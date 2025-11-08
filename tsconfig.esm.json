@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/esm",
+    "moduleResolution": "nodenext",
+    "module": "NodeNext",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "exclude": ["**/__mocks__/**", "**/__tests__/**"]
+}

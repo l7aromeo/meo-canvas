@@ -1,0 +1,79 @@
+{
+  "name": "@meonode/canvas",
+  "version": "1.0.0",
+  "description": "A declarative, component-based library for generating high-quality images on a canvas, inspired by the MeoNode UI library for React. It leverages skia-canvas for rendering and yoga-layout for flexible, CSS-like layouts.",
+  "license": "MIT",
+  "author": "Ukasyah Rahmatullah Zada",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf ./dist && rollup -c --bundleConfigAsCjs && tsc-alias -p tsconfig.esm.json && tsc-alias -p tsconfig.cjs.json",
+    "test": "node --experimental-vm-modules $(yarn bin jest)",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs",
+    "format": "prettier --write .",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@rollup/plugin-alias": "^6.0.0",
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/gitlab": "^13.2.9",
+    "@semantic-release/npm": "^13.1.1",
+    "@semantic-release/release-notes-generator": "^14.1.0",
+    "@types/jest": "^30.0.0",
+    "@types/lodash-es": "^4.17.12",
+    "@types/module-alias": "^2.0.4",
+    "@types/sharp": "^0.32.0",
+    "@types/skia-canvas": "^0.9.28",
+    "@types/tinycolor2": "^1.4.6",
+    "@types/yoga-layout": "^3.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.3",
+    "@typescript-eslint/parser": "^8.46.3",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-unused-imports": "^4.3.0",
+    "husky": "^9.1.7",
+    "jest": "^30.2.0",
+    "meocord": "^1.0.14",
+    "prettier": "^3.6.2",
+    "rollup": "^4.53.1",
+    "rollup-plugin-tsconfig-paths": "^1.5.2",
+    "semantic-release": "^25.0.2",
+    "ts-jest": "^29.4.5",
+    "tsc-alias": "^1.8.16",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.3"
+  },
+  "packageManager": "yarn@4.11.0",
+  "dependencies": {
+    "file-type": "^21.0.0",
+    "lodash-es": "^4.17.21",
+    "module-alias": "^2.2.3",
+    "skia-canvas": "^3.0.8",
+    "tinycolor2": "^1.6.0",
+    "tslib": "^2.8.1",
+    "yoga-layout": "^3.2.1"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "LICENSE",
+    "README.md",
+    "CONTRIBUTING.md"
+  ]
+}

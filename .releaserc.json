@@ -1,0 +1,44 @@
+{
+  "branches": [
+    "main",
+    {
+      "name": "beta",
+      "prerelease": true
+    },
+    {
+      "name": "alpha",
+      "prerelease": true
+    }
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": true,
+        "tarballDir": "dist"
+      }
+    ],
+    [
+      "@semantic-release/gitlab",
+      {
+        "gitlabUrl": "https://gitlab.com",
+        "assets": [
+          {
+            "path": "dist/**/*.js",
+            "label": "JavaScript Distribution"
+          },
+          {
+            "path": "dist/**/*.d.ts",
+            "label": "TypeScript Definitions"
+          },
+          {
+            "path": "package.json",
+            "label": "Package Manifest"
+          }
+        ]
+      }
+    ]
+  ]
+}

@@ -1,0 +1,55 @@
+image: node:current-alpine
+
+stages:
+  - install
+  - test
+  - build
+  - deploy
+
+cache:
+  paths:
+    - node_modules/
+    - .yarn/cache
+
+install_dependencies:
+  stage: install
+  script:
+    - npm i -gf corepack
+    - corepack enable
+    - yarn install --immutable
+  artifacts:
+    paths:
+      - node_modules/
+      - .yarn/
+
+lint_and_test:
+  stage: test
+  script:
+    - yarn lint
+    - yarn test
+  needs:
+    - install_dependencies
+
+build_package:
+  stage: build
+  script:
+    - yarn build
+  needs:
+    - install_dependencies
+  artifacts:
+    paths:
+      - dist/
+
+release:
+  stage: deploy
+  resource_group: meonode_canvas_pipeline_lock
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "beta" || $CI_COMMIT_BRANCH == "alpha"
+  script:
+    - apk add git
+    - yarn semantic-release
+  needs:
+    - lint_and_test
+    - build_package
+  environment:
+    name: production
