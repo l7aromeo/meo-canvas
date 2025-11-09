@@ -17,7 +17,13 @@
       "@semantic-release/npm",
       {
         "npmPublish": true,
-        "tarballDir": "dist"
+        "tarballDir": "release"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "mkdir -p release && tar -czf release/meonode-canvas-${nextRelease.version}.tar.gz dist/"
       }
     ],
     [
@@ -26,16 +32,12 @@
         "gitlabUrl": "https://gitlab.com",
         "assets": [
           {
-            "path": "dist/**/*.js",
-            "label": "JavaScript Distribution"
+            "path": "release/*.tgz",
+            "label": "npm package"
           },
           {
-            "path": "dist/**/*.d.ts",
-            "label": "TypeScript Definitions"
-          },
-          {
-            "path": "package.json",
-            "label": "Package Manifest"
+            "path": "release/*.tar.gz",
+            "label": "Distribution (tar.gz)"
           }
         ]
       }
