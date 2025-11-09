@@ -25,6 +25,8 @@ export class RootNode extends ColumnNode {
   private ctx: CanvasRenderingContext2D | null = null
   /** Target width for the canvas in pixels */
   private readonly targetWidth: number
+  /** Target height for the canvas in pixels */
+  private readonly targetHeight: number
   /** Scale factor for rendering (e.g. 2 for 2x resolution) */
   private readonly scale: number
 
@@ -36,6 +38,8 @@ export class RootNode extends ColumnNode {
   constructor(props: RootProps & BaseProps) {
     // Call the parent constructor with root name and props
     super({ name: 'Root', ...props })
+
+    this.props = props
 
     // Validate the required width property
     if (!props.width) {
@@ -65,6 +69,7 @@ export class RootNode extends ColumnNode {
     // Set up scale and width
     this.scale = props.scale || 1
     this.targetWidth = props.width
+    this.targetHeight = props.height
     this.node.setWidth(this.targetWidth)
 
     // Initialize children nodes
@@ -114,7 +119,7 @@ export class RootNode extends ColumnNode {
     // Step 4: Create a canvas with calculated dimensions
     const calculatedContentHeight = this.node.getComputedHeight()
     const finalCanvasWidth = Math.ceil(this.targetWidth * this.scale)
-    const finalCanvasHeight = Math.max(1, Math.ceil(calculatedContentHeight * this.scale))
+    const finalCanvasHeight = this.targetHeight ? Math.ceil(this.targetHeight * this.scale) : Math.max(1, Math.ceil(calculatedContentHeight * this.scale))
 
     // Step 5: Set up canvas context
     this.canvas = new Canvas(finalCanvasWidth, finalCanvasHeight)

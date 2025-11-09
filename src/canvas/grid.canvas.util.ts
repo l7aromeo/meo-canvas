@@ -1,3 +1,5 @@
+// TODO: Add comprehensive unit tests for this file.
+
 import type { GridProps } from '@/canvas/canvas.type.js'
 import { BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
 import { Style, FlexDirection } from '@/constant/common.const.js'
@@ -63,12 +65,27 @@ export class GridNode extends RowNode {
       ...props,
       // Explicitly remove the 'direction' prop passed to super, as it's handled by flexDirection
       direction: undefined,
+      // Pass undefined for gap to prevent BoxNode from trying to parse it
+      gap: undefined,
     })
 
     this.columns = columns
     this.columnGapValue = columnGap
     this.rowGapValue = rowGap
     this.isVertical = isVertical
+
+    // Explicitly set gaps on this.node after super() call
+    // These will be updated again in updateLayoutBasedOnComputedSize, but this ensures initial setup
+    if (typeof columnGap === 'number') {
+      this.node.setGap(Style.Gutter.Column, columnGap)
+    } else if (typeof columnGap === 'string' && columnGap.endsWith('%')) {
+      this.node.setGapPercent(Style.Gutter.Column, parseFloat(columnGap))
+    }
+    if (typeof rowGap === 'number') {
+      this.node.setGap(Style.Gutter.Row, rowGap)
+    } else if (typeof rowGap === 'string' && rowGap.endsWith('%')) {
+      this.node.setGapPercent(Style.Gutter.Row, parseFloat(rowGap))
+    }
   }
 
   /**

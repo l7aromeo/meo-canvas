@@ -1,3 +1,5 @@
+// TODO: Add comprehensive unit tests for this file.
+
 import type { BaseProps, ImageProps } from '@/canvas/canvas.type.js'
 import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.util.js'

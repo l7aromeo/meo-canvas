@@ -1,3 +1,5 @@
+// TODO: Add comprehensive unit tests for this file.
+
 import type { TextProps, TextSegment } from '@/canvas/canvas.type.js'
 import { Canvas, type CanvasRenderingContext2D, type FontVariantSetting } from 'skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.util.js'
