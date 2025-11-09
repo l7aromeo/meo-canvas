@@ -1,4 +1,5 @@
 export * from '@/constant/common.const.js'
+export * from '@/canvas/canvas.type.js'
 export { Box, Column, Row, type BoxNode } from '@/canvas/layout.canvas.util.js'
 export { Image } from '@/canvas/image.canvas.util.js'
 export { Text } from '@/canvas/text.canvas.util.js'
