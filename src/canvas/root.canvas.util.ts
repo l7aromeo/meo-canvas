@@ -30,7 +30,7 @@ export class RootNode extends ColumnNode {
 
   /**
    * Creates a new root node for canvas rendering
-   * @param props - Configuration properties for the root node
+   * @param props Configuration properties for the root node
    * @throws Error if width property is not provided
    */
   constructor(props: RootProps & BaseProps) {
@@ -134,7 +134,7 @@ export class RootNode extends ColumnNode {
 
 /**
  * Creates and renders a new root node with the given properties
- * @param props - Configuration properties for the root node
+ * @param props Configuration properties for the root node
  * @returns Promise resolving to the rendered Canvas instance
  */
 export const Root = async (props: RootProps) => await new RootNode(props).render()

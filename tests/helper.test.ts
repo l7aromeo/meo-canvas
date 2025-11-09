@@ -29,10 +29,7 @@ const createMockContext = () => {
   return mockCtx as CanvasRenderingContext2D
 }
 
-const createMockYogaNode = (
-  borders: Partial<Record<YogaTypes.Edge, number>> = {},
-  boxSizing: YogaTypes.BoxSizing = Style.BoxSizing.BorderBox,
-) => {
+const createMockYogaNode = (borders: Partial<Record<YogaTypes.Edge, number>> = {}, boxSizing: YogaTypes.BoxSizing = Style.BoxSizing.BorderBox) => {
   const mockNode: Partial<YogaTypes.Node> = {
     getBorder: (edge: YogaTypes.Edge) => borders[edge] || 0,
     getBoxSizing: () => boxSizing,

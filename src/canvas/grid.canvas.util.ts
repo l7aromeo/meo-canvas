@@ -15,7 +15,7 @@ export class GridNode extends RowNode {
 
   /**
    * Creates a new grid layout node
-   * @param props - Grid configuration properties
+   * @param props Grid configuration properties
    */
   constructor(props: GridProps) {
     const columns = Math.max(1, props.columns || 1)
@@ -74,8 +74,8 @@ export class GridNode extends RowNode {
   /**
    * Appends a child node to this grid.
    * Overridden primarily for documentation/clarity, functionality is inherited.
-   * @param child - Child node to append
-   * @param index - Index at which to insert the child
+   * @param child Child node to append
+   * @param index Index at which to insert the child
    */
   protected override appendChild(child: BoxNode, index: number) {
     super.appendChild(child, index)
@@ -129,19 +129,12 @@ export class GridNode extends RowNode {
         if (!isNaN(percent) && contentWidth > 0) {
           columnGapPixels = (percent / 100) * contentWidth
         } else if (isNaN(percent)) {
-          console.warn(
-            `[GridNode ${this.props.key}] Invalid percentage column gap format: "${this.columnGapValue}". Using 0px.`,
-          )
+          console.warn(`[GridNode ${this.props.key}] Invalid percentage column gap format: "${this.columnGapValue}". Using 0px.`)
         } else if (contentWidth <= 0) {
-          console.warn(
-            `[GridNode ${this.props.key}] Cannot calculate percentage column gap (${this.columnGapValue}) because content width is zero. Using 0px.`,
-          )
+          console.warn(`[GridNode ${this.props.key}] Cannot calculate percentage column gap (${this.columnGapValue}) because content width is zero. Using 0px.`)
         }
       } catch (e) {
-        console.warn(
-          `[GridNode ${this.props.key}] Error parsing percentage column gap: "${this.columnGapValue}". Using 0px.`,
-          e,
-        )
+        console.warn(`[GridNode ${this.props.key}] Error parsing percentage column gap: "${this.columnGapValue}". Using 0px.`, e)
       }
     } else if (typeof this.columnGapValue === 'string' && this.columnGapValue.trim() !== '') {
       console.warn(
@@ -158,19 +151,12 @@ export class GridNode extends RowNode {
         if (!isNaN(percent) && contentHeight > 0) {
           rowGapPixels = (percent / 100) * contentHeight
         } else if (isNaN(percent)) {
-          console.warn(
-            `[GridNode ${this.props.key}] Invalid percentage row gap format: "${this.rowGapValue}". Using 0px.`,
-          )
+          console.warn(`[GridNode ${this.props.key}] Invalid percentage row gap format: "${this.rowGapValue}". Using 0px.`)
         } else if (contentHeight <= 0) {
-          console.warn(
-            `[GridNode ${this.props.key}] Cannot calculate percentage row gap (${this.rowGapValue}) because content height is zero. Using 0px.`,
-          )
+          console.warn(`[GridNode ${this.props.key}] Cannot calculate percentage row gap (${this.rowGapValue}) because content height is zero. Using 0px.`)
         }
       } catch (e) {
-        console.warn(
-          `[GridNode ${this.props.key}] Error parsing percentage row gap: "${this.rowGapValue}". Using 0px.`,
-          e,
-        )
+        console.warn(`[GridNode ${this.props.key}] Error parsing percentage row gap: "${this.rowGapValue}". Using 0px.`, e)
       }
     } else if (typeof this.rowGapValue === 'string' && this.rowGapValue.trim() !== '') {
       console.warn(
@@ -289,7 +275,7 @@ export class GridNode extends RowNode {
 
 /**
  * Factory function to create a new GridNode instance.
- * @param props - Grid configuration properties.
+ * @param props Grid configuration properties.
  * @returns A new GridNode instance.
  */
 export const Grid = (props: GridProps) => new GridNode(props)

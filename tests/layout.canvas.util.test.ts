@@ -507,34 +507,10 @@ describe('BoxNode Layout Properties', () => {
     expect(mockClip).toHaveBeenCalled()
     expect(mockContext.restore).toHaveBeenCalledTimes(1)
     // Expect arc calls for rounded corners, adjusted for border
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      Math.max(0, 10 - 5),
-      expect.any(Number),
-      expect.any(Number),
-    ) // TopLeft
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      Math.max(0, 20 - 5),
-      expect.any(Number),
-      expect.any(Number),
-    ) // TopRight
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      Math.max(0, 30 - 5),
-      expect.any(Number),
-      expect.any(Number),
-    ) // BottomRight
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      Math.max(0, 40 - 5),
-      expect.any(Number),
-      expect.any(Number),
-    ) // BottomLeft
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), Math.max(0, 10 - 5), expect.any(Number), expect.any(Number)) // TopLeft
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), Math.max(0, 20 - 5), expect.any(Number), expect.any(Number)) // TopRight
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), Math.max(0, 30 - 5), expect.any(Number), expect.any(Number)) // BottomRight
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), Math.max(0, 40 - 5), expect.any(Number), expect.any(Number)) // BottomLeft
     getContextSpy.mockRestore()
   })
 
@@ -1424,34 +1400,10 @@ describe('BoxNode _renderContent', () => {
 
     expect(mockContext.beginPath).toHaveBeenCalled()
     // Check if arc was called with the correct radii
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      5,
-      expect.any(Number),
-      expect.any(Number),
-    )
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      10,
-      expect.any(Number),
-      expect.any(Number),
-    )
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      15,
-      expect.any(Number),
-      expect.any(Number),
-    )
-    expect(mockContext.arc).toHaveBeenCalledWith(
-      expect.any(Number),
-      expect.any(Number),
-      20,
-      expect.any(Number),
-      expect.any(Number),
-    )
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 5, expect.any(Number), expect.any(Number))
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 10, expect.any(Number), expect.any(Number))
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 15, expect.any(Number), expect.any(Number))
+    expect(mockContext.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 20, expect.any(Number), expect.any(Number))
     expect(mockContext.fill).toHaveBeenCalled()
   })
 

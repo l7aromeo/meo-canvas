@@ -50,7 +50,6 @@ export class ImageNode extends BoxNode {
   /**
    * Loads and processes an image from various sources (URL, file path, or Buffer).
    * Handles SVG color modifications and sets natural dimensions with an aspect ratio.
-   *
    * @returns Promise that resolves when image loading completes
    * @throws Error if image loading fails
    */
@@ -59,8 +58,7 @@ export class ImageNode extends BoxNode {
     if (this.loadedImage) return Promise.resolve()
 
     if (!this.props.src) {
-      const aspectRatioFromProps =
-        typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
+      const aspectRatioFromProps = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
       this.node.setAspectRatio(aspectRatioFromProps)
       this.naturalWidth = 0
       this.naturalHeight = 0
@@ -68,105 +66,100 @@ export class ImageNode extends BoxNode {
       return Promise.resolve()
     }
 
-    return new Promise(async resolve => {
-      const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
-      let finalSource: string | Buffer = this.props.src
-      let isSvg = false
-      let contentBuffer: Buffer | null = null
-      let detectedMime: string | undefined
+    return new Promise(resolve => {
+      const load = async () => {
+        const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
+        let finalSource: string | Buffer = this.props.src
+        let isSvg = false
+        let contentBuffer: Buffer | null = null
+        let detectedMime: string | undefined
 
-      try {
-        if (typeof this.props.src === 'string') {
-          if (this.props.src.startsWith('http')) {
-            const response = await fetch(this.props.src)
-            if (!response.ok) {
-              throw new Error(`HTTP error ${response.status} fetching image: ${this.props.src}`)
+        try {
+          if (typeof this.props.src === 'string') {
+            if (this.props.src.startsWith('http')) {
+              const response = await fetch(this.props.src)
+              if (!response.ok) {
+                throw new Error(`HTTP error ${response.status} fetching image: ${this.props.src}`)
+              }
+              const imageArrayBuffer = await response.arrayBuffer()
+              contentBuffer = Buffer.from(imageArrayBuffer)
+              finalSource = contentBuffer
+
+              const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
+              detectedMime = fileTypeResult?.mime
+              isSvg = detectedMime === 'image/svg+xml'
+
+              if ((!detectedMime || detectedMime === 'application/xml') && contentBuffer.toString('utf-8').includes('<svg')) {
+                isSvg = true
+              }
+            } else {
+              finalSource = this.props.src
+              const filePath = this.props.src
+
+              try {
+                const fileTypeResult = await fileTypeFromFile(filePath)
+                detectedMime = fileTypeResult?.mime
+                isSvg = detectedMime === 'image/svg+xml'
+
+                if ((!detectedMime || detectedMime === 'application/xml') && filePath.toLowerCase().endsWith('.svg')) {
+                  isSvg = true
+                }
+              } catch {
+                isSvg = filePath.toLowerCase().endsWith('.svg')
+              }
+
+              if (isSvg && this.props.color) {
+                try {
+                  contentBuffer = await fs.readFile(filePath)
+                } catch {
+                  isSvg = false
+                  contentBuffer = null
+                }
+              }
             }
-            const imageArrayBuffer = await response.arrayBuffer()
-            contentBuffer = Buffer.from(imageArrayBuffer)
+          } else {
+            contentBuffer = this.props.src
             finalSource = contentBuffer
 
             const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
             detectedMime = fileTypeResult?.mime
             isSvg = detectedMime === 'image/svg+xml'
+          }
 
-            if (
-              (!detectedMime || detectedMime === 'application/xml') &&
-              contentBuffer.toString('utf-8').includes('<svg')
-            ) {
-              isSvg = true
-            }
-          } else {
-            finalSource = this.props.src
-            const filePath = this.props.src
+          if (isSvg && this.props.color && contentBuffer) {
+            const svgString = contentBuffer.toString('utf-8')
+            const modifiedSvgString = svgString.replace(/fill="[^"]*"/g, `fill="${this.props.color}"`)
 
-            try {
-              const fileTypeResult = await fileTypeFromFile(filePath)
-              detectedMime = fileTypeResult?.mime
-              isSvg = detectedMime === 'image/svg+xml'
-
-              if ((!detectedMime || detectedMime === 'application/xml') && filePath.toLowerCase().endsWith('.svg')) {
-                isSvg = true
-              }
-            } catch {
-              isSvg = filePath.toLowerCase().endsWith('.svg')
-            }
-
-            if (isSvg && this.props.color) {
-              try {
-                contentBuffer = await fs.readFile(filePath)
-              } catch {
-                isSvg = false
-                contentBuffer = null
-              }
+            if (modifiedSvgString !== svgString) {
+              finalSource = Buffer.from(modifiedSvgString)
+            } else {
+              finalSource = contentBuffer
             }
           }
-        } else {
-          contentBuffer = this.props.src
-          finalSource = contentBuffer
 
-          const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
-          detectedMime = fileTypeResult?.mime
-          isSvg = detectedMime === 'image/svg+xml'
+          const img = await loadImage(finalSource as never)
+          this.loadedImage = img
+          this.naturalWidth = img.width
+          this.naturalHeight = img.height
+
+          const calculatedAspectRatio = this.naturalWidth > 0 && this.naturalHeight > 0 ? this.naturalWidth / this.naturalHeight : undefined
+
+          const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
+
+          this.node.setAspectRatio(finalAspectRatio)
+
+          this.props.onLoad?.()
+          resolve()
+        } catch (error: any) {
+          this.naturalWidth = 0
+          this.naturalHeight = 0
+          const finalAspectRatioOnError = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
+          this.node.setAspectRatio(finalAspectRatioOnError)
+          this.props.onError?.(error)
+          resolve()
         }
-
-        if (isSvg && this.props.color && contentBuffer) {
-          const svgString = contentBuffer.toString('utf-8')
-          const modifiedSvgString = svgString.replace(/fill="[^"]*"/g, `fill="${this.props.color}"`)
-
-          if (modifiedSvgString !== svgString) {
-            finalSource = Buffer.from(modifiedSvgString)
-          } else {
-            finalSource = contentBuffer
-          }
-        }
-
-        const img = await loadImage(finalSource as never)
-        this.loadedImage = img
-        this.naturalWidth = img.width
-        this.naturalHeight = img.height
-
-        const calculatedAspectRatio =
-          this.naturalWidth > 0 && this.naturalHeight > 0 ? this.naturalWidth / this.naturalHeight : undefined
-
-        const finalAspectRatio =
-          typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0
-            ? this.props.aspectRatio
-            : calculatedAspectRatio
-
-        this.node.setAspectRatio(finalAspectRatio)
-
-        this.props.onLoad?.()
-        resolve()
-      } catch (error: any) {
-        this.naturalWidth = 0
-        this.naturalHeight = 0
-        const finalAspectRatioOnError =
-          typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
-        this.node.setAspectRatio(finalAspectRatioOnError)
-        this.props.onError?.(error)
-        resolve()
       }
+      load()
     })
   }
 
@@ -178,13 +171,7 @@ export class ImageNode extends BoxNode {
    * Renders the image with correct sizing, clipping, and positioning.
    * Handles object-fit, object-position, and visual effects like saturation.
    */
-  protected override _renderContent(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-  ) {
+  protected override _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     super._renderContent(ctx, x, y, width, height)
 
     if (!this.loadedImage || width <= 0 || height <= 0) return
@@ -277,10 +264,8 @@ export class ImageNode extends BoxNode {
     const availableWidth = contentWidth - dw
     const availableHeight = contentHeight - dh
     const posProps = this.props.objectPosition || {}
-    const horizontalValue =
-      posProps.Left !== undefined ? posProps.Left : posProps.Right !== undefined ? posProps.Right : '50%'
-    const verticalValue =
-      posProps.Top !== undefined ? posProps.Top : posProps.Bottom !== undefined ? posProps.Bottom : '50%'
+    const horizontalValue = posProps.Left !== undefined ? posProps.Left : posProps.Right !== undefined ? posProps.Right : '50%'
+    const verticalValue = posProps.Top !== undefined ? posProps.Top : posProps.Bottom !== undefined ? posProps.Bottom : '50%'
 
     let offsetX = calculateOffsetFromValue(horizontalValue, availableWidth)
     let offsetY = calculateOffsetFromValue(verticalValue, availableHeight)

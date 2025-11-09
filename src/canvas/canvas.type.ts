@@ -10,6 +10,7 @@ export interface BaseProps {
    * Optional display name for debugging purposes.
    */
   name?: string
+
   /**
    * Optional key identifier for component reconciliation.
    */
@@ -35,6 +36,7 @@ export interface TransformProps {
    * @default undefined (no translation)
    */
   translateX?: number | `${number}%`
+
   /**
    * Vertical translation (movement along the Y-axis).
    * Applied after positioning via layout.
@@ -42,12 +44,14 @@ export interface TransformProps {
    * @default undefined (no translation)
    */
   translateY?: number | `${number}%`
+
   /**
    * Rotation around the transform origin.
    * @unit Angle in degrees. Positive values rotate clockwise.
    * @default undefined (no rotation)
    */
   rotate?: number // degrees
+
   /**
    * Uniform scaling factor (applied to both X and Y axes).
    * A value of 1 means no scaling, 2 means double size, 0.5 means half-size.
@@ -55,22 +59,26 @@ export interface TransformProps {
    * @default undefined (no scaling, effectively 1)
    */
   scale?: number
+
   /**
    * Horizontal scaling factor. Overrides the X component of `scale` if provided.
    * @default undefined (no scaling, effectively 1)
    */
   scaleX?: number
+
   /**
    * Vertical scaling factor. Overrides the Y component of `scale` if provided.
    * @default undefined (no scaling, effectively 1)
    */
   scaleY?: number
+
   /**
    * The horizontal origin point for transformations (rotate, scale).
    * @unit Pixels from the left edge if it's number, percentage of the node's width if it's string.
    * @default '50%' (center)
    */
   originX?: number | `${number}%`
+
   /**
    * The vertical origin point for transformations (rotate, scale).
    * @unit Pixels from the top edge if it's number, percentage of the node's height if it's string.
@@ -88,24 +96,28 @@ export interface BoxShadowProps {
    * @default false (outset)
    */
   inset?: boolean
+
   /**
    * The horizontal offset of the shadow. Positive values move it right, negative values left.
    * @unit Pixels.
    * @default 0
    */
   offsetX?: number
+
   /**
    * The vertical offset of the shadow. Positive values move it down, negative values up.
    * @unit Pixels.
    * @default 0
    */
   offsetY?: number
+
   /**
    * The blur radius. Larger values create bigger, lighter blurs. Negative values are invalid.
    * @unit Pixels.
    * @default 0 (hard shadow)
    */
   blur?: number
+
   /**
    * The color of the shadow.
    * Accepts standard CSS color strings.
@@ -124,6 +136,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/width-height
    */
   width?: number | `${number}%`
+
   /**
    * Sets the height of the node.
    * @unit Pixels if it's number, percentage of the parent's height if it's string.
@@ -131,6 +144,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/width-height
    */
   height?: number | `${number}%`
+
   /**
    * Sets the minimum width of the node.
    * @unit Pixels if it's number, percentage of the parent's width if it's string.
@@ -138,6 +152,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/min-max-width-height
    */
   minWidth?: number | `${number}%`
+
   /**
    * Sets the minimum height of the node.
    * @unit Pixels if it's number, percentage of the parent's height if it's string.
@@ -145,6 +160,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/min-max-width-height
    */
   minHeight?: number | `${number}%`
+
   /**
    * Sets the maximum width of the node.
    * @unit Pixels if it's number, percentage of the parent's width if it's string.
@@ -152,6 +168,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/min-max-width-height
    */
   maxWidth?: number | `${number}%`
+
   /**
    * Sets the maximum height of the node.
    * @unit Pixels if it's number, percentage of the parent's height if it's string.
@@ -159,6 +176,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/min-max-width-height
    */
   maxHeight?: number | `${number}%`
+
   /**
    * Defines the direction of the main axis for flex items within this container.
    * @see Style.FlexDirection (`COLUMN`, `ROW`, `COLUMN_REVERSE`, `ROW_REVERSE`)
@@ -166,6 +184,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/flex-direction
    */
   flexDirection?: Style.FlexDirection
+
   /**
    * Defines how flex items are distributed along the main axis of the container.
    * @see Style.Justify (`FLEX_START`, `CENTER`, `FLEX_END`, `SPACE_BETWEEN`, `SPACE_AROUND`, `SPACE_EVENLY`)
@@ -173,6 +192,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/justify-content
    */
   justifyContent?: Style.Justify
+
   /**
    * Defines how flex items are aligned along the cross axis of the container.
    * @see Style.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
@@ -180,6 +200,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/align-items-self
    */
   alignItems?: Style.Align
+
   /**
    * Allows overriding the parent's `alignItems` value for a specific flex item.
    * @see Style.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
@@ -187,6 +208,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/align-items-self
    */
   alignSelf?: Style.Align
+
   /**
    * Defines how lines are distributed along the cross axis when `flexWrap` is `WRAP` or `WRAP_REVERSE`.
    * Has no effect when there is only one line of flex items.
@@ -195,6 +217,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/align-content
    */
   alignContent?: Style.Align
+
   /**
    * Defines the ability of a flex item to grow if necessary, relative to other items.
    * A non-negative number indicating the proportion of available space the item should take.
@@ -202,6 +225,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/flex-basis-grow-shrink
    */
   flexGrow?: number
+
   /**
    * Defines the ability of a flex item to shrink if necessary, relative to other items.
    * A non-negative number indicating the proportion of overflow space the item should lose.
@@ -209,6 +233,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/flex-basis-grow-shrink
    */
   flexShrink?: number
+
   /**
    * Defines the default size of a flex item along the main axis before the remaining space is distributed.
    * @unit Pixels.
@@ -216,6 +241,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs//styling/flex-basis-grow-shrink
    */
   flexBasis?: number | 'auto' | `${number}%`
+
   /**
    * Specifies the positioning method used for the node.
    * `RELATIVE`: Positioned according to the normal flow, then offset relative to that position.
@@ -225,6 +251,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/position
    */
   positionType?: Style.PositionType
+
   /**
    * Specifies the offset distances for positioned elements (`positionType: 'ABSOLUTE'` or `RELATIVE`).
    * Can be a single number for all edges or an object specifying individual edges (`Top`, `Right`, `Bottom`, `Left`, `Start`, `End`).
@@ -234,6 +261,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/position
    */
   position?: Partial<Record<keyof typeof Style.Edge, number | `${number}%`>> | number | `${number}%`
+
   /**
    * Sets the margin space on the outside of the node's border.
    * Can be a single number for all edges or an object specifying individual edges.
@@ -242,6 +270,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/margin-padding-border
    */
   margin?: Partial<Record<keyof typeof Style.Edge, number | `${number}%` | 'auto'>> | number | `${number}%` | 'auto'
+
   /**
    * Sets the padding space on the inside of the node's border, around the content.
    * Can be a single number for all edges or an object specifying individual edges.
@@ -250,6 +279,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/margin-padding-border
    */
   padding?: Partial<Record<keyof typeof Style.Edge, number | `${number}%`>> | number | `${number}%`
+
   /**
    * Sets the width of the node's border.
    * Can be a single number for all edges or an object specifying individual edges.
@@ -258,12 +288,14 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/margin-padding-border
    */
   border?: Partial<Record<keyof typeof Style.Edge, number>> | number
+
   /**
    * Sets the color of the node's border.
    * Accepts standard CSS color strings (e.g., 'red', '#FF0000', 'rgba(255,0,0,0.5)').
    * @default 'black' (set in BoxNode constructor)
    */
   borderColor?: string | `#${string}`
+
   /**
    * Sets the style of the node's border.
    * @see Style.Border.Solid (0)
@@ -272,6 +304,7 @@ export interface BoxProps extends BaseProps {
    * @default Style.Border.Solid (set in BoxNode constructor)
    */
   borderStyle?: typeof Style.Border.Solid | typeof Style.Border.Dashed | typeof Style.Border.Dotted
+
   /**
    * Sets the radius of the node's corners, creating rounded effects.
    * Can be a single number for all corners or an object specifying individual corners (`TopLeft`, `TopRight`, `BottomLeft`, `BottomRight`).
@@ -286,6 +319,7 @@ export interface BoxProps extends BaseProps {
         BottomRight: number
       }>
     | number
+
   /**
    * Locks the aspect ratio (width / height) of the node.
    * If set, Yoga might adjust the height based on the calculated width or vice versa.
@@ -294,6 +328,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/aspect-ratio
    */
   aspectRatio?: number
+
   /**
    * Defines how content that overflows the node's bounds is handled.
    * `VISIBLE`: Content is not clipped and may render outside the node's box.
@@ -304,6 +339,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/overflow
    */
   overflow?: Style.Overflow
+
   /**
    * Controls whether the node and its children are included in the layout calculation and rendering.
    * `FLEX`: The node participates in a flex layout.
@@ -313,6 +349,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/display
    */
   display?: Style.Display
+
   /**
    * Sets the primary text and layout direction (Left-to-Right or Right-to-Left).
    * Affects the meaning of `Start` and `End` edges for properties like `position`, `margin`, `padding`, `border`.
@@ -322,6 +359,7 @@ export interface BoxProps extends BaseProps {
    * @see https://yogalayout.dev/docs/styling/layout-direction
    */
   direction?: Style.Direction
+
   /**
    * Controls whether flex items are forced onto a single line or can wrap onto multiple lines.
    * @see Style.Wrap (`NO_WRAP`, `WRAP`, `WRAP_REVERSE`)
@@ -346,12 +384,14 @@ export interface BoxProps extends BaseProps {
    * @default `Style.BOX_SIZING_BORDER_BOX` (set in `setLayout`)
    */
   boxSizing?: Style.BoxSizing
+
   /**
    * Sets the background color of the node. Drawn beneath the content and padding, extending to the border edge.
    * Accepts standard CSS color strings.
    * @default undefined (transparent)
    */
   backgroundColor?: string
+
   /**
    * Sets a linear gradient as the background. Overrides `backgroundColor` if provided.
    * `colors`: Array of CSS color strings for the gradient stops.
@@ -426,6 +466,7 @@ export interface BoxProps extends BaseProps {
   boxShadow?: BoxShadowProps | BoxShadowProps[]
 
   // Font Props to pass to the child TextNode
+
   /**
    * Font size.
    * @unit Pixels.
@@ -570,12 +611,12 @@ export interface TextSegment {
 /**
  * Defines the content and styling properties for a TextNode.
  */
-export interface TextProps
-  extends Omit<BoxProps, 'children' | 'gap' | 'flexDirection' | 'justifyContent' | 'alignContent' | 'alignItems'> {
+export interface TextProps extends Omit<BoxProps, 'children' | 'gap' | 'flexDirection' | 'justifyContent' | 'alignContent' | 'alignItems'> {
   lineHeight?: number // Optional explicit line height
 
   /** Maximum number of lines to display. Text exceeding this limit will be truncated. */
   maxLines?: number
+
   /**
    * If true, adds '...' to the end of the last visible line when text is truncated due to `maxLines`.
    * If a string is provided, that string is used as the ellipsis character(s).
@@ -604,18 +645,21 @@ export interface DropShadowProps {
    * @default 0
    */
   offsetX?: number
+
   /**
    * The vertical offset of the shadow. Positive values move it down, negative values up.
    * @unit Pixels.
    * @default 0
    */
   offsetY?: number
+
   /**
    * The blur radius. Larger values create bigger, softer shadows. Must be non-negative.
    * @unit Pixels.
    * @default 0 (hard shadow)
    */
   blur?: number
+
   /**
    * The color of the shadow.
    * Accepts standard CSS color strings.
@@ -634,18 +678,21 @@ export interface TextShadowProps {
    * @default 0
    */
   offsetX?: number
+
   /**
    * The vertical offset of the shadow. Positive values move it down, negative values up.
    * @unit Pixels.
    * @default 0
    */
   offsetY?: number
+
   /**
    * The blur radius. Larger values create bigger, lighter blurs. Negative values are invalid.
    * @unit Pixels.
    * @default 0 (hard shadow)
    */
   blur?: number
+
   /**
    * The color of the shadow.
    * Accepts standard CSS color strings.
@@ -717,7 +764,7 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
 
   /**
    * Callback function that executes when the image fails to load.
-   * @param error - The error that occurred during loading.
+   * @param error The error that occurred during loading.
    */
   onError?: (error: Error) => void
 }

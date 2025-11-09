@@ -11,7 +11,7 @@ export class TextNode extends BoxNode {
   private readonly segments: TextSegment[] = []
   private lines: TextSegment[][] = []
   private static measurementContext: CanvasRenderingContext2D | null = null
-  private readonly metricsString = 'Ag|\``'
+  private readonly metricsString = 'Ag|``'
   private lineHeights: number[] = []
   private lineAscents: number[] = []
   private lineContentHeights: number[] = []
@@ -43,18 +43,7 @@ export class TextNode extends BoxNode {
 
   protected override applyDefaults(): void {
     const textDefaults: Required<
-      Pick<
-        TextProps,
-        | 'fontSize'
-        | 'fontFamily'
-        | 'fontWeight'
-        | 'fontStyle'
-        | 'color'
-        | 'textAlign'
-        | 'verticalAlign'
-        | 'ellipsis'
-        | 'lineGap'
-      >
+      Pick<TextProps, 'fontSize' | 'fontFamily' | 'fontWeight' | 'fontStyle' | 'color' | 'textAlign' | 'verticalAlign' | 'ellipsis' | 'lineGap'>
     > & {
       lineHeight: undefined | number
       maxLines: undefined | number
@@ -119,8 +108,7 @@ export class TextNode extends BoxNode {
    * - \b - Backspace (removed)
    * - \f - Form feed (treated as newline)
    * - \v - Vertical tab (treated as newline)
-   *
-   * @param input - Raw text string potentially containing escape sequences
+   * @param input Raw text string potentially containing escape sequences
    * @returns Processed string with escape sequences converted
    */
   private processEscapeSequences(input: string): string {
@@ -167,9 +155,8 @@ export class TextNode extends BoxNode {
    * <color="red">, <color='red'>, <color=red>
    *
    * Tags can be nested and must be properly closed with </tag>
-   *
-   * @param input - Text string containing markup tags
-   * @param baseStyle - Default style properties to apply to all segments
+   * @param input Text string containing markup tags
+   * @param baseStyle Default style properties to apply to all segments
    * @returns Array of styled text segments with consistent style properties
    */
   private parseRichText(input: string, baseStyle: Partial<TextSegment>): TextSegment[] {
@@ -290,8 +277,7 @@ export class TextNode extends BoxNode {
    * - Style: segment <i> > base fontStyle
    * - Size: segment size > base fontSize
    * - Family: base fontFamily
-   *
-   * @param segmentStyle - Optional TextSegment styling to override base props
+   * @param segmentStyle Optional TextSegment styling to override base props
    * @returns Formatted CSS font string for canvas context
    */
   private getFontString(segmentStyle?: Partial<TextSegment>): string {
@@ -347,12 +333,11 @@ export class TextNode extends BoxNode {
    * 2. Otherwise calculating dynamic height based on largest font size per line
    * 3. Adding leading space above/below text content
    * 4. Including specified line gaps between lines
-   *
-   * @param widthConstraint - Maximum allowed width in pixels for text layout
-   * @param widthMode - YogaLayout mode determining how width constraint is applied
+   * @param widthConstraint Maximum allowed width in pixels for text layout
+   * @param widthMode YogaLayout mode determining how width constraint is applied
    * @returns Calculated minimum dimensions required to render text content
-   *   - width: Total width needed for text layout
-   *   - height: Total height including line heights and gaps
+   * - width: Total width needed for text layout
+   * - height: Total height including line heights and gaps
    */
   private measureText(widthConstraint: number, widthMode: MeasureMode): { width: number; height: number } {
     // Create measurement canvas if not exists
@@ -374,10 +359,7 @@ export class TextNode extends BoxNode {
       if (typeof this.props.fontVariant === 'string') {
         ctx.fontVariant = this.props.fontVariant
       } else if (this.props.fontVariant !== undefined) {
-        console.warn(
-          `[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (segment width):`,
-          this.props.fontVariant,
-        )
+        console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (segment width):`, this.props.fontVariant)
         if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
       } else {
         if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -414,10 +396,7 @@ export class TextNode extends BoxNode {
         if (typeof this.props.fontVariant === 'string') {
           ctx.fontVariant = this.props.fontVariant
         } else if (this.props.fontVariant !== undefined) {
-          console.warn(
-            `[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (empty line):`,
-            this.props.fontVariant,
-          )
+          console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (empty line):`, this.props.fontVariant)
           if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
         } else {
           if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -438,10 +417,7 @@ export class TextNode extends BoxNode {
           if (typeof this.props.fontVariant === 'string') {
             ctx.fontVariant = this.props.fontVariant
           } else if (this.props.fontVariant !== undefined) {
-            console.warn(
-              `[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (segment height):`,
-              this.props.fontVariant,
-            )
+            console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (segment height):`, this.props.fontVariant)
             if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
           } else {
             if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -462,10 +438,7 @@ export class TextNode extends BoxNode {
         if (typeof this.props.fontVariant === 'string') {
           ctx.fontVariant = this.props.fontVariant
         } else if (this.props.fontVariant !== undefined) {
-          console.warn(
-            `[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (fallback):`,
-            this.props.fontVariant,
-          )
+          console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (fallback):`, this.props.fontVariant)
           if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
         } else {
           if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -483,9 +456,7 @@ export class TextNode extends BoxNode {
 
       // Determine final line box height with leading
       const targetLineBoxHeight =
-        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0
-          ? this.props.lineHeight
-          : maxFontSizeOnLine * defaultLineHeightMultiplier
+        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : maxFontSizeOnLine * defaultLineHeightMultiplier
 
       // Use larger of target height or content height to prevent clipping
       const finalLineHeight = Math.max(actualContentHeight, targetLineBoxHeight)
@@ -515,10 +486,7 @@ export class TextNode extends BoxNode {
         if (typeof this.props.fontVariant === 'string') {
           ctx.fontVariant = this.props.fontVariant
         } else if (this.props.fontVariant !== undefined) {
-          console.warn(
-            `[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (single line width):`,
-            this.props.fontVariant,
-          )
+          console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (single line width):`, this.props.fontVariant)
           if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
         } else {
           if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -597,19 +565,13 @@ export class TextNode extends BoxNode {
    * Wraps text segments into multiple lines while respecting width constraints and preserving styling.
    * Handles rich text attributes (color, weight, size, bold, italic) and proper word wrapping.
    * Also respects explicit newline characters (\n) for forced line breaks.
-   *
-   * @param ctx - Canvas rendering context used for text measurements
-   * @param segments - Array of text segments with styling information
-   * @param maxWidth - Maximum allowed width for each line in pixels
-   * @param parsedWordSpacingPx - Additional spacing to add between words in pixels
+   * @param ctx Canvas rendering context used for text measurements
+   * @param segments Array of text segments with styling information
+   * @param maxWidth Maximum allowed width for each line in pixels
+   * @param parsedWordSpacingPx Additional spacing to add between words in pixels
    * @returns Array of lines, where each line contains styled text segments
    */
-  private wrapTextRich(
-    ctx: CanvasRenderingContext2D,
-    segments: TextSegment[],
-    maxWidth: number,
-    parsedWordSpacingPx: number,
-  ): TextSegment[][] {
+  private wrapTextRich(ctx: CanvasRenderingContext2D, segments: TextSegment[], maxWidth: number, parsedWordSpacingPx: number): TextSegment[][] {
     const lines: TextSegment[][] = []
 
     if (segments.length === 0 || maxWidth <= 0) return lines
@@ -622,10 +584,7 @@ export class TextNode extends BoxNode {
     const finalizeLine = (forceEmpty = false) => {
       // Remove trailing whitespace segments unless we're forcing an empty line
       if (!forceEmpty) {
-        while (
-          currentLineSegments.length > 0 &&
-          /^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
-        ) {
+        while (currentLineSegments.length > 0 && /^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)) {
           currentLineSegments.pop()
         }
       }
@@ -673,9 +632,7 @@ export class TextNode extends BoxNode {
                 wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
               }
 
-              const needsSpace =
-                currentLineSegments.length > 0 &&
-                !/^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
+              const needsSpace = currentLineSegments.length > 0 && !/^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
               const spaceToAdd = needsSpace ? spaceWidth + parsedWordSpacingPx : 0
 
               if (currentLineWidth + spaceToAdd + wordWidth <= maxWidth || currentLineSegments.length === 0) {
@@ -738,8 +695,7 @@ export class TextNode extends BoxNode {
             wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
           }
 
-          const needsSpace =
-            currentLineSegments.length > 0 && !/^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
+          const needsSpace = currentLineSegments.length > 0 && !/^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
           const spaceToAdd = needsSpace ? spaceWidth + parsedWordSpacingPx : 0
 
           if (currentLineWidth + spaceToAdd + wordWidth <= maxWidth || currentLineSegments.length === 0) {
@@ -785,10 +741,9 @@ export class TextNode extends BoxNode {
   /**
    * Breaks a word segment into multiple segments that each fit within the specified width constraint.
    * Maintains all styling properties (color, weight, size, bold, italic) across broken segments.
-   *
-   * @param ctx - Canvas rendering context used for text measurements
-   * @param segmentToBreak - Original text segment to split
-   * @param maxWidth - Maximum width allowed for each resulting segment
+   * @param ctx Canvas rendering context used for text measurements
+   * @param segmentToBreak Original text segment to split
+   * @param maxWidth Maximum width allowed for each resulting segment
    * @returns Array of TextSegments, each fitting maxWidth, or original segment if no breaking needed
    */
   private breakWordRich(ctx: CanvasRenderingContext2D, segmentToBreak: TextSegment, maxWidth: number): TextSegment[] {
@@ -880,20 +835,13 @@ export class TextNode extends BoxNode {
    * - Ellipsis truncation
    * - Rich text styling per segment (color, weight, size, etc)
    * - Performance optimizations (clipping, visibility checks)
-   *
-   * @param ctx - Canvas rendering context
-   * @param x - Content box left position in pixels
-   * @param y - Content box top position in pixels
-   * @param width - Content box total width including padding
-   * @param height - Content box total height including padding
+   * @param ctx Canvas rendering context
+   * @param x Content box left position in pixels
+   * @param y Content box top position in pixels
+   * @param width Content box total width including padding
+   * @param height Content box total height including padding
    */
-  protected override _renderContent(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-  ) {
+  protected override _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     super._renderContent(ctx, x, y, width, height)
 
     const linesToRender = this.getLinesToMeasureOrRender()
@@ -935,8 +883,7 @@ export class TextNode extends BoxNode {
 
     // Calculate vertical alignment offset
     const lineGapValue = this.props.lineGap
-    const totalCalculatedTextHeight =
-      this.lineHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, numLinesToRender - 1) * lineGapValue
+    const totalCalculatedTextHeight = this.lineHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, numLinesToRender - 1) * lineGapValue
 
     let blockStartY: number
     switch (this.props.verticalAlign) {
@@ -987,10 +934,7 @@ export class TextNode extends BoxNode {
       if (typeof this.props.fontVariant === 'string') {
         ctx.fontVariant = this.props.fontVariant
       } else if (this.props.fontVariant !== undefined) {
-        console.warn(
-          `[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (ellipsis measure):`,
-          this.props.fontVariant,
-        )
+        console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (ellipsis measure):`, this.props.fontVariant)
         if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
       } else {
         if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -1112,10 +1056,7 @@ export class TextNode extends BoxNode {
           if (typeof this.props.fontVariant === 'string') {
             ctx.fontVariant = this.props.fontVariant
           } else if (this.props.fontVariant !== undefined) {
-            console.warn(
-              `[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (segment render):`,
-              this.props.fontVariant,
-            )
+            console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (segment render):`, this.props.fontVariant)
             if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
           } else {
             if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
@@ -1128,11 +1069,7 @@ export class TextNode extends BoxNode {
 
           if (isLastRenderedLine && needsEllipsis && !isSpaceSegment) {
             const currentTotalWidth = accumulatedWidth + spaceToAddBefore + segmentWidth
-            const spaceNeededAfter = isLastSegmentOnLine
-              ? 0
-              : isJustify
-                ? spacePerWordGapPlusSpacing
-                : spaceWidth + parsedWordSpacingPx
+            const spaceNeededAfter = isLastSegmentOnLine ? 0 : isJustify ? spacePerWordGapPlusSpacing : spaceWidth + parsedWordSpacingPx
 
             if (currentTotalWidth > contentWidth - spaceNeededAfter) {
               const availableWidthForSegment = contentWidth - accumulatedWidth - spaceToAddBefore - ellipsisWidth
@@ -1167,11 +1104,7 @@ export class TextNode extends BoxNode {
           if (currentSegmentRenderWidth > 0 && remainingRenderWidth > 0 && !isSpaceSegment) {
             ctx.textAlign = 'left'
 
-            const shadows = this.props.textShadow
-              ? Array.isArray(this.props.textShadow)
-                ? this.props.textShadow
-                : [this.props.textShadow]
-              : []
+            const shadows = this.props.textShadow ? (Array.isArray(this.props.textShadow) ? this.props.textShadow : [this.props.textShadow]) : []
 
             ctx.save()
 
@@ -1213,10 +1146,7 @@ export class TextNode extends BoxNode {
               if (typeof this.props.fontVariant === 'string') {
                 ctx.fontVariant = this.props.fontVariant
               } else if (this.props.fontVariant !== undefined) {
-                console.warn(
-                  `[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (ellipsis draw):`,
-                  this.props.fontVariant,
-                )
+                console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (ellipsis draw):`, this.props.fontVariant)
                 if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
               } else {
                 if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'

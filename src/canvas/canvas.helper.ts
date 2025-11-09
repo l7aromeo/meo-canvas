@@ -61,24 +61,15 @@ export const drawBorders = ({
 
     /**
      * Draws a rounded corner arc for the border.
-     *
-     * @param cx - The x-coordinate of the visual center of the corner curve.
-     * @param cy - The y-coordinate of the visual center of the corner curve.
-     * @param radius - The visual radius of the corner curve.
-     * @param startAngle - The starting angle of the arc in radians.
-     * @param endAngle - The ending angle of the arc in radians.
-     * @param border1 - The border width leading into the corner.
-     * @param border2 - The border width leading out of the corner.
+     * @param cx The x-coordinate of the visual center of the corner curve.
+     * @param cy The y-coordinate of the visual center of the corner curve.
+     * @param radius The visual radius of the corner curve.
+     * @param startAngle The starting angle of the arc in radians.
+     * @param endAngle The ending angle of the arc in radians.
+     * @param border1 The border width leading into the corner.
+     * @param border2 The border width leading out of the corner.
      */
-    const drawCornerArc = (
-      cx: number,
-      cy: number,
-      radius: number,
-      startAngle: number,
-      endAngle: number,
-      border1: number,
-      border2: number,
-    ) => {
+    const drawCornerArc = (cx: number, cy: number, radius: number, startAngle: number, endAngle: number, border1: number, border2: number) => {
       if (radius <= 0) return
 
       const cornerWidth = Math.max(border1, border2)
@@ -114,12 +105,11 @@ export const drawBorders = ({
 
     /**
      * Draws a straight line segment for the border.
-     *
-     * @param x1 - The x-coordinate of the starting point.
-     * @param y1 - The y-coordinate of the starting point.
-     * @param x2 - The x-coordinate of the ending point.
-     * @param y2 - The y-coordinate of the ending point.
-     * @param borderWidth - The width of the border.
+     * @param x1 The x-coordinate of the starting point.
+     * @param y1 The y-coordinate of the starting point.
+     * @param x2 The x-coordinate of the ending point.
+     * @param y2 The y-coordinate of the ending point.
+     * @param borderWidth The width of the border.
      */
     const drawLine = (x1: number, y1: number, x2: number, y2: number, borderWidth: number) => {
       if (borderWidth <= 0) return
@@ -149,35 +139,35 @@ export const drawBorders = ({
     // For content-box, coordinates are offset *outwards* from x, y, width, height
     if (boxSizing === Style.BoxSizing.ContentBox) {
       // Top line segment
-      drawLine(x + rTL, y - halfBt, x + width - rTR, y - halfBt, borderTop)
+      void drawLine(x + rTL, y - halfBt, x + width - rTR, y - halfBt, borderTop)
       // Right line segment
-      drawLine(x + width + halfBr, y + rTR, x + width + halfBr, y + height - rBR, borderRight)
+      void drawLine(x + width + halfBr, y + rTR, x + width + halfBr, y + height - rBR, borderRight)
       // Bottom line segment
-      drawLine(x + width - rBR, y + height + halfBb, x + rBL, y + height + halfBb, borderBottom)
+      void drawLine(x + width - rBR, y + height + halfBb, x + rBL, y + height + halfBb, borderBottom)
       // Left line segment
-      drawLine(x - halfBl, y + height - rBL, x - halfBl, y + rTL, borderLeft)
+      void drawLine(x - halfBl, y + height - rBL, x - halfBl, y + rTL, borderLeft)
 
-      drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop)
-      drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight)
-      drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom)
-      drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft)
+      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop)
+      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight)
+      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom)
+      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft)
     } else {
       // For border-box, coordinates are offset *inwards* from x, y, width, height
       // Top line segment
-      drawLine(x + rTL, y + halfBt, x + width - rTR, y + halfBt, borderTop)
+      void drawLine(x + rTL, y + halfBt, x + width - rTR, y + halfBt, borderTop)
       // Right line segment
-      drawLine(x + width - halfBr, y + rTR, x + width - halfBr, y + height - rBR, borderRight)
+      void drawLine(x + width - halfBr, y + rTR, x + width - halfBr, y + height - rBR, borderRight)
       // Bottom line segment
-      drawLine(x + width - rBR, y + height - halfBb, x + rBL, y + height - halfBb, borderBottom)
+      void drawLine(x + width - rBR, y + height - halfBb, x + rBL, y + height - halfBb, borderBottom)
       // Left line segment
-      drawLine(x + halfBl, y + height - rBL, x + halfBl, y + rTL, borderLeft)
+      void drawLine(x + halfBl, y + height - rBL, x + halfBl, y + rTL, borderLeft)
 
       // Draw corner arcs (centers relative to layout box corners, adjusted for inward border)
       // Pass visual radius (rTL, rTR etc.) to drawCornerArc
-      drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop) // Top-Left
-      drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight) // Top-Right
-      drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom) // Bottom-Right
-      drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft) // Bottom-Left
+      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop) // Top-Left
+      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight) // Top-Right
+      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom) // Bottom-Right
+      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft) // Bottom-Left
     }
   }
 }
@@ -186,13 +176,12 @@ export const drawBorders = ({
  * Draws an optimized rounded rectangle path on the canvas context.
  * Automatically clamps radius values to prevent visual artifacts based on box dimensions.
  * Uses arc-based rendering for crisp corners and consistent border appearance.
- *
- * @param ctx - The canvas 2D rendering context to draw on
- * @param x - Left position of the rectangle
- * @param y - Top position of the rectangle
- * @param width - Width of the rectangle
- * @param height - Height of the rectangle
- * @param radii - Corner radius values for each corner. Values are clamped to box constraints.
+ * @param ctx The canvas 2D rendering context to draw on
+ * @param x Left position of the rectangle
+ * @param y Top position of the rectangle
+ * @param width Width of the rectangle
+ * @param height Height of the rectangle
+ * @param radii Corner radius values for each corner. Values are clamped to box constraints.
  */
 export const drawRoundedRectPath = (
   ctx: CanvasRenderingContext2D,
@@ -225,15 +214,11 @@ export const drawRoundedRectPath = (
 
   // Draw right edge and bottom-right corner
   ctx.lineTo(x + width, y + height - clampedBR)
-  clampedBR > 0
-    ? ctx.arc(x + width - clampedBR, y + height - clampedBR, clampedBR, 0, 0.5 * Math.PI)
-    : ctx.lineTo(x + width, y + height)
+  clampedBR > 0 ? ctx.arc(x + width - clampedBR, y + height - clampedBR, clampedBR, 0, 0.5 * Math.PI) : ctx.lineTo(x + width, y + height)
 
   // Draw bottom edge and bottom-left corner
   ctx.lineTo(x + clampedBL, y + height)
-  clampedBL > 0
-    ? ctx.arc(x + clampedBL, y + height - clampedBL, clampedBL, 0.5 * Math.PI, Math.PI)
-    : ctx.lineTo(x, y + height)
+  clampedBL > 0 ? ctx.arc(x + clampedBL, y + height - clampedBL, clampedBL, 0.5 * Math.PI, Math.PI) : ctx.lineTo(x, y + height)
 
   // Draw left edge and top-left corner
   ctx.lineTo(x, y + clampedTL)
@@ -244,7 +229,7 @@ export const drawRoundedRectPath = (
 
 /**
  * Calculates border radius values from props
- * @param radiusProp - Border radius property value
+ * @param radiusProp Border radius property value
  * @returns Calculated border radii for all corners
  */
 export const parseBorderRadius = (
@@ -269,9 +254,8 @@ export const parseBorderRadius = (
 
 /**
  * Parses a percentage value or a number, returning the calculated value based on the base.
- *
- * @param value - The value to parse, can be a number, a percentage string, or undefined.
- * @param base - The base value to calculate the percentage from.
+ * @param value The value to parse, can be a number, a percentage string, or undefined.
+ * @param base The base value to calculate the percentage from.
  * @returns The parsed number, or 0 if the value is not a number or a valid percentage.
  */
 export function parsePercentage(value: number | string | undefined, base: number): number {

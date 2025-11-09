@@ -15,29 +15,35 @@ export class BoxNode {
    * @property {Partial<BoxProps>} initialProps - Original props passed to the constructor before any modifications.
    */
   initialProps: Partial<BoxProps>
+
   /**
    * @property {Node} node - The Yoga layout engine node.
    */
   node: Node
+
   /**
    * @property {BoxNode[]} children - Child nodes.
    */
   children: BoxNode[]
+
   /**
    * @property {BoxProps & BaseProps} props - Current props including defaults and inherited values.
    */
   props: BoxProps & BaseProps
+
   /**
    * @property {string} name - Node type name.
    */
   readonly name?: string
+
   /**
    * @property {string} key - Unique node identifier.
    */
   key?: string
+
   /**
    * Creates a new BoxNode instance
-   * @param props - Initial box properties and styling
+   * @param props Initial box properties and styling
    */
   constructor(props: BoxProps & BaseProps = {}) {
     const children = (Array.isArray(props?.children) ? props.children : [props.children]).filter(child => child)
@@ -76,7 +82,7 @@ export class BoxNode {
 
   /**
    * Inherits styles from the parent node.
-   * @param {BoxProps & BaseProps} parentProps - Parent node properties to inherit from.
+   * @param {BoxProps & BaseProps} parentProps Parent node properties to inherit from.
    */
   protected resolveInheritedStyles(parentProps: BoxProps & BaseProps) {
     if (parentProps.key) {
@@ -121,8 +127,8 @@ export class BoxNode {
 
   /**
    * Appends a child node at the specified index.
-   * @param {BoxNode} child - Child node to append.
-   * @param index - Index to insert child at
+   * @param {BoxNode} child Child node to append.
+   * @param index Index to insert child at
    */
   protected appendChild(child: BoxNode, index: number) {
     if (!child || !child.node) {
@@ -141,7 +147,7 @@ export class BoxNode {
    * Performs final layout adjustments recursively after the main layout calculation.
    * @returns {boolean} Whether any node was marked as dirty during finalization.
    */
-  public finalizeLayout() {
+  public finalizeLayout(): boolean {
     let wasDirty = false
     this.updateLayoutBasedOnComputedSize()
     if (this.node.isDirty()) {
@@ -167,7 +173,7 @@ export class BoxNode {
 
   /**
    * Applies layout properties to the Yoga node.
-   * @param props - Box properties containing layout values
+   * @param props Box properties containing layout values
    */
   protected setLayout(props: BoxProps) {
     // --- Yoga layout property application ---
@@ -304,11 +310,11 @@ export class BoxNode {
 
   /**
    * Renders the node and its children to the canvas.
-   * @param {CanvasRenderingContext2D} ctx - Canvas rendering context (from skia-canvas).
-   * @param {number} offsetX - X offset for rendering.
-   * @param {number} offsetY - Y offset for rendering.
+   * @param {CanvasRenderingContext2D} ctx Canvas rendering context (from skia-canvas).
+   * @param {number} offsetX X offset for rendering.
+   * @param {number} offsetY Y offset for rendering.
    */
-  render(ctx: CanvasRenderingContext2D, offsetX = 0, offsetY = 0) {
+  render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
     const layout = this.node.getComputedLayout()
     const x = layout.left + offsetX
     const y = layout.top + offsetY
@@ -335,13 +341,7 @@ export class BoxNode {
       // --- Transformation Setup ---
       const transform = this.props.transform
       const needsTransform =
-        transform &&
-        (transform.translateX ||
-          transform.translateY ||
-          transform.rotate ||
-          transform.scale ||
-          transform.scaleX ||
-          transform.scaleY)
+        transform && (transform.translateX || transform.translateY || transform.rotate || transform.scale || transform.scaleX || transform.scaleY)
 
       let savedContextForTransform = false
       if (needsTransform) {
@@ -476,12 +476,11 @@ export class BoxNode {
   /**
    * Renders the node's visual content including background fills, shadows, and borders.
    * This is an internal method used by the render() pipeline.
-   *
-   * @param ctx - The skia-canvas 2D rendering context to draw into
-   * @param x - The absolute x-coordinate where drawing should begin
-   * @param y - The absolute y-coordinate where drawing should begin
-   * @param width - The width of the content area to render
-   * @param height - The height of the content area to render
+   * @param ctx The skia-canvas 2D rendering context to draw into
+   * @param x The absolute x-coordinate where drawing should begin
+   * @param y The absolute y-coordinate where drawing should begin
+   * @param width The width of the content area to render
+   * @param height The height of the content area to render
    */
   protected _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     // Calculate border radius values for all corners
@@ -533,14 +532,7 @@ export class BoxNode {
           ctx.shadowOffsetX = shadow.offsetX ?? 0
           ctx.shadowOffsetY = shadow.offsetY ?? 0
           ctx.shadowBlur = shadow.blur ?? Math.max(shadow.offsetX ?? 0, shadow.offsetY ?? 0)
-          drawRoundedRectPath(
-            ctx,
-            x + subtractOffset / 2,
-            y + subtractOffset / 2,
-            width - subtractOffset,
-            height - subtractOffset,
-            radii,
-          )
+          drawRoundedRectPath(ctx, x + subtractOffset / 2, y + subtractOffset / 2, width - subtractOffset, height - subtractOffset, radii)
           ctx.fill()
         }
         ctx.restore()
@@ -715,9 +707,7 @@ export class BoxNode {
           }
         } else {
           if (!colors?.length) {
-            console.warn(
-              `[BoxNode ${this.key}] Gradient specified but no colors provided. Falling back to backgroundColor.`,
-            )
+            console.warn(`[BoxNode ${this.key}] Gradient specified but no colors provided. Falling back to backgroundColor.`)
           } else {
             console.warn(`[BoxNode ${this.key}] Cannot draw gradient with zero width/height.`)
           }
@@ -772,10 +762,10 @@ export class BoxNode {
 
 /**
  * Creates a new BoxNode instance.
- * @param {BoxProps} props - Box properties and configuration.
+ * @param {BoxProps} props Box properties and configuration.
  * @returns {BoxNode} New BoxNode instance.
  */
-export const Box = (props: BoxProps) => new BoxNode(props)
+export const Box = (props: BoxProps): BoxNode => new BoxNode(props)
 
 /**
  * @class ColumnNode
@@ -795,10 +785,10 @@ export class ColumnNode extends BoxNode {
 
 /**
  * Creates a new ColumnNode instance.
- * @param {BoxProps} props - Column properties and configuration.
+ * @param {BoxProps} props Column properties and configuration.
  * @returns {ColumnNode} New ColumnNode instance.
  */
-export const Column = (props: BoxProps) => new ColumnNode(props)
+export const Column = (props: BoxProps): ColumnNode => new ColumnNode(props)
 
 /**
  * @class RowNode
@@ -818,7 +808,7 @@ export class RowNode extends BoxNode {
 
 /**
  * Creates a new RowNode instance.
- * @param {BoxProps} props - Row properties and configuration.
+ * @param {BoxProps} props Row properties and configuration.
  * @returns {RowNode} New RowNode instance.
  */
-export const Row = (props: BoxProps) => new RowNode(props)
+export const Row = (props: BoxProps): RowNode => new RowNode(props)

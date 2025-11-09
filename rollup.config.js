@@ -2,10 +2,7 @@ import typescript from '@rollup/plugin-typescript'
 import { nodeResolve } from '@rollup/plugin-node-resolve'
 import commonjs from '@rollup/plugin-commonjs'
 import tsconfigPaths from 'rollup-plugin-tsconfig-paths'
-import path from 'path'
 import fs from 'fs'
-
-const projectRootDir = path.resolve(__dirname)
 
 const inputFiles = fs.readdirSync('src')
   .filter(file => file.endsWith('.ts'))
