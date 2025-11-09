@@ -30,6 +30,7 @@
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",
     "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.1.0",
     "@semantic-release/gitlab": "^13.2.9",
     "@semantic-release/npm": "^13.1.1",
     "@semantic-release/release-notes-generator": "^14.1.0",
