@@ -1,10 +1,9 @@
-import * as StylePropTypes from 'yoga-layout'
 import { BoxNode } from '@/canvas/layout.canvas.util.js'
 import type { TextNode } from '@/canvas/text.canvas.util.js'
 import type { ImageNode } from '@/canvas/image.canvas.util.js'
 import type { GridNode } from '@/canvas/grid.canvas.util.js'
 import type { FontVariantSetting } from 'skia-canvas'
-import { Style } from '@/constant/common.const.js'
+import * as Style from '@/constant/common.const.js'
 
 export interface BaseProps {
   /**
@@ -162,40 +161,40 @@ export interface BoxProps extends BaseProps {
   maxHeight?: number | `${number}%`
   /**
    * Defines the direction of the main axis for flex items within this container.
-   * @see StylePropTypes.FlexDirection (`COLUMN`, `ROW`, `COLUMN_REVERSE`, `ROW_REVERSE`)
+   * @see Style.FlexDirection (`COLUMN`, `ROW`, `COLUMN_REVERSE`, `ROW_REVERSE`)
    * @default Yoga default (`COLUMN`)
    * @see https://yogalayout.dev/docs/styling/flex-direction
    */
-  flexDirection?: StylePropTypes.FlexDirection
+  flexDirection?: Style.FlexDirection
   /**
    * Defines how flex items are distributed along the main axis of the container.
-   * @see StylePropTypes.Justify (`FLEX_START`, `CENTER`, `FLEX_END`, `SPACE_BETWEEN`, `SPACE_AROUND`, `SPACE_EVENLY`)
+   * @see Style.Justify (`FLEX_START`, `CENTER`, `FLEX_END`, `SPACE_BETWEEN`, `SPACE_AROUND`, `SPACE_EVENLY`)
    * @default Yoga default (`FLEX_START`)
    * @see https://yogalayout.dev/docs/styling/justify-content
    */
-  justifyContent?: StylePropTypes.Justify
+  justifyContent?: Style.Justify
   /**
    * Defines how flex items are aligned along the cross axis of the container.
-   * @see StylePropTypes.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
+   * @see Style.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
    * @default Yoga default (`STRETCH`)
    * @see https://yogalayout.dev/docs/styling/align-items-self
    */
-  alignItems?: StylePropTypes.Align
+  alignItems?: Style.Align
   /**
    * Allows overriding the parent's `alignItems` value for a specific flex item.
-   * @see StylePropTypes.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
+   * @see Style.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
    * @default Yoga default (`AUTO`) - Inherits from `alignItems`.
    * @see https://yogalayout.dev/docs/styling/align-items-self
    */
-  alignSelf?: StylePropTypes.Align
+  alignSelf?: Style.Align
   /**
    * Defines how lines are distributed along the cross axis when `flexWrap` is `WRAP` or `WRAP_REVERSE`.
    * Has no effect when there is only one line of flex items.
-   * @see StylePropTypes.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
+   * @see Style.Align (`AUTO`, `FLEX_START`, `CENTER`, `FLEX_END`, `STRETCH`, `BASELINE`, `SPACE_BETWEEN`, `SPACE_AROUND`)
    * @default Yoga default (`FLEX_START`)
    * @see https://yogalayout.dev/docs/styling/align-content
    */
-  alignContent?: StylePropTypes.Align
+  alignContent?: Style.Align
   /**
    * Defines the ability of a flex item to grow if necessary, relative to other items.
    * A non-negative number indicating the proportion of available space the item should take.
@@ -221,11 +220,11 @@ export interface BoxProps extends BaseProps {
    * Specifies the positioning method used for the node.
    * `RELATIVE`: Positioned according to the normal flow, then offset relative to that position.
    * `ABSOLUTE`: Positioned relative to its nearest positioned ancestor (or the root). Layout calculation ignores this node.
-   * @see StylePropTypes.PositionType (`RELATIVE`, `ABSOLUTE`)
+   * @see Style.PositionType (`RELATIVE`, `ABSOLUTE`)
    * @default Yoga default (`RELATIVE`)
    * @see https://yogalayout.dev/docs/styling/position
    */
-  positionType?: StylePropTypes.PositionType
+  positionType?: Style.PositionType
   /**
    * Specifies the offset distances for positioned elements (`positionType: 'ABSOLUTE'` or `RELATIVE`).
    * Can be a single number for all edges or an object specifying individual edges (`Top`, `Right`, `Bottom`, `Left`, `Start`, `End`).
@@ -234,7 +233,7 @@ export interface BoxProps extends BaseProps {
    * @default Yoga default (undefined for each edge)
    * @see https://yogalayout.dev/docs/styling/position
    */
-  position?: Partial<Record<keyof typeof StylePropTypes.Edge, number | `${number}%`>> | number | `${number}%`
+  position?: Partial<Record<keyof typeof Style.Edge, number | `${number}%`>> | number | `${number}%`
   /**
    * Sets the margin space on the outside of the node's border.
    * Can be a single number for all edges or an object specifying individual edges.
@@ -242,11 +241,7 @@ export interface BoxProps extends BaseProps {
    * @default Yoga default (0 for each edge)
    * @see https://yogalayout.dev/docs/styling/margin-padding-border
    */
-  margin?:
-    | Partial<Record<keyof typeof StylePropTypes.Edge, number | `${number}%` | 'auto'>>
-    | number
-    | `${number}%`
-    | 'auto'
+  margin?: Partial<Record<keyof typeof Style.Edge, number | `${number}%` | 'auto'>> | number | `${number}%` | 'auto'
   /**
    * Sets the padding space on the inside of the node's border, around the content.
    * Can be a single number for all edges or an object specifying individual edges.
@@ -254,7 +249,7 @@ export interface BoxProps extends BaseProps {
    * @default Yoga default (0 for each edge)
    * @see https://yogalayout.dev/docs/styling/margin-padding-border
    */
-  padding?: Partial<Record<keyof typeof StylePropTypes.Edge, number | `${number}%`>> | number | `${number}%`
+  padding?: Partial<Record<keyof typeof Style.Edge, number | `${number}%`>> | number | `${number}%`
   /**
    * Sets the width of the node's border.
    * Can be a single number for all edges or an object specifying individual edges.
@@ -262,7 +257,7 @@ export interface BoxProps extends BaseProps {
    * @default Yoga default (0 for each edge)
    * @see https://yogalayout.dev/docs/styling/margin-padding-border
    */
-  border?: Partial<Record<keyof typeof StylePropTypes.Edge, number>> | number
+  border?: Partial<Record<keyof typeof Style.Edge, number>> | number
   /**
    * Sets the color of the node's border.
    * Accepts standard CSS color strings (e.g., 'red', '#FF0000', 'rgba(255,0,0,0.5)').
@@ -303,36 +298,36 @@ export interface BoxProps extends BaseProps {
    * `VISIBLE`: Content is not clipped and may render outside the node's box.
    * `HIDDEN`: Content is clipped and the rest is invisible.
    * `SCROLL`: Content is clipped, but Yoga calculates layout as if it were visible (used for scrollable containers, though an actual scrolling mechanism is external).
-   * @see StylePropTypes.Overflow (`VISIBLE`, `HIDDEN`, `SCROLL`)
+   * @see Style.Overflow (`VISIBLE`, `HIDDEN`, `SCROLL`)
    * @default Yoga default (`VISIBLE`)
    * @see https://yogalayout.dev/docs/styling/overflow
    */
-  overflow?: StylePropTypes.Overflow
+  overflow?: Style.Overflow
   /**
    * Controls whether the node and its children are included in the layout calculation and rendering.
    * `FLEX`: The node participates in a flex layout.
    * `NONE`: The node and its subtree are ignored by layout and rendering.
-   * @see StylePropTypes.Display (`FLEX`, `NONE`)
+   * @see Style.Display (`FLEX`, `NONE`)
    * @default Yoga default (`FLEX`)
    * @see https://yogalayout.dev/docs/styling/display
    */
-  display?: StylePropTypes.Display
+  display?: Style.Display
   /**
    * Sets the primary text and layout direction (Left-to-Right or Right-to-Left).
    * Affects the meaning of `Start` and `End` edges for properties like `position`, `margin`, `padding`, `border`.
    * `INHERIT`: Uses the direction of the parent node.
-   * @see StylePropTypes.Direction (`INHERIT`, `LTR`, `RTL`)
+   * @see Style.Direction (`INHERIT`, `LTR`, `RTL`)
    * @default `Style.DIRECTION_LTR` (set in `setLayout`)
    * @see https://yogalayout.dev/docs/styling/layout-direction
    */
-  direction?: StylePropTypes.Direction
+  direction?: Style.Direction
   /**
    * Controls whether flex items are forced onto a single line or can wrap onto multiple lines.
-   * @see StylePropTypes.Wrap (`NO_WRAP`, `WRAP`, `WRAP_REVERSE`)
+   * @see Style.Wrap (`NO_WRAP`, `WRAP`, `WRAP_REVERSE`)
    * @default Yoga default (`NO_WRAP`)
    * @see https://yogalayout.dev/docs/styling/flex-wrap
    */
-  flexWrap?: StylePropTypes.Wrap
+  flexWrap?: Style.Wrap
 
   /**
    * Defines the space between flex items along the main axis.
@@ -340,16 +335,16 @@ export interface BoxProps extends BaseProps {
    * @default Yoga default (0)
    * @see https://yogalayout.dev/docs/styling/gap
    */
-  gap?: Partial<Record<keyof typeof StylePropTypes.Gutter, number | `${number}%`>> | number | `${number}%`
+  gap?: Partial<Record<keyof typeof Style.Gutter, number | `${number}%`>> | number | `${number}%`
 
   /**
    * Defines how the `width` and `height` properties are interpreted regarding padding and border.
    * `CONTENT_BOX`: Width/height apply only to the content area. Padding and border are added outside.
    * `BORDER_BOX`: Width/height include content, padding, and border.
-   * @see StylePropTypes.BoxSizing (`CONTENT_BOX`, `BORDER_BOX`)
+   * @see Style.BoxSizing (`CONTENT_BOX`, `BORDER_BOX`)
    * @default `Style.BOX_SIZING_BORDER_BOX` (set in `setLayout`)
    */
-  boxSizing?: StylePropTypes.BoxSizing
+  boxSizing?: Style.BoxSizing
   /**
    * Sets the background color of the node. Drawn beneath the content and padding, extending to the border edge.
    * Accepts standard CSS color strings.
