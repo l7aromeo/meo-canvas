@@ -1,10 +1,8 @@
 import { jest } from '@jest/globals'
-import { _clearRegisteredFonts } from '@/canvas/root.canvas.util.js' // Import the function to clear registered fonts
+import { _clearRegisteredFonts } from '@/canvas/root.canvas.util.js'
 
 export const mockCanvasContext = {
   scale: jest.fn(),
-  // Add other context methods as needed for tests
-  // For example, if you call ctx.drawImage, you'd add:
   drawImage: jest.fn(),
   save: jest.fn(),
   restore: jest.fn(),
@@ -49,17 +47,16 @@ export const Canvas = jest.fn(function (this: any, width: number, height: number
   this.toBuffer = jest.fn(() => Buffer.from(''))
 })
 
+export const loadImage = jest.fn()
+
 export const FontLibrary = {
   use: jest.fn(),
 }
-
-export const loadImage = jest.fn()
 
 export const __mocks__ = {
   Canvas,
   FontLibrary,
   loadImage,
-  mockCanvasContext, // Export for resetting
   reset: () => {
     // Reset Canvas and FontLibrary mocks
     Canvas.mockClear()

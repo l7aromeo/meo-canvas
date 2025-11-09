@@ -1,10 +1,9 @@
 import { jest } from '@jest/globals'
 
-jest.mock('node:path', () => ({
-  resolve: jest.fn(p => p),
-}))
-
 export const __mocks__ = {
-  resolve: jest.fn(),
-  reset: jest.fn(),
+  resolve: jest.fn(p => p), // Default to returning the path itself
+  reset: jest.fn(() => {
+    __mocks__.resolve.mockClear()
+    __mocks__.resolve.mockImplementation(p => p) // Reset to default behavior
+  }),
 }

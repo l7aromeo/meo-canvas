@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 
-export const existsSync = jest.fn(() => true)
+export const existsSync = jest.fn<(val: any) => boolean>(_val => true)
 
 export const __mocks__ = {
   existsSync,

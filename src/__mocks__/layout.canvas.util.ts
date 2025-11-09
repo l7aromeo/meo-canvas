@@ -1,27 +1,14 @@
 import { jest } from '@jest/globals'
+import { mockNodeCreate, clearCreatedNodes } from '@/__mocks__/yoga-layout.js'
 
 export const mockYogaNode = {
-  getComputedHeight: jest.fn(() => 0),
-  calculateLayout: jest.fn(),
-  getComputedLayout: jest.fn(() => ({
-    left: 0,
-    top: 0,
-    width: 0,
-    height: 0,
-  })),
-  insertChild: jest.fn(),
-  setAspectRatio: jest.fn(),
-  setWidth: jest.fn(),
-  isDirty: jest.fn(() => false),
-  markDirty: jest.fn(),
-  getComputedBorder: jest.fn(() => 0),
-  getComputedPadding: jest.fn(() => 0),
+  current: mockNodeCreate(),
 }
 
 // Mock the actual BoxNode class
 export const BoxNode = jest.fn(function (this: any, props: any) {
   this.initialProps = props
-  this.node = mockYogaNode
+  this.node = mockYogaNode.current // Directly assign the current mock node
   this.children = []
   this.props = { ...props }
   this.name = props.name || 'Box'
@@ -60,7 +47,7 @@ export const Column = jest.fn((props: any) => new ColumnNode(props))
 export const Row = jest.fn((props: any) => new RowNode(props))
 
 export const __mocks__ = {
-  mockYogaNode,
+  mockYogaNode: mockYogaNode.current,
   BoxNode,
   ColumnNode,
   RowNode,
@@ -69,16 +56,8 @@ export const __mocks__ = {
   Row,
   reset: () => {
     // Reset all jest.fn() mocks
-    for (const key in mockYogaNode) {
-      if (jest.isMockFunction((mockYogaNode as any)[key])) {
-        ;(mockYogaNode as any)[key].mockClear()
-      }
-    }
-    mockYogaNode.getComputedHeight.mockReturnValue(0)
-    mockYogaNode.isDirty.mockReturnValue(false)
-    mockYogaNode.getComputedLayout.mockReturnValue({ left: 0, top: 0, width: 0, height: 0 })
-    mockYogaNode.getComputedBorder.mockReturnValue(0)
-    mockYogaNode.getComputedPadding.mockReturnValue(0)
+    clearCreatedNodes()
+    mockYogaNode.current = mockNodeCreate()
 
     BoxNode.mockClear()
     BoxNode.prototype.render.mockClear() // Clear the prototype render mock

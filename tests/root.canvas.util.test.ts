@@ -5,11 +5,7 @@ import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
 import { __mocks__ as layoutMocks } from '@/__mocks__/layout.canvas.util.js'
 import { __mocks__ as imageMocks } from '@/__mocks__/image.canvas.util.js'
 
-jest.unstable_mockModule('skia-canvas', () => ({
-  Canvas: skiaCanvasMocks.Canvas,
-  FontLibrary: skiaCanvasMocks.FontLibrary,
-  loadImage: skiaCanvasMocks.loadImage,
-}))
+jest.unstable_mockModule('skia-canvas', () => skiaCanvasMocks)
 
 jest.unstable_mockModule('node:fs', () => fsMocks)
 
@@ -181,8 +177,7 @@ describe('RootNode', () => {
       height: 100,
     })
 
-    const calculateLayoutSpy = layoutMocks.mockYogaNode.calculateLayout
-    calculateLayoutSpy.mockClear() // Clear calls from constructor
+    const calculateLayoutSpy = jest.spyOn(rootNodeInstance.node, 'calculateLayout')
 
     await rootNodeInstance.render()
 
