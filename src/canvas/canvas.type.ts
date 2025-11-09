@@ -268,9 +268,10 @@ export interface BoxProps extends BaseProps {
    * Sets the style of the node's border.
    * @see Style.Border.Solid (0)
    * @see Style.Border.Dashed (1)
+   * @see Style.Border.Dotted (2)
    * @default Style.Border.Solid (set in BoxNode constructor)
    */
-  borderStyle?: typeof Style.Border.Solid | typeof Style.Border.Dashed
+  borderStyle?: typeof Style.Border.Solid | typeof Style.Border.Dashed | typeof Style.Border.Dotted
   /**
    * Sets the radius of the node's corners, creating rounded effects.
    * Can be a single number for all corners or an object specifying individual corners (`TopLeft`, `TopRight`, `BottomLeft`, `BottomRight`).

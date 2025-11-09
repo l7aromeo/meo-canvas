@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals'
 import { BoxNode, Box, RowNode, Row, ColumnNode, Column } from '@/canvas/layout.canvas.util.js'
+import { drawBorders } from '@/canvas/canvas.helper.js'
 import Yoga, { Style } from '@/constant/common.const.js'
 import { Canvas } from 'skia-canvas'
 
@@ -264,6 +265,142 @@ describe('BoxNode Layout Properties', () => {
   it('should set border with a single number', () => {
     const node = new BoxNode({ border: 5 })
     expect(node.node.getBorder(Style.Edge.All)).toBe(5)
+  })
+
+  it('should apply dotted border style correctly', () => {
+    const mockSetLineDash = jest.fn()
+    let lineCapValue = ''
+    const mockContext = {
+      setLineDash: mockSetLineDash,
+      beginPath: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      stroke: jest.fn(),
+      save: jest.fn(),
+      restore: jest.fn(),
+      closePath: jest.fn(),
+      arc: jest.fn(),
+      get lineCap() {
+        return lineCapValue
+      },
+      set lineCap(value: string) {
+        lineCapValue = value
+      },
+      strokeStyle: '',
+      lineWidth: 0,
+    }
+
+    const mockNode = {
+      getBorder: jest.fn(() => 2), // Simulate border width
+      getBoxSizing: jest.fn(() => Style.BoxSizing.ContentBox),
+    } as any
+
+    drawBorders({
+      ctx: mockContext as any,
+      node: mockNode,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      radii: { TopLeft: 0, TopRight: 0, BottomLeft: 0, BottomRight: 0 },
+      borderColor: 'black',
+      borderStyle: Style.Border.Dotted,
+    })
+
+    expect(mockContext.lineCap).toBe('round')
+    expect(mockSetLineDash).toHaveBeenCalledWith([0, 2 * 2]) // 0-length dash with spacing (width * 2)
+  })
+
+  it('should apply dashed border style correctly', () => {
+    const mockSetLineDash = jest.fn()
+    let lineCapValue = ''
+    const mockContext = {
+      setLineDash: mockSetLineDash,
+      beginPath: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      stroke: jest.fn(),
+      save: jest.fn(),
+      restore: jest.fn(),
+      closePath: jest.fn(),
+      arc: jest.fn(),
+      get lineCap() {
+        return lineCapValue
+      },
+      set lineCap(value: string) {
+        lineCapValue = value
+      },
+      strokeStyle: '',
+      lineWidth: 0,
+    }
+
+    const mockNode = {
+      getBorder: jest.fn(() => 2), // Simulate border width
+      getBoxSizing: jest.fn(() => Style.BoxSizing.ContentBox),
+    } as any
+
+    drawBorders({
+      ctx: mockContext as any,
+      node: mockNode,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      radii: { TopLeft: 0, TopRight: 0, BottomLeft: 0, BottomRight: 0 },
+      borderColor: 'black',
+      borderStyle: Style.Border.Dashed,
+    })
+
+    const borderWidth = 2
+    const dashLength = Math.max(2, borderWidth * 1.5)
+    const gapLength = Math.max(1, borderWidth)
+
+    expect(mockContext.lineCap).toBe('butt')
+    expect(mockSetLineDash).toHaveBeenCalledWith([dashLength, gapLength])
+  })
+
+  it('should apply solid border style correctly', () => {
+    const mockSetLineDash = jest.fn()
+    let lineCapValue = ''
+    const mockContext = {
+      setLineDash: mockSetLineDash,
+      beginPath: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      stroke: jest.fn(),
+      save: jest.fn(),
+      restore: jest.fn(),
+      closePath: jest.fn(),
+      arc: jest.fn(),
+      get lineCap() {
+        return lineCapValue
+      },
+      set lineCap(value: string) {
+        lineCapValue = value
+      },
+      strokeStyle: '',
+      lineWidth: 0,
+    }
+
+    const mockNode = {
+      getBorder: jest.fn(() => 2), // Simulate border width
+      getBoxSizing: jest.fn(() => Style.BoxSizing.ContentBox),
+    } as any
+
+    drawBorders({
+      ctx: mockContext as any,
+      node: mockNode,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      radii: { TopLeft: 0, TopRight: 0, BottomLeft: 0, BottomRight: 0 },
+      borderColor: 'black',
+      borderStyle: Style.Border.Solid,
+    })
+
+    expect(mockContext.lineCap).toBe('butt')
+    expect(mockSetLineDash).toHaveBeenCalledWith([])
   })
 
   it('should set boxSizing, direction, flexWrap, overflow, display, aspectRatio correctly', () => {

@@ -44,11 +44,17 @@ export const drawBorders = ({
     ctx.lineJoin = 'miter' // Use miter for sharp corners unless rounded
 
     const setDash = (width: number) => {
-      if (borderStyle === Style.Border.Dashed && width > 0) {
+      if (borderStyle === Style.Border.Dotted && width > 0) {
+        // Dotted: tight spacing with round caps for circular dots
+        ctx.lineCap = 'round'
+        ctx.setLineDash([0, width * 2]) // 0-length dash with spacing creates dots with round caps
+      } else if (borderStyle === Style.Border.Dashed && width > 0) {
+        ctx.lineCap = 'butt'
         const dashLength = Math.max(2, width * 1.5)
         const gapLength = Math.max(1, width)
         ctx.setLineDash([dashLength, gapLength])
       } else {
+        ctx.lineCap = 'butt'
         ctx.setLineDash([]) // Solid line
       }
     }
