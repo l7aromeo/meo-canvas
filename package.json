@@ -46,6 +46,8 @@
     "@semantic-release/gitlab": "^13.2.9",
     "@semantic-release/npm": "^13.1.1",
     "@semantic-release/release-notes-generator": "^14.1.0",
+    "@types/jest": "^30.0.0",
+    "@types/sharp": "^0.32.0",
     "@typescript-eslint/eslint-plugin": "^8.46.3",
     "@typescript-eslint/parser": "^8.46.3",
     "eslint": "^9.39.1",
@@ -69,6 +71,7 @@
   "dependencies": {
     "file-type": "^21.0.0",
     "lodash-es": "^4.17.21",
+    "sharp": "^0.34.5",
     "skia-canvas": "^3.0.8",
     "tinycolor2": "^1.6.0",
     "tslib": "^2.8.1",
