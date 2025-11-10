@@ -1,6 +1,7 @@
 # @meonode/canvas
 
-A declarative, component-based library for **server-side** generation of high-quality images on a canvas, inspired by the MeoNode UI library for React.
+A declarative, component-based library for **server-side** generation of high-quality images on a canvas, inspired by
+the MeoNode UI library for React.
 It uses `skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
 
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
@@ -14,6 +15,7 @@ rendering to a canvas.
 - **Rich Text:** Render text with custom fonts and inline styling using simple HTML-like tags. Supported tags include
   `<color="value">`, `<weight="value">`, `<size="value">`, `<b>`, and `<i>`.
 - **Image Support:** Render images from URLs, file paths, or buffers, with `object-fit` and `object-position` support.
+- **Chart Support:** Render bar, line, pie, and doughnut charts with customizable data and options.
 - **Styling:** Style your components with properties that mimic CSS, including borders, padding, margins, and more.
 - **Grid Layout:** A `Grid` component is provided for easy grid-based layouts.
 - **TypeScript Support:** Fully typed for a better development experience.
@@ -28,6 +30,9 @@ rendering to a canvas.
   <tr>
     <td><img src="https://i.ibb.co/F4xfHdBp/daily-notes.webp" alt="Image 3"></td>
     <td><img src="https://i.ibb.co/Jj0x6khB/character-archive-base.webp" alt="Image 4"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="https://i.ibb.co.com/JRQ72Gj8/dashboard.webp" alt="Image 5"/></td>
   </tr>
 </table>
 
@@ -204,6 +209,94 @@ async function generateComplexImage() {
 generateComplexImage().catch(console.error);
 ```
 
+## Chart Examples
+
+You can easily create charts by providing data and options to the `Chart` component.
+
+### Bar Chart
+
+```typescript
+import {Root, Chart} from '@meonode/canvas';
+import {writeFile} from 'fs/promises';
+
+async function generateBarChart() {
+  const canvas = await Root({
+    width: 600,
+    height: 400,
+    children: [
+      Chart({
+        type: 'bar',
+        width: '100%',
+        height: '100%',
+        data: {
+          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
+          datasets: [
+            {
+              label: 'Sales',
+              data: [120, 150, 180, 90, 200],
+              color: '#36A2EB',
+            },
+          ],
+        },
+        options: {
+          gridOptions: {show: true, style: 'dashed'},
+          axisColor: '#333',
+          labelColor: '#333',
+        },
+      }),
+    ],
+  });
+
+  const buffer = await canvas.toBuffer('png');
+  await writeFile('bar_chart.png', buffer);
+}
+
+generateBarChart().catch(console.error);
+```
+
+### Doughnut Chart with Custom Legend
+
+```typescript
+import {Root, Chart, Row, Box, Text} from '@meonode/canvas';
+import {writeFile} from 'fs/promises';
+
+async function generateDoughnutChart() {
+  const canvas = await Root({
+    width: 600,
+    height: 400,
+    children: [
+      Chart({
+        type: 'doughnut',
+        width: '100%',
+        height: '100%',
+        data: [
+          {label: 'Red', value: 300, color: '#FF6384'},
+          {label: 'Blue', value: 50, color: '#36A2EB'},
+          {label: 'Yellow', value: 100, color: '#FFCE56'},
+        ],
+        options: {
+          innerRadius: 0.7,
+          sliceBorderRadius: 5,
+          renderLegendItem: ({item, color}) =>
+            Row({
+              alignItems: 'center',
+              children: [
+                Box({width: 12, height: 12, backgroundColor: color, borderRadius: 6}),
+                Text(`${item.label}: ${item.value}`, {fontSize: 16, marginLeft: 8}),
+              ],
+            }),
+        },
+      }),
+    ],
+  });
+
+  const buffer = await canvas.toBuffer('png');
+  await writeFile('doughnut_chart.png', buffer);
+}
+
+generateDoughnutChart().catch(console.error);
+```
+
 ## Using Yoga Layout Properties
 
 This library leverages `yoga-layout` for its powerful flexbox engine. Many layout properties directly map to Yoga's
@@ -231,7 +324,8 @@ Box({
 });
 ```
 
-Refer to the [Yoga Layout documentation](https://yogalayout.dev/docs/) for a comprehensive understanding of these properties.
+Refer to the [Yoga Layout documentation](https://yogalayout.dev/docs/) for a comprehensive understanding of these
+properties.
 
 ## Component API Reference
 
@@ -352,6 +446,50 @@ The `Grid` component arranges its children in a grid layout. It is a specialized
 
 ---
 
+### Chart
+
+The `Chart` component renders various types of charts. It inherits all `BoxProps`.
+
+#### Chart-Specific Props
+
+| Prop      | Type                                        | Description                                                                   |
+|-----------|---------------------------------------------|-------------------------------------------------------------------------------|
+| `type`    | `'bar' \| 'line' \| 'pie' \| 'doughnut'`    | The type of chart to render.                                                  |
+| `data`    | `CartesianChartData \| PieChartDataPoint[]` | The data for the chart, which varies based on the `type`.                     |
+| `options` | `ChartOptions<T>`                           | An object containing rendering and style options, specific to the chart type. |
+
+#### ChartOptions
+
+The `options` prop is a conditional type that changes based on the chart `type`.
+
+##### Common Options (All Chart Types)
+
+| Prop               | Type                                         | Description                                       |
+|--------------------|----------------------------------------------|---------------------------------------------------|
+| `showLabels`       | `boolean`                                    | If `true`, displays labels on the chart.          |
+| `showLegend`       | `boolean`                                    | If `true`, displays the chart legend.             |
+| `labelFontSize`    | `number`                                     | Font size for labels and legend text.             |
+| `labelColor`       | `string`                                     | Color for labels and legend text.                 |
+| `legendPosition`   | `'top' \| 'bottom' \| 'left' \| 'right'`     | The position of the legend relative to the chart. |
+| `renderLabelItem`  | `(props: { item, index }) => BoxNode`        | A custom render function for chart labels.        |
+| `renderLegendItem` | `(props: { item, index, color }) => BoxNode` | A custom render function for legend items.        |
+
+##### Cartesian Chart Options (`bar`, `line`)
+
+| Prop          | Type          | Description                                                       |
+|---------------|---------------|-------------------------------------------------------------------|
+| `gridOptions` | `GridOptions` | An object to configure the grid lines (`show`, `color`, `style`). |
+| `axisColor`   | `string`      | The color of the chart axes.                                      |
+
+##### Pie & Doughnut Chart Options (`pie`, `doughnut`)
+
+| Prop                | Type     | Description                                                                  |
+|---------------------|----------|------------------------------------------------------------------------------|
+| `innerRadius`       | `number` | The radius of the inner circle in a doughnut chart (0 to 1). Default is 0.6. |
+| `sliceBorderRadius` | `number` | The border radius for the corners of each slice. Default is 0.               |
+
+---
+
 ### Root
 
 The `Root` component is the entry point for rendering. It is a specialized `ColumnNode`.
@@ -365,18 +503,12 @@ The `Root` component is the entry point for rendering. It is a specialized `Colu
 | `scale`  | `number`                 | Scale factor for rendering (e.g., 2 for 2x resolution). Default is 1.    |
 | `fonts`  | `FontRegistrationInfo[]` | An array of font files to register for use in the canvas.                |
 
-
 ## Contributing
 
-
-
-Contributions are welcome! Please see the [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started.
-
-
+Contributions are welcome! Please see the [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get
+started.
 
 ## License
-
-
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
