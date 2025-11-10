@@ -43,6 +43,52 @@ export class TextNode extends BoxNode {
     this.applyDefaults()
   }
 
+  /**
+   * Renders a simple, single-line text string without complex layout calculations.
+   * A lightweight, static utility for drawing text where layout is handled externally.
+   * @param ctx The canvas rendering context.
+   * @param text The string to render.
+   * @param x The x-coordinate for rendering.
+   * @param y The y-coordinate for rendering.
+   * @param props Basic text styling properties.
+   */
+  public static renderSimpleText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    props: {
+      fontFamily?: string
+      fontSize?: number
+      fontWeight?: TextProps['fontWeight']
+      fontStyle?: TextProps['fontStyle']
+      color?: string
+      textAlign?: CanvasRenderingContext2D['textAlign']
+      textBaseline?: CanvasRenderingContext2D['textBaseline']
+    } = {},
+  ) {
+    ctx.save()
+
+    const {
+      fontFamily = 'sans-serif',
+      fontSize = 12,
+      fontWeight = 'normal',
+      fontStyle = 'normal',
+      color = '#333',
+      textAlign = 'left',
+      textBaseline = 'alphabetic',
+    } = props
+
+    ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`
+    ctx.fillStyle = color
+    ctx.textAlign = textAlign
+    ctx.textBaseline = textBaseline
+
+    ctx.fillText(text, x, y)
+
+    ctx.restore()
+  }
+
   protected override applyDefaults(): void {
     const textDefaults: Required<
       Pick<TextProps, 'fontSize' | 'fontFamily' | 'fontWeight' | 'fontStyle' | 'color' | 'textAlign' | 'verticalAlign' | 'ellipsis' | 'lineGap'>

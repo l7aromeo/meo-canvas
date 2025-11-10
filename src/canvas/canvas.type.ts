@@ -752,7 +752,7 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
   dropShadow?: DropShadowProps
 
   /**
-   * Alternative text description of the image (used for accessibility or if the image fails).
+   * Alternative text description of the image (used for accessibility or if the image fails to load).
    * Currently not rendered visually, but good practice to include.
    */
   alt?: string
@@ -805,6 +805,57 @@ export interface CartesianChartData {
   datasets: ChartDataset[]
 }
 
+export type LegendItem<T extends ChartType> = T extends 'bar' | 'line' ? ChartDataset : PieChartDataPoint
+
+export type LabelItem<T extends ChartType> = T extends 'bar' | 'line' ? string : PieChartDataPoint
+
+export interface GridOptions {
+  show?: boolean
+  color?: string
+  style?: 'solid' | 'dashed' | 'dotted'
+}
+
+// Base options common to all charts
+interface BaseChartOptions<T extends ChartType> {
+  showLabels?: boolean
+  showLegend?: boolean
+  labelFontSize?: number
+  labelColor?: string
+  legendPosition?: 'top' | 'bottom' | 'left' | 'right'
+  renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => BoxNode | null | undefined
+  renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => BoxNode | null | undefined
+}
+
+// Options specific to Cartesian charts
+interface CartesianChartSpecificOptions {
+  grid?: GridOptions
+  axisColor?: string
+}
+
+// Options specific to Pie/Doughnut charts
+interface PieChartSpecificOptions {
+  /**
+   * The radius of the inner circle in a doughnut chart, expressed as a
+   * percentage of the outer radius. Should be between 0 and 1.
+   * @default 0.6
+   */
+  innerRadius?: number
+
+  /**
+   * The border radius for the corners of each slice in a pie or doughnut chart.
+   * @unit Pixels.
+   * @default 0
+   */
+  sliceBorderRadius?: number
+}
+
+// The main conditional type for options
+export type ChartOptions<T extends ChartType> = T extends 'bar' | 'line'
+  ? BaseChartOptions<T> & CartesianChartSpecificOptions
+  : T extends 'pie' | 'doughnut'
+    ? BaseChartOptions<T> & PieChartSpecificOptions
+    : BaseChartOptions<T>
+
 /**
  * Properties for rendering a chart inside a `BoxNode`.
  * Extends `BoxProps` so layout and visual styles can be applied.
@@ -828,22 +879,7 @@ export interface ChartProps<T extends ChartType> extends BoxProps {
   data: T extends 'bar' | 'line' ? CartesianChartData : PieChartDataPoint[]
 
   /**
-   * Optional rendering and style options.
-   * - `showGrid`: Draw grid lines (for cartesian charts).
-   * - `showLabels`: Draw data labels on chart elements.
-   * - `showLegend`: Display legend for series/colors.
-   * - `gridColor`: CSS color for grid lines.
-   * - `axisColor`: CSS color for axes.
-   * - `labelFontSize`: Font size in pixels for labels/legend.
-   * - `legendPosition`: Position of legend relative to chart.
+   * Optional rendering and style options, specific to the chart type.
    */
-  options?: {
-    showGrid?: boolean
-    showLabels?: boolean
-    showLegend?: boolean
-    gridColor?: string
-    axisColor?: string
-    labelFontSize?: number
-    legendPosition?: 'top' | 'bottom' | 'left' | 'right'
-  }
+  options?: ChartOptions<T>
 }
