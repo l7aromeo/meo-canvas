@@ -23,8 +23,7 @@ let ColumnNode: typeof import('@/canvas/layout.canvas.util.js').ColumnNode
 
 describe('RootNode', () => {
   beforeEach(async () => {
-    // Make beforeEach async
-    jest.resetModules() // Reset module registry to ensure fresh mocks
+    jest.resetModules()
 
     // Re-import modules after resetting
     const skiaCanvasModule = await import('skia-canvas')
@@ -39,25 +38,24 @@ describe('RootNode', () => {
     fsMocks.reset()
     pathMocks.reset()
     skiaCanvasMocks.reset()
+    imageMocks.reset()
+    layoutMocks.reset()
 
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(0)
-    layoutMocks.mockYogaNode.calculateLayout.mockClear()
-    layoutMocks.mockYogaNode.getComputedLayout.mockReturnValue({
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(0)
+    layoutMocks.yogaNode.calculateLayout.mockClear()
+    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
       left: 0,
       top: 0,
       width: 0,
       height: 0,
     })
-    layoutMocks.mockYogaNode.insertChild.mockClear()
-    layoutMocks.mockYogaNode.setAspectRatio.mockClear()
-    layoutMocks.mockYogaNode.setWidth.mockClear()
-    layoutMocks.mockYogaNode.isDirty.mockReturnValue(false)
-    layoutMocks.mockYogaNode.markDirty.mockClear()
-    layoutMocks.mockYogaNode.getComputedBorder.mockClear()
-    layoutMocks.mockYogaNode.getComputedPadding.mockClear()
-
-    imageMocks.reset()
-    layoutMocks.reset()
+    layoutMocks.yogaNode.insertChild.mockClear()
+    layoutMocks.yogaNode.setAspectRatio.mockClear()
+    layoutMocks.yogaNode.setWidth.mockClear()
+    layoutMocks.yogaNode.isDirty.mockReturnValue(false)
+    layoutMocks.yogaNode.markDirty.mockClear()
+    layoutMocks.yogaNode.getComputedBorder.mockClear()
+    layoutMocks.yogaNode.getComputedPadding.mockClear()
   })
 
   it('should throw an error if width is not provided', async () => {
@@ -71,7 +69,7 @@ describe('RootNode', () => {
   })
 
   it('should create canvas with correct dimension', async () => {
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(600) // Mock computed height to match expected
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(600) // Mock computed height to match expected
 
     await Root({ width: 400, height: 600 })
 
@@ -96,8 +94,8 @@ describe('RootNode', () => {
     finalizeLayoutSpy.mockReturnValue(false) // No re-layout for this test
 
     // Mock the Yoga node's getComputedHeight to return a non-zero value for canvas creation
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(100)
-    layoutMocks.mockYogaNode.getComputedLayout.mockReturnValue({
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
+    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -120,8 +118,8 @@ describe('RootNode', () => {
       getContext: mockCtx.getContext,
     }))
 
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(100)
-    layoutMocks.mockYogaNode.getComputedLayout.mockReturnValue({
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
+    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -139,8 +137,8 @@ describe('RootNode', () => {
       // Swallow actual rendering during this test
     }) // Prevent actual rendering during this test
 
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(100)
-    layoutMocks.mockYogaNode.getComputedLayout.mockReturnValue({
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
+    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -154,7 +152,7 @@ describe('RootNode', () => {
   })
 
   it('should ensure canvas height is at least 1 even if content height is 0', async () => {
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(0) // Simulate 0 content height
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(0) // Simulate 0 content height
 
     await Root({ width: 100 })
 
@@ -169,8 +167,8 @@ describe('RootNode', () => {
     finalizeLayoutSpy.mockReturnValue(true)
 
     // Mock the Yoga node's getComputedHeight to return a non-zero value for canvas creation
-    layoutMocks.mockYogaNode.getComputedHeight.mockReturnValue(100)
-    layoutMocks.mockYogaNode.getComputedLayout.mockReturnValue({
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
+    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
       left: 0,
       top: 0,
       width: 100,

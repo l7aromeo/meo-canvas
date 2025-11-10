@@ -1,14 +1,14 @@
 import { jest } from '@jest/globals'
 import { mockNodeCreate, clearCreatedNodes } from '@/__mocks__/yoga-layout.js'
 
-export const mockYogaNode = {
+export const yogaNode = {
   current: mockNodeCreate(),
 }
 
 // Mock the actual BoxNode class
 export const BoxNode = jest.fn(function (this: any, props: any) {
   this.initialProps = props
-  this.node = mockYogaNode.current // Directly assign the current mock node
+  this.node = yogaNode.current // Directly assign the current mock node
   this.children = []
   this.props = { ...props }
   this.name = props.name || 'Box'
@@ -47,7 +47,7 @@ export const Column = jest.fn((props: any) => new ColumnNode(props))
 export const Row = jest.fn((props: any) => new RowNode(props))
 
 export const __mocks__ = {
-  mockYogaNode: mockYogaNode.current,
+  yogaNode: yogaNode.current,
   BoxNode,
   ColumnNode,
   RowNode,
@@ -57,7 +57,7 @@ export const __mocks__ = {
   reset: () => {
     // Reset all jest.fn() mocks
     clearCreatedNodes()
-    mockYogaNode.current = mockNodeCreate()
+    yogaNode.current = mockNodeCreate()
 
     BoxNode.mockClear()
     BoxNode.prototype.render.mockClear() // Clear the prototype render mock

@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import { Style } from '@/constant/common.const.js' // Import Style for Unit enum
 
 // Track all created nodes
 export let createdNodes: any[] = []
@@ -18,6 +19,12 @@ export const mockNodeCreate = jest.fn(() => {
     getComputedLayout: jest.fn(() => ({ left: 0, top: 0, width: 100, height: 100 })),
     getComputedBorder: jest.fn(() => 0),
     getComputedPadding: jest.fn(() => 0),
+    getWidth: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })),
+    getHeight: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })),
+    getFlexGrow: jest.fn(() => 0), // Add this
+    getFlexShrink: jest.fn(() => 0), // Add this
+    getMargin: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
+    getGap: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
     insertChild: jest.fn(),
     removeChild: jest.fn(),
     getChildCount: jest.fn(() => 0),
@@ -53,7 +60,7 @@ export const mockNodeCreate = jest.fn(() => {
   return node
 })
 
-export const mockYogaModule = {
+export const Yoga = {
   Node: {
     create: mockNodeCreate,
   },
@@ -93,6 +100,13 @@ export const mockYogaModule = {
     Row: 1,
     All: 2,
   },
+  Unit: {
+    // Add Unit enum
+    Undefined: 0,
+    Point: 1,
+    Percent: 2,
+    Auto: 3,
+  },
   DIRECTION_LTR: 0,
   DIRECTION_RTL: 1,
   FLEX_DIRECTION_COLUMN: 0,
@@ -103,4 +117,10 @@ export const mockYogaModule = {
 
 export function clearCreatedNodes() {
   createdNodes = []
+}
+
+export const __mocks__ = {
+  Yoga,
+  clearCreatedNodes,
+  createdNodes,
 }
