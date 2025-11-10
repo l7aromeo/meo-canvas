@@ -69,8 +69,6 @@ describe('RootNode', () => {
   })
 
   it('should create canvas with correct dimension', async () => {
-    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(600) // Mock computed height to match expected
-
     await Root({ width: 400, height: 600 })
 
     expect(Canvas).toHaveBeenCalledWith(400, 600)
@@ -110,14 +108,6 @@ describe('RootNode', () => {
   })
 
   it('should call ctx.scale with the correct scale factor', async () => {
-    const mockCtx = {
-      scale: jest.fn(),
-      getContext: jest.fn(() => mockCtx),
-    }
-    skiaCanvasMocks.Canvas.mockImplementation(() => ({
-      getContext: mockCtx.getContext,
-    }))
-
     layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
     layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
       left: 0,
@@ -128,14 +118,14 @@ describe('RootNode', () => {
 
     await Root({ width: 100, scale: 2 })
 
-    expect(mockCtx.scale).toHaveBeenCalledWith(2, 2)
+    expect(skiaCanvasMocks.mockCanvasContext.scale).toHaveBeenCalledWith(2, 2)
   })
 
   it('should call super.render (ColumnNode.render) during rendering', async () => {
     const columnNodeRenderSpy = jest.spyOn(ColumnNode.prototype, 'render')
     columnNodeRenderSpy.mockImplementation(() => {
       // Swallow actual rendering during this test
-    }) // Prevent actual rendering during this test
+    })
 
     layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
     layoutMocks.yogaNode.getComputedLayout.mockReturnValue({
@@ -152,8 +142,6 @@ describe('RootNode', () => {
   })
 
   it('should ensure canvas height is at least 1 even if content height is 0', async () => {
-    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(0) // Simulate 0 content height
-
     await Root({ width: 100 })
 
     expect(Canvas).toHaveBeenCalledWith(100, 1) // Expect height to be 1

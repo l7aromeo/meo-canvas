@@ -8,7 +8,7 @@ export const yogaNode = {
 // Mock the actual BoxNode class
 export const BoxNode = jest.fn(function (this: any, props: any) {
   this.initialProps = props
-  this.node = yogaNode.current // Directly assign the current mock node
+  this.node = yogaNode.current
   this.children = []
   this.props = { ...props }
   this.name = props.name || 'Box'
