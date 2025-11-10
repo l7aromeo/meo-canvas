@@ -106,8 +106,8 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const legendItemLabels =
       'datasets' in this.chartData ? this.chartData.datasets.map(d => d.label) : (this.chartData as PieChartDataPoint[]).map(p => `${p.label} (${p.value})`)
 
-    let calculatedLegendHeight = 0
-    let calculatedLegendWidth = 0
+    let calculatedLegendHeight: number
+    let calculatedLegendWidth: number
 
     if (position === 'top' || position === 'bottom') {
       let currentX = 0
@@ -134,12 +134,12 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
     let effectiveChartWidth = totalWidth
     let effectiveChartHeight = totalHeight
-    let legendAreaX = 0
-    let legendAreaY = 0
-    let chartAreaX = 0
-    let chartAreaY = 0
-    let legendAreaWidth = 0
-    let legendAreaHeight = 0
+    let legendAreaX: number
+    let legendAreaY: number
+    let chartAreaX: number
+    let chartAreaY: number
+    let legendAreaWidth: number
+    let legendAreaHeight: number
 
     if (position === 'top' || position === 'bottom') {
       effectiveChartHeight -= calculatedLegendHeight
@@ -522,7 +522,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const { renderLegendItem } = this.chartOptions
 
     if (renderLegendItem) {
-      let legendNodes: (BoxNode | null | undefined)[] = []
+      let legendNodes: (BoxNode | null | undefined)[]
       if (this.chartType === 'bar' || this.chartType === 'line') {
         const items = (this.chartData as CartesianChartData).datasets
         const render = renderLegendItem as (props: { item: ChartDataset; index: number; color: string }) => BoxNode | null | undefined
