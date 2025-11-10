@@ -768,3 +768,82 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
    */
   onError?: (error: Error) => void
 }
+
+export type ChartType = 'pie' | 'doughnut' | 'bar' | 'line'
+
+/**
+ * A single data point for pie or doughnut chart rendering.
+ * - `label`: Human-readable label for the data point (shown on axes/legend).
+ * - `value`: Numeric value used to determine the visual size/height of the point.
+ * - `color`: Optional CSS color string to override the default dataset/series color for this point.
+ */
+export interface PieChartDataPoint {
+  label: string
+  value: number
+  color?: string
+}
+
+/**
+ * Represents a single dataset for a cartesian chart (like bar or line).
+ * - `label`: The name of the dataset (e.g., "Sales 2023").
+ * - `data`: An array of numeric values for this dataset.
+ * - `color`: Optional CSS color string for the entire dataset.
+ */
+export interface ChartDataset {
+  label: string
+  data: number[]
+  color?: string
+}
+
+/**
+ * Defines the data structure for cartesian charts (bar, line).
+ * - `labels`: An array of strings for the x-axis categories.
+ * - `datasets`: An array of `ChartDataset` objects, each representing a series.
+ */
+export interface CartesianChartData {
+  labels: string[]
+  datasets: ChartDataset[]
+}
+
+/**
+ * Properties for rendering a chart inside a `BoxNode`.
+ * Extends `BoxProps` so layout and visual styles can be applied.
+ *
+ * - `type`: Chart kind to render. Implementation may vary per type.
+ * - `data`: Data for the chart. The structure depends on the chart type.
+ * - `options`: Optional rendering and styling flags.
+ */
+export interface ChartProps<T extends ChartType> extends BoxProps {
+  /**
+   * Chart type to render.
+   * - 'bar' | 'line' | 'pie' | 'doughnut'
+   */
+  type: T
+
+  /**
+   * Data for the chart.
+   * - For 'bar' and 'line' charts, use `CartesianChartData`.
+   * - For 'pie' and 'doughnut' charts, use an array of `PieChartDataPoint`.
+   */
+  data: T extends 'bar' | 'line' ? CartesianChartData : PieChartDataPoint[]
+
+  /**
+   * Optional rendering and style options.
+   * - `showGrid`: Draw grid lines (for cartesian charts).
+   * - `showLabels`: Draw data labels on chart elements.
+   * - `showLegend`: Display legend for series/colors.
+   * - `gridColor`: CSS color for grid lines.
+   * - `axisColor`: CSS color for axes.
+   * - `labelFontSize`: Font size in pixels for labels/legend.
+   * - `legendPosition`: Position of legend relative to chart.
+   */
+  options?: {
+    showGrid?: boolean
+    showLabels?: boolean
+    showLegend?: boolean
+    gridColor?: string
+    axisColor?: string
+    labelFontSize?: number
+    legendPosition?: 'top' | 'bottom' | 'left' | 'right'
+  }
+}
