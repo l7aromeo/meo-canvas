@@ -57,6 +57,7 @@ export const __mocks__ = {
   Canvas,
   FontLibrary,
   loadImage,
+  mockCanvasContext,
   reset: () => {
     // Reset Canvas and FontLibrary mocks
     Canvas.mockClear()
