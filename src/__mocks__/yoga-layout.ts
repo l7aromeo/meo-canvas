@@ -22,7 +22,9 @@ export const mockNodeCreate = jest.fn(() => {
     getWidth: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })),
     getHeight: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })),
     getFlexGrow: jest.fn(() => 0), // Add this
+    getFlexWrap: jest.fn(() => Style.Wrap.Wrap), // Add this
     getFlexShrink: jest.fn(() => 0), // Add this
+    getFlexDirection: jest.fn(() => Style.FlexDirection.Column), // Add this
     getMargin: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
     getGap: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
     insertChild: jest.fn(),
