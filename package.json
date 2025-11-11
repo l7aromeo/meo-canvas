@@ -1,7 +1,7 @@
 {
   "name": "@meonode/canvas",
   "version": "1.0.0",
-  "description": "A declarative, component-based library for generating high-quality images on a canvas, inspired by the MeoNode UI library for React. It leverages skia-canvas for rendering and yoga-layout for flexible, CSS-like layouts.",
+  "description": "A declarative, component-based library for server-side generation of high-quality images on a canvas, inspired by the MeoNode UI library for React. It uses skia-canvas for drawing and yoga-layout for flexbox-based layouts.",
   "keywords": [
     "canvas",
     "server-side",
@@ -15,6 +15,14 @@
   ],
   "license": "MIT",
   "author": "Ukasyah Rahmatullah Zada",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/meonode/canvas.git"
+  },
+  "homepage": "https://gitlab.com/meonode/canvas#readme",
+  "bugs": {
+    "url": "https://gitlab.com/meonode/canvas/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
