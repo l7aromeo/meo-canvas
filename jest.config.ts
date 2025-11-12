@@ -22,9 +22,7 @@ const config: Config = {
   coverageDirectory: '<rootDir>/coverage',
   coveragePathIgnorePatterns: ['/node_modules/', '<rootDir>/dist/'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-
-  // Add this to inject Jest globals
-  injectGlobals: true, // This is true by default, but explicit is better
+  injectGlobals: true,
 }
 
 export default config
