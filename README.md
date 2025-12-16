@@ -1,7 +1,6 @@
 # @meonode/canvas
 
-A declarative, component-based library for **server-side** generation of high-quality images on a canvas, inspired by
-the MeoNode UI library for React.
+A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple functions, similar to the composition style of @meonode/ui.
 It uses `skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
 
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
@@ -32,7 +31,7 @@ rendering to a canvas.
     <td><img src="https://i.ibb.co/Jj0x6khB/character-archive-base.webp" alt="Image 4"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="https://i.ibb.co.com/JRQ72Gj8/dashboard.webp" alt="Image 5"/></td>
+    <td colspan="2"><img src="https://i.ibb.co.com/B24SZ0C9/charts.webp" alt="Image 5"/></td>
   </tr>
 </table>
 
@@ -242,6 +241,10 @@ async function generateBarChart() {
           gridOptions: {show: true, style: 'dashed'},
           axisColor: '#333',
           labelColor: '#333',
+          showValues: true,
+          valueFontSize: 12,
+          showYAxis: true,
+          yAxisColor: '#666',
         },
       }),
     ],
@@ -480,6 +483,13 @@ The `options` prop is a conditional type that changes based on the chart `type`.
 |---------------|---------------|-------------------------------------------------------------------|
 | `gridOptions` | `GridOptions` | An object to configure the grid lines (`show`, `color`, `style`). |
 | `axisColor`   | `string`      | The color of the chart axes.                                      |
+| `showValues`  | `boolean`     | If `true`, displays values on top of bars or points.              |
+| `valueColor`  | `string`      | Color of the value labels.                                        |
+| `valueFontSize`| `number`     | Font size of the value labels.                                    |
+| `showYAxis`   | `boolean`     | If `true`, displays the Y-axis labels on the left.                |
+| `yAxisColor`  | `string`      | Color of the Y-axis labels.                                       |
+| `yAxisFontSize`| `number`     | Font size of the Y-axis labels.                                   |
+| `yAxisLabelFormatter` | `(value: number) => string` | Custom formatter for Y-axis labels.        |
 
 ##### Pie & Doughnut Chart Options (`pie`, `doughnut`)
 
