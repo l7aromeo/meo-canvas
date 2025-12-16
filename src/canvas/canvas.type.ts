@@ -830,6 +830,14 @@ interface BaseChartOptions<T extends ChartType> {
 interface CartesianChartSpecificOptions {
   grid?: GridOptions
   axisColor?: string
+  showValues?: boolean
+  valueFontSize?: number
+  valueColor?: string
+  renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => BoxNode | null | undefined
+  showYAxis?: boolean
+  yAxisFontSize?: number
+  yAxisColor?: string
+  yAxisLabelFormatter?: (value: number) => string
 }
 
 // Options specific to Pie/Doughnut charts

@@ -191,14 +191,24 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const chartData = this.chartData as CartesianChartData
     const chartOptions = this.chartOptions as ChartProps<'bar'>['options']
 
-    const legendLayout = this.getLegendLayout(ctx, width, height)
-    const chartX = x + legendLayout.chartX
-    const chartY = y + legendLayout.chartY
-    const chartWidth = legendLayout.chartWidth
-    const chartHeight = legendLayout.chartHeight
-
     const { labels, datasets } = chartData
     const maxValue = Math.max(...datasets.flatMap(d => d.data))
+
+    const legendLayout = this.getLegendLayout(ctx, width, height)
+    let chartX = x + legendLayout.chartX
+    const chartY = y + legendLayout.chartY
+    let chartWidth = legendLayout.chartWidth
+    const chartHeight = legendLayout.chartHeight
+
+    if (chartOptions?.showYAxis) {
+      const fontSize = chartOptions.yAxisFontSize || 12
+      ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
+      const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => v.toString())
+      const maxLabel = formatter(maxValue)
+      const yAxisWidth = ctx.measureText(maxLabel).width + 10
+      chartX += yAxisWidth
+      chartWidth -= yAxisWidth
+    }
 
     let labelHeight = 0
     if (chartOptions?.showLabels) {
@@ -229,6 +239,20 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         ctx.moveTo(chartX, gridY)
         ctx.lineTo(chartX + chartWidth, gridY)
         ctx.stroke()
+
+        if (chartOptions?.showYAxis) {
+          const value = maxValue - (maxValue / 5) * i
+          const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => (Math.round(v * 100) / 100).toString())
+          const label = formatter(value)
+
+          TextNode.renderSimpleText(ctx, label, chartX - 5, gridY, {
+            color: chartOptions.yAxisColor || chartOptions.axisColor || '#000',
+            fontSize: chartOptions.yAxisFontSize || 12,
+            fontFamily: this.props.fontFamily,
+            textAlign: 'right',
+            textBaseline: 'middle',
+          })
+        }
       }
       ctx.setLineDash([])
     }
@@ -244,6 +268,32 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
         ctx.fillStyle = dataset.color || this.generateColor(datasetIndex)
         ctx.fillRect(barX, barY, barWidth, barHeight)
+
+        // Render values
+        if (chartOptions?.showValues) {
+          const value = dataset.data[index]
+          const { renderValueItem } = chartOptions
+          const valueX = barX + barWidth / 2
+          const valueY = barY - 5 // 5px padding above bar
+
+          if (renderValueItem) {
+            const valueNode = renderValueItem({ item: value, index, datasetIndex })
+            if (valueNode) {
+              valueNode.processInitialChildren()
+              valueNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
+              const layout = valueNode.node.getComputedLayout()
+              valueNode.render(ctx, valueX - layout.width / 2, valueY - layout.height)
+            }
+          } else {
+            TextNode.renderSimpleText(ctx, value.toString(), valueX, valueY, {
+              color: chartOptions.valueColor || '#000',
+              fontSize: chartOptions.valueFontSize || 12,
+              fontFamily: this.props.fontFamily,
+              textAlign: 'center',
+              textBaseline: 'bottom',
+            })
+          }
+        }
       })
 
       // Render labels
@@ -280,14 +330,24 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const chartData = this.chartData as CartesianChartData
     const chartOptions = this.chartOptions as ChartProps<'line'>['options']
 
-    const legendLayout = this.getLegendLayout(ctx, width, height)
-    const chartX = x + legendLayout.chartX
-    const chartY = y + legendLayout.chartY
-    const chartWidth = legendLayout.chartWidth
-    const chartHeight = legendLayout.chartHeight
-
     const { labels, datasets } = chartData
     const maxValue = Math.max(...datasets.flatMap(d => d.data))
+
+    const legendLayout = this.getLegendLayout(ctx, width, height)
+    let chartX = x + legendLayout.chartX
+    const chartY = y + legendLayout.chartY
+    let chartWidth = legendLayout.chartWidth
+    const chartHeight = legendLayout.chartHeight
+
+    if (chartOptions?.showYAxis) {
+      const fontSize = chartOptions.yAxisFontSize || 12
+      ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
+      const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => v.toString())
+      const maxLabel = formatter(maxValue)
+      const yAxisWidth = ctx.measureText(maxLabel).width + 10
+      chartX += yAxisWidth
+      chartWidth -= yAxisWidth
+    }
 
     let labelHeight = 0
     if (chartOptions?.showLabels) {
@@ -315,6 +375,20 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         ctx.moveTo(chartX, gridY)
         ctx.lineTo(chartX + chartWidth, gridY)
         ctx.stroke()
+
+        if (chartOptions?.showYAxis) {
+          const value = maxValue - (maxValue / 5) * i
+          const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => (Math.round(v * 100) / 100).toString())
+          const label = formatter(value)
+
+          TextNode.renderSimpleText(ctx, label, chartX - 5, gridY, {
+            color: chartOptions.yAxisColor || chartOptions.axisColor || '#000',
+            fontSize: chartOptions.yAxisFontSize || 12,
+            fontFamily: this.props.fontFamily,
+            textAlign: 'right',
+            textBaseline: 'middle',
+          })
+        }
       }
       ctx.setLineDash([])
     }
