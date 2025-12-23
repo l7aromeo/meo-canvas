@@ -1,6 +1,7 @@
 # @meonode/canvas
 
-A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple functions, similar to the composition style of @meonode/ui.
+A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
+functions, similar to the composition style of @meonode/ui.
 It uses `skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
 
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
@@ -23,15 +24,16 @@ rendering to a canvas.
 
 <table>
   <tr>
-    <td><img src="https://i.ibb.co/VpPZybzF/profile-card.webp" alt="Image 1"></td>
-    <td><img src="https://i.ibb.co/zTgrBWpT/profile-card-1.webp" alt="Image 2"></td>
+    <td width="50%"><img src="https://i.ibb.co/VpPZybzF/profile-card.webp" alt="Image 1"></td>
+    <td width="50%"><img src="https://i.ibb.co/zTgrBWpT/profile-card-1.webp" alt="Image 2"></td>
   </tr>
   <tr>
-    <td><img src="https://i.ibb.co/F4xfHdBp/daily-notes.webp" alt="Image 3"></td>
-    <td><img src="https://i.ibb.co/Jj0x6khB/character-archive-base.webp" alt="Image 4"></td>
+    <td width="50%"><img src="https://i.ibb.co/F4xfHdBp/daily-notes.webp" alt="Image 3"></td>
+    <td width="50%"><img src="https://i.ibb.co/Jj0x6khB/character-archive-base.webp" alt="Image 4"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="https://i.ibb.co.com/B24SZ0C9/charts.webp" alt="Image 5"/></td>
+    <td width="50%"><img src="https://i.ibb.co.com/B24SZ0C9/charts.webp" alt="Image 5"/></td>
+    <td width="50%"><img src="https://i.ibb.co.com/q3sy9r2L/sample-grids.png" alt="Image 6"/></td>
   </tr>
 </table>
 
@@ -50,41 +52,41 @@ import {Root, Box, Text} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateImage() {
-  const canvas = await Root({
-    width: 500,
-    height: 300,
-    fonts: [
-      {
-        family: 'Roboto',
-        paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
-      },
-    ],
-    children: [
-      Box({
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#f0f0f0',
-        padding: 20,
-        children: [
-          Text('Hello, World!', {
-            fontSize: 32,
-            fontWeight: 'bold',
-            fontFamily: 'Roboto',
-            color: '#333',
-          }),
-          Text('This is a basic example of using @meonode/canvas.', {
-            fontSize: 18,
-            fontFamily: 'Roboto',
-            color: '#666',
-            margin: {Top: 10},
-          }),
+    const canvas = await Root({
+        width: 500,
+        height: 300,
+        fonts: [
+            {
+                family: 'Roboto',
+                paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
+            },
         ],
-      }),
-    ],
-  });
+        children: [
+            Box({
+                width: '100%',
+                height: '100%',
+                backgroundColor: '#f0f0f0',
+                padding: 20,
+                children: [
+                    Text('Hello, World!', {
+                        fontSize: 32,
+                        fontWeight: 'bold',
+                        fontFamily: 'Roboto',
+                        color: '#333',
+                    }),
+                    Text('This is a basic example of using @meonode/canvas.', {
+                        fontSize: 18,
+                        fontFamily: 'Roboto',
+                        color: '#666',
+                        margin: {Top: 10},
+                    }),
+                ],
+            }),
+        ],
+    });
 
-  const buffer = await canvas.toBuffer('png');
-  await writeFile('output.png', buffer);
+    const buffer = await canvas.toBuffer('png');
+    await writeFile('output.png', buffer);
 }
 
 generateImage().catch(console.error);
@@ -100,109 +102,109 @@ import {Root, Column, Row, Text, Image, Style} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateComplexImage() {
-  const canvas = await Root({
-    width: 800,
-    height: 600,
-    fonts: [
-      {
-        family: 'Roboto',
-        paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
-      },
-      {
-        family: 'Open Sans',
-        paths: ['./fonts/OpenSans-Regular.ttf'],
-      },
-    ],
-    children: [
-      Column({
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#f0f0f0',
-        padding: 20,
-        justifyContent: Style.Justify.SpaceBetween,
+    const canvas = await Root({
+        width: 800,
+        height: 600,
+        fonts: [
+            {
+                family: 'Roboto',
+                paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
+            },
+            {
+                family: 'Open Sans',
+                paths: ['./fonts/OpenSans-Regular.ttf'],
+            },
+        ],
         children: [
-          // Header Section
-          Row({
-            width: '100%',
-            alignItems: Style.Align.Center,
-            marginBottom: 20,
-            children: [
-              Image({
-                src: 'https://via.placeholder.com/80x80/FF0000/FFFFFF?text=Logo',
-                width: 80,
-                height: 80,
-                borderRadius: 40,
-                marginRight: 20,
-                objectFit: 'cover',
-              }),
-              Text('Welcome to MeoNode Canvas!', {
-                fontSize: 40,
-                fontWeight: 'bold',
-                fontFamily: 'Roboto',
-                color: '#333',
-              }),
-            ],
-          }),
+            Column({
+                width: '100%',
+                height: '100%',
+                backgroundColor: '#f0f0f0',
+                padding: 20,
+                justifyContent: Style.Justify.SpaceBetween,
+                children: [
+                    // Header Section
+                    Row({
+                        width: '100%',
+                        alignItems: Style.Align.Center,
+                        marginBottom: 20,
+                        children: [
+                            Image({
+                                src: 'https://via.placeholder.com/80x80/FF0000/FFFFFF?text=Logo',
+                                width: 80,
+                                height: 80,
+                                borderRadius: 40,
+                                marginRight: 20,
+                                objectFit: 'cover',
+                            }),
+                            Text('Welcome to MeoNode Canvas!', {
+                                fontSize: 40,
+                                fontWeight: 'bold',
+                                fontFamily: 'Roboto',
+                                color: '#333',
+                            }),
+                        ],
+                    }),
 
-          // Main Content Section
-          Column({
-            flexGrow: 1,
-            width: '100%',
-            backgroundColor: '#ffffff',
-            borderRadius: 10,
-            padding: 30,
-            boxShadow: {blur: 10, color: 'rgba(0,0,0,0.1)'},
-            children: [
-              Text('A New Way to Render Graphics', {
-                fontSize: 28,
-                fontWeight: 'bold',
-                fontFamily: 'Open Sans',
-                color: '#555',
-                marginBottom: 15,
-              }),
-              Text(
-                `This example demonstrates a more complex layout using various components.
+                    // Main Content Section
+                    Column({
+                        flexGrow: 1,
+                        width: '100%',
+                        backgroundColor: '#ffffff',
+                        borderRadius: 10,
+                        padding: 30,
+                        boxShadow: {blur: 10, color: 'rgba(0,0,0,0.1)'},
+                        children: [
+                            Text('A New Way to Render Graphics', {
+                                fontSize: 28,
+                                fontWeight: 'bold',
+                                fontFamily: 'Open Sans',
+                                color: '#555',
+                                marginBottom: 15,
+                            }),
+                            Text(
+                                `This example demonstrates a more complex layout using various components.
                 We have a header with a logo and title, a main content area with text,
                 and a footer. Notice how flexbox properties are used to arrange elements.`,
-                {
-                  fontSize: 18,
-                  fontFamily: 'Open Sans',
-                  color: '#777',
-                  lineHeight: 24,
-                },
-              ),
-              Image({
-                src: 'https://via.placeholder.com/600x200/007bff/ffffff?text=Feature+Image',
-                width: '100%',
-                height: 200,
-                marginTop: 20,
-                borderRadius: 8,
-                objectFit: 'contain',
-                objectPosition: {Top: '50%', Left: '50%'},
-              }),
-            ],
-          }),
+                                {
+                                    fontSize: 18,
+                                    fontFamily: 'Open Sans',
+                                    color: '#777',
+                                    lineHeight: 24,
+                                },
+                            ),
+                            Image({
+                                src: 'https://via.placeholder.com/600x200/007bff/ffffff?text=Feature+Image',
+                                width: '100%',
+                                height: 200,
+                                marginTop: 20,
+                                borderRadius: 8,
+                                objectFit: 'contain',
+                                objectPosition: {Top: '50%', Left: '50%'},
+                            }),
+                        ],
+                    }),
 
-          // Footer Section
-          Row({
-            width: '100%',
-            marginTop: 20,
-            justifyContent: Style.Justify.Center,
-            children: [
-              Text('© 2025 MeoNode Canvas. All rights reserved.', {
-                fontSize: 14,
-                fontFamily: 'Open Sans',
-                color: '#999',
-              }),
-            ],
-          }),
+                    // Footer Section
+                    Row({
+                        width: '100%',
+                        marginTop: 20,
+                        justifyContent: Style.Justify.Center,
+                        children: [
+                            Text('© 2025 MeoNode Canvas. All rights reserved.', {
+                                fontSize: 14,
+                                fontFamily: 'Open Sans',
+                                color: '#999',
+                            }),
+                        ],
+                    }),
+                ],
+            }),
         ],
-      }),
-    ],
-  });
+    });
 
-  const buffer = await canvas.toBuffer('png');
-  await writeFile('complex_output.png', buffer);
+    const buffer = await canvas.toBuffer('png');
+    await writeFile('complex_output.png', buffer);
 }
 
 generateComplexImage().catch(console.error);
@@ -219,39 +221,39 @@ import {Root, Chart} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateBarChart() {
-  const canvas = await Root({
-    width: 600,
-    height: 400,
-    children: [
-      Chart({
-        type: 'bar',
-        width: '100%',
-        height: '100%',
-        data: {
-          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
-          datasets: [
-            {
-              label: 'Sales',
-              data: [120, 150, 180, 90, 200],
-              color: '#36A2EB',
-            },
-          ],
-        },
-        options: {
-          gridOptions: {show: true, style: 'dashed'},
-          axisColor: '#333',
-          labelColor: '#333',
-          showValues: true,
-          valueFontSize: 12,
-          showYAxis: true,
-          yAxisColor: '#666',
-        },
-      }),
-    ],
-  });
+    const canvas = await Root({
+        width: 600,
+        height: 400,
+        children: [
+            Chart({
+                type: 'bar',
+                width: '100%',
+                height: '100%',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
+                    datasets: [
+                        {
+                            label: 'Sales',
+                            data: [120, 150, 180, 90, 200],
+                            color: '#36A2EB',
+                        },
+                    ],
+                },
+                options: {
+                    gridOptions: {show: true, style: 'dashed'},
+                    axisColor: '#333',
+                    labelColor: '#333',
+                    showValues: true,
+                    valueFontSize: 12,
+                    showYAxis: true,
+                    yAxisColor: '#666',
+                },
+            }),
+        ],
+    });
 
-  const buffer = await canvas.toBuffer('png');
-  await writeFile('bar_chart.png', buffer);
+    const buffer = await canvas.toBuffer('png');
+    await writeFile('bar_chart.png', buffer);
 }
 
 generateBarChart().catch(console.error);
@@ -264,40 +266,126 @@ import {Root, Chart, Row, Box, Text} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateDoughnutChart() {
-  const canvas = await Root({
-    width: 600,
-    height: 400,
-    children: [
-      Chart({
-        type: 'doughnut',
-        width: '100%',
-        height: '100%',
-        data: [
-          {label: 'Red', value: 300, color: '#FF6384'},
-          {label: 'Blue', value: 50, color: '#36A2EB'},
-          {label: 'Yellow', value: 100, color: '#FFCE56'},
-        ],
-        options: {
-          innerRadius: 0.7,
-          sliceBorderRadius: 5,
-          renderLegendItem: ({item, color}) =>
-            Row({
-              alignItems: 'center',
-              children: [
-                Box({width: 12, height: 12, backgroundColor: color, borderRadius: 6}),
-                Text(`${item.label}: ${item.value}`, {fontSize: 16, marginLeft: 8}),
-              ],
+    const canvas = await Root({
+        width: 600,
+        height: 400,
+        children: [
+            Chart({
+                type: 'doughnut',
+                width: '100%',
+                height: '100%',
+                data: [
+                    {label: 'Red', value: 300, color: '#FF6384'},
+                    {label: 'Blue', value: 50, color: '#36A2EB'},
+                    {label: 'Yellow', value: 100, color: '#FFCE56'},
+                ],
+                options: {
+                    innerRadius: 0.7,
+                    sliceBorderRadius: 5,
+                    renderLegendItem: ({item, color}) =>
+                        Row({
+                            alignItems: 'center',
+                            children: [
+                                Box({width: 12, height: 12, backgroundColor: color, borderRadius: 6}),
+                                Text(`${item.label}: ${item.value}`, {fontSize: 16, marginLeft: 8}),
+                            ],
+                        }),
+                },
             }),
-        },
-      }),
-    ],
-  });
+        ],
+    });
 
-  const buffer = await canvas.toBuffer('png');
-  await writeFile('doughnut_chart.png', buffer);
+    const buffer = await canvas.toBuffer('png');
+    await writeFile('doughnut_chart.png', buffer);
 }
 
 generateDoughnutChart().catch(console.error);
+```
+
+## Grid Layout Examples
+
+The `Grid` component simplifies creating complex layouts. It mimics CSS Grid Layout.
+
+### Basic Grid
+
+A simple grid with 3 columns, each 100 pixels wide.
+
+```typescript
+import {Root, Grid, Box, Text} from '@meonode/canvas';
+import {writeFile} from 'fs/promises';
+
+async function generateBasicGrid() {
+    const canvas = await Root({
+        width: 400,
+        height: 300,
+        children: [
+            Grid({
+                columns: 3,
+                templateColumns: [100, 100, 100], // or ['100px', '100px', '100px']
+                gap: 10,
+                children: [
+                    Box({backgroundColor: 'red', height: 50, children: [Text('1')]}),
+                    Box({backgroundColor: 'blue', height: 50, children: [Text('2')]}),
+                    Box({backgroundColor: 'green', height: 50, children: [Text('3')]}),
+                    Box({backgroundColor: 'yellow', height: 50, children: [Text('4')]}),
+                ],
+            }),
+        ],
+    });
+
+    await canvas.toFile('grid_basic.png');
+}
+
+generateBasicGrid();
+```
+
+### Responsive Grid (Fractional Units)
+
+Using fractional units (`fr`) allows columns to take up proportional space.
+
+```typescript
+Grid({
+    // First column takes 1 part, second takes 2 parts, third takes 1 part
+    templateColumns: ['1fr', '2fr', '1fr'],
+    gap: 10,
+    children: [
+        Box({backgroundColor: 'red', height: 50, children: [Text('1fr')]}),
+        Box({backgroundColor: 'blue', height: 50, children: [Text('2fr')]}),
+        Box({backgroundColor: 'green', height: 50, children: [Text('1fr')]}),
+    ],
+});
+```
+
+### Spanning Items
+
+Use `GridItem` (or just passing `gridColumn`/`gridRow` props to any child) to span multiple columns or rows.
+
+```typescript
+import {Grid, GridItem, Box, Text} from '@meonode/canvas';
+
+Grid({
+    templateColumns: ['1fr', '1fr', '1fr'],
+    gap: 10,
+    children: [
+        // Spans all 3 columns
+        GridItem({
+            gridColumn: 'span 3',
+            height: 50,
+            backgroundColor: '#333',
+            children: [Text('Header', {color: 'white'})],
+        }),
+        // Standard items
+        Box({backgroundColor: '#eee', height: 100, children: [Text('Content')]}),
+        Box({backgroundColor: '#ccc', height: 100, children: [Text('Sidebar')]}),
+        // Spans 2 columns
+        GridItem({
+            gridColumn: 'span 2',
+            height: 50,
+            backgroundColor: '#555',
+            children: [Text('Footer', {color: 'white'})],
+        }),
+    ],
+});
 ```
 
 ## Using Yoga Layout Properties
@@ -311,19 +399,19 @@ For example, to set `flexDirection` to `row` or `positionType` to `absolute`, yo
 import {Box, Style} from '@meonode/canvas';
 
 Box({
-  flexDirection: Style.FlexDirection.Row,
-  justifyContent: Style.Justify.Center,
-  alignItems: Style.Align.Center,
-  children: [
-    Box({
-      width: 100,
-      height: 100,
-      backgroundColor: 'red',
-      positionType: Style.PositionType.Absolute,
-      position: {Top: 10, Left: 10},
-    }),
-    // ... other children
-  ],
+    flexDirection: Style.FlexDirection.Row,
+    justifyContent: Style.Justify.Center,
+    alignItems: Style.Align.Center,
+    children: [
+        Box({
+            width: 100,
+            height: 100,
+            backgroundColor: 'red',
+            positionType: Style.PositionType.Absolute,
+            position: {Top: 10, Left: 10},
+        }),
+        // ... other children
+    ],
 });
 ```
 
@@ -442,10 +530,17 @@ The `Grid` component arranges its children in a grid layout. It is a specialized
 
 #### Grid-Specific Props
 
-| Prop        | Type                                                     | Description                                         |
-|-------------|----------------------------------------------------------|-----------------------------------------------------|
-| `columns`   | `number`                                                 | The number of columns in the grid. Default is 1.    |
-| `direction` | `'row' \| 'column' \| 'row-reverse' \| 'column-reverse'` | The direction of the grid layout. Default is 'row'. |
+| Prop              | Type                                                     | Description                                             |
+|-------------------|----------------------------------------------------------|---------------------------------------------------------|
+| `columns`         | `number`                                                 | The number of columns in the grid. Default is 1.        |
+| `templateColumns` | `GridTrackSize[]`                                        | Defines the columns of the grid (e.g., `[100, '1fr']`). |
+| `templateRows`    | `GridTrackSize[]`                                        | Defines the rows of the grid.                           |
+| `autoRows`        | `GridTrackSize`                                          | Specifies the size of implicitly created rows.          |
+| `autoFlow`        | `'row' \| 'column' \| 'row-dense' \| 'column-dense'`     | Controls how the auto-placement algorithm works.        |
+| `gap`             | `number \| string`                                       | Defines the gap between grid items.                     |
+| `rowGap`          | `number \| string`                                       | Defines the row gap.                                    |
+| `columnGap`       | `number \| string`                                       | Defines the column gap.                                 |
+| `direction`       | `'row' \| 'column' \| 'row-reverse' \| 'column-reverse'` | The direction of the grid layout. Default is 'row'.     |
 
 ---
 
@@ -479,17 +574,17 @@ The `options` prop is a conditional type that changes based on the chart `type`.
 
 ##### Cartesian Chart Options (`bar`, `line`)
 
-| Prop          | Type          | Description                                                       |
-|---------------|---------------|-------------------------------------------------------------------|
-| `gridOptions` | `GridOptions` | An object to configure the grid lines (`show`, `color`, `style`). |
-| `axisColor`   | `string`      | The color of the chart axes.                                      |
-| `showValues`  | `boolean`     | If `true`, displays values on top of bars or points.              |
-| `valueColor`  | `string`      | Color of the value labels.                                        |
-| `valueFontSize`| `number`     | Font size of the value labels.                                    |
-| `showYAxis`   | `boolean`     | If `true`, displays the Y-axis labels on the left.                |
-| `yAxisColor`  | `string`      | Color of the Y-axis labels.                                       |
-| `yAxisFontSize`| `number`     | Font size of the Y-axis labels.                                   |
-| `yAxisLabelFormatter` | `(value: number) => string` | Custom formatter for Y-axis labels.        |
+| Prop                  | Type                        | Description                                                       |
+|-----------------------|-----------------------------|-------------------------------------------------------------------|
+| `gridOptions`         | `GridOptions`               | An object to configure the grid lines (`show`, `color`, `style`). |
+| `axisColor`           | `string`                    | The color of the chart axes.                                      |
+| `showValues`          | `boolean`                   | If `true`, displays values on top of bars or points.              |
+| `valueColor`          | `string`                    | Color of the value labels.                                        |
+| `valueFontSize`       | `number`                    | Font size of the value labels.                                    |
+| `showYAxis`           | `boolean`                   | If `true`, displays the Y-axis labels on the left.                |
+| `yAxisColor`          | `string`                    | Color of the Y-axis labels.                                       |
+| `yAxisFontSize`       | `number`                    | Font size of the Y-axis labels.                                   |
+| `yAxisLabelFormatter` | `(value: number) => string` | Custom formatter for Y-axis labels.                               |
 
 ##### Pie & Doughnut Chart Options (`pie`, `doughnut`)
 
