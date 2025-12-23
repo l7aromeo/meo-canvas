@@ -1,7 +1,7 @@
 {
   "name": "@meonode/canvas",
   "version": "1.0.0",
-  "description": "A declarative, component-based library for server-side generation of high-quality images on a canvas, inspired by the MeoNode UI library for React. It uses skia-canvas for drawing and yoga-layout for flexbox-based layouts.",
+  "description": "A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple functions, similar to the composition style of @meonode/ui.",
   "keywords": [
     "canvas",
     "server-side",
