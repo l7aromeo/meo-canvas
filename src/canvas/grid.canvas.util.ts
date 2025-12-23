@@ -1,298 +1,417 @@
-// TODO: Add comprehensive unit tests for this file.
-
-import type { GridProps } from '@/canvas/canvas.type.js'
+import type { GridProps, GridTrackSize, GridItemProps } from '@/canvas/canvas.type.js'
 import { BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
-import { Style, FlexDirection } from '@/constant/common.const.js'
+import { Style } from '@/constant/common.const.js'
+import { parsePercentage } from '@/canvas/canvas.helper.js'
 
 /**
- * Grid layout node that arranges children in a configurable number of columns or rows.
- * Uses Yoga's flexbox capabilities with wrapping and gap properties to simulate a grid.
- * @extends RowNode
+ * GridItem Node. Theoretically just a BoxNode but typed differently in factory.
+ * In runtime, it behaves almost like a BoxNode, but we can detect it if needed,
+ * or simply rely on the props being present in the instance.
+ */
+export class GridItemNode extends BoxNode {
+  constructor(props: GridItemProps) {
+    super({
+      ...props,
+      name: 'GridItem',
+    })
+  }
+}
+
+/**
+ * Factory for GridItem.
+ */
+export const GridItem = (props: GridItemProps) => new GridItemNode(props)
+
+/**
+ * Grid layout node that arranges children in a 2D grid.
+ * Implements a simplified version of the CSS Grid Layout algorithm.
  */
 export class GridNode extends RowNode {
-  private readonly columns: number
-  private readonly columnGapValue: number | `${number}%`
-  private readonly rowGapValue: number | `${number}%`
-  private readonly isVertical: boolean // True if the main axis is vertical (flexDirection: column or column-reverse)
-
   /**
    * Creates a new grid layout node
    * @param props Grid configuration properties
    */
   constructor(props: GridProps) {
-    const columns = Math.max(1, props.columns || 1)
-    const direction = props.direction || 'row' // Default to horizontal row
-    const isVertical = direction === 'column' || direction === 'column-reverse'
-
-    // Map direction string to Yoga FlexDirection
-    let flexDirection: FlexDirection
-    switch (direction) {
-      case 'row':
-        flexDirection = Style.FlexDirection.Row
-        break
-      case 'column':
-        flexDirection = Style.FlexDirection.Column
-        break
-      case 'row-reverse':
-        flexDirection = Style.FlexDirection.RowReverse
-        break
-      case 'column-reverse':
-        flexDirection = Style.FlexDirection.ColumnReverse
-        break
-      default:
-        console.warn(`[GridNode] Invalid direction "${direction}". Defaulting to "row".`)
-        flexDirection = Style.FlexDirection.Row
-    }
-
-    // Determine the column and row gap values from props
-    let columnGap: number | `${number}%` = 0
-    let rowGap: number | `${number}%` = 0
-
-    if (typeof props.gap === 'number' || (typeof props.gap === 'string' && props.gap.trim() !== '')) {
-      // Single value applies to both row and column gaps
-      columnGap = props.gap
-      rowGap = props.gap
-    } else if (props.gap && typeof props.gap === 'object') {
-      // Object format: prioritize a specific direction (Column/Row), then All
-      columnGap = props.gap.Column ?? props.gap.All ?? 0
-      rowGap = props.gap.Row ?? props.gap.All ?? 0
-    }
-
     super({
-      name: 'Grid',
-      flexWrap: Style.Wrap.Wrap, // Essential for grid behavior
-      flexDirection,
       ...props,
-      // Explicitly remove the 'direction' prop passed to super, as it's handled by flexDirection
-      direction: undefined,
-      // Pass undefined for gap to prevent BoxNode from trying to parse it
-      gap: undefined,
+      name: props.name || 'Grid',
+      flexWrap: Style.Wrap.Wrap,
     })
-
-    this.columns = columns
-    this.columnGapValue = columnGap
-    this.rowGapValue = rowGap
-    this.isVertical = isVertical
-
-    // Explicitly set gaps on this.node after super() call
-    // These will be updated again in updateLayoutBasedOnComputedSize, but this ensures initial setup
-    if (typeof columnGap === 'number') {
-      this.node.setGap(Style.Gutter.Column, columnGap)
-    } else if (typeof columnGap === 'string' && columnGap.endsWith('%')) {
-      this.node.setGapPercent(Style.Gutter.Column, parseFloat(columnGap))
-    }
-    if (typeof rowGap === 'number') {
-      this.node.setGap(Style.Gutter.Row, rowGap)
-    } else if (typeof rowGap === 'string' && rowGap.endsWith('%')) {
-      this.node.setGapPercent(Style.Gutter.Row, parseFloat(rowGap))
-    }
   }
 
   /**
-   * Appends a child node to this grid.
-   * Overridden primarily for documentation/clarity, functionality is inherited.
-   * @param child Child node to append
-   * @param index Index at which to insert the child
+   * Helper to parse a track size definition.
    */
-  protected override appendChild(child: BoxNode, index: number) {
-    super.appendChild(child, index)
+  private parseTrack(track: GridTrackSize, availableSpace: number): { type: 'px' | '%' | 'fr' | 'auto'; value: number } {
+    if (typeof track === 'number') {
+      return { type: 'px', value: track }
+    }
+    if (track === 'auto') {
+      return { type: 'auto', value: 0 }
+    }
+    if (typeof track === 'string') {
+      if (track.endsWith('fr')) {
+        return { type: 'fr', value: parseFloat(track) }
+      }
+      if (track.endsWith('%')) {
+        return { type: '%', value: parsePercentage(track, availableSpace) }
+      }
+      // Try parsing as number (px) if just string "100"
+      const num = parseFloat(track)
+      if (!isNaN(num)) return { type: 'px', value: num }
+    }
+    return { type: 'auto', value: 0 }
+  }
+
+  /**
+   * Parses the gap property into pixels.
+   */
+  private getGapPixels(gap: GridProps['gap'], width: number, height: number) {
+    let rowGap = 0
+    let colGap = 0
+
+    if (typeof gap === 'number') {
+      rowGap = colGap = gap
+    } else if (typeof gap === 'string') {
+      const val = parsePercentage(gap, width) // Use width as base for simplicity if %
+      rowGap = colGap = val
+    } else if (gap && typeof gap === 'object') {
+      const colVal = gap.Column ?? gap.All ?? 0
+      const rowVal = gap.Row ?? gap.All ?? 0
+      colGap = parsePercentage(colVal as string | number, width)
+      rowGap = parsePercentage(rowVal as string | number, height)
+    }
+
+    return { rowGap, colGap }
   }
 
   /**
    * Update layout calculations after the initial layout is computed.
-   * This method calculates the appropriate flex-basis for children based on the
-   * number of columns and gaps, respecting the container's padding,
-   * and applies the gaps using Yoga's built-in properties.
    */
   protected override updateLayoutBasedOnComputedSize() {
-    // Step 1: Early return if the grid is empty or invalid
-    if (this.columns <= 0 || this.children.length === 0) {
-      return
-    }
-
-    // Step 2: Get container dimensions and padding after the initial layout
+    // 1. Get Container Dimensions
     const width = this.node.getComputedWidth()
-    const height = this.node.getComputedHeight()
+
     const paddingLeft = this.node.getComputedPadding(Style.Edge.Left)
     const paddingRight = this.node.getComputedPadding(Style.Edge.Right)
     const paddingTop = this.node.getComputedPadding(Style.Edge.Top)
     const paddingBottom = this.node.getComputedPadding(Style.Edge.Bottom)
 
-    // Calculate content box dimensions
     const contentWidth = Math.max(0, width - paddingLeft - paddingRight)
-    const contentHeight = Math.max(0, height - paddingTop - paddingBottom)
+    const computedHeight = this.node.getComputedHeight()
+    const contentHeight = Math.max(0, computedHeight - paddingTop - paddingBottom)
 
-    // Step 3: Validate dimensions needed for calculations
-    if (!this.isVertical && contentWidth <= 0 && width > 0) {
-      console.warn(
-        `[GridNode ${this.props.key} - Finalize] Grid content width (${contentWidth}) is zero or negative after accounting for padding (${paddingLeft}+${paddingRight}) on total width ${width}. Cannot calculate basis.`,
-      )
-      if (this.columns > 1) return
-    }
-    if (this.isVertical && contentHeight <= 0 && height > 0) {
-      console.warn(
-        `[GridNode ${this.props.key} - Finalize] Grid content height (${contentHeight}) is zero or negative after accounting for padding (${paddingTop}+${paddingBottom}) on total height ${height}. Cannot calculate basis.`,
-      )
-      if (this.columns > 1) return
-    }
+    const { templateColumns, templateRows, autoRows = 'auto', gap, columns } = this.props as GridProps
 
-    // Step 4: Calculate Gap Values in Pixels
-    let columnGapPixels = 0
-    if (typeof this.columnGapValue === 'number') {
-      columnGapPixels = this.columnGapValue
-    } else if (typeof this.columnGapValue === 'string' && this.columnGapValue.trim().endsWith('%')) {
-      try {
-        const percent = parseFloat(this.columnGapValue)
-        if (!isNaN(percent) && contentWidth > 0) {
-          columnGapPixels = (percent / 100) * contentWidth
-        } else if (isNaN(percent)) {
-          console.warn(`[GridNode ${this.props.key}] Invalid percentage column gap format: "${this.columnGapValue}". Using 0px.`)
-        } else if (contentWidth <= 0) {
-          console.warn(`[GridNode ${this.props.key}] Cannot calculate percentage column gap (${this.columnGapValue}) because content width is zero. Using 0px.`)
-        }
-      } catch (e) {
-        console.warn(`[GridNode ${this.props.key}] Error parsing percentage column gap: "${this.columnGapValue}". Using 0px.`, e)
-      }
-    } else if (typeof this.columnGapValue === 'string' && this.columnGapValue.trim() !== '') {
-      console.warn(
-        `[GridNode ${this.props.key}] Unsupported string column gap format: "${this.columnGapValue}". Using 0px. Only numbers and percentages ('%') are supported.`,
-      )
+    // 2. Resolve Gaps
+    const { rowGap, colGap } = this.getGapPixels(gap, contentWidth, contentHeight)
+
+    // 3. Resolve Columns (Tracks)
+    let explicitColTracks: GridTrackSize[] = templateColumns || []
+    if (explicitColTracks.length === 0 && columns) {
+      explicitColTracks = Array(columns).fill('1fr')
+    }
+    if (explicitColTracks.length === 0) explicitColTracks = ['1fr']
+
+    const resolvedColTracks = this.resolveTracks(explicitColTracks, contentWidth, colGap)
+
+    // Pre-calculate Col Offsets needed for placement/width
+    const colOffsetsValues = [0]
+    for (let i = 0; i < resolvedColTracks.length; i++) {
+      colOffsetsValues.push(colOffsetsValues[i] + resolvedColTracks[i] + colGap)
     }
 
-    let rowGapPixels = 0
-    if (typeof this.rowGapValue === 'number') {
-      rowGapPixels = this.rowGapValue
-    } else if (typeof this.rowGapValue === 'string' && this.rowGapValue.trim().endsWith('%')) {
-      try {
-        const percent = parseFloat(this.rowGapValue)
-        if (!isNaN(percent) && contentHeight > 0) {
-          rowGapPixels = (percent / 100) * contentHeight
-        } else if (isNaN(percent)) {
-          console.warn(`[GridNode ${this.props.key}] Invalid percentage row gap format: "${this.rowGapValue}". Using 0px.`)
-        } else if (contentHeight <= 0) {
-          console.warn(`[GridNode ${this.props.key}] Cannot calculate percentage row gap (${this.rowGapValue}) because content height is zero. Using 0px.`)
-        }
-      } catch (e) {
-        console.warn(`[GridNode ${this.props.key}] Error parsing percentage row gap: "${this.rowGapValue}". Using 0px.`, e)
-      }
-    } else if (typeof this.rowGapValue === 'string' && this.rowGapValue.trim() !== '') {
-      console.warn(
-        `[GridNode ${this.props.key}] Unsupported string row gap format: "${this.rowGapValue}". Using 0px. Only numbers and percentages ('%') are supported.`,
-      )
+    // 4. Place Items & Resolve Explicit Row Tracks
+    const explicitRowTracks = templateRows || []
+    const resolvedExplicitRowTracks = this.resolveTracks(explicitRowTracks, contentHeight, rowGap)
+
+    const cells: boolean[][] = [] // true if occupied
+    const items: { node: BoxNode; rowStart: number; rowEnd: number; colStart: number; colEnd: number }[] = []
+
+    const isOccupied = (r: number, c: number) => {
+      if (!cells[r]) return false
+      return cells[r][c] === true
+    }
+    const setOccupied = (r: number, c: number) => {
+      if (!cells[r]) cells[r] = []
+      cells[r][c] = true
     }
 
-    // Ensure gaps are not negative
-    columnGapPixels = Math.max(0, columnGapPixels)
-    rowGapPixels = Math.max(0, rowGapPixels)
+    let cursorRow = 0
+    let cursorCol = 0
 
-    // Step 5: Calculate flex-basis percentage for children
-    const mainAxisGapPixels = this.isVertical ? rowGapPixels : columnGapPixels
-    const mainAxisContentSize = this.isVertical ? contentHeight : contentWidth
-    let childWidth = 0
-
-    if (mainAxisContentSize > 0 && this.columns > 0) {
-      // Total space taken up by gaps on the main axis
-      const totalGapSpaceOnMainAxis = this.columns > 1 ? mainAxisGapPixels * (this.columns - 1) : 0
-
-      // Calculate the space available *only* for the items themselves
-      const availableSpaceOnMainAxis = Math.max(0, mainAxisContentSize - totalGapSpaceOnMainAxis)
-
-      // Calculate the exact pixel of the total content size that each item should occupy
-      const exactItemWidth = availableSpaceOnMainAxis / this.columns
-
-      // Ensure it's not negative (shouldn't happen, but safety)
-      childWidth = Math.max(0, exactItemWidth - 0.5) // Slightly reduce to avoid rounding issues
-    } else if (this.columns === 1) {
-      // If only one column, it takes up the full basis (gaps don't apply)
-      childWidth = mainAxisContentSize
-    }
-
-    // Clamp basis percentage between 0 and 100 (mostly redundant after floor/max(0) but safe)
-    childWidth = Math.max(0, Math.min(mainAxisContentSize, childWidth))
-
-    // Step 6: Apply layout properties to children
-    let childrenNeedRecalculation = false
     for (const child of this.children) {
-      let childChanged = false
-      const currentLayoutWidth = child.node.getWidth()
-      const currentWidthValue = currentLayoutWidth.value
-      const currentWidthUnit = currentLayoutWidth.unit
+      const childProps = child.props as GridItemProps
+      const { gridColumn, gridRow } = childProps
 
-      let widthNeedsUpdate = false
-      if (currentWidthUnit === Style.Unit.Point) {
-        // If current width is in points, check if the value is significantly different
-        if (Math.abs(currentWidthValue - childWidth) > 0.01) {
-          widthNeedsUpdate = true
+      let colStart: number | undefined
+      let colEnd: number | undefined
+      let colSpan = 1
+      let rowStart: number | undefined
+      let rowEnd: number | undefined
+      let rowSpan = 1
+
+      // ... Grid Placement Logic ...
+      if (gridColumn) {
+        const parts = gridColumn.split('/').map(s => s.trim())
+        if (parts[0]) {
+          if (parts[0].startsWith('span')) {
+            colSpan = parseInt(parts[0].replace('span', '')) || 1
+          } else {
+            colStart = parseInt(parts[0]) - 1
+          }
+        }
+        if (parts[1]) {
+          if (parts[1].startsWith('span')) {
+            const span = parseInt(parts[1].replace('span', '')) || 1
+            if (colStart !== undefined) {
+              colEnd = colStart + span
+              colSpan = span
+            } else {
+              // If start is undefined but end is span? Unusual. Treat as span.
+              colSpan = span
+            }
+          } else {
+            colEnd = parseInt(parts[1]) - 1
+            if (colStart !== undefined) {
+              colSpan = colEnd - colStart
+            }
+          }
+        }
+      }
+
+      if (gridRow) {
+        const parts = gridRow.split('/').map(s => s.trim())
+        if (parts[0]) {
+          if (parts[0].startsWith('span')) {
+            rowSpan = parseInt(parts[0].replace('span', '')) || 1
+          } else {
+            rowStart = parseInt(parts[0]) - 1
+          }
+        }
+        if (parts[1]) {
+          if (parts[1].startsWith('span')) {
+            const span = parseInt(parts[1].replace('span', '')) || 1
+            if (rowStart !== undefined) {
+              rowEnd = rowStart + span
+              rowSpan = span
+            } else {
+              rowSpan = span
+            }
+          } else {
+            rowEnd = parseInt(parts[1]) - 1
+            if (rowStart !== undefined) {
+              rowSpan = rowEnd - rowStart
+            }
+          }
+        }
+      }
+
+      if (colStart !== undefined && rowStart !== undefined) {
+        // Fixed position: Check overlap in simpler V1? Or just place?
+        // Just place.
+      } else {
+        // Auto placement
+        let placed = false
+        while (!placed) {
+          if (!cells[cursorRow]) cells[cursorRow] = []
+
+          if (colStart !== undefined) cursorCol = colStart
+
+          let fits = true
+          for (let r = 0; r < rowSpan; r++) {
+            for (let c = 0; c < colSpan; c++) {
+              if (isOccupied(cursorRow + r, cursorCol + c)) {
+                fits = false
+                break
+              }
+            }
+            if (!fits) break
+          }
+
+          if (fits) {
+            rowStart = cursorRow
+            colStart = cursorCol
+            placed = true
+          } else {
+            cursorCol++
+            if (cursorCol + colSpan > resolvedColTracks.length) {
+              cursorCol = 0
+              cursorRow++
+            }
+          }
+        }
+        cursorCol += colSpan
+        if (cursorCol >= resolvedColTracks.length) {
+          cursorCol = 0
+          cursorRow++
+        }
+      }
+
+      rowEnd = (rowStart ?? 0) + rowSpan
+      colEnd = (colStart ?? 0) + colSpan
+
+      for (let r = rowStart!; r < rowEnd!; r++) {
+        for (let c = colStart!; c < colEnd!; c++) {
+          setOccupied(r, c)
+        }
+      }
+
+      // CRITICAL FIX: Pre-set width on item to ensure height calculation is accurate later
+      const itemColStart = colStart!
+      const itemColEnd = colEnd!
+
+      // Extend local offsets if needed for spanned columns beyond track count (rare but safe)
+      while (colOffsetsValues.length <= itemColEnd) {
+        colOffsetsValues.push(colOffsetsValues[colOffsetsValues.length - 1] + 0 + colGap)
+      }
+
+      const cs = Math.min(itemColStart, colOffsetsValues.length - 1)
+      const ce = Math.min(itemColEnd, colOffsetsValues.length - 1)
+      const targetWidth = Math.max(0, colOffsetsValues[ce] - colOffsetsValues[cs] - colGap)
+
+      child.node.setWidth(targetWidth)
+      child.node.calculateLayout(targetWidth, Number.NaN, Style.Direction.LTR)
+
+      items.push({ node: child, rowStart: rowStart!, rowEnd: rowEnd!, colStart: itemColStart, colEnd: itemColEnd })
+    }
+
+    // 6. Finalize Rows (Implicit)
+    const totalRowsNeeded = Math.max(resolvedExplicitRowTracks.length, ...items.map(i => i.rowEnd))
+    const resolvedRowTracks = [...resolvedExplicitRowTracks]
+
+    // Fill implicit rows
+    for (let r = resolvedExplicitRowTracks.length; r < totalRowsNeeded; r++) {
+      let rowSize = 0
+
+      // Better 'auto' handling:
+      if (autoRows === 'auto') {
+        const rowItems = items.filter(i => i.rowStart === r && i.rowEnd - i.rowStart === 1)
+        for (const item of rowItems) {
+          rowSize = Math.max(rowSize, item.node.node.getComputedHeight())
         }
       } else {
-        // If current width is not in points (e.g., Auto, Percent, Undefined), it needs to be set to points
-        widthNeedsUpdate = true
+        const parsed = this.parseTrack(autoRows, contentHeight)
+        rowSize = parsed.value
+      }
+      resolvedRowTracks.push(rowSize)
+    }
+
+    // 6. Calculate Offsets (Rows) & Final Layout Application
+    const colOffsets = colOffsetsValues // Re-use
+    const rowOffsets = [0]
+    for (let i = 0; i < resolvedRowTracks.length; i++) {
+      let size = resolvedRowTracks[i]
+      // Re-check auto-sized explicit rows (value 0)
+      if (size === 0) {
+        const rowItems = items.filter(it => it.rowStart === i && it.rowEnd - it.rowStart === 1)
+        for (const item of rowItems) {
+          size = Math.max(size, item.node.node.getComputedHeight())
+        }
+        resolvedRowTracks[i] = size
+      }
+      rowOffsets.push(rowOffsets[i] + size + rowGap)
+    }
+
+    // 7. Apply Positions
+    let childrenChanged = false
+    for (const item of items) {
+      const x = colOffsets[item.colStart] + paddingLeft
+
+      while (colOffsets.length <= item.colEnd) {
+        colOffsets.push(colOffsets[colOffsets.length - 1] + 0 + colGap)
       }
 
-      if (widthNeedsUpdate) {
-        child.node.setWidth(childWidth)
-        childChanged = true
+      const widthStart = colOffsets[item.colStart]
+      const widthEnd = colOffsets[item.colEnd]
+      const totalWidth = Math.max(0, widthEnd - widthStart - colGap)
+
+      const y = rowOffsets[item.rowStart] + paddingTop
+
+      const heightStart = rowOffsets[item.rowStart]
+      const heightEnd = rowOffsets[item.rowEnd]
+      const totalHeight = Math.max(0, heightEnd - heightStart - rowGap)
+
+      const childNode = item.node.node
+
+      if (childNode.getPositionType() !== Style.PositionType.Absolute) {
+        childNode.setPositionType(Style.PositionType.Absolute)
+        childrenChanged = true
       }
 
-      // Ensure grow/shrink are set correctly for grid items
-      if (child.node.getFlexGrow() !== 0) {
-        child.node.setFlexGrow(0)
-        childChanged = true
+      if (childNode.getPosition(Style.Edge.Left).value !== x) {
+        childNode.setPosition(Style.Edge.Left, x)
+        childrenChanged = true
       }
-      if (child.node.getFlexShrink() !== 1) {
-        child.node.setFlexShrink(1) // Allow shrinking
-        childChanged = true
-      }
-
-      // Remove margins that might interfere with gap property
-      if (child.node.getMargin(Style.Edge.Bottom).unit !== Style.Unit.Undefined) {
-        child.node.setMargin(Style.Edge.Bottom, undefined)
-        childChanged = true
-      }
-      if (child.node.getMargin(Style.Edge.Right).unit !== Style.Unit.Undefined) {
-        child.node.setMargin(Style.Edge.Right, undefined)
-        childChanged = true
-      }
-      if (child.node.getMargin(Style.Edge.Top).unit !== Style.Unit.Undefined) {
-        child.node.setMargin(Style.Edge.Top, undefined)
-        childChanged = true
-      }
-      if (child.node.getMargin(Style.Edge.Left).unit !== Style.Unit.Undefined) {
-        child.node.setMargin(Style.Edge.Left, undefined)
-        childChanged = true
+      if (childNode.getPosition(Style.Edge.Top).value !== y) {
+        childNode.setPosition(Style.Edge.Top, y)
+        childrenChanged = true
       }
 
-      if (childChanged && !child.node.isDirty()) {
-        child.node.markDirty()
-        childrenNeedRecalculation = true
+      if (childNode.getWidth().unit !== Style.Unit.Point || Math.abs(childNode.getWidth().value - totalWidth) > 0.1) {
+        childNode.setWidth(totalWidth)
+        childrenChanged = true
+      }
+      if (childNode.getHeight().unit !== Style.Unit.Point || Math.abs(childNode.getHeight().value - totalHeight) > 0.1) {
+        childNode.setHeight(totalHeight)
+        childrenChanged = true
       }
     }
 
-    // Step 7: Apply gaps using Yoga's built-in gap properties
-    const currentColumnGap = this.node.getGap(Style.Gutter.Column).value
-    const currentRowGap = this.node.getGap(Style.Gutter.Row).value
-    let gapsChanged = false
-
-    // Use a small tolerance for comparing gap pixels
-    if (Math.abs(currentColumnGap - columnGapPixels) > 0.001) {
-      this.node.setGap(Style.Gutter.Column, columnGapPixels)
-      gapsChanged = true
-    }
-    if (Math.abs(currentRowGap - rowGapPixels) > 0.001) {
-      this.node.setGap(Style.Gutter.Row, rowGapPixels)
-      gapsChanged = true
+    // 9. Update Grid Height
+    const totalGridHeight = Math.max(0, rowOffsets[rowOffsets.length - 1] - rowGap)
+    const currentHeightStyle = this.node.getHeight()
+    if (currentHeightStyle.unit === Style.Unit.Auto || currentHeightStyle.unit === Style.Unit.Undefined) {
+      const targetTotalHeight = totalGridHeight + paddingTop + paddingBottom
+      this.node.setHeight(targetTotalHeight)
+      childrenChanged = true
     }
 
-    // Step 8: Mark the grid node itself as dirty if gaps changed or children changed
-    if ((gapsChanged || childrenNeedRecalculation) && !this.node.isDirty()) {
+    if (childrenChanged && !this.node.isDirty()) {
       this.node.markDirty()
     }
+  }
+
+  /**
+   * Resolves track sizes to pixels.
+   */
+  private resolveTracks(tracks: GridTrackSize[], availableSpace: number, gap: number): number[] {
+    const resolved: number[] = []
+    let usedSpace = 0
+    let totalFr = 0
+    const frIndices: number[] = []
+
+    tracks.forEach((t, i) => {
+      const parsed = this.parseTrack(t, availableSpace)
+      if (parsed.type === 'px' || parsed.type === '%') {
+        resolved[i] = parsed.value
+        usedSpace += parsed.value
+      } else if (parsed.type === 'fr') {
+        totalFr += parsed.value
+        resolved[i] = 0
+        frIndices.push(i)
+      } else {
+        resolved[i] = 0
+      }
+    })
+
+    const totalGaps = Math.max(0, tracks.length - 1) * gap
+    usedSpace += totalGaps
+
+    const remainingSpace = Math.max(0, availableSpace - usedSpace)
+    if (totalFr > 0) {
+      frIndices.forEach(i => {
+        const parsed = this.parseTrack(tracks[i], availableSpace)
+        const share = (parsed.value / totalFr) * remainingSpace
+        resolved[i] = share
+      })
+    }
+
+    return resolved
   }
 }
 
 /**
  * Factory function to create a new GridNode instance.
- * @param props Grid configuration properties.
- * @returns A new GridNode instance.
  */
 export const Grid = (props: GridProps) => new GridNode(props)
