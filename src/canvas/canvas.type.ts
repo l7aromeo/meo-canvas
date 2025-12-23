@@ -561,6 +561,19 @@ export interface BoxProps extends BaseProps {
 }
 
 /**
+ * Defines the properties for a GridItemNode.
+ * Includes all BoxProperties plus Grid placement properties.
+ */
+export interface GridItemProps extends BoxProps {
+  /**
+   * Grid Placement Props
+   */
+  gridColumn?: string // e.g., "1 / 3" or "span 2"
+  gridRow?: string // e.g., "1 / 2"
+  gridArea?: string // shorthand
+}
+
+/**
  * Defines the properties for a RootNode.
  */
 export interface RootProps extends BoxProps {
@@ -575,9 +588,18 @@ export interface RootProps extends BoxProps {
 }
 
 /**
+ * Tracks can be specified as:
+ * - `number` (pixels)
+ * - `'auto'`
+ * - `${number}fr` (fraction of available space)
+ * - `${number}%` (percentage of container size)
+ */
+export type GridTrackSize = number | 'auto' | `${number}fr` | `${number}%`
+
+/**
  * Defines the properties for a GridNode.
  */
-export interface GridProps extends Omit<BoxProps, 'direction'> {
+export interface GridProps extends BoxProps {
   /**
    * Number of columns in the grid layout.
    * @default 1
@@ -585,14 +607,28 @@ export interface GridProps extends Omit<BoxProps, 'direction'> {
   columns?: number
 
   /**
-   * Direction of the grid layout.
-   * - 'row': Items are arranged horizontally (default)
-   * - 'column': Items are arranged vertically
-   * - 'row-reverse': Items are arranged horizontally in reverse order
-   * - 'column-reverse': Items are arranged vertically in reverse order
+   * Defines the columns of the grid with a space-separated list of track sizes.
+   * @example ['100px', '1fr', 'auto']
+   */
+  templateColumns?: GridTrackSize[]
+
+  /**
+   * Defines the rows of the grid with a space-separated list of track sizes.
+   * @example ['100px', '1fr', 'auto']
+   */
+  templateRows?: GridTrackSize[]
+
+  /**
+   * Specifies the size of implicitly created rows.
+   * @default 'auto'
+   */
+  autoRows?: GridTrackSize
+
+  /**
+   * Controls how the auto-placement algorithm works.
    * @default 'row'
    */
-  direction?: 'row' | 'column' | 'row-reverse' | 'column-reverse'
+  autoFlow?: 'row' | 'column' | 'row-dense' | 'column-dense'
 }
 
 /**
