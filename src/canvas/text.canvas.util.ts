@@ -892,20 +892,6 @@ export class TextNode extends BoxNode {
   protected override _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     super._renderContent(ctx, x, y, width, height)
 
-    const linesToRender = this.getLinesToMeasureOrRender()
-    const numLinesToRender = linesToRender.length
-
-    // Validate required data is available
-    if (
-      numLinesToRender === 0 ||
-      this.segments.length === 0 ||
-      this.lineHeights.length !== numLinesToRender ||
-      this.lineAscents.length !== numLinesToRender ||
-      this.lineContentHeights.length !== numLinesToRender
-    ) {
-      return
-    }
-
     ctx.save()
     ctx.textBaseline = 'alphabetic'
     ctx.letterSpacing = this.formatSpacing(this.props.letterSpacing)
@@ -929,9 +915,87 @@ export class TextNode extends BoxNode {
       return
     }
 
+    // Re-calculate lines based on the actual render width to ensure consistency
+    // This fixes issues where Yoga Layout might use a cached measurement from a different
+    // width constraint (e.g., during a flex shrink pass) but final layout is wider.
+    const spaceWidth = this.measureSpaceWidth(ctx)
+    // Use a small epsilon for float precision issues
+    const epsilon = 0.01
+    const allLines = this.wrapTextRich(ctx, this.segments, contentWidth + epsilon, parsedWordSpacingPx)
+
+    const needsEllipsis = this.props.ellipsis && this.props.maxLines !== undefined && allLines.length > this.props.maxLines
+
+    // Apply maxLines constraint to get the visible lines
+    const visibleLines = this.props.maxLines !== undefined && this.props.maxLines > 0 ? allLines.slice(0, this.props.maxLines) : allLines
+
+    const numLinesToRender = visibleLines.length
+
+    // Recalculate line metrics for the rendered lines
+    // We cannot rely on this.lineHeights from measureText because it might correspond to different wrapping
+    const lineHeights: number[] = []
+    const lineAscents: number[] = []
+    const lineContentHeights: number[] = []
+    const defaultLineHeightMultiplier = 1.2
+    let totalTextHeight = 0
+
+    for (const line of visibleLines) {
+      let maxAscent = 0
+      let maxDescent = 0
+      let maxFontSizeOnLine = 0
+
+      if (line.length === 0) {
+        ctx.font = this.getFontString()
+        if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
+        const metrics = ctx.measureText(this.metricsString)
+        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
+        maxFontSizeOnLine = baseFontSize
+      } else {
+        for (const segment of line) {
+          if (/^\s+$/.test(segment.text)) continue
+          const segmentSize = segment.size || baseFontSize
+          maxFontSizeOnLine = Math.max(maxFontSizeOnLine, segmentSize)
+
+          // Style context for accurate metrics
+          ctx.font = this.getFontString(segment)
+          if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
+
+          const metrics = ctx.measureText(this.metricsString)
+          const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
+          const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
+          maxAscent = Math.max(maxAscent, ascent)
+          maxDescent = Math.max(maxDescent, descent)
+        }
+      }
+      if (maxAscent === 0 && maxDescent === 0 && line.length > 0) {
+        // Fallback
+        ctx.font = this.getFontString()
+        if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
+        const metrics = ctx.measureText(this.metricsString)
+        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
+        maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
+      }
+      maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
+      const actualContentHeight = maxAscent + maxDescent
+      const targetLineBoxHeight =
+        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : maxFontSizeOnLine * defaultLineHeightMultiplier
+      const finalLineHeight = Math.max(actualContentHeight, targetLineBoxHeight)
+
+      lineHeights.push(finalLineHeight)
+      lineAscents.push(maxAscent)
+      lineContentHeights.push(actualContentHeight)
+      totalTextHeight += finalLineHeight
+    }
+
+    if (numLinesToRender === 0) {
+      ctx.restore()
+      return
+    }
+
     // Calculate vertical alignment offset
     const lineGapValue = this.props.lineGap
-    const totalCalculatedTextHeight = this.lineHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, numLinesToRender - 1) * lineGapValue
+    const totalCalculatedTextHeight = totalTextHeight + Math.max(0, numLinesToRender - 1) * lineGapValue
 
     let blockStartY: number
     switch (this.props.verticalAlign) {
@@ -955,15 +1019,13 @@ export class TextNode extends BoxNode {
 
     // Configure ellipsis if needed
     const ellipsisChar = typeof this.props.ellipsis === 'string' ? this.props.ellipsis : '...'
-    const needsEllipsis = this.props.ellipsis && this.lines.length > numLinesToRender
     let ellipsisWidth = 0
     let ellipsisStyle: Partial<TextSegment> | undefined = undefined
 
     if (needsEllipsis) {
-      const lastRenderedLine = linesToRender[numLinesToRender - 1]
+      const lastRenderedLine = visibleLines[visibleLines.length - 1]
+      // ... ellipsis calculation ...
       const lastTextStyleSegment = [...lastRenderedLine].reverse().find(seg => !/^\s+$/.test(seg.text))
-
-      // Inherit styles from last non-whitespace segment
       ellipsisStyle = lastTextStyleSegment
         ? {
             color: lastTextStyleSegment.color,
@@ -974,38 +1036,21 @@ export class TextNode extends BoxNode {
           }
         : undefined
 
-      const originalFont = ctx.font
-      const originalVariant = ctx.fontVariant
+      ctx.save()
       ctx.font = this.getFontString(ellipsisStyle)
-
-      // Handle font variant setting and validation
-      if (typeof this.props.fontVariant === 'string') {
-        ctx.fontVariant = this.props.fontVariant
-      } else if (this.props.fontVariant !== undefined) {
-        console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (ellipsis measure):`, this.props.fontVariant)
-        if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-      } else {
-        if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
+      if (this.props.fontVariant) {
+        ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
       }
-
       ellipsisWidth = ctx.measureText(ellipsisChar).width
-      ctx.font = originalFont
-
-      if (originalVariant !== 'normal') {
-        ctx.fontVariant = originalVariant
-      } else if (ctx.fontVariant !== 'normal') {
-        ctx.fontVariant = 'normal'
-      }
+      ctx.restore()
     }
-
-    const spaceWidth = this.measureSpaceWidth(ctx)
 
     // Render text content line by line
     for (let i = 0; i < numLinesToRender; i++) {
-      const lineSegments = linesToRender[i]
-      const currentLineFinalHeight = this.lineHeights[i]
-      const currentLineMaxAscent = this.lineAscents[i]
-      const currentLineContentHeight = this.lineContentHeights[i]
+      const lineSegments = visibleLines[i]
+      const currentLineFinalHeight = lineHeights[i]
+      const currentLineMaxAscent = lineAscents[i]
+      const currentLineContentHeight = lineContentHeights[i]
 
       // Calculate line spacing metrics
       const currentLineLeading = currentLineFinalHeight - currentLineContentHeight
@@ -1185,10 +1230,7 @@ export class TextNode extends BoxNode {
           if (applyEllipsisAfter) {
             const ellipsisRemainingWidth = contentX + contentWidth - currentX
             if (ellipsisRemainingWidth >= ellipsisWidth) {
-              const originalFont = ctx.font
-              const originalVariant = ctx.fontVariant
-              const originalFill = ctx.fillStyle
-
+              ctx.save()
               ctx.font = this.getFontString(ellipsisStyle)
 
               if (typeof this.props.fontVariant === 'string') {
@@ -1202,14 +1244,7 @@ export class TextNode extends BoxNode {
 
               ctx.fillStyle = ellipsisStyle?.color || this.props.color || 'black'
               ctx.fillText(ellipsisChar, currentX, lineY, Math.max(0, ellipsisRemainingWidth + 1))
-
-              ctx.font = originalFont
-              if (originalVariant !== 'normal') {
-                ctx.fontVariant = originalVariant
-              } else if (ctx.fontVariant !== 'normal') {
-                ctx.fontVariant = 'normal'
-              }
-              ctx.fillStyle = originalFill
+              ctx.restore()
             }
             break
           }
