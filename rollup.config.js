@@ -4,19 +4,20 @@ import commonjs from '@rollup/plugin-commonjs'
 import tsconfigPaths from 'rollup-plugin-tsconfig-paths'
 import fs from 'fs'
 
-const inputFiles = fs.readdirSync('src')
+const inputFiles = fs
+  .readdirSync('src')
   .filter(file => file.endsWith('.ts'))
   .reduce((acc, file) => {
-    const name = file.replace('.ts', '');
-    acc[name] = `src/${file}`;
-    return acc;
-  }, {});
+    const name = file.replace('.ts', '')
+    acc[name] = `src/${file}`
+    return acc
+  }, {})
 
 const common = {
   input: inputFiles,
   plugins: [tsconfigPaths(), nodeResolve({ exclude: 'node_modules/**' }), commonjs()],
-  external: (id) => {
-    return ['skia-canvas', 'yoga-layout', 'lodash-es', 'tinycolor2', 'file-type', 'node:fs', 'path'].includes(id) || id.startsWith('tslib');
+  external: id => {
+    return ['skia-canvas', 'yoga-layout', 'lodash-es', 'tinycolor2', 'file-type', 'node:fs', 'path'].includes(id) || id.startsWith('tslib')
   },
 }
 
@@ -28,11 +29,11 @@ export default [
     output: {
       dir: 'dist/esm',
       preserveModules: true,
-      entryFileNames: (chunkInfo) => {
-        return `${chunkInfo.name.replace('src/', '')}.js`;
+      entryFileNames: chunkInfo => {
+        return `${chunkInfo.name.replace('src/', '')}.js`
       },
-      chunkFileNames: (chunkInfo) => {
-        return `${chunkInfo.name.replace('src/', '')}.js`;
+      chunkFileNames: chunkInfo => {
+        return `${chunkInfo.name.replace('src/', '')}.js`
       },
     },
   },
@@ -46,11 +47,11 @@ export default [
       sourcemap: true,
       preserveModules: true,
       exports: 'named',
-      entryFileNames: (chunkInfo) => {
-        return `${chunkInfo.name.replace('src/', '')}.js`;
+      entryFileNames: chunkInfo => {
+        return `${chunkInfo.name.replace('src/', '')}.js`
       },
-      chunkFileNames: (chunkInfo) => {
-        return `${chunkInfo.name.replace('src/', '')}.js`;
+      chunkFileNames: chunkInfo => {
+        return `${chunkInfo.name.replace('src/', '')}.js`
       },
     },
   },
