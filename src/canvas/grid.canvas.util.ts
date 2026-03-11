@@ -273,6 +273,13 @@ export class GridNode extends RowNode {
       child.node.setWidth(targetWidth)
       child.node.calculateLayout(targetWidth, Number.NaN, Style.Direction.LTR)
 
+      // Recursively finalize nested children (e.g. inner Grids) so their
+      // computed heights are accurate before we measure row sizes.
+      child.finalizeLayout()
+      if (child.node.isDirty()) {
+        child.node.calculateLayout(targetWidth, Number.NaN, Style.Direction.LTR)
+      }
+
       items.push({ node: child, rowStart: rowStart!, rowEnd: rowEnd!, colStart: itemColStart, colEnd: itemColEnd })
     }
 
