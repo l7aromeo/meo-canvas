@@ -41,7 +41,7 @@
     "test": "node --no-experimental-webstorage --experimental-vm-modules $(yarn bin jest)",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix",
     "format": "prettier --write .",
-    "generate:samples": "npx tsx scripts/generate_sample_charts.ts && npx tsx scripts/generate_sample_grids.ts",
+    "generate:samples": "npx tsx scripts/generate_sample_charts.ts && npx tsx scripts/generate_sample_grids.ts && npx tsx scripts/generate_sample_nested_grids.ts",
     "prepare": "husky"
   },
   "devDependencies": {
