@@ -321,7 +321,6 @@ export class GridNode extends RowNode {
     }
 
     // 7. Apply Positions
-    let childrenChanged = false
     for (const item of items) {
       const x = colOffsets[item.colStart] + paddingLeft
 
@@ -343,25 +342,20 @@ export class GridNode extends RowNode {
 
       if (childNode.getPositionType() !== Style.PositionType.Absolute) {
         childNode.setPositionType(Style.PositionType.Absolute)
-        childrenChanged = true
       }
 
       if (childNode.getPosition(Style.Edge.Left).value !== x) {
         childNode.setPosition(Style.Edge.Left, x)
-        childrenChanged = true
       }
       if (childNode.getPosition(Style.Edge.Top).value !== y) {
         childNode.setPosition(Style.Edge.Top, y)
-        childrenChanged = true
       }
 
       if (childNode.getWidth().unit !== Style.Unit.Point || Math.abs(childNode.getWidth().value - totalWidth) > 0.1) {
         childNode.setWidth(totalWidth)
-        childrenChanged = true
       }
       if (childNode.getHeight().unit !== Style.Unit.Point || Math.abs(childNode.getHeight().value - totalHeight) > 0.1) {
         childNode.setHeight(totalHeight)
-        childrenChanged = true
       }
     }
 
@@ -371,11 +365,6 @@ export class GridNode extends RowNode {
     if (currentHeightStyle.unit === Style.Unit.Auto || currentHeightStyle.unit === Style.Unit.Undefined) {
       const targetTotalHeight = totalGridHeight + paddingTop + paddingBottom
       this.node.setHeight(targetTotalHeight)
-      childrenChanged = true
-    }
-
-    if (childrenChanged && !this.node.isDirty()) {
-      this.node.markDirty()
     }
   }
 
