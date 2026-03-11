@@ -33,7 +33,7 @@ rendering to a canvas.
   </tr>
   <tr>
     <td width="50%"><img src="https://i.ibb.co.com/B24SZ0C9/charts.webp" alt="Image 5"/></td>
-    <td width="50%"><img src="https://i.ibb.co.com/q3sy9r2L/sample-grids.png" alt="Image 6"/></td>
+    <td width="50%"><img src="https://i.ibb.co.com/jkBJMRgT/sample-nested-grids.png" alt="Image 6"/></td>
   </tr>
 </table>
 
