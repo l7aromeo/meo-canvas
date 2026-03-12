@@ -92,6 +92,37 @@ async function run() {
     ],
   })
 
+  // 2b. Line Chart with Decimal Values (Response Times)
+  const decimalLineChartSection = Column({
+    width: '50%',
+    height: '100%',
+    padding: 10,
+    children: [
+      Text('Line Chart (Decimal Values)', titleStyle),
+      Chart({
+        type: 'line',
+        width: '100%',
+        height: '100%',
+        flexGrow: 1,
+        options: {
+          ...commonProps.options,
+          showYAxis: true,
+          grid: { show: true, style: 'dashed' },
+        },
+        data: {
+          labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+          datasets: [
+            {
+              label: 'Response Time (ms)',
+              data: [21.84, 43.69, 65.32, 87.15, 109.22, 52.46],
+              color: '#FF9800',
+            },
+          ],
+        },
+      }),
+    ],
+  })
+
   // 3. Pie Chart
   const pieChartSection = Column({
     width: '50%',
@@ -141,22 +172,22 @@ async function run() {
   })
 
   const canvas = await Root({
-    width: 800,
+    width: 1600,
     height: 800,
     backgroundColor: '#f0f0f0',
     padding: 10,
     children: [
-      // Top Row
+      // Top Row - 2 charts
       Row({
         width: '100%',
         height: '50%',
         children: [barChartSection, lineChartSection],
       }),
-      // Bottom Row
+      // Bottom Row - 3 charts
       Row({
         width: '100%',
         height: '50%',
-        children: [pieChartSection, doughnutChartSection],
+        children: [pieChartSection, doughnutChartSection, decimalLineChartSection],
       }),
     ],
   })
