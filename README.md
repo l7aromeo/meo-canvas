@@ -52,41 +52,41 @@ import {Root, Box, Text} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateImage() {
-    const canvas = await Root({
-        width: 500,
-        height: 300,
-        fonts: [
-            {
-                family: 'Roboto',
-                paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
-            },
-        ],
+  const canvas = await Root({
+    width: 500,
+    height: 300,
+    fonts: [
+      {
+        family: 'Roboto',
+        paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
+      },
+    ],
+    children: [
+      Box({
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#f0f0f0',
+        padding: 20,
         children: [
-            Box({
-                width: '100%',
-                height: '100%',
-                backgroundColor: '#f0f0f0',
-                padding: 20,
-                children: [
-                    Text('Hello, World!', {
-                        fontSize: 32,
-                        fontWeight: 'bold',
-                        fontFamily: 'Roboto',
-                        color: '#333',
-                    }),
-                    Text('This is a basic example of using @meonode/canvas.', {
-                        fontSize: 18,
-                        fontFamily: 'Roboto',
-                        color: '#666',
-                        margin: {Top: 10},
-                    }),
-                ],
-            }),
+          Text('Hello, World!', {
+            fontSize: 32,
+            fontWeight: 'bold',
+            fontFamily: 'Roboto',
+            color: '#333',
+          }),
+          Text('This is a basic example of using @meonode/canvas.', {
+            fontSize: 18,
+            fontFamily: 'Roboto',
+            color: '#666',
+            margin: {Top: 10},
+          }),
         ],
-    });
+      }),
+    ],
+  });
 
-    const buffer = await canvas.toBuffer('png');
-    await writeFile('output.png', buffer);
+  const buffer = await canvas.toBuffer('png');
+  await writeFile('output.png', buffer);
 }
 
 generateImage().catch(console.error);
@@ -102,109 +102,109 @@ import {Root, Column, Row, Text, Image, Style} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateComplexImage() {
-    const canvas = await Root({
-        width: 800,
-        height: 600,
-        fonts: [
-            {
-                family: 'Roboto',
-                paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
-            },
-            {
-                family: 'Open Sans',
-                paths: ['./fonts/OpenSans-Regular.ttf'],
-            },
-        ],
+  const canvas = await Root({
+    width: 800,
+    height: 600,
+    fonts: [
+      {
+        family: 'Roboto',
+        paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'],
+      },
+      {
+        family: 'Open Sans',
+        paths: ['./fonts/OpenSans-Regular.ttf'],
+      },
+    ],
+    children: [
+      Column({
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#f0f0f0',
+        padding: 20,
+        justifyContent: Style.Justify.SpaceBetween,
         children: [
-            Column({
+          // Header Section
+          Row({
+            width: '100%',
+            alignItems: Style.Align.Center,
+            marginBottom: 20,
+            children: [
+              Image({
+                src: 'https://via.placeholder.com/80x80/FF0000/FFFFFF?text=Logo',
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                marginRight: 20,
+                objectFit: 'cover',
+              }),
+              Text('Welcome to MeoNode Canvas!', {
+                fontSize: 40,
+                fontWeight: 'bold',
+                fontFamily: 'Roboto',
+                color: '#333',
+              }),
+            ],
+          }),
+
+          // Main Content Section
+          Column({
+            flexGrow: 1,
+            width: '100%',
+            backgroundColor: '#ffffff',
+            borderRadius: 10,
+            padding: 30,
+            boxShadow: {blur: 10, color: 'rgba(0,0,0,0.1)'},
+            children: [
+              Text('A New Way to Render Graphics', {
+                fontSize: 28,
+                fontWeight: 'bold',
+                fontFamily: 'Open Sans',
+                color: '#555',
+                marginBottom: 15,
+              }),
+              Text(
+                `This example demonstrates a more complex layout using various components.
+        We have a header with a logo and title, a main content area with text,
+        and a footer. Notice how flexbox properties are used to arrange elements.`,
+                {
+                  fontSize: 18,
+                  fontFamily: 'Open Sans',
+                  color: '#777',
+                  lineHeight: 24,
+                },
+              ),
+              Image({
+                src: 'https://via.placeholder.com/600x200/007bff/ffffff?text=Feature+Image',
                 width: '100%',
-                height: '100%',
-                backgroundColor: '#f0f0f0',
-                padding: 20,
-                justifyContent: Style.Justify.SpaceBetween,
-                children: [
-                    // Header Section
-                    Row({
-                        width: '100%',
-                        alignItems: Style.Align.Center,
-                        marginBottom: 20,
-                        children: [
-                            Image({
-                                src: 'https://via.placeholder.com/80x80/FF0000/FFFFFF?text=Logo',
-                                width: 80,
-                                height: 80,
-                                borderRadius: 40,
-                                marginRight: 20,
-                                objectFit: 'cover',
-                            }),
-                            Text('Welcome to MeoNode Canvas!', {
-                                fontSize: 40,
-                                fontWeight: 'bold',
-                                fontFamily: 'Roboto',
-                                color: '#333',
-                            }),
-                        ],
-                    }),
+                height: 200,
+                marginTop: 20,
+                borderRadius: 8,
+                objectFit: 'contain',
+                objectPosition: {Top: '50%', Left: '50%'},
+              }),
+            ],
+          }),
 
-                    // Main Content Section
-                    Column({
-                        flexGrow: 1,
-                        width: '100%',
-                        backgroundColor: '#ffffff',
-                        borderRadius: 10,
-                        padding: 30,
-                        boxShadow: {blur: 10, color: 'rgba(0,0,0,0.1)'},
-                        children: [
-                            Text('A New Way to Render Graphics', {
-                                fontSize: 28,
-                                fontWeight: 'bold',
-                                fontFamily: 'Open Sans',
-                                color: '#555',
-                                marginBottom: 15,
-                            }),
-                            Text(
-                                `This example demonstrates a more complex layout using various components.
-                We have a header with a logo and title, a main content area with text,
-                and a footer. Notice how flexbox properties are used to arrange elements.`,
-                                {
-                                    fontSize: 18,
-                                    fontFamily: 'Open Sans',
-                                    color: '#777',
-                                    lineHeight: 24,
-                                },
-                            ),
-                            Image({
-                                src: 'https://via.placeholder.com/600x200/007bff/ffffff?text=Feature+Image',
-                                width: '100%',
-                                height: 200,
-                                marginTop: 20,
-                                borderRadius: 8,
-                                objectFit: 'contain',
-                                objectPosition: {Top: '50%', Left: '50%'},
-                            }),
-                        ],
-                    }),
-
-                    // Footer Section
-                    Row({
-                        width: '100%',
-                        marginTop: 20,
-                        justifyContent: Style.Justify.Center,
-                        children: [
-                            Text('© 2025 MeoNode Canvas. All rights reserved.', {
-                                fontSize: 14,
-                                fontFamily: 'Open Sans',
-                                color: '#999',
-                            }),
-                        ],
-                    }),
-                ],
-            }),
+          // Footer Section
+          Row({
+            width: '100%',
+            marginTop: 20,
+            justifyContent: Style.Justify.Center,
+            children: [
+              Text('© 2025 MeoNode Canvas. All rights reserved.', {
+                fontSize: 14,
+                fontFamily: 'Open Sans',
+                color: '#999',
+              }),
+            ],
+          }),
         ],
-    });
+      }),
+    ],
+  });
 
-    const buffer = await canvas.toBuffer('png');
-    await writeFile('complex_output.png', buffer);
+  const buffer = await canvas.toBuffer('png');
+  await writeFile('complex_output.png', buffer);
 }
 
 generateComplexImage().catch(console.error);
@@ -315,25 +315,25 @@ import {Root, Grid, Box, Text} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateBasicGrid() {
-    const canvas = await Root({
-        width: 400,
-        height: 300,
+  const canvas = await Root({
+    width: 400,
+    height: 300,
+    children: [
+      Grid({
+        columns: 3,
+        templateColumns: [100, 100, 100], // or ['100px', '100px', '100px']
+        gap: 10,
         children: [
-            Grid({
-                columns: 3,
-                templateColumns: [100, 100, 100], // or ['100px', '100px', '100px']
-                gap: 10,
-                children: [
-                    Box({backgroundColor: 'red', height: 50, children: [Text('1')]}),
-                    Box({backgroundColor: 'blue', height: 50, children: [Text('2')]}),
-                    Box({backgroundColor: 'green', height: 50, children: [Text('3')]}),
-                    Box({backgroundColor: 'yellow', height: 50, children: [Text('4')]}),
-                ],
-            }),
+          Box({backgroundColor: 'red', height: 50, children: [Text('1')]}),
+          Box({backgroundColor: 'blue', height: 50, children: [Text('2')]}),
+          Box({backgroundColor: 'green', height: 50, children: [Text('3')]}),
+          Box({backgroundColor: 'yellow', height: 50, children: [Text('4')]}),
         ],
-    });
+      }),
+    ],
+  });
 
-    await canvas.toFile('grid_basic.png');
+  await canvas.toFile('grid_basic.png');
 }
 
 generateBasicGrid();
@@ -345,14 +345,14 @@ Using fractional units (`fr`) allows columns to take up proportional space.
 
 ```typescript
 Grid({
-    // First column takes 1 part, second takes 2 parts, third takes 1 part
-    templateColumns: ['1fr', '2fr', '1fr'],
-    gap: 10,
-    children: [
-        Box({backgroundColor: 'red', height: 50, children: [Text('1fr')]}),
-        Box({backgroundColor: 'blue', height: 50, children: [Text('2fr')]}),
-        Box({backgroundColor: 'green', height: 50, children: [Text('1fr')]}),
-    ],
+  // First column takes 1 part, second takes 2 parts, third takes 1 part
+  templateColumns: ['1fr', '2fr', '1fr'],
+  gap: 10,
+  children: [
+    Box({backgroundColor: 'red', height: 50, children: [Text('1fr')]}),
+    Box({backgroundColor: 'blue', height: 50, children: [Text('2fr')]}),
+    Box({backgroundColor: 'green', height: 50, children: [Text('1fr')]}),
+  ],
 });
 ```
 
@@ -364,27 +364,27 @@ Use `GridItem` (or just passing `gridColumn`/`gridRow` props to any child) to sp
 import {Grid, GridItem, Box, Text} from '@meonode/canvas';
 
 Grid({
-    templateColumns: ['1fr', '1fr', '1fr'],
-    gap: 10,
-    children: [
-        // Spans all 3 columns
-        GridItem({
-            gridColumn: 'span 3',
-            height: 50,
-            backgroundColor: '#333',
-            children: [Text('Header', {color: 'white'})],
-        }),
-        // Standard items
-        Box({backgroundColor: '#eee', height: 100, children: [Text('Content')]}),
-        Box({backgroundColor: '#ccc', height: 100, children: [Text('Sidebar')]}),
-        // Spans 2 columns
-        GridItem({
-            gridColumn: 'span 2',
-            height: 50,
-            backgroundColor: '#555',
-            children: [Text('Footer', {color: 'white'})],
-        }),
-    ],
+  templateColumns: ['1fr', '1fr', '1fr'],
+  gap: 10,
+  children: [
+    // Spans all 3 columns
+    GridItem({
+      gridColumn: 'span 3',
+      height: 50,
+      backgroundColor: '#333',
+      children: [Text('Header', {color: 'white'})],
+    }),
+    // Standard items
+    Box({backgroundColor: '#eee', height: 100, children: [Text('Content')]}),
+    Box({backgroundColor: '#ccc', height: 100, children: [Text('Sidebar')]}),
+    // Spans 2 columns
+    GridItem({
+      gridColumn: 'span 2',
+      height: 50,
+      backgroundColor: '#555',
+      children: [Text('Footer', {color: 'white'})],
+    }),
+  ],
 });
 ```
 
@@ -399,19 +399,19 @@ For example, to set `flexDirection` to `row` or `positionType` to `absolute`, yo
 import {Box, Style} from '@meonode/canvas';
 
 Box({
-    flexDirection: Style.FlexDirection.Row,
-    justifyContent: Style.Justify.Center,
-    alignItems: Style.Align.Center,
-    children: [
-        Box({
-            width: 100,
-            height: 100,
-            backgroundColor: 'red',
-            positionType: Style.PositionType.Absolute,
-            position: {Top: 10, Left: 10},
-        }),
-        // ... other children
-    ],
+  flexDirection: Style.FlexDirection.Row,
+  justifyContent: Style.Justify.Center,
+  alignItems: Style.Align.Center,
+  children: [
+    Box({
+      width: 100,
+      height: 100,
+      backgroundColor: 'red',
+      positionType: Style.PositionType.Absolute,
+      position: {Top: 10, Left: 10},
+    }),
+    // ... other children
+  ],
 });
 ```
 
@@ -645,4 +645,3 @@ started.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
