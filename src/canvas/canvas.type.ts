@@ -874,6 +874,7 @@ interface CartesianChartSpecificOptions {
   yAxisFontSize?: number
   yAxisColor?: string
   yAxisLabelFormatter?: (value: number) => string
+  xAxisLabelFormatter?: (value: string, index: number) => string
 }
 
 // Options specific to Pie/Doughnut charts

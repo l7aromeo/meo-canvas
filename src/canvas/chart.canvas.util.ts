@@ -85,6 +85,34 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     }
   }
 
+  private getSmartYAxisFormatter(maxValue: number): (v: number) => string {
+    const absMax = Math.abs(maxValue)
+
+    // Thresholds with corresponding decimal places, divisors, and suffixes
+    const thresholds = [
+      { min: 1000000, decimals: 1, divisor: 1000000, suffix: 'M' },
+      { min: 1000, decimals: 0, divisor: 1, suffix: '' },
+      { min: 100, decimals: 1, divisor: 1, suffix: '' },
+      { min: 1, decimals: 2, divisor: 1, suffix: '' },
+      { min: 0, decimals: 4, divisor: 1, suffix: '' },
+    ]
+
+    let config = thresholds[thresholds.length - 1]
+    for (const threshold of thresholds) {
+      if (absMax >= threshold.min) {
+        config = threshold
+        break
+      }
+    }
+
+    return (v: number) => {
+      const scaled = v / config.divisor
+      const factor = Math.pow(10, config.decimals)
+      const rounded = Math.round(scaled * factor) / factor
+      return rounded.toString() + config.suffix
+    }
+  }
+
   private getLegendLayout(ctx: CanvasRenderingContext2D, totalWidth: number, totalHeight: number) {
     if (!this.chartOptions?.showLegend) {
       return { x: 0, y: 0, width: 0, height: 0, chartWidth: totalWidth, chartHeight: totalHeight, chartX: 0, chartY: 0 }
@@ -203,7 +231,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (chartOptions?.showYAxis) {
       const fontSize = chartOptions.yAxisFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-      const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => v.toString())
+      const formatter = chartOptions.yAxisLabelFormatter || this.getSmartYAxisFormatter(maxValue)
       const maxLabel = formatter(maxValue)
       const yAxisWidth = ctx.measureText(maxLabel).width + 10
       chartX += yAxisWidth
@@ -242,7 +270,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
         if (chartOptions?.showYAxis) {
           const value = maxValue - (maxValue / 5) * i
-          const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => (Math.round(v * 100) / 100).toString())
+          const formatter = chartOptions.yAxisLabelFormatter || this.getSmartYAxisFormatter(maxValue)
           const label = formatter(value)
 
           TextNode.renderSimpleText(ctx, label, chartX - 5, gridY, {
@@ -298,7 +326,8 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
       // Render labels
       if (chartOptions?.showLabels) {
-        const { renderLabelItem } = chartOptions
+        const { renderLabelItem, xAxisLabelFormatter } = chartOptions
+        const displayLabel = xAxisLabelFormatter ? xAxisLabelFormatter(label, index) : label
         if (renderLabelItem) {
           const labelNode = renderLabelItem({ item: label, index })
           if (labelNode) {
@@ -308,7 +337,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             labelNode.render(ctx, groupX + (groupWidth - barSpacing) / 2 - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
           }
         } else {
-          TextNode.renderSimpleText(ctx, label, groupX + (groupWidth - barSpacing) / 2, chartY + finalChartHeight + labelHeight / 2, {
+          TextNode.renderSimpleText(ctx, displayLabel, groupX + (groupWidth - barSpacing) / 2, chartY + finalChartHeight + labelHeight / 2, {
             color: chartOptions.labelColor || chartOptions.axisColor,
             fontSize: chartOptions.labelFontSize,
             fontFamily: this.props.fontFamily,
@@ -342,7 +371,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (chartOptions?.showYAxis) {
       const fontSize = chartOptions.yAxisFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-      const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => v.toString())
+      const formatter = chartOptions.yAxisLabelFormatter || this.getSmartYAxisFormatter(maxValue)
       const maxLabel = formatter(maxValue)
       const yAxisWidth = ctx.measureText(maxLabel).width + 10
       chartX += yAxisWidth
@@ -378,7 +407,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
         if (chartOptions?.showYAxis) {
           const value = maxValue - (maxValue / 5) * i
-          const formatter = chartOptions.yAxisLabelFormatter || ((v: number) => (Math.round(v * 100) / 100).toString())
+          const formatter = chartOptions.yAxisLabelFormatter || this.getSmartYAxisFormatter(maxValue)
           const label = formatter(value)
 
           TextNode.renderSimpleText(ctx, label, chartX - 5, gridY, {
@@ -424,9 +453,10 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
     // Render labels
     if (chartOptions?.showLabels) {
-      const { renderLabelItem } = chartOptions
+      const { renderLabelItem, xAxisLabelFormatter } = chartOptions
       labels.forEach((label, index) => {
         const pointX = chartX + index * pointSpacing
+        const displayLabel = xAxisLabelFormatter ? xAxisLabelFormatter(label, index) : label
         if (renderLabelItem) {
           const labelNode = renderLabelItem({ item: label, index })
           if (labelNode) {
@@ -436,7 +466,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             labelNode.render(ctx, pointX - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
           }
         } else {
-          TextNode.renderSimpleText(ctx, label, pointX, chartY + finalChartHeight + labelHeight / 2, {
+          TextNode.renderSimpleText(ctx, displayLabel, pointX, chartY + finalChartHeight + labelHeight / 2, {
             color: chartOptions.labelColor || chartOptions.axisColor,
             fontSize: chartOptions.labelFontSize,
             fontFamily: this.props.fontFamily,
