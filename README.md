@@ -221,39 +221,39 @@ import {Root, Chart} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateBarChart() {
-    const canvas = await Root({
-        width: 600,
-        height: 400,
-        children: [
-            Chart({
-                type: 'bar',
-                width: '100%',
-                height: '100%',
-                data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
-                    datasets: [
-                        {
-                            label: 'Sales',
-                            data: [120, 150, 180, 90, 200],
-                            color: '#36A2EB',
-                        },
-                    ],
-                },
-                options: {
-                    gridOptions: {show: true, style: 'dashed'},
-                    axisColor: '#333',
-                    labelColor: '#333',
-                    showValues: true,
-                    valueFontSize: 12,
-                    showYAxis: true,
-                    yAxisColor: '#666',
-                },
-            }),
-        ],
-    });
+  const canvas = await Root({
+    width: 600,
+    height: 400,
+    children: [
+      Chart({
+        type: 'bar',
+        width: '100%',
+        height: '100%',
+        data: {
+          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
+          datasets: [
+            {
+              label: 'Sales',
+              data: [120, 150, 180, 90, 200],
+              color: '#36A2EB',
+            },
+          ],
+        },
+        options: {
+          gridOptions: {show: true, style: 'dashed'},
+          axisColor: '#333',
+          labelColor: '#333',
+          showValues: true,
+          valueFontSize: 12,
+          showYAxis: true,
+          yAxisColor: '#666',
+        },
+      }),
+    ],
+  });
 
-    const buffer = await canvas.toBuffer('png');
-    await writeFile('bar_chart.png', buffer);
+  const buffer = await canvas.toBuffer('png');
+  await writeFile('bar_chart.png', buffer);
 }
 
 generateBarChart().catch(console.error);
@@ -266,37 +266,37 @@ import {Root, Chart, Row, Box, Text} from '@meonode/canvas';
 import {writeFile} from 'fs/promises';
 
 async function generateDoughnutChart() {
-    const canvas = await Root({
-        width: 600,
-        height: 400,
-        children: [
-            Chart({
-                type: 'doughnut',
-                width: '100%',
-                height: '100%',
-                data: [
-                    {label: 'Red', value: 300, color: '#FF6384'},
-                    {label: 'Blue', value: 50, color: '#36A2EB'},
-                    {label: 'Yellow', value: 100, color: '#FFCE56'},
-                ],
-                options: {
-                    innerRadius: 0.7,
-                    sliceBorderRadius: 5,
-                    renderLegendItem: ({item, color}) =>
-                        Row({
-                            alignItems: 'center',
-                            children: [
-                                Box({width: 12, height: 12, backgroundColor: color, borderRadius: 6}),
-                                Text(`${item.label}: ${item.value}`, {fontSize: 16, marginLeft: 8}),
-                            ],
-                        }),
-                },
-            }),
+  const canvas = await Root({
+    width: 600,
+    height: 400,
+    children: [
+      Chart({
+        type: 'doughnut',
+        width: '100%',
+        height: '100%',
+        data: [
+          {label: 'Red', value: 300, color: '#FF6384'},
+          {label: 'Blue', value: 50, color: '#36A2EB'},
+          {label: 'Yellow', value: 100, color: '#FFCE56'},
         ],
-    });
+        options: {
+          innerRadius: 0.7,
+          sliceBorderRadius: 5,
+          renderLegendItem: ({item, color}) =>
+            Row({
+              alignItems: 'center',
+              children: [
+                Box({width: 12, height: 12, backgroundColor: color, borderRadius: 6}),
+                Text(`${item.label}: ${item.value}`, {fontSize: 16, marginLeft: 8}),
+              ],
+            }),
+        },
+      }),
+    ],
+  });
 
-    const buffer = await canvas.toBuffer('png');
-    await writeFile('doughnut_chart.png', buffer);
+  const buffer = await canvas.toBuffer('png');
+  await writeFile('doughnut_chart.png', buffer);
 }
 
 generateDoughnutChart().catch(console.error);
@@ -584,7 +584,36 @@ The `options` prop is a conditional type that changes based on the chart `type`.
 | `showYAxis`           | `boolean`                   | If `true`, displays the Y-axis labels on the left.                |
 | `yAxisColor`          | `string`                    | Color of the Y-axis labels.                                       |
 | `yAxisFontSize`       | `number`                    | Font size of the Y-axis labels.                                   |
-| `yAxisLabelFormatter` | `(value: number) => string` | Custom formatter for Y-axis labels.                               |
+| `yAxisLabelFormatter` | `(value: number) => string` | Custom formatter for Y-axis labels. Smart defaults adjust decimal precision based on value range. |
+| `xAxisLabelFormatter` | `(value: string, index: number) => string` | Custom formatter for X-axis labels. Useful for truncating or transforming labels. |
+
+###### Y-Axis Label Formatter
+
+The `yAxisLabelFormatter` enables custom Y-axis label formatting. By default, it uses smart formatting:
+- **Values < 1**: 4 decimals (e.g., `0.0025`)
+- **Values 1-100**: 2 decimals (e.g., `25.43`)
+- **Values 100-1000**: 1 decimal (e.g., `250.5`)
+- **Values 1000-1M**: 0 decimals (e.g., `50000`)
+- **Values ≥ 1M**: 1 decimal with "M" suffix (e.g., `1.5M`)
+
+Custom example:
+```typescript
+options: {
+  yAxisLabelFormatter: (value) => `$${value.toFixed(2)}`,
+}
+```
+
+###### X-Axis Label Formatter
+
+The `xAxisLabelFormatter` allows custom X-axis label transformations. It receives the label string and its index.
+
+Custom example:
+```typescript
+options: {
+  xAxisLabelFormatter: (label, index) => 
+    label.length > 5 ? label.substring(0, 5) + '...' : label,
+}
+```
 
 ##### Pie & Doughnut Chart Options (`pie`, `doughnut`)
 
