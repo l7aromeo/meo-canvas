@@ -91,38 +91,23 @@ export class GridNode extends RowNode {
   /**
    * Update layout calculations after the initial layout is computed.
    */
-
-  /**
-   * Whether we've set maxWidth constraint based on parent's minWidth.
-   * Prevents setting maxWidth multiple times (which could cause layout issues).
-   */
-  private maxWidthConstraintSet = false
-
   protected override updateLayoutBasedOnComputedSize() {
     // 1. Get Container Dimensions
     let width = this.node.getComputedWidth()
+    const parent = this.node.getParent()
 
-    // When Grid's parent uses minWidth with a percentage, the parent may expand
-    // beyond the intended percentage to fit content. Set maxWidth on Grid so Yoga
-    // respects the constraint during all layout calculations.
-    if (!this.maxWidthConstraintSet) {
-      const parent = this.node.getParent()
-      if (parent) {
-        const parentMinWidth = parent.getMinWidth()
-        if (parentMinWidth.unit === Style.Unit.Percent) {
-          const grandparent = parent.getParent()
-          if (grandparent) {
-            const grandparentWidth = grandparent.getComputedWidth()
-            if (grandparentWidth > 0) {
-              const intendedMaxWidth = (parentMinWidth.value / 100) * grandparentWidth
-              // Set maxWidth so Yoga respects this constraint during all future layouts
-              this.node.setMaxWidth(intendedMaxWidth)
-              this.maxWidthConstraintSet = true
-              // Also use this for current width calculation
-              if (width > intendedMaxWidth) {
-                width = intendedMaxWidth
-              }
-            }
+    if (parent) {
+      const parentWidth = parent.getWidth()
+      const parentMaxWidth = parent.getMaxWidth()
+
+      // Case: Parent has % width but no maxWidth - we're likely expanding it
+      if (parentWidth.unit === Style.Unit.Percent && (parentMaxWidth.unit === Style.Unit.Undefined || parentMaxWidth.unit === Style.Unit.Auto)) {
+        const grandparent = parent.getParent()
+        if (grandparent) {
+          const intended = (parentWidth.value / 100) * grandparent.getComputedWidth()
+          // Only constrain if we expanded beyond intended (don't shrink if already smaller)
+          if (width > intended) {
+            width = intended
           }
         }
       }
