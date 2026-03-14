@@ -43,6 +43,9 @@ build_package:
 release:
   stage: deploy
   resource_group: meonode_canvas_pipeline_lock
+  id_tokens:
+    NPM_ID_TOKEN:
+      aud: "npm:registry.npmjs.org"
   rules:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "beta" || $CI_COMMIT_BRANCH == "alpha"
   script:
