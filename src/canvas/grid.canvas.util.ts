@@ -98,16 +98,26 @@ export class GridNode extends RowNode {
 
     if (parent) {
       const parentWidth = parent.getWidth()
+      const parentMinWidth = parent.getMinWidth()
       const parentMaxWidth = parent.getMaxWidth()
 
-      // Case: Parent has % width but no maxWidth - we're likely expanding it
-      if (parentWidth.unit === Style.Unit.Percent && (parentMaxWidth.unit === Style.Unit.Undefined || parentMaxWidth.unit === Style.Unit.Auto)) {
+      // Parent has % minWidth but no hard width/maxWidth constraint
+      const hasPercentMinWidth = parentMinWidth.unit === Style.Unit.Percent
+      const hasExplicitWidth = parentWidth.unit !== Style.Unit.Undefined && parentWidth.unit !== Style.Unit.Auto
+      const hasMaxWidth = parentMaxWidth.unit !== Style.Unit.Undefined && parentMaxWidth.unit !== Style.Unit.Auto
+
+      if (hasPercentMinWidth && !hasExplicitWidth && !hasMaxWidth) {
         const grandparent = parent.getParent()
         if (grandparent) {
-          const intended = (parentWidth.value / 100) * grandparent.getComputedWidth()
-          // Only constrain if we expanded beyond intended (don't shrink if already smaller)
-          if (width > intended) {
-            width = intended
+          const intendedWidth = (parentMinWidth.value / 100) * grandparent.getComputedWidth()
+
+          // Check if parent has flexGrow - if so, don't constrain
+          const parentFlexGrow = parent.getFlexGrow()
+          if (parentFlexGrow > 0) {
+            // Allow expansion - use computed width
+          } else {
+            // No flexGrow - constrain to minWidth
+            width = Math.min(width, intendedWidth)
           }
         }
       }
