@@ -56,6 +56,9 @@ export class GridNode extends RowNode {
       if (track.endsWith('%')) {
         return { type: '%', value: parsePercentage(track, availableSpace) }
       }
+      if (track.endsWith('px')) {
+        return { type: 'px', value: parseFloat(track) }
+      }
       // Try parsing as number (px) if just string "100"
       const num = parseFloat(track)
       if (!isNaN(num)) return { type: 'px', value: num }
@@ -88,9 +91,42 @@ export class GridNode extends RowNode {
   /**
    * Update layout calculations after the initial layout is computed.
    */
+
+  /**
+   * Whether we've set maxWidth constraint based on parent's minWidth.
+   * Prevents setting maxWidth multiple times (which could cause layout issues).
+   */
+  private maxWidthConstraintSet = false
+
   protected override updateLayoutBasedOnComputedSize() {
     // 1. Get Container Dimensions
-    const width = this.node.getComputedWidth()
+    let width = this.node.getComputedWidth()
+
+    // When Grid's parent uses minWidth with a percentage, the parent may expand
+    // beyond the intended percentage to fit content. Set maxWidth on Grid so Yoga
+    // respects the constraint during all layout calculations.
+    if (!this.maxWidthConstraintSet) {
+      const parent = this.node.getParent()
+      if (parent) {
+        const parentMinWidth = parent.getMinWidth()
+        if (parentMinWidth.unit === Style.Unit.Percent) {
+          const grandparent = parent.getParent()
+          if (grandparent) {
+            const grandparentWidth = grandparent.getComputedWidth()
+            if (grandparentWidth > 0) {
+              const intendedMaxWidth = (parentMinWidth.value / 100) * grandparentWidth
+              // Set maxWidth so Yoga respects this constraint during all future layouts
+              this.node.setMaxWidth(intendedMaxWidth)
+              this.maxWidthConstraintSet = true
+              // Also use this for current width calculation
+              if (width > intendedMaxWidth) {
+                width = intendedMaxWidth
+              }
+            }
+          }
+        }
+      }
+    }
 
     const paddingLeft = this.node.getComputedPadding(Style.Edge.Left)
     const paddingRight = this.node.getComputedPadding(Style.Edge.Right)

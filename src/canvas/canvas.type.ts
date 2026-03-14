@@ -594,7 +594,7 @@ export interface RootProps extends BoxProps {
  * - `${number}fr` (fraction of available space)
  * - `${number}%` (percentage of container size)
  */
-export type GridTrackSize = number | 'auto' | `${number}fr` | `${number}%`
+export type GridTrackSize = number | 'auto' | `${number}px` | `${number}fr` | `${number}%`
 
 /**
  * Defines the properties for a GridNode.
