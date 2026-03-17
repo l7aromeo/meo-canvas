@@ -23,6 +23,12 @@ function calculateOffsetFromValue(positionValue: number | `${number}%` | undefin
 }
 
 /**
+ * Per-render image cache — keyed by `src|color` for string sources.
+ * Scoped to a single RootNode.render() call; discarded after rendering.
+ */
+export type RenderImageCache = Map<string, Promise<CanvasImage>>
+
+/**
  * Renders images with configurable sizing, positioning, and effects.
  * Supports object-fit modes, positioning, border radius, and saturation filters.
  */
@@ -45,114 +51,121 @@ export class ImageNode extends BoxNode {
     }
   }
 
-  public load(): Promise<void> {
+  public load(cache?: RenderImageCache): Promise<void> {
     if (!this.loadingPromise) {
-      this.loadingPromise = this._loadImage()
+      this.loadingPromise = this._loadImage(cache)
     }
     return this.loadingPromise
   }
 
   /**
-   * Loads and processes an image from various sources (URL, file path, or Buffer).
-   * Handles SVG color modifications and sets natural dimensions with an aspect ratio.
-   * @returns Promise that resolves when image loading completes
-   * @throws Error if image loading fails
+   * Fetches and processes the image source into a CanvasImage.
+   * Does not touch node state — pure fetch logic.
    */
-  private _loadImage(): Promise<void> {
-    if (this.loadingPromise) return this.loadingPromise
-    if (this.loadedImage) return Promise.resolve()
+  private async _fetchCanvasImage(): Promise<CanvasImage> {
+    const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
+    let finalSource: string | Buffer = this.props.src
+    let isSvg = false
+    let contentBuffer: Buffer | null = null
+    let detectedMime: string | undefined
 
+    if (typeof this.props.src === 'string') {
+      if (this.props.src.startsWith('http')) {
+        const response = await fetch(this.props.src)
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status} fetching image: ${this.props.src}`)
+        }
+        const imageArrayBuffer = await response.arrayBuffer()
+        contentBuffer = Buffer.from(imageArrayBuffer)
+        finalSource = contentBuffer
+
+        const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
+        detectedMime = fileTypeResult?.mime
+        isSvg = detectedMime === 'image/svg+xml'
+
+        if ((!detectedMime || detectedMime === 'application/xml') && contentBuffer.toString('utf-8').includes('<svg')) {
+          isSvg = true
+        }
+      } else {
+        finalSource = this.props.src
+        const filePath = this.props.src
+
+        try {
+          const fileTypeResult = await fileTypeFromFile(filePath)
+          detectedMime = fileTypeResult?.mime
+          isSvg = detectedMime === 'image/svg+xml'
+
+          if ((!detectedMime || detectedMime === 'application/xml') && filePath.toLowerCase().endsWith('.svg')) {
+            isSvg = true
+          }
+        } catch {
+          isSvg = filePath.toLowerCase().endsWith('.svg')
+        }
+
+        if (isSvg && this.props.color) {
+          try {
+            contentBuffer = await fs.readFile(filePath)
+          } catch {
+            isSvg = false
+            contentBuffer = null
+          }
+        }
+      }
+    } else {
+      contentBuffer = this.props.src
+      finalSource = contentBuffer
+
+      const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
+      detectedMime = fileTypeResult?.mime
+      isSvg = detectedMime === 'image/svg+xml'
+    }
+
+    if (isSvg && this.props.color && contentBuffer) {
+      const svgString = contentBuffer.toString('utf-8')
+      const modifiedSvgString = svgString.replace(/fill="[^"]*"/g, `fill="${this.props.color}"`)
+      finalSource = modifiedSvgString !== svgString ? Buffer.from(modifiedSvgString) : contentBuffer
+    }
+
+    return loadImage(finalSource as never)
+  }
+
+  /**
+   * Loads and processes an image, using the render-scoped cache to avoid
+   * re-fetching the same source within a single render pass.
+   */
+  private _loadImage(cache?: RenderImageCache): Promise<void> {
     if (!this.props.src) {
       const aspectRatioFromProps = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
       this.node.setAspectRatio(aspectRatioFromProps)
       this.naturalWidth = 0
       this.naturalHeight = 0
-
       return Promise.resolve()
     }
 
     return new Promise(resolve => {
       const load = async () => {
-        const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
-        let finalSource: string | Buffer = this.props.src
-        let isSvg = false
-        let contentBuffer: Buffer | null = null
-        let detectedMime: string | undefined
-
         try {
-          if (typeof this.props.src === 'string') {
-            if (this.props.src.startsWith('http')) {
-              const response = await fetch(this.props.src)
-              if (!response.ok) {
-                throw new Error(`HTTP error ${response.status} fetching image: ${this.props.src}`)
-              }
-              const imageArrayBuffer = await response.arrayBuffer()
-              contentBuffer = Buffer.from(imageArrayBuffer)
-              finalSource = contentBuffer
+          let imagePromise: Promise<CanvasImage>
 
-              const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
-              detectedMime = fileTypeResult?.mime
-              isSvg = detectedMime === 'image/svg+xml'
-
-              if ((!detectedMime || detectedMime === 'application/xml') && contentBuffer.toString('utf-8').includes('<svg')) {
-                isSvg = true
-              }
-            } else {
-              finalSource = this.props.src
-              const filePath = this.props.src
-
-              try {
-                const fileTypeResult = await fileTypeFromFile(filePath)
-                detectedMime = fileTypeResult?.mime
-                isSvg = detectedMime === 'image/svg+xml'
-
-                if ((!detectedMime || detectedMime === 'application/xml') && filePath.toLowerCase().endsWith('.svg')) {
-                  isSvg = true
-                }
-              } catch {
-                isSvg = filePath.toLowerCase().endsWith('.svg')
-              }
-
-              if (isSvg && this.props.color) {
-                try {
-                  contentBuffer = await fs.readFile(filePath)
-                } catch {
-                  isSvg = false
-                  contentBuffer = null
-                }
-              }
+          if (cache && typeof this.props.src === 'string') {
+            const cacheKey = this.props.color ? `${this.props.src}|${this.props.color}` : this.props.src
+            if (!cache.has(cacheKey)) {
+              cache.set(cacheKey, this._fetchCanvasImage())
             }
+            imagePromise = cache.get(cacheKey)!
           } else {
-            contentBuffer = this.props.src
-            finalSource = contentBuffer
-
-            const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
-            detectedMime = fileTypeResult?.mime
-            isSvg = detectedMime === 'image/svg+xml'
+            imagePromise = this._fetchCanvasImage()
           }
 
-          if (isSvg && this.props.color && contentBuffer) {
-            const svgString = contentBuffer.toString('utf-8')
-            const modifiedSvgString = svgString.replace(/fill="[^"]*"/g, `fill="${this.props.color}"`)
-
-            if (modifiedSvgString !== svgString) {
-              finalSource = Buffer.from(modifiedSvgString)
-            } else {
-              finalSource = contentBuffer
-            }
-          }
-
-          const img = await loadImage(finalSource as never)
+          const img = await imagePromise
           this.loadedImage = img
           this.naturalWidth = img.width
           this.naturalHeight = img.height
 
           const calculatedAspectRatio = this.naturalWidth > 0 && this.naturalHeight > 0 ? this.naturalWidth / this.naturalHeight : undefined
-
           const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
 
           this.node.setAspectRatio(finalAspectRatio)
-
           this.props.onLoad?.()
           resolve()
         } catch (error: any) {
