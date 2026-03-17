@@ -1,7 +1,9 @@
 import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
+import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
 import type { BaseProps, RootProps, NodeDescriptor } from '@/canvas/canvas.type.js'
-import { ImageNode } from '@/canvas/image.canvas.util.js'
+import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/canvas/worker.types.js'
+import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.util.js'
 import { TextNode } from '@/canvas/text.canvas.util.js'
 import { ChartNode } from '@/canvas/chart.canvas.util.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.util.js'
@@ -44,47 +46,142 @@ export function configure(options: CanvasEngineConfig) {
   }
 }
 
+interface PendingTask {
+  resolve: (value: unknown) => void
+  reject: (err: Error) => void
+}
+
+interface PoolRenderResult {
+  buffer: Buffer
+  canvasId: number
+  workerIdx: number
+  width: number
+  height: number
+}
+
 /**
- * Minimal Canvas-compatible wrapper returned when rendering in worker mode.
- * Exposes toBuffer / toBufferSync so callers can use the result identically.
+ * Proxies all skia-canvas Canvas APIs to a Canvas instance living inside a worker thread.
+ * Sync methods (toBufferSync, toURLSync) return from a pre-encoded PNG buffer.
+ * Async methods (toBuffer, toURL, toFile, getters) delegate to the worker.
  */
 class WorkerCanvas {
-  constructor(private readonly _buffer: Buffer) {}
-  toBufferSync(_format?: string) {
+  readonly width: number
+  readonly height: number
+  private readonly _buffer: Buffer // pre-encoded PNG for sync use
+  private readonly _pool: WorkerPool
+  private readonly _workerIdx: number
+  private readonly _canvasId: number
+
+  constructor(opts: PoolRenderResult & { pool: WorkerPool }) {
+    this._buffer = opts.buffer
+    this.width = opts.width
+    this.height = opts.height
+    this._pool = opts.pool
+    this._workerIdx = opts.workerIdx
+    this._canvasId = opts.canvasId
+  }
+
+  private _call<M extends CanvasCallMethod>(method: M, ...args: CallArgs<M>): Promise<CallResult<M>> {
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, method, args)
+  }
+
+  // --- Sync methods: return from pre-encoded PNG buffer ---
+
+  toBufferSync(_format?: ExportFormat, _options?: ExportOptions): Buffer {
     return this._buffer
   }
-  toBuffer(_format?: string): Promise<Buffer> {
-    return Promise.resolve(this._buffer)
+
+  toURLSync(_format?: ExportFormat, _options?: ExportOptions): string {
+    return `data:image/png;base64,${this._buffer.toString('base64')}`
+  }
+
+  // --- Async methods: delegate to worker ---
+
+  toBuffer(format: ExportFormat, options?: ExportOptions): Promise<Buffer> {
+    return this._call('toBuffer', format, options)
+  }
+
+  toURL(format: ExportFormat, options?: ExportOptions): Promise<string> {
+    return this._call('toURL', format, options)
+  }
+
+  toFile(filename: string, options?: SaveOptions): Promise<void> {
+    return this._call('toFile', filename, options)
+  }
+
+  /** Returns a Buffer (Sharp instance cannot be transferred across threads) */
+  toSharp(options?: RenderOptions): Promise<Buffer> {
+    return this._call('toSharp', options)
+  }
+
+  toSharpSync(_options?: RenderOptions): never {
+    throw new Error('[canvas] toSharpSync() is not available in worker mode — use toSharp() instead')
+  }
+
+  // --- Async convenience getters ---
+
+  get png(): Promise<Buffer> {
+    return this._call('toBuffer', 'png')
+  }
+  get webp(): Promise<Buffer> {
+    return this._call('toBuffer', 'webp')
+  }
+  get jpg(): Promise<Buffer> {
+    return this._call('toBuffer', 'jpg')
+  }
+  get svg(): Promise<Buffer> {
+    return this._call('toBuffer', 'svg')
+  }
+  get pdf(): Promise<Buffer> {
+    return this._call('toBuffer', 'pdf')
+  }
+  get raw(): Promise<Buffer> {
+    return this._call('toBuffer', 'raw')
+  }
+
+  /** Release the Canvas from worker memory. Call when done with this object. */
+  release(): void {
+    this._pool.releaseCanvas(this._workerIdx, this._canvasId)
   }
 }
 
-/** Lazy-instantiated worker pool singleton */
+/** Worker thread pool — routes render and canvas-call messages */
 class WorkerPool {
   private workers: Worker[] = []
   private idle: Worker[] = []
   private queue: Array<{ id: number; props: RootProps }> = []
-  private pending = new Map<number, { resolve: (b: Buffer) => void; reject: (e: Error) => void }>()
+  private pending = new Map<number, PendingTask>()
   private nextId = 0
 
   constructor(size: number) {
     this.init(size)
   }
 
-  private async init(size: number) {
+  private init(size: number) {
     const workerFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../render.worker.js')
 
     for (let i = 0; i < size; i++) {
+      const workerIdx = i
       const worker = new Worker(workerFile)
-      worker.on('message', ({ id, buffer, error }: { id: number; buffer?: Buffer; error?: string }) => {
-        const task = this.pending.get(id)
+      worker.on('message', (msg: WorkerResponse) => {
+        const task = this.pending.get(msg.taskId)
         if (!task) return
-        this.pending.delete(id)
-        this.idle.push(worker)
-        this.drain()
-        if (error) {
-          task.reject(new Error(error))
+        this.pending.delete(msg.taskId)
+
+        if ('error' in msg) {
+          task.reject(new Error(msg.error))
+          return
+        }
+
+        if ('canvasId' in msg) {
+          // Render complete — put worker back to idle
+          this.idle.push(worker)
+          this.drain()
+          const result: PoolRenderResult = { buffer: msg.buffer, canvasId: msg.canvasId, workerIdx, width: msg.width, height: msg.height }
+          task.resolve(result)
         } else {
-          task.resolve(buffer!)
+          // Canvas method call complete
+          task.resolve(msg.result)
         }
       })
       this.workers.push(worker)
@@ -96,21 +193,37 @@ class WorkerPool {
     while (this.queue.length > 0 && this.idle.length > 0) {
       const task = this.queue.shift()!
       const worker = this.idle.pop()!
-      worker.postMessage({ id: task.id, props: task.props })
+      const request: WorkerRequest = { type: 'render', taskId: task.id, props: task.props }
+      worker.postMessage(request)
     }
   }
 
-  render(props: RootProps): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
+  render(props: RootProps): Promise<PoolRenderResult> {
+    return new Promise<PoolRenderResult>((resolve, reject) => {
       const id = this.nextId++
-      this.pending.set(id, { resolve, reject })
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
       if (this.idle.length > 0) {
         const worker = this.idle.pop()!
-        worker.postMessage({ id, props })
+        const request: WorkerRequest = { type: 'render', taskId: id, props }
+        worker.postMessage(request)
       } else {
         this.queue.push({ id, props })
       }
     })
+  }
+
+  callOnCanvas<M extends CanvasCallMethod>(workerIdx: number, canvasId: number, method: M, args: CallArgs<M>): Promise<CallResult<M>> {
+    return new Promise<CallResult<M>>((resolve, reject) => {
+      const id = this.nextId++
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
+      const request = { type: 'call' as const, taskId: id, canvasId, method, args } as WorkerCallRequest
+      this.workers[workerIdx].postMessage(request)
+    })
+  }
+
+  releaseCanvas(workerIdx: number, canvasId: number): void {
+    const request: WorkerRequest = { type: 'release', canvasId }
+    this.workers[workerIdx]?.postMessage(request)
   }
 
   terminate() {
@@ -240,15 +353,17 @@ export class RootNode extends ColumnNode {
    * @returns Promise resolving to the rendered Canvas instance
    */
   async render(): Promise<Canvas> {
-    // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources
+    // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources.
+    // A per-render cache deduplicates identical src+color combinations within this render pass.
     const imageNodes = this.findAllImageNodes()
     if (imageNodes.length > 0) {
+      const imageCache: RenderImageCache = new Map()
       const CONCURRENCY = 5
       const queue = [...imageNodes]
       const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
         while (queue.length > 0) {
           const node = queue.shift()!
-          await node.load()
+          await node.load(imageCache)
         }
       })
       await Promise.allSettled(workers)
@@ -296,8 +411,8 @@ export const Root = async (props: RootProps): Promise<Canvas> => {
     if (!_workerPool) {
       _workerPool = new WorkerPool(_workerPoolSize)
     }
-    const buffer = await _workerPool.render(props)
-    return new WorkerCanvas(buffer) as unknown as Canvas
+    const result = await _workerPool.render(props)
+    return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas
   }
   return new RootNode(props).render()
 }
