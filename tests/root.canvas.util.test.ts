@@ -28,9 +28,15 @@ class MockWorker {
     this.handlers.get(event)!.push(handler)
     return this
   }
-  postMessage(data: { id: number; props: any }) {
+  postMessage(data: any) {
     setImmediate(() => {
-      this.handlers.get('message')?.forEach(h => h({ id: data.id, buffer: Buffer.from('mock-render') }))
+      const emit = (msg: any) => this.handlers.get('message')?.forEach(h => h(msg))
+      if (data.type === 'render') {
+        emit({ taskId: data.taskId, canvasId: 0, buffer: Buffer.from('mock-render'), width: 100, height: 100 })
+      } else if (data.type === 'call') {
+        emit({ taskId: data.taskId, result: Buffer.from('mock-call-result') })
+      }
+      // 'release' needs no response
     })
   }
   terminate() {}
@@ -291,12 +297,19 @@ describe('Root (worker mode)', () => {
   })
 
   it('should reject if worker responds with an error', async () => {
-    jest.spyOn(MockWorker.prototype, 'postMessage').mockImplementationOnce(function (this: MockWorker, data) {
+    jest.spyOn(MockWorker.prototype, 'postMessage').mockImplementationOnce(function (this: any, data: any) {
       setImmediate(() => {
-        ;(this as any).handlers?.get('message')?.forEach((h: any) => h({ id: data.id, error: 'render failed' }))
+        this.handlers?.get('message')?.forEach((h: any) => h({ taskId: data.taskId, error: 'render failed' }))
       })
     })
     await expect(Root({ width: 100 })).rejects.toThrow('render failed')
+  })
+
+  it('should delegate async toBuffer call to worker', async () => {
+    const canvas = await Root({ width: 100 })
+    const buf = await canvas.toBuffer('webp')
+    expect(Buffer.isBuffer(buf)).toBe(true)
+    expect(buf).toEqual(Buffer.from('mock-call-result'))
   })
 
   it('should allow disabling worker mode via configure()', async () => {
