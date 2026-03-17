@@ -76,7 +76,7 @@ describe('RootNode', () => {
 
   it('should call findAllImageNodes and await loading promises', async () => {
     const mockImageNodeInstance = new imageMocks.ImageNode({})
-    mockImageNodeInstance.getLoadingPromise = jest.fn(() => Promise.resolve())
+    mockImageNodeInstance.load = jest.fn(() => Promise.resolve())
 
     // Create RootNode instance and add the mock ImageNode as a child
     const rootNodeInstance = new RootNode({ width: 100 })
@@ -102,7 +102,7 @@ describe('RootNode', () => {
 
     await rootNodeInstance.render()
 
-    expect(mockImageNodeInstance.getLoadingPromise).toHaveBeenCalled()
+    expect(mockImageNodeInstance.load).toHaveBeenCalled()
     columnNodeRenderSpy.mockRestore()
     finalizeLayoutSpy.mockRestore()
   })

@@ -1,5 +1,3 @@
-// TODO: Add comprehensive unit tests for this file.
-
 import type { BaseProps, ImageProps } from '@/canvas/canvas.type.js'
 import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.util.js'
@@ -33,7 +31,7 @@ export class ImageNode extends BoxNode {
   private loadedImage: CanvasImage | null = null
   private naturalWidth = 0
   private naturalHeight = 0
-  private readonly loadingPromise: Promise<void> | null = null
+  private loadingPromise: Promise<void> | null = null
 
   constructor(props: ImageProps) {
     super({ name: 'Image', ...props, children: undefined })
@@ -45,8 +43,13 @@ export class ImageNode extends BoxNode {
       objectPosition: { Left: '50%', Top: '50%' },
       ...props,
     }
+  }
 
-    this.loadingPromise = this._loadImage()
+  public load(): Promise<void> {
+    if (!this.loadingPromise) {
+      this.loadingPromise = this._loadImage()
+    }
+    return this.loadingPromise
   }
 
   /**
@@ -166,7 +169,7 @@ export class ImageNode extends BoxNode {
   }
 
   public getLoadingPromise(): Promise<void> {
-    return this.loadingPromise ?? Promise.resolve()
+    return this.loadingPromise ?? this.load()
   }
 
   /**

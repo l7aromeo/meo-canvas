@@ -99,12 +99,18 @@ export class RootNode extends ColumnNode {
    * @returns Promise resolving to the rendered Canvas instance
    */
   async render(): Promise<Canvas> {
-    // Step 1: Load all images
+    // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources
     const imageNodes = this.findAllImageNodes()
-    const loadingPromises = imageNodes.map(node => node.getLoadingPromise())
-
-    if (loadingPromises.length > 0) {
-      await Promise.allSettled(loadingPromises)
+    if (imageNodes.length > 0) {
+      const CONCURRENCY = 5
+      const queue = [...imageNodes]
+      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length > 0) {
+          const node = queue.shift()!
+          await node.load()
+        }
+      })
+      await Promise.allSettled(workers)
     }
 
     // Step 2: Calculate initial layout
