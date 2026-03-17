@@ -1,4 +1,4 @@
-import type { BaseProps, ImageProps } from '@/canvas/canvas.type.js'
+import type { BaseProps, ImageProps, NodeDescriptor } from '@/canvas/canvas.type.js'
 import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.util.js'
 import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.js'
@@ -329,4 +329,7 @@ export class ImageNode extends BoxNode {
 /**
  * Factory function to create ImageNode instances
  */
-export const Image = (props: ImageProps) => new ImageNode(props)
+export const Image = (props: ImageProps): NodeDescriptor => ({
+  __type: 'Image',
+  props: props as Omit<ImageProps, 'onLoad' | 'onError'>,
+})

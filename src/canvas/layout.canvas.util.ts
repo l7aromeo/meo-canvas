@@ -1,6 +1,6 @@
 import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
-import type { BaseProps, BoxProps, BoxShadowProps } from '@/canvas/canvas.type.js'
+import type { BaseProps, BoxProps, BoxShadowProps, NodeDescriptor } from '@/canvas/canvas.type.js'
 import { omit } from 'lodash-es'
 import tinycolor from 'tinycolor2'
 import Yoga, { Style, Node } from '@/constant/common.const.js'
@@ -74,7 +74,7 @@ export class BoxNode {
       const childrenToAdd = Array.isArray(this.props.children) ? this.props.children : [this.props.children]
       childrenToAdd.forEach((child, index) => {
         if (child) {
-          this.appendChild(child, index)
+          this.appendChild(child as BoxNode, index)
         }
       })
     }
@@ -761,11 +761,24 @@ export class BoxNode {
 }
 
 /**
+ * Normalizes children into a flat NodeDescriptor array, filtering falsy values.
+ */
+function normalizeDescriptorChildren(children: BoxProps['children']): NodeDescriptor[] | undefined {
+  if (children === undefined || children === null || children === false) return undefined
+  const arr = (Array.isArray(children) ? children : [children]).filter(Boolean) as NodeDescriptor[]
+  return arr.length > 0 ? arr : undefined
+}
+
+/**
  * Creates a new BoxNode instance.
  * @param {BoxProps} props Box properties and configuration.
  * @returns {BoxNode} New BoxNode instance.
  */
-export const Box = (props: BoxProps): BoxNode => new BoxNode(props)
+export const Box = ({ children, ...rest }: BoxProps): NodeDescriptor => ({
+  __type: 'Box',
+  props: rest,
+  children: normalizeDescriptorChildren(children),
+})
 
 /**
  * @class ColumnNode
@@ -788,7 +801,11 @@ export class ColumnNode extends BoxNode {
  * @param {BoxProps} props Column properties and configuration.
  * @returns {ColumnNode} New ColumnNode instance.
  */
-export const Column = (props: BoxProps): ColumnNode => new ColumnNode(props)
+export const Column = ({ children, ...rest }: BoxProps): NodeDescriptor => ({
+  __type: 'Column',
+  props: rest,
+  children: normalizeDescriptorChildren(children),
+})
 
 /**
  * @class RowNode
@@ -811,4 +828,8 @@ export class RowNode extends BoxNode {
  * @param {BoxProps} props Row properties and configuration.
  * @returns {RowNode} New RowNode instance.
  */
-export const Row = (props: BoxProps): RowNode => new RowNode(props)
+export const Row = ({ children, ...rest }: BoxProps): NodeDescriptor => ({
+  __type: 'Row',
+  props: rest,
+  children: normalizeDescriptorChildren(children),
+})

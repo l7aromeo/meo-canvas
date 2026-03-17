@@ -1,5 +1,5 @@
-import { BoxNode, Row } from '@/canvas/layout.canvas.util.js'
-import type { BaseProps, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint } from '@/canvas/canvas.type.js'
+import { BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
+import type { BaseProps, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint, NodeDescriptor } from '@/canvas/canvas.type.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
 import { Style } from '@/constant/common.const.js'
 import { TextNode } from '@/canvas/text.canvas.util.js'
@@ -646,7 +646,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       const finalNodes = legendNodes.filter((node): node is BoxNode => !!node)
 
       if (finalNodes.length > 0) {
-        const legendContainer = Row({
+        const legendContainer = new RowNode({
           children: finalNodes,
           width,
           height,
@@ -750,4 +750,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
   }
 }
 
-export const Chart = <T extends ChartType>(props: ChartProps<T> & BaseProps): ChartNode<T> => new ChartNode(props)
+export const Chart = <T extends ChartType>(props: ChartProps<T> & BaseProps): NodeDescriptor => ({
+  __type: 'Chart',
+  props: props as any,
+})

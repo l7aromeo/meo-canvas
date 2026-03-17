@@ -1,7 +1,14 @@
-import type { GridProps, GridTrackSize, GridItemProps } from '@/canvas/canvas.type.js'
+import type { GridProps, GridTrackSize, GridItemProps, NodeDescriptor } from '@/canvas/canvas.type.js'
+import type { BoxProps } from '@/canvas/canvas.type.js'
 import { BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
 import { Style } from '@/constant/common.const.js'
 import { parsePercentage } from '@/canvas/canvas.helper.js'
+
+function normalizeDescriptorChildren(children: BoxProps['children']): NodeDescriptor[] | undefined {
+  if (children === undefined || children === null || children === false) return undefined
+  const arr = (Array.isArray(children) ? children : [children]).filter(Boolean) as NodeDescriptor[]
+  return arr.length > 0 ? arr : undefined
+}
 
 /**
  * GridItem Node. Theoretically just a BoxNode but typed differently in factory.
@@ -20,7 +27,11 @@ export class GridItemNode extends BoxNode {
 /**
  * Factory for GridItem.
  */
-export const GridItem = (props: GridItemProps) => new GridItemNode(props)
+export const GridItem = ({ children, ...rest }: GridItemProps): NodeDescriptor => ({
+  __type: 'GridItem',
+  props: rest,
+  children: normalizeDescriptorChildren(children),
+})
 
 /**
  * Grid layout node that arranges children in a 2D grid.
@@ -441,4 +452,8 @@ export class GridNode extends RowNode {
 /**
  * Factory function to create a new GridNode instance.
  */
-export const Grid = (props: GridProps) => new GridNode(props)
+export const Grid = ({ children, ...rest }: GridProps): NodeDescriptor => ({
+  __type: 'Grid',
+  props: rest,
+  children: normalizeDescriptorChildren(children),
+})

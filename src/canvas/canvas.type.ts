@@ -17,7 +17,17 @@ export interface BaseProps {
   key?: string
 }
 
-export type Children = BoxNode | TextNode | ImageNode | GridNode | false | undefined
+export type Children = BoxNode | TextNode | ImageNode | GridNode | NodeDescriptor | false | undefined
+
+export type NodeDescriptor =
+  | { __type: 'Box'; props: Omit<BoxProps, 'children'>; children?: NodeDescriptor[] }
+  | { __type: 'Column'; props: Omit<BoxProps, 'children'>; children?: NodeDescriptor[] }
+  | { __type: 'Row'; props: Omit<BoxProps, 'children'>; children?: NodeDescriptor[] }
+  | { __type: 'Grid'; props: Omit<GridProps, 'children'>; children?: NodeDescriptor[] }
+  | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: NodeDescriptor[] }
+  | { __type: 'Image'; props: Omit<ImageProps, 'onLoad' | 'onError'> }
+  | { __type: 'Text'; text: string | number; props?: TextProps }
+  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
 
 export interface FontRegistrationInfo {
   family: string

@@ -1,6 +1,6 @@
 // TODO: Add comprehensive unit tests for this file.
 
-import type { TextProps, TextSegment } from '@/canvas/canvas.type.js'
+import type { TextProps, TextSegment, NodeDescriptor } from '@/canvas/canvas.type.js'
 import { Canvas, type CanvasRenderingContext2D, type FontVariantSetting } from 'skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.util.js'
 import { Style, MeasureMode } from '@/constant/common.const.js'
@@ -1282,4 +1282,8 @@ export class TextNode extends BoxNode {
 /**
  * Creates a new TextNode instance with rich text support
  */
-export const Text = (text: number | string, props?: TextProps) => new TextNode(text, props)
+export const Text = (text: number | string, props?: TextProps): NodeDescriptor => ({
+  __type: 'Text',
+  text,
+  props,
+})

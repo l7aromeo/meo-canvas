@@ -1101,10 +1101,9 @@ describe('BoxNode Layout Properties', () => {
 })
 
 describe('Box factory', () => {
-  it('should create a BoxNode instance', () => {
+  it('should return a NodeDescriptor with __type Box', () => {
     const box = Box({ width: 10, height: 20 })
-    expect(box).toBeInstanceOf(BoxNode)
-    expect(box.props.width).toBe(10)
+    expect(box).toMatchObject({ __type: 'Box', props: { width: 10, height: 20 } })
   })
 })
 
@@ -1115,10 +1114,9 @@ describe('ColumnNode', () => {
     expect(column.props.flexDirection).toBe(Style.FlexDirection.Column)
     expect(column.props.flexShrink).toBe(1)
   })
-  it('should create a Column via factory', () => {
+  it('should return a NodeDescriptor with __type Column', () => {
     const col = Column({ width: 100 })
-    expect(col).toBeInstanceOf(ColumnNode)
-    expect(col.props.width).toBe(100)
+    expect(col).toMatchObject({ __type: 'Column', props: { width: 100 } })
   })
 })
 
@@ -1130,10 +1128,9 @@ describe('RowNode', () => {
     expect(row.props.flexShrink).toBe(1)
     expect(row.name).toBe('Row')
   })
-  it('should create a Row via factory', () => {
+  it('should return a NodeDescriptor with __type Row', () => {
     const r = Row({ width: 200 })
-    expect(r).toBeInstanceOf(RowNode)
-    expect(r.props.width).toBe(200)
+    expect(r).toMatchObject({ __type: 'Row', props: { width: 200 } })
   })
 })
 

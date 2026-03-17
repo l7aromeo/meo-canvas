@@ -15,10 +15,33 @@ jest.unstable_mockModule('@/canvas/layout.canvas.util.js', () => layoutMocks)
 
 jest.unstable_mockModule('@/canvas/image.canvas.util.js', () => imageMocks)
 
+// Mock worker_threads so worker mode tests don't spin up real OS threads.
+// Each MockWorker captures its 'message' handler and responds via postMessage.
+let _mockWorkerInstances: MockWorker[] = []
+class MockWorker {
+  private handlers: Map<string, ((data: any) => void)[]> = new Map()
+  constructor(_file: string) {
+    _mockWorkerInstances.push(this)
+  }
+  on(event: string, handler: (data: any) => void) {
+    if (!this.handlers.has(event)) this.handlers.set(event, [])
+    this.handlers.get(event)!.push(handler)
+    return this
+  }
+  postMessage(data: { id: number; props: any }) {
+    setImmediate(() => {
+      this.handlers.get('message')?.forEach(h => h({ id: data.id, buffer: Buffer.from('mock-render') }))
+    })
+  }
+  terminate() {}
+}
+jest.unstable_mockModule('node:worker_threads', () => ({ Worker: MockWorker }))
+
 let Canvas: typeof import('skia-canvas').Canvas
 let FontLibrary: typeof import('skia-canvas').FontLibrary
 let Root: typeof import('@/canvas/root.canvas.util.js').Root
 let RootNode: typeof import('@/canvas/root.canvas.util.js').RootNode
+let configure: typeof import('@/canvas/root.canvas.util.js').configure
 let ColumnNode: typeof import('@/canvas/layout.canvas.util.js').ColumnNode
 
 describe('RootNode', () => {
@@ -32,6 +55,8 @@ describe('RootNode', () => {
     const rootModule = await import('@/canvas/root.canvas.util.js')
     Root = rootModule.Root
     RootNode = rootModule.RootNode
+    configure = rootModule.configure
+    configure({ workerMode: false })
     const layoutModule = await import('@/canvas/layout.canvas.util.js')
     ColumnNode = layoutModule.ColumnNode
 
@@ -214,5 +239,70 @@ describe('RootNode', () => {
     expect(FontLibrary.use).toHaveBeenCalledWith({
       ExistingFont: ['/mock/path/to/font2.ttf'],
     })
+  })
+})
+
+describe('Root (worker mode)', () => {
+  let Root: typeof import('@/canvas/root.canvas.util.js').Root
+  let configure: typeof import('@/canvas/root.canvas.util.js').configure
+
+  beforeEach(async () => {
+    jest.resetModules()
+    _mockWorkerInstances = []
+
+    skiaCanvasMocks.reset()
+    fsMocks.reset()
+    pathMocks.reset()
+    layoutMocks.reset()
+    imageMocks.reset()
+
+    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
+    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({ left: 0, top: 0, width: 100, height: 100 })
+    layoutMocks.yogaNode.isDirty.mockReturnValue(false)
+
+    const rootModule = await import('@/canvas/root.canvas.util.js')
+    Root = rootModule.Root
+    configure = rootModule.configure
+    // worker mode is on by default — no configure() call needed
+  })
+
+  it('should create worker pool and dispatch render to worker', async () => {
+    const result = await Root({ width: 100 })
+    expect(_mockWorkerInstances.length).toBeGreaterThan(0)
+    expect(result).toBeDefined()
+  })
+
+  it('should return an object with toBufferSync that returns the worker buffer', async () => {
+    const result = await Root({ width: 100 })
+    const buf = result.toBufferSync('png')
+    expect(Buffer.isBuffer(buf)).toBe(true)
+    expect(buf).toEqual(Buffer.from('mock-render'))
+  })
+
+  it('should pass props to the worker via postMessage', async () => {
+    const postMessageSpy = jest.spyOn(MockWorker.prototype, 'postMessage')
+    await Root({ width: 200, height: 300 })
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        props: expect.objectContaining({ width: 200, height: 300 }),
+      }),
+    )
+    postMessageSpy.mockRestore()
+  })
+
+  it('should reject if worker responds with an error', async () => {
+    jest.spyOn(MockWorker.prototype, 'postMessage').mockImplementationOnce(function (this: MockWorker, data) {
+      setImmediate(() => {
+        ;(this as any).handlers?.get('message')?.forEach((h: any) => h({ id: data.id, error: 'render failed' }))
+      })
+    })
+    await expect(Root({ width: 100 })).rejects.toThrow('render failed')
+  })
+
+  it('should allow disabling worker mode via configure()', async () => {
+    configure({ workerMode: false })
+    _mockWorkerInstances = []
+    await Root({ width: 100 })
+    expect(_mockWorkerInstances.length).toBe(0)
   })
 })
