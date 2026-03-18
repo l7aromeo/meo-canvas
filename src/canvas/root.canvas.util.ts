@@ -3,7 +3,7 @@ import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'sk
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
 import type { BaseProps, RootProps, CanvasElement } from '@/canvas/canvas.type.js'
 import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/canvas/worker.types.js'
-import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.util.js'
+import { ImageNode, type RenderImageCache, disposeImageCache, getImageCache } from '@/canvas/image.canvas.util.js'
 import { TextNode } from '@/canvas/text.canvas.util.js'
 import { ChartNode } from '@/canvas/chart.canvas.util.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.util.js'
@@ -33,6 +33,8 @@ export interface CanvasEngineConfig {
   workerMode?: boolean
   /** Number of worker threads in the pool (default: os.cpus().length - 1) */
   workers?: number
+  /** Maximum number of resolved images to keep in the persistent LRU cache (default: 128) */
+  imageCacheSize?: number
 }
 
 /**
@@ -42,6 +44,11 @@ export interface CanvasEngineConfig {
 export function configure(options: CanvasEngineConfig) {
   if (options.workerMode !== undefined) _workerMode = options.workerMode
   if (options.workers !== undefined) _workerPoolSize = options.workers
+  if (options.imageCacheSize !== undefined) {
+    // Dispose existing cache and create a new one with the specified size
+    disposeImageCache()
+    getImageCache(options.imageCacheSize)
+  }
   if (_workerMode) {
     _workerPool = new WorkerPool(_workerPoolSize)
   }
@@ -355,49 +362,55 @@ export class RootNode extends ColumnNode {
    * @returns Promise resolving to the rendered Canvas instance
    */
   async render(): Promise<Canvas> {
-    // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources.
-    // A per-render cache deduplicates identical src+color combinations within this render pass.
-    const imageNodes = this.findAllImageNodes()
-    if (imageNodes.length > 0) {
-      const imageCache: RenderImageCache = new Map()
-      const CONCURRENCY = 5
-      const queue = [...imageNodes]
-      const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-        while (queue.length > 0) {
-          const node = queue.shift()!
-          await node.load(imageCache)
-        }
-      })
-      await Promise.allSettled(workers)
-    }
+    try {
+      // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources.
+      // A per-render cache deduplicates identical src+color combinations within this render pass.
+      const imageNodes = this.findAllImageNodes()
+      if (imageNodes.length > 0) {
+        const imageCache: RenderImageCache = new Map()
+        const CONCURRENCY = 5
+        const queue = [...imageNodes]
+        const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+          while (queue.length > 0) {
+            const node = queue.shift()!
+            await node.load(imageCache)
+          }
+        })
+        await Promise.allSettled(workers)
+      }
 
-    // Step 2: Calculate initial layout
-    this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
-
-    // Step 3: Allow nodes to finalize their layout
-    const needRecalculate = this.finalizeLayout()
-    if (needRecalculate) {
+      // Step 2: Calculate initial layout
       this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+
+      // Step 3: Allow nodes to finalize their layout
+      const needRecalculate = this.finalizeLayout()
+      if (needRecalculate) {
+        this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+      }
+
+      // Step 4: Create a canvas with calculated dimensions
+      const calculatedContentHeight = this.node.getComputedHeight()
+      const finalCanvasWidth = Math.ceil(this.targetWidth * this.scale)
+      const finalCanvasHeight = this.targetHeight ? Math.ceil(this.targetHeight * this.scale) : Math.max(1, Math.ceil(calculatedContentHeight * this.scale))
+
+      // Step 5: Set up canvas context
+      this.canvas = new Canvas(finalCanvasWidth, finalCanvasHeight)
+      this.ctx = this.canvas.getContext('2d')
+      this.ctx.scale(this.scale, this.scale)
+
+      // Step 6: Render content
+      super.render(this.ctx, 0, 0)
+
+      if (!this.canvas) {
+        throw new Error('Canvas not initialized')
+      }
+
+      return this.canvas
+    } finally {
+      // Always clear the persistent image cache after render (success or error)
+      // so resolved CanvasImage references don't outlive the render pass.
+      disposeImageCache()
     }
-
-    // Step 4: Create a canvas with calculated dimensions
-    const calculatedContentHeight = this.node.getComputedHeight()
-    const finalCanvasWidth = Math.ceil(this.targetWidth * this.scale)
-    const finalCanvasHeight = this.targetHeight ? Math.ceil(this.targetHeight * this.scale) : Math.max(1, Math.ceil(calculatedContentHeight * this.scale))
-
-    // Step 5: Set up canvas context
-    this.canvas = new Canvas(finalCanvasWidth, finalCanvasHeight)
-    this.ctx = this.canvas.getContext('2d')
-    this.ctx.scale(this.scale, this.scale)
-
-    // Step 6: Render content
-    super.render(this.ctx, 0, 0)
-
-    if (!this.canvas) {
-      throw new Error('Canvas not initialized')
-    }
-
-    return this.canvas
   }
 }
 
@@ -409,12 +422,18 @@ export class RootNode extends ColumnNode {
  * @returns Promise resolving to the rendered Canvas (or WorkerCanvas in worker mode)
  */
 export const Root = async (props: RootProps): Promise<Canvas> => {
-  if (_workerMode) {
-    if (!_workerPool) {
-      _workerPool = new WorkerPool(_workerPoolSize)
+  try {
+    if (_workerMode) {
+      if (!_workerPool) {
+        _workerPool = new WorkerPool(_workerPoolSize)
+      }
+      const result = await _workerPool.render(props)
+      return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas
     }
-    const result = await _workerPool.render(props)
-    return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas
+    return await new RootNode(props).render()
+  } catch (err) {
+    // Ensure cache is cleared even if Root-level orchestration fails
+    disposeImageCache()
+    throw err
   }
-  return new RootNode(props).render()
 }

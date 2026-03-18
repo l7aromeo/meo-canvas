@@ -28,6 +28,106 @@ function calculateOffsetFromValue(positionValue: number | `${number}%` | undefin
  */
 export type RenderImageCache = Map<string, Promise<CanvasImage>>
 
+// ---------------------------------------------------------------------------
+// Persistent LRU image cache — survives across render passes
+// ---------------------------------------------------------------------------
+
+interface LRUEntry {
+  image: CanvasImage
+  key: string
+}
+
+/**
+ * A simple LRU cache for resolved `CanvasImage` objects.
+ *
+ * - Persists across render passes so repeated renders of the same tree don't
+ *   re-fetch every image.
+ * - Bounded by `maxSize` entries; least-recently-used entries are evicted first.
+ * - Call `dispose()` to eagerly release all held images, or rely on the
+ *   automatic `process.on('exit')` hook that clears the singleton.
+ */
+export class ImageLRUCache {
+  private readonly map = new Map<string, LRUEntry>()
+  readonly maxSize: number
+
+  constructor(maxSize: number) {
+    this.maxSize = maxSize
+  }
+
+  get(key: string): CanvasImage | undefined {
+    const entry = this.map.get(key)
+    if (!entry) return undefined
+    // Move to end (most-recently used)
+    this.map.delete(key)
+    this.map.set(key, entry)
+    return entry.image
+  }
+
+  set(key: string, image: CanvasImage): void {
+    // If key already exists, refresh it
+    if (this.map.has(key)) {
+      this.map.delete(key)
+    }
+    // Evict oldest if at capacity
+    while (this.map.size >= this.maxSize) {
+      const oldest = this.map.keys().next().value!
+      this.map.delete(oldest)
+    }
+    this.map.set(key, { image, key })
+  }
+
+  has(key: string): boolean {
+    return this.map.has(key)
+  }
+
+  get size(): number {
+    return this.map.size
+  }
+
+  dispose(): void {
+    this.map.clear()
+  }
+}
+
+/** Module-level singleton — lazily created on first render. */
+let _globalImageCache: ImageLRUCache | null = null
+
+const DEFAULT_CACHE_SIZE = 128
+
+// Symbol key on process to track hook registration across module reloads (e.g. Jest resetModules)
+const HOOK_KEY = Symbol.for('__meonode_canvas_image_cache_hook__')
+
+/**
+ * Returns the singleton `ImageLRUCache`, creating it on first access.
+ * Registers a one-time process cleanup hook to clear the cache
+ * so native image buffers are freed when the process shuts down.
+ */
+export function getImageCache(maxSize: number = DEFAULT_CACHE_SIZE): ImageLRUCache {
+  if (!_globalImageCache) {
+    _globalImageCache = new ImageLRUCache(maxSize)
+  }
+  if (!(globalThis as any)[HOOK_KEY]) {
+    ;(globalThis as any)[HOOK_KEY] = true
+    const cleanup = () => {
+      _globalImageCache?.dispose()
+      _globalImageCache = null
+    }
+    process.once('exit', cleanup)
+    process.once('SIGINT', cleanup)
+    process.once('SIGTERM', cleanup)
+  }
+  return _globalImageCache
+}
+
+/**
+ * Explicitly disposes the global image cache.
+ * Useful in tests or when tearing down the rendering engine.
+ */
+export function disposeImageCache(): void {
+  _globalImageCache?.dispose()
+  _globalImageCache = null
+}
+
 /**
  * Renders images with configurable sizing, positioning, and effects.
  * Supports object-fit modes, positioning, border radius, and saturation filters.
@@ -130,8 +230,14 @@ export class ImageNode extends BoxNode {
   }
 
   /**
-   * Loads and processes an image, using the render-scoped cache to avoid
-   * re-fetching the same source within a single render pass.
+   * Loads and processes an image.
+   *
+   * Resolution order:
+   *   1. Persistent LRU cache (cross-render) — instant hit, no I/O.
+   *   2. Per-render dedup cache — avoids duplicate in-flight fetches within a single render.
+   *   3. Fresh fetch via `_fetchCanvasImage()`.
+   *
+   * Resolved images are stored back into the LRU cache for future renders.
    */
   private _loadImage(cache?: RenderImageCache): Promise<void> {
     if (!this.props.src) {
@@ -145,10 +251,28 @@ export class ImageNode extends BoxNode {
     return new Promise(resolve => {
       const load = async () => {
         try {
-          let imagePromise: Promise<CanvasImage>
+          const lru = getImageCache()
+          const cacheKey = typeof this.props.src === 'string' ? (this.props.color ? `${this.props.src}|${this.props.color}` : this.props.src) : null
 
-          if (cache && typeof this.props.src === 'string') {
-            const cacheKey = this.props.color ? `${this.props.src}|${this.props.color}` : this.props.src
+          // 1. Check persistent LRU cache
+          if (cacheKey) {
+            const cached = lru.get(cacheKey)
+            if (cached) {
+              this.loadedImage = cached
+              this.naturalWidth = cached.width
+              this.naturalHeight = cached.height
+              const calculatedAspectRatio = cached.width > 0 && cached.height > 0 ? cached.width / cached.height : undefined
+              const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
+              this.node.setAspectRatio(finalAspectRatio)
+              this.props.onLoad?.()
+              resolve()
+              return
+            }
+          }
+
+          // 2. Per-render dedup cache or fresh fetch
+          let imagePromise: Promise<CanvasImage>
+          if (cache && cacheKey) {
             if (!cache.has(cacheKey)) {
               cache.set(cacheKey, this._fetchCanvasImage())
             }
@@ -158,6 +282,12 @@ export class ImageNode extends BoxNode {
           }
 
           const img = await imagePromise
+
+          // 3. Store in persistent LRU cache
+          if (cacheKey) {
+            lru.set(cacheKey, img)
+          }
+
           this.loadedImage = img
           this.naturalWidth = img.width
           this.naturalHeight = img.height
