@@ -17,17 +17,17 @@ export interface BaseProps {
   key?: string
 }
 
-export type Children = BoxNode | TextNode | ImageNode | GridNode | NodeDescriptor | false | undefined
+export type Children = BoxNode | TextNode | ImageNode | GridNode | CanvasElement | false | undefined
 
-export type NodeDescriptor =
-  | { __type: 'Box'; props: Omit<BoxProps, 'children'>; children?: NodeDescriptor[] }
-  | { __type: 'Column'; props: Omit<BoxProps, 'children'>; children?: NodeDescriptor[] }
-  | { __type: 'Row'; props: Omit<BoxProps, 'children'>; children?: NodeDescriptor[] }
-  | { __type: 'Grid'; props: Omit<GridProps, 'children'>; children?: NodeDescriptor[] }
-  | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: NodeDescriptor[] }
+export type CanvasElement =
+  | { __type: 'Box'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
+  | { __type: 'Column'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
+  | { __type: 'Row'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
+  | { __type: 'Grid'; props: Omit<GridProps, 'children'>; children?: CanvasElement[] }
+  | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: CanvasElement[] }
   | { __type: 'Image'; props: Omit<ImageProps, 'onLoad' | 'onError'> }
   | { __type: 'Text'; text: string | number; props?: TextProps }
-  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
+  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> & PreComputedChartOptions } }
 
 export interface FontRegistrationInfo {
   family: string
@@ -910,6 +910,18 @@ export type ChartOptions<T extends ChartType> = T extends 'bar' | 'line'
   : T extends 'pie' | 'doughnut'
     ? BaseChartOptions<T> & PieChartSpecificOptions
     : BaseChartOptions<T>
+
+/**
+ * Pre-computed values from function props, resolved on the main thread
+ * before being sent to a worker thread via postMessage (structured clone).
+ */
+export interface PreComputedChartOptions {
+  _preComputedXAxisLabels?: string[]
+  _preComputedYAxisLabels?: string[]
+  _preComputedLegendItems?: (CanvasElement | null | undefined)[]
+  _preComputedLabelItems?: (CanvasElement | null | undefined)[]
+  _preComputedValueItems?: (CanvasElement | null | undefined)[][]
+}
 
 /**
  * Properties for rendering a chart inside a `BoxNode`.
