@@ -1101,7 +1101,7 @@ describe('BoxNode Layout Properties', () => {
 })
 
 describe('Box factory', () => {
-  it('should return a NodeDescriptor with __type Box', () => {
+  it('should return a CanvasElement with __type Box', () => {
     const box = Box({ width: 10, height: 20 })
     expect(box).toMatchObject({ __type: 'Box', props: { width: 10, height: 20 } })
   })
@@ -1114,7 +1114,7 @@ describe('ColumnNode', () => {
     expect(column.props.flexDirection).toBe(Style.FlexDirection.Column)
     expect(column.props.flexShrink).toBe(1)
   })
-  it('should return a NodeDescriptor with __type Column', () => {
+  it('should return a CanvasElement with __type Column', () => {
     const col = Column({ width: 100 })
     expect(col).toMatchObject({ __type: 'Column', props: { width: 100 } })
   })
@@ -1128,7 +1128,7 @@ describe('RowNode', () => {
     expect(row.props.flexShrink).toBe(1)
     expect(row.name).toBe('Row')
   })
-  it('should return a NodeDescriptor with __type Row', () => {
+  it('should return a CanvasElement with __type Row', () => {
     const r = Row({ width: 200 })
     expect(r).toMatchObject({ __type: 'Row', props: { width: 200 } })
   })

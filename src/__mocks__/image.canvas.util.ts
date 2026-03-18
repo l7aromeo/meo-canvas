@@ -4,6 +4,7 @@ import Mock = jest.Mock
 import { Style } from '@/constant/common.const.js' // Import Style
 
 export class ImageNode extends BoxNode {
+  load: Mock<() => Promise<void>>
   getLoadingPromise: Mock<() => Promise<void>>
 
   constructor(props: any) {
@@ -17,6 +18,7 @@ export class ImageNode extends BoxNode {
     const mergedProps = { ...defaultImageProps, ...props }
 
     super({ name: 'Image', ...mergedProps }) // Pass the merged props to super
+    this.load = jest.fn(() => Promise.resolve())
     this.getLoadingPromise = jest.fn(() => Promise.resolve())
   }
 }
