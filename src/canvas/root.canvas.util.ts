@@ -1,13 +1,14 @@
 import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
 import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
-import type { BaseProps, RootProps, NodeDescriptor } from '@/canvas/canvas.type.js'
+import type { BaseProps, RootProps, CanvasElement } from '@/canvas/canvas.type.js'
 import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/canvas/worker.types.js'
 import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.util.js'
 import { TextNode } from '@/canvas/text.canvas.util.js'
 import { ChartNode } from '@/canvas/chart.canvas.util.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.util.js'
 import { Style } from '@/constant/common.const.js'
+import { WorkerPreProcessor } from '@/canvas/canvas.helper.js'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import { cpus } from 'node:os'
@@ -199,15 +200,16 @@ class WorkerPool {
   }
 
   render(props: RootProps): Promise<PoolRenderResult> {
+    const sanitizedProps = WorkerPreProcessor.process(props)
     return new Promise<PoolRenderResult>((resolve, reject) => {
       const id = this.nextId++
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
       if (this.idle.length > 0) {
         const worker = this.idle.pop()!
-        const request: WorkerRequest = { type: 'render', taskId: id, props }
+        const request: WorkerRequest = { type: 'render', taskId: id, props: sanitizedProps }
         worker.postMessage(request)
       } else {
-        this.queue.push({ id, props })
+        this.queue.push({ id, props: sanitizedProps })
       }
     })
   }
@@ -232,11 +234,11 @@ class WorkerPool {
 }
 
 /**
- * Converts a NodeDescriptor tree into actual BoxNode instances.
+ * Converts a CanvasElement tree into actual BoxNode instances.
  * Used both for non-worker rendering (inline tree building) and inside
  * the render worker (reconstructing the tree from serialized descriptors).
  */
-export function buildTree(descriptor: NodeDescriptor): BoxNode {
+export function buildTree(descriptor: CanvasElement): BoxNode {
   switch (descriptor.__type) {
     case 'Box':
       return new BoxNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) })
@@ -315,12 +317,12 @@ export class RootNode extends ColumnNode {
     this.targetHeight = props.height
     this.node.setWidth(this.targetWidth)
 
-    // Convert any NodeDescriptor children to actual BoxNode instances
+    // Convert any CanvasElement children to actual BoxNode instances
     if (this.props.children) {
       const childArray = Array.isArray(this.props.children) ? this.props.children : [this.props.children]
       this.props.children = childArray.map(child => {
         if (child && typeof child === 'object' && '__type' in child) {
-          return buildTree(child as NodeDescriptor)
+          return buildTree(child as CanvasElement)
         }
         return child
       }) as any
