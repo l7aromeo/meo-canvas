@@ -4,6 +4,7 @@ import { BoxNode } from '@/canvas/layout.canvas.util.js'
 import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.js'
 import { promises as fs } from 'fs'
 import { Style } from '@/constant/common.const.js'
+import { hashBuffer, readDiskCache, writeDiskCache } from '@/util/disk.cache.js'
 
 /**
  * Calculates pixel offset for image positioning based on percentage or pixel values.
@@ -161,8 +162,11 @@ export class ImageNode extends BoxNode {
   /**
    * Fetches and processes the image source into a CanvasImage.
    * Does not touch node state — pure fetch logic.
+   *
+   * If `diskCacheKey` is provided, the resolved image buffer is written to the
+   * disk cache at `.cache/files/<diskCacheKey>` (best-effort, fire-and-forget).
    */
-  private async _fetchCanvasImage(): Promise<CanvasImage> {
+  private async _fetchCanvasImage(diskCacheKey?: string): Promise<CanvasImage> {
     const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
     let finalSource: string | Buffer = this.props.src
     let isSvg = false
@@ -226,6 +230,12 @@ export class ImageNode extends BoxNode {
       finalSource = modifiedSvgString !== svgString ? Buffer.from(modifiedSvgString) : contentBuffer
     }
 
+    // Write resolved buffer to disk cache (fire-and-forget, non-fatal)
+    if (diskCacheKey) {
+      const cacheBuffer = Buffer.isBuffer(finalSource) ? finalSource : contentBuffer
+      if (cacheBuffer) writeDiskCache(diskCacheKey, cacheBuffer)
+    }
+
     return loadImage(finalSource as never)
   }
 
@@ -234,10 +244,11 @@ export class ImageNode extends BoxNode {
    *
    * Resolution order:
    *   1. Persistent LRU cache (cross-render) — instant hit, no I/O.
-   *   2. Per-render dedup cache — avoids duplicate in-flight fetches within a single render.
-   *   3. Fresh fetch via `_fetchCanvasImage()`.
+   *   2. Disk cache at `.cache/files/<hash>` — survives process restarts.
+   *   3. Per-render dedup cache — avoids duplicate in-flight fetches within a single render.
+   *   4. Fresh fetch via `_fetchCanvasImage()` — writes buffer to disk cache after fetch.
    *
-   * Resolved images are stored back into the LRU cache for future renders.
+   * Buffer sources use a SHA-256 hash as their cache key (same as string sources).
    */
   private _loadImage(cache?: RenderImageCache): Promise<void> {
     if (!this.props.src) {
@@ -252,41 +263,60 @@ export class ImageNode extends BoxNode {
       const load = async () => {
         try {
           const lru = getImageCache()
-          const cacheKey = typeof this.props.src === 'string' ? (this.props.color ? `${this.props.src}|${this.props.color}` : this.props.src) : null
+          const cacheKey =
+            typeof this.props.src === 'string'
+              ? this.props.color
+                ? `${this.props.src}|${this.props.color}`
+                : this.props.src
+              : this.props.color
+                ? `${hashBuffer(this.props.src)}|${this.props.color}`
+                : hashBuffer(this.props.src)
 
           // 1. Check persistent LRU cache
-          if (cacheKey) {
-            const cached = lru.get(cacheKey)
-            if (cached) {
-              this.loadedImage = cached
-              this.naturalWidth = cached.width
-              this.naturalHeight = cached.height
-              const calculatedAspectRatio = cached.width > 0 && cached.height > 0 ? cached.width / cached.height : undefined
-              const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
-              this.node.setAspectRatio(finalAspectRatio)
-              this.props.onLoad?.()
-              resolve()
-              return
-            }
+          const cached = lru.get(cacheKey)
+          if (cached) {
+            this.loadedImage = cached
+            this.naturalWidth = cached.width
+            this.naturalHeight = cached.height
+            const calculatedAspectRatio = cached.width > 0 && cached.height > 0 ? cached.width / cached.height : undefined
+            const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
+            this.node.setAspectRatio(finalAspectRatio)
+            this.props.onLoad?.()
+            resolve()
+            return
           }
 
-          // 2. Per-render dedup cache or fresh fetch
+          // 2. Check disk cache (persists across process restarts)
+          const diskBuffer = await readDiskCache(cacheKey)
+          if (diskBuffer) {
+            const img = await loadImage(diskBuffer as never)
+            lru.set(cacheKey, img)
+            this.loadedImage = img
+            this.naturalWidth = img.width
+            this.naturalHeight = img.height
+            const calculatedAspectRatio = img.width > 0 && img.height > 0 ? img.width / img.height : undefined
+            const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
+            this.node.setAspectRatio(finalAspectRatio)
+            this.props.onLoad?.()
+            resolve()
+            return
+          }
+
+          // 3. Per-render dedup cache or fresh fetch (writes to disk internally)
           let imagePromise: Promise<CanvasImage>
-          if (cache && cacheKey) {
+          if (cache) {
             if (!cache.has(cacheKey)) {
-              cache.set(cacheKey, this._fetchCanvasImage())
+              cache.set(cacheKey, this._fetchCanvasImage(cacheKey))
             }
             imagePromise = cache.get(cacheKey)!
           } else {
-            imagePromise = this._fetchCanvasImage()
+            imagePromise = this._fetchCanvasImage(cacheKey)
           }
 
           const img = await imagePromise
 
-          // 3. Store in persistent LRU cache
-          if (cacheKey) {
-            lru.set(cacheKey, img)
-          }
+          // 4. Store in persistent LRU cache
+          lru.set(cacheKey, img)
 
           this.loadedImage = img
           this.naturalWidth = img.width
