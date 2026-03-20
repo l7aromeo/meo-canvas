@@ -4,14 +4,17 @@ import commonjs from '@rollup/plugin-commonjs'
 import tsconfigPaths from 'rollup-plugin-tsconfig-paths'
 import fs from 'fs'
 
-const inputFiles = fs
-  .readdirSync('src')
-  .filter(file => file.endsWith('.ts'))
-  .reduce((acc, file) => {
-    const name = file.replace('.ts', '')
-    acc[name] = `src/${file}`
-    return acc
-  }, {})
+const inputFiles = {
+  ...fs
+    .readdirSync('src')
+    .filter(file => file.endsWith('.ts'))
+    .reduce((acc, file) => {
+      const name = file.replace('.ts', '')
+      acc[name] = `src/${file}`
+      return acc
+    }, {}),
+  'worker/render.worker': 'src/worker/render.worker.ts',
+}
 
 const common = {
   input: inputFiles,

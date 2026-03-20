@@ -14,7 +14,7 @@
 import { parentPort } from 'worker_threads'
 import { RootNode } from '@/canvas/root.canvas.util.js'
 import type { Canvas } from 'skia-canvas'
-import type { WorkerRequest, WorkerRenderResponse, WorkerCallResponse, WorkerErrorResponse } from '@/canvas/worker.types.js'
+import type { WorkerRequest, WorkerRenderResponse, WorkerCallResponse, WorkerErrorResponse } from '@/worker/worker.types.js'
 
 if (!parentPort) {
   throw new Error('[render.worker] Must be run as a worker thread')

@@ -2,7 +2,7 @@ import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
 import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
 import type { BaseProps, RootProps, CanvasElement } from '@/canvas/canvas.type.js'
-import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/canvas/worker.types.js'
+import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/worker/worker.types.js'
 import { ImageNode, type RenderImageCache, disposeImageCache, getImageCache } from '@/canvas/image.canvas.util.js'
 import { TextNode } from '@/canvas/text.canvas.util.js'
 import { ChartNode } from '@/canvas/chart.canvas.util.js'
@@ -166,7 +166,7 @@ class WorkerPool {
   }
 
   private init(size: number) {
-    const workerFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../render.worker.js')
+    const workerFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../worker/render.worker.js')
 
     for (let i = 0; i < size; i++) {
       const workerIdx = i
