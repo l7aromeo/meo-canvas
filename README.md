@@ -544,6 +544,22 @@ The `Grid` component arranges its children in a grid layout. It is a specialized
 
 ---
 
+### GridItem
+
+The `GridItem` component represents a child item within a `Grid`. It inherits all `BoxProps` and adds grid placement properties.
+
+#### GridItem-Specific Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `gridColumn` | `string` | Specifies the column span (e.g., `'span 2'`, `'1 / 3'`). |
+| `gridRow` | `string` | Specifies the row span (e.g., `'span 2'`, `'1 / 3'`). |
+| `gridArea` | `string` | Shorthand for `gridRow` and `gridColumn` (e.g., `'header'`). |
+
+> **Note:** You can also use `gridColumn` and `gridRow` props directly on any child component (`Box`, `Text`, etc.) without wrapping in `GridItem`.
+
+---
+
 ### Chart
 
 The `Chart` component renders various types of charts. It inherits all `BoxProps`.
@@ -626,16 +642,154 @@ options: {
 
 ### Root
 
-The `Root` component is the entry point for rendering. It is a specialized `ColumnNode`.
+The `Root` component is the entry point for rendering. It is a specialized `ColumnNode` that inherits all `BoxProps`.
 
 #### Root-Specific Props
 
-| Prop     | Type                     | Description                                                              |
-|----------|--------------------------|--------------------------------------------------------------------------|
-| `width`  | `number`                 | **Required.** Width of the canvas in pixels.                             |
-| `height` | `number`                 | Optional height of the canvas. If not set, it's calculated from content. |
-| `scale`  | `number`                 | Scale factor for rendering (e.g., 2 for 2x resolution). Default is 1.    |
-| `fonts`  | `FontRegistrationInfo[]` | An array of font files to register for use in the canvas.                |
+| Prop | Type | Default | Description |
+|----------|--------------------------|-------------|----------------------------------------------------------------------|
+| `width` | `number` | - | **Required.** Width of the canvas in pixels. |
+| `height` | `number` | - | Optional height of the canvas. If not set, it's calculated from content. |
+| `scale` | `number` | `1` | Scale factor for rendering (e.g., 2 for 2x resolution). |
+| `fonts` | `FontRegistrationInfo[]` | - | An array of font files to register for use in the canvas. |
+| `useDiskCache` | `boolean` | `false` | Write fetched images to disk during render for faster re-decode. Disk entries are cleaned up automatically after render completes. |
+| `workerMode` | `boolean` | `true` | Enable worker thread rendering for non-blocking operation. |
+| `workers` | `number` | `cpus().length - 1` | Number of worker threads to use (only applies on first render with `workerMode: true`). |
+
+#### Common Inherited Props (from BoxProps)
+
+Since `Root` extends `BoxProps`, it also accepts:
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `children` | `CanvasElement \| CanvasElement[]` | **Required.** The component tree to render. |
+| `backgroundColor` | `string` | Canvas background color. |
+| `padding` | `number \| object \| string` | Canvas padding. |
+| `gradient` | `object` | Background gradient (overrides `backgroundColor`). |
+| `boxShadow` | `object \| object[]` | Box shadow effects. |
+
+> For a complete list of inherited props, see [Box, Row, and Column](#box-row-and-column) above.
+
+---
+
+### Canvas Methods
+
+The `Root()` function returns a Canvas object with the following methods and properties:
+
+#### Export Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `toBufferSync` | `(format?: ExportFormat, options?: ExportOptions) => Buffer` | Synchronously returns a buffer. In worker mode, returns the pre-encoded PNG from render. |
+| `toBuffer` | `(format: ExportFormat, options?: ExportOptions) => Promise<Buffer>` | Asynchronously encodes to the specified format. |
+| `toURL` | `(format: ExportFormat, options?: ExportOptions) => Promise<string>` | Returns a data URL. |
+| `toURLSync` | `(format?: ExportFormat, options?: ExportOptions) => string` | Synchronously returns a data URL (from pre-encoded PNG in worker mode). |
+| `toFile` | `(filename: string, options?: SaveOptions) => Promise<void>` | Saves the canvas to a file. |
+| `toSharp` | `(options?: RenderOptions) => Promise<Buffer>` | Returns a Sharp instance buffer for further processing. |
+| `toSharpSync` | `(options?: RenderOptions) => never` | **Throws error.** Use `toSharp()` instead in worker mode. |
+
+**Supported Export Formats:** `'png'`, `'jpg'` (or `'jpeg'`), `'webp'`, `'pdf'`, `'svg'`, `'raw'`
+
+#### Canvas Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.width` | `number` | Canvas width in pixels (after scale). |
+| `.height` | `number` | Canvas height in pixels (after scale). |
+
+#### Convenience Getters
+
+| Getter | Returns | Description |
+|--------|---------|-------------|
+| `.png` | `Promise<Buffer>` | Shortcut for `toBuffer('png')` |
+| `.jpg` | `Promise<Buffer>` | Shortcut for `toBuffer('jpg')` |
+| `.webp` | `Promise<Buffer>` | Shortcut for `toBuffer('webp')` |
+| `.svg` | `Promise<Buffer>` | Shortcut for `toBuffer('svg')` |
+| `.pdf` | `Promise<Buffer>` | Shortcut for `toBuffer('pdf')` |
+| `.raw` | `Promise<Buffer>` | Shortcut for `toBuffer('raw')` - raw pixel data |
+
+#### Memory Management (Worker Mode)
+
+| Method | Description |
+|--------|-------------|
+| `.release()` | **Required in worker mode.** Releases the Canvas from worker memory. Call when done to prevent memory leaks. |
+
+```typescript
+import { Root } from '@meonode/canvas'
+
+// Render with default worker mode (enabled)
+const canvas = await Root({ width: 400, height: 400, children: [...] })
+
+// Or explicitly disable worker mode
+const canvas = await Root({ width: 400, height: 400, children: [...], workerMode: false })
+
+// Use the canvas
+const png = await canvas.png
+const jpg = await canvas.jpg
+await canvas.toFile('output.png')
+
+// Release memory (worker mode only)
+canvas.release()
+```
+
+> **Note:** A FinalizationRegistry provides automatic cleanup for forgotten `.release()` calls, but explicit cleanup is recommended for deterministic memory management in production.
+
+---
+
+### Cleanup Functions
+
+#### `terminate()`
+
+Terminate all worker pools and free worker thread resources. Call this when shutting down a long-running server.
+
+```typescript
+import { terminate } from '@meonode/canvas'
+
+// Call on server shutdown
+process.on('SIGTERM', () => {
+  terminate()
+  process.exit(0)
+})
+```
+
+> After calling `terminate()`, you must call `configure()` again before rendering.
+
+#### `clearDiskCache()`
+
+Manually clear the entire disk cache directory. Useful for debugging or forced cleanup.
+
+```typescript
+import { clearDiskCache } from '@meonode/canvas'
+
+// Clear all disk cache
+await clearDiskCache()
+```
+
+> **Note:** Disk cache is automatically cleaned up after each render when `useDiskCache: true`, and on process exit.
+
+---
+
+### Configuration (Legacy)
+
+#### `configure(options)`
+
+> **Deprecated:** Pass `workerMode` and `workers` directly to `Root()` props instead.
+
+Configure the canvas rendering engine. Call once at startup.
+
+```typescript
+import { configure } from '@meonode/canvas'
+
+configure({
+  workerMode: true, // Default: true
+  workers: 4,       // Default: cpus().length - 1
+})
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `workerMode` | `boolean` | `true` | Enable worker thread rendering for non-blocking operation |
+| `workers` | `number` | `cpus().length - 1` | Number of worker threads in the pool |
 
 ## Contributing
 
