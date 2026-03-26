@@ -595,6 +595,26 @@ export interface RootProps extends BoxProps {
   scale?: number
   /** Font files to register for use */
   fonts?: FontRegistrationInfo[]
+
+  /**
+   * Write fetched images to disk during this render for faster re-decode
+   * when the same source appears multiple times. Disk entries are deleted
+   * when the render completes — no cross-render sharing. Default: false.
+   */
+  useDiskCache?: boolean
+
+  /**
+   * Enable worker thread rendering for non-blocking operation.
+   * @default true
+   */
+  workerMode?: boolean
+
+  /**
+   * Number of worker threads to use when workerMode is enabled.
+   * Only applies on first render with workerMode: true.
+   * @default cpus().length - 1
+   */
+  workers?: number
 }
 
 /**

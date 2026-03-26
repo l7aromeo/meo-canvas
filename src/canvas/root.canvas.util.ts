@@ -3,7 +3,8 @@ import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'sk
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
 import type { BaseProps, RootProps, CanvasElement } from '@/canvas/canvas.type.js'
 import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/worker/worker.types.js'
-import { ImageNode, type RenderImageCache, disposeImageCache, getImageCache } from '@/canvas/image.canvas.util.js'
+import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.util.js'
+import { deleteDiskCache } from '@/util/disk.cache.js'
 import { TextNode } from '@/canvas/text.canvas.util.js'
 import { ChartNode } from '@/canvas/chart.canvas.util.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.util.js'
@@ -23,9 +24,26 @@ export const _clearRegisteredFonts = () => {
   registeredFonts.clear()
 }
 
-/** Engine configuration */
-let _workerMode = true
-let _workerPoolSize = Math.max(1, cpus().length - 1)
+/**
+ * FinalizationRegistry to clean up WorkerCanvas instances that were not explicitly released.
+ * This is a safety net — users should still call .release() explicitly.
+ */
+const canvasRegistry = new FinalizationRegistry<{ workerIdx: number; canvasId: number }>(heldValue => {
+  // Best-effort cleanup — worker may already be terminated
+  try {
+    // Access workers via a public method or make it accessible
+    // For now, just try to send the message and let errors be caught
+    if (_workerPool) {
+      ;(_workerPool as any).workers?.[heldValue.workerIdx]?.postMessage({ type: 'release', canvasId: heldValue.canvasId })
+    }
+  } catch {
+    // Worker already gone — nothing to clean up
+  }
+})
+
+/** Engine configuration — legacy support for configure() */
+let _defaultWorkerMode = true
+let _defaultWorkerPoolSize = Math.max(1, cpus().length - 1)
 let _workerPool: WorkerPool | null = null
 
 export interface CanvasEngineConfig {
@@ -33,24 +51,27 @@ export interface CanvasEngineConfig {
   workerMode?: boolean
   /** Number of worker threads in the pool (default: os.cpus().length - 1) */
   workers?: number
-  /** Maximum number of resolved images to keep in the persistent LRU cache (default: 128) */
-  imageCacheSize?: number
 }
 
 /**
  * Configure the canvas rendering engine.
  * Call this once at application startup before rendering.
+ * @deprecated Pass workerMode and workers directly to Root() props instead.
  */
 export function configure(options: CanvasEngineConfig) {
-  if (options.workerMode !== undefined) _workerMode = options.workerMode
-  if (options.workers !== undefined) _workerPoolSize = options.workers
-  if (options.imageCacheSize !== undefined) {
-    // Dispose existing cache and create a new one with the specified size
-    disposeImageCache()
-    getImageCache(options.imageCacheSize)
-  }
-  if (_workerMode) {
-    _workerPool = new WorkerPool(_workerPoolSize)
+  if (options.workerMode !== undefined) _defaultWorkerMode = options.workerMode
+  if (options.workers !== undefined) _defaultWorkerPoolSize = options.workers
+}
+
+/**
+ * Terminate all worker pools and free worker thread resources.
+ * Call this when shutting down a long-running server to clean up immediately.
+ * After calling, you must call configure() again before rendering.
+ */
+export function terminate() {
+  if (_workerPool) {
+    _workerPool.terminate()
+    _workerPool = null
   }
 }
 
@@ -87,6 +108,8 @@ class WorkerCanvas {
     this._pool = opts.pool
     this._workerIdx = opts.workerIdx
     this._canvasId = opts.canvasId
+    // Register for finalizer-based cleanup if user forgets to call .release()
+    canvasRegistry.register(this, { workerIdx: opts.workerIdx, canvasId: opts.canvasId }, this)
   }
 
   private _call<M extends CanvasCallMethod>(method: M, ...args: CallArgs<M>): Promise<CallResult<M>> {
@@ -150,6 +173,8 @@ class WorkerCanvas {
   /** Release the Canvas from worker memory. Call when done with this object. */
   release(): void {
     this._pool.releaseCanvas(this._workerIdx, this._canvasId)
+    // Unregister from finalizer since we're explicitly cleaning up
+    canvasRegistry.unregister(this)
   }
 }
 
@@ -271,6 +296,7 @@ export function buildTree(descriptor: CanvasElement): BoxNode {
  * Inherits from ColumnNode to provide vertical layout capabilities.
  */
 export class RootNode extends ColumnNode {
+  declare props: RootProps & BaseProps
   /** The canvas instance used for rendering */
   private canvas: Canvas | undefined
   /** The 2D rendering context for the canvas */
@@ -362,6 +388,8 @@ export class RootNode extends ColumnNode {
    * @returns Promise resolving to the rendered Canvas instance
    */
   async render(): Promise<Canvas> {
+    const diskCacheKeys = this.props.useDiskCache ? new Set<string>() : undefined
+
     try {
       // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources.
       // A per-render cache deduplicates identical src+color combinations within this render pass.
@@ -373,7 +401,7 @@ export class RootNode extends ColumnNode {
         const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
           while (queue.length > 0) {
             const node = queue.shift()!
-            await node.load(imageCache)
+            await node.load(imageCache, diskCacheKeys)
           }
         })
         await Promise.allSettled(workers)
@@ -407,33 +435,33 @@ export class RootNode extends ColumnNode {
 
       return this.canvas
     } finally {
-      // Always clear the persistent image cache after render (success or error)
-      // so resolved CanvasImage references don't outlive the render pass.
-      disposeImageCache()
+      if (diskCacheKeys?.size) {
+        await Promise.allSettled([...diskCacheKeys].map(key => deleteDiskCache(key)))
+      }
     }
   }
 }
 
 /**
  * Creates and renders a new root node with the given properties.
- * When worker mode is enabled via configure(), rendering runs in a worker thread
- * and the returned object implements the same toBuffer/toBufferSync interface.
+ * Rendering runs in worker threads by default for non-blocking operation.
  * @param props Configuration properties for the root node
  * @returns Promise resolving to the rendered Canvas (or WorkerCanvas in worker mode)
  */
 export const Root = async (props: RootProps): Promise<Canvas> => {
-  try {
-    if (_workerMode) {
-      if (!_workerPool) {
-        _workerPool = new WorkerPool(_workerPoolSize)
-      }
-      const result = await _workerPool.render(props)
-      return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas
+  // Determine worker mode: props override legacy configure()
+  const workerMode = props.workerMode ?? _defaultWorkerMode
+  const workerPoolSize = props.workers ?? _defaultWorkerPoolSize
+
+  if (workerMode) {
+    // Lazy initialize worker pool
+    if (!_workerPool) {
+      _workerPool = new WorkerPool(workerPoolSize)
     }
-    return await new RootNode(props).render()
-  } catch (err) {
-    // Ensure cache is cleared even if Root-level orchestration fails
-    disposeImageCache()
-    throw err
+    const result = await _workerPool.render(props)
+    return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas
   }
+
+  // Non-worker mode — render directly and return Canvas
+  return new RootNode(props).render()
 }
