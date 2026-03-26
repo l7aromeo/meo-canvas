@@ -584,37 +584,90 @@ export interface GridItemProps extends BoxProps {
 }
 
 /**
- * Defines the properties for a RootNode.
+ * Root component props for canvas rendering.
+ * Extends BoxProps for layout and styling capabilities.
  */
 export interface RootProps extends BoxProps {
-  /** Width of the canvas in pixels */
+  /**
+   * Width of the canvas in pixels.
+   * @required
+   */
   width: number
-  /** Optional height of the canvas in pixels */
+
+  /**
+   * Optional height of the canvas in pixels.
+   * If not set, height is calculated from content.
+   */
   height?: number
-  /** Scale factor for rendering (e.g., 2 for 2x resolution) */
+
+  /**
+   * Scale factor for high-DPI rendering.
+   * @default 1
+   * @example 2 // For 2x Retina displays
+   */
   scale?: number
-  /** Font files to register for use */
+
+  /**
+   * Font files to register for use in the canvas.
+   */
   fonts?: FontRegistrationInfo[]
 
   /**
    * Write fetched images to disk during this render for faster re-decode
    * when the same source appears multiple times. Disk entries are deleted
-   * when the render completes — no cross-render sharing. Default: false.
+   * when the render completes — no cross-render sharing.
+   * @default false
    */
   useDiskCache?: boolean
 
   /**
    * Enable worker thread rendering for non-blocking operation.
+   * Worker mode renders in a separate thread to avoid blocking the event loop.
    * @default true
    */
   workerMode?: boolean
 
   /**
    * Number of worker threads to use when workerMode is enabled.
-   * Only applies on first render with workerMode: true.
+   * Only applies when workerMode is true or undefined (default).
+   * Has no effect when workerMode: false.
    * @default cpus().length - 1
    */
   workers?: number
+}
+
+/**
+ * Root props when worker mode is enabled (default behavior).
+ * Includes .release() method for memory cleanup.
+ */
+export interface RootPropsWithWorker extends RootProps {
+  /**
+   * Worker mode enabled or default (undefined defaults to true).
+   */
+  workerMode?: true
+
+  /**
+   * Number of worker threads (only available in worker mode).
+   */
+  workers?: number
+}
+
+/**
+ * Root props when worker mode is disabled.
+ * Returns plain Canvas without .release() method.
+ * workers prop is not available in this mode.
+ */
+export interface RootPropsWithoutWorker extends RootProps {
+  /**
+   * Worker mode explicitly disabled.
+   */
+  workerMode: false
+
+  /**
+   * workers prop is not available when workerMode is false.
+   * Setting this will cause a TypeScript error.
+   */
+  workers?: never
 }
 
 /**

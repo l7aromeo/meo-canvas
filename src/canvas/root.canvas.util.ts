@@ -1,7 +1,7 @@
 import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
 import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
-import type { BaseProps, RootProps, CanvasElement } from '@/canvas/canvas.type.js'
+import type { BaseProps, RootProps, CanvasElement, RootPropsWithWorker, RootPropsWithoutWorker } from '@/canvas/canvas.type.js'
 import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/worker/worker.types.js'
 import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.util.js'
 import { deleteDiskCache } from '@/util/disk.cache.js'
@@ -445,10 +445,24 @@ export class RootNode extends ColumnNode {
 /**
  * Creates and renders a new root node with the given properties.
  * Rendering runs in worker threads by default for non-blocking operation.
+ * @example
+ * // Worker mode (default) - .release() available
+ * const canvas = await Root({ width: 400, children: [...] })
+ * canvas.release() // ✓ OK
+ * @example
+ * // Worker mode explicit - .release() available
+ * const canvas = await Root({ width: 400, workerMode: true, workers: 2 })
+ * canvas.release() // ✓ OK
+ * @example
+ * // Non-worker mode - .release() NOT available, workers not allowed
+ * const canvas = await Root({ width: 400, workerMode: false })
+ * canvas.release() // ✗ TypeScript error
  * @param props Configuration properties for the root node
- * @returns Promise resolving to the rendered Canvas (or WorkerCanvas in worker mode)
+ * @returns Canvas with .release() in worker mode, plain Canvas otherwise
  */
-export const Root = async (props: RootProps): Promise<Canvas> => {
+export function Root(props: RootPropsWithWorker): Promise<Canvas & { release(): void }>
+export function Root(props: RootPropsWithoutWorker): Promise<Canvas>
+export async function Root(props: RootProps): Promise<Canvas | (Canvas & { release(): void })> {
   // Determine worker mode: props override legacy configure()
   const workerMode = props.workerMode ?? _defaultWorkerMode
   const workerPoolSize = props.workers ?? _defaultWorkerPoolSize
@@ -459,7 +473,7 @@ export const Root = async (props: RootProps): Promise<Canvas> => {
       _workerPool = new WorkerPool(workerPoolSize)
     }
     const result = await _workerPool.render(props)
-    return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas
+    return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas & { release(): void }
   }
 
   // Non-worker mode — render directly and return Canvas
