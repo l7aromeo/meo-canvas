@@ -32,3 +32,36 @@ export async function writeDiskCache(key: string, data: Buffer): Promise<void> {
     // best-effort — cache write failures are non-fatal
   }
 }
+
+export async function deleteDiskCache(key: string): Promise<void> {
+  try {
+    await fs.unlink(join(CACHE_DIR, key))
+  } catch {
+    // non-fatal — file may not exist if write failed earlier
+  }
+}
+
+/**
+ * Delete the entire disk cache directory.
+ * Called on process exit to clean up any orphaned cache files.
+ */
+export async function clearDiskCache(): Promise<void> {
+  try {
+    await fs.rm(CACHE_DIR, { recursive: true, force: true })
+  } catch {
+    // non-fatal — directory may not exist
+  }
+}
+
+// Clean up disk cache on process exit to handle crashes mid-render
+process.on('beforeExit', () => {
+  // Fire and forget — best effort cleanup
+  clearDiskCache()
+})
+
+// Also clean up on SIGINT/SIGTERM for graceful shutdowns
+const cleanupOnExit = () => {
+  clearDiskCache().finally(() => process.exit(0))
+}
+process.on('SIGINT', cleanupOnExit)
+process.on('SIGTERM', cleanupOnExit)
