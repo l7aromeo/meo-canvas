@@ -42,6 +42,7 @@
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix",
     "format": "prettier --write .",
     "generate:samples": "npx tsx scripts/generate_sample_charts.ts && npx tsx scripts/generate_sample_grids.ts && npx tsx scripts/generate_sample_nested_grids.ts",
+    "check:memory": "npx tsx --expose-gc scripts/check_memory.ts",
     "prepare": "husky"
   },
   "devDependencies": {
