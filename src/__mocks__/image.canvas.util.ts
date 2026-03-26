@@ -27,15 +27,10 @@ export const Image = jest.fn((props: any) => new ImageNode(props))
 
 export type RenderImageCache = Map<string, Promise<any>>
 
-export const getImageCache = jest.fn(() => ({ get: jest.fn(), set: jest.fn(), has: jest.fn(() => false), dispose: jest.fn(), size: 0, maxSize: 128 }))
-export const disposeImageCache = jest.fn()
-
 export const __mocks__ = {
   ImageNode,
   Image,
   RenderImageCache: Map,
-  getImageCache,
-  disposeImageCache,
   reset: () => {
     Image.mockClear()
   },
