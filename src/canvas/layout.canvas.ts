@@ -105,11 +105,14 @@ export class BoxNode {
       'textDecoration',
       'maxLines',
       'fontVariant',
-    ]
+    ] as const
 
+    const initialPropsRec = this.initialProps as Record<string, unknown>
+    const parentPropsRec = parentProps as Record<string, unknown>
+    const propsRec = this.props as Record<string, unknown>
     for (const key of inheritableKeys) {
-      if (this.initialProps[key] === undefined && parentProps[key] !== undefined) {
-        this.props[key] = parentProps[key]
+      if (initialPropsRec[key] === undefined && parentPropsRec[key] !== undefined) {
+        propsRec[key] = parentPropsRec[key]
       }
     }
 
@@ -230,10 +233,11 @@ export class BoxNode {
       } else {
         for (const [edge, value] of Object.entries(position)) {
           if (edge in Style.Edge) {
+            const edgeKey = edge as keyof typeof Style.Edge
             if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setPositionPercent(Style.Edge[edge], parseFloat(value))
+              this.node.setPositionPercent(Style.Edge[edgeKey], parseFloat(value))
             } else {
-              this.node.setPosition(Style.Edge[edge], value as number)
+              this.node.setPosition(Style.Edge[edgeKey], value as number)
             }
           }
         }
@@ -247,10 +251,11 @@ export class BoxNode {
       } else {
         for (const [gutter, value] of Object.entries(gap)) {
           if (gutter in Style.Gutter) {
+            const gutterKey = gutter as keyof typeof Style.Gutter
             if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setGapPercent(Style.Gutter[gutter], parseFloat(value))
+              this.node.setGapPercent(Style.Gutter[gutterKey], parseFloat(value))
             } else {
-              this.node.setGap(Style.Gutter[gutter], value as number)
+              this.node.setGap(Style.Gutter[gutterKey], value as number)
             }
           }
         }
@@ -264,10 +269,11 @@ export class BoxNode {
       } else {
         for (const [edge, value] of Object.entries(margin)) {
           if (edge in Style.Edge) {
+            const edgeKey = edge as keyof typeof Style.Edge
             if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setMarginPercent(Style.Edge[edge], parseFloat(value))
+              this.node.setMarginPercent(Style.Edge[edgeKey], parseFloat(value))
             } else {
-              this.node.setMargin(Style.Edge[edge], value as number)
+              this.node.setMargin(Style.Edge[edgeKey], value as number)
             }
           }
         }
@@ -281,10 +287,11 @@ export class BoxNode {
       } else {
         for (const [edge, value] of Object.entries(padding)) {
           if (edge in Style.Edge) {
+            const edgeKey = edge as keyof typeof Style.Edge
             if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setPaddingPercent(Style.Edge[edge], parseFloat(value))
+              this.node.setPaddingPercent(Style.Edge[edgeKey], parseFloat(value))
             } else {
-              this.node.setPadding(Style.Edge[edge], value as number)
+              this.node.setPadding(Style.Edge[edgeKey], value as number)
             }
           }
         }
@@ -295,7 +302,7 @@ export class BoxNode {
         this.node.setBorder(Style.Edge.All, border)
       } else {
         for (const [edge, value] of Object.entries(border)) {
-          if (edge in Style.Edge) this.node.setBorder(Style.Edge[edge], value)
+          if (edge in Style.Edge) this.node.setBorder(Style.Edge[edge as keyof typeof Style.Edge], value)
         }
       }
     }

@@ -116,7 +116,7 @@ export class TextNode extends BoxNode {
     let defaultsApplied = false
     for (const key of Object.keys(textDefaults) as (keyof typeof textDefaults)[]) {
       if (this.props[key] === undefined && textDefaults[key] !== undefined) {
-        this.props[key as string] = textDefaults[key]
+        ;(this.props as unknown as Record<string, unknown>)[key] = textDefaults[key]
         defaultsApplied = true
       }
     }
@@ -132,7 +132,7 @@ export class TextNode extends BoxNode {
         'lineGap',
         'letterSpacing',
         'wordSpacing',
-      ].some(measureKey => this.props[measureKey] === textDefaults[measureKey])
+      ].some(measureKey => this.props[measureKey as keyof typeof textDefaults] === textDefaults[measureKey as keyof typeof textDefaults])
       if (affectsMeasurement) {
         this.node.markDirty()
       }

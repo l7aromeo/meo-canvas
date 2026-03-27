@@ -304,7 +304,7 @@ export class RootNode extends ColumnNode {
   /** Target width for the canvas in pixels */
   private readonly targetWidth: number
   /** Target height for the canvas in pixels */
-  private readonly targetHeight: number
+  private readonly targetHeight: number | undefined
   /** Scale factor for rendering (e.g. 2 for 2x resolution) */
   private readonly scale: number
 
