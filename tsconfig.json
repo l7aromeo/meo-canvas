@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "types": ["jest"],
+    "types": ["node","jest"],
     "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "nodenext",

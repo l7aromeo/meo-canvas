@@ -1,5 +1,5 @@
 import { Root, Column, Box, Row, Text, Style, Grid } from '../src/index.js'
-import { GridItem } from '../src/canvas/grid.canvas.util.js'
+import { GridItem } from '../src/canvas/grid.canvas.js'
 import tinycolor from 'tinycolor2'
 import path from 'path'
 import fs from 'fs'
@@ -572,6 +572,7 @@ const unstableGrid = Section(
 ;(async () => {
   try {
     const canvas = await Root({
+      workerMode: false,
       width: 1200,
       backgroundColor: '#F0F0F5',
       fontFamily: 'Inter',

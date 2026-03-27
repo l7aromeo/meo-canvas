@@ -1,7 +1,7 @@
-import { Root } from '@/canvas/root.canvas.util.js'
-import { Chart } from '@/canvas/chart.canvas.util.js'
-import { Column, Row } from '@/canvas/layout.canvas.util.js'
-import { Text } from '@/canvas/text.canvas.util.js'
+import { Root } from '@/canvas/root.canvas.js'
+import { Chart } from '@/canvas/chart.canvas.js'
+import { Column, Row } from '@/canvas/layout.canvas.js'
+import { Text } from '@/canvas/text.canvas.js'
 import * as fs from 'fs'
 
 async function run() {
@@ -172,6 +172,7 @@ async function run() {
   })
 
   const canvas = await Root({
+    workerMode: false,
     width: 1600,
     height: 800,
     backgroundColor: '#f0f0f0',

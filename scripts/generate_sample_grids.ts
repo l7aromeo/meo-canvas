@@ -1,5 +1,5 @@
 import { Root, Column, Box, Text, Style } from '../src/index.js'
-import { Grid, GridItem } from '../src/canvas/grid.canvas.util.js'
+import { Grid, GridItem } from '../src/canvas/grid.canvas.js'
 import path from 'path'
 import fs from 'fs'
 
@@ -93,6 +93,7 @@ const implicitRowsGrid = Grid({
 ;(async () => {
   try {
     const canvas = await Root({
+      workerMode: false,
       width: 1200, // Wide enough for all
       backgroundColor: 'white',
       fontFamily: 'Inter', // Assuming Inter is available or defaults safely
