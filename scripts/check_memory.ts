@@ -24,6 +24,9 @@
 
 import { existsSync } from 'fs'
 import { execSync } from 'child_process'
+import { cpus } from 'os'
+import type { Root as RootFn, terminate as terminateFn } from '@/canvas/root.canvas.js'
+import type { Image as ImageFn } from '@/canvas/image.canvas.js'
 
 // ---------------------------------------------------------------------------
 // Worker availability — the compiled .js must exist; tsx cannot run .ts workers
@@ -80,8 +83,13 @@ async function main() {
     process.exit(1)
   }
 
-  // Runtime imports from dist (required for worker path resolution)
-  const [{ Root }, { Image }] = await Promise.all([import('dist/esm/canvas/root.canvas.util.js'), import('dist/esm/canvas/image.canvas.util.js')])
+  // Runtime imports from dist (required for worker path resolution).
+  // Paths are stored in variables so TS skips static module resolution on them.
+  const [rootDistPath, imageDistPath] = ['dist/esm/canvas/root.canvas.js', 'dist/esm/canvas/image.canvas.js'] as string[]
+  const [{ Root, terminate }, { Image }] = (await Promise.all([import(rootDistPath), import(imageDistPath)])) as [
+    { Root: typeof RootFn; terminate: typeof terminateFn },
+    { Image: typeof ImageFn },
+  ]
 
   function makeTree() {
     return {
@@ -143,7 +151,7 @@ async function main() {
     const samples: number[] = []
 
     for (let i = 0; i < 2; i++) {
-      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: 1 })) as any
+      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: Math.max(1, cpus().length - 1) })) as any
       canvas.toBufferSync('png')
       // intentionally NOT calling canvas.release()
     }
@@ -151,7 +159,7 @@ async function main() {
     tryGC()
 
     for (let i = 0; i < RENDERS; i++) {
-      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: 1 })) as any
+      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: Math.max(1, cpus().length - 1) })) as any
       canvas.toBufferSync('png')
       // intentionally NOT calling canvas.release()
       tryGC()
@@ -181,7 +189,7 @@ async function main() {
     const samples: number[] = []
 
     for (let i = 0; i < 2; i++) {
-      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: 1 })) as any
+      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: Math.max(1, cpus().length - 1) })) as any
       canvas.toBufferSync('png')
       canvas.release()
     }
@@ -189,7 +197,7 @@ async function main() {
     tryGC()
 
     for (let i = 0; i < RENDERS; i++) {
-      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: 1 })) as any
+      const canvas = (await Root({ ...makeTree(), workerMode: true, workers: Math.max(1, cpus().length - 1) })) as any
       canvas.toBufferSync('png')
       canvas.release()
       tryGC()
@@ -216,8 +224,7 @@ async function main() {
   console.log(' Done')
   console.log('========================================\n')
 
-  // Let worker threads finish teardown before exiting
-  setTimeout(() => process.exit(0), 500)
+  terminate()
 }
 
 void main()
