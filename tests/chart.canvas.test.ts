@@ -103,8 +103,8 @@ describe('Chart factory function', () => {
     expect(descriptor.__type).toBe('Chart')
     expect((descriptor.props as any).type).toBe('bar')
     expect((descriptor.props as any).data).toBe(barData)
-    expect(descriptor.props.width).toBe(500)
-    expect(descriptor.props.height).toBe(400)
+    expect((descriptor.props as any).width).toBe(500)
+    expect((descriptor.props as any).height).toBe(400)
   })
 
   it('should return correct descriptor for pie chart', () => {
