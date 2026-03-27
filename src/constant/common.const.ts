@@ -12,7 +12,7 @@ export enum Border {
 /**
  * Consolidated Style object combining Yoga layout constants and custom border styles
  */
-export const Style = {
+export const Style: typeof All & { Border: typeof Border } = {
   ...All,
   Border,
 }
