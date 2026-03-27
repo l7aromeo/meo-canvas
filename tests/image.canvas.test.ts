@@ -27,8 +27,8 @@ jest.unstable_mockModule('fs', () => ({
   promises: { readFile: mockReadFile },
 }))
 
-let ImageNode: typeof import('@/canvas/image.canvas.util.js').ImageNode
-let Image: typeof import('@/canvas/image.canvas.util.js').Image
+let ImageNode: typeof import('@/canvas/image.canvas.js').ImageNode
+let Image: typeof import('@/canvas/image.canvas.js').Image
 
 const createMockCtx = (): CanvasRenderingContext2D => {
   const ctx: Partial<CanvasRenderingContext2D> = {
@@ -83,7 +83,7 @@ describe('ImageNode & Image factory', () => {
       promises: { readFile: mockReadFile },
     }))
 
-    const mod = await import('@/canvas/image.canvas.util.js')
+    const mod = await import('@/canvas/image.canvas.js')
     ImageNode = mod.ImageNode
     Image = mod.Image
 
@@ -273,7 +273,7 @@ describe('ImageNode & Image factory', () => {
 
   describe('Caching', () => {
     it('should use cache for same src', async () => {
-      const cache = new Map() as import('@/canvas/image.canvas.util.js').RenderImageCache
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
       const node1 = new ImageNode({ src: 'test.png', width: 100, height: 100 })
       const node2 = new ImageNode({ src: 'test.png', width: 100, height: 100 })
 
@@ -285,7 +285,7 @@ describe('ImageNode & Image factory', () => {
     })
 
     it('should create separate cache entries for different src', async () => {
-      const cache = new Map() as import('@/canvas/image.canvas.util.js').RenderImageCache
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
       const node1 = new ImageNode({ src: 'a.png', width: 100, height: 100 })
       const node2 = new ImageNode({ src: 'b.png', width: 100, height: 100 })
 
@@ -296,7 +296,7 @@ describe('ImageNode & Image factory', () => {
     })
 
     it('should create separate cache entries for same src with different color', async () => {
-      const cache = new Map() as import('@/canvas/image.canvas.util.js').RenderImageCache
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
 
       // For SVG files with color, we need fileTypeFromFile to return svg type
       mockFileTypeFromFile.mockResolvedValue({ mime: 'image/svg+xml' })

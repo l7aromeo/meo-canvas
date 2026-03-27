@@ -1,6 +1,6 @@
 import type { GridProps, GridTrackSize, GridItemProps, CanvasElement } from '@/canvas/canvas.type.js'
 import type { BoxProps } from '@/canvas/canvas.type.js'
-import { BoxNode, RowNode } from '@/canvas/layout.canvas.util.js'
+import { BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import { Style } from '@/constant/common.const.js'
 import { parsePercentage } from '@/canvas/canvas.helper.js'
 

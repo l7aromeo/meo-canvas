@@ -167,9 +167,9 @@ jest.unstable_mockModule('node:path', () => ({
 // Types loaded after mocks
 // ---------------------------------------------------------------------------
 
-let ImageNode: typeof import('@/canvas/image.canvas.util.js').ImageNode
-let RootNode: typeof import('@/canvas/root.canvas.util.js').RootNode
-let configure: typeof import('@/canvas/root.canvas.util.js').configure
+let ImageNode: typeof import('@/canvas/image.canvas.js').ImageNode
+let RootNode: typeof import('@/canvas/root.canvas.js').RootNode
+let configure: typeof import('@/canvas/root.canvas.js').configure
 
 const MOCK_IMAGE = { width: 200, height: 100 }
 const TEST_KEY = 'abc123deadbeef'
@@ -234,10 +234,10 @@ beforeEach(async () => {
     hashBuffer: mockHashBuffer,
   }))
 
-  const imageMod = await import('@/canvas/image.canvas.util.js')
+  const imageMod = await import('@/canvas/image.canvas.js')
   ImageNode = imageMod.ImageNode
 
-  const rootMod = await import('@/canvas/root.canvas.util.js')
+  const rootMod = await import('@/canvas/root.canvas.js')
   RootNode = rootMod.RootNode
   configure = rootMod.configure
   configure({ workerMode: false })
@@ -321,7 +321,7 @@ describe('ImageNode — disk cache via diskCacheKeys', () => {
   it('deduplicates disk writes via per-render memory cache', async () => {
     mockReadDiskCache.mockResolvedValue(null)
 
-    const memCache = new Map() as import('@/canvas/image.canvas.util.js').RenderImageCache
+    const memCache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
     const diskCacheKeys = new Set<string>()
 
     // Use HTTP URL to trigger fetch path which has contentBuffer available

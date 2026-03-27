@@ -2,8 +2,8 @@ import { jest } from '@jest/globals'
 import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/skia-canvas.js'
 import { __mocks__ as fsMocks } from '@/__mocks__/node-fs.js'
 import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
-import { __mocks__ as layoutMocks } from '@/__mocks__/layout.canvas.util.js'
-import { __mocks__ as imageMocks } from '@/__mocks__/image.canvas.util.js'
+import { __mocks__ as layoutMocks } from '@/__mocks__/layout.canvas.js'
+import { __mocks__ as imageMocks } from '@/__mocks__/image.canvas.js'
 
 jest.unstable_mockModule('skia-canvas', () => skiaCanvasMocks)
 
@@ -11,9 +11,9 @@ jest.unstable_mockModule('node:fs', () => fsMocks)
 
 jest.unstable_mockModule('node:path', () => pathMocks)
 
-jest.unstable_mockModule('@/canvas/layout.canvas.util.js', () => layoutMocks)
+jest.unstable_mockModule('@/canvas/layout.canvas.js', () => layoutMocks)
 
-jest.unstable_mockModule('@/canvas/image.canvas.util.js', () => imageMocks)
+jest.unstable_mockModule('@/canvas/image.canvas.js', () => imageMocks)
 
 // Mock worker_threads so worker mode tests don't spin up real OS threads.
 // Each MockWorker captures its 'message' handler and responds via postMessage.
@@ -45,10 +45,10 @@ jest.unstable_mockModule('node:worker_threads', () => ({ Worker: MockWorker }))
 
 let Canvas: typeof import('skia-canvas').Canvas
 let FontLibrary: typeof import('skia-canvas').FontLibrary
-let Root: typeof import('@/canvas/root.canvas.util.js').Root
-let RootNode: typeof import('@/canvas/root.canvas.util.js').RootNode
-let configure: typeof import('@/canvas/root.canvas.util.js').configure
-let ColumnNode: typeof import('@/canvas/layout.canvas.util.js').ColumnNode
+let Root: typeof import('@/canvas/root.canvas.js').Root
+let RootNode: typeof import('@/canvas/root.canvas.js').RootNode
+let configure: typeof import('@/canvas/root.canvas.js').configure
+let ColumnNode: typeof import('@/canvas/layout.canvas.js').ColumnNode
 
 describe('RootNode', () => {
   beforeEach(async () => {
@@ -58,12 +58,12 @@ describe('RootNode', () => {
     const skiaCanvasModule = await import('skia-canvas')
     Canvas = skiaCanvasModule.Canvas
     FontLibrary = skiaCanvasModule.FontLibrary
-    const rootModule = await import('@/canvas/root.canvas.util.js')
+    const rootModule = await import('@/canvas/root.canvas.js')
     Root = rootModule.Root
     RootNode = rootModule.RootNode
     configure = rootModule.configure
     configure({ workerMode: false })
-    const layoutModule = await import('@/canvas/layout.canvas.util.js')
+    const layoutModule = await import('@/canvas/layout.canvas.js')
     ColumnNode = layoutModule.ColumnNode
 
     fsMocks.reset()
@@ -249,8 +249,8 @@ describe('RootNode', () => {
 })
 
 describe('Root (worker mode)', () => {
-  let Root: typeof import('@/canvas/root.canvas.util.js').Root
-  let configure: typeof import('@/canvas/root.canvas.util.js').configure
+  let Root: typeof import('@/canvas/root.canvas.js').Root
+  let configure: typeof import('@/canvas/root.canvas.js').configure
 
   beforeEach(async () => {
     jest.resetModules()
@@ -266,7 +266,7 @@ describe('Root (worker mode)', () => {
     layoutMocks.yogaNode.getComputedLayout.mockReturnValue({ left: 0, top: 0, width: 100, height: 100 })
     layoutMocks.yogaNode.isDirty.mockReturnValue(false)
 
-    const rootModule = await import('@/canvas/root.canvas.util.js')
+    const rootModule = await import('@/canvas/root.canvas.js')
     Root = rootModule.Root
     configure = rootModule.configure
     // worker mode is on by default — no configure() call needed

@@ -46,6 +46,7 @@ export async function deleteDiskCache(key: string): Promise<void> {
  * Called on process exit to clean up any orphaned cache files.
  */
 export async function clearDiskCache(): Promise<void> {
+  _dirEnsured = false
   try {
     await fs.rm(CACHE_DIR, { recursive: true, force: true })
   } catch {
@@ -53,10 +54,14 @@ export async function clearDiskCache(): Promise<void> {
   }
 }
 
-// Clean up disk cache on process exit to handle crashes mid-render
+// Clean up disk cache on process exit to handle crashes mid-render.
+// Guard prevents re-entry: clearDiskCache() is async, so without this the
+// beforeExit → schedule I/O → idle → beforeExit cycle loops forever.
+let _exitCleanupStarted = false
 process.on('beforeExit', () => {
-  // Fire and forget — best effort cleanup
-  clearDiskCache()
+  if (_exitCleanupStarted) return
+  _exitCleanupStarted = true
+  void clearDiskCache()
 })
 
 // Also clean up on SIGINT/SIGTERM for graceful shutdowns

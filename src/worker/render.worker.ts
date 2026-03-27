@@ -12,7 +12,7 @@
  *   WorkerErrorResponse   — any failure
  */
 import { parentPort } from 'worker_threads'
-import { RootNode } from '@/canvas/root.canvas.util.js'
+import { RootNode } from '@/canvas/root.canvas.js'
 import type { Canvas } from 'skia-canvas'
 import type { WorkerRequest, WorkerRenderResponse, WorkerCallResponse, WorkerErrorResponse } from '@/worker/worker.types.js'
 

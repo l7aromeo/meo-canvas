@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { BoxNode } from '@/canvas/layout.canvas.util.js'
+import { BoxNode } from '@/canvas/layout.canvas.js'
 import Mock = jest.Mock
 import { Style } from '@/constant/common.const.js' // Import Style
 

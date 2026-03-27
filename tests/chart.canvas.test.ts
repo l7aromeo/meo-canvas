@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
-import { Chart, ChartNode } from '@/canvas/chart.canvas.util.js'
-import { BoxNode } from '@/canvas/layout.canvas.util.js'
+import { Chart, ChartNode } from '@/canvas/chart.canvas.js'
+import { BoxNode } from '@/canvas/layout.canvas.js'
 import type { CanvasElement, CartesianChartData, PieChartDataPoint } from '@/canvas/canvas.type.js'
 import { Style } from '@/constant/common.const.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'

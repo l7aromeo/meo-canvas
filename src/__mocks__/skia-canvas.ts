@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { _clearRegisteredFonts } from '@/canvas/root.canvas.util.js'
+import { _clearRegisteredFonts } from '@/canvas/root.canvas.js'
 
 export const mockCanvasContext = {
   scale: jest.fn(),

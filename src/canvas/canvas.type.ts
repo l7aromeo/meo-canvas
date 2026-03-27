@@ -1,7 +1,7 @@
-import { BoxNode } from '@/canvas/layout.canvas.util.js'
-import type { TextNode } from '@/canvas/text.canvas.util.js'
-import type { ImageNode } from '@/canvas/image.canvas.util.js'
-import type { GridNode } from '@/canvas/grid.canvas.util.js'
+import { BoxNode } from '@/canvas/layout.canvas.js'
+import type { TextNode } from '@/canvas/text.canvas.js'
+import type { ImageNode } from '@/canvas/image.canvas.js'
+import type { GridNode } from '@/canvas/grid.canvas.js'
 import type { FontVariantSetting } from 'skia-canvas'
 import * as Style from '@/constant/common.const.js'
 

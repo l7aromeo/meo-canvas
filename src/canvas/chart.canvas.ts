@@ -1,4 +1,4 @@
-import { BoxNode, ColumnNode, RowNode } from '@/canvas/layout.canvas.util.js'
+import { BoxNode, ColumnNode, RowNode } from '@/canvas/layout.canvas.js'
 import type {
   BaseProps,
   CartesianChartData,
@@ -11,13 +11,13 @@ import type {
 } from '@/canvas/canvas.type.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
 import { Style } from '@/constant/common.const.js'
-import { TextNode } from '@/canvas/text.canvas.util.js'
-import { ImageNode } from '@/canvas/image.canvas.util.js'
+import { TextNode } from '@/canvas/text.canvas.js'
+import { ImageNode } from '@/canvas/image.canvas.js'
 
 /**
  * Local buildTree for pre-computed render function results.
  * Handles only node types that render functions would return (Box, Column, Row, Text, Image).
- * Avoids circular dependency with root.canvas.util.ts.
+ * Avoids circular dependency with root.canvas.ts.
  */
 function buildDescriptorTree(descriptor: CanvasElement): BoxNode {
   switch (descriptor.__type) {

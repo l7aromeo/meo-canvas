@@ -2,10 +2,10 @@ import { jest } from '@jest/globals'
 import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/skia-canvas.js'
 import { __mocks__ as fsMocks } from '@/__mocks__/node-fs.js'
 import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
-import { ImageNode } from '@/__mocks__/image.canvas.util.js'
-import { ColumnNode } from '@/__mocks__/layout.canvas.util.js'
+import { ImageNode } from '@/__mocks__/image.canvas.js'
+import { ColumnNode } from '@/__mocks__/layout.canvas.js'
 import { Style } from '@/constant/common.const.js'
-import { RootNode as BaseRootNode } from '@/canvas/root.canvas.util.js'
+import { RootNode as BaseRootNode } from '@/canvas/root.canvas.js'
 
 const registeredFonts = new Map<string, Set<string>>()
 

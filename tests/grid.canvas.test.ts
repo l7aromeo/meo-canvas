@@ -1,5 +1,5 @@
-import { GridNode, GridItem } from '@/canvas/grid.canvas.util.js'
-import { BoxNode } from '@/canvas/layout.canvas.util.js'
+import { GridNode, GridItem } from '@/canvas/grid.canvas.js'
+import { BoxNode } from '@/canvas/layout.canvas.js'
 import Yoga, { Style } from '@/constant/common.const.js'
 import type { GridProps } from '@/canvas/canvas.type.js'
 
