@@ -7,5 +7,5 @@
     "declaration": true,
     "declarationMap": true
   },
-  "exclude": ["**/__mocks__/**", "**/__tests__/**", "scripts"]
+  "exclude": ["**/__mocks__/**", "**/__tests__/**", "scripts", "tests"]
 }
