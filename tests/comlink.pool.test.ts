@@ -133,13 +133,26 @@ describe('ComlinkPool', () => {
     expect(() => pool.render({ width: 100 } as any)).rejects.toBeDefined()
   })
 
-  it('should wrap function props with Comlink.proxy and clean up after render', async () => {
+  it('should extract function props and pass callFn proxy to worker', async () => {
     const pool = new ComlinkPool(1)
     const fn = () => 'hello'
     await pool.render({ width: 100, options: { formatter: fn } } as any)
 
-    // The render call should succeed — proxy cleanup happens in finally block
     expect(mockEndpoint.render).toHaveBeenCalledTimes(1)
+    // First arg should have the function replaced with a sentinel
+    const [props, callFn] = mockEndpoint.render.mock.calls[0] as unknown as [any, any]
+    expect(props.options.formatter).toHaveProperty('__comlinkFnId', 0)
+    expect(typeof callFn).toBe('function')
+    pool.terminate()
+  })
+
+  it('should not pass callFn when props have no functions', async () => {
+    const pool = new ComlinkPool(1)
+    await pool.render({ width: 100 } as any)
+
+    expect(mockEndpoint.render).toHaveBeenCalledTimes(1)
+    const [, callFn] = mockEndpoint.render.mock.calls[0] as unknown as [any, any]
+    expect(callFn).toBeUndefined()
     pool.terminate()
   })
 })

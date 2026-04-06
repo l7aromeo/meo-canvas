@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals'
 import { Chart, ChartNode } from '@/canvas/chart.canvas.js'
 import { BoxNode } from '@/canvas/layout.canvas.js'
+import { extractFunctions, restoreFunctions } from '@/worker/comlink.pool.js'
 import type { CartesianChartData, PieChartDataPoint } from '@/canvas/canvas.type.js'
 import { Style } from '@/constant/common.const.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
@@ -496,5 +497,84 @@ describe('ChartNode grid rendering', () => {
 
     // No setLineDash calls since grid is not enabled
     expect(ctx.setLineDash).not.toHaveBeenCalled()
+  })
+})
+
+describe('Chart function props serialization', () => {
+  it('should extract formatter functions from chart descriptor and restore them', async () => {
+    const formatter = (value: string, index: number) => (index % 2 === 0 ? value : '')
+    const yFormatter = (value: number) => `${value}%`
+
+    const descriptor = Chart({
+      type: 'line',
+      data: barData,
+      options: {
+        xAxisLabelFormatter: formatter,
+        yAxisLabelFormatter: yFormatter,
+        showLegend: true,
+        legendPosition: 'bottom',
+      },
+    })
+
+    // Wrap in a Root-like structure
+    const props = { width: 800, children: [descriptor] }
+
+    // Extract — should replace functions with sentinels
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
+    const cleaned = extractFunctions(props, fnMap, { value: 0 })
+
+    expect(fnMap.size).toBe(2)
+    // Cleaned props should be structured-clone safe (no functions)
+    const json = JSON.stringify(cleaned)
+    expect(json).toContain('__comlinkFnId')
+    expect(json).not.toContain('[Function')
+
+    // Restore — sentinels become callable functions via callback proxy
+    const mockCallFn = async (id: number, ...args: unknown[]) => {
+      const fn = fnMap.get(id)
+      return fn!(...args)
+    }
+    const restored = restoreFunctions(cleaned, mockCallFn)
+    const restoredOptions = (restored.children[0] as any).props.options
+
+    expect(await restoredOptions.xAxisLabelFormatter('Jan', 0)).toBe('Jan')
+    expect(await restoredOptions.xAxisLabelFormatter('Feb', 1)).toBe('')
+    expect(await restoredOptions.yAxisLabelFormatter(42)).toBe('42%')
+  })
+
+  it('should handle chart descriptors with no function props', () => {
+    const descriptor = Chart({
+      type: 'pie',
+      data: pieData,
+      options: { showLabels: false, showLegend: true },
+    })
+
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
+    const cleaned = extractFunctions({ width: 400, children: [descriptor] }, fnMap, { value: 0 })
+
+    expect(fnMap.size).toBe(0)
+    expect(cleaned).toEqual({ width: 400, children: [descriptor] })
+  })
+
+  it('should handle renderLegendItem function prop', async () => {
+    const renderLegendItem = ({ color }: { item: unknown; color: string }) => new BoxNode({ width: 50, height: 20, backgroundColor: color })
+
+    const descriptor = Chart({
+      type: 'doughnut',
+      data: pieData,
+      options: { renderLegendItem: renderLegendItem as any },
+    })
+
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
+    const cleaned = extractFunctions({ width: 400, children: [descriptor] }, fnMap, { value: 0 })
+
+    expect(fnMap.size).toBe(1)
+
+    const mockCallFn = async (id: number, ...args: unknown[]) => fnMap.get(id)!(...args)
+    const restored = restoreFunctions(cleaned, mockCallFn)
+    const restoredFn = (restored.children[0] as any).props.options.renderLegendItem
+
+    const result = await restoredFn({ item: { label: 'A', value: 10 }, index: 0, color: '#ff0000' })
+    expect(result).toBeInstanceOf(BoxNode)
   })
 })

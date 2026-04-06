@@ -15,7 +15,8 @@ import nodeEndpoint from 'comlink/dist/esm/node-adapter.mjs'
  */
 function installNodeProxyHandler() {
   Comlink.transferHandlers.set('proxy', {
-    canHandle: (obj: unknown): obj is { [Comlink.proxyMarker]: true } => typeof obj === 'object' && obj !== null && Comlink.proxyMarker in obj,
+    canHandle: (obj: unknown): obj is { [Comlink.proxyMarker]: true } =>
+      (typeof obj === 'object' || typeof obj === 'function') && obj !== null && Comlink.proxyMarker in obj,
     serialize: (obj: unknown) => {
       const { port1, port2 } = new MessageChannel()
       Comlink.expose(obj, nodeEndpoint(port1))

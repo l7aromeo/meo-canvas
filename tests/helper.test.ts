@@ -1,5 +1,5 @@
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
-import { wrapFunctions } from '@/worker/comlink.pool.js'
+import { extractFunctions, restoreFunctions, FN_MARKER } from '@/worker/comlink.pool.js'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
@@ -482,84 +482,136 @@ describe('drawBorders', () => {
   })
 })
 
-describe('wrapFunctions', () => {
-  it('should wrap function values and track them', () => {
+describe('extractFunctions', () => {
+  it('should replace functions with sentinels and collect them', () => {
     const fn = (x: number) => x * 2
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const input = { a: 1, b: fn, c: 'hello' }
-    const result = wrapFunctions(input, proxies)
+    const result = extractFunctions(input, fnMap, { value: 0 })
 
     expect(result.a).toBe(1)
     expect(result.c).toBe('hello')
-    expect(proxies.size).toBe(1)
-    // In main thread context, Comlink.proxy returns the function itself
-    // The key invariant is that the proxy is tracked for cleanup
-    expect(proxies.has(result.b)).toBe(true)
+    expect(fnMap.size).toBe(1)
+    expect((result.b as any)[FN_MARKER]).toBe(0)
+    expect(fnMap.get(0)).toBe(fn)
   })
 
   it('should handle nested objects', () => {
     const fn = () => 'test'
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const input = { nested: { deep: { fn } } }
-    const result = wrapFunctions(input, proxies)
+    const result = extractFunctions(input, fnMap, { value: 0 })
 
-    expect(proxies.size).toBe(1)
-    expect(proxies.has(result.nested.deep.fn)).toBe(true)
+    expect(fnMap.size).toBe(1)
+    expect((result.nested.deep.fn as any)[FN_MARKER]).toBe(0)
   })
 
   it('should handle arrays with functions', () => {
     const fn1 = () => 1
     const fn2 = () => 2
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const input = [fn1, 'a', fn2]
-    const result = wrapFunctions(input, proxies)
+    const result = extractFunctions(input, fnMap, { value: 0 })
 
-    expect(proxies.size).toBe(2)
+    expect(fnMap.size).toBe(2)
     expect(result[1]).toBe('a')
+    expect((result[0] as any)[FN_MARKER]).toBe(0)
+    expect((result[2] as any)[FN_MARKER]).toBe(1)
   })
 
   it('should preserve null and undefined', () => {
-    const proxies = new Set<unknown>()
-    expect(wrapFunctions(null, proxies)).toBeNull()
-    expect(wrapFunctions(undefined, proxies)).toBeUndefined()
-    expect(proxies.size).toBe(0)
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
+    expect(extractFunctions(null, fnMap, { value: 0 })).toBeNull()
+    expect(extractFunctions(undefined, fnMap, { value: 0 })).toBeUndefined()
+    expect(fnMap.size).toBe(0)
   })
 
   it('should preserve primitives', () => {
-    const proxies = new Set<unknown>()
-    expect(wrapFunctions(42, proxies)).toBe(42)
-    expect(wrapFunctions('str', proxies)).toBe('str')
-    expect(wrapFunctions(true, proxies)).toBe(true)
-    expect(proxies.size).toBe(0)
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
+    expect(extractFunctions(42, fnMap, { value: 0 })).toBe(42)
+    expect(extractFunctions('str', fnMap, { value: 0 })).toBe('str')
+    expect(extractFunctions(true, fnMap, { value: 0 })).toBe(true)
+    expect(fnMap.size).toBe(0)
   })
 
   it('should preserve Buffer instances', () => {
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const buf = Buffer.from('hello')
-    expect(wrapFunctions(buf, proxies)).toBe(buf)
-    expect(proxies.size).toBe(0)
+    expect(extractFunctions(buf, fnMap, { value: 0 })).toBe(buf)
+    expect(fnMap.size).toBe(0)
   })
 
   it('should preserve ArrayBuffer instances', () => {
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const ab = new ArrayBuffer(8)
-    expect(wrapFunctions(ab, proxies)).toBe(ab)
-    expect(proxies.size).toBe(0)
+    expect(extractFunctions(ab, fnMap, { value: 0 })).toBe(ab)
+    expect(fnMap.size).toBe(0)
   })
 
   it('should preserve TypedArray instances', () => {
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const ta = new Uint8Array(8)
-    expect(wrapFunctions(ta, proxies)).toBe(ta)
-    expect(proxies.size).toBe(0)
+    expect(extractFunctions(ta, fnMap, { value: 0 })).toBe(ta)
+    expect(fnMap.size).toBe(0)
   })
 
   it('should handle objects with no functions', () => {
-    const proxies = new Set<unknown>()
+    const fnMap = new Map<number, (...args: unknown[]) => unknown>()
     const input = { a: 1, b: 'two', c: [3, 4] }
-    const result = wrapFunctions(input, proxies)
+    const result = extractFunctions(input, fnMap, { value: 0 })
 
     expect(result).toEqual(input)
-    expect(proxies.size).toBe(0)
+    expect(fnMap.size).toBe(0)
+  })
+})
+
+describe('restoreFunctions', () => {
+  it('should replace sentinels with callable functions', async () => {
+    const mockCallFn = async (id: number, ...args: unknown[]) => {
+      if (id === 0) return (args[0] as number) * 2
+      return null
+    }
+    const input = { a: 1, b: { [FN_MARKER]: 0 }, c: 'hello' }
+    const result = restoreFunctions(input, mockCallFn)
+
+    expect(result.a).toBe(1)
+    expect(result.c).toBe('hello')
+    expect(typeof result.b).toBe('function')
+    expect(await (result.b as any)(5)).toBe(10)
+  })
+
+  it('should handle nested sentinels', async () => {
+    const mockCallFn = async (id: number) => `fn_${id}`
+    const input = { nested: { deep: { fn: { [FN_MARKER]: 3 } } } }
+    const result = restoreFunctions(input, mockCallFn)
+
+    expect(typeof result.nested.deep.fn).toBe('function')
+    expect(await (result.nested.deep.fn as any)()).toBe('fn_3')
+  })
+
+  it('should handle arrays with sentinels', async () => {
+    const mockCallFn = async (id: number) => id * 10
+    const input = [{ [FN_MARKER]: 0 }, 'a', { [FN_MARKER]: 1 }]
+    const result = restoreFunctions(input, mockCallFn)
+
+    expect(typeof result[0]).toBe('function')
+    expect(result[1]).toBe('a')
+    expect(typeof result[2]).toBe('function')
+    expect(await (result[0] as any)()).toBe(0)
+    expect(await (result[2] as any)()).toBe(10)
+  })
+
+  it('should preserve non-sentinel values', () => {
+    const mockCallFn = async () => null
+    expect(restoreFunctions(null, mockCallFn)).toBeNull()
+    expect(restoreFunctions(undefined, mockCallFn)).toBeUndefined()
+    expect(restoreFunctions(42, mockCallFn)).toBe(42)
+    expect(restoreFunctions('str', mockCallFn)).toBe('str')
+  })
+
+  it('should preserve binary data', () => {
+    const mockCallFn = async () => null
+    const buf = Buffer.from('hello')
+    expect(restoreFunctions(buf, mockCallFn)).toBe(buf)
   })
 })
