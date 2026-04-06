@@ -231,8 +231,8 @@ export class ImageNode extends BoxNode {
    * Renders the image with correct sizing, clipping, and positioning.
    * Handles object-fit, object-position, and visual effects like saturation.
    */
-  protected override _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
-    super._renderContent(ctx, x, y, width, height)
+  protected override async _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+    await super._renderContent(ctx, x, y, width, height)
 
     if (!this.loadedImage || width <= 0 || height <= 0) return
     const img = this.loadedImage

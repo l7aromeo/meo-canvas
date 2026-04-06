@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals'
 import { Chart, ChartNode } from '@/canvas/chart.canvas.js'
 import { BoxNode } from '@/canvas/layout.canvas.js'
-import type { CanvasElement, CartesianChartData, PieChartDataPoint } from '@/canvas/canvas.type.js'
+import type { CartesianChartData, PieChartDataPoint } from '@/canvas/canvas.type.js'
 import { Style } from '@/constant/common.const.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
 
@@ -139,13 +139,13 @@ describe('ChartNode construction', () => {
     expect(layout.height).toBe(600)
   })
 
-  it('should set default options (showLabels, showLegend, labelFontSize, legendPosition)', () => {
+  it('should set default options (showLabels, showLegend, labelFontSize, legendPosition)', async () => {
     const node = new ChartNode({ type: 'bar', data: barData })
     // Access chartOptions via rendering behavior: labels and legend should render by default
     const ctx = createMockContext()
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // Default showLabels: true => measureText should be called for labels
     expect(ctx.measureText).toHaveBeenCalled()
@@ -176,12 +176,12 @@ describe('ChartNode construction', () => {
 // ---------- 3. Bar chart rendering ----------
 
 describe('ChartNode rendering - bar chart', () => {
-  it('should call fillRect for bars', () => {
+  it('should call fillRect for bars', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({ type: 'bar', data: barData, width: 400, height: 300 })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // Each label x each dataset = 3 labels * 2 datasets = 6 bar fillRects
     // Plus legend colored boxes (2 datasets)
@@ -192,7 +192,7 @@ describe('ChartNode rendering - bar chart', () => {
     expect(fillRectCalls.length).toBeGreaterThanOrEqual(6)
   })
 
-  it('should render labels when showLabels is true', () => {
+  it('should render labels when showLabels is true', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -203,13 +203,13 @@ describe('ChartNode rendering - bar chart', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // measureText is called for labels and legend layout
     expect(ctx.measureText).toHaveBeenCalled()
   })
 
-  it('should not render labels when showLabels is false', () => {
+  it('should not render labels when showLabels is false', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -220,7 +220,7 @@ describe('ChartNode rendering - bar chart', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // fillRect still called for bars (6 calls), but no legend boxes
     const fillRectCalls = (ctx.fillRect as jest.Mock).mock.calls
@@ -231,12 +231,12 @@ describe('ChartNode rendering - bar chart', () => {
 // ---------- 4. Line chart rendering ----------
 
 describe('ChartNode rendering - line chart', () => {
-  it('should call arc for data points and stroke for lines', () => {
+  it('should call arc for data points and stroke for lines', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({ type: 'line', data: lineData, width: 400, height: 300 })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // arc is called for each data point (4 points in 1 dataset)
     expect(ctx.arc).toHaveBeenCalled()
@@ -247,12 +247,12 @@ describe('ChartNode rendering - line chart', () => {
     expect(ctx.stroke).toHaveBeenCalled()
   })
 
-  it('should call moveTo for the first point and lineTo for subsequent points', () => {
+  it('should call moveTo for the first point and lineTo for subsequent points', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({ type: 'line', data: lineData, width: 400, height: 300 })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(ctx.moveTo).toHaveBeenCalled()
     expect(ctx.lineTo).toHaveBeenCalled()
@@ -265,12 +265,12 @@ describe('ChartNode rendering - line chart', () => {
 // ---------- 5. Pie chart rendering ----------
 
 describe('ChartNode rendering - pie chart', () => {
-  it('should call arc for each slice and fill for each', () => {
+  it('should call arc for each slice and fill for each', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({ type: 'pie', data: pieData, width: 400, height: 300 })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // arc called once per slice (3 slices)
     expect(ctx.arc).toHaveBeenCalled()
@@ -283,12 +283,12 @@ describe('ChartNode rendering - pie chart', () => {
     expect(fillCalls.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('should call closePath for each pie slice', () => {
+  it('should call closePath for each pie slice', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({ type: 'pie', data: pieData, width: 400, height: 300 })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(ctx.closePath).toHaveBeenCalled()
     const closePathCalls = (ctx.closePath as jest.Mock).mock.calls
@@ -299,19 +299,19 @@ describe('ChartNode rendering - pie chart', () => {
 // ---------- 6. Doughnut chart rendering ----------
 
 describe('ChartNode rendering - doughnut chart', () => {
-  it('should call arc twice per slice (outer and inner radius)', () => {
+  it('should call arc twice per slice (outer and inner radius)', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({ type: 'doughnut', data: pieData, width: 400, height: 300 })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // 2 arcs per slice (outer + inner) * 3 slices = 6 arc calls
     const arcCalls = (ctx.arc as jest.Mock).mock.calls
     expect(arcCalls.length).toBeGreaterThanOrEqual(6)
   })
 
-  it('should render with custom innerRadius', () => {
+  it('should render with custom innerRadius', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'doughnut',
@@ -322,7 +322,7 @@ describe('ChartNode rendering - doughnut chart', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // Verify arc calls exist — inner radius param differs from default (0.6)
     const arcCalls = (ctx.arc as jest.Mock).mock.calls
@@ -338,93 +338,10 @@ describe('ChartNode rendering - doughnut chart', () => {
   })
 })
 
-// ---------- 7. Pre-computed fields consumption ----------
-
-describe('ChartNode pre-computed fields', () => {
-  it('should use _preComputedXAxisLabels instead of formatter', () => {
-    const ctx = createMockContext()
-    const customLabels = ['January', 'February', 'March']
-    const formatterSpy = jest.fn((v: string) => `formatted-${v}`)
-
-    const node = new ChartNode({
-      type: 'bar',
-      data: barData,
-      width: 400,
-      height: 300,
-      options: {
-        showLabels: true,
-        showLegend: false,
-        xAxisLabelFormatter: formatterSpy,
-        _preComputedXAxisLabels: customLabels,
-      } as any,
-    })
-    node.processInitialChildren()
-    node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
-
-    // The formatter should NOT be called when pre-computed labels exist
-    expect(formatterSpy).not.toHaveBeenCalled()
-  })
-
-  it('should use _preComputedYAxisLabels instead of formatter', () => {
-    const ctx = createMockContext()
-    const customYLabels = ['0', '7', '14', '21', '28', '35']
-    const yFormatterSpy = jest.fn((v: number) => `y-${v}`)
-
-    const node = new ChartNode({
-      type: 'bar',
-      data: barData,
-      width: 400,
-      height: 300,
-      options: {
-        showLabels: true,
-        showLegend: false,
-        showYAxis: true,
-        grid: { show: true },
-        yAxisLabelFormatter: yFormatterSpy,
-        _preComputedYAxisLabels: customYLabels,
-      } as any,
-    })
-    node.processInitialChildren()
-    node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
-
-    // The y-axis formatter should NOT be called when pre-computed labels exist
-    expect(yFormatterSpy).not.toHaveBeenCalled()
-  })
-
-  it('should use _preComputedLegendItems with buildDescriptorTree', () => {
-    const ctx = createMockContext()
-    const legendDescriptors: CanvasElement[] = [
-      {
-        __type: 'Box',
-        props: { width: 50, height: 20 },
-        children: [{ __type: 'Text', text: 'Legend A', props: {} }],
-      },
-    ]
-
-    const node = new ChartNode({
-      type: 'bar',
-      data: barData,
-      width: 400,
-      height: 300,
-      options: {
-        showLegend: true,
-        _preComputedLegendItems: legendDescriptors,
-      } as any,
-    })
-    node.processInitialChildren()
-    node.node.calculateLayout(400, 300, Style.Direction.LTR)
-
-    // Should not throw; buildDescriptorTree processes the descriptors
-    expect(() => node.render(ctx, 0, 0)).not.toThrow()
-  })
-})
-
-// ---------- 8. Legend rendering ----------
+// ---------- 7. Legend rendering ----------
 
 describe('ChartNode legend rendering', () => {
-  it('should render default legend with colored boxes and labels', () => {
+  it('should render default legend with colored boxes and labels', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -435,7 +352,7 @@ describe('ChartNode legend rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // Legend renders colored boxes via fillRect and labels via measureText
     // Bar rects (6) + legend boxes (2 datasets) = at least 8 fillRect calls
@@ -443,7 +360,7 @@ describe('ChartNode legend rendering', () => {
     expect(fillRectCalls.length).toBeGreaterThanOrEqual(8)
   })
 
-  it('should not render legend when showLegend is false', () => {
+  it('should not render legend when showLegend is false', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -454,14 +371,14 @@ describe('ChartNode legend rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // Only bar rects (6), no legend
     const fillRectCalls = (ctx.fillRect as jest.Mock).mock.calls
     expect(fillRectCalls.length).toBe(6)
   })
 
-  it('should render with custom renderLegendItem function', () => {
+  it('should render with custom renderLegendItem function', async () => {
     const ctx = createMockContext()
     const renderLegendItem = jest.fn(({ color }: any) => {
       return new BoxNode({ width: 60, height: 20, backgroundColor: color })
@@ -479,7 +396,7 @@ describe('ChartNode legend rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // renderLegendItem should be called once per dataset
     expect(renderLegendItem).toHaveBeenCalledTimes(2)
@@ -491,7 +408,7 @@ describe('ChartNode legend rendering', () => {
 // ---------- 9. Grid rendering ----------
 
 describe('ChartNode grid rendering', () => {
-  it('should draw grid lines when grid.show is true', () => {
+  it('should draw grid lines when grid.show is true', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -506,7 +423,7 @@ describe('ChartNode grid rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // Grid draws 6 horizontal lines (i = 0 to 5)
     expect(ctx.beginPath).toHaveBeenCalled()
@@ -521,7 +438,7 @@ describe('ChartNode grid rendering', () => {
     expect(lineToCalls.length).toBeGreaterThanOrEqual(6)
   })
 
-  it('should apply dashed grid style', () => {
+  it('should apply dashed grid style', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -536,14 +453,14 @@ describe('ChartNode grid rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // setLineDash should be called with [5, 5] for dashed style, then reset with []
     expect(ctx.setLineDash).toHaveBeenCalledWith([5, 5])
     expect(ctx.setLineDash).toHaveBeenCalledWith([])
   })
 
-  it('should apply dotted grid style', () => {
+  it('should apply dotted grid style', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -558,13 +475,13 @@ describe('ChartNode grid rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(ctx.setLineDash).toHaveBeenCalledWith([2, 2])
     expect(ctx.setLineDash).toHaveBeenCalledWith([])
   })
 
-  it('should not draw grid when grid.show is false or absent', () => {
+  it('should not draw grid when grid.show is false or absent', async () => {
     const ctx = createMockContext()
     const node = new ChartNode({
       type: 'bar',
@@ -575,7 +492,7 @@ describe('ChartNode grid rendering', () => {
     })
     node.processInitialChildren()
     node.node.calculateLayout(400, 300, Style.Direction.LTR)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     // No setLineDash calls since grid is not enabled
     expect(ctx.setLineDash).not.toHaveBeenCalled()

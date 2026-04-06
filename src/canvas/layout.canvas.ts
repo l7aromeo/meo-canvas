@@ -321,7 +321,7 @@ export class BoxNode {
    * @param {number} offsetX X offset for rendering.
    * @param {number} offsetY Y offset for rendering.
    */
-  render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
+  async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
     const layout = this.node.getComputedLayout()
     const x = layout.left + offsetX
     const y = layout.top + offsetY
@@ -380,7 +380,7 @@ export class BoxNode {
 
       // --- Step 1: Render Parent Background/Borders/Content ---
       // This renders the current node's own visual appearance first.
-      this._renderContent(ctx, x, y, width, height)
+      await this._renderContent(ctx, x, y, width, height)
 
       // --- Step 2: Prepare Children for Stacking ---
       const positionedChildren: { node: BoxNode; zIndex: number; originalIndex: number }[] = []
@@ -441,21 +441,21 @@ export class BoxNode {
       for (const item of positionedChildren) {
         if (item.zIndex < 0) {
           // Pass parent's layout origin (x, y) as offset
-          item.node.render(ctx, x, y)
+          await item.node.render(ctx, x, y)
         }
       }
 
       // 4b: Render in-flow children (recursively)
       for (const child of inFlowChildren) {
         // Pass parent's layout origin (x, y) as offset
-        child.render(ctx, x, y)
+        await child.render(ctx, x, y)
       }
 
       // 4c: Render positioned children with zero or positive zIndex
       for (const item of positionedChildren) {
         if (item.zIndex >= 0) {
           // Pass parent's layout origin (x, y) as offset
-          item.node.render(ctx, x, y)
+          await item.node.render(ctx, x, y)
         }
       }
       // --- End Child Rendering ---
@@ -489,7 +489,7 @@ export class BoxNode {
    * @param width The width of the content area to render
    * @param height The height of the content area to render
    */
-  protected _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  protected async _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     // Calculate border radius values for all corners
     const radii = { TopLeft: 0, TopRight: 0, BottomRight: 0, BottomLeft: 0 }
     if (this.props.borderRadius) {

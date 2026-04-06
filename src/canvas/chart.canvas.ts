@@ -1,45 +1,13 @@
-import { BoxNode, ColumnNode, RowNode } from '@/canvas/layout.canvas.js'
-import type {
-  BaseProps,
-  CartesianChartData,
-  ChartDataset,
-  ChartProps,
-  ChartType,
-  PieChartDataPoint,
-  CanvasElement,
-  PreComputedChartOptions,
-} from '@/canvas/canvas.type.js'
+import { BoxNode, RowNode } from '@/canvas/layout.canvas.js'
+import type { BaseProps, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint, CanvasElement } from '@/canvas/canvas.type.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
 import { Style } from '@/constant/common.const.js'
 import { TextNode } from '@/canvas/text.canvas.js'
-import { ImageNode } from '@/canvas/image.canvas.js'
-
-/**
- * Local buildTree for pre-computed render function results.
- * Handles only node types that render functions would return (Box, Column, Row, Text, Image).
- * Avoids circular dependency with root.canvas.ts.
- */
-function buildDescriptorTree(descriptor: CanvasElement): BoxNode {
-  switch (descriptor.__type) {
-    case 'Box':
-      return new BoxNode({ ...descriptor.props, children: descriptor.children?.map(buildDescriptorTree) })
-    case 'Column':
-      return new ColumnNode({ ...descriptor.props, children: descriptor.children?.map(buildDescriptorTree) })
-    case 'Row':
-      return new RowNode({ ...descriptor.props, children: descriptor.children?.map(buildDescriptorTree) })
-    case 'Image':
-      return new ImageNode(descriptor.props as any)
-    case 'Text':
-      return new TextNode(descriptor.text, descriptor.props)
-    default:
-      return new BoxNode({})
-  }
-}
 
 export class ChartNode<T extends ChartType> extends BoxNode {
   private chartData: CartesianChartData | PieChartDataPoint[]
   private chartType: ChartProps<T>['type']
-  private chartOptions: ChartProps<T>['options'] & PreComputedChartOptions
+  private chartOptions: ChartProps<T>['options']
 
   constructor(props: ChartProps<T> & BaseProps) {
     // Set default intrinsic size if not provided
@@ -61,7 +29,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       labelFontSize: 12,
       legendPosition: 'bottom',
       ...props.options,
-    } as ChartProps<T>['options'] & PreComputedChartOptions
+    } as ChartProps<T>['options']
 
     this.validateProps()
   }
@@ -87,9 +55,9 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     }
   }
 
-  protected _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  protected async _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     // First render background/borders from parent
-    super._renderContent(ctx, x, y, width, height)
+    await super._renderContent(ctx, x, y, width, height)
 
     // Then render chart-specific content
     const paddingLeft = this.node.getComputedPadding(Style.Edge.Left)
@@ -103,16 +71,16 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
     switch (this.chartType) {
       case 'bar':
-        this.renderBarChart(ctx, contentX, contentY, contentWidth, contentHeight)
+        await this.renderBarChart(ctx, contentX, contentY, contentWidth, contentHeight)
         break
       case 'line':
-        this.renderLineChart(ctx, contentX, contentY, contentWidth, contentHeight)
+        await this.renderLineChart(ctx, contentX, contentY, contentWidth, contentHeight)
         break
       case 'pie':
-        this.renderPieChart(ctx, contentX, contentY, contentWidth, contentHeight)
+        await this.renderPieChart(ctx, contentX, contentY, contentWidth, contentHeight)
         break
       case 'doughnut':
-        this.renderDoughnutChart(ctx, contentX, contentY, contentWidth, contentHeight)
+        await this.renderDoughnutChart(ctx, contentX, contentY, contentWidth, contentHeight)
         break
     }
   }
@@ -246,10 +214,10 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     }
   }
 
-  private renderBarChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  private async renderBarChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     if (this.chartType !== 'bar') return
     const chartData = this.chartData as CartesianChartData
-    const chartOptions = this.chartOptions as ChartProps<'bar'>['options'] & PreComputedChartOptions
+    const chartOptions = this.chartOptions as ChartProps<'bar'>['options']
 
     const { labels, datasets } = chartData
     const maxValue = Math.max(...datasets.flatMap(d => d.data))
@@ -263,9 +231,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (chartOptions?.showYAxis) {
       const fontSize = chartOptions.yAxisFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-      const maxLabel =
-        chartOptions._preComputedYAxisLabels?.[0] ??
-        (chartOptions.yAxisLabelFormatter ? chartOptions.yAxisLabelFormatter(maxValue) : this.getSmartYAxisFormatter(maxValue)(maxValue))
+      const maxLabel = chartOptions.yAxisLabelFormatter ? await chartOptions.yAxisLabelFormatter(maxValue) : this.getSmartYAxisFormatter(maxValue)(maxValue)
       const yAxisWidth = ctx.measureText(maxLabel).width + 10
       chartX += yAxisWidth
       chartWidth -= yAxisWidth
@@ -303,9 +269,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
         if (chartOptions?.showYAxis) {
           const value = maxValue - (maxValue / 5) * i
-          const label =
-            chartOptions._preComputedYAxisLabels?.[i] ??
-            (chartOptions.yAxisLabelFormatter ? chartOptions.yAxisLabelFormatter(value) : this.getSmartYAxisFormatter(maxValue)(value))
+          const label = chartOptions.yAxisLabelFormatter ? await chartOptions.yAxisLabelFormatter(value) : this.getSmartYAxisFormatter(maxValue)(value)
 
           TextNode.renderSimpleText(ctx, label, chartX - 5, gridY, {
             color: chartOptions.yAxisColor || chartOptions.axisColor || '#000',
@@ -320,10 +284,12 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     }
 
     // Render bars
-    labels.forEach((label, index) => {
+    for (let index = 0; index < labels.length; index++) {
+      const label = labels[index]
       const groupX = chartX + index * groupWidth + barSpacing / 2
 
-      datasets.forEach((dataset, datasetIndex) => {
+      for (let datasetIndex = 0; datasetIndex < datasets.length; datasetIndex++) {
+        const dataset = datasets[datasetIndex]
         const barHeight = (dataset.data[index] / maxValue) * finalChartHeight
         const barX = groupX + datasetIndex * barWidth
         const barY = chartY + finalChartHeight - barHeight
@@ -337,20 +303,13 @@ export class ChartNode<T extends ChartType> extends BoxNode {
           const valueX = barX + barWidth / 2
           const valueY = barY - 5 // 5px padding above bar
 
-          const preComputedValueDesc = chartOptions._preComputedValueItems?.[datasetIndex]?.[index]
-          if (preComputedValueDesc) {
-            const valueNode = buildDescriptorTree(preComputedValueDesc)
-            valueNode.processInitialChildren()
-            valueNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
-            const layout = valueNode.node.getComputedLayout()
-            valueNode.render(ctx, valueX - layout.width / 2, valueY - layout.height)
-          } else if (chartOptions.renderValueItem) {
-            const valueNode = chartOptions.renderValueItem({ item: value, index, datasetIndex })
+          if (chartOptions.renderValueItem) {
+            const valueNode = await chartOptions.renderValueItem({ item: value, index, datasetIndex })
             if (valueNode) {
               valueNode.processInitialChildren()
               valueNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
               const layout = valueNode.node.getComputedLayout()
-              valueNode.render(ctx, valueX - layout.width / 2, valueY - layout.height)
+              await valueNode.render(ctx, valueX - layout.width / 2, valueY - layout.height)
             }
           } else {
             TextNode.renderSimpleText(ctx, value.toString(), valueX, valueY, {
@@ -362,27 +321,23 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             })
           }
         }
-      })
+      }
 
       // Render labels
       if (chartOptions?.showLabels) {
-        const displayLabel =
-          chartOptions._preComputedXAxisLabels?.[index] ?? (chartOptions.xAxisLabelFormatter ? chartOptions.xAxisLabelFormatter(label, index) : label)
+        const displayLabel = chartOptions.xAxisLabelFormatter ? await chartOptions.xAxisLabelFormatter(label, index) : label
 
-        const preComputedLabelDesc = chartOptions._preComputedLabelItems?.[index]
-        if (preComputedLabelDesc) {
-          const labelNode = buildDescriptorTree(preComputedLabelDesc)
-          labelNode.processInitialChildren()
-          labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
-          const layout = labelNode.node.getComputedLayout()
-          labelNode.render(ctx, groupX + (groupWidth - barSpacing) / 2 - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
-        } else if (chartOptions.renderLabelItem) {
-          const labelNode = chartOptions.renderLabelItem({ item: label, index })
+        if (chartOptions.renderLabelItem) {
+          const labelNode = await chartOptions.renderLabelItem({ item: label, index })
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
-            labelNode.render(ctx, groupX + (groupWidth - barSpacing) / 2 - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
+            await labelNode.render(
+              ctx,
+              groupX + (groupWidth - barSpacing) / 2 - layout.width / 2,
+              chartY + finalChartHeight + labelHeight / 2 - layout.height / 2,
+            )
           }
         } else {
           TextNode.renderSimpleText(ctx, displayLabel, groupX + (groupWidth - barSpacing) / 2, chartY + finalChartHeight + labelHeight / 2, {
@@ -394,18 +349,18 @@ export class ChartNode<T extends ChartType> extends BoxNode {
           })
         }
       }
-    })
+    }
 
     // Render legend
     if (chartOptions?.showLegend) {
-      this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
+      await this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
     }
   }
 
-  private renderLineChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  private async renderLineChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     if (this.chartType !== 'line') return
     const chartData = this.chartData as CartesianChartData
-    const chartOptions = this.chartOptions as ChartProps<'line'>['options'] & PreComputedChartOptions
+    const chartOptions = this.chartOptions as ChartProps<'line'>['options']
 
     const { labels, datasets } = chartData
     const maxValue = Math.max(...datasets.flatMap(d => d.data))
@@ -419,9 +374,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (chartOptions?.showYAxis) {
       const fontSize = chartOptions.yAxisFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-      const maxLabel =
-        chartOptions._preComputedYAxisLabels?.[0] ??
-        (chartOptions.yAxisLabelFormatter ? chartOptions.yAxisLabelFormatter(maxValue) : this.getSmartYAxisFormatter(maxValue)(maxValue))
+      const maxLabel = chartOptions.yAxisLabelFormatter ? await chartOptions.yAxisLabelFormatter(maxValue) : this.getSmartYAxisFormatter(maxValue)(maxValue)
       const yAxisWidth = ctx.measureText(maxLabel).width + 10
       chartX += yAxisWidth
       chartWidth -= yAxisWidth
@@ -456,9 +409,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
         if (chartOptions?.showYAxis) {
           const value = maxValue - (maxValue / 5) * i
-          const label =
-            chartOptions._preComputedYAxisLabels?.[i] ??
-            (chartOptions.yAxisLabelFormatter ? chartOptions.yAxisLabelFormatter(value) : this.getSmartYAxisFormatter(maxValue)(value))
+          const label = chartOptions.yAxisLabelFormatter ? await chartOptions.yAxisLabelFormatter(value) : this.getSmartYAxisFormatter(maxValue)(value)
 
           TextNode.renderSimpleText(ctx, label, chartX - 5, gridY, {
             color: chartOptions.yAxisColor || chartOptions.axisColor || '#000',
@@ -473,12 +424,14 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     }
 
     // Render lines and points
-    datasets.forEach((dataset, datasetIndex) => {
+    for (let datasetIndex = 0; datasetIndex < datasets.length; datasetIndex++) {
+      const dataset = datasets[datasetIndex]
       ctx.strokeStyle = dataset.color || this.generateColor(datasetIndex)
       ctx.lineWidth = 2
       ctx.beginPath()
 
-      dataset.data.forEach((value, index) => {
+      for (let index = 0; index < dataset.data.length; index++) {
+        const value = dataset.data[index]
         const pointX = chartX + index * pointSpacing
         const pointY = chartY + finalChartHeight - (value / maxValue) * finalChartHeight
 
@@ -487,41 +440,34 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         } else {
           ctx.lineTo(pointX, pointY)
         }
-      })
+      }
       ctx.stroke()
 
       // Render points
-      dataset.data.forEach((value, index) => {
+      for (let index = 0; index < dataset.data.length; index++) {
         const pointX = chartX + index * pointSpacing
-        const pointY = chartY + finalChartHeight - (value / maxValue) * finalChartHeight
+        const pointY = chartY + finalChartHeight - (dataset.data[index] / maxValue) * finalChartHeight
         ctx.fillStyle = dataset.color || this.generateColor(datasetIndex)
         ctx.beginPath()
         ctx.arc(pointX, pointY, 4, 0, Math.PI * 2)
         ctx.fill()
-      })
-    })
+      }
+    }
 
     // Render labels
     if (chartOptions?.showLabels) {
-      labels.forEach((label, index) => {
+      for (let index = 0; index < labels.length; index++) {
+        const label = labels[index]
         const pointX = chartX + index * pointSpacing
-        const displayLabel =
-          chartOptions._preComputedXAxisLabels?.[index] ?? (chartOptions.xAxisLabelFormatter ? chartOptions.xAxisLabelFormatter(label, index) : label)
+        const displayLabel = chartOptions.xAxisLabelFormatter ? await chartOptions.xAxisLabelFormatter(label, index) : label
 
-        const preComputedLabelDesc = chartOptions._preComputedLabelItems?.[index]
-        if (preComputedLabelDesc) {
-          const labelNode = buildDescriptorTree(preComputedLabelDesc)
-          labelNode.processInitialChildren()
-          labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
-          const layout = labelNode.node.getComputedLayout()
-          labelNode.render(ctx, pointX - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
-        } else if (chartOptions.renderLabelItem) {
-          const labelNode = chartOptions.renderLabelItem({ item: label, index })
+        if (chartOptions.renderLabelItem) {
+          const labelNode = await chartOptions.renderLabelItem({ item: label, index })
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
-            labelNode.render(ctx, pointX - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
+            await labelNode.render(ctx, pointX - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
           }
         } else {
           TextNode.renderSimpleText(ctx, displayLabel, pointX, chartY + finalChartHeight + labelHeight / 2, {
@@ -532,18 +478,18 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             textBaseline: 'middle',
           })
         }
-      })
+      }
     }
 
     if (chartOptions?.showLegend) {
-      this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
+      await this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
     }
   }
 
-  private renderPieChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  private async renderPieChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     if (this.chartType !== 'pie') return
     const data = this.chartData as PieChartDataPoint[]
-    const chartOptions = this.chartOptions as ChartProps<'pie'>['options'] & PreComputedChartOptions
+    const chartOptions = this.chartOptions as ChartProps<'pie'>['options']
 
     const legendLayout = this.getLegendLayout(ctx, width, height)
     const chartX = x + legendLayout.chartX
@@ -558,7 +504,8 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const total = data.reduce((sum, point) => sum + point.value, 0)
     let currentAngle = -Math.PI / 2 // Start at top
 
-    data.forEach((point, index) => {
+    for (let index = 0; index < data.length; index++) {
+      const point = data[index]
       const sliceAngle = (point.value / total) * Math.PI * 2
       const startAngle = currentAngle
       const endAngle = currentAngle + sliceAngle
@@ -582,20 +529,13 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const labelX = centerX + Math.cos(labelAngle) * labelRadius
         const labelY = centerY + Math.sin(labelAngle) * labelRadius
 
-        const preComputedLabelDesc = chartOptions._preComputedLabelItems?.[index]
-        if (preComputedLabelDesc) {
-          const labelNode = buildDescriptorTree(preComputedLabelDesc)
-          labelNode.processInitialChildren()
-          labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
-          const layout = labelNode.node.getComputedLayout()
-          labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
-        } else if (chartOptions.renderLabelItem) {
-          const labelNode = chartOptions.renderLabelItem({ item: point, index })
+        if (chartOptions.renderLabelItem) {
+          const labelNode = await chartOptions.renderLabelItem({ item: point, index })
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
-            labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
+            await labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
           }
         } else {
           TextNode.renderSimpleText(ctx, point.label, labelX, labelY, {
@@ -609,17 +549,17 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       }
 
       currentAngle = endAngle
-    })
+    }
 
     if (chartOptions?.showLegend) {
-      this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
+      await this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
     }
   }
 
-  private renderDoughnutChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  private async renderDoughnutChart(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     if (this.chartType !== 'doughnut') return
     const data = this.chartData as PieChartDataPoint[]
-    const chartOptions = this.chartOptions as ChartProps<'doughnut'>['options'] & PreComputedChartOptions
+    const chartOptions = this.chartOptions as ChartProps<'doughnut'>['options']
 
     const legendLayout = this.getLegendLayout(ctx, width, height)
     const chartX = x + legendLayout.chartX
@@ -635,7 +575,8 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const total = data.reduce((sum, point) => sum + point.value, 0)
     let currentAngle = -Math.PI / 2
 
-    data.forEach((point, index) => {
+    for (let index = 0; index < data.length; index++) {
+      const point = data[index]
       const sliceAngle = (point.value / total) * Math.PI * 2
       const startAngle = currentAngle
       const endAngle = currentAngle + sliceAngle
@@ -658,20 +599,13 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const labelX = centerX + Math.cos(labelAngle) * labelRadius
         const labelY = centerY + Math.sin(labelAngle) * labelRadius
 
-        const preComputedLabelDesc = chartOptions._preComputedLabelItems?.[index]
-        if (preComputedLabelDesc) {
-          const labelNode = buildDescriptorTree(preComputedLabelDesc)
-          labelNode.processInitialChildren()
-          labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
-          const layout = labelNode.node.getComputedLayout()
-          labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
-        } else if (chartOptions.renderLabelItem) {
-          const labelNode = chartOptions.renderLabelItem({ item: point, index })
+        if (chartOptions.renderLabelItem) {
+          const labelNode = await chartOptions.renderLabelItem({ item: point, index })
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
-            labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
+            await labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
           }
         } else {
           TextNode.renderSimpleText(ctx, point.label, labelX, labelY, {
@@ -685,52 +619,40 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       }
 
       currentAngle = endAngle
-    })
+    }
 
     if (chartOptions?.showLegend) {
-      this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
+      await this.renderLegend(ctx, x + legendLayout.x, y + legendLayout.y, legendLayout.width, legendLayout.height)
     }
   }
 
-  private renderLegend(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
-    const { renderLegendItem, _preComputedLegendItems } = this.chartOptions
+  private async renderLegend(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+    const chartOptions = this.chartOptions
 
-    if (_preComputedLegendItems) {
-      const finalNodes = _preComputedLegendItems.filter((desc): desc is CanvasElement => !!desc).map(desc => buildDescriptorTree(desc))
-
-      if (finalNodes.length > 0) {
-        const legendContainer = new RowNode({
-          children: finalNodes,
-          width,
-          height,
-          justifyContent: Style.Justify.Center,
-          alignItems: Style.Align.Center,
-          flexWrap: Style.Wrap.Wrap,
-          gap: 10,
-        })
-        legendContainer.processInitialChildren()
-        legendContainer.node.calculateLayout(width, height, Style.Direction.LTR)
-        legendContainer.render(ctx, x, y)
-      }
-      return
-    }
+    const renderLegendItem = chartOptions?.renderLegendItem as
+      | ((props: { item: unknown; index: number; color: string }) => BoxNode | null | undefined)
+      | undefined
 
     if (renderLegendItem) {
       let legendNodes: (BoxNode | null | undefined)[]
       if (this.chartType === 'bar' || this.chartType === 'line') {
         const items = (this.chartData as CartesianChartData).datasets
         const render = renderLegendItem as (props: { item: ChartDataset; index: number; color: string }) => BoxNode | null | undefined
-        legendNodes = items.map((item, index) => {
-          const color = item.color || this.generateColor(index)
-          return render({ item, index, color })
-        })
+        legendNodes = await Promise.all(
+          items.map(async (item, index) => {
+            const color = item.color || this.generateColor(index)
+            return render({ item, index, color })
+          }),
+        )
       } else {
         const items = this.chartData as PieChartDataPoint[]
         const render = renderLegendItem as (props: { item: PieChartDataPoint; index: number; color: string }) => BoxNode | null | undefined
-        legendNodes = items.map((item, index) => {
-          const color = item.color || this.generateColor(index)
-          return render({ item, index, color })
-        })
+        legendNodes = await Promise.all(
+          items.map(async (item, index) => {
+            const color = item.color || this.generateColor(index)
+            return render({ item, index, color })
+          }),
+        )
       }
 
       const finalNodes = legendNodes.filter((node): node is BoxNode => !!node)
@@ -747,12 +669,13 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         })
         legendContainer.processInitialChildren()
         legendContainer.node.calculateLayout(width, height, Style.Direction.LTR)
-        legendContainer.render(ctx, x, y)
+        await legendContainer.render(ctx, x, y)
       }
       return
     }
 
     // Fallback to default rendering if renderLegendItem is not provided
+    if (!this.chartData) return
     const legendItems =
       'datasets' in this.chartData
         ? this.chartData.datasets.map(d => ({ label: d.label, value: d.data.reduce((a, b) => a + b, 0) }))
@@ -765,7 +688,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const itemHeight = Math.ceil(textHeight + 8)
     const boxSize = Math.min(15, itemHeight - 2)
 
-    const position = this.chartOptions.legendPosition
+    const position = this.chartOptions?.legendPosition
     if (position === 'top' || position === 'bottom') {
       const itemPadding = 20 // horizontal padding between items
       const rows: { items: { label: string; color: string; width: number }[]; width: number }[] = []

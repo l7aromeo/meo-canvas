@@ -27,7 +27,7 @@ export type CanvasElement =
   | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: CanvasElement[] }
   | { __type: 'Image'; props: Omit<ImageProps, 'onLoad' | 'onError'> }
   | { __type: 'Text'; text: string | number; props?: TextProps }
-  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> & PreComputedChartOptions } }
+  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
 
 export interface FontRegistrationInfo {
   family: string
@@ -983,18 +983,6 @@ export type ChartOptions<T extends ChartType> = T extends 'bar' | 'line'
   : T extends 'pie' | 'doughnut'
     ? BaseChartOptions<T> & PieChartSpecificOptions
     : BaseChartOptions<T>
-
-/**
- * Pre-computed values from function props, resolved on the main thread
- * before being sent to a worker thread via postMessage (structured clone).
- */
-export interface PreComputedChartOptions {
-  _preComputedXAxisLabels?: string[]
-  _preComputedYAxisLabels?: string[]
-  _preComputedLegendItems?: (CanvasElement | null | undefined)[]
-  _preComputedLabelItems?: (CanvasElement | null | undefined)[]
-  _preComputedValueItems?: (CanvasElement | null | undefined)[][]
-}
 
 /**
  * Properties for rendering a chart inside a `BoxNode`.

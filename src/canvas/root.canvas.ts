@@ -2,19 +2,16 @@ import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
 import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import type { BaseProps, RootProps, CanvasElement, RootPropsWithWorker, RootPropsWithoutWorker } from '@/canvas/canvas.type.js'
-import type { CanvasCallMethod, CallArgs, CallResult, WorkerCallRequest, WorkerResponse, WorkerRequest } from '@/worker/worker.types.js'
+import type { ComlinkPool as ComlinkPoolType, PoolRenderResult } from '@/worker/comlink.pool.js'
 import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.js'
 import { deleteDiskCache } from '@/util/disk.cache.js'
 import { TextNode } from '@/canvas/text.canvas.js'
 import { ChartNode } from '@/canvas/chart.canvas.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.js'
 import { Style } from '@/constant/common.const.js'
-import { WorkerPreProcessor } from '@/canvas/canvas.helper.js'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import { cpus } from 'node:os'
-import { Worker } from 'node:worker_threads'
-import { fileURLToPath } from 'node:url'
 
 /** Registry to track fonts that have already been loaded */
 const registeredFonts = new Map<string, Set<string>>()
@@ -29,13 +26,8 @@ export const _clearRegisteredFonts = () => {
  * This is a safety net — users should still call .release() explicitly.
  */
 const canvasRegistry = new FinalizationRegistry<{ workerIdx: number; canvasId: number }>(heldValue => {
-  // Best-effort cleanup — worker may already be terminated
   try {
-    // Access workers via a public method or make it accessible
-    // For now, just try to send the message and let errors be caught
-    if (_workerPool) {
-      ;(_workerPool as any).workers?.[heldValue.workerIdx]?.postMessage({ type: 'release', canvasId: heldValue.canvasId })
-    }
+    _workerPool?.releaseCanvas(heldValue.workerIdx, heldValue.canvasId)
   } catch {
     // Worker already gone — nothing to clean up
   }
@@ -44,7 +36,7 @@ const canvasRegistry = new FinalizationRegistry<{ workerIdx: number; canvasId: n
 /** Engine configuration — legacy support for configure() */
 let _defaultWorkerMode = true
 let _defaultWorkerPoolSize = Math.max(1, cpus().length - 1)
-let _workerPool: WorkerPool | null = null
+let _workerPool: ComlinkPoolType | null = null
 
 export interface CanvasEngineConfig {
   /** Run rendering in worker threads to avoid blocking the event loop (default: true) */
@@ -75,19 +67,6 @@ export function terminate() {
   }
 }
 
-interface PendingTask {
-  resolve: (value: unknown) => void
-  reject: (err: Error) => void
-}
-
-interface PoolRenderResult {
-  buffer: Buffer
-  canvasId: number
-  workerIdx: number
-  width: number
-  height: number
-}
-
 /**
  * Proxies all skia-canvas Canvas APIs to a Canvas instance living inside a worker thread.
  * Sync methods (toBufferSync, toURLSync) return from a pre-encoded PNG buffer.
@@ -96,24 +75,19 @@ interface PoolRenderResult {
 class WorkerCanvas {
   readonly width: number
   readonly height: number
-  private readonly _buffer: Buffer // pre-encoded PNG for sync use
-  private readonly _pool: WorkerPool
+  private readonly _buffer: Buffer
+  private readonly _pool: ComlinkPoolType
   private readonly _workerIdx: number
   private readonly _canvasId: number
 
-  constructor(opts: PoolRenderResult & { pool: WorkerPool }) {
+  constructor(opts: PoolRenderResult & { pool: ComlinkPoolType }) {
     this._buffer = opts.buffer
     this.width = opts.width
     this.height = opts.height
     this._pool = opts.pool
     this._workerIdx = opts.workerIdx
     this._canvasId = opts.canvasId
-    // Register for finalizer-based cleanup if user forgets to call .release()
     canvasRegistry.register(this, { workerIdx: opts.workerIdx, canvasId: opts.canvasId }, this)
-  }
-
-  private _call<M extends CanvasCallMethod>(method: M, ...args: CallArgs<M>): Promise<CallResult<M>> {
-    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, method, args)
   }
 
   // --- Sync methods: return from pre-encoded PNG buffer ---
@@ -126,23 +100,22 @@ class WorkerCanvas {
     return `data:image/png;base64,${this._buffer.toString('base64')}`
   }
 
-  // --- Async methods: delegate to worker ---
+  // --- Async methods: delegate to worker via Comlink ---
 
   toBuffer(format: ExportFormat, options?: ExportOptions): Promise<Buffer> {
-    return this._call('toBuffer', format, options)
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toBuffer', [format, options]) as Promise<Buffer>
   }
 
   toURL(format: ExportFormat, options?: ExportOptions): Promise<string> {
-    return this._call('toURL', format, options)
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toURL', [format, options]) as Promise<string>
   }
 
   toFile(filename: string, options?: SaveOptions): Promise<void> {
-    return this._call('toFile', filename, options)
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toFile', [filename, options]) as Promise<void>
   }
 
-  /** Returns a Buffer (Sharp instance cannot be transferred across threads) */
   toSharp(options?: RenderOptions): Promise<Buffer> {
-    return this._call('toSharp', options)
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toSharp', [options]) as Promise<Buffer>
   }
 
   toSharpSync(_options?: RenderOptions): never {
@@ -152,116 +125,28 @@ class WorkerCanvas {
   // --- Async convenience getters ---
 
   get png(): Promise<Buffer> {
-    return this._call('toBuffer', 'png')
+    return this.toBuffer('png')
   }
   get webp(): Promise<Buffer> {
-    return this._call('toBuffer', 'webp')
+    return this.toBuffer('webp')
   }
   get jpg(): Promise<Buffer> {
-    return this._call('toBuffer', 'jpg')
+    return this.toBuffer('jpg')
   }
   get svg(): Promise<Buffer> {
-    return this._call('toBuffer', 'svg')
+    return this.toBuffer('svg')
   }
   get pdf(): Promise<Buffer> {
-    return this._call('toBuffer', 'pdf')
+    return this.toBuffer('pdf')
   }
   get raw(): Promise<Buffer> {
-    return this._call('toBuffer', 'raw')
+    return this.toBuffer('raw')
   }
 
   /** Release the Canvas from worker memory. Call when done with this object. */
   release(): void {
     this._pool.releaseCanvas(this._workerIdx, this._canvasId)
-    // Unregister from finalizer since we're explicitly cleaning up
     canvasRegistry.unregister(this)
-  }
-}
-
-/** Worker thread pool — routes render and canvas-call messages */
-class WorkerPool {
-  private workers: Worker[] = []
-  private idle: Worker[] = []
-  private queue: Array<{ id: number; props: RootProps }> = []
-  private pending = new Map<number, PendingTask>()
-  private nextId = 0
-
-  constructor(size: number) {
-    this.init(size)
-  }
-
-  private init(size: number) {
-    const workerFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../worker/render.worker.js')
-
-    for (let i = 0; i < size; i++) {
-      const workerIdx = i
-      const worker = new Worker(workerFile)
-      worker.on('message', (msg: WorkerResponse) => {
-        const task = this.pending.get(msg.taskId)
-        if (!task) return
-        this.pending.delete(msg.taskId)
-
-        if ('error' in msg) {
-          task.reject(new Error(msg.error))
-          return
-        }
-
-        if ('canvasId' in msg) {
-          // Render complete — put worker back to idle
-          this.idle.push(worker)
-          this.drain()
-          const result: PoolRenderResult = { buffer: msg.buffer, canvasId: msg.canvasId, workerIdx, width: msg.width, height: msg.height }
-          task.resolve(result)
-        } else {
-          // Canvas method call complete
-          task.resolve(msg.result)
-        }
-      })
-      this.workers.push(worker)
-      this.idle.push(worker)
-    }
-  }
-
-  private drain() {
-    while (this.queue.length > 0 && this.idle.length > 0) {
-      const task = this.queue.shift()!
-      const worker = this.idle.pop()!
-      const request: WorkerRequest = { type: 'render', taskId: task.id, props: task.props }
-      worker.postMessage(request)
-    }
-  }
-
-  render(props: RootProps): Promise<PoolRenderResult> {
-    const sanitizedProps = WorkerPreProcessor.process(props)
-    return new Promise<PoolRenderResult>((resolve, reject) => {
-      const id = this.nextId++
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
-      if (this.idle.length > 0) {
-        const worker = this.idle.pop()!
-        const request: WorkerRequest = { type: 'render', taskId: id, props: sanitizedProps }
-        worker.postMessage(request)
-      } else {
-        this.queue.push({ id, props: sanitizedProps })
-      }
-    })
-  }
-
-  callOnCanvas<M extends CanvasCallMethod>(workerIdx: number, canvasId: number, method: M, args: CallArgs<M>): Promise<CallResult<M>> {
-    return new Promise<CallResult<M>>((resolve, reject) => {
-      const id = this.nextId++
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
-      const request = { type: 'call' as const, taskId: id, canvasId, method, args } as WorkerCallRequest
-      this.workers[workerIdx].postMessage(request)
-    })
-  }
-
-  releaseCanvas(workerIdx: number, canvasId: number): void {
-    const request: WorkerRequest = { type: 'release', canvasId }
-    this.workers[workerIdx]?.postMessage(request)
-  }
-
-  terminate() {
-    this.workers.forEach(w => w.terminate())
   }
 }
 
@@ -387,7 +272,15 @@ export class RootNode extends ColumnNode {
    * and final drawing
    * @returns Promise resolving to the rendered Canvas instance
    */
-  async render(): Promise<Canvas> {
+  override async render(ctx: CanvasRenderingContext2D, offsetX?: number, offsetY?: number): Promise<void>
+  async render(ctx?: CanvasRenderingContext2D, offsetX?: number, offsetY?: number): Promise<Canvas>
+  async render(ctx?: CanvasRenderingContext2D, offsetX = 0, offsetY = 0): Promise<Canvas | void> {
+    // If ctx is provided, delegate to parent render (used when called as a child node)
+    if (ctx) {
+      await super.render(ctx, offsetX, offsetY)
+      return
+    }
+
     const diskCacheKeys = this.props.useDiskCache ? new Set<string>() : undefined
 
     try {
@@ -427,7 +320,7 @@ export class RootNode extends ColumnNode {
       this.ctx.scale(this.scale, this.scale)
 
       // Step 6: Render content
-      super.render(this.ctx, 0, 0)
+      await super.render(this.ctx, 0, 0)
 
       if (!this.canvas) {
         throw new Error('Canvas not initialized')
@@ -468,9 +361,10 @@ export async function Root(props: RootProps): Promise<Canvas | (Canvas & { relea
   const workerPoolSize = props.workers ?? _defaultWorkerPoolSize
 
   if (workerMode) {
-    // Lazy initialize worker pool
+    // Lazy initialize worker pool — dynamic import to avoid loading Comlink in non-worker contexts
     if (!_workerPool) {
-      _workerPool = new WorkerPool(workerPoolSize)
+      const { ComlinkPool } = await import('@/worker/comlink.pool.js')
+      _workerPool = new ComlinkPool(workerPoolSize)
     }
     const result = await _workerPool.render(props)
     return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas & { release(): void }

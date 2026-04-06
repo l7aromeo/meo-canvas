@@ -87,7 +87,7 @@ describe('BoxNode', () => {
     expect(wasDirty).toBe(true)
   })
 
-  it('should call render pipeline with context', () => {
+  it('should call render pipeline with context', async () => {
     const node = new BoxNode({ width: 50, height: 50, backgroundColor: 'red', key: 'box' })
     node.node.setWidth(50)
     node.node.setHeight(50)
@@ -123,7 +123,7 @@ describe('BoxNode', () => {
     const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(getContextSpy).toHaveBeenCalledWith('2d')
     expect(mockFill).toHaveBeenCalled()
@@ -448,7 +448,7 @@ describe('BoxNode Layout Properties', () => {
     expect(node.node.getFlexBasis().value).toBe(50)
   })
 
-  it('should handle overflow hidden with complex border radius and borders', () => {
+  it('should handle overflow hidden with complex border radius and borders', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -500,7 +500,7 @@ describe('BoxNode Layout Properties', () => {
       if (edge === Style.Edge.Bottom) return 5
       return 0
     })
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalledTimes(1)
     expect(mockContext.beginPath).toHaveBeenCalled()
@@ -514,7 +514,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should handle overflow hidden and zero inner dimensions for clipping', () => {
+  it('should handle overflow hidden and zero inner dimensions for clipping', async () => {
     const node = new BoxNode({
       width: 10,
       height: 10,
@@ -555,7 +555,7 @@ describe('BoxNode Layout Properties', () => {
       if (edge === Style.Edge.Top) return 10
       return 0
     })
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalledTimes(1)
     expect(mockContext.beginPath).toHaveBeenCalled()
@@ -565,7 +565,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should handle overflow hidden and border radius correctly', () => {
+  it('should handle overflow hidden and border radius correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -596,7 +596,7 @@ describe('BoxNode Layout Properties', () => {
       width: 100,
       height: 100,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalledTimes(1)
     expect(mockContext.beginPath).toHaveBeenCalled()
@@ -619,10 +619,10 @@ describe('BoxNode Layout Properties', () => {
     })
     parent.processInitialChildren()
 
-    const mockRenderChildA = jest.spyOn(childA, 'render').mockImplementation(jest.fn())
-    const mockRenderChildB = jest.spyOn(childB, 'render').mockImplementation(jest.fn())
-    const mockRenderChildC = jest.spyOn(childC, 'render').mockImplementation(jest.fn())
-    const mockRenderChildD = jest.spyOn(childD, 'render').mockImplementation(jest.fn())
+    const mockRenderChildA = jest.spyOn(childA, 'render').mockImplementation(async () => {})
+    const mockRenderChildB = jest.spyOn(childB, 'render').mockImplementation(async () => {})
+    const mockRenderChildC = jest.spyOn(childC, 'render').mockImplementation(async () => {})
+    const mockRenderChildD = jest.spyOn(childD, 'render').mockImplementation(async () => {})
 
     const mockContext = {
       fill: jest.fn(),
@@ -655,7 +655,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should render background color correctly', () => {
+  it('should render background color correctly', async () => {
     const node = new BoxNode({ width: 100, height: 100, backgroundColor: 'red' })
     const mockFill = jest.fn()
     const mockContext = {
@@ -673,14 +673,14 @@ describe('BoxNode Layout Properties', () => {
     const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.fillStyle).toBe('red')
     expect(mockContext.fill).toHaveBeenCalled()
     getContextSpy.mockRestore()
   })
 
-  it('should render linear gradient correctly', () => {
+  it('should render linear gradient correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -719,7 +719,7 @@ describe('BoxNode Layout Properties', () => {
       width: 100,
       height: 100,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockCreateLinearGradient).toHaveBeenCalled()
     expect(mockAddColorStop).toHaveBeenCalledTimes(2)
@@ -727,7 +727,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should render radial gradient correctly', () => {
+  it('should render radial gradient correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -765,7 +765,7 @@ describe('BoxNode Layout Properties', () => {
       width: 100,
       height: 100,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockCreateRadialGradient).toHaveBeenCalled()
     expect(mockAddColorStop).toHaveBeenCalledTimes(2)
@@ -773,7 +773,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should render radial gradient with direction correctly', () => {
+  it('should render radial gradient with direction correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -812,14 +812,14 @@ describe('BoxNode Layout Properties', () => {
       width: 100,
       height: 100,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockCreateRadialGradient).toHaveBeenCalled()
     expect(mockContext.fill).toHaveBeenCalled()
     getContextSpy.mockRestore()
   })
 
-  it('should render outset box shadow correctly', () => {
+  it('should render outset box shadow correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -851,7 +851,7 @@ describe('BoxNode Layout Properties', () => {
     const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalled()
     expect(mockContext.shadowColor).toBe('rgba(0,0,0,0.5)')
@@ -863,7 +863,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should render inset box shadow correctly', () => {
+  it('should render inset box shadow correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -902,7 +902,7 @@ describe('BoxNode Layout Properties', () => {
     const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalled()
     expect(mockClip).toHaveBeenCalled()
@@ -915,7 +915,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should handle opacity correctly', () => {
+  it('should handle opacity correctly', async () => {
     const node = new BoxNode({ width: 100, height: 100, opacity: 0.5 })
     const mockFill = jest.fn()
     const mockGlobalAlphaValues: number[] = []
@@ -944,14 +944,14 @@ describe('BoxNode Layout Properties', () => {
     const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockGlobalAlphaValues).toContain(0.5) // Check if 0.5 was set
     expect(mockContext.globalAlpha).toBe(1) // After restoration, it should be 1
     getContextSpy.mockRestore()
   })
 
-  it('should handle transform properties correctly', () => {
+  it('should handle transform properties correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -981,7 +981,7 @@ describe('BoxNode Layout Properties', () => {
     const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalledTimes(1)
     expect(mockContext.translate).toHaveBeenCalled()
@@ -991,7 +991,7 @@ describe('BoxNode Layout Properties', () => {
     getContextSpy.mockRestore()
   })
 
-  it('should not render if width or height is zero', () => {
+  it('should not render if width or height is zero', async () => {
     const node = new BoxNode({ width: 0, height: 50, backgroundColor: 'red' })
     const mockFill = jest.fn()
     const mockContext = {
@@ -1012,14 +1012,14 @@ describe('BoxNode Layout Properties', () => {
       width: 0,
       height: 50,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockFill).not.toHaveBeenCalled()
     expect(mockContext.save).not.toHaveBeenCalled()
     getContextSpy.mockRestore()
   })
 
-  it('should not render if display is set to none', () => {
+  it('should not render if display is set to none', async () => {
     const node = new BoxNode({ width: 50, height: 50, display: Style.Display.None, backgroundColor: 'red' })
     const mockFill = jest.fn()
     const mockContext = {
@@ -1040,14 +1040,14 @@ describe('BoxNode Layout Properties', () => {
       width: 50,
       height: 50,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockFill).not.toHaveBeenCalled()
     expect(mockContext.save).not.toHaveBeenCalled()
     getContextSpy.mockRestore()
   })
 
-  it('should handle transform properties with originX and originY correctly', () => {
+  it('should handle transform properties with originX and originY correctly', async () => {
     const node = new BoxNode({
       width: 100,
       height: 100,
@@ -1087,7 +1087,7 @@ describe('BoxNode Layout Properties', () => {
       width: 100,
       height: 100,
     } as any)
-    node.render(ctx, 0, 0)
+    await node.render(ctx, 0, 0)
 
     expect(mockContext.save).toHaveBeenCalledTimes(1)
     // Expect translate to be called for origin, then for translateX/Y, then for origin restoration

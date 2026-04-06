@@ -1,5 +1,5 @@
-import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage, WorkerPreProcessor } from '@/canvas/canvas.helper.js'
-import type { CanvasElement, RootProps } from '@/canvas/canvas.type.js'
+import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
+import { wrapFunctions } from '@/worker/comlink.pool.js'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
@@ -482,321 +482,84 @@ describe('drawBorders', () => {
   })
 })
 
-describe('WorkerPreProcessor', () => {
-  const CHART_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+describe('wrapFunctions', () => {
+  it('should wrap function values and track them', () => {
+    const fn = (x: number) => x * 2
+    const proxies = new Set<unknown>()
+    const input = { a: 1, b: fn, c: 'hello' }
+    const result = wrapFunctions(input, proxies)
 
-  const makeRootProps = (children?: any): RootProps => ({
-    width: 800,
-    height: 600,
-    children,
+    expect(result.a).toBe(1)
+    expect(result.c).toBe('hello')
+    expect(proxies.size).toBe(1)
+    // In main thread context, Comlink.proxy returns the function itself
+    // The key invariant is that the proxy is tracked for cleanup
+    expect(proxies.has(result.b)).toBe(true)
   })
 
-  const makeCartesianChartDesc = (type: 'bar' | 'line', options: Record<string, any> = {}): CanvasElement => ({
-    __type: 'Chart',
-    props: {
-      type,
-      data: {
-        labels: ['A', 'B', 'C'],
-        datasets: [{ label: 'DS1', data: [10, 20, 30] }],
-      },
-      options,
-    } as any,
+  it('should handle nested objects', () => {
+    const fn = () => 'test'
+    const proxies = new Set<unknown>()
+    const input = { nested: { deep: { fn } } }
+    const result = wrapFunctions(input, proxies)
+
+    expect(proxies.size).toBe(1)
+    expect(proxies.has(result.nested.deep.fn)).toBe(true)
   })
 
-  const makePieChartDesc = (type: 'pie' | 'doughnut', options: Record<string, any> = {}): CanvasElement => ({
-    __type: 'Chart',
-    props: {
-      type,
-      data: [
-        { label: 'Slice1', value: 10, color: '#AAA' },
-        { label: 'Slice2', value: 20 },
-      ],
-      options,
-    } as any,
+  it('should handle arrays with functions', () => {
+    const fn1 = () => 1
+    const fn2 = () => 2
+    const proxies = new Set<unknown>()
+    const input = [fn1, 'a', fn2]
+    const result = wrapFunctions(input, proxies)
+
+    expect(proxies.size).toBe(2)
+    expect(result[1]).toBe('a')
   })
 
-  describe('process()', () => {
-    it('should return props unchanged (minus functions) when there are no children', () => {
-      const fn = () => 'hello'
-      const props = makeRootProps()
-      ;(props as any).someFn = fn
-      const result = WorkerPreProcessor.process(props)
-
-      expect(result.width).toBe(800)
-      expect(result.height).toBe(600)
-      expect((result as any).someFn).toBeUndefined()
-    })
-
-    it('should recursively process non-Chart children and strip functions', () => {
-      const boxDesc: CanvasElement = {
-        __type: 'Box',
-        props: { someFn: () => 'x' } as any,
-        children: [{ __type: 'Box', props: { anotherFn: () => 'y' } as any }],
-      }
-      const props = makeRootProps([boxDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      expect(children).toHaveLength(1)
-      expect((children[0] as any).props.someFn).toBeUndefined()
-      expect(((children[0] as any).children[0] as any).props.anotherFn).toBeUndefined()
-    })
-
-    it('should pre-compute _preComputedXAxisLabels from xAxisLabelFormatter for bar chart', () => {
-      const chartDesc = makeCartesianChartDesc('bar', {
-        xAxisLabelFormatter: (v: string, i: number) => `${v}-${i}`,
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const chartProps = (children[0] as any).props
-      expect(chartProps.options._preComputedXAxisLabels).toEqual(['A-0', 'B-1', 'C-2'])
-      expect(chartProps.options.xAxisLabelFormatter).toBeUndefined()
-    })
-
-    it('should pre-compute _preComputedYAxisLabels from yAxisLabelFormatter for bar chart', () => {
-      const chartDesc = makeCartesianChartDesc('bar', {
-        yAxisLabelFormatter: (v: number) => `${v}k`,
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const chartProps = (children[0] as any).props
-      // maxValue = 30, ticks: 30, 24, 18, 12, 6, 0
-      expect(chartProps.options._preComputedYAxisLabels).toEqual(['30k', '24k', '18k', '12k', '6k', '0k'])
-      expect(chartProps.options.yAxisLabelFormatter).toBeUndefined()
-    })
-
-    it('should pre-compute _preComputedLegendItems from renderLegendItem for bar chart', () => {
-      const legendNode: CanvasElement = { __type: 'Text', text: 'legend', props: {} }
-      const chartDesc = makeCartesianChartDesc('bar', {
-        renderLegendItem: (_props: any) => legendNode,
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const chartProps = (children[0] as any).props
-      expect(chartProps.options._preComputedLegendItems).toHaveLength(1)
-      expect(chartProps.options._preComputedLegendItems[0]).toEqual(legendNode)
-      expect(chartProps.options.renderLegendItem).toBeUndefined()
-    })
-
-    it('should use generateColor palette for legend items without color (bar)', () => {
-      const chartDesc: CanvasElement = {
-        __type: 'Chart',
-        props: {
-          type: 'bar',
-          data: {
-            labels: ['A'],
-            datasets: [
-              { label: 'DS1', data: [10] },
-              { label: 'DS2', data: [20] },
-            ],
-          },
-          options: {
-            renderLegendItem: ({ color }: any) => ({ __type: 'Text', text: color }),
-          },
-        } as any,
-      }
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const items = (children[0] as any).props.options._preComputedLegendItems
-      expect(items[0]).toEqual({ __type: 'Text', text: CHART_COLORS[0] })
-      expect(items[1]).toEqual({ __type: 'Text', text: CHART_COLORS[1] })
-    })
-
-    it('should pre-compute _preComputedLegendItems from renderLegendItem for pie chart', () => {
-      const chartDesc = makePieChartDesc('pie', {
-        renderLegendItem: ({ item, color }: any) => ({ __type: 'Text', text: `${item.label}-${color}` }),
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const items = (children[0] as any).props.options._preComputedLegendItems
-      expect(items).toHaveLength(2)
-      // First item has color '#AAA', second uses generated color
-      expect(items[0]).toEqual({ __type: 'Text', text: 'Slice1-#AAA' })
-      expect(items[1]).toEqual({ __type: 'Text', text: `Slice2-${CHART_COLORS[1]}` })
-    })
-
-    it('should pre-compute _preComputedLabelItems from renderLabelItem for bar chart', () => {
-      const chartDesc = makeCartesianChartDesc('line', {
-        renderLabelItem: ({ item, index }: any) => ({ __type: 'Text', text: `${item}:${index}` }),
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const items = (children[0] as any).props.options._preComputedLabelItems
-      expect(items).toEqual([
-        { __type: 'Text', text: 'A:0' },
-        { __type: 'Text', text: 'B:1' },
-        { __type: 'Text', text: 'C:2' },
-      ])
-      expect((children[0] as any).props.options.renderLabelItem).toBeUndefined()
-    })
-
-    it('should pre-compute _preComputedLabelItems from renderLabelItem for pie chart', () => {
-      const chartDesc = makePieChartDesc('doughnut', {
-        renderLabelItem: ({ item }: any) => ({ __type: 'Text', text: `${item.label}` }),
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const items = (children[0] as any).props.options._preComputedLabelItems
-      expect(items).toEqual([
-        { __type: 'Text', text: 'Slice1' },
-        { __type: 'Text', text: 'Slice2' },
-      ])
-    })
-
-    it('should pre-compute _preComputedValueItems from renderValueItem for bar chart', () => {
-      const chartDesc: CanvasElement = {
-        __type: 'Chart',
-        props: {
-          type: 'bar',
-          data: {
-            labels: ['A', 'B'],
-            datasets: [
-              { label: 'DS1', data: [10, 20] },
-              { label: 'DS2', data: [30, 40] },
-            ],
-          },
-          options: {
-            renderValueItem: ({ item, index, datasetIndex }: any) => ({ __type: 'Text', text: `${datasetIndex}-${index}-${item}` }),
-          },
-        } as any,
-      }
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const items = (children[0] as any).props.options._preComputedValueItems
-      expect(items).toEqual([
-        [
-          { __type: 'Text', text: '0-0-10' },
-          { __type: 'Text', text: '0-1-20' },
-        ],
-        [
-          { __type: 'Text', text: '1-0-30' },
-          { __type: 'Text', text: '1-1-40' },
-        ],
-      ])
-      expect((children[0] as any).props.options.renderValueItem).toBeUndefined()
-    })
-
-    it('should ignore xAxisLabelFormatter for non-cartesian chart types', () => {
-      const chartDesc = makePieChartDesc('pie', {
-        xAxisLabelFormatter: (v: string, i: number) => `${v}-${i}`,
-      })
-      const props = makeRootProps([chartDesc])
-      const result = WorkerPreProcessor.process(props)
-
-      const children = result.children as CanvasElement[]
-      const chartProps = (children[0] as any).props
-      // Should not have pre-computed labels since pie charts don't support axis formatters
-      expect(chartProps.options._preComputedXAxisLabels).toBeUndefined()
-      // The function should be stripped by stripNonSerializable
-      expect(chartProps.options.xAxisLabelFormatter).toBeUndefined()
-    })
+  it('should preserve null and undefined', () => {
+    const proxies = new Set<unknown>()
+    expect(wrapFunctions(null, proxies)).toBeNull()
+    expect(wrapFunctions(undefined, proxies)).toBeUndefined()
+    expect(proxies.size).toBe(0)
   })
 
-  describe('stripNonSerializable()', () => {
-    it('should preserve primitives', () => {
-      expect(WorkerPreProcessor.stripNonSerializable('hello')).toBe('hello')
-      expect(WorkerPreProcessor.stripNonSerializable(42)).toBe(42)
-      expect(WorkerPreProcessor.stripNonSerializable(true)).toBe(true)
-    })
-
-    it('should return null and undefined as-is', () => {
-      expect(WorkerPreProcessor.stripNonSerializable(null)).toBeNull()
-      expect(WorkerPreProcessor.stripNonSerializable(undefined)).toBeUndefined()
-    })
-
-    it('should strip functions', () => {
-      expect(WorkerPreProcessor.stripNonSerializable(() => 'x')).toBeUndefined()
-    })
-
-    it('should strip symbols', () => {
-      expect(WorkerPreProcessor.stripNonSerializable(Symbol('test'))).toBeUndefined()
-    })
-
-    it('should strip function values from objects', () => {
-      const obj = { a: 1, b: 'hello', fn: () => 'x', sym: Symbol('s') }
-      const result = WorkerPreProcessor.stripNonSerializable(obj)
-      expect(result).toEqual({ a: 1, b: 'hello' })
-      expect(result).not.toHaveProperty('fn')
-      expect(result).not.toHaveProperty('sym')
-    })
-
-    it('should recursively strip from nested objects', () => {
-      const obj = { a: { b: { fn: () => 'x', c: 3 } } }
-      const result = WorkerPreProcessor.stripNonSerializable(obj)
-      expect(result).toEqual({ a: { b: { c: 3 } } })
-    })
-
-    it('should handle arrays and strip functions within them', () => {
-      const arr = [1, () => 'x', 'hello', { fn: () => 'y', a: 2 }]
-      const result = WorkerPreProcessor.stripNonSerializable(arr)
-      expect(result).toEqual([1, undefined, 'hello', { a: 2 }])
-    })
-
-    it('should preserve Buffer instances', () => {
-      const buf = Buffer.from('hello')
-      const result = WorkerPreProcessor.stripNonSerializable(buf)
-      expect(Buffer.isBuffer(result)).toBe(true)
-      expect(result).toBe(buf)
-    })
-
-    it('should preserve ArrayBuffer instances', () => {
-      const ab = new ArrayBuffer(8)
-      const result = WorkerPreProcessor.stripNonSerializable(ab)
-      expect(result).toBe(ab)
-      expect(result instanceof ArrayBuffer).toBe(true)
-    })
-
-    it('should preserve TypedArray instances', () => {
-      const ta = new Uint8Array([1, 2, 3])
-      const result = WorkerPreProcessor.stripNonSerializable(ta)
-      expect(result).toBe(ta)
-      expect(ArrayBuffer.isView(result)).toBe(true)
-    })
+  it('should preserve primitives', () => {
+    const proxies = new Set<unknown>()
+    expect(wrapFunctions(42, proxies)).toBe(42)
+    expect(wrapFunctions('str', proxies)).toBe('str')
+    expect(wrapFunctions(true, proxies)).toBe(true)
+    expect(proxies.size).toBe(0)
   })
 
-  describe('nodeToDescriptor()', () => {
-    // Access private method via bracket notation for testing
-    const nodeToDescriptor = (node: any) => (WorkerPreProcessor as any).nodeToDescriptor(node)
+  it('should preserve Buffer instances', () => {
+    const proxies = new Set<unknown>()
+    const buf = Buffer.from('hello')
+    expect(wrapFunctions(buf, proxies)).toBe(buf)
+    expect(proxies.size).toBe(0)
+  })
 
-    it('should return CanvasElement as-is if it has __type', () => {
-      const desc: CanvasElement = { __type: 'Box', props: {} as any }
-      expect(nodeToDescriptor(desc)).toBe(desc)
-    })
+  it('should preserve ArrayBuffer instances', () => {
+    const proxies = new Set<unknown>()
+    const ab = new ArrayBuffer(8)
+    expect(wrapFunctions(ab, proxies)).toBe(ab)
+    expect(proxies.size).toBe(0)
+  })
 
-    it('should return null for class instances', () => {
-      class MyClass {
-        value = 1
-      }
-      expect(nodeToDescriptor(new MyClass())).toBeNull()
-    })
+  it('should preserve TypedArray instances', () => {
+    const proxies = new Set<unknown>()
+    const ta = new Uint8Array(8)
+    expect(wrapFunctions(ta, proxies)).toBe(ta)
+    expect(proxies.size).toBe(0)
+  })
 
-    it('should return null for null input', () => {
-      expect(nodeToDescriptor(null)).toBeNull()
-    })
+  it('should handle objects with no functions', () => {
+    const proxies = new Set<unknown>()
+    const input = { a: 1, b: 'two', c: [3, 4] }
+    const result = wrapFunctions(input, proxies)
 
-    it('should return undefined for undefined input', () => {
-      expect(nodeToDescriptor(undefined)).toBeUndefined()
-    })
-
-    it('should return plain objects without __type as-is', () => {
-      const plain = { foo: 'bar' }
-      expect(nodeToDescriptor(plain)).toBe(plain)
-    })
+    expect(result).toEqual(input)
+    expect(proxies.size).toBe(0)
   })
 })

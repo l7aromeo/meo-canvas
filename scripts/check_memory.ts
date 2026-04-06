@@ -25,6 +25,8 @@
 import { existsSync } from 'fs'
 import { execSync } from 'child_process'
 import { cpus } from 'os'
+import { pathToFileURL } from 'url'
+import { resolve } from 'path'
 import type { Root as RootFn, terminate as terminateFn } from '@/canvas/root.canvas.js'
 import type { Image as ImageFn } from '@/canvas/image.canvas.js'
 
@@ -84,8 +86,9 @@ async function main() {
   }
 
   // Runtime imports from dist (required for worker path resolution).
-  // Paths are stored in variables so TS skips static module resolution on them.
-  const [rootDistPath, imageDistPath] = ['dist/esm/canvas/root.canvas.js', 'dist/esm/canvas/image.canvas.js'] as string[]
+  // Use file:// URLs for ESM compatibility.
+  const rootDistPath = pathToFileURL(resolve('dist/esm/canvas/root.canvas.js')).href
+  const imageDistPath = pathToFileURL(resolve('dist/esm/canvas/image.canvas.js')).href
   const [{ Root, terminate }, { Image }] = (await Promise.all([import(rootDistPath), import(imageDistPath)])) as [
     { Root: typeof RootFn; terminate: typeof terminateFn },
     { Image: typeof ImageFn },

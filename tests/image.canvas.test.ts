@@ -196,7 +196,7 @@ describe('ImageNode & Image factory', () => {
     it('should call drawImage when image is loaded', async () => {
       const ctx = createMockCtx()
       const node = await setupRenderableNode({ src: 'test.png' })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
     })
 
@@ -204,7 +204,7 @@ describe('ImageNode & Image factory', () => {
       mockLoadImage.mockRejectedValueOnce(new Error('fail'))
       const ctx = createMockCtx()
       const node = await setupRenderableNode({ src: 'test.png' })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       expect(ctx.drawImage).not.toHaveBeenCalled()
     })
 
@@ -213,7 +213,7 @@ describe('ImageNode & Image factory', () => {
       // contain: imgRatio(2) > nodeRatio(1) => dw=100, dh=50
       const ctx = createMockCtx()
       const node = await setupRenderableNode({ src: 'test.png', objectFit: 'contain' })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
       const drawCall = (ctx.drawImage as jest.Mock<any>).mock.calls[0]
       // drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
@@ -228,7 +228,7 @@ describe('ImageNode & Image factory', () => {
       // cover: imgRatio(2) > nodeRatio(1) => dh=100, dw=200
       const ctx = createMockCtx()
       const node = await setupRenderableNode({ src: 'test.png', objectFit: 'cover' })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
       const drawCall = (ctx.drawImage as jest.Mock<any>).mock.calls[0]
       const dw = drawCall[7]
@@ -240,7 +240,7 @@ describe('ImageNode & Image factory', () => {
     it('should handle object-fit none (natural dimensions)', async () => {
       const ctx = createMockCtx()
       const node = await setupRenderableNode({ src: 'test.png', objectFit: 'none' })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
       const drawCall = (ctx.drawImage as jest.Mock<any>).mock.calls[0]
       const dw = drawCall[7]
@@ -255,7 +255,7 @@ describe('ImageNode & Image factory', () => {
         src: 'test.png',
         dropShadow: { offsetX: 5, offsetY: 5, blur: 10, color: 'rgba(0,0,0,0.5)' },
       })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       // Shadow properties are set inside a save/restore block
       // Verify drawImage was called (shadow was applied before it)
       expect(ctx.drawImage).toHaveBeenCalled()
@@ -264,7 +264,7 @@ describe('ImageNode & Image factory', () => {
     it('should set filter string when saturate is not 1', async () => {
       const ctx = createMockCtx()
       const node = await setupRenderableNode({ src: 'test.png', saturate: 0.5 })
-      node.render(ctx, 0, 0)
+      await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
     })
   })

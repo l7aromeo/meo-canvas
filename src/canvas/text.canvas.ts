@@ -905,8 +905,8 @@ export class TextNode extends BoxNode {
    * @param width Content box total width including padding
    * @param height Content box total height including padding
    */
-  protected override _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
-    super._renderContent(ctx, x, y, width, height)
+  protected override async _renderContent(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+    await super._renderContent(ctx, x, y, width, height)
 
     ctx.save()
     ctx.textBaseline = 'alphabetic'

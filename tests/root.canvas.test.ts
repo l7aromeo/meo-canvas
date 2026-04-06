@@ -15,33 +15,16 @@ jest.unstable_mockModule('@/canvas/layout.canvas.js', () => layoutMocks)
 
 jest.unstable_mockModule('@/canvas/image.canvas.js', () => imageMocks)
 
-// Mock worker_threads so worker mode tests don't spin up real OS threads.
-// Each MockWorker captures its 'message' handler and responds via postMessage.
-let _mockWorkerInstances: MockWorker[] = []
-class MockWorker {
-  private handlers: Map<string, ((data: any) => void)[]> = new Map()
-  constructor(_file: string) {
-    _mockWorkerInstances.push(this)
-  }
-  on(event: string, handler: (data: any) => void) {
-    if (!this.handlers.has(event)) this.handlers.set(event, [])
-    this.handlers.get(event)!.push(handler)
-    return this
-  }
-  postMessage(data: any) {
-    setImmediate(() => {
-      const emit = (msg: any) => this.handlers.get('message')?.forEach(h => h(msg))
-      if (data.type === 'render') {
-        emit({ taskId: data.taskId, canvasId: 0, buffer: Buffer.from('mock-render'), width: 100, height: 100 })
-      } else if (data.type === 'call') {
-        emit({ taskId: data.taskId, result: Buffer.from('mock-call-result') })
-      }
-      // 'release' needs no response
-    })
-  }
-  terminate() {}
-}
-jest.unstable_mockModule('node:worker_threads', () => ({ Worker: MockWorker }))
+// Mock worker_threads to prevent real OS threads during unit tests.
+jest.unstable_mockModule('node:worker_threads', () => ({
+  Worker: class {
+    on() {
+      return this
+    }
+    postMessage() {}
+    terminate() {}
+  },
+}))
 
 let Canvas: typeof import('skia-canvas').Canvas
 let FontLibrary: typeof import('skia-canvas').FontLibrary
@@ -114,7 +97,7 @@ describe('RootNode', () => {
     rootNodeInstance.children.push(mockImageNodeInstance)
 
     const columnNodeRenderSpy = jest.spyOn(ColumnNode.prototype, 'render')
-    columnNodeRenderSpy.mockImplementation(() => {
+    columnNodeRenderSpy.mockImplementation(async () => {
       // Swallow actual rendering during this test
     })
 
@@ -154,7 +137,7 @@ describe('RootNode', () => {
 
   it('should call super.render (ColumnNode.render) during rendering', async () => {
     const columnNodeRenderSpy = jest.spyOn(ColumnNode.prototype, 'render')
-    columnNodeRenderSpy.mockImplementation(() => {
+    columnNodeRenderSpy.mockImplementation(async () => {
       // Swallow actual rendering during this test
     })
 
@@ -245,77 +228,5 @@ describe('RootNode', () => {
     expect(FontLibrary.use).toHaveBeenCalledWith({
       ExistingFont: ['/mock/path/to/font2.ttf'],
     })
-  })
-})
-
-describe('Root (worker mode)', () => {
-  let Root: typeof import('@/canvas/root.canvas.js').Root
-  let configure: typeof import('@/canvas/root.canvas.js').configure
-
-  beforeEach(async () => {
-    jest.resetModules()
-    _mockWorkerInstances = []
-
-    skiaCanvasMocks.reset()
-    fsMocks.reset()
-    pathMocks.reset()
-    layoutMocks.reset()
-    imageMocks.reset()
-
-    layoutMocks.yogaNode.getComputedHeight.mockReturnValue(100)
-    layoutMocks.yogaNode.getComputedLayout.mockReturnValue({ left: 0, top: 0, width: 100, height: 100 })
-    layoutMocks.yogaNode.isDirty.mockReturnValue(false)
-
-    const rootModule = await import('@/canvas/root.canvas.js')
-    Root = rootModule.Root
-    configure = rootModule.configure
-    // worker mode is on by default — no configure() call needed
-  })
-
-  it('should create worker pool and dispatch render to worker', async () => {
-    const result = await Root({ width: 100 })
-    expect(_mockWorkerInstances.length).toBeGreaterThan(0)
-    expect(result).toBeDefined()
-  })
-
-  it('should return an object with toBufferSync that returns the worker buffer', async () => {
-    const result = await Root({ width: 100 })
-    const buf = result.toBufferSync('png')
-    expect(Buffer.isBuffer(buf)).toBe(true)
-    expect(buf).toEqual(Buffer.from('mock-render'))
-  })
-
-  it('should pass props to the worker via postMessage', async () => {
-    const postMessageSpy = jest.spyOn(MockWorker.prototype, 'postMessage')
-    await Root({ width: 200, height: 300 })
-    expect(postMessageSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        props: expect.objectContaining({ width: 200, height: 300 }),
-      }),
-    )
-    postMessageSpy.mockRestore()
-  })
-
-  it('should reject if worker responds with an error', async () => {
-    jest.spyOn(MockWorker.prototype, 'postMessage').mockImplementationOnce(function (this: any, data: any) {
-      setImmediate(() => {
-        this.handlers?.get('message')?.forEach((h: any) => h({ taskId: data.taskId, error: 'render failed' }))
-      })
-    })
-    await expect(Root({ width: 100 })).rejects.toThrow('render failed')
-  })
-
-  it('should delegate async toBuffer call to worker', async () => {
-    const canvas = await Root({ width: 100 })
-    const buf = await canvas.toBuffer('webp')
-    expect(Buffer.isBuffer(buf)).toBe(true)
-    expect(buf).toEqual(Buffer.from('mock-call-result'))
-  })
-
-  it('should allow disabling worker mode via configure()', async () => {
-    configure({ workerMode: false })
-    _mockWorkerInstances = []
-    await Root({ width: 100 })
-    expect(_mockWorkerInstances.length).toBe(0)
   })
 })
