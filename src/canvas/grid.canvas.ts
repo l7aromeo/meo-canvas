@@ -1,14 +1,7 @@
 import type { GridProps, GridTrackSize, GridItemProps, CanvasElement } from '@/canvas/canvas.type.js'
-import type { BoxProps } from '@/canvas/canvas.type.js'
-import { BoxNode, RowNode } from '@/canvas/layout.canvas.js'
+import { BoxNode, normalizeDescriptorChildren, RowNode } from '@/canvas/layout.canvas.js'
 import { Style } from '@/constant/common.const.js'
 import { parsePercentage } from '@/canvas/canvas.helper.js'
-
-function normalizeDescriptorChildren(children: BoxProps['children']): CanvasElement[] | undefined {
-  if (children === undefined || children === null || children === false) return undefined
-  const arr = (Array.isArray(children) ? children : [children]).filter(Boolean) as CanvasElement[]
-  return arr.length > 0 ? arr : undefined
-}
 
 /**
  * GridItem Node. Theoretically just a BoxNode but typed differently in factory.

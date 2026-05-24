@@ -1,9 +1,9 @@
 import { Canvas, type CanvasRenderingContext2D } from 'skia-canvas'
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
-import { omit } from 'lodash-es'
-import tinycolor from 'tinycolor2'
 import Yoga, { Style, Node } from '@/constant/common.const.js'
+
+const _HEX_ALPHA_RE = /^#([0-9a-fA-F]{8})$/
 
 /**
  * @class BoxNode
@@ -139,7 +139,8 @@ export class BoxNode {
       return
     }
 
-    child.resolveInheritedStyles(omit(this.props, 'children'))
+    const { children: _c, ...inheritedProps } = this.props
+    child.resolveInheritedStyles(inheritedProps)
     child.applyDefaults()
     this.children.push(child)
     this.node.insertChild(child.node, index)
@@ -243,60 +244,28 @@ export class BoxNode {
         }
       }
     }
-    if (gap) {
-      if (typeof gap === 'number') {
-        this.node.setGap(Style.Gutter.All, gap)
-      } else if (typeof gap === 'string' && gap.endsWith('%')) {
-        this.node.setGapPercent(Style.Gutter.All, parseFloat(gap))
-      } else {
-        for (const [gutter, value] of Object.entries(gap)) {
-          if (gutter in Style.Gutter) {
-            const gutterKey = gutter as keyof typeof Style.Gutter
-            if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setGapPercent(Style.Gutter[gutterKey], parseFloat(value))
-            } else {
-              this.node.setGap(Style.Gutter[gutterKey], value as number)
-            }
-          }
-        }
-      }
-    }
-    if (margin) {
-      if (typeof margin === 'number' || margin === 'auto') {
-        this.node.setMargin(Style.Edge.All, margin)
-      } else if (typeof margin === 'string' && margin.endsWith('%')) {
-        this.node.setMarginPercent(Style.Edge.All, parseFloat(margin))
-      } else {
-        for (const [edge, value] of Object.entries(margin)) {
-          if (edge in Style.Edge) {
-            const edgeKey = edge as keyof typeof Style.Edge
-            if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setMarginPercent(Style.Edge[edgeKey], parseFloat(value))
-            } else {
-              this.node.setMargin(Style.Edge[edgeKey], value as number)
-            }
-          }
-        }
-      }
-    }
-    if (padding) {
-      if (typeof padding === 'number') {
-        this.node.setPadding(Style.Edge.All, padding)
-      } else if (typeof padding === 'string' && padding.endsWith('%')) {
-        this.node.setPaddingPercent(Style.Edge.All, parseFloat(padding))
-      } else {
-        for (const [edge, value] of Object.entries(padding)) {
-          if (edge in Style.Edge) {
-            const edgeKey = edge as keyof typeof Style.Edge
-            if (typeof value === 'string' && value.endsWith('%')) {
-              this.node.setPaddingPercent(Style.Edge[edgeKey], parseFloat(value))
-            } else {
-              this.node.setPadding(Style.Edge[edgeKey], value as number)
-            }
-          }
-        }
-      }
-    }
+    if (gap)
+      _setEdgeValues(
+        gap,
+        Style.Gutter,
+        (e: any, v: any) => this.node.setGap(e, v),
+        (e: any, v: any) => this.node.setGapPercent(e, v),
+      )
+    if (margin)
+      _setEdgeValues(
+        margin,
+        Style.Edge,
+        (e: any, v: any) => this.node.setMargin(e, v),
+        (e: any, v: any) => this.node.setMarginPercent(e, v),
+        true,
+      )
+    if (padding)
+      _setEdgeValues(
+        padding,
+        Style.Edge,
+        (e: any, v: any) => this.node.setPadding(e, v),
+        (e: any, v: any) => this.node.setPaddingPercent(e, v),
+      )
     if (border) {
       if (typeof border === 'number') {
         this.node.setBorder(Style.Edge.All, border)
@@ -523,8 +492,7 @@ export class BoxNode {
     const backgroundColor = this.props.backgroundColor
     let isOpaque = false
     if (backgroundColor && !this.props.gradient) {
-      const rgba = tinycolor(backgroundColor).toRgb()
-      isOpaque = rgba && rgba.a === 1
+      isOpaque = _isColorOpaque(backgroundColor)
     }
 
     // Render outset shadows if present
@@ -770,10 +738,64 @@ export class BoxNode {
 /**
  * Normalizes children into a flat CanvasElement array, filtering falsy values.
  */
-function normalizeDescriptorChildren(children: BoxProps['children']): CanvasElement[] | undefined {
+export function normalizeDescriptorChildren(children: BoxProps['children']): CanvasElement[] | undefined {
   if (children === undefined || children === null || children === false) return undefined
   const arr = (Array.isArray(children) ? children : [children]).filter(Boolean) as CanvasElement[]
   return arr.length > 0 ? arr : undefined
+}
+
+/**
+ * Generic helper to set gap/margin/padding edge values on a Yoga node.
+ * Handles scalar (number | string), percent strings, and per-edge object notation.
+ */
+function _setEdgeValues(
+  value: number | string | Record<string, number | string>,
+  keys: { [key: string]: any },
+  setFn: (edge: any, val: number | string) => void,
+  percentFn?: (edge: any, val: number) => void,
+  allowAuto = false,
+): void {
+  if (typeof value === 'number' || (allowAuto && value === 'auto')) {
+    setFn(keys.All, value)
+  } else if (typeof value === 'string' && percentFn && value.endsWith('%')) {
+    percentFn(keys.All, parseFloat(value))
+  } else if (typeof value === 'object') {
+    for (const [key, val] of Object.entries(value)) {
+      if (key in keys) {
+        const edgeKey = keys[key]
+        if (typeof val === 'string' && percentFn && val.endsWith('%')) {
+          percentFn(edgeKey, parseFloat(val))
+        } else {
+          setFn(edgeKey, val as number)
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Checks if a CSS color string represents a fully opaque color (alpha = 1).
+ * Handles hex (#RGB, #RRGGBB, #RRGGBBAA), rgb()/rgba(), and transparent.
+ */
+function _isColorOpaque(color: string): boolean {
+  if (color === 'transparent') return false
+
+  const hexAlpha = _HEX_ALPHA_RE.exec(color)
+  if (hexAlpha) {
+    return parseInt(hexAlpha[1].slice(6), 16) === 255
+  }
+  // #RGB or #RRGGBB are always opaque
+  if (color.startsWith('#')) return true
+
+  // rgba(r, g, b, a)
+  const rgba = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/.exec(color)
+  if (rgba) {
+    const a = rgba[4] !== undefined ? parseFloat(rgba[4]) : 1
+    return a === 1
+  }
+
+  // Unknown format — assume opaque (covers named colors like 'black', 'white', etc.)
+  return true
 }
 
 /**

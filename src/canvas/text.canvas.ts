@@ -414,14 +414,7 @@ export class TextNode extends BoxNode {
     // Pre-measure each text segment width with its specific styling
     for (const segment of this.segments) {
       ctx.font = this.getFontString(segment)
-      if (typeof this.props.fontVariant === 'string') {
-        ctx.fontVariant = this.props.fontVariant
-      } else if (this.props.fontVariant !== undefined) {
-        console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (segment width):`, this.props.fontVariant)
-        if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-      } else {
-        if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-      }
+      this._applyFontVariant(ctx, 'measureText (segment width)')
       segment.width = this.addLetterSpacingExtra(segment.text, ctx.measureText(segment.text).width, parsedLetterSpacingPx)
     }
 
@@ -451,14 +444,7 @@ export class TextNode extends BoxNode {
       // Handle empty line metrics
       if (line.length === 0) {
         ctx.font = this.getFontString()
-        if (typeof this.props.fontVariant === 'string') {
-          ctx.fontVariant = this.props.fontVariant
-        } else if (this.props.fontVariant !== undefined) {
-          console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (empty line):`, this.props.fontVariant)
-          if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-        } else {
-          if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-        }
+        this._applyFontVariant(ctx, 'measureText (empty line)')
         const metrics = ctx.measureText(this.metricsString)
         maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
         maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
@@ -472,14 +458,7 @@ export class TextNode extends BoxNode {
           maxFontSizeOnLine = Math.max(maxFontSizeOnLine, segmentSize)
 
           ctx.font = this.getFontString(segment)
-          if (typeof this.props.fontVariant === 'string') {
-            ctx.fontVariant = this.props.fontVariant
-          } else if (this.props.fontVariant !== undefined) {
-            console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (segment height):`, this.props.fontVariant)
-            if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-          } else {
-            if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-          }
+          this._applyFontVariant(ctx, 'measureText (segment height)')
 
           const metrics = ctx.measureText(this.metricsString)
           const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
@@ -493,14 +472,7 @@ export class TextNode extends BoxNode {
       // Fallback metrics for lines with only whitespace
       if (maxAscent === 0 && maxDescent === 0 && line.length > 0) {
         ctx.font = this.getFontString()
-        if (typeof this.props.fontVariant === 'string') {
-          ctx.fontVariant = this.props.fontVariant
-        } else if (this.props.fontVariant !== undefined) {
-          console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (fallback):`, this.props.fontVariant)
-          if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-        } else {
-          if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-        }
+        this._applyFontVariant(ctx, 'measureText (fallback)')
         const metrics = ctx.measureText(this.metricsString)
         maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
         maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
@@ -541,14 +513,7 @@ export class TextNode extends BoxNode {
       for (const word of words) {
         if (/^\s+$/.test(word)) continue
         ctx.font = this.getFontString(segment)
-        if (typeof this.props.fontVariant === 'string') {
-          ctx.fontVariant = this.props.fontVariant
-        } else if (this.props.fontVariant !== undefined) {
-          console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in measureText (single line width):`, this.props.fontVariant)
-          if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-        } else {
-          if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-        }
+        this._applyFontVariant(ctx, 'measureText (single line width)')
         const wordWidth = this.addLetterSpacingExtra(word, ctx.measureText(word).width, parsedLetterSpacingPx)
         if (!firstWordInSingleLine) {
           singleLineWidth += spaceWidth + parsedWordSpacingPx
@@ -889,7 +854,21 @@ export class TextNode extends BoxNode {
   }
 
   /**
-   * Renders multi-line text content with rich text styling and layout features
+   * Applies this.props.fontVariant to the context, or resets to 'normal'.
+   * Centralizes the type guard + warn pattern repeated across measure/render paths.
+   */
+  private _applyFontVariant(ctx: CanvasRenderingContext2D, context: string): void {
+    if (typeof this.props.fontVariant === 'string') {
+      ctx.fontVariant = this.props.fontVariant
+    } else if (this.props.fontVariant !== undefined) {
+      console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in ${context}:`, this.props.fontVariant)
+      if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
+    } else {
+      if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
+    }
+  }
+
+  /**
    *
    * Core features:
    * - Dynamic line heights with leading/spacing controls
@@ -1163,14 +1142,7 @@ export class TextNode extends BoxNode {
           ctx.font = this.getFontString(segment)
           ctx.fillStyle = segment.color || this.props.color || 'black'
 
-          if (typeof this.props.fontVariant === 'string') {
-            ctx.fontVariant = this.props.fontVariant
-          } else if (this.props.fontVariant !== undefined) {
-            console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (segment render):`, this.props.fontVariant)
-            if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-          } else {
-            if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-          }
+          this._applyFontVariant(ctx, '_renderContent (segment render)')
 
           // Handle text truncation and ellipsis
           let textToDraw = segment.text
@@ -1250,14 +1222,7 @@ export class TextNode extends BoxNode {
               ctx.save()
               ctx.font = this.getFontString(ellipsisStyle)
 
-              if (typeof this.props.fontVariant === 'string') {
-                ctx.fontVariant = this.props.fontVariant
-              } else if (this.props.fontVariant !== undefined) {
-                console.warn(`[TextNode ${this.key || ''}] Invalid fontVariant prop type in _renderContent (ellipsis draw):`, this.props.fontVariant)
-                if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-              } else {
-                if (ctx.fontVariant !== 'normal') ctx.fontVariant = 'normal'
-              }
+              this._applyFontVariant(ctx, '_renderContent (ellipsis draw)')
 
               ctx.fillStyle = ellipsisStyle?.color || this.props.color || 'black'
               ctx.fillText(ellipsisChar, currentX, lineY, Math.max(0, ellipsisRemainingWidth + 1))
