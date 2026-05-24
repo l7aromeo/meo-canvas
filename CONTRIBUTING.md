@@ -4,11 +4,11 @@ First off, thank you for considering contributing! It's people like you that mak
 
 ## Where do I go from here?
 
-If you've noticed a bug or have a feature request, [make one](https://github.com/meonode/canvas/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
+If you've noticed a bug or have a feature request, [make one](https://gitlab.com/meonode/canvas/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
 
 ### Fork & create a branch
 
-If this is something you think you can fix, then [fork @meonode/canvas](https://github.com/meonode/canvas/fork) and create a branch with a descriptive name.
+If this is something you think you can fix, then [fork @meonode/canvas](https://gitlab.com/meonode/canvas/-/forks/new) and create a branch with a descriptive name.
 
 A good branch name would be (where issue #38 is the ticket you're working on):
 
@@ -53,7 +53,7 @@ Make sure your commit messages are clear and descriptive.
 At this point, you should switch back to your master branch and make sure it's up to date with the latest upstream master.
 
 ```sh
-git remote add upstream git@github.com:meonode/canvas.git
+git remote add upstream git@gitlab.com:meonode/canvas.git
 git checkout master
 git pull upstream master
 ```
@@ -66,10 +66,10 @@ git rebase master
 git push --force-with-lease origin 38-add-gaussian-blur-support
 ```
 
-Finally, go to GitHub and [make a Pull Request](https://github.com/meonode/canvas/compare) :D
+Finally, go to GitLab and [make a Merge Request](https://gitlab.com/meonode/canvas/-/merge_requests/new) :D
 
 We're happy to help you get your PR reviewed and merged.
 
 ---
 
-*This contribution guide was adapted from the [React-Boilerplate guide](https://github.com/react-boilerplate/react-boilerplate/blob/master/CONTRIBUTING.md).*
+*This contribution guide was adapted from the [React-Boilerplate guide](https://github.com/react-boilerplate/react-boilerplate).*

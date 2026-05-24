@@ -1,8 +1,21 @@
 import { Root, Column, Box, Row, Text, Style, Grid } from '../src/index.js'
 import { GridItem } from '../src/canvas/grid.canvas.js'
-import tinycolor from 'tinycolor2'
 import path from 'path'
 import fs from 'fs'
+
+function _darken(hex: string, amount: number): string {
+  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - (amount / 100) * 255)
+  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - (amount / 100) * 255)
+  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - (amount / 100) * 255)
+  return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('')
+}
+
+function _alpha(hex: string, a: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${a})`
+}
 
 // ─── Theme ──────────────────────────────────────────────────────────────────────
 const Theme = {
@@ -28,7 +41,7 @@ const Section = (title: string, subtitle: string, content: any) =>
     boxShadow: { offsetY: 4, blur: 12, color: 'rgba(0,0,0,0.08)' },
     children: [
       Text(title, { fontSize: 22, fontWeight: 'bold', color: Theme.darkColor }),
-      Text(subtitle, { fontSize: 14, color: tinycolor(Theme.darkColor).setAlpha(0.5).toString() }),
+      Text(subtitle, { fontSize: 14, color: _alpha(Theme.darkColor, 0.5) }),
       content,
     ],
   })
@@ -70,10 +83,7 @@ const StatBadge = (label: string, value: string, color: string) =>
     children: Column({
       alignItems: Style.Align.Center,
       gap: 2,
-      children: [
-        Text(value, { fontSize: 18, fontWeight: 'bold', color: 'white' }),
-        Text(label, { fontSize: 10, color: tinycolor('white').setAlpha(0.7).toString() }),
-      ],
+      children: [Text(value, { fontSize: 18, fontWeight: 'bold', color: 'white' }), Text(label, { fontSize: 10, color: _alpha('white', 0.7) })],
     }),
   })
 
@@ -88,7 +98,7 @@ const dashboardLayout = Section(
     children: [
       // Left panel: stats grid
       Box({
-        backgroundColor: tinycolor(Theme.primaryColor).setAlpha(0.08).toString(),
+        backgroundColor: _alpha(Theme.primaryColor, 0.08),
         borderRadius: 10,
         padding: 16,
         children: Column({
@@ -110,7 +120,7 @@ const dashboardLayout = Section(
       }),
       // Right panel: stats grid
       Box({
-        backgroundColor: tinycolor(Theme.secondaryColor).setAlpha(0.08).toString(),
+        backgroundColor: _alpha(Theme.secondaryColor, 0.08),
         borderRadius: 10,
         padding: 16,
         children: Column({
@@ -147,7 +157,7 @@ const cardGrid = Section(
     gap: 14,
     children: names.map((name, i) =>
       Box({
-        backgroundColor: tinycolor(colors[i]).setAlpha(0.1).toString(),
+        backgroundColor: _alpha(colors[i], 0.1),
         borderRadius: 10,
         padding: 14,
         children: Column({
@@ -171,15 +181,12 @@ const cardGrid = Section(
             Grid({
               columns: 2,
               gap: 8,
-              children: [
-                GradientCell('Score: 92', [colors[i], tinycolor(colors[i]).darken(20).toString()], 40),
-                GradientCell('Rank: A+', [tinycolor(colors[i]).darken(10).toString(), colors[i]], 40),
-              ],
+              children: [GradientCell('Score: 92', [colors[i], _darken(colors[i], 20)], 40), GradientCell('Rank: A+', [_darken(colors[i], 10), colors[i]], 40)],
             }),
             // Description
             Text('Performance metrics for this module show steady growth with minimal variance.', {
               fontSize: 11,
-              color: tinycolor(Theme.darkColor).setAlpha(0.6).toString(),
+              color: _alpha(Theme.darkColor, 0.6),
               maxLines: 2,
               ellipsis: true,
             }),
@@ -209,7 +216,7 @@ const holyGrail = Section(
         gridColumn: 'span 3',
         children: [
           Box({
-            backgroundColor: tinycolor(Theme.primaryColor).setAlpha(0.06).toString(),
+            backgroundColor: _alpha(Theme.primaryColor, 0.06),
             borderRadius: 8,
             padding: 16,
             height: 200,
@@ -219,7 +226,7 @@ const holyGrail = Section(
                 Text('Main Content Area', { fontSize: 18, fontWeight: 'bold', color: Theme.darkColor }),
                 Text('This area spans 3 columns and contains the primary page content.', {
                   fontSize: 13,
-                  color: tinycolor(Theme.darkColor).setAlpha(0.6).toString(),
+                  color: _alpha(Theme.darkColor, 0.6),
                 }),
                 Grid({
                   columns: 3,
@@ -236,7 +243,7 @@ const holyGrail = Section(
         gridColumn: 'span 1',
         children: [
           Box({
-            backgroundColor: tinycolor(Theme.secondaryColor).setAlpha(0.08).toString(),
+            backgroundColor: _alpha(Theme.secondaryColor, 0.08),
             borderRadius: 8,
             padding: 12,
             height: 200,
@@ -249,8 +256,8 @@ const holyGrail = Section(
                   gap: 6,
                   children: [
                     Cell('Nav Item 1', Theme.secondaryColor, 36),
-                    Cell('Nav Item 2', tinycolor(Theme.secondaryColor).darken(10).toString(), 36),
-                    Cell('Nav Item 3', tinycolor(Theme.secondaryColor).darken(20).toString(), 36),
+                    Cell('Nav Item 2', _darken(Theme.secondaryColor, 10), 36),
+                    Cell('Nav Item 3', _darken(Theme.secondaryColor, 20), 36),
                   ],
                 }),
               ],
@@ -277,9 +284,7 @@ const deeplyNested = Section(
     gap: 14,
     children: ['Panel A', 'Panel B'].map((panelName, pi) =>
       Box({
-        backgroundColor: tinycolor(pi === 0 ? Theme.primaryColor : Theme.accentColor)
-          .setAlpha(0.08)
-          .toString(),
+        backgroundColor: _alpha(pi === 0 ? Theme.primaryColor : Theme.accentColor, 0.08),
         borderRadius: 10,
         padding: 14,
         children: Column({
@@ -292,9 +297,7 @@ const deeplyNested = Section(
               gap: 8,
               children: ['Sub 1', 'Sub 2'].map((subName, si) =>
                 Box({
-                  backgroundColor: tinycolor(pi === 0 ? Theme.primaryColor : Theme.accentColor)
-                    .setAlpha(0.12)
-                    .toString(),
+                  backgroundColor: _alpha(pi === 0 ? Theme.primaryColor : Theme.accentColor, 0.12),
                   borderRadius: 8,
                   padding: 10,
                   children: Column({
@@ -310,13 +313,7 @@ const deeplyNested = Section(
                         columns: 3,
                         gap: 4,
                         children: Array.from({ length: 3 }).map((_, ci) =>
-                          Cell(
-                            `${pi + 1}.${si + 1}.${ci + 1}`,
-                            tinycolor(pi === 0 ? Theme.primaryColor : Theme.accentColor)
-                              .darken(ci * 8)
-                              .toString(),
-                            32,
-                          ),
+                          Cell(`${pi + 1}.${si + 1}.${ci + 1}`, _darken(pi === 0 ? Theme.primaryColor : Theme.accentColor, ci * 8), 32),
                         ),
                       }),
                     ],
@@ -446,14 +443,14 @@ const renderStarHistory = (banner: (typeof banners)[number]) => {
               Column({
                 gradient: {
                   type: 'linear',
-                  colors: [tinycolor(bgColor).darken(15).toString(), bgColor],
+                  colors: [_darken(bgColor, 15), bgColor],
                   direction: 'to-bottom',
                 },
                 borderRadius: 10,
                 overflow: Style.Overflow.Hidden,
                 boxShadow: {
                   offsetY: 4,
-                  color: tinycolor('black').setAlpha(0.3).toString(),
+                  color: _alpha('black', 0.3),
                 },
                 children: [
                   // Icon area
@@ -482,7 +479,7 @@ const renderStarHistory = (banner: (typeof banners)[number]) => {
                       Text(`${star.pity} pulls · ${star.time.slice(2)}`, {
                         fontSize: 9,
                         textAlign: 'center',
-                        color: tinycolor('white').setAlpha(0.7).toString(),
+                        color: _alpha('white', 0.7),
                       }),
                     ],
                   }),
@@ -510,7 +507,7 @@ const unstableGrid = Section(
     children: banners.map(banner =>
       Box({
         flexShrink: 0,
-        backgroundColor: tinycolor(banner.color).setAlpha(0.15).toString(),
+        backgroundColor: _alpha(banner.color, 0.15),
         borderRadius: 8,
         padding: 16,
         children: Column({
@@ -529,7 +526,7 @@ const unstableGrid = Section(
                 Text(`${banner.total} wishes`, {
                   fontSize: 16,
                   fontWeight: '600',
-                  color: tinycolor('black').setAlpha(0.3).toString(),
+                  color: _alpha('black', 0.3),
                 }),
               ],
             }),
@@ -589,7 +586,7 @@ const unstableGrid = Section(
             }),
             Text('Demonstrating Grid nesting patterns: grids inside grids with spanning and deep hierarchies', {
               fontSize: 14,
-              color: tinycolor(Theme.darkColor).setAlpha(0.5).toString(),
+              color: _alpha(Theme.darkColor, 0.5),
               margin: { Bottom: 10 },
             }),
             dashboardLayout,

@@ -19,6 +19,7 @@ rendering to a canvas.
 - **Styling:** Style your components with properties that mimic CSS, including borders, padding, margins, and more.
 - **Grid Layout:** A `Grid` component is provided for easy grid-based layouts.
 - **TypeScript Support:** Fully typed for a better development experience.
+- **[Architecture →](./ARCHITECTURE.md)**
 
 ## Showcase
 
@@ -443,6 +444,7 @@ that inherits all `BoxProps`.
 | `scale`        | `number`                          | `1`                 | Scale factor for rendering (e.g., 2 for 2x resolution).                                               |
 | `fonts`        | `FontRegistrationInfo[]`          | -                   | An array of font files to register for use in the canvas.                                             |
 | `useDiskCache` | `boolean`                         | `false`             | Write fetched images to disk during render for faster re-decode. Entries are cleaned up after render. |
+| `imageConcurrency` | `number`                     | `5`                 | Maximum number of images to fetch concurrently during render.                                         |
 | `workerMode`   | `boolean`                         | `true`              | Enable worker thread rendering for non-blocking operation.                                            |
 | `workers`      | `number`                          | `cpus().length - 1` | Number of worker threads to use (only applies on first render with`workerMode: true`).                |
 
@@ -768,7 +770,7 @@ process.on('SIGTERM', () => {
 })
 ```
 
-> After calling `terminate()`, you must call `configure()` again before rendering.
+> After calling `terminate()`, the worker pool will be lazily re-initialized on the next `Root()` call.
 
 #### `clearDiskCache()`
 
@@ -782,31 +784,17 @@ await clearDiskCache()
 
 > **Note:** Disk cache is automatically cleaned up after each render when `useDiskCache: true`, and on process exit.
 
----
+#### `setDiskCacheDir(dir)`
 
-### Configuration (Legacy)
-
-#### `configure(options)`
-
-> **Deprecated:** Pass `workerMode` and `workers` directly to `Root()` props instead.
-
-Configure the canvas rendering engine. Call once at startup.
+Override the default disk cache directory. Must be called before any cache read/write operations.
 
 ```typescript
-import {configure} from '@meonode/canvas'
+import {setDiskCacheDir} from '@meonode/canvas'
 
-configure({
-  workerMode: true, // Default: true
-  workers: 4,       // Default: cpus().length - 1
-})
+setDiskCacheDir('/tmp/my-custom-cache')
 ```
 
-
-| Option       | Type      | Default             | Description                                               |
-| ------------ | --------- | ------------------- | --------------------------------------------------------- |
-| `workerMode` | `boolean` | `true`              | Enable worker thread rendering for non-blocking operation |
-| `workers`    | `number`  | `cpus().length - 1` | Number of worker threads in the pool                      |
-
+---
 ## Contributing
 
 Contributions are welcome! Please see the [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get
