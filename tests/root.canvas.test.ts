@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import type { RootPropsWithoutWorker } from '@/canvas/canvas.type.js'
 import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/skia-canvas.js'
 import { __mocks__ as fsMocks } from '@/__mocks__/node-fs.js'
 import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
@@ -30,7 +31,6 @@ let Canvas: typeof import('skia-canvas').Canvas
 let FontLibrary: typeof import('skia-canvas').FontLibrary
 let Root: typeof import('@/canvas/root.canvas.js').Root
 let RootNode: typeof import('@/canvas/root.canvas.js').RootNode
-let configure: typeof import('@/canvas/root.canvas.js').configure
 let ColumnNode: typeof import('@/canvas/layout.canvas.js').ColumnNode
 
 describe('RootNode', () => {
@@ -44,8 +44,6 @@ describe('RootNode', () => {
     const rootModule = await import('@/canvas/root.canvas.js')
     Root = rootModule.Root
     RootNode = rootModule.RootNode
-    configure = rootModule.configure
-    configure({ workerMode: false })
     const layoutModule = await import('@/canvas/layout.canvas.js')
     ColumnNode = layoutModule.ColumnNode
 
@@ -73,17 +71,17 @@ describe('RootNode', () => {
   })
 
   it('should throw an error if width is not provided', async () => {
-    await expect(Root({} as any)).rejects.toThrow('Width and height are required for Root')
+    await expect(Root({ workerMode: false } as RootPropsWithoutWorker)).rejects.toThrow('Width and height are required for Root')
   })
 
   it('should create canvas with scaled dimensions', async () => {
-    await Root({ width: 400, scale: 2 })
+    await Root({ workerMode: false, width: 400, scale: 2 })
 
     expect(Canvas).toHaveBeenCalledWith(800, 1)
   })
 
   it('should create canvas with correct dimension', async () => {
-    await Root({ width: 400, height: 600 })
+    await Root({ workerMode: false, width: 400, height: 600 })
 
     expect(Canvas).toHaveBeenCalledWith(400, 600)
   })
@@ -130,7 +128,7 @@ describe('RootNode', () => {
       height: 100,
     })
 
-    await Root({ width: 100, scale: 2 })
+    await Root({ workerMode: false, width: 100, scale: 2 })
 
     expect(skiaCanvasMocks.mockCanvasContext.scale).toHaveBeenCalledWith(2, 2)
   })
@@ -149,14 +147,14 @@ describe('RootNode', () => {
       height: 100,
     })
 
-    await Root({ width: 100 })
+    await Root({ workerMode: false, width: 100 })
 
     expect(columnNodeRenderSpy).toHaveBeenCalled()
     columnNodeRenderSpy.mockRestore()
   })
 
   it('should ensure canvas height is at least 1 even if content height is 0', async () => {
-    await Root({ width: 100 })
+    await Root({ workerMode: false, width: 100 })
 
     expect(Canvas).toHaveBeenCalledWith(100, 1) // Expect height to be 1
   })
@@ -190,14 +188,8 @@ describe('RootNode', () => {
     fsMocks.existsSync.mockReturnValue(true)
     pathMocks.resolve.mockImplementation(p => `/mock/path/to/${p}`)
 
-    await Root({
-      width: 100,
-      fonts: [{ family: 'TestFont', paths: ['font.ttf'] }],
-    })
-    await Root({
-      width: 100,
-      fonts: [{ family: 'TestFont', paths: ['font.ttf'] }],
-    })
+    await Root({ workerMode: false, width: 100, fonts: [{ family: 'TestFont', paths: ['font.ttf'] }] })
+    await Root({ workerMode: false, width: 100, fonts: [{ family: 'TestFont', paths: ['font.ttf'] }] })
 
     expect(FontLibrary.use).toHaveBeenCalledTimes(1)
     expect(FontLibrary.use).toHaveBeenCalledWith({
@@ -210,16 +202,10 @@ describe('RootNode', () => {
     pathMocks.resolve.mockImplementation(p => `/mock/path/to/${p}`)
 
     // Register first font
-    await Root({
-      width: 100,
-      fonts: [{ family: 'ExistingFont', paths: ['font1.ttf'] }],
-    })
+    await Root({ workerMode: false, width: 100, fonts: [{ family: 'ExistingFont', paths: ['font1.ttf'] }] })
 
     // Register second font for the same family
-    await Root({
-      width: 100,
-      fonts: [{ family: 'ExistingFont', paths: ['font2.ttf'] }],
-    })
+    await Root({ workerMode: false, width: 100, fonts: [{ family: 'ExistingFont', paths: ['font2.ttf'] }] })
 
     expect(FontLibrary.use).toHaveBeenCalledTimes(2)
     expect(FontLibrary.use).toHaveBeenCalledWith({

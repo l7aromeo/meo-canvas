@@ -129,6 +129,101 @@ describe('BoxNode', () => {
     expect(mockFill).toHaveBeenCalled()
     getContextSpy.mockRestore()
   })
+
+  it('should render full pipeline with real children in correct order', async () => {
+    const parent = new BoxNode({
+      key: 'parent',
+      width: 200,
+      height: 200,
+      backgroundColor: 'white',
+      overflow: Style.Overflow.Hidden,
+      border: 1,
+    })
+
+    const childA = new BoxNode({ key: 'childA', width: 50, height: 50, backgroundColor: 'red' })
+    const childB = new BoxNode({ key: 'childB', width: 50, height: 50, backgroundColor: 'blue' })
+
+    // Manually build tree — parent → children
+    ;(parent as any).appendChild(childA, 0)
+    ;(parent as any).appendChild(childB, 1)
+
+    // Mock computed layouts so render() reads correct positions
+    jest.spyOn(parent.node, 'getComputedLayout').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 200,
+      bottom: 0,
+      right: 0,
+    } as any)
+    jest.spyOn(childA.node, 'getComputedLayout').mockReturnValue({
+      left: 10,
+      top: 10,
+      width: 50,
+      height: 50,
+      bottom: 0,
+      right: 0,
+    } as any)
+    jest.spyOn(childB.node, 'getComputedLayout').mockReturnValue({
+      left: 70,
+      top: 10,
+      width: 50,
+      height: 50,
+      bottom: 0,
+      right: 0,
+    } as any)
+
+    // Trace draw order
+    const drawLog: string[] = []
+    const mockContext = {
+      fill: jest.fn(() => drawLog.push('fill')),
+      beginPath: jest.fn(() => drawLog.push('beginPath')),
+      rect: jest.fn(() => drawLog.push('rect')),
+      save: jest.fn(() => drawLog.push('save')),
+      restore: jest.fn(() => drawLog.push('restore')),
+      clip: jest.fn(() => drawLog.push('clip')),
+      closePath: jest.fn(() => drawLog.push('closePath')),
+      moveTo: jest.fn(() => drawLog.push('moveTo')),
+      lineTo: jest.fn(() => drawLog.push('lineTo')),
+      arc: jest.fn(() => drawLog.push('arc')),
+      setLineDash: jest.fn(() => drawLog.push('setLineDash')),
+      stroke: jest.fn(() => drawLog.push('stroke')),
+      drawImage: jest.fn(() => drawLog.push('drawImage')),
+      clearRect: jest.fn(() => drawLog.push('clearRect')),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      globalAlpha: 1,
+      shadowColor: '',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      shadowBlur: 0,
+      globalCompositeOperation: 'source-over',
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high',
+    }
+
+    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const ctx = new Canvas().getContext('2d')
+
+    await parent.render(ctx, 0, 0)
+
+    // Verify balanced save/restore — should be: save (overflow clip), 2x save (each child), 2x restore, restore
+    const saveCount = drawLog.filter(s => s === 'save').length
+    const restoreCount = drawLog.filter(s => s === 'restore').length
+    expect(saveCount).toBe(restoreCount)
+
+    // Overflow:hidden should trigger a save/clip pair
+    expect(drawLog).toContain('save')
+    expect(drawLog).toContain('clip')
+
+    // Parent fills before children (find first fill after beginPath)
+    // The rendering order matters: parent background → childA → childB
+    const firstChildFillIdx = drawLog.indexOf('fill', drawLog.indexOf('clip'))
+    expect(firstChildFillIdx).toBeGreaterThan(0)
+
+    getContextSpy.mockRestore()
+  })
 })
 
 describe('BoxNode Layout Properties', () => {

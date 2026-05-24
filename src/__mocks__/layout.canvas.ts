@@ -46,6 +46,12 @@ export const Box = jest.fn((props: any) => new BoxNode(props))
 export const Column = jest.fn((props: any) => new ColumnNode(props))
 export const Row = jest.fn((props: any) => new RowNode(props))
 
+export const normalizeDescriptorChildren = jest.fn((children: any): any[] | undefined => {
+  if (children === undefined || children === null || children === false) return undefined
+  const arr = (Array.isArray(children) ? children : [children]).filter(Boolean)
+  return arr.length > 0 ? arr : undefined
+})
+
 export const __mocks__ = {
   yogaNode: yogaNode.current,
   BoxNode,
@@ -54,6 +60,7 @@ export const __mocks__ = {
   Box,
   Column,
   Row,
+  normalizeDescriptorChildren,
   reset: () => {
     // Reset all jest.fn() mocks
     clearCreatedNodes()
@@ -66,5 +73,6 @@ export const __mocks__ = {
     Box.mockClear()
     Column.mockClear()
     Row.mockClear()
+    normalizeDescriptorChildren.mockClear()
   },
 }

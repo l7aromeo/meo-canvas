@@ -169,7 +169,6 @@ jest.unstable_mockModule('node:path', () => ({
 
 let ImageNode: typeof import('@/canvas/image.canvas.js').ImageNode
 let RootNode: typeof import('@/canvas/root.canvas.js').RootNode
-let configure: typeof import('@/canvas/root.canvas.js').configure
 
 const MOCK_IMAGE = { width: 200, height: 100 }
 const TEST_KEY = 'abc123deadbeef'
@@ -239,8 +238,6 @@ beforeEach(async () => {
 
   const rootMod = await import('@/canvas/root.canvas.js')
   RootNode = rootMod.RootNode
-  configure = rootMod.configure
-  configure({ workerMode: false })
 
   mockLoadImage.mockReset()
   mockFileTypeFromBuffer.mockReset()
