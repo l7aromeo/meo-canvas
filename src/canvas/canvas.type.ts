@@ -621,6 +621,12 @@ export interface RootProps extends BoxProps {
   useDiskCache?: boolean
 
   /**
+   * Maximum number of images to fetch concurrently during render.
+   * @default 5
+   */
+  imageConcurrency?: number
+
+  /**
    * Enable worker thread rendering for non-blocking operation.
    * Worker mode renders in a separate thread to avoid blocking the event loop.
    * @default true

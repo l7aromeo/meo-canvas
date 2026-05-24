@@ -1,7 +1,17 @@
 import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
 import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.js'
-import type { BaseProps, RootProps, CanvasElement, RootPropsWithWorker, RootPropsWithoutWorker } from '@/canvas/canvas.type.js'
+import type {
+  BaseProps,
+  RootProps,
+  CanvasElement,
+  RootPropsWithWorker,
+  RootPropsWithoutWorker,
+  Children,
+  ImageProps,
+  ChartProps,
+  ChartType,
+} from '@/canvas/canvas.type.js'
 import type { ComlinkPool as ComlinkPoolType, PoolRenderResult } from '@/worker/comlink.pool.js'
 import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.js'
 import { deleteDiskCache } from '@/util/disk.cache.js'
@@ -15,10 +25,12 @@ import { cpus } from 'node:os'
 
 /** Registry to track fonts that have already been loaded */
 const registeredFonts = new Map<string, Set<string>>()
+let _fontRegistrationLock: Promise<void> | null = null
 
-// Exported for testing purposes only
-export const _clearRegisteredFonts = () => {
+// Clears the font registry between test runs (internal, not exported from index)
+const _clearRegisteredFonts = () => {
   registeredFonts.clear()
+  _fontRegistrationLock = null
 }
 
 /**
@@ -33,32 +45,11 @@ const canvasRegistry = new FinalizationRegistry<{ workerIdx: number; canvasId: n
   }
 })
 
-/** Engine configuration — legacy support for configure() */
-let _defaultWorkerMode = true
-let _defaultWorkerPoolSize = Math.max(1, cpus().length - 1)
 let _workerPool: ComlinkPoolType | null = null
-
-export interface CanvasEngineConfig {
-  /** Run rendering in worker threads to avoid blocking the event loop (default: true) */
-  workerMode?: boolean
-  /** Number of worker threads in the pool (default: os.cpus().length - 1) */
-  workers?: number
-}
-
-/**
- * Configure the canvas rendering engine.
- * Call this once at application startup before rendering.
- * @deprecated Pass workerMode and workers directly to Root() props instead.
- */
-export function configure(options: CanvasEngineConfig) {
-  if (options.workerMode !== undefined) _defaultWorkerMode = options.workerMode
-  if (options.workers !== undefined) _defaultWorkerPoolSize = options.workers
-}
 
 /**
  * Terminate all worker pools and free worker thread resources.
  * Call this when shutting down a long-running server to clean up immediately.
- * After calling, you must call configure() again before rendering.
  */
 export function terminate() {
   if (_workerPool) {
@@ -164,15 +155,15 @@ export function buildTree(descriptor: CanvasElement): BoxNode {
     case 'Row':
       return new RowNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) })
     case 'Grid':
-      return new GridNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) as any })
+      return new GridNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) as Children[] })
     case 'GridItem':
-      return new GridItemNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) as any })
+      return new GridItemNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) as Children[] })
     case 'Image':
-      return new ImageNode(descriptor.props as any)
+      return new ImageNode(descriptor.props as ImageProps)
     case 'Text':
       return new TextNode(descriptor.text, descriptor.props)
     case 'Chart':
-      return new ChartNode(descriptor.props as any)
+      return new ChartNode(descriptor.props as ChartProps<ChartType>)
   }
 }
 
@@ -192,6 +183,8 @@ export class RootNode extends ColumnNode {
   private readonly targetHeight: number | undefined
   /** Scale factor for rendering (e.g. 2 for 2x resolution) */
   private readonly scale: number
+  /** Max concurrent image fetches during render (default: 5) */
+  private readonly imageConcurrency: number
 
   /**
    * Creates a new root node for canvas rendering
@@ -209,41 +202,23 @@ export class RootNode extends ColumnNode {
       throw new Error('Width and height are required for Root')
     }
 
-    // Register provided fonts with caching
-    if (props.fonts?.length) {
-      for (const font of props.fonts) {
-        const family = font.family
-        const paths = font.paths.map(p => path.resolve(p))
-
-        if (!registeredFonts.has(family)) {
-          registeredFonts.set(family, new Set())
-        }
-
-        const cachedPaths = registeredFonts.get(family)!
-        const newPaths = paths.filter(p => !cachedPaths.has(p) && fs.existsSync(p))
-
-        if (newPaths.length > 0) {
-          FontLibrary.use({ [family]: newPaths })
-          newPaths.forEach(p => cachedPaths.add(p))
-        }
-      }
-    }
-
     // Set up scale and width
     this.scale = props.scale || 1
     this.targetWidth = props.width
     this.targetHeight = props.height
+    this.imageConcurrency = props.imageConcurrency ?? 5
     this.node.setWidth(this.targetWidth)
 
     // Convert any CanvasElement children to actual BoxNode instances
     if (this.props.children) {
       const childArray = Array.isArray(this.props.children) ? this.props.children : [this.props.children]
-      this.props.children = childArray.map(child => {
+      const converted: Children[] = childArray.map(child => {
         if (child && typeof child === 'object' && '__type' in child) {
           return buildTree(child as CanvasElement)
         }
-        return child
-      }) as any
+        return child as Children
+      })
+      this.props.children = converted
     }
 
     // Initialize children nodes
@@ -257,14 +232,51 @@ export class RootNode extends ColumnNode {
   private findAllImageNodes(): ImageNode[] {
     const imageNodes: ImageNode[] = []
     const queue: BoxNode[] = [this]
-    while (queue.length > 0) {
-      const node = queue.shift()!
+    let head = 0
+    while (head < queue.length) {
+      const node = queue[head++]
       if (node instanceof ImageNode) {
         imageNodes.push(node)
       }
       queue.push(...node.children)
     }
     return imageNodes
+  }
+
+  /**
+   * Registers fonts with serialization to prevent duplicate FontLibrary.use() calls
+   * when multiple Root() instances are created concurrently.
+   */
+  private async _registerFonts(): Promise<void> {
+    if (!this.props.fonts?.length) return
+
+    // Wait for any in-flight registration to complete
+    if (_fontRegistrationLock) await _fontRegistrationLock
+
+    _fontRegistrationLock = (async () => {
+      try {
+        for (const font of this.props.fonts!) {
+          const family = font.family
+          const paths = font.paths.map(p => path.resolve(p))
+
+          if (!registeredFonts.has(family)) {
+            registeredFonts.set(family, new Set())
+          }
+
+          const cachedPaths = registeredFonts.get(family)!
+          const newPaths = paths.filter(p => !cachedPaths.has(p) && fs.existsSync(p))
+
+          if (newPaths.length > 0) {
+            FontLibrary.use({ [family]: newPaths })
+            newPaths.forEach(p => cachedPaths.add(p))
+          }
+        }
+      } finally {
+        _fontRegistrationLock = null
+      }
+    })()
+
+    await _fontRegistrationLock
   }
 
   /**
@@ -281,6 +293,9 @@ export class RootNode extends ColumnNode {
       return
     }
 
+    // Register fonts with serialization to prevent duplicate FontLibrary.use() across concurrent Root() calls
+    await this._registerFonts()
+
     const diskCacheKeys = this.props.useDiskCache ? new Set<string>() : undefined
 
     try {
@@ -289,15 +304,19 @@ export class RootNode extends ColumnNode {
       const imageNodes = this.findAllImageNodes()
       if (imageNodes.length > 0) {
         const imageCache: RenderImageCache = new Map()
-        const CONCURRENCY = 5
         const queue = [...imageNodes]
-        const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-          while (queue.length > 0) {
-            const node = queue.shift()!
+        let qIdx = 0
+        const workers = Array.from({ length: Math.min(this.imageConcurrency, queue.length) }, async () => {
+          while (qIdx < queue.length) {
+            const node = queue[qIdx++]
             await node.load(imageCache, diskCacheKeys)
           }
         })
-        await Promise.allSettled(workers)
+        await Promise.allSettled(workers).then(results => {
+          results.forEach(r => {
+            if (r.status === 'rejected') console.warn('[RootNode] Image load worker failed:', r.reason)
+          })
+        })
       }
 
       // Step 2: Calculate initial layout
@@ -356,9 +375,9 @@ export class RootNode extends ColumnNode {
 export function Root(props: RootPropsWithWorker): Promise<Canvas & { release(): void }>
 export function Root(props: RootPropsWithoutWorker): Promise<Canvas>
 export async function Root(props: RootProps): Promise<Canvas | (Canvas & { release(): void })> {
-  // Determine worker mode: props override legacy configure()
-  const workerMode = props.workerMode ?? _defaultWorkerMode
-  const workerPoolSize = props.workers ?? _defaultWorkerPoolSize
+  // Determine worker mode
+  const workerMode = props.workerMode ?? true
+  const workerPoolSize = props.workers ?? Math.max(1, cpus().length - 1)
 
   if (workerMode) {
     // Lazy initialize worker pool — dynamic import to avoid loading Comlink in non-worker contexts
