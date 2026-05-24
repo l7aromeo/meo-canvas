@@ -140,7 +140,7 @@ export class ImageNode extends BoxNode {
       }
     }
 
-    return loadImage(finalSource as never)
+    return loadImage(finalSource as Buffer)
   }
 
   /**
@@ -174,7 +174,7 @@ export class ImageNode extends BoxNode {
           if (diskCacheKeys) {
             const diskBuffer = await readDiskCache(cacheKey)
             if (diskBuffer) {
-              const img = await loadImage(diskBuffer as never)
+              const img = await loadImage(diskBuffer as Buffer)
               this.loadedImage = img
               this.naturalWidth = img.width
               this.naturalHeight = img.height

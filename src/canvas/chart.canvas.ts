@@ -678,7 +678,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (!this.chartData) return
     const legendItems =
       'datasets' in this.chartData
-        ? this.chartData.datasets.map(d => ({ label: d.label, value: d.data.reduce((a, b) => a + b, 0) }))
+        ? this.chartData.datasets.map(d => ({ label: d.label, value: d.data.reduce((a, b) => a + b, 0), color: d.color }))
         : (this.chartData as PieChartDataPoint[])
     const fontSize = this.chartOptions?.labelFontSize || 12
     ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
@@ -695,8 +695,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       let currentRow: { items: { label: string; color: string; width: number }[]; width: number } = { items: [], width: 0 }
 
       legendItems.forEach((point, index) => {
-        const color =
-          ('datasets' in this.chartData ? (this.chartData as CartesianChartData).datasets[index].color : (point as any).color) || this.generateColor(index)
+        const color = point.color || this.generateColor(index)
         const label = 'datasets' in this.chartData ? point.label : `${point.label} (${point.value})`
         const labelWidth = ctx.measureText(label).width
         const itemWidth = boxSize + 5 + labelWidth
@@ -741,8 +740,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const itemY = startY + index * itemHeight
 
         const boxY = itemY + (itemHeight - boxSize) / 2
-        ctx.fillStyle =
-          ('datasets' in this.chartData ? (this.chartData as CartesianChartData).datasets[index].color : (point as any).color) || this.generateColor(index)
+        ctx.fillStyle = point.color || this.generateColor(index)
         ctx.fillRect(itemX, boxY, boxSize, boxSize)
 
         const label = 'datasets' in this.chartData ? point.label : `${point.label} (${point.value})`
@@ -763,7 +761,9 @@ export class ChartNode<T extends ChartType> extends BoxNode {
   }
 }
 
-export const Chart = <T extends ChartType>(props: ChartProps<T> & BaseProps): CanvasElement => ({
-  __type: 'Chart',
-  props: props as any,
+type ChartElement = Extract<CanvasElement, { __type: 'Chart' }>
+
+export const Chart = <T extends ChartType>(props: ChartProps<T> & BaseProps): ChartElement => ({
+  __type: 'Chart' as const,
+  props: props as unknown as ChartElement['props'],
 })
