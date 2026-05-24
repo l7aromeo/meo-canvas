@@ -13,4 +13,6 @@ yarn-error.log*
 /dist
 /coverage
 /.yarn/*
-!/.yarn/releases\n.DS_Store\n.idea/
+!/.yarn/releases
+.DS_Store
+.idea/

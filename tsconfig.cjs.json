@@ -3,7 +3,7 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "dist/cjs",
-    "module": "nodenext",
+    "module": "CommonJS",
     "declaration": true,
     "declarationMap": true
   },

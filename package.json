@@ -37,9 +37,10 @@
     }
   },
   "scripts": {
-    "build": "rm -rf ./dist && rollup -c --bundleConfigAsCjs && tsc-alias -p tsconfig.esm.json && tsc-alias -p tsconfig.cjs.json",
+    "build": "node -e \"fs.rmSync('./dist', {recursive:true, force:true})\" && rollup -c --bundleConfigAsCjs && tsc-alias -p tsconfig.esm.json && tsc-alias -p tsconfig.cjs.json",
     "test": "node --no-experimental-webstorage --experimental-vm-modules $(yarn bin jest)",
-    "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix && yarn typecheck",
     "format": "prettier --write .",
     "generate:samples": "npx tsx scripts/generate_sample_charts.ts && npx tsx scripts/generate_sample_grids.ts && npx tsx scripts/generate_sample_nested_grids.ts",
     "check:memory": "npx tsx --expose-gc scripts/check_memory.ts",
@@ -57,10 +58,8 @@
     "@semantic-release/npm": "^13.1.5",
     "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/jest": "^30.0.0",
-    "@types/lodash-es": "^4.17.12",
     "@types/node": "^25.5.0",
     "@types/sharp": "^0.32.0",
-    "@types/tinycolor2": "^1.4.6",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
     "eslint": "^9.39.4",
@@ -83,10 +82,8 @@
   "dependencies": {
     "comlink": "^4.4.2",
     "file-type": "^22.0.0",
-    "lodash-es": "^4.17.23",
     "sharp": "^0.34.5",
     "skia-canvas": "^3.0.8",
-    "tinycolor2": "^1.6.0",
     "tslib": "^2.8.1",
     "yoga-layout": "^3.2.1"
   },
