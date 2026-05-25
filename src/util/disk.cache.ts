@@ -70,18 +70,50 @@ export async function clearDiskCache(): Promise<void> {
 }
 
 // Clean up disk cache on process exit to handle crashes mid-render.
-// Guard prevents re-entry: clearDiskCache() is async, so without this the
-// beforeExit → schedule I/O → idle → beforeExit cycle loops forever.
-let _exitCleanupStarted = false
-process.on('beforeExit', () => {
-  if (_exitCleanupStarted) return
-  _exitCleanupStarted = true
-  void clearDiskCache()
-})
-
-// Also clean up on SIGINT/SIGTERM for graceful shutdowns
-const cleanupOnExit = () => {
-  clearDiskCache().finally(() => process.exit(0))
+// Handlers live on globalThis so re-evaluations (e.g. vitest.resetModules +
+// dynamic import) can detach the previous closures and attach fresh ones —
+// avoids stale clearDiskCache / duplicate listener buildup.
+interface DiskCacheExitGlobal {
+  /** One-shot guard for async beforeExit re-entry storms */
+  lifecycle: { cleanupStarted: boolean }
+  onBeforeExit: () => void
+  onSignals: () => void
 }
-process.on('SIGINT', cleanupOnExit)
-process.on('SIGTERM', cleanupOnExit)
+
+const globalForExit = globalThis as typeof globalThis & {
+  __diskCacheExit?: DiskCacheExitGlobal
+}
+
+function registerExitListeners(): void {
+  const prev = globalForExit.__diskCacheExit
+
+  const lifecycle = prev?.lifecycle ?? { cleanupStarted: false }
+
+  if (prev) {
+    process.removeListener('beforeExit', prev.onBeforeExit)
+    process.removeListener('SIGINT', prev.onSignals)
+    process.removeListener('SIGTERM', prev.onSignals)
+  }
+
+  const onBeforeExit = () => {
+    if (lifecycle.cleanupStarted) return
+    lifecycle.cleanupStarted = true
+    void clearDiskCache()
+  }
+
+  const onSignals = () => {
+    clearDiskCache().finally(() => process.exit(0))
+  }
+
+  globalForExit.__diskCacheExit = {
+    lifecycle,
+    onBeforeExit,
+    onSignals,
+  }
+
+  process.on('beforeExit', onBeforeExit)
+  process.on('SIGINT', onSignals)
+  process.on('SIGTERM', onSignals)
+}
+
+registerExitListeners()

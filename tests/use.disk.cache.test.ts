@@ -11,6 +11,8 @@
 
 import { vi } from 'vitest'
 
+import { createMockCanvas } from './helpers/mock-canvas-context.js'
+
 // ---------------------------------------------------------------------------
 // Shared mock fns — declared before unstable_mockModule so they're in scope
 // ---------------------------------------------------------------------------
@@ -35,42 +37,7 @@ global.fetch = mockFetch as any
 vi.mock('skia-canvas', () => ({
   loadImage: mockLoadImage,
   Image: vi.fn(),
-  Canvas: vi.fn(function (this: any, w: number, h: number) {
-    this.width = w
-    this.height = h
-    this.getContext = vi.fn(() => ({
-      scale: vi.fn(),
-      save: vi.fn(),
-      restore: vi.fn(),
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      arc: vi.fn(),
-      closePath: vi.fn(),
-      rect: vi.fn(),
-      fill: vi.fn(),
-      stroke: vi.fn(),
-      clip: vi.fn(),
-      fillStyle: '',
-      strokeStyle: '',
-      lineWidth: 0,
-      globalAlpha: 1,
-      globalCompositeOperation: '',
-      imageSmoothingEnabled: true,
-      imageSmoothingQuality: 'high',
-      createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-      setLineDash: vi.fn(),
-      measureText: vi.fn(() => ({ width: 0, height: 0 })),
-      fillText: vi.fn(),
-      strokeText: vi.fn(),
-      drawImage: vi.fn(),
-      font: '',
-      textAlign: 'left',
-      textBaseline: 'alphabetic',
-    }))
-    this.toBufferSync = vi.fn(() => Buffer.from(''))
-  }),
+  Canvas: createMockCanvas(),
   FontLibrary: { use: vi.fn() },
 }))
 
@@ -179,41 +146,7 @@ beforeEach(async () => {
   vi.doMock('skia-canvas', () => ({
     loadImage: mockLoadImage,
     Image: vi.fn(),
-    Canvas: vi.fn(function (this: any, w: number, h: number) {
-      this.width = w
-      this.height = h
-      this.getContext = vi.fn(() => ({
-        scale: vi.fn(),
-        save: vi.fn(),
-        restore: vi.fn(),
-        beginPath: vi.fn(),
-        moveTo: vi.fn(),
-        lineTo: vi.fn(),
-        arc: vi.fn(),
-        closePath: vi.fn(),
-        rect: vi.fn(),
-        fill: vi.fn(),
-        stroke: vi.fn(),
-        clip: vi.fn(),
-        fillStyle: '',
-        strokeStyle: '',
-        lineWidth: 0,
-        globalAlpha: 1,
-        globalCompositeOperation: '',
-        imageSmoothingEnabled: true,
-        imageSmoothingQuality: 'high',
-        createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-        createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-        setLineDash: vi.fn(),
-        measureText: vi.fn(() => ({ width: 0, height: 0 })),
-        fillText: vi.fn(),
-        strokeText: vi.fn(),
-        font: '',
-        textAlign: 'left',
-        textBaseline: 'alphabetic',
-      }))
-      this.toBufferSync = vi.fn(() => Buffer.from(''))
-    }),
+    Canvas: createMockCanvas(),
     FontLibrary: { use: vi.fn() },
   }))
 

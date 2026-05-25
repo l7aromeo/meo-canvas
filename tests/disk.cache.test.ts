@@ -5,7 +5,7 @@
  * Uses a temporary directory for isolation and cleans up after each test.
  */
 
-import { hashBuffer, readDiskCache, writeDiskCache, deleteDiskCache, clearDiskCache } from '@/util/disk.cache.js'
+import { hashBuffer, readDiskCache, writeDiskCache, deleteDiskCache, clearDiskCache, setDiskCacheDir } from '@/util/disk.cache.js'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 
@@ -35,6 +35,22 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('disk.cache', () => {
+  it('registers process exit listeners only once across re-imports', async () => {
+    const beforeCount = process.listenerCount('beforeExit')
+    const sigintCount = process.listenerCount('SIGINT')
+    const sigtermCount = process.listenerCount('SIGTERM')
+
+    vi.resetModules()
+    await import('@/util/disk.cache.js')
+    vi.resetModules()
+    await import('@/util/disk.cache.js')
+
+    // Replacing handlers should not accumulate extra listeners (+2 per leaky re-import).
+    expect(process.listenerCount('beforeExit')).toBe(beforeCount)
+    expect(process.listenerCount('SIGINT')).toBe(sigintCount)
+    expect(process.listenerCount('SIGTERM')).toBe(sigtermCount)
+  })
+
   describe('hashBuffer', () => {
     it('should generate consistent SHA-256 hashes', () => {
       const buffer1 = Buffer.from('hello world')
@@ -284,6 +300,75 @@ describe('disk.cache', () => {
 
       // Should not throw
       expect(true).toBe(true)
+    })
+  })
+
+  describe('setDiskCacheDir', () => {
+    it('redirects read/write to a custom directory', async () => {
+      const customDir = join(process.cwd(), '.cache', 'custom-dir-test')
+      setDiskCacheDir(customDir)
+
+      const key = 'custom-dir-key'
+      const data = Buffer.from('custom location')
+      await writeDiskCache(key, data)
+
+      const filePath = join(customDir, key)
+      const onDisk = await fs.readFile(filePath)
+      expect(onDisk).toEqual(data)
+
+      await fs.rm(customDir, { recursive: true, force: true })
+      setDiskCacheDir(join(process.cwd(), '.cache', 'files'))
+    })
+  })
+
+  describe('exit listeners', () => {
+    interface DiskCacheExitGlobal {
+      lifecycle: { cleanupStarted: boolean }
+      onBeforeExit: () => void
+      onSignals: () => void
+    }
+
+    const globalForExit = globalThis as typeof globalThis & {
+      __diskCacheExit?: DiskCacheExitGlobal
+    }
+
+    it('beforeExit handler clears cache once', async () => {
+      await writeDiskCache('before-exit-key', Buffer.from('data'))
+      expect(await readDiskCache('before-exit-key')).not.toBeNull()
+
+      const handler = globalForExit.__diskCacheExit?.onBeforeExit
+      expect(handler).toBeTypeOf('function')
+
+      globalForExit.__diskCacheExit!.lifecycle.cleanupStarted = false
+      handler!()
+
+      await vi.waitFor(async () => {
+        expect(await readDiskCache('before-exit-key')).toBeNull()
+      })
+
+      expect(globalForExit.__diskCacheExit!.lifecycle.cleanupStarted).toBe(true)
+    })
+
+    it('beforeExit handler is a no-op when cleanup already started', async () => {
+      const handler = globalForExit.__diskCacheExit?.onBeforeExit
+      globalForExit.__diskCacheExit!.lifecycle.cleanupStarted = true
+
+      expect(() => handler!()).not.toThrow()
+    })
+
+    it('signal handler clears cache and exits process', async () => {
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as typeof process.exit)
+      const handler = globalForExit.__diskCacheExit?.onSignals
+
+      await writeDiskCache('signal-key', Buffer.from('data'))
+      handler!()
+
+      await vi.waitFor(() => {
+        expect(exitSpy).toHaveBeenCalledWith(0)
+      })
+
+      expect(await readDiskCache('signal-key')).toBeNull()
+      exitSpy.mockRestore()
     })
   })
 })
