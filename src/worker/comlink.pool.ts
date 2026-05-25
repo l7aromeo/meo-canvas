@@ -137,6 +137,10 @@ export class ComlinkPool {
   }
 
   async render(props: RootProps): Promise<PoolRenderResult> {
+    if (this.endpoints.length === 0) {
+      throw new Error('[ComlinkPool] Pool has been terminated')
+    }
+
     // Extract functions from props, replacing them with serializable sentinels.
     // A single Comlink.proxy() callback is created at the top level so Comlink
     // can correctly transfer it via its proxy transfer handler.
