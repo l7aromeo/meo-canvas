@@ -26,6 +26,14 @@ lint_and_test:
   needs:
     - install_dependencies
 
+integration_test:
+  stage: test
+  script:
+    - bun run test:integration
+  needs:
+    - install_dependencies
+  allow_failure: true
+
 build_package:
   stage: build
   script:

@@ -11,13 +11,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
-    exclude: ['node_modules/**', 'dist/**', 'tests/integration/**'],
-    coverage: {
-      provider: 'v8',
-      reportsDirectory: './coverage',
-      exclude: ['node_modules/**', 'dist/**'],
-    },
+    include: ['tests/integration/**/*.test.ts'],
+    exclude: ['node_modules/**', 'dist/**'],
+    testTimeout: 30_000,
     pool: 'forks',
   },
 })

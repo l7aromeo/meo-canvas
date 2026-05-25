@@ -39,6 +39,7 @@
   "scripts": {
     "build": "bun -e \"fs.rmSync('./dist', {recursive:true, force:true})\" && rollup -c --bundleConfigAsCjs && bun scripts/rewrite-dts-aliases.ts",
     "test": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix && bun run typecheck",
     "format": "prettier --write .",
