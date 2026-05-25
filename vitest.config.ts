@@ -16,7 +16,15 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
-      exclude: ['node_modules/**', 'dist/**'],
+      exclude: ['node_modules/**', 'dist/**', 'scripts/**', '**/__mocks__/**'],
+      thresholds: {
+        'src/canvas/layout.canvas.ts': { lines: 90, statements: 90, functions: 90 },
+        'src/canvas/canvas.helper.ts': { lines: 90, statements: 90, functions: 90 },
+        'src/canvas/text.canvas.ts': { lines: 90, statements: 90, functions: 90 },
+        'src/util/disk.cache.ts': { lines: 90, statements: 90, functions: 90 },
+        'src/worker/comlink.pool.ts': { lines: 90, statements: 90, functions: 90 },
+        'src/worker/canvas-handlers.ts': { lines: 90, statements: 90, functions: 90 },
+      },
     },
     pool: 'forks',
   },
