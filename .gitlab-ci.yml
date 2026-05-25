@@ -55,6 +55,7 @@ build_package:
       - dist/
 
 release:
+  <<: *node_with_bun
   stage: deploy
   resource_group: meonode_canvas_pipeline_lock
   id_tokens:
@@ -63,7 +64,7 @@ release:
   rules:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "beta" || $CI_COMMIT_BRANCH == "alpha"
   script:
-    - apk add git
+    - apk add --no-cache git
     - bunx semantic-release
   needs:
     - lint_and_test
