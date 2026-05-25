@@ -1,9 +1,8 @@
 // src/worker/comlink.setup.ts
 import * as Comlink from 'comlink'
-import { MessageChannel } from 'node:worker_threads'
+import { MessageChannel, type MessagePort } from 'node:worker_threads'
 
-// Use deep import path — Comlink has no `exports` field (issue #508)
-// @ts-expect-error — Comlink's node-adapter has no type declarations at this path
+// Deep import — Comlink has no `exports` field (issue #508); types in src/types/comlink-node-adapter.d.ts
 import nodeEndpoint from 'comlink/dist/esm/node-adapter.mjs'
 
 /**
@@ -23,7 +22,7 @@ function installNodeProxyHandler() {
       return [port2, [port2]]
     },
     deserialize: (port: MessagePort) => {
-      ;(port as any).start?.()
+      port.start()
       return Comlink.wrap(nodeEndpoint(port))
     },
   })
