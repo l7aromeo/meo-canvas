@@ -1,5 +1,6 @@
 import { GridNode, GridItem } from '@/canvas/grid.canvas.js'
 import { BoxNode } from '@/canvas/layout.canvas.js'
+import { buildTree } from '@/canvas/root.canvas.js'
 import Yoga, { Style } from '@/constant/common.const.js'
 import type { GridProps } from '@/canvas/canvas.type.js'
 
@@ -119,7 +120,7 @@ describe('GridNode', () => {
   it('should place items with gridColumn span syntax', () => {
     const grid = new GridNode({ columns: 3, width: 600 })
 
-    const item = GridItem({ gridColumn: 'span 2', width: 100, height: 50 })
+    const item = buildTree(GridItem({ gridColumn: 'span 2', width: 100, height: 50 }))
     ;(grid as any).appendChild(item, 0)
 
     grid.node.setWidth(600)
