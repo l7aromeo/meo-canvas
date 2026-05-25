@@ -22,22 +22,22 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
 
 1.  Install dependencies:
     ```sh
-    yarn install
+    bun install
     ```
 
 2.  Run the linter to ensure your code follows the project's style guidelines:
     ```sh
-    yarn lint
+    bun run lint
     ```
 
 3.  Run the tests to make sure everything is working as expected:
     ```sh
-    yarn test
+    bun run test
     ```
 
 4.  Build the project to generate the distribution files:
     ```sh
-    yarn build
+    bun run build
     ```
 
 ### Make your changes

@@ -1,4 +1,4 @@
-image: node:current-alpine
+image: oven/bun:1-alpine
 
 stages:
   - install
@@ -9,31 +9,27 @@ stages:
 cache:
   paths:
     - node_modules/
-    - .yarn/cache
 
 install_dependencies:
   stage: install
   script:
-    - npm i -gf corepack
-    - corepack enable
-    - yarn install --immutable
+    - HUSKY=0 bun install --frozen-lockfile
   artifacts:
     paths:
       - node_modules/
-      - .yarn/
 
 lint_and_test:
   stage: test
   script:
-    - yarn lint
-    - yarn test
+    - bun run lint
+    - bun run test
   needs:
     - install_dependencies
 
 build_package:
   stage: build
   script:
-    - yarn build
+    - bun run build
   needs:
     - install_dependencies
   artifacts:
@@ -50,7 +46,7 @@ release:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "beta" || $CI_COMMIT_BRANCH == "alpha"
   script:
     - apk add git
-    - yarn semantic-release
+    - bunx semantic-release
   needs:
     - lint_and_test
     - build_package

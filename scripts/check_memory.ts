@@ -2,7 +2,7 @@
  * Memory reclamation check script.
  *
  * Run with:
- *   yarn check:memory
+ *   bun run check:memory
  *
  * The --expose-gc flag enables global.gc() for forced GC between samples,
  * giving cleaner readings. The script still runs without it but readings
@@ -19,7 +19,7 @@
  *      verifying memory is reclaimed.
  *
  * Worker sections (2 & 3) require compiled .js output. The script runs
- * `yarn build` automatically at startup to ensure dist/ is up to date.
+ * `bun run build` automatically at startup to ensure dist/ is up to date.
  */
 
 import { existsSync } from 'fs'
@@ -77,9 +77,9 @@ async function main() {
   console.log(`Image source: ${IMAGE_URL}`)
 
   // Build first to ensure dist/ is up to date
-  console.log('\nRunning yarn build...')
+  console.log('\nRunning bun run build...')
   try {
-    execSync('yarn build', { stdio: 'inherit' })
+    execSync('bun run build', { stdio: 'inherit' })
   } catch (err) {
     console.error('Build failed:', err)
     process.exit(1)
@@ -143,7 +143,7 @@ async function main() {
 
     if (!WORKER_AVAILABLE) {
       console.log('\n  ⚠ SKIPPED — tsx runs source .ts files; worker threads require compiled .js.')
-      console.log('  Add scripts/ to the rollup input, run `yarn build`, then:')
+      console.log('  Add scripts/ to the rollup input, run `bun run build`, then:')
       console.log('    node --expose-gc dist/esm/scripts/check_memory.js')
       return
     }

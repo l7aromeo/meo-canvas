@@ -41,7 +41,7 @@ rendering to a canvas.
 ## Installation
 
 ```bash
-yarn add @meonode/canvas
+bun add @meonode/canvas
 ```
 
 ## Usage
