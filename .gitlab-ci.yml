@@ -10,6 +10,15 @@ cache:
   paths:
     - node_modules/
 
+.node_with_bun: &node_with_bun
+  image: node:alpine
+  before_script:
+    - node --version
+    - apk add --no-cache curl unzip bash
+    - curl -fsSL https://bun.sh/install | bash
+    - export BUN_INSTALL="$HOME/.bun"
+    - export PATH="$BUN_INSTALL/bin:$PATH"
+
 install_dependencies:
   stage: install
   script:
@@ -19,10 +28,11 @@ install_dependencies:
       - node_modules/
 
 lint_and_test:
+  <<: *node_with_bun
   stage: test
   script:
     - bun run lint
-    - bun run test
+    - bun run test:ci
   needs:
     - install_dependencies
 
