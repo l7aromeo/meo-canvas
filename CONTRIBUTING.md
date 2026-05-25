@@ -35,6 +35,8 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
     bun run test
     ```
 
+    > **Note:** Use `bun run test` (Vitest), not bare `bun test`. The Bun test runner does not load Vitest globals (`describe`, `vi`, etc.).
+
 4.  Build the project to generate the distribution files:
     ```sh
     bun run build
