@@ -199,11 +199,13 @@ describe('RootNode', () => {
     })
 
     const calculateLayoutSpy = vi.spyOn(rootNodeInstance.node, 'calculateLayout')
+    calculateLayoutSpy.mockClear()
 
     await rootNodeInstance.render()
 
-    // Expect calculateLayout to be called twice: once in constructor, once after finalizeLayout
+    // Expect calculateLayout twice during render when finalizeLayout requests a relayout
     expect(calculateLayoutSpy).toHaveBeenCalledTimes(2)
+    calculateLayoutSpy.mockRestore()
     finalizeLayoutSpy.mockRestore()
   })
 

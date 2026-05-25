@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
 import Yoga, { Style } from '@/constant/common.const.js'
 import { ColumnNode } from '@/canvas/layout.canvas.js'
-import { createMockCanvasContext } from './helpers/mock-canvas-context.js'
+import { createMockCanvasContext, createTestTextMetrics } from './helpers/mock-canvas-context.js'
 
 vi.mock('skia-canvas', () => import('@/__mocks__/skia-canvas.js'))
 
@@ -12,16 +12,17 @@ let skiaMockCtx: typeof import('@/__mocks__/skia-canvas.js').mockCanvasContext
 
 const chartWidthPerChar = 8
 
-const measureByCharLength = (text: string) => ({
-  width: [...text].length * chartWidthPerChar,
-  actualBoundingBoxAscent: 10,
-  actualBoundingBoxDescent: 3,
-})
+const measureByCharLength: CanvasRenderingContext2D['measureText'] = text =>
+  createTestTextMetrics({
+    width: [...text].length * chartWidthPerChar,
+    actualBoundingBoxAscent: 10,
+    actualBoundingBoxDescent: 3,
+  })
 
 function createRenderContext(): CanvasRenderingContext2D {
-  const raw = createMockCanvasContext()
-  raw.measureText = vi.fn((text: string) => measureByCharLength(text))
-  return raw as unknown as CanvasRenderingContext2D
+  const ctx = createMockCanvasContext()
+  ctx.measureText = vi.fn<CanvasRenderingContext2D['measureText']>(measureByCharLength)
+  return ctx
 }
 
 function attachAndLayout(parentWidth: number, text: InstanceType<typeof TextNode>, parentHeight?: number): void {
@@ -94,9 +95,9 @@ describe('TextNode & Text factory', () => {
   describe('Task 6 — rich text rendering', () => {
     it('renderSimpleText configures font, fillStyle, textAlign/textBaseline and calls fillText', () => {
       const raw = createMockCanvasContext()
-      raw.fillText = vi.fn()
+      raw.fillText = vi.fn<CanvasRenderingContext2D['fillText']>()
 
-      TextNode.renderSimpleText(raw as unknown as CanvasRenderingContext2D, 'Hi', 5, 16, {
+      TextNode.renderSimpleText(raw, 'Hi', 5, 16, {
         fontFamily: 'Georgia',
         fontSize: 20,
         fontWeight: 'bold',
@@ -136,14 +137,14 @@ describe('TextNode & Text factory', () => {
       })
       attachAndLayout(260, node)
 
-      const raw = createRenderContext() as CanvasRenderingContext2D & Record<string, unknown>
+      const ctx = createRenderContext()
       let fillStylesAtLetterB: unknown
 
-      raw.fillText = vi.fn(((text: string, _x: number, _y: number, _max?: number) => {
-        if (text === 'B') fillStylesAtLetterB = raw.fillStyle
-      }) as any)
+      ctx.fillText = vi.fn<CanvasRenderingContext2D['fillText']>((text, _x, _y, _max) => {
+        if (text === 'B') fillStylesAtLetterB = ctx.fillStyle
+      })
 
-      await node.render(raw, 0, 0)
+      await node.render(ctx, 0, 0)
 
       expect(fillStylesAtLetterB).toBe('red')
     })
@@ -219,9 +220,9 @@ describe('TextNode & Text factory', () => {
       attachAndLayout(360, node)
       const ctx = createRenderContext()
       const fonts: string[] = []
-      ctx.fillText = vi.fn(((_text: string) => {
+      ctx.fillText = vi.fn<CanvasRenderingContext2D['fillText']>((_text, _x, _y, _max) => {
         fonts.push(ctx.font)
-      }) as typeof ctx.fillText)
+      })
       await node.render(ctx, 0, 0)
 
       expect(fonts.some(f => f.includes('700'))).toBe(true)
@@ -238,9 +239,9 @@ describe('TextNode & Text factory', () => {
       attachAndLayout(240, node)
       const ctx = createRenderContext()
       const styles: unknown[] = []
-      ctx.fillText = vi.fn(((text: string) => {
+      ctx.fillText = vi.fn<CanvasRenderingContext2D['fillText']>(text => {
         if (text === 'G' || text === 'O') styles.push(ctx.fillStyle)
-      }) as typeof ctx.fillText)
+      })
       await node.render(ctx, 0, 0)
       expect(styles).toContain('green')
       expect(styles).toContain('orange')
@@ -427,10 +428,10 @@ describe('TextNode & Text factory', () => {
       attachAndLayout(40, node)
       const ctx = createRenderContext()
       let charMeasureCalls = 0
-      ctx.measureText = vi.fn((text: string) => {
+      ctx.measureText = vi.fn<CanvasRenderingContext2D['measureText']>(text => {
         if (text.length === 1) charMeasureCalls++
         return measureByCharLength(text)
-      }) as unknown as typeof ctx.measureText
+      })
       await node.render(ctx, 0, 0)
       expect(charMeasureCalls).toBeGreaterThan(0)
       expect(vi.mocked(ctx.fillText)).toHaveBeenCalled()
@@ -476,9 +477,9 @@ describe('TextNode & Text factory', () => {
       attachAndLayout(280, node)
       const ctx = createRenderContext()
       const styles: string[] = []
-      ctx.fillText = vi.fn(((_text: string) => {
+      ctx.fillText = vi.fn<CanvasRenderingContext2D['fillText']>(_text => {
         styles.push(String(ctx.fillStyle))
-      }) as typeof ctx.fillText)
+      })
       await node.render(ctx, 0, 0)
       expect(styles.some(s => s === 'blue')).toBe(true)
     })
@@ -567,11 +568,13 @@ describe('TextNode & Text factory', () => {
     it('breakWordRich forces single-character segments when a glyph exceeds max width', () => {
       const node = new TextNode('x', { fontSize: 12 })
       const ctx = createRenderContext()
-      ctx.measureText = vi.fn(() => ({
-        width: 50,
-        actualBoundingBoxAscent: 10,
-        actualBoundingBoxDescent: 2,
-      })) as unknown as typeof ctx.measureText
+      ctx.measureText = vi.fn<CanvasRenderingContext2D['measureText']>(() =>
+        createTestTextMetrics({
+          width: 50,
+          actualBoundingBoxAscent: 10,
+          actualBoundingBoxDescent: 2,
+        }),
+      )
       const parts = (node as any).breakWordRich(ctx, { text: 'ab', color: 'black' }, 10, 0)
       expect(parts.length).toBeGreaterThan(1)
     })
@@ -590,9 +593,10 @@ describe('TextNode & Text factory', () => {
     })
 
     it('measureText uses fallback metrics for whitespace-only wrapped lines', () => {
-      const node = new TextNode('alpha     beta', { fontSize: 16, width: 40 })
-      const result = (node as any).measureText(40, Style.MeasureMode.Exactly)
-      expect(result.width).toBeGreaterThan(0)
+      const node = new TextNode('x', { fontSize: 16 })
+      vi.spyOn(node as any, 'wrapTextRich').mockReturnValue([[{ text: '     ', width: 0 }]])
+      const result = (node as any).measureText(80, Style.MeasureMode.Exactly)
+      expect(result.height).toBeGreaterThan(0)
     })
 
     it('applyDefaults marks the yoga node dirty when measurement defaults are applied', () => {
@@ -618,7 +622,7 @@ describe('TextNode & Text factory', () => {
     it('wrapTextRich handles overflow after explicit newlines', () => {
       const node = new TextNode('x', { fontSize: 12 })
       const ctx = createRenderContext()
-      const lines = (node as any).wrapTextRich(ctx, [{ text: `a\n${'w'.repeat(20)}` }], 24, 0, 0)
+      const lines = (node as any).wrapTextRich(ctx, [{ text: `intro\n${'z'.repeat(30)}` }], 16, 0, 0)
       expect(lines.length).toBeGreaterThan(1)
     })
   })
@@ -639,19 +643,26 @@ describe('TextNode & Text factory', () => {
     })
 
     it('character-truncates an overflowing last segment before drawing ellipsis', async () => {
-      const node = new TextNode('aaa bbbbbbbbbbbb', {
-        width: 48,
+      const node = new TextNode('aa bbbbbbbbbbbb', {
+        width: 56,
         height: 24,
         maxLines: 1,
         ellipsis: true,
         fontSize: 12,
       })
-      attachAndLayout(48, node, 24)
+      attachAndLayout(56, node, 24)
       const ctx = createRenderContext()
+      ctx.measureText = vi.fn<CanvasRenderingContext2D['measureText']>(text =>
+        createTestTextMetrics({
+          width: text === '...' ? 12 : text.length * 6,
+          actualBoundingBoxAscent: 10,
+          actualBoundingBoxDescent: 2,
+        }),
+      )
       const drawn: string[] = []
-      ctx.fillText = vi.fn(((text: string) => {
+      ctx.fillText = vi.fn<CanvasRenderingContext2D['fillText']>(text => {
         drawn.push(String(text))
-      }) as typeof ctx.fillText)
+      })
       await node.render(ctx, 0, 0)
       expect(drawn.some(t => t.length > 0 && t.length < 6 && t !== '...')).toBe(true)
       expect(drawn).toContain('...')

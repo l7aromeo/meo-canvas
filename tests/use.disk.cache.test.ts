@@ -59,7 +59,7 @@ vi.mock('@/util/disk.cache.js', () => ({
 
 // Minimal yoga-layout mock so BoxNode construction works
 vi.mock('yoga-layout', () => {
-  const node = {
+  const createNode = () => ({
     setWidth: vi.fn(),
     setHeight: vi.fn(),
     setAspectRatio: vi.fn(),
@@ -96,9 +96,9 @@ vi.mock('yoga-layout', () => {
     setDirection: vi.fn(),
     getBoxSizing: vi.fn(() => 0),
     free: vi.fn(),
-  }
+  })
   return {
-    default: { Node: { create: vi.fn(() => node) } },
+    default: { Node: { create: vi.fn(createNode) } },
     Direction: { LTR: 0, RTL: 1, Inherit: 2 },
     FlexDirection: { Column: 0, Row: 1 },
     Align: { FlexStart: 0, Center: 1, FlexEnd: 2, Stretch: 3 },
