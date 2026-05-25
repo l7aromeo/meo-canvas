@@ -200,7 +200,6 @@ export class GridNode extends RowNode {
           if (parts[1].startsWith('span')) {
             const span = parseInt(parts[1].replace('span', '')) || 1
             if (colStart !== undefined) {
-              colEnd = colStart + span
               colSpan = span
             } else {
               // If start is undefined but end is span? Unusual. Treat as span.
@@ -228,7 +227,6 @@ export class GridNode extends RowNode {
           if (parts[1].startsWith('span')) {
             const span = parseInt(parts[1].replace('span', '')) || 1
             if (rowStart !== undefined) {
-              rowEnd = rowStart + span
               rowSpan = span
             } else {
               rowSpan = span

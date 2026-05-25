@@ -69,8 +69,8 @@ export class ImageNode extends BoxNode {
    */
   private async _fetchCanvasImage(diskCacheKey?: string, diskCacheKeys?: Set<string>): Promise<CanvasImage> {
     const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
-    let finalSource: string | Buffer = this.props.src
-    let isSvg = false
+    let finalSource: string | Buffer
+    let isSvg: boolean
     let contentBuffer: Buffer | null = null
     let detectedMime: string | undefined
 
