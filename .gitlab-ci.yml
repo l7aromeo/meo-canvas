@@ -65,7 +65,7 @@ release:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "beta" || $CI_COMMIT_BRANCH == "alpha"
   script:
     - apk add --no-cache git
-    - bunx semantic-release
+    - bun x semantic-release
   needs:
     - lint_and_test
     - build_package
