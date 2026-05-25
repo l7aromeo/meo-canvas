@@ -1,9 +1,24 @@
 import { vi } from 'vitest'
-import { _clearRegisteredFonts } from '@/__mocks__/root.canvas.js'
+
+/** Default monospace-ish width — tests can replace via measureText.mockImplementation */
+const defaultMeasureWidth = (text: string) => [...text].length * 8
 
 export const mockCanvasContext = {
   scale: vi.fn(),
   drawImage: vi.fn(),
+  fillText: vi.fn(),
+  strokeText: vi.fn(),
+  measureText: vi.fn((text: string) => ({
+    width: defaultMeasureWidth(text),
+    actualBoundingBoxAscent: 10,
+    actualBoundingBoxDescent: 3,
+  })),
+  font: '',
+  textAlign: 'left' as const,
+  textBaseline: 'alphabetic' as const,
+  letterSpacing: 'normal',
+  wordSpacing: 'normal',
+  fontVariant: 'normal',
   save: vi.fn(),
   restore: vi.fn(),
   filter: '',
@@ -13,6 +28,10 @@ export const mockCanvasContext = {
   shadowColor: '',
   globalAlpha: 1,
   beginPath: vi.fn(),
+  moveTo: vi.fn(),
+  lineTo: vi.fn(),
+  arc: vi.fn(),
+  closePath: vi.fn(),
   rect: vi.fn(),
   clip: vi.fn(),
   fill: vi.fn(),
@@ -20,6 +39,9 @@ export const mockCanvasContext = {
   fillStyle: '',
   strokeStyle: '',
   lineWidth: 0,
+  lineCap: 'butt' as const,
+  lineJoin: 'miter' as const,
+  setLineDash: vi.fn(),
   createLinearGradient: vi.fn(() => ({
     addColorStop: vi.fn(),
   })),
@@ -59,12 +81,9 @@ export const __mocks__ = {
   loadImage,
   mockCanvasContext,
   reset: () => {
-    // Reset Canvas and FontLibrary mocks
+    // Reset Canvas and FontLibrary mocks (avoid importing root.canvas mock here — circular dep)
     Canvas.mockClear()
     FontLibrary.use.mockClear()
     loadImage.mockClear()
-
-    // Clear the registered fonts in the actual module
-    _clearRegisteredFonts()
   },
 }
