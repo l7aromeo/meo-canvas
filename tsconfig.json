@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "types": ["node", "jest"],
+    "types": ["node", "vitest/globals"],
     "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "nodenext",

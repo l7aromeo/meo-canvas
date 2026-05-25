@@ -1,11 +1,10 @@
-import { jest } from '@jest/globals'
+import { vi, type MockInstance } from 'vitest'
 import { BoxNode } from '@/canvas/layout.canvas.js'
-import Mock = jest.Mock
 import { Style } from '@/constant/common.const.js' // Import Style
 
 export class ImageNode extends BoxNode {
-  load: Mock<() => Promise<void>>
-  getLoadingPromise: Mock<() => Promise<void>>
+  load: MockInstance<() => Promise<void>>
+  getLoadingPromise: MockInstance<() => Promise<void>>
 
   constructor(props: any) {
     // Apply ImageNode's specific defaults here in the mock
@@ -18,12 +17,12 @@ export class ImageNode extends BoxNode {
     const mergedProps = { ...defaultImageProps, ...props }
 
     super({ name: 'Image', ...mergedProps }) // Pass the merged props to super
-    this.load = jest.fn(() => Promise.resolve())
-    this.getLoadingPromise = jest.fn(() => Promise.resolve())
+    this.load = vi.fn(() => Promise.resolve())
+    this.getLoadingPromise = vi.fn(() => Promise.resolve())
   }
 }
 
-export const Image = jest.fn((props: any) => new ImageNode(props))
+export const Image = vi.fn((props: any) => new ImageNode(props))
 
 export type RenderImageCache = Map<string, Promise<any>>
 

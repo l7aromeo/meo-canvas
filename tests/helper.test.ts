@@ -3,7 +3,7 @@ import { extractFunctions, restoreFunctions, FN_MARKER } from '@/worker/comlink.
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
 const createMockContext = () => {
   const mockCtx: Partial<CanvasRenderingContext2D> = {
@@ -90,18 +90,18 @@ describe('drawRoundedRectPath', () => {
 
   beforeEach(() => {
     mockCtx = createMockContext()
-    mockCtx.save = jest.fn()
-    mockCtx.restore = jest.fn()
-    mockCtx.beginPath = jest.fn()
-    mockCtx.closePath = jest.fn()
-    mockCtx.moveTo = jest.fn()
-    mockCtx.lineTo = jest.fn()
-    mockCtx.arc = jest.fn()
-    mockCtx.rect = jest.fn()
-    mockCtx.stroke = jest.fn()
-    mockCtx.fill = jest.fn()
-    mockCtx.clip = jest.fn()
-    mockCtx.setLineDash = jest.fn()
+    mockCtx.save = vi.fn()
+    mockCtx.restore = vi.fn()
+    mockCtx.beginPath = vi.fn()
+    mockCtx.closePath = vi.fn()
+    mockCtx.moveTo = vi.fn()
+    mockCtx.lineTo = vi.fn()
+    mockCtx.arc = vi.fn()
+    mockCtx.rect = vi.fn()
+    mockCtx.stroke = vi.fn()
+    mockCtx.fill = vi.fn()
+    mockCtx.clip = vi.fn()
+    mockCtx.setLineDash = vi.fn()
   })
 
   it('should draw a simple rectangle if width or height is zero or negative', () => {
@@ -112,7 +112,7 @@ describe('drawRoundedRectPath', () => {
     expect(mockCtx.arc).not.toHaveBeenCalled()
     expect(mockCtx.closePath).not.toHaveBeenCalled() // closePath is not called in this branch
 
-    jest.clearAllMocks()
+    vi.clearAllMocks()
 
     drawRoundedRectPath(mockCtx, 0, 0, 100, -10, { TopLeft: 10, TopRight: 10, BottomRight: 10, BottomLeft: 10 })
     expect(mockCtx.beginPath).toHaveBeenCalledTimes(1)
@@ -172,24 +172,24 @@ describe('drawBorders', () => {
 
   beforeEach(() => {
     mockCtx = createMockContext()
-    mockCtx.save = jest.fn()
-    mockCtx.restore = jest.fn()
-    mockCtx.beginPath = jest.fn()
-    mockCtx.closePath = jest.fn()
-    mockCtx.moveTo = jest.fn()
-    mockCtx.lineTo = jest.fn()
-    mockCtx.arc = jest.fn()
-    mockCtx.rect = jest.fn()
-    mockCtx.stroke = jest.fn()
-    mockCtx.fill = jest.fn()
-    mockCtx.clip = jest.fn()
-    mockCtx.setLineDash = jest.fn()
+    mockCtx.save = vi.fn()
+    mockCtx.restore = vi.fn()
+    mockCtx.beginPath = vi.fn()
+    mockCtx.closePath = vi.fn()
+    mockCtx.moveTo = vi.fn()
+    mockCtx.lineTo = vi.fn()
+    mockCtx.arc = vi.fn()
+    mockCtx.rect = vi.fn()
+    mockCtx.stroke = vi.fn()
+    mockCtx.fill = vi.fn()
+    mockCtx.clip = vi.fn()
+    mockCtx.setLineDash = vi.fn()
 
     mockNode = createMockYogaNode()
-    mockNode.getBorder = jest.fn(() => 0)
-    mockNode.getBoxSizing = jest.fn(() => Style.BoxSizing.BorderBox)
-    mockNode.getComputedPadding = jest.fn(() => 0)
-    mockNode.getComputedBorder = jest.fn(() => 0)
+    mockNode.getBorder = vi.fn(() => 0)
+    mockNode.getBoxSizing = vi.fn(() => Style.BoxSizing.BorderBox)
+    mockNode.getComputedPadding = vi.fn(() => 0)
+    mockNode.getComputedBorder = vi.fn(() => 0)
   })
 
   it('should not draw borders if hasBorder is false', () => {

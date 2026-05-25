@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals'
+import { vi, type MockInstance } from 'vitest'
 import type { CanvasRenderingContext2D } from 'skia-canvas'
 import type { ImageProps } from '@/canvas/canvas.type.js'
 import { Direction } from 'yoga-layout'
@@ -6,24 +6,24 @@ import { Style } from '@/constant/common.const.js'
 
 // --- Mock setup ---
 
-const mockLoadImage = jest.fn<(src: any) => Promise<any>>()
-const mockFileTypeFromBuffer = jest.fn<(buf: any) => Promise<any>>()
-const mockFileTypeFromFile = jest.fn<(path: any) => Promise<any>>()
-const mockReadFile = jest.fn<(path: any) => Promise<any>>()
+const mockLoadImage = vi.fn<(src: any) => Promise<any>>()
+const mockFileTypeFromBuffer = vi.fn<(buf: any) => Promise<any>>()
+const mockFileTypeFromFile = vi.fn<(path: any) => Promise<any>>()
+const mockReadFile = vi.fn<(path: any) => Promise<any>>()
 
-jest.unstable_mockModule('skia-canvas', () => ({
+vi.mock('skia-canvas', () => ({
   loadImage: mockLoadImage,
-  Image: jest.fn(),
-  Canvas: jest.fn(),
-  FontLibrary: { use: jest.fn() },
+  Image: vi.fn(),
+  Canvas: vi.fn(),
+  FontLibrary: { use: vi.fn() },
 }))
 
-jest.unstable_mockModule('file-type', () => ({
+vi.mock('file-type', () => ({
   fileTypeFromBuffer: mockFileTypeFromBuffer,
   fileTypeFromFile: mockFileTypeFromFile,
 }))
 
-jest.unstable_mockModule('fs', () => ({
+vi.mock('fs', () => ({
   promises: { readFile: mockReadFile },
 }))
 
@@ -32,18 +32,18 @@ let Image: typeof import('@/canvas/image.canvas.js').Image
 
 const createMockCtx = (): CanvasRenderingContext2D => {
   const ctx: Partial<CanvasRenderingContext2D> = {
-    save: jest.fn(),
-    restore: jest.fn(),
-    clip: jest.fn(),
-    beginPath: jest.fn(),
-    moveTo: jest.fn(),
-    lineTo: jest.fn(),
-    arcTo: jest.fn(),
-    closePath: jest.fn(),
-    drawImage: jest.fn(),
-    fill: jest.fn(),
-    stroke: jest.fn(),
-    rect: jest.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    clip: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    arcTo: vi.fn(),
+    closePath: vi.fn(),
+    drawImage: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    rect: vi.fn(),
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0,
@@ -56,8 +56,8 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     imageSmoothingEnabled: true,
     imageSmoothingQuality: 'high',
     globalCompositeOperation: 'source-over',
-    createLinearGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
-    createRadialGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
   }
   return ctx as CanvasRenderingContext2D
 }
@@ -66,20 +66,20 @@ const mockImage = { width: 200, height: 100 }
 
 describe('ImageNode & Image factory', () => {
   beforeEach(async () => {
-    jest.resetModules()
+    vi.resetModules()
 
     // Re-setup mocks after module reset
-    jest.unstable_mockModule('skia-canvas', () => ({
+    vi.doMock('skia-canvas', () => ({
       loadImage: mockLoadImage,
-      Image: jest.fn(),
-      Canvas: jest.fn(),
-      FontLibrary: { use: jest.fn() },
+      Image: vi.fn(),
+      Canvas: vi.fn(),
+      FontLibrary: { use: vi.fn() },
     }))
-    jest.unstable_mockModule('file-type', () => ({
+    vi.doMock('file-type', () => ({
       fileTypeFromBuffer: mockFileTypeFromBuffer,
       fileTypeFromFile: mockFileTypeFromFile,
     }))
-    jest.unstable_mockModule('fs', () => ({
+    vi.doMock('fs', () => ({
       promises: { readFile: mockReadFile },
     }))
 
@@ -149,7 +149,7 @@ describe('ImageNode & Image factory', () => {
 
   describe('ImageNode.load()', () => {
     it('should load image successfully and call onLoad', async () => {
-      const onLoad = jest.fn()
+      const onLoad = vi.fn()
       const node = new ImageNode({ src: 'test.png', onLoad })
       await node.load()
 
@@ -160,7 +160,7 @@ describe('ImageNode & Image factory', () => {
     it('should handle load error gracefully and call onError', async () => {
       const loadError = new Error('load failed')
       mockLoadImage.mockRejectedValueOnce(loadError)
-      const onError = jest.fn()
+      const onError = vi.fn()
       const node = new ImageNode({ src: 'test.png', onError })
       await node.load()
 
@@ -215,7 +215,7 @@ describe('ImageNode & Image factory', () => {
       const node = await setupRenderableNode({ src: 'test.png', objectFit: 'contain' })
       await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
-      const drawCall = (ctx.drawImage as jest.Mock<any>).mock.calls[0]
+      const drawCall = (ctx.drawImage as unknown as MockInstance<any>).mock.calls[0]
       // drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
       const dw = drawCall[7] // finalDW (ceil)
       const dh = drawCall[8] // finalDH (ceil)
@@ -230,7 +230,7 @@ describe('ImageNode & Image factory', () => {
       const node = await setupRenderableNode({ src: 'test.png', objectFit: 'cover' })
       await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
-      const drawCall = (ctx.drawImage as jest.Mock<any>).mock.calls[0]
+      const drawCall = (ctx.drawImage as unknown as MockInstance<any>).mock.calls[0]
       const dw = drawCall[7]
       const dh = drawCall[8]
       expect(dw).toBe(200)
@@ -242,7 +242,7 @@ describe('ImageNode & Image factory', () => {
       const node = await setupRenderableNode({ src: 'test.png', objectFit: 'none' })
       await node.render(ctx, 0, 0)
       expect(ctx.drawImage).toHaveBeenCalled()
-      const drawCall = (ctx.drawImage as jest.Mock<any>).mock.calls[0]
+      const drawCall = (ctx.drawImage as unknown as MockInstance<any>).mock.calls[0]
       const dw = drawCall[7]
       const dh = drawCall[8]
       expect(dw).toBe(200)
@@ -331,7 +331,7 @@ describe('ImageNode & Image factory', () => {
         expect(result).not.toContain('fill="#000000"')
       } else {
         // If not a buffer, the SVG replacement path was not taken
-        fail('Expected loadImage to be called with a Buffer for SVG color replacement')
+        expect.fail('Expected loadImage to be called with a Buffer for SVG color replacement')
       }
     })
 

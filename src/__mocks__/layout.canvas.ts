@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import { mockNodeCreate, clearCreatedNodes } from '@/__mocks__/yoga-layout.js'
 
 export const yogaNode = {
@@ -6,7 +6,7 @@ export const yogaNode = {
 }
 
 // Mock the actual BoxNode class
-export const BoxNode = jest.fn(function (this: any, props: any) {
+export const BoxNode = vi.fn(function (this: any, props: any) {
   this.initialProps = props
   this.node = yogaNode.current
   this.children = []
@@ -15,20 +15,20 @@ export const BoxNode = jest.fn(function (this: any, props: any) {
   this.key = props.key || `${this.name}-0`
 
   // Mock methods that are called on the instance
-  this.processInitialChildren = jest.fn()
-  this.resolveInheritedStyles = jest.fn()
-  this.applyDefaults = jest.fn()
-  this.appendChild = jest.fn()
-  this.finalizeLayout = jest.fn(() => false)
-  this.updateLayoutBasedOnComputedSize = jest.fn()
-  this.setLayout = jest.fn()
-  this._renderContent = jest.fn()
+  this.processInitialChildren = vi.fn()
+  this.resolveInheritedStyles = vi.fn()
+  this.applyDefaults = vi.fn()
+  this.appendChild = vi.fn()
+  this.finalizeLayout = vi.fn(() => false)
+  this.updateLayoutBasedOnComputedSize = vi.fn()
+  this.setLayout = vi.fn()
+  this._renderContent = vi.fn()
 })
 // Define render on the prototype so it can be spied on
-BoxNode.prototype.render = jest.fn()
+BoxNode.prototype.render = vi.fn()
 
 // Mock the actual ColumnNode class, inheriting from mocked BoxNode
-export const ColumnNode = jest.fn(function (this: any, props: any) {
+export const ColumnNode = vi.fn(function (this: any, props: any) {
   // Call BoxNode constructor to set up properties
   Object.assign(this, new BoxNode({ name: 'Column', ...props }))
 })
@@ -36,17 +36,17 @@ export const ColumnNode = jest.fn(function (this: any, props: any) {
 Object.setPrototypeOf(ColumnNode.prototype, BoxNode.prototype)
 
 // Mock the actual RowNode class, inheriting from mocked BoxNode
-export const RowNode = jest.fn(function (this: any, props: any) {
+export const RowNode = vi.fn(function (this: any, props: any) {
   Object.assign(this, new BoxNode({ name: 'Row', ...props }))
 })
 Object.setPrototypeOf(RowNode.prototype, BoxNode.prototype)
 
 // Mock the factory functions
-export const Box = jest.fn((props: any) => new BoxNode(props))
-export const Column = jest.fn((props: any) => new ColumnNode(props))
-export const Row = jest.fn((props: any) => new RowNode(props))
+export const Box = vi.fn((props: any) => new BoxNode(props))
+export const Column = vi.fn((props: any) => new ColumnNode(props))
+export const Row = vi.fn((props: any) => new RowNode(props))
 
-export const normalizeDescriptorChildren = jest.fn((children: any): any[] | undefined => {
+export const normalizeDescriptorChildren = vi.fn((children: any): any[] | undefined => {
   if (children === undefined || children === null || children === false) return undefined
   const arr = (Array.isArray(children) ? children : [children]).filter(Boolean)
   return arr.length > 0 ? arr : undefined
@@ -62,7 +62,7 @@ export const __mocks__ = {
   Row,
   normalizeDescriptorChildren,
   reset: () => {
-    // Reset all jest.fn() mocks
+    // Reset all vi.fn() mocks
     clearCreatedNodes()
     yogaNode.current = mockNodeCreate()
 

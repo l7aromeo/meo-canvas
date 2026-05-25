@@ -1,12 +1,12 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
-export const existsSync = jest.fn<(val: any) => boolean>(_val => true)
+export const existsSync = vi.fn<(val: any) => boolean>(_val => true)
 
 export const promises = {
-  mkdir: jest.fn<() => Promise<void>>(() => Promise.resolve()),
-  readFile: jest.fn<() => Promise<Buffer>>(() => Promise.reject(new Error('not found'))),
-  writeFile: jest.fn<() => Promise<void>>(() => Promise.resolve()),
-  unlink: jest.fn<() => Promise<void>>(() => Promise.resolve()),
+  mkdir: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  readFile: vi.fn<() => Promise<Buffer>>(() => Promise.reject(new Error('not found'))),
+  writeFile: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  unlink: vi.fn<() => Promise<void>>(() => Promise.resolve()),
 }
 
 export const __mocks__ = {

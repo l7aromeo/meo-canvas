@@ -1,13 +1,13 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
 const mockRenderResult = { canvasId: 1, buffer: Buffer.from('png'), width: 100, height: 100 }
 const mockEndpoint = {
-  render: jest.fn<() => Promise<typeof mockRenderResult>>().mockResolvedValue(mockRenderResult),
-  callOnCanvas: jest.fn<() => Promise<Buffer>>().mockResolvedValue(Buffer.from('result')),
-  releaseCanvas: jest.fn(),
+  render: vi.fn<() => Promise<typeof mockRenderResult>>().mockResolvedValue(mockRenderResult),
+  callOnCanvas: vi.fn<() => Promise<Buffer>>().mockResolvedValue(Buffer.from('result')),
+  releaseCanvas: vi.fn(),
 }
 
-jest.unstable_mockModule('node:worker_threads', () => ({
+vi.mock('node:worker_threads', () => ({
   Worker: class {
     on() {
       return this
@@ -16,11 +16,11 @@ jest.unstable_mockModule('node:worker_threads', () => ({
   },
 }))
 
-jest.unstable_mockModule('node:url', () => ({
+vi.mock('node:url', () => ({
   fileURLToPath: () => '/mock/worker/comlink.pool.ts',
 }))
 
-jest.unstable_mockModule('@/worker/comlink.setup.js', () => ({
+vi.mock('@/worker/comlink.setup.js', () => ({
   Comlink: {
     wrap: () => mockEndpoint,
     proxy: (fn: unknown) => fn,
@@ -32,7 +32,7 @@ jest.unstable_mockModule('@/worker/comlink.setup.js', () => ({
 let ComlinkPool: typeof import('@/worker/comlink.pool.js').ComlinkPool
 
 beforeEach(async () => {
-  jest.clearAllMocks()
+  vi.clearAllMocks()
   mockEndpoint.render.mockResolvedValue(mockRenderResult)
 
   const mod = await import('@/worker/comlink.pool.js')
@@ -125,12 +125,12 @@ describe('ComlinkPool', () => {
     pool.terminate()
   })
 
-  it('should clear all state on terminate', () => {
+  it('should clear all state on terminate', async () => {
     const pool = new ComlinkPool(2)
     pool.terminate()
 
     // After terminate, render should fail because no endpoints exist
-    expect(() => pool.render({ width: 100 } as any)).rejects.toBeDefined()
+    await expect(pool.render({ width: 100 } as any)).rejects.toBeDefined()
   })
 
   it('should extract function props and pass callFn proxy to worker', async () => {

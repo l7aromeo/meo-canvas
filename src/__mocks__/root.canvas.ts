@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/skia-canvas.js'
 import { __mocks__ as fsMocks } from '@/__mocks__/node-fs.js'
 import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
@@ -9,11 +9,11 @@ import { RootNode as BaseRootNode } from '@/canvas/root.canvas.js'
 
 const registeredFonts = new Map<string, Set<string>>()
 
-export const _clearRegisteredFonts = jest.fn(() => {
+export const _clearRegisteredFonts = vi.fn(() => {
   registeredFonts.clear()
 })
 
-export const RootNode = jest.fn(function (this: any, props: any) {
+export const RootNode = vi.fn(function (this: any, props: any) {
   // Validate FIRST - fail fast
   if (!props.width) {
     throw new Error('Width and height are required for Root')
@@ -35,7 +35,7 @@ export const RootNode = jest.fn(function (this: any, props: any) {
   if (props.fonts?.length) {
     for (const font of props.fonts) {
       const family = font.family
-      const paths = font.paths.map((p: unknown) => pathMocks.resolve(p))
+      const paths = font.paths.map((p: string) => pathMocks.resolve(p))
 
       if (!registeredFonts.has(family)) {
         registeredFonts.set(family, new Set())
@@ -55,7 +55,7 @@ export const RootNode = jest.fn(function (this: any, props: any) {
   this.processInitialChildren()
 
   // BFS traversal for image nodes
-  this.findAllImageNodes = jest.fn(function (this: any) {
+  this.findAllImageNodes = vi.fn(function (this: any) {
     const imageNodes: any[] = []
     const queue: any[] = [this]
     while (queue.length > 0) {
@@ -70,7 +70,7 @@ export const RootNode = jest.fn(function (this: any, props: any) {
     return imageNodes
   })
 
-  this.finalizeLayout = jest.fn(() => false)
+  this.finalizeLayout = vi.fn(() => false)
 
   this.render = async function (this: any) {
     const imageNodes = this.findAllImageNodes()
@@ -108,7 +108,7 @@ export const RootNode = jest.fn(function (this: any, props: any) {
 RootNode.prototype = Object.create(ColumnNode.prototype)
 RootNode.prototype.constructor = RootNode
 
-export const Root = jest.fn(async (props: any) => {
+export const Root = vi.fn(async (props: any) => {
   const instance = new RootNode(props)
   return (instance as unknown as ReturnType<() => BaseRootNode>).render()
 })

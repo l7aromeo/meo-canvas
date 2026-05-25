@@ -5,7 +5,6 @@
  * Uses a temporary directory for isolation and cleans up after each test.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
 import { hashBuffer, readDiskCache, writeDiskCache, deleteDiskCache, clearDiskCache } from '@/util/disk.cache.js'
 import { promises as fs } from 'fs'
 import { join } from 'path'

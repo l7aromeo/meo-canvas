@@ -1,23 +1,24 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import type { RootPropsWithoutWorker } from '@/canvas/canvas.type.js'
-import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/skia-canvas.js'
-import { __mocks__ as fsMocks } from '@/__mocks__/node-fs.js'
-import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
-import { __mocks__ as layoutMocks } from '@/__mocks__/layout.canvas.js'
-import { __mocks__ as imageMocks } from '@/__mocks__/image.canvas.js'
 
-jest.unstable_mockModule('skia-canvas', () => skiaCanvasMocks)
+const pathMocks = vi.hoisted(() => ({
+  resolve: vi.fn((p: string) => p),
+  join: vi.fn((...args: string[]) => args.join('/')),
+  dirname: vi.fn((p: string) => {
+    const parts = p.split('/')
+    parts.pop()
+    return parts.join('/') || '.'
+  }),
+}))
 
-jest.unstable_mockModule('node:fs', () => fsMocks)
-
-jest.unstable_mockModule('node:path', () => pathMocks)
-
-jest.unstable_mockModule('@/canvas/layout.canvas.js', () => layoutMocks)
-
-jest.unstable_mockModule('@/canvas/image.canvas.js', () => imageMocks)
+vi.mock('node:path', () => pathMocks)
+vi.mock('skia-canvas', async () => (await import('@/__mocks__/skia-canvas.js')).__mocks__)
+vi.mock('node:fs', async () => (await import('@/__mocks__/node-fs.js')).__mocks__)
+vi.mock('@/canvas/layout.canvas.js', async () => (await import('@/__mocks__/layout.canvas.js')).__mocks__)
+vi.mock('@/canvas/image.canvas.js', async () => (await import('@/__mocks__/image.canvas.js')).__mocks__)
 
 // Mock worker_threads to prevent real OS threads during unit tests.
-jest.unstable_mockModule('node:worker_threads', () => ({
+vi.mock('node:worker_threads', () => ({
   Worker: class {
     on() {
       return this
@@ -32,10 +33,30 @@ let FontLibrary: typeof import('skia-canvas').FontLibrary
 let Root: typeof import('@/canvas/root.canvas.js').Root
 let RootNode: typeof import('@/canvas/root.canvas.js').RootNode
 let ColumnNode: typeof import('@/canvas/layout.canvas.js').ColumnNode
+let skiaCanvasMocks: typeof import('@/__mocks__/skia-canvas.js').__mocks__
+let fsMocks: typeof import('@/__mocks__/node-fs.js').__mocks__
+let layoutMocks: typeof import('@/__mocks__/layout.canvas.js').__mocks__
+let imageMocks: typeof import('@/__mocks__/image.canvas.js').__mocks__
 
 describe('RootNode', () => {
   beforeEach(async () => {
-    jest.resetModules()
+    vi.resetModules()
+
+    skiaCanvasMocks = (await import('@/__mocks__/skia-canvas.js')).__mocks__
+    fsMocks = (await import('@/__mocks__/node-fs.js')).__mocks__
+    layoutMocks = (await import('@/__mocks__/layout.canvas.js')).__mocks__
+    imageMocks = (await import('@/__mocks__/image.canvas.js')).__mocks__
+
+    pathMocks.resolve.mockReset()
+    pathMocks.resolve.mockImplementation((p: string) => p)
+    pathMocks.join.mockReset()
+    pathMocks.join.mockImplementation((...args: string[]) => args.join('/'))
+    pathMocks.dirname.mockReset()
+    pathMocks.dirname.mockImplementation((p: string) => {
+      const parts = p.split('/')
+      parts.pop()
+      return parts.join('/') || '.'
+    })
 
     // Re-import modules after resetting
     const skiaCanvasModule = await import('skia-canvas')
@@ -48,7 +69,6 @@ describe('RootNode', () => {
     ColumnNode = layoutModule.ColumnNode
 
     fsMocks.reset()
-    pathMocks.reset()
     skiaCanvasMocks.reset()
     imageMocks.reset()
     layoutMocks.reset()
@@ -87,20 +107,21 @@ describe('RootNode', () => {
   })
 
   it('should call findAllImageNodes and await loading promises', async () => {
-    const mockImageNodeInstance = new imageMocks.ImageNode({})
-    mockImageNodeInstance.load = jest.fn(() => Promise.resolve())
+    const { ImageNode } = await import('@/canvas/image.canvas.js')
+    const mockImageNodeInstance = new ImageNode({ src: 'test.png' })
+    mockImageNodeInstance.load = vi.fn(() => Promise.resolve())
 
     // Create RootNode instance and add the mock ImageNode as a child
     const rootNodeInstance = new RootNode({ width: 100 })
     rootNodeInstance.children.push(mockImageNodeInstance)
 
-    const columnNodeRenderSpy = jest.spyOn(ColumnNode.prototype, 'render')
+    const columnNodeRenderSpy = vi.spyOn(ColumnNode.prototype, 'render')
     columnNodeRenderSpy.mockImplementation(async () => {
       // Swallow actual rendering during this test
     })
 
     // Mock the internal finalizeLayout method
-    const finalizeLayoutSpy = jest.spyOn(rootNodeInstance, 'finalizeLayout')
+    const finalizeLayoutSpy = vi.spyOn(rootNodeInstance, 'finalizeLayout')
     finalizeLayoutSpy.mockReturnValue(false) // No re-layout for this test
 
     // Mock the Yoga node's getComputedHeight to return a non-zero value for canvas creation
@@ -130,11 +151,13 @@ describe('RootNode', () => {
 
     await Root({ workerMode: false, width: 100, scale: 2 })
 
-    expect(skiaCanvasMocks.mockCanvasContext.scale).toHaveBeenCalledWith(2, 2)
+    const canvasInstance = vi.mocked(Canvas).mock.results.at(-1)?.value
+    const ctx = canvasInstance?.getContext.mock.results.at(-1)?.value
+    expect(ctx?.scale).toHaveBeenCalledWith(2, 2)
   })
 
   it('should call super.render (ColumnNode.render) during rendering', async () => {
-    const columnNodeRenderSpy = jest.spyOn(ColumnNode.prototype, 'render')
+    const columnNodeRenderSpy = vi.spyOn(ColumnNode.prototype, 'render')
     columnNodeRenderSpy.mockImplementation(async () => {
       // Swallow actual rendering during this test
     })
@@ -163,7 +186,7 @@ describe('RootNode', () => {
     const rootNodeInstance = new RootNode({ width: 100 })
 
     // Mock the internal finalizeLayout method to return true
-    const finalizeLayoutSpy = jest.spyOn(rootNodeInstance, 'finalizeLayout')
+    const finalizeLayoutSpy = vi.spyOn(rootNodeInstance, 'finalizeLayout')
     finalizeLayoutSpy.mockReturnValue(true)
 
     // Mock the Yoga node's getComputedHeight to return a non-zero value for canvas creation
@@ -175,7 +198,7 @@ describe('RootNode', () => {
       height: 100,
     })
 
-    const calculateLayoutSpy = jest.spyOn(rootNodeInstance.node, 'calculateLayout')
+    const calculateLayoutSpy = vi.spyOn(rootNodeInstance.node, 'calculateLayout')
 
     await rootNodeInstance.render()
 
@@ -200,6 +223,7 @@ describe('RootNode', () => {
   it('should add new font paths to an existing family', async () => {
     fsMocks.existsSync.mockReturnValue(true)
     pathMocks.resolve.mockImplementation(p => `/mock/path/to/${p}`)
+    vi.mocked(FontLibrary.use).mockClear()
 
     // Register first font
     await Root({ workerMode: false, width: 100, fonts: [{ family: 'ExistingFont', paths: ['font1.ttf'] }] })

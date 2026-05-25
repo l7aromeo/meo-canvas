@@ -1,62 +1,62 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import { Style } from '@/constant/common.const.js' // Import Style for Unit enum
 
 // Track all created nodes
 export let createdNodes: any[] = []
 
 // Create the mock Node.create function
-export const mockNodeCreate = jest.fn(() => {
+export const mockNodeCreate = vi.fn(() => {
   const node = {
-    setWidth: jest.fn(),
-    setHeight: jest.fn(),
-    setMinWidth: jest.fn(),
-    setMinHeight: jest.fn(),
-    setMaxWidth: jest.fn(),
-    setMaxHeight: jest.fn(),
-    calculateLayout: jest.fn(),
-    getComputedHeight: jest.fn(() => 0),
-    getComputedWidth: jest.fn(() => 0),
-    getComputedLayout: jest.fn(() => ({ left: 0, top: 0, width: 100, height: 100 })),
-    getComputedBorder: jest.fn(() => 0),
-    getComputedPadding: jest.fn(() => 0),
-    getWidth: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })),
-    getHeight: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })),
-    getFlexGrow: jest.fn(() => 0), // Add this
-    getFlexWrap: jest.fn(() => Style.Wrap.Wrap), // Add this
-    getFlexShrink: jest.fn(() => 0), // Add this
-    getFlexDirection: jest.fn(() => Style.FlexDirection.Column), // Add this
-    getMargin: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
-    getGap: jest.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
-    insertChild: jest.fn(),
-    removeChild: jest.fn(),
-    getChildCount: jest.fn(() => 0),
-    setFlexDirection: jest.fn(),
-    setJustifyContent: jest.fn(),
-    setAlignItems: jest.fn(),
-    setAlignSelf: jest.fn(),
-    setAlignContent: jest.fn(),
-    setFlexGrow: jest.fn(),
-    setFlexShrink: jest.fn(),
-    setFlexBasis: jest.fn(),
-    setFlexWrap: jest.fn(),
-    setPositionType: jest.fn(),
-    setPosition: jest.fn(),
-    setPositionPercent: jest.fn(),
-    setGap: jest.fn(),
-    setGapPercent: jest.fn(),
-    setMargin: jest.fn(),
-    setMarginPercent: jest.fn(),
-    setPadding: jest.fn(),
-    setPaddingPercent: jest.fn(),
-    setBorder: jest.fn(),
-    setDisplay: jest.fn(),
-    setOverflow: jest.fn(),
-    setBoxSizing: jest.fn(),
-    setDirection: jest.fn(),
-    setAspectRatio: jest.fn(),
-    isDirty: jest.fn(() => false),
-    markDirty: jest.fn(),
-    free: jest.fn(),
+    setWidth: vi.fn(),
+    setHeight: vi.fn(),
+    setMinWidth: vi.fn(),
+    setMinHeight: vi.fn(),
+    setMaxWidth: vi.fn(),
+    setMaxHeight: vi.fn(),
+    calculateLayout: vi.fn(),
+    getComputedHeight: vi.fn(() => 0),
+    getComputedWidth: vi.fn(() => 0),
+    getComputedLayout: vi.fn(() => ({ left: 0, top: 0, width: 100, height: 100 })),
+    getComputedBorder: vi.fn(() => 0),
+    getComputedPadding: vi.fn(() => 0),
+    getWidth: vi.fn(() => ({ value: 0, unit: Style.Unit.Point })),
+    getHeight: vi.fn(() => ({ value: 0, unit: Style.Unit.Point })),
+    getFlexGrow: vi.fn(() => 0), // Add this
+    getFlexWrap: vi.fn(() => Style.Wrap.Wrap), // Add this
+    getFlexShrink: vi.fn(() => 0), // Add this
+    getFlexDirection: vi.fn(() => Style.FlexDirection.Column), // Add this
+    getMargin: vi.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
+    getGap: vi.fn(() => ({ value: 0, unit: Style.Unit.Point })), // Add this
+    insertChild: vi.fn(),
+    removeChild: vi.fn(),
+    getChildCount: vi.fn(() => 0),
+    setFlexDirection: vi.fn(),
+    setJustifyContent: vi.fn(),
+    setAlignItems: vi.fn(),
+    setAlignSelf: vi.fn(),
+    setAlignContent: vi.fn(),
+    setFlexGrow: vi.fn(),
+    setFlexShrink: vi.fn(),
+    setFlexBasis: vi.fn(),
+    setFlexWrap: vi.fn(),
+    setPositionType: vi.fn(),
+    setPosition: vi.fn(),
+    setPositionPercent: vi.fn(),
+    setGap: vi.fn(),
+    setGapPercent: vi.fn(),
+    setMargin: vi.fn(),
+    setMarginPercent: vi.fn(),
+    setPadding: vi.fn(),
+    setPaddingPercent: vi.fn(),
+    setBorder: vi.fn(),
+    setDisplay: vi.fn(),
+    setOverflow: vi.fn(),
+    setBoxSizing: vi.fn(),
+    setDirection: vi.fn(),
+    setAspectRatio: vi.fn(),
+    isDirty: vi.fn(() => false),
+    markDirty: vi.fn(),
+    free: vi.fn(),
   }
   createdNodes.push(node)
   return node

@@ -1,17 +1,23 @@
-import { jest } from '@jest/globals'
-import nodePath from 'node:path'
+import { vi } from 'vitest'
 
 export const __mocks__ = {
-  resolve: jest.fn(p => p), // Default to returning the path itself
-  // Pass-throughs for utilities used internally (e.g. worker file path resolution)
-  join: jest.fn((...args: string[]) => nodePath.join(...args)),
-  dirname: jest.fn((p: string) => nodePath.dirname(p)),
-  reset: jest.fn(() => {
+  resolve: vi.fn((p: string) => p),
+  join: vi.fn((...args: string[]) => args.join('/')),
+  dirname: vi.fn((p: string) => {
+    const parts = p.split('/')
+    parts.pop()
+    return parts.join('/') || '.'
+  }),
+  reset: vi.fn(() => {
     __mocks__.resolve.mockClear()
-    __mocks__.resolve.mockImplementation(p => p) // Reset to default behavior
+    __mocks__.resolve.mockImplementation((p: string) => p)
     __mocks__.join.mockClear()
-    __mocks__.join.mockImplementation((...args: string[]) => nodePath.join(...args))
+    __mocks__.join.mockImplementation((...args: string[]) => args.join('/'))
     __mocks__.dirname.mockClear()
-    __mocks__.dirname.mockImplementation((p: string) => nodePath.dirname(p))
+    __mocks__.dirname.mockImplementation((p: string) => {
+      const parts = p.split('/')
+      parts.pop()
+      return parts.join('/') || '.'
+    })
   }),
 }

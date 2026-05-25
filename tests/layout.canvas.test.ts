@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import { BoxNode, Box, RowNode, Row, ColumnNode, Column } from '@/canvas/layout.canvas.js'
 import { drawBorders } from '@/canvas/canvas.helper.js'
 import Yoga, { Style } from '@/constant/common.const.js'
@@ -39,7 +39,7 @@ describe('BoxNode', () => {
     const parent = new BoxNode({ key: 'parent', fontSize: 16 })
     const child = new BoxNode({ key: 'child' })
     child.node.setWidth(100) // This will mark the node as dirty
-    const markDirtySpy = jest.spyOn(child.node, 'markDirty')
+    const markDirtySpy = vi.spyOn(child.node, 'markDirty')
     ;(child as any).resolveInheritedStyles(parent.props)
     expect(markDirtySpy).not.toHaveBeenCalled()
     markDirtySpy.mockRestore()
@@ -47,7 +47,7 @@ describe('BoxNode', () => {
 
   it('should warn and not append invalid child nodes', () => {
     const parent = new BoxNode({ key: 'parent' })
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(jest.fn)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     ;(parent as any).appendChild(null, 0)
     expect(parent.children).toHaveLength(0)
@@ -94,33 +94,33 @@ describe('BoxNode', () => {
     node.node.setPosition(Style.Edge.Left, 0)
     node.node.setPosition(Style.Edge.Top, 0)
 
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      setTransform: jest.fn(),
-      translate: jest.fn(),
-      scale: jest.fn(),
-      rotate: jest.fn(),
-      clip: jest.fn(),
-      fillText: jest.fn(),
-      strokeText: jest.fn(),
-      measureText: jest.fn(() => ({ width: 10, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 2 })),
-      setFont: jest.fn(),
-      setLineDash: jest.fn(),
-      stroke: jest.fn(),
-      clearRect: jest.fn(),
-      drawImage: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(), // Added
-      arc: jest.fn(), // Added
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setTransform: vi.fn(),
+      translate: vi.fn(),
+      scale: vi.fn(),
+      rotate: vi.fn(),
+      clip: vi.fn(),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      measureText: vi.fn(() => ({ width: 10, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 2 })),
+      setFont: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: vi.fn(),
+      clearRect: vi.fn(),
+      drawImage: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(), // Added
+      arc: vi.fn(), // Added
     }
 
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
@@ -148,7 +148,7 @@ describe('BoxNode', () => {
     ;(parent as any).appendChild(childB, 1)
 
     // Mock computed layouts so render() reads correct positions
-    jest.spyOn(parent.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(parent.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 200,
@@ -156,7 +156,7 @@ describe('BoxNode', () => {
       bottom: 0,
       right: 0,
     } as any)
-    jest.spyOn(childA.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(childA.node, 'getComputedLayout').mockReturnValue({
       left: 10,
       top: 10,
       width: 50,
@@ -164,7 +164,7 @@ describe('BoxNode', () => {
       bottom: 0,
       right: 0,
     } as any)
-    jest.spyOn(childB.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(childB.node, 'getComputedLayout').mockReturnValue({
       left: 70,
       top: 10,
       width: 50,
@@ -176,20 +176,20 @@ describe('BoxNode', () => {
     // Trace draw order
     const drawLog: string[] = []
     const mockContext = {
-      fill: jest.fn(() => drawLog.push('fill')),
-      beginPath: jest.fn(() => drawLog.push('beginPath')),
-      rect: jest.fn(() => drawLog.push('rect')),
-      save: jest.fn(() => drawLog.push('save')),
-      restore: jest.fn(() => drawLog.push('restore')),
-      clip: jest.fn(() => drawLog.push('clip')),
-      closePath: jest.fn(() => drawLog.push('closePath')),
-      moveTo: jest.fn(() => drawLog.push('moveTo')),
-      lineTo: jest.fn(() => drawLog.push('lineTo')),
-      arc: jest.fn(() => drawLog.push('arc')),
-      setLineDash: jest.fn(() => drawLog.push('setLineDash')),
-      stroke: jest.fn(() => drawLog.push('stroke')),
-      drawImage: jest.fn(() => drawLog.push('drawImage')),
-      clearRect: jest.fn(() => drawLog.push('clearRect')),
+      fill: vi.fn(() => drawLog.push('fill')),
+      beginPath: vi.fn(() => drawLog.push('beginPath')),
+      rect: vi.fn(() => drawLog.push('rect')),
+      save: vi.fn(() => drawLog.push('save')),
+      restore: vi.fn(() => drawLog.push('restore')),
+      clip: vi.fn(() => drawLog.push('clip')),
+      closePath: vi.fn(() => drawLog.push('closePath')),
+      moveTo: vi.fn(() => drawLog.push('moveTo')),
+      lineTo: vi.fn(() => drawLog.push('lineTo')),
+      arc: vi.fn(() => drawLog.push('arc')),
+      setLineDash: vi.fn(() => drawLog.push('setLineDash')),
+      stroke: vi.fn(() => drawLog.push('stroke')),
+      drawImage: vi.fn(() => drawLog.push('drawImage')),
+      clearRect: vi.fn(() => drawLog.push('clearRect')),
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 0,
@@ -203,7 +203,7 @@ describe('BoxNode', () => {
       imageSmoothingQuality: 'high',
     }
 
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
     const ctx = new Canvas().getContext('2d')
 
     await parent.render(ctx, 0, 0)
@@ -363,18 +363,18 @@ describe('BoxNode Layout Properties', () => {
   })
 
   it('should apply dotted border style correctly', () => {
-    const mockSetLineDash = jest.fn()
+    const mockSetLineDash = vi.fn()
     let lineCapValue = ''
     const mockContext = {
       setLineDash: mockSetLineDash,
-      beginPath: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      stroke: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       get lineCap() {
         return lineCapValue
       },
@@ -386,8 +386,8 @@ describe('BoxNode Layout Properties', () => {
     }
 
     const mockNode = {
-      getBorder: jest.fn(() => 2), // Simulate border width
-      getBoxSizing: jest.fn(() => Style.BoxSizing.ContentBox),
+      getBorder: vi.fn(() => 2), // Simulate border width
+      getBoxSizing: vi.fn(() => Style.BoxSizing.ContentBox),
     } as any
 
     drawBorders({
@@ -407,18 +407,18 @@ describe('BoxNode Layout Properties', () => {
   })
 
   it('should apply dashed border style correctly', () => {
-    const mockSetLineDash = jest.fn()
+    const mockSetLineDash = vi.fn()
     let lineCapValue = ''
     const mockContext = {
       setLineDash: mockSetLineDash,
-      beginPath: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      stroke: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       get lineCap() {
         return lineCapValue
       },
@@ -430,8 +430,8 @@ describe('BoxNode Layout Properties', () => {
     }
 
     const mockNode = {
-      getBorder: jest.fn(() => 2), // Simulate border width
-      getBoxSizing: jest.fn(() => Style.BoxSizing.ContentBox),
+      getBorder: vi.fn(() => 2), // Simulate border width
+      getBoxSizing: vi.fn(() => Style.BoxSizing.ContentBox),
     } as any
 
     drawBorders({
@@ -455,18 +455,18 @@ describe('BoxNode Layout Properties', () => {
   })
 
   it('should apply solid border style correctly', () => {
-    const mockSetLineDash = jest.fn()
+    const mockSetLineDash = vi.fn()
     let lineCapValue = ''
     const mockContext = {
       setLineDash: mockSetLineDash,
-      beginPath: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      stroke: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       get lineCap() {
         return lineCapValue
       },
@@ -478,8 +478,8 @@ describe('BoxNode Layout Properties', () => {
     }
 
     const mockNode = {
-      getBorder: jest.fn(() => 2), // Simulate border width
-      getBoxSizing: jest.fn(() => Style.BoxSizing.ContentBox),
+      getBorder: vi.fn(() => 2), // Simulate border width
+      getBoxSizing: vi.fn(() => Style.BoxSizing.ContentBox),
     } as any
 
     drawBorders({
@@ -561,34 +561,34 @@ describe('BoxNode Layout Properties', () => {
         Bottom: 5,
       },
     })
-    const mockFill = jest.fn()
-    const mockClip = jest.fn()
+    const mockFill = vi.fn()
+    const mockClip = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
       clip: mockClip,
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
-      setLineDash: jest.fn(),
-      stroke: jest.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(100)
     node.node.setHeight(100)
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
       height: 100,
     } as any)
-    jest.spyOn(node.node, 'getComputedBorder').mockImplementation(edge => {
+    vi.spyOn(node.node, 'getComputedBorder').mockImplementation(edge => {
       if (edge === Style.Edge.Left) return 5
       if (edge === Style.Edge.Top) return 5
       if (edge === Style.Edge.Right) return 5
@@ -619,33 +619,33 @@ describe('BoxNode Layout Properties', () => {
         Top: 10,
       }, // Make innerWidth/Height <= 0
     })
-    const mockClip = jest.fn()
+    const mockClip = vi.fn()
     const mockContext = {
-      fill: jest.fn(),
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
+      fill: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
       clip: mockClip,
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
-      setLineDash: jest.fn(),
-      stroke: jest.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(10)
     node.node.setHeight(10)
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 10,
       height: 10,
     } as any)
-    jest.spyOn(node.node, 'getComputedBorder').mockImplementation(edge => {
+    vi.spyOn(node.node, 'getComputedBorder').mockImplementation(edge => {
       if (edge === Style.Edge.Left) return 10
       if (edge === Style.Edge.Top) return 10
       return 0
@@ -667,25 +667,25 @@ describe('BoxNode Layout Properties', () => {
       overflow: Style.Overflow.Hidden,
       borderRadius: 10,
     })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      clip: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(100) // Explicitly set width for the Yoga node
     node.node.setHeight(100) // Explicitly set height for the Yoga node
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -714,27 +714,27 @@ describe('BoxNode Layout Properties', () => {
     })
     parent.processInitialChildren()
 
-    const mockRenderChildA = jest.spyOn(childA, 'render').mockImplementation(async () => {})
-    const mockRenderChildB = jest.spyOn(childB, 'render').mockImplementation(async () => {})
-    const mockRenderChildC = jest.spyOn(childC, 'render').mockImplementation(async () => {})
-    const mockRenderChildD = jest.spyOn(childD, 'render').mockImplementation(async () => {})
+    const mockRenderChildA = vi.spyOn(childA, 'render').mockImplementation(async () => {})
+    const mockRenderChildB = vi.spyOn(childB, 'render').mockImplementation(async () => {})
+    const mockRenderChildC = vi.spyOn(childC, 'render').mockImplementation(async () => {})
+    const mockRenderChildD = vi.spyOn(childD, 'render').mockImplementation(async () => {})
 
     const mockContext = {
-      fill: jest.fn(),
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      clip: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      fill: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       globalAlpha: 1,
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
-    jest.spyOn(parent.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(parent.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 200,
@@ -752,20 +752,20 @@ describe('BoxNode Layout Properties', () => {
 
   it('should render background color correctly', async () => {
     const node = new BoxNode({ width: 100, height: 100, backgroundColor: 'red' })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       fillStyle: '',
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
@@ -785,30 +785,30 @@ describe('BoxNode Layout Properties', () => {
         direction: 'to-right',
       },
     })
-    const mockAddColorStop = jest.fn()
-    const mockCreateLinearGradient = jest.fn(() => ({
+    const mockAddColorStop = vi.fn()
+    const mockCreateLinearGradient = vi.fn(() => ({
       addColorStop: mockAddColorStop,
     }))
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       createLinearGradient: mockCreateLinearGradient,
       fillStyle: '',
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(100) // Explicitly set width for the Yoga node
     node.node.setHeight(100) // Explicitly set height for the Yoga node
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -831,30 +831,30 @@ describe('BoxNode Layout Properties', () => {
         colors: ['red', 'blue'],
       },
     })
-    const mockAddColorStop = jest.fn()
-    const mockCreateRadialGradient = jest.fn(() => ({
+    const mockAddColorStop = vi.fn()
+    const mockCreateRadialGradient = vi.fn(() => ({
       addColorStop: mockAddColorStop,
     }))
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       createRadialGradient: mockCreateRadialGradient,
       fillStyle: '',
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(100) // Explicitly set width for the Yoga node
     node.node.setHeight(100) // Explicitly set height for the Yoga node
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -878,30 +878,30 @@ describe('BoxNode Layout Properties', () => {
         direction: 'to-top-right',
       },
     })
-    const mockAddColorStop = jest.fn()
-    const mockCreateRadialGradient = jest.fn(() => ({
+    const mockAddColorStop = vi.fn()
+    const mockCreateRadialGradient = vi.fn(() => ({
       addColorStop: mockAddColorStop,
     }))
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       createRadialGradient: mockCreateRadialGradient,
       fillStyle: '',
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(100)
     node.node.setHeight(100)
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -926,24 +926,24 @@ describe('BoxNode Layout Properties', () => {
         blur: 10,
       },
     })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       fillStyle: '',
       shadowColor: '',
       shadowOffsetX: 0,
       shadowOffsetY: 0,
       shadowBlur: 0,
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
@@ -971,19 +971,19 @@ describe('BoxNode Layout Properties', () => {
         blur: 10,
       },
     })
-    const mockFill = jest.fn()
-    const mockStroke = jest.fn()
-    const mockClip = jest.fn()
+    const mockFill = vi.fn()
+    const mockStroke = vi.fn()
+    const mockClip = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
       fillStyle: '',
       shadowColor: '',
       shadowOffsetX: 0,
@@ -994,7 +994,7 @@ describe('BoxNode Layout Properties', () => {
       lineWidth: 0,
       strokeStyle: '',
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
@@ -1012,14 +1012,14 @@ describe('BoxNode Layout Properties', () => {
 
   it('should handle opacity correctly', async () => {
     const node = new BoxNode({ width: 100, height: 100, opacity: 0.5 })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockGlobalAlphaValues: number[] = []
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
 
       _globalAlpha: 1, // Internal storage
       get globalAlpha() {
@@ -1031,12 +1031,12 @@ describe('BoxNode Layout Properties', () => {
       },
 
       // Add other methods that might be called on the context
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
@@ -1057,23 +1057,23 @@ describe('BoxNode Layout Properties', () => {
         scale: 2,
       },
     })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      translate: jest.fn(),
-      rotate: jest.fn(),
-      scale: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
+      scale: vi.fn(),
       // Add other methods that might be called on the context
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
@@ -1088,20 +1088,20 @@ describe('BoxNode Layout Properties', () => {
 
   it('should not render if width or height is zero', async () => {
     const node = new BoxNode({ width: 0, height: 50, backgroundColor: 'red' })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(0)
     node.node.setHeight(50)
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 0,
@@ -1116,20 +1116,20 @@ describe('BoxNode Layout Properties', () => {
 
   it('should not render if display is set to none', async () => {
     const node = new BoxNode({ width: 50, height: 50, display: Style.Display.None, backgroundColor: 'red' })
-    const mockFill = jest.fn()
+    const mockFill = vi.fn()
     const mockContext = {
       fill: mockFill,
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(50)
     node.node.setHeight(50)
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 50,
@@ -1154,29 +1154,29 @@ describe('BoxNode Layout Properties', () => {
         originY: 25,
       },
     })
-    const mockTranslate = jest.fn()
-    const mockRotate = jest.fn()
-    const mockScale = jest.fn()
+    const mockTranslate = vi.fn()
+    const mockRotate = vi.fn()
+    const mockScale = vi.fn()
     const mockContext = {
-      fill: jest.fn(),
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
+      fill: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
       translate: mockTranslate,
       rotate: mockRotate,
       scale: mockScale,
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
     }
-    const getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
+    const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     node.node.setWidth(100)
     node.node.setHeight(100)
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -1245,25 +1245,25 @@ describe('BoxNode _renderContent', () => {
     shadowBlurValues = []
 
     mockContext = {
-      fill: jest.fn(),
-      beginPath: jest.fn(),
-      rect: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      clip: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      closePath: jest.fn(),
-      arc: jest.fn(),
-      createLinearGradient: jest.fn(() => ({
-        addColorStop: jest.fn(),
+      fill: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      clip: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      arc: vi.fn(),
+      createLinearGradient: vi.fn(() => ({
+        addColorStop: vi.fn(),
       })),
-      createRadialGradient: jest.fn(() => ({
-        addColorStop: jest.fn(),
+      createRadialGradient: vi.fn(() => ({
+        addColorStop: vi.fn(),
       })),
-      drawImage: jest.fn(),
-      setLineDash: jest.fn(),
-      stroke: jest.fn(),
+      drawImage: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: vi.fn(),
       // Mock properties
       _fillStyle: '',
       get fillStyle() {
@@ -1312,9 +1312,9 @@ describe('BoxNode _renderContent', () => {
     }
 
     // This spy is for the *main* canvas context, not the offscreen one
-    getContextSpy = jest.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext)
+    getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext)
     node = new BoxNode({ width: 100, height: 100 })
-    jest.spyOn(node.node, 'getComputedLayout').mockReturnValue({
+    vi.spyOn(node.node, 'getComputedLayout').mockReturnValue({
       left: 0,
       top: 0,
       width: 100,
@@ -1408,7 +1408,7 @@ describe('BoxNode _renderContent', () => {
   })
 
   it('should warn and fallback for invalid linear gradient direction', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(jest.fn)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     node.props.gradient = {
       type: 'linear',
       colors: ['red', 'blue'],
@@ -1428,7 +1428,7 @@ describe('BoxNode _renderContent', () => {
   })
 
   it('should warn and fallback for radial gradient with no colors', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(jest.fn)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     node.props.gradient = {
       type: 'radial',
       colors: [],
@@ -1445,7 +1445,7 @@ describe('BoxNode _renderContent', () => {
   })
 
   it('should warn and fallback for gradient with zero width/height', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(jest.fn)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     node.props.gradient = {
       direction: 'to-bottom',
       type: 'linear',
@@ -1463,7 +1463,7 @@ describe('BoxNode _renderContent', () => {
   })
 
   it('should handle radial gradient with zero width/height (r1 <= 0)', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(jest.fn)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     node.props.gradient = {
       type: 'radial',
       colors: ['red', 'blue'],
@@ -1506,13 +1506,13 @@ describe('BoxNode _renderContent', () => {
     const fillStylesSet: string[] = []
     const originalFillStyleSetter = Object.getOwnPropertyDescriptor(mockContext, 'fillStyle')?.set
     Object.defineProperty(mockContext, 'fillStyle', {
-      set: jest.fn((value: string) => {
+      set: vi.fn((value: string) => {
         fillStylesSet.push(value)
         if (originalFillStyleSetter) {
           originalFillStyleSetter.call(mockContext, value)
         }
       }),
-      get: jest.fn(() => mockContext._fillStyle),
+      get: vi.fn(() => mockContext._fillStyle),
       configurable: true,
     })
 
@@ -1527,7 +1527,7 @@ describe('BoxNode _renderContent', () => {
     if (originalFillStyleSetter) {
       Object.defineProperty(mockContext, 'fillStyle', {
         set: originalFillStyleSetter,
-        get: jest.fn(() => mockContext._fillStyle),
+        get: vi.fn(() => mockContext._fillStyle),
         configurable: true,
       })
     }

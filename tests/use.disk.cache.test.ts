@@ -9,48 +9,48 @@
  *  - RootNode: only this render's own keys are deleted (isolation)
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Shared mock fns — declared before unstable_mockModule so they're in scope
 // ---------------------------------------------------------------------------
 
-const mockLoadImage = jest.fn<(src: any) => Promise<any>>()
-const mockFileTypeFromBuffer = jest.fn<(buf: any) => Promise<any>>()
-const mockFileTypeFromFile = jest.fn<(path: any) => Promise<any>>()
+const mockLoadImage = vi.fn<(src: any) => Promise<any>>()
+const mockFileTypeFromBuffer = vi.fn<(buf: any) => Promise<any>>()
+const mockFileTypeFromFile = vi.fn<(path: any) => Promise<any>>()
 
-const mockReadDiskCache = jest.fn<(key: string) => Promise<Buffer | null>>()
-const mockWriteDiskCache = jest.fn<(key: string, data: Buffer) => Promise<void>>()
-const mockDeleteDiskCache = jest.fn<(key: string) => Promise<void>>()
-const mockHashBuffer = jest.fn<(buf: Buffer) => string>()
+const mockReadDiskCache = vi.fn<(key: string) => Promise<Buffer | null>>()
+const mockWriteDiskCache = vi.fn<(key: string, data: Buffer) => Promise<void>>()
+const mockDeleteDiskCache = vi.fn<(key: string) => Promise<void>>()
+const mockHashBuffer = vi.fn<(buf: Buffer) => string>()
 
 // Mock global fetch for HTTP image sources
-const mockFetch = jest.fn<(url: string) => Promise<Response>>()
+const mockFetch = vi.fn<(url: string) => Promise<Response>>()
 global.fetch = mockFetch as any
 
 // ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
 
-jest.unstable_mockModule('skia-canvas', () => ({
+vi.mock('skia-canvas', () => ({
   loadImage: mockLoadImage,
-  Image: jest.fn(),
-  Canvas: jest.fn(function (this: any, w: number, h: number) {
+  Image: vi.fn(),
+  Canvas: vi.fn(function (this: any, w: number, h: number) {
     this.width = w
     this.height = h
-    this.getContext = jest.fn(() => ({
-      scale: jest.fn(),
-      save: jest.fn(),
-      restore: jest.fn(),
-      beginPath: jest.fn(),
-      moveTo: jest.fn(),
-      lineTo: jest.fn(),
-      arc: jest.fn(),
-      closePath: jest.fn(),
-      rect: jest.fn(),
-      fill: jest.fn(),
-      stroke: jest.fn(),
-      clip: jest.fn(),
+    this.getContext = vi.fn(() => ({
+      scale: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      closePath: vi.fn(),
+      rect: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      clip: vi.fn(),
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 0,
@@ -58,32 +58,32 @@ jest.unstable_mockModule('skia-canvas', () => ({
       globalCompositeOperation: '',
       imageSmoothingEnabled: true,
       imageSmoothingQuality: 'high',
-      createLinearGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
-      createRadialGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
-      setLineDash: jest.fn(),
-      measureText: jest.fn(() => ({ width: 0, height: 0 })),
-      fillText: jest.fn(),
-      strokeText: jest.fn(),
-      drawImage: jest.fn(),
+      createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      setLineDash: vi.fn(),
+      measureText: vi.fn(() => ({ width: 0, height: 0 })),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      drawImage: vi.fn(),
       font: '',
       textAlign: 'left',
       textBaseline: 'alphabetic',
     }))
-    this.toBufferSync = jest.fn(() => Buffer.from(''))
+    this.toBufferSync = vi.fn(() => Buffer.from(''))
   }),
-  FontLibrary: { use: jest.fn() },
+  FontLibrary: { use: vi.fn() },
 }))
 
-jest.unstable_mockModule('file-type', () => ({
+vi.mock('file-type', () => ({
   fileTypeFromBuffer: mockFileTypeFromBuffer,
   fileTypeFromFile: mockFileTypeFromFile,
 }))
 
-jest.unstable_mockModule('fs', () => ({
-  promises: { readFile: jest.fn(() => Promise.reject(new Error('not found'))) },
+vi.mock('fs', () => ({
+  promises: { readFile: vi.fn(() => Promise.reject(new Error('not found'))) },
 }))
 
-jest.unstable_mockModule('@/util/disk.cache.js', () => ({
+vi.mock('@/util/disk.cache.js', () => ({
   readDiskCache: mockReadDiskCache,
   writeDiskCache: mockWriteDiskCache,
   deleteDiskCache: mockDeleteDiskCache,
@@ -91,47 +91,47 @@ jest.unstable_mockModule('@/util/disk.cache.js', () => ({
 }))
 
 // Minimal yoga-layout mock so BoxNode construction works
-jest.unstable_mockModule('yoga-layout', () => {
+vi.mock('yoga-layout', () => {
   const node = {
-    setWidth: jest.fn(),
-    setHeight: jest.fn(),
-    setAspectRatio: jest.fn(),
-    getComputedWidth: jest.fn(() => 100),
-    getComputedHeight: jest.fn(() => 100),
-    getComputedLayout: jest.fn(() => ({ left: 0, top: 0, width: 100, height: 100 })),
-    getComputedPadding: jest.fn(() => 0),
-    getComputedBorder: jest.fn(() => 0),
-    getBorder: jest.fn(() => 0),
-    calculateLayout: jest.fn(),
-    insertChild: jest.fn(),
-    isDirty: jest.fn(() => false),
-    markDirty: jest.fn(),
-    setFlexDirection: jest.fn(),
-    setAlignItems: jest.fn(),
-    setJustifyContent: jest.fn(),
-    setFlex: jest.fn(),
-    setFlexGrow: jest.fn(),
-    setFlexShrink: jest.fn(),
-    setFlexBasis: jest.fn(),
-    setMargin: jest.fn(),
-    setPadding: jest.fn(),
-    setBorder: jest.fn(),
-    setGap: jest.fn(),
-    setOverflow: jest.fn(),
-    setDisplay: jest.fn(),
-    setPosition: jest.fn(),
-    setPositionType: jest.fn(),
-    setMinWidth: jest.fn(),
-    setMinHeight: jest.fn(),
-    setMaxWidth: jest.fn(),
-    setMaxHeight: jest.fn(),
-    setBoxSizing: jest.fn(),
-    setDirection: jest.fn(),
-    getBoxSizing: jest.fn(() => 0),
-    free: jest.fn(),
+    setWidth: vi.fn(),
+    setHeight: vi.fn(),
+    setAspectRatio: vi.fn(),
+    getComputedWidth: vi.fn(() => 100),
+    getComputedHeight: vi.fn(() => 100),
+    getComputedLayout: vi.fn(() => ({ left: 0, top: 0, width: 100, height: 100 })),
+    getComputedPadding: vi.fn(() => 0),
+    getComputedBorder: vi.fn(() => 0),
+    getBorder: vi.fn(() => 0),
+    calculateLayout: vi.fn(),
+    insertChild: vi.fn(),
+    isDirty: vi.fn(() => false),
+    markDirty: vi.fn(),
+    setFlexDirection: vi.fn(),
+    setAlignItems: vi.fn(),
+    setJustifyContent: vi.fn(),
+    setFlex: vi.fn(),
+    setFlexGrow: vi.fn(),
+    setFlexShrink: vi.fn(),
+    setFlexBasis: vi.fn(),
+    setMargin: vi.fn(),
+    setPadding: vi.fn(),
+    setBorder: vi.fn(),
+    setGap: vi.fn(),
+    setOverflow: vi.fn(),
+    setDisplay: vi.fn(),
+    setPosition: vi.fn(),
+    setPositionType: vi.fn(),
+    setMinWidth: vi.fn(),
+    setMinHeight: vi.fn(),
+    setMaxWidth: vi.fn(),
+    setMaxHeight: vi.fn(),
+    setBoxSizing: vi.fn(),
+    setDirection: vi.fn(),
+    getBoxSizing: vi.fn(() => 0),
+    free: vi.fn(),
   }
   return {
-    default: { Node: { create: jest.fn(() => node) } },
+    default: { Node: { create: vi.fn(() => node) } },
     Direction: { LTR: 0, RTL: 1, Inherit: 2 },
     FlexDirection: { Column: 0, Row: 1 },
     Align: { FlexStart: 0, Center: 1, FlexEnd: 2, Stretch: 3 },
@@ -146,18 +146,18 @@ jest.unstable_mockModule('yoga-layout', () => {
   }
 })
 
-jest.unstable_mockModule('node:worker_threads', () => ({
+vi.mock('node:worker_threads', () => ({
   Worker: class {
     on() {}
     postMessage() {}
     terminate() {}
   },
 }))
-jest.unstable_mockModule('node:fs', () => ({
-  existsSync: jest.fn(() => false),
-  promises: { mkdir: jest.fn(), readFile: jest.fn(() => Promise.reject()), writeFile: jest.fn(), unlink: jest.fn() },
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(() => false),
+  promises: { mkdir: vi.fn(), readFile: vi.fn(() => Promise.reject()), writeFile: vi.fn(), unlink: vi.fn() },
 }))
-jest.unstable_mockModule('node:path', () => ({
+vi.mock('node:path', () => ({
   join: (...args: string[]) => args.join('/'),
   dirname: (p: string) => p.split('/').slice(0, -1).join('/'),
   resolve: (...args: string[]) => args.join('/'),
@@ -174,27 +174,27 @@ const MOCK_IMAGE = { width: 200, height: 100 }
 const TEST_KEY = 'abc123deadbeef'
 
 beforeEach(async () => {
-  jest.resetModules()
+  vi.resetModules()
 
-  jest.unstable_mockModule('skia-canvas', () => ({
+  vi.doMock('skia-canvas', () => ({
     loadImage: mockLoadImage,
-    Image: jest.fn(),
-    Canvas: jest.fn(function (this: any, w: number, h: number) {
+    Image: vi.fn(),
+    Canvas: vi.fn(function (this: any, w: number, h: number) {
       this.width = w
       this.height = h
-      this.getContext = jest.fn(() => ({
-        scale: jest.fn(),
-        save: jest.fn(),
-        restore: jest.fn(),
-        beginPath: jest.fn(),
-        moveTo: jest.fn(),
-        lineTo: jest.fn(),
-        arc: jest.fn(),
-        closePath: jest.fn(),
-        rect: jest.fn(),
-        fill: jest.fn(),
-        stroke: jest.fn(),
-        clip: jest.fn(),
+      this.getContext = vi.fn(() => ({
+        scale: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        arc: vi.fn(),
+        closePath: vi.fn(),
+        rect: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        clip: vi.fn(),
         fillStyle: '',
         strokeStyle: '',
         lineWidth: 0,
@@ -202,31 +202,31 @@ beforeEach(async () => {
         globalCompositeOperation: '',
         imageSmoothingEnabled: true,
         imageSmoothingQuality: 'high',
-        createLinearGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
-        createRadialGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
-        setLineDash: jest.fn(),
-        measureText: jest.fn(() => ({ width: 0, height: 0 })),
-        fillText: jest.fn(),
-        strokeText: jest.fn(),
+        createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+        createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+        setLineDash: vi.fn(),
+        measureText: vi.fn(() => ({ width: 0, height: 0 })),
+        fillText: vi.fn(),
+        strokeText: vi.fn(),
         font: '',
         textAlign: 'left',
         textBaseline: 'alphabetic',
       }))
-      this.toBufferSync = jest.fn(() => Buffer.from(''))
+      this.toBufferSync = vi.fn(() => Buffer.from(''))
     }),
-    FontLibrary: { use: jest.fn() },
+    FontLibrary: { use: vi.fn() },
   }))
 
-  jest.unstable_mockModule('file-type', () => ({
+  vi.doMock('file-type', () => ({
     fileTypeFromBuffer: mockFileTypeFromBuffer,
     fileTypeFromFile: mockFileTypeFromFile,
   }))
 
-  jest.unstable_mockModule('fs', () => ({
-    promises: { readFile: jest.fn(() => Promise.reject(new Error('not found'))) },
+  vi.doMock('fs', () => ({
+    promises: { readFile: vi.fn(() => Promise.reject(new Error('not found'))) },
   }))
 
-  jest.unstable_mockModule('@/util/disk.cache.js', () => ({
+  vi.doMock('@/util/disk.cache.js', () => ({
     readDiskCache: mockReadDiskCache,
     writeDiskCache: mockWriteDiskCache,
     deleteDiskCache: mockDeleteDiskCache,
@@ -388,7 +388,7 @@ describe('RootNode — useDiskCache prop', () => {
 
     const root = makeRootWithImageChild(true)
     // Force a throw after image loading by breaking the canvas setup
-    jest.spyOn(root as any, 'finalizeLayout').mockImplementation(() => {
+    vi.spyOn(root as any, 'finalizeLayout').mockImplementation(() => {
       throw new Error('layout error')
     })
 

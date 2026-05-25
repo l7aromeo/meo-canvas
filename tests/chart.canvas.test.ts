@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals'
+import { vi, type MockInstance } from 'vitest'
 import { Chart, ChartNode } from '@/canvas/chart.canvas.js'
 import { BoxNode } from '@/canvas/layout.canvas.js'
 import { extractFunctions, restoreFunctions } from '@/worker/comlink.pool.js'
@@ -15,21 +15,21 @@ const createMockContext = () => {
     globalAlpha: 1,
     lineCap: 'butt',
     lineJoin: 'miter',
-    save: jest.fn(),
-    restore: jest.fn(),
-    beginPath: jest.fn(),
-    closePath: jest.fn(),
-    moveTo: jest.fn(),
-    lineTo: jest.fn(),
-    arc: jest.fn(),
-    rect: jest.fn(),
-    fill: jest.fn(),
-    stroke: jest.fn(),
-    clip: jest.fn(),
-    fillRect: jest.fn(),
-    strokeRect: jest.fn(),
-    setLineDash: jest.fn(),
-    measureText: jest.fn((text: string) => ({
+    save: vi.fn(),
+    restore: vi.fn(),
+    beginPath: vi.fn(),
+    closePath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    arc: vi.fn(),
+    rect: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    clip: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    setLineDash: vi.fn(),
+    measureText: vi.fn((text: string) => ({
       width: text.length * 8,
       actualBoundingBoxAscent: 10,
       actualBoundingBoxDescent: 3,
@@ -44,9 +44,9 @@ const createMockContext = () => {
       ideographicBaseline: -3,
       lines: [],
     })),
-    fillText: jest.fn(),
-    strokeText: jest.fn(),
-    drawImage: jest.fn(),
+    fillText: vi.fn(),
+    strokeText: vi.fn(),
+    drawImage: vi.fn(),
     filter: '',
     shadowOffsetX: 0,
     shadowOffsetY: 0,
@@ -59,8 +59,8 @@ const createMockContext = () => {
     letterSpacing: '',
     wordSpacing: '',
     fontVariant: 'normal',
-    createLinearGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
-    createRadialGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
     globalCompositeOperation: 'source-over',
   }
   return ctx as unknown as CanvasRenderingContext2D
@@ -155,7 +155,7 @@ describe('ChartNode construction', () => {
   })
 
   it('should warn on dataset length mismatch', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const mismatchedData: CartesianChartData = {
       labels: ['Jan', 'Feb'],
       datasets: [{ label: 'Sales', data: [10, 20, 30], color: '#FF6384' }],
@@ -166,7 +166,7 @@ describe('ChartNode construction', () => {
   })
 
   it('should warn on invalid pie data', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     // Force non-array data for pie chart
     new ChartNode({ type: 'pie', data: 'not-an-array' as any })
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('expects an array'))
@@ -188,7 +188,7 @@ describe('ChartNode rendering - bar chart', () => {
     // Plus legend colored boxes (2 datasets)
     // fillRect is called for bars and legend items
     expect(ctx.fillRect).toHaveBeenCalled()
-    const fillRectCalls = (ctx.fillRect as jest.Mock).mock.calls
+    const fillRectCalls = (ctx.fillRect as unknown as MockInstance).mock.calls
     // At least 6 calls for bar rects (3 labels * 2 datasets)
     expect(fillRectCalls.length).toBeGreaterThanOrEqual(6)
   })
@@ -224,7 +224,7 @@ describe('ChartNode rendering - bar chart', () => {
     await node.render(ctx, 0, 0)
 
     // fillRect still called for bars (6 calls), but no legend boxes
-    const fillRectCalls = (ctx.fillRect as jest.Mock).mock.calls
+    const fillRectCalls = (ctx.fillRect as unknown as MockInstance).mock.calls
     expect(fillRectCalls.length).toBe(6) // only bars, no legend boxes
   })
 })
@@ -241,7 +241,7 @@ describe('ChartNode rendering - line chart', () => {
 
     // arc is called for each data point (4 points in 1 dataset)
     expect(ctx.arc).toHaveBeenCalled()
-    const arcCalls = (ctx.arc as jest.Mock).mock.calls
+    const arcCalls = (ctx.arc as unknown as MockInstance).mock.calls
     expect(arcCalls.length).toBeGreaterThanOrEqual(4)
 
     // stroke is called for the line path + slice borders (at least once for the line)
@@ -258,7 +258,7 @@ describe('ChartNode rendering - line chart', () => {
     expect(ctx.moveTo).toHaveBeenCalled()
     expect(ctx.lineTo).toHaveBeenCalled()
     // 3 lineTo calls for 4 data points (first point uses moveTo)
-    const lineToCalls = (ctx.lineTo as jest.Mock).mock.calls
+    const lineToCalls = (ctx.lineTo as unknown as MockInstance).mock.calls
     expect(lineToCalls.length).toBeGreaterThanOrEqual(3)
   })
 })
@@ -275,12 +275,12 @@ describe('ChartNode rendering - pie chart', () => {
 
     // arc called once per slice (3 slices)
     expect(ctx.arc).toHaveBeenCalled()
-    const arcCalls = (ctx.arc as jest.Mock).mock.calls
+    const arcCalls = (ctx.arc as unknown as MockInstance).mock.calls
     expect(arcCalls.length).toBeGreaterThanOrEqual(3)
 
     // fill called for each slice
     expect(ctx.fill).toHaveBeenCalled()
-    const fillCalls = (ctx.fill as jest.Mock).mock.calls
+    const fillCalls = (ctx.fill as unknown as MockInstance).mock.calls
     expect(fillCalls.length).toBeGreaterThanOrEqual(3)
   })
 
@@ -292,7 +292,7 @@ describe('ChartNode rendering - pie chart', () => {
     await node.render(ctx, 0, 0)
 
     expect(ctx.closePath).toHaveBeenCalled()
-    const closePathCalls = (ctx.closePath as jest.Mock).mock.calls
+    const closePathCalls = (ctx.closePath as unknown as MockInstance).mock.calls
     expect(closePathCalls.length).toBeGreaterThanOrEqual(3)
   })
 })
@@ -308,7 +308,7 @@ describe('ChartNode rendering - doughnut chart', () => {
     await node.render(ctx, 0, 0)
 
     // 2 arcs per slice (outer + inner) * 3 slices = 6 arc calls
-    const arcCalls = (ctx.arc as jest.Mock).mock.calls
+    const arcCalls = (ctx.arc as unknown as MockInstance).mock.calls
     expect(arcCalls.length).toBeGreaterThanOrEqual(6)
   })
 
@@ -326,7 +326,7 @@ describe('ChartNode rendering - doughnut chart', () => {
     await node.render(ctx, 0, 0)
 
     // Verify arc calls exist — inner radius param differs from default (0.6)
-    const arcCalls = (ctx.arc as jest.Mock).mock.calls
+    const arcCalls = (ctx.arc as unknown as MockInstance).mock.calls
     expect(arcCalls.length).toBeGreaterThanOrEqual(6)
 
     // The inner radius arcs should use the custom 0.3 ratio
@@ -357,7 +357,7 @@ describe('ChartNode legend rendering', () => {
 
     // Legend renders colored boxes via fillRect and labels via measureText
     // Bar rects (6) + legend boxes (2 datasets) = at least 8 fillRect calls
-    const fillRectCalls = (ctx.fillRect as jest.Mock).mock.calls
+    const fillRectCalls = (ctx.fillRect as unknown as MockInstance).mock.calls
     expect(fillRectCalls.length).toBeGreaterThanOrEqual(8)
   })
 
@@ -375,13 +375,13 @@ describe('ChartNode legend rendering', () => {
     await node.render(ctx, 0, 0)
 
     // Only bar rects (6), no legend
-    const fillRectCalls = (ctx.fillRect as jest.Mock).mock.calls
+    const fillRectCalls = (ctx.fillRect as unknown as MockInstance).mock.calls
     expect(fillRectCalls.length).toBe(6)
   })
 
   it('should render with custom renderLegendItem function', async () => {
     const ctx = createMockContext()
-    const renderLegendItem = jest.fn(({ color }: any) => {
+    const renderLegendItem = vi.fn(({ color }: any) => {
       return new BoxNode({ width: 60, height: 20, backgroundColor: color })
     })
 
@@ -432,8 +432,8 @@ describe('ChartNode grid rendering', () => {
     expect(ctx.lineTo).toHaveBeenCalled()
     expect(ctx.stroke).toHaveBeenCalled()
 
-    const moveToCalls = (ctx.moveTo as jest.Mock).mock.calls
-    const lineToCalls = (ctx.lineTo as jest.Mock).mock.calls
+    const moveToCalls = (ctx.moveTo as unknown as MockInstance).mock.calls
+    const lineToCalls = (ctx.lineTo as unknown as MockInstance).mock.calls
     // 6 grid lines = 6 moveTo + 6 lineTo
     expect(moveToCalls.length).toBeGreaterThanOrEqual(6)
     expect(lineToCalls.length).toBeGreaterThanOrEqual(6)
