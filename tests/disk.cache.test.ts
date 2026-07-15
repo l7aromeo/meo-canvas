@@ -19,6 +19,10 @@ const TEST_CACHE_DIR = join(process.cwd(), '.cache', 'test-files')
 beforeEach(async () => {
   // Ensure test cache dir exists
   await fs.mkdir(TEST_CACHE_DIR, { recursive: true })
+  // Point the cache module at the isolated dir. Without this, reads/writes hit
+  // the shared default `.cache/files`, where a concurrent test fork's exit-time
+  // clearDiskCache() can wipe entries mid-test (flaky "expected null" races).
+  setDiskCacheDir(TEST_CACHE_DIR)
 })
 
 afterEach(async () => {
@@ -282,9 +286,9 @@ describe('disk.cache', () => {
     })
 
     it('should not throw if cache directory does not exist', async () => {
-      // Remove the dir first
+      // Remove the (isolated) dir first
       try {
-        await fs.rm(join(process.cwd(), '.cache', 'files'), { recursive: true, force: true })
+        await fs.rm(TEST_CACHE_DIR, { recursive: true, force: true })
       } catch {
         // Ignore
       }
@@ -317,7 +321,7 @@ describe('disk.cache', () => {
       expect(onDisk).toEqual(data)
 
       await fs.rm(customDir, { recursive: true, force: true })
-      setDiskCacheDir(join(process.cwd(), '.cache', 'files'))
+      setDiskCacheDir(TEST_CACHE_DIR)
     })
   })
 
@@ -331,6 +335,13 @@ describe('disk.cache', () => {
     const globalForExit = globalThis as typeof globalThis & {
       __diskCacheExit?: DiskCacheExitGlobal
     }
+
+    // The globally-registered exit handler was captured from the module instance
+    // re-imported in the first test, whose _cacheDir is the default. Align the
+    // dir used by writeDiskCache/readDiskCache here with what the handler clears.
+    beforeEach(() => {
+      setDiskCacheDir(join(process.cwd(), '.cache', 'files'))
+    })
 
     it('beforeExit handler clears cache once', async () => {
       await writeDiskCache('before-exit-key', Buffer.from('data'))

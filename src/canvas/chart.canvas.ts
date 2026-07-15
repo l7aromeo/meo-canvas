@@ -630,8 +630,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const chartOptions = this.chartOptions
 
     const renderLegendItem = chartOptions?.renderLegendItem as
-      | ((props: { item: unknown; index: number; color: string }) => BoxNode | null | undefined)
-      | undefined
+      ((props: { item: unknown; index: number; color: string }) => BoxNode | null | undefined) | undefined
 
     if (renderLegendItem) {
       let legendNodes: (BoxNode | null | undefined)[]

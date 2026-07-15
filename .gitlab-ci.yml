@@ -7,6 +7,9 @@ stages:
   - deploy
 
 cache:
+  key:
+    files:
+      - bun.lock
   paths:
     - node_modules/
 

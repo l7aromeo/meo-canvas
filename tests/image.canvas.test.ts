@@ -312,6 +312,112 @@ describe('ImageNode & Image factory', () => {
     })
   })
 
+  // --- 5b. httpOptions ---
+
+  describe('httpOptions', () => {
+    let mockFetch: MockInstance<any>
+
+    beforeEach(() => {
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'image/png' })
+      mockFetch = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new ArrayBuffer(8),
+      }))
+      vi.stubGlobal('fetch', mockFetch)
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('should pass httpOptions as the second argument to fetch for http src', async () => {
+      const httpOptions = { headers: { Authorization: 'Bearer token123' } }
+      const node = new ImageNode({ src: 'https://example.com/img.png', httpOptions })
+      await node.load()
+
+      expect(mockFetch).toHaveBeenCalledWith('https://example.com/img.png', httpOptions)
+    })
+
+    it('should call fetch with undefined options when httpOptions is not provided', async () => {
+      const node = new ImageNode({ src: 'https://example.com/img.png' })
+      await node.load()
+
+      expect(mockFetch).toHaveBeenCalledWith('https://example.com/img.png', undefined)
+    })
+
+    it('should create separate cache entries for same url with different httpOptions', async () => {
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
+      const node1 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { Authorization: 'Bearer A' } } })
+      const node2 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { Authorization: 'Bearer B' } } })
+
+      await node1.load(cache)
+      await node2.load(cache)
+
+      expect(cache.size).toBe(2)
+    })
+
+    it('should reuse the cache entry for same url with identical httpOptions', async () => {
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
+      const node1 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { Authorization: 'Bearer A' } } })
+      const node2 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { Authorization: 'Bearer A' } } })
+
+      await node1.load(cache)
+      await node2.load(cache)
+
+      expect(cache.size).toBe(1)
+    })
+
+    it('should produce a stable cache key regardless of header key ordering', async () => {
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
+      const node1 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { A: '1', B: '2' } } })
+      const node2 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { B: '2', A: '1' } } })
+
+      await node1.load(cache)
+      await node2.load(cache)
+
+      expect(cache.size).toBe(1)
+    })
+
+    it('should handle a Headers instance deterministically in the cache key', async () => {
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
+      const node1 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: new Headers({ Authorization: 'Bearer A' }) } })
+      const node2 = new ImageNode({ src: 'https://example.com/img.png', httpOptions: { headers: { authorization: 'Bearer A' } } })
+
+      await node1.load(cache)
+      await node2.load(cache)
+
+      // Headers normalizes keys to lowercase, so both should collapse to one entry
+      expect(cache.size).toBe(1)
+    })
+
+    it('should not throw and still load when httpOptions contains a circular reference', async () => {
+      const circular: any = { headers: { 'X-Test': '1' } }
+      circular.self = circular
+      const onError = vi.fn()
+      const onLoad = vi.fn()
+      const node = new ImageNode({ src: 'https://example.com/img.png', httpOptions: circular, onError, onLoad })
+
+      await node.load()
+
+      expect(onError).not.toHaveBeenCalled()
+      expect(onLoad).toHaveBeenCalled()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('should not include httpOptions in the cache key for non-http (file) src', async () => {
+      const cache = new Map() as import('@/canvas/image.canvas.js').RenderImageCache
+      const node1 = new ImageNode({ src: 'local.png', httpOptions: { headers: { Authorization: 'Bearer A' } } })
+      const node2 = new ImageNode({ src: 'local.png', httpOptions: { headers: { Authorization: 'Bearer B' } } })
+
+      await node1.load(cache)
+      await node2.load(cache)
+
+      // httpOptions is meaningless for file paths — same file should share a cache entry
+      expect(cache.size).toBe(1)
+    })
+  })
+
   // --- 6. SVG color replacement ---
 
   describe('SVG color replacement', () => {
