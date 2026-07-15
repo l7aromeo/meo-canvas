@@ -836,6 +836,20 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
   src: string | Buffer<ArrayBufferLike>
 
   /**
+   * Request options forwarded to `fetch` when `src` is a remote (`http`/`https`) URL.
+   * Accepts the standard Web `RequestInit` shape — `headers`, `method`, `body`,
+   * `credentials`, `redirect`, `signal`, etc.
+   *
+   * Ignored when `src` is a local file path or a `Buffer` (no request is made).
+   *
+   * When set, the options are also folded into the image cache key, so the same
+   * URL fetched with different headers/method/body is cached separately.
+   * @example { headers: { Authorization: 'Bearer <token>' } }
+   * @default undefined
+   */
+  httpOptions?: RequestInit
+
+  /**
    * Specifies how the image should be resized to fit its container.
    * - `fill`: Stretches the image to fill the container, ignoring an aspect ratio. (Default)
    * - `contain`: Scales the image to fit within the container while preserving an aspect ratio.

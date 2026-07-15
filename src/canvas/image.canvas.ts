@@ -5,6 +5,7 @@ import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.j
 import { promises as fs } from 'fs'
 import { Style } from '@/constant/common.const.js'
 import { hashBuffer, readDiskCache, writeDiskCache } from '@/util/disk.cache.js'
+import { hashHttpOptions } from '@/util/http.options.js'
 
 /**
  * Calculates pixel offset for image positioning based on percentage or pixel values.
@@ -76,7 +77,7 @@ export class ImageNode extends BoxNode {
 
     if (typeof this.props.src === 'string') {
       if (this.props.src.startsWith('http')) {
-        const response = await fetch(this.props.src)
+        const response = await fetch(this.props.src, this.props.httpOptions)
         if (!response.ok) {
           throw new Error(`HTTP error ${response.status} fetching image: ${this.props.src}`)
         }
@@ -168,7 +169,16 @@ export class ImageNode extends BoxNode {
       const load = async () => {
         try {
           const srcHash = typeof this.props.src === 'string' ? hashBuffer(Buffer.from(this.props.src)) : hashBuffer(this.props.src)
-          const cacheKey = this.props.color ? `${srcHash}|${this.props.color}` : srcHash
+          let cacheKey = this.props.color ? `${srcHash}|${this.props.color}` : srcHash
+
+          // httpOptions only affect remote fetches, so fold them into the key
+          // for http(s) sources only — same URL + different headers/body must
+          // not share a cached image.
+          const isHttpSrc = typeof this.props.src === 'string' && this.props.src.startsWith('http')
+          if (isHttpSrc && this.props.httpOptions) {
+            const optionsHash = hashHttpOptions(this.props.httpOptions)
+            if (optionsHash) cacheKey += `|${optionsHash}`
+          }
 
           // 1. Disk cache read — only when disk caching is enabled for this render
           if (diskCacheKeys) {

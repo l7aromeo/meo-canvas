@@ -618,6 +618,7 @@ The `Image` component renders an image. It inherits all `BoxProps` except for `c
 | Prop             | Type                                                   | Description                                                           |
 | ---------------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
 | `src`            | `string | Buffer`                                      | The source URL, file path, or buffer of the image.                    |
+| `httpOptions`    | `RequestInit`                                          | Fetch options (headers, method, body, etc.) applied when `src` is a remote `http`/`https` URL. Ignored for file paths and buffers. Folded into the cache key. |
 | `objectFit`      | `'fill' | 'contain' | 'cover' | 'none' | 'scale-down'` | Specifies how the image should be resized to fit its container.       |
 | `objectPosition` | `object`                                               | Specifies the alignment of the image within its box.                  |
 | `saturate`       | `number`                                               | Adjusts the image's saturation level (0 is grayscale, 1 is original). |
