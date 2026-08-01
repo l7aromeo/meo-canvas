@@ -2,7 +2,7 @@
 
 ## Overview
 
-`@meonode/canvas` renders a declarative component tree into a raster image. It combines a **flexbox layout engine** (yoga-layout) with a **2D drawing library** (skia-canvas), plus an optional **worker-thread pool** (Comlink) for non-blocking server-side rendering.
+`meo-canvas` renders a declarative component tree into a raster image. It combines a **flexbox layout engine** (yoga-layout) with a **2D drawing library** (skia-canvas), plus an optional **worker-thread pool** (Comlink) for non-blocking server-side rendering.
 
 ```
 User Code

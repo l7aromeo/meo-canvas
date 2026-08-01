@@ -1,4 +1,4 @@
-# @meonode/canvas
+# meo-canvas
 
 A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
 functions, similar to the composition style of @meonode/ui.
@@ -41,7 +41,7 @@ rendering to a canvas.
 ## Installation
 
 ```bash
-bun add @meonode/canvas
+bun add meo-canvas
 ```
 
 ## Usage
@@ -51,7 +51,7 @@ bun add @meonode/canvas
 A minimal example that renders a title and description to a PNG file:
 
 ```typescript
-import {Root, Box, Text} from '@meonode/canvas';
+import {Root, Box, Text} from 'meo-canvas';
 
 async function generateImage() {
   const canvas = await Root({
@@ -78,7 +78,7 @@ async function generateImage() {
             fontFamily: 'Roboto',
             color: '#333',
           }),
-          Text('This is a basic example of using @meonode/canvas.', {
+          Text('This is a basic example of using meo-canvas.', {
             fontSize: 18,
             fontFamily: 'Roboto',
             color: '#666',
@@ -102,7 +102,7 @@ A more complete example using `Column`, `Row`, `Image`, and advanced flexbox pro
 layout with a header, content area, and footer:
 
 ```typescript
-import {Root, Column, Row, Text, Image, Style} from '@meonode/canvas';
+import {Root, Column, Row, Text, Image, Style} from 'meo-canvas';
 
 async function generateComplexImage() {
   const canvas = await Root({
@@ -225,7 +225,7 @@ The `Chart` component supports `bar`, `line`, `pie`, and `doughnut` chart types.
 #### Bar Chart
 
 ```typescript
-import {Root, Chart} from '@meonode/canvas';
+import {Root, Chart} from 'meo-canvas';
 
 async function generateBarChart() {
   const canvas = await Root({
@@ -270,7 +270,7 @@ generateBarChart().catch(console.error);
 #### Doughnut Chart with Custom Legend
 
 ```typescript
-import {Root, Chart, Row, Box, Text} from '@meonode/canvas';
+import {Root, Chart, Row, Box, Text} from 'meo-canvas';
 
 async function generateDoughnutChart() {
   const canvas = await Root({
@@ -320,7 +320,7 @@ The `Grid` component simplifies creating complex layouts. It mimics CSS Grid Lay
 A simple grid with 3 columns, each 100 pixels wide.
 
 ```typescript
-import {Root, Grid, Box, Text} from '@meonode/canvas';
+import {Root, Grid, Box, Text} from 'meo-canvas';
 
 async function generateBasicGrid() {
   const canvas = await Root({
@@ -371,7 +371,7 @@ Grid({
 Use `GridItem` (or pass `gridColumn`/`gridRow` props directly to any child) to span multiple columns or rows.
 
 ```typescript
-import {Grid, GridItem, Box, Text} from '@meonode/canvas';
+import {Grid, GridItem, Box, Text} from 'meo-canvas';
 
 Grid({
   templateColumns: ['1fr', '1fr', '1fr'],
@@ -401,10 +401,10 @@ Grid({
 ## Yoga Layout
 
 This library leverages `yoga-layout` for its powerful flexbox engine. Many layout properties directly map to Yoga's
-concepts. You can access Yoga-specific constants through the `Style` export from `@meonode/canvas`.
+concepts. You can access Yoga-specific constants through the `Style` export from `meo-canvas`.
 
 ```typescript
-import {Box, Style} from '@meonode/canvas';
+import {Box, Style} from 'meo-canvas';
 
 Box({
   flexDirection: Style.FlexDirection.Row,
@@ -498,7 +498,7 @@ The `Root()` function returns a Canvas object with the following methods and pro
 | `.release()` | **Required in worker mode.** Releases the Canvas from worker memory. Call when done to prevent memory leaks. |
 
 ```typescript
-import {Root} from '@meonode/canvas'
+import {Root} from 'meo-canvas'
 
 // Render with default worker mode (enabled)
 const canvas = await Root({width: 400, height: 400, children: [...]})
@@ -762,7 +762,7 @@ options: {
 Terminate all worker pools and free worker thread resources. Call this when shutting down a long-running server.
 
 ```typescript
-import {terminate} from '@meonode/canvas'
+import {terminate} from 'meo-canvas'
 
 // Call on server shutdown
 process.on('SIGTERM', () => {
@@ -778,7 +778,7 @@ process.on('SIGTERM', () => {
 Manually clear the entire disk cache directory. Useful for debugging or forced cleanup.
 
 ```typescript
-import {clearDiskCache} from '@meonode/canvas'
+import {clearDiskCache} from 'meo-canvas'
 
 await clearDiskCache()
 ```
@@ -790,7 +790,7 @@ await clearDiskCache()
 Override the default disk cache directory. Must be called before any cache read/write operations.
 
 ```typescript
-import {setDiskCacheDir} from '@meonode/canvas'
+import {setDiskCacheDir} from 'meo-canvas'
 
 setDiskCacheDir('/tmp/my-custom-cache')
 ```
