@@ -41,7 +41,8 @@
             "path": "release/*.tar.gz",
             "label": "Distribution (tar.gz)"
           }
-        ]
+        ],
+        "useJobToken": true
       }
     ]
   ]
