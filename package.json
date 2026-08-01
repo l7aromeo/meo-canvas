@@ -1,5 +1,5 @@
 {
-  "name": "@meonode/canvas",
+  "name": "meo-canvas",
   "version": "1.0.0",
   "description": "A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple functions, similar to the composition style of @meonode/ui.",
   "keywords": [
@@ -17,11 +17,11 @@
   "author": "Ukasyah Rahmatullah Zada",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/meonode/canvas.git"
+    "url": "https://gitlab.com/l7aromeo/meo-canvas.git"
   },
-  "homepage": "https://gitlab.com/meonode/canvas#readme",
+  "homepage": "https://gitlab.com/l7aromeo/meo-canvas#readme",
   "bugs": {
-    "url": "https://gitlab.com/meonode/canvas/issues"
+    "url": "https://gitlab.com/l7aromeo/meo-canvas/issues"
   },
   "publishConfig": {
     "access": "public"

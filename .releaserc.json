@@ -25,7 +25,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "mkdir -p release && tar -czf release/meonode-canvas-${nextRelease.version}.tar.gz dist/"
+        "prepareCmd": "mkdir -p release && tar -czf release/meo-canvas-${nextRelease.version}.tar.gz dist/"
       }
     ],
     [
@@ -41,7 +41,8 @@
             "path": "release/*.tar.gz",
             "label": "Distribution (tar.gz)"
           }
-        ]
+        ],
+        "useJobToken": true
       }
     ]
   ]
