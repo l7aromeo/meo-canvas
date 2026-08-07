@@ -347,9 +347,45 @@ export class RootNode extends ColumnNode {
 
       return this.canvas
     } finally {
+      // Freed before the disk cache is cleaned up, not after. Both run in the same `finally`, but
+      // deleting cache files is asynchronous, and awaiting it first would hold the whole layout
+      // tree in WASM memory across that I/O for no reason. This is the earliest point the tree is
+      // provably dead: layout is read during `super.render`, and nothing consults it afterwards.
+      this.freeLayoutTree()
+
       if (diskCacheKeys?.size) {
         await Promise.allSettled([...diskCacheKeys].map(key => deleteDiskCache(key)))
       }
+    }
+  }
+
+  /**
+   * Releases the Yoga layout tree back to the WASM heap.
+   *
+   * Yoga nodes are allocated inside WebAssembly memory, which the JavaScript collector cannot
+   * see or reclaim: a node stays allocated until something calls `free()` on it, no matter how
+   * unreachable the JavaScript object holding it becomes. Nothing did, so every rendered card
+   * left its entire node tree behind — roughly ten to fifteen megabytes per render for a
+   * moderately sized layout, growing without limit for the life of the process.
+   *
+   * `freeRecursive` releases this node and every descendant, so one call at the root covers the
+   * whole tree. It runs only after the layout has been read and the content drawn; at this point
+   * the tree is dead and nothing reads from it again.
+   *
+   * Guarded against running twice. Freeing an already-freed Yoga node dereferences a stale WASM
+   * pointer, which aborts the process rather than raising an exception a caller could handle.
+   */
+  private _layoutTreeFreed = false
+
+  private freeLayoutTree(): void {
+    if (this._layoutTreeFreed) return
+    this._layoutTreeFreed = true
+    try {
+      this.node.freeRecursive()
+    } catch (e) {
+      // A failure here must not mask the render's own result, and leaking is preferable to
+      // aborting: report it and carry on.
+      console.warn('[RootNode] Failed to free the layout tree:', e)
     }
   }
 }
