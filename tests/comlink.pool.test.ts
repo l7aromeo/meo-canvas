@@ -7,14 +7,13 @@ const mockEndpoint = {
   releaseCanvas: vi.fn(),
 }
 
-vi.mock('node:worker_threads', () => ({
-  Worker: class {
-    on() {
-      return this
-    }
-    terminate() {}
-  },
-}))
+/** Spied so tests can assert *when* threads are created, not just that rendering works. */
+const WorkerMock = vi.fn(function (this: Record<string, unknown>) {
+  this.on = () => this
+  this.terminate = () => {}
+})
+
+vi.mock('node:worker_threads', () => ({ Worker: WorkerMock }))
 
 vi.mock('node:url', () => ({
   fileURLToPath: () => '/mock/worker/comlink.pool.ts',
@@ -40,10 +39,18 @@ beforeEach(async () => {
 })
 
 describe('ComlinkPool', () => {
-  it('should create the specified number of workers', () => {
+  it('should not spawn any worker until the first render', async () => {
     const pool = new ComlinkPool(3)
-    // All 3 workers are idle — render should not queue
-    expect(pool).toBeDefined()
+    // Nothing has been rendered, so no thread should exist yet — the pool grows to fit demand
+    // rather than to fit the core count.
+    expect(WorkerMock).not.toHaveBeenCalled()
+
+    await pool.render({ width: 200 } as any)
+    expect(WorkerMock).toHaveBeenCalledTimes(1)
+
+    // A second sequential render reuses the warm worker instead of spawning a sibling.
+    await pool.render({ width: 200 } as any)
+    expect(WorkerMock).toHaveBeenCalledTimes(1)
     pool.terminate()
   })
 
@@ -58,14 +65,39 @@ describe('ComlinkPool', () => {
 
   it('should delegate callOnCanvas to the correct worker endpoint', async () => {
     const pool = new ComlinkPool(2)
+    // Workers spawn on demand, so one has to render before its index exists. That mirrors real
+    // usage: a workerIdx is only ever obtained from the result of a previous render().
+    await pool.render({ width: 200 } as any)
     await pool.callOnCanvas(0, 1, 'toBuffer', ['png'])
 
     expect(mockEndpoint.callOnCanvas).toHaveBeenCalledWith(1, 'toBuffer', ['png'])
     pool.terminate()
   })
 
-  it('should delegate releaseCanvas to the correct worker endpoint', () => {
+  it('should reject callOnCanvas for a worker that does not exist', async () => {
+    // Reachable in practice: a canvas collected by the FinalizationRegistry after the pool has
+    // terminated still carries its old worker index.
     const pool = new ComlinkPool(2)
+    await expect(pool.callOnCanvas(5, 1, 'toBuffer', ['png'])).rejects.toThrow('Worker 5 is not available')
+    pool.terminate()
+  })
+
+  it('should ignore releaseCanvas for a worker that does not exist', () => {
+    const pool = new ComlinkPool(2)
+    expect(() => pool.releaseCanvas(5, 1)).not.toThrow()
+    expect(mockEndpoint.releaseCanvas).not.toHaveBeenCalled()
+    pool.terminate()
+  })
+
+  it('should refuse to render once terminated', async () => {
+    const pool = new ComlinkPool(2)
+    pool.terminate()
+    await expect(pool.render({ width: 200 } as any)).rejects.toThrow('Pool has been terminated')
+  })
+
+  it('should delegate releaseCanvas to the correct worker endpoint', async () => {
+    const pool = new ComlinkPool(2)
+    await pool.render({ width: 200 } as any)
     pool.releaseCanvas(0, 5)
 
     expect(mockEndpoint.releaseCanvas).toHaveBeenCalledWith(5)
