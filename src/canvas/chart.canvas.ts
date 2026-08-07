@@ -4,6 +4,27 @@ import type { CanvasRenderingContext2D } from 'skia-canvas'
 import { Style } from '@/constant/common.const.js'
 import { TextNode } from '@/canvas/text.canvas.js'
 
+/**
+ * Releases a detached measurement node's Yoga tree.
+ *
+ * Charts build short-lived nodes to measure and draw individual values, labels and the legend.
+ * These are never inserted into the root's tree, so the recursive free that runs at the end of a
+ * render never reaches them — and Yoga nodes live in WASM memory that the JavaScript collector
+ * cannot reclaim. Left alone they accumulate per data point rather than per render, which makes
+ * charts leak far faster than anything else.
+ *
+ * The callbacks that produce these nodes are expected to return a fresh node per item; laying one
+ * out mutates it, so a reused node was already unsafe.
+ */
+const freeDetachedNode = (node?: { node?: { freeRecursive(): void } } | null): void => {
+  try {
+    node?.node?.freeRecursive()
+  } catch (e) {
+    // Never let cleanup abort a render that has otherwise succeeded.
+    console.warn('[ChartNode] Failed to free a measurement node:', e)
+  }
+}
+
 export class ChartNode<T extends ChartType> extends BoxNode {
   private chartData: CartesianChartData | PieChartDataPoint[]
   private chartType: ChartProps<T>['type']
@@ -310,6 +331,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
               valueNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
               const layout = valueNode.node.getComputedLayout()
               await valueNode.render(ctx, valueX - layout.width / 2, valueY - layout.height)
+              freeDetachedNode(valueNode)
             }
           } else {
             TextNode.renderSimpleText(ctx, value.toString(), valueX, valueY, {
@@ -338,6 +360,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
               groupX + (groupWidth - barSpacing) / 2 - layout.width / 2,
               chartY + finalChartHeight + labelHeight / 2 - layout.height / 2,
             )
+            freeDetachedNode(labelNode)
           }
         } else {
           TextNode.renderSimpleText(ctx, displayLabel, groupX + (groupWidth - barSpacing) / 2, chartY + finalChartHeight + labelHeight / 2, {
@@ -468,6 +491,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
             await labelNode.render(ctx, pointX - layout.width / 2, chartY + finalChartHeight + labelHeight / 2 - layout.height / 2)
+            freeDetachedNode(labelNode)
           }
         } else {
           TextNode.renderSimpleText(ctx, displayLabel, pointX, chartY + finalChartHeight + labelHeight / 2, {
@@ -536,6 +560,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
             await labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
+            freeDetachedNode(labelNode)
           }
         } else {
           TextNode.renderSimpleText(ctx, point.label, labelX, labelY, {
@@ -606,6 +631,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
             const layout = labelNode.node.getComputedLayout()
             await labelNode.render(ctx, labelX - layout.width / 2, labelY - layout.height / 2)
+            freeDetachedNode(labelNode)
           }
         } else {
           TextNode.renderSimpleText(ctx, point.label, labelX, labelY, {
@@ -669,6 +695,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         legendContainer.processInitialChildren()
         legendContainer.node.calculateLayout(width, height, Style.Direction.LTR)
         await legendContainer.render(ctx, x, y)
+        freeDetachedNode(legendContainer)
       }
       return
     }

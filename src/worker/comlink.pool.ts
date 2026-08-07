@@ -90,20 +90,56 @@ export class ComlinkPool {
   private idle: number[] = []
   private queue: QueuedTask[] = []
 
-  constructor(size: number) {
-    const workerFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../worker/render.worker.js')
+  private readonly size: number
+  private readonly workerFile: string
 
-    for (let i = 0; i < size; i++) {
-      const worker = new Worker(workerFile)
-      const endpoint = Comlink.wrap<WorkerAPI>(nodeEndpoint(worker))
-      this.workers.push(worker)
-      this.endpoints.push(endpoint)
-      this.idle.push(i)
-    }
+  /**
+   * Tracked explicitly rather than inferred from `endpoints.length`. An empty pool used to mean
+   * "terminated", which was safe only while every worker was created in the constructor. With
+   * lazy spawning an empty pool is also the normal state before the first render, so the two
+   * cases have to be told apart.
+   */
+  private terminated = false
+
+  /**
+   * Workers are spawned on demand rather than up front.
+   *
+   * The pool defaults to one worker per core, and every worker is a full thread with its own
+   * runtime and its own copy of any registered font faces — roughly twelve megabytes each while
+   * completely idle, and eighteen Poppins faces add eight megabytes more to any worker that
+   * actually renders. Allocating that for every core punished machines for having them: a
+   * fourteen-core workstation paid a hundred and eighty-seven megabytes to render one card at a
+   * time, of which twelve threads never rendered anything.
+   *
+   * Spawning lazily means the pool grows to fit real concurrency instead of the core count. A
+   * caller that renders sequentially ends up with exactly one worker; a caller that renders eight
+   * cards at once still gets eight. `size` remains the ceiling, so nothing that relied on the
+   * concurrency limit changes.
+   */
+  constructor(size: number) {
+    this.size = size
+    this.workerFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../worker/render.worker.js')
   }
 
+  /** Adds one worker to the pool and returns its index. */
+  private spawn(): number {
+    const idx = this.workers.length
+    const worker = new Worker(this.workerFile)
+    this.workers.push(worker)
+    this.endpoints.push(Comlink.wrap<WorkerAPI>(nodeEndpoint(worker)))
+    return idx
+  }
+
+  /**
+   * Prefers an already-warm worker over a new one. A worker that has rendered before has its
+   * fonts loaded and its runtime warm, so reusing it is both faster and cheaper than spawning a
+   * sibling that would have to repeat that work.
+   */
   private acquire(): number | null {
-    return this.idle.pop() ?? null
+    const reused = this.idle.pop()
+    if (reused !== undefined) return reused
+    if (this.terminated) return null
+    return this.workers.length < this.size ? this.spawn() : null
   }
 
   private release(idx: number) {
@@ -112,9 +148,10 @@ export class ComlinkPool {
   }
 
   private drain() {
-    while (this.queue.length > 0 && this.idle.length > 0) {
+    while (this.queue.length > 0) {
+      const idx = this.acquire()
+      if (idx === null) return
       const task = this.queue.shift()!
-      const idx = this.idle.pop()!
       void this.executeRender(idx, task.props, task.callFn, task.resolve, task.reject)
     }
   }
@@ -137,7 +174,7 @@ export class ComlinkPool {
   }
 
   async render(props: RootProps): Promise<PoolRenderResult> {
-    if (this.endpoints.length === 0) {
+    if (this.terminated) {
       throw new Error('[ComlinkPool] Pool has been terminated')
     }
 
@@ -196,14 +233,22 @@ export class ComlinkPool {
   }
 
   callOnCanvas(workerIdx: number, canvasId: number, method: string, args: unknown[]): Promise<Buffer | string | void> {
-    return this.endpoints[workerIdx].callOnCanvas(canvasId, method, args) as Promise<Buffer | string | void>
+    // The endpoint can legitimately be gone: a canvas released by the FinalizationRegistry may be
+    // collected after the pool has terminated. Rejecting is clearer than dereferencing undefined,
+    // which surfaced as an unrelated TypeError.
+    const endpoint = this.endpoints[workerIdx]
+    if (!endpoint) return Promise.reject(new Error(`[ComlinkPool] Worker ${workerIdx} is not available`))
+    return endpoint.callOnCanvas(canvasId, method, args) as Promise<Buffer | string | void>
   }
 
   releaseCanvas(workerIdx: number, canvasId: number): void {
-    this.endpoints[workerIdx].releaseCanvas(canvasId)
+    // Best-effort: this is also reached from the FinalizationRegistry, which can run after the
+    // pool is gone. Nothing to release in that case.
+    this.endpoints[workerIdx]?.releaseCanvas(canvasId)
   }
 
   terminate() {
+    this.terminated = true
     this.workers.forEach(w => w.terminate())
     this.workers = []
     this.endpoints = []
