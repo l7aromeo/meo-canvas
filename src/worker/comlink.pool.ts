@@ -1,7 +1,8 @@
-import { Worker } from 'node:worker_threads'
+import { MessageChannel, Worker } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
 import * as path from 'node:path'
 import { Comlink, nodeEndpoint } from '@/worker/comlink.setup.js'
+import { SyncChannel } from '@/worker/sync.bridge.js'
 import type { Remote } from 'comlink'
 import type { WorkerAPI, RenderResult, CallFn } from '@/worker/worker.types.js'
 import type { RootProps } from '@/canvas/canvas.type.js'
@@ -87,6 +88,7 @@ export function restoreFunctions<T>(obj: T, callFn: (id: number, ...args: unknow
 export class ComlinkPool {
   private workers: Worker[] = []
   private endpoints: Remote<WorkerAPI>[] = []
+  private syncChannels: SyncChannel[] = []
   private idle: number[] = []
   private queue: QueuedTask[] = []
 
@@ -124,9 +126,19 @@ export class ComlinkPool {
   /** Adds one worker to the pool and returns its index. */
   private spawn(): number {
     const idx = this.workers.length
-    const worker = new Worker(this.workerFile)
+
+    // A second, raw port alongside Comlink's. Comlink owns `parentPort` and speaks only promises,
+    // so the synchronous half of the Canvas API needs a channel of its own.
+    const { port1, port2 } = new MessageChannel()
+    const worker = new Worker(this.workerFile, { workerData: { syncPort: port2 }, transferList: [port2] })
+
+    // Nothing listens on `port1` — replies are drained by `receiveMessageOnPort` — but an active
+    // port still holds the event loop open and would keep a finished process alive.
+    port1.unref?.()
+
     this.workers.push(worker)
     this.endpoints.push(Comlink.wrap<WorkerAPI>(nodeEndpoint(worker)))
+    this.syncChannels.push(new SyncChannel(port1))
     return idx
   }
 
@@ -241,6 +253,21 @@ export class ComlinkPool {
     return endpoint.callOnCanvas(canvasId, method, args) as Promise<Buffer | string | void>
   }
 
+  /**
+   * Runs a `*Sync` method on a canvas and blocks until the worker answers.
+   *
+   * Head-of-line blocking is real and inherent: a Canvas is native memory pinned to the worker
+   * that drew it, so a sync call queues behind whatever that worker is currently rendering. The
+   * wait is bounded by `SyncChannel`'s timeout rather than left to hang forever.
+   */
+  syncCall(workerIdx: number, canvasId: number, method: string, args: unknown[]): unknown {
+    const channel = this.syncChannels[workerIdx]
+    if (!channel) {
+      throw new Error(`[ComlinkPool] Worker ${workerIdx} is not available`)
+    }
+    return channel.call(canvasId, method, args)
+  }
+
   releaseCanvas(workerIdx: number, canvasId: number): void {
     // Best-effort: this is also reached from the FinalizationRegistry, which can run after the
     // pool is gone. Nothing to release in that case.
@@ -249,9 +276,11 @@ export class ComlinkPool {
 
   terminate() {
     this.terminated = true
+    this.syncChannels.forEach(c => c.close())
     this.workers.forEach(w => w.terminate())
     this.workers = []
     this.endpoints = []
+    this.syncChannels = []
     this.idle = []
     this.queue = []
   }

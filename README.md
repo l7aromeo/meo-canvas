@@ -44,6 +44,19 @@ rendering to a canvas.
 bun add meo-canvas
 ```
 
+Installing with **bun** also needs this in your own `package.json`:
+
+```json
+{
+  "trustedDependencies": ["skia-canvas"]
+}
+```
+
+`skia-canvas` downloads a native binary from a postinstall script, and bun only runs those
+for packages a project trusts. The list is not inherited from dependencies, so without this entry
+the install reports success and the renderer then fails at runtime with a missing `skia.node`.
+npm, pnpm and yarn run the script without any extra configuration.
+
 ## Usage
 
 ### Simple Example
@@ -458,17 +471,31 @@ The `Root()` function returns a Canvas object with the following methods and pro
 ##### Export Methods
 
 
-| Method         | Signature                                                            | Description                                                                  |
-| -------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `toBufferSync` | `(format?: ExportFormat, options?: ExportOptions) => Buffer`         | Synchronously returns a buffer. In worker mode, returns the pre-encoded PNG. |
-| `toBuffer`     | `(format: ExportFormat, options?: ExportOptions) => Promise<Buffer>` | Asynchronously encodes to the specified format.                              |
-| `toURL`        | `(format: ExportFormat, options?: ExportOptions) => Promise<string>` | Returns a data URL.                                                          |
-| `toURLSync`    | `(format?: ExportFormat, options?: ExportOptions) => string`         | Synchronously returns a data URL (from pre-encoded PNG in worker mode).      |
-| `toFile`       | `(filename: string, options?: SaveOptions) => Promise<void>`         | Saves the canvas to a file.                                                  |
-| `toSharp`      | `(options?: RenderOptions) => Promise<Buffer>`                       | Returns a Sharp instance buffer for further processing.                      |
-| `toSharpSync`  | `(options?: RenderOptions) => never`                                 | **Throws error.** Use `toSharp()` instead in worker mode.                    |
+| Method          | Signature                                                            | Description                                                       |
+| --------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `toBuffer`      | `(format: ExportFormat, options?: ExportOptions) => Promise<Buffer>` | Encodes to the given format. **Preferred** — see the note below.  |
+| `toBufferSync`  | `(format?: ExportFormat, options?: ExportOptions) => Buffer`         | Same, blocking the calling thread until the encode finishes.      |
+| `toURL`         | `(format: ExportFormat, options?: ExportOptions) => Promise<string>` | Returns a data URL.                                               |
+| `toURLSync`     | `(format?: ExportFormat, options?: ExportOptions) => string`         | Blocking data URL.                                                |
+| `toDataURL`     | `(format?: ExportFormat, quality?: number) => string`                | Blocking data URL, with a `0`–`1` quality shorthand.              |
+| `toFile`        | `(filename: string, options?: SaveOptions) => Promise<void>`         | Saves the canvas to a file.                                       |
+| `toFileSync`    | `(filename: string, options?: SaveOptions) => void`                  | Blocking file write.                                              |
+| `toSharp`       | `(options?: RenderOptions) => Promise<Buffer>`                       | Encoded buffer. Returns a `Sharp` from 5.0.0 onward.              |
+| `toSharpSync`   | `(options?: RenderOptions) => never`                                 | **Throws** in worker mode. Works from 5.0.0 onward.               |
+| `saveAs`        | `(filename: string, options?: SaveOptions) => Promise<void>`         | *Deprecated* — use `toFile()`.                                    |
+| `saveAsSync`    | `(filename: string, options?: SaveOptions) => void`                  | *Deprecated* — use `toFileSync()`.                                |
+| `toDataURLSync` | `(format?: ExportFormat, options?: ExportOptions) => string`         | *Deprecated* — use `toDataURL()`.                                 |
 
 **Supported Export Formats:** `'png'`, `'jpg'` (or `'jpeg'`), `'webp'`, `'pdf'`, `'svg'`, `'raw'`
+
+> **Prefer the async methods in worker mode.** Both produce identical bytes, but `toBuffer()` runs
+> the encode off the event loop, while `toBufferSync()` blocks the calling thread for its whole
+> duration — the same way a synchronous method on a plain Canvas does. A sync call also queues
+> behind whatever its worker is currently rendering, because a Canvas is native memory pinned to the
+> thread that drew it.
+
+Repeated sync calls for the same format and options are served from a cache, so asking twice costs
+one encode.
 
 ##### Convenience Getters
 
@@ -485,10 +512,19 @@ The `Root()` function returns a Canvas object with the following methods and pro
 ##### Canvas Properties
 
 
-| Property  | Type     | Description                            |
-| --------- | -------- | -------------------------------------- |
-| `.width`  | `number` | Canvas width in pixels (after scale).  |
-| `.height` | `number` | Canvas height in pixels (after scale). |
+| Property  | Type            | Description                                        |
+| --------- | --------------- | -------------------------------------------------- |
+| `.width`  | `number`        | Canvas width in pixels (after scale).              |
+| `.height` | `number`        | Canvas height in pixels (after scale).             |
+| `.gpu`    | `boolean`       | Whether the render used the GPU.                   |
+| `.engine` | `EngineDetails` | Renderer, graphics API, device and thread count.   |
+
+##### Not available in worker mode
+
+`getContext()`, `newPage()` and `pages` each hand back a live rendering context bound to native
+memory inside the worker, which cannot cross a thread boundary — proxying one would mean a round
+trip per drawing call. They throw in worker mode. Use `Root({ workerMode: false })` if you need to
+drive a context directly; drawing is otherwise expressed as a component tree.
 
 ##### Memory Management (Worker Mode)
 

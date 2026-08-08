@@ -1,5 +1,5 @@
 import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
-import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
+import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions, EngineDetails } from 'skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import type {
   BaseProps,
@@ -59,42 +59,116 @@ export function terminate() {
 }
 
 /**
- * Proxies all skia-canvas Canvas APIs to a Canvas instance living inside a worker thread.
- * Sync methods (toBufferSync, toURLSync) return from a pre-encoded PNG buffer.
- * Async methods (toBuffer, toURL, toFile, getters) delegate to the worker.
+ * Restores the `Buffer` identity that a thread hop strips.
+ *
+ * Structured clone preserves the bytes but not the subclass, so anything arriving from a worker is
+ * a plain `Uint8Array` no matter what the signature says. Callers notice the moment they reach for
+ * a Buffer-only method: `.toString('utf8')` silently falls through to `Array.prototype.toString`
+ * and yields `"60,63,120,109"` instead of `"<?xm"`, with no error to point at.
+ *
+ * The view is wrapped, not copied — this stays O(1) even for a multi-megabyte raw export.
  */
-class WorkerCanvas {
+function asBuffer(value: unknown): Buffer {
+  const bytes = value as Uint8Array
+  return Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+}
+
+/**
+ * A Canvas that lives in a worker thread.
+ *
+ * Every method behaves as its counterpart on a real Canvas does. Sync methods block the calling
+ * thread while the worker runs the real call (see {@link SyncChannel}); async methods go through
+ * Comlink. The two members that cannot be honoured — `getContext()` and `newPage()` — say so
+ * instead of returning something that only resembles the real thing.
+ */
+export class WorkerCanvas {
   readonly width: number
   readonly height: number
-  private readonly _buffer: Buffer
+  /** Snapshots, not proxies: neither can change once the canvas has been rendered. */
+  readonly gpu: boolean
+  readonly engine: EngineDetails
+
   private readonly _pool: ComlinkPoolType
   private readonly _workerIdx: number
   private readonly _canvasId: number
 
+  /**
+   * Encoded results, keyed by format and options.
+   *
+   * The canvas is immutable once rendered — nothing here can draw to it — so a repeated
+   * `toBufferSync('webp')` is guaranteed to produce identical bytes and is served from here rather
+   * than paying a second round trip and a second encode.
+   */
+  private readonly _cache = new Map<string, Buffer | string>()
+
   constructor(opts: PoolRenderResult & { pool: ComlinkPoolType }) {
-    this._buffer = opts.buffer
     this.width = opts.width
     this.height = opts.height
+    this.gpu = opts.gpu
+    this.engine = opts.engine
     this._pool = opts.pool
     this._workerIdx = opts.workerIdx
     this._canvasId = opts.canvasId
     canvasRegistry.register(this, { workerIdx: opts.workerIdx, canvasId: opts.canvasId }, this)
   }
 
-  // --- Sync methods: return from pre-encoded PNG buffer ---
-
-  toBufferSync(_format?: ExportFormat, _options?: ExportOptions): Buffer {
-    return this._buffer
+  private _sync(method: string, args: unknown[]): unknown {
+    return this._pool.syncCall(this._workerIdx, this._canvasId, method, args)
   }
 
-  toURLSync(_format?: ExportFormat, _options?: ExportOptions): string {
-    return `data:image/png;base64,${this._buffer.toString('base64')}`
+  /**
+   * Sync call whose result is worth keeping. Only for methods that return data, never files.
+   *
+   * `transform` runs once, on the way into the cache, so a repeat call costs a Map lookup and
+   * returns the identical instance rather than re-wrapping the bytes.
+   */
+  private _syncCached<T extends Buffer | string>(method: string, args: unknown[], transform: (value: unknown) => T): T {
+    const key = `${method}:${JSON.stringify(args)}`
+    const hit = this._cache.get(key)
+    if (hit !== undefined) return hit as T
+    const value = transform(this._sync(method, args))
+    this._cache.set(key, value)
+    return value
+  }
+
+  // --- Sync methods: block on the worker, honour the format actually asked for ---
+
+  toBufferSync(format: ExportFormat = 'png', options?: ExportOptions): Buffer {
+    return this._syncCached<Buffer>('toBufferSync', [format, options], asBuffer)
+  }
+
+  toURLSync(format: ExportFormat = 'png', options?: ExportOptions): string {
+    return this._syncCached<string>('toURLSync', [format, options], String)
+  }
+
+  /**
+   * Encodes to a data URL, blocking on the worker.
+   * @deprecated `toDataURL()` is synchronous; use it instead.
+   */
+  toDataURLSync(format: ExportFormat = 'png', options?: ExportOptions): string {
+    return this._syncCached<string>('toDataURLSync', [format, options], String)
+  }
+
+  toDataURL(format: ExportFormat = 'png', quality?: number): string {
+    return this._syncCached<string>('toDataURL', [format, quality], String)
+  }
+
+  toFileSync(filename: string, options?: SaveOptions): void {
+    this._sync('toFileSync', [filename, options])
+  }
+
+  /**
+   * Writes the canvas to disk from the worker thread, blocking until it lands.
+   * @deprecated Use {@link WorkerCanvas.toFileSync} instead.
+   */
+  saveAsSync(filename: string, options?: SaveOptions): void {
+    this._sync('saveAsSync', [filename, options])
   }
 
   // --- Async methods: delegate to worker via Comlink ---
 
   toBuffer(format: ExportFormat, options?: ExportOptions): Promise<Buffer> {
-    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toBuffer', [format, options]) as Promise<Buffer>
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toBuffer', [format, options]).then(asBuffer)
   }
 
   toURL(format: ExportFormat, options?: ExportOptions): Promise<string> {
@@ -105,10 +179,29 @@ class WorkerCanvas {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toFile', [filename, options]) as Promise<void>
   }
 
+  /**
+   * Writes the canvas to disk from the worker thread.
+   * @deprecated Use {@link WorkerCanvas.toFile} instead.
+   */
+  saveAs(filename: string, options?: SaveOptions): Promise<void> {
+    return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'saveAs', [filename, options]) as Promise<void>
+  }
+
+  /**
+   * Still returns a Buffer here, where a real Canvas returns a `Sharp`.
+   *
+   * Correcting it changes the return type and would break every existing caller, so it is left
+   * alone on this line and fixed in 5.0.0. Everything else on this class now matches the real
+   * Canvas.
+   */
   toSharp(options?: RenderOptions): Promise<Buffer> {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toSharp', [options]) as Promise<Buffer>
   }
 
+  /**
+   * Throws in worker mode, because `toSharp()` here resolves a Buffer rather than a Sharp.
+   * @deprecated Use {@link WorkerCanvas.toSharp}; both are corrected in 5.0.0.
+   */
   toSharpSync(_options?: RenderOptions): never {
     throw new Error('[canvas] toSharpSync() is not available in worker mode — use toSharp() instead')
   }
@@ -134,10 +227,31 @@ class WorkerCanvas {
     return this.toBuffer('raw')
   }
 
+  // --- Members a worker-held canvas genuinely cannot provide ---
+
+  /**
+   * `getContext`, `newPage` and `pages` all hand back a live `CanvasRenderingContext2D` bound to
+   * native memory in the worker. Proxying one would mean a thread round trip per `fillRect`, so
+   * these throw rather than return something that only looks like a context. Drawing is expressed
+   * as a component tree here, which is what the worker replays on the other side.
+   */
+  getContext(): never {
+    throw new Error('[canvas] getContext() is not available in worker mode — describe drawing with a component tree, or use Root({ workerMode: false })')
+  }
+
+  newPage(): never {
+    throw new Error('[canvas] newPage() is not available in worker mode — use Root({ workerMode: false })')
+  }
+
+  get pages(): never {
+    throw new Error('[canvas] pages is not available in worker mode — use Root({ workerMode: false })')
+  }
+
   /** Release the Canvas from worker memory. Call when done with this object. */
   release(): void {
     this._pool.releaseCanvas(this._workerIdx, this._canvasId)
     canvasRegistry.unregister(this)
+    this._cache.clear()
   }
 }
 
@@ -422,6 +536,8 @@ export async function Root(props: RootProps): Promise<Canvas | (Canvas & { relea
       _workerPool = new ComlinkPool(workerPoolSize)
     }
     const result = await _workerPool.render(props)
+    // The cast stays on this line: narrowing the public type to WorkerCanvas would break callers
+    // that annotate with Canvas. 5.0.0 returns WorkerCanvas honestly.
     return new WorkerCanvas({ ...result, pool: _workerPool }) as unknown as Canvas & { release(): void }
   }
 
