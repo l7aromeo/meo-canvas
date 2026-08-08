@@ -7,13 +7,22 @@ function asCanvas(mock: object): Canvas {
 }
 
 describe('createCanvasHandlers', () => {
-  it('stores canvas on render and returns png buffer metadata', async () => {
+  const engine = { renderer: 'CPU', api: 'Vulkan', device: 'mock', threads: 1 } as const
+
+  /**
+   * Rendering must not encode anything. It used to eagerly produce a PNG that most callers threw
+   * away, and that buffer was then returned from every sync method regardless of the format asked
+   * for — the reason `toBufferSync('svg')` handed back PNG bytes.
+   */
+  it('stores the canvas on render and encodes nothing', async () => {
     const canvases = new Map<number, Canvas>()
     let nextId = 0
     const mockCanvas = {
       toBufferSync: vi.fn(() => Buffer.from('png-bytes')),
       width: 400,
       height: 300,
+      gpu: true,
+      engine,
     }
 
     const handlers = createCanvasHandlers({
@@ -24,14 +33,48 @@ describe('createCanvasHandlers', () => {
 
     const result = await handlers.render({ width: 400, height: 300 } as any)
 
-    expect(result).toEqual({
-      canvasId: 0,
-      buffer: Buffer.from('png-bytes'),
-      width: 400,
-      height: 300,
-    })
+    expect(result).toEqual({ canvasId: 0, width: 400, height: 300, gpu: true, engine })
     expect(canvases.get(0)).toBe(mockCanvas)
-    expect(mockCanvas.toBufferSync).toHaveBeenCalledWith('png')
+    expect(mockCanvas.toBufferSync).not.toHaveBeenCalled()
+  })
+
+  it('callSync runs the real method with the format it was given', () => {
+    const mockCanvas = {
+      toBufferSync: vi.fn((format: string) => Buffer.from(`${format}-bytes`)),
+      width: 100,
+      height: 100,
+    }
+    const handlers = createCanvasHandlers({
+      canvases: new Map<number, Canvas>([[0, asCanvas(mockCanvas)]]),
+      getNextCanvasId: () => 1,
+      renderRoot: vi.fn(),
+    })
+
+    expect(handlers.callSync(0, 'toBufferSync', ['svg'])).toEqual(Buffer.from('svg-bytes'))
+    expect(mockCanvas.toBufferSync).toHaveBeenCalledWith('svg')
+  })
+
+  /** `method` arrives as a string over a port, so the dispatch must not be an open lookup. */
+  it('callSync refuses methods outside the allowlist', () => {
+    const mockCanvas = { constructor: vi.fn(), toBufferSync: vi.fn(), width: 1, height: 1 }
+    const handlers = createCanvasHandlers({
+      canvases: new Map<number, Canvas>([[0, asCanvas(mockCanvas)]]),
+      getNextCanvasId: () => 1,
+      renderRoot: vi.fn(),
+    })
+
+    expect(() => handlers.callSync(0, 'constructor', [])).toThrow('not callable synchronously')
+    expect(() => handlers.callSync(0, 'toBuffer', ['png'])).toThrow('not callable synchronously')
+  })
+
+  it('callSync throws for a missing canvas', () => {
+    const handlers = createCanvasHandlers({
+      canvases: new Map(),
+      getNextCanvasId: () => 0,
+      renderRoot: vi.fn(),
+    })
+
+    expect(() => handlers.callSync(99, 'toBufferSync', ['png'])).toThrow('Canvas 99 not found')
   })
 
   it('throws when callOnCanvas targets missing canvas', async () => {
@@ -112,9 +155,9 @@ describe('createCanvasHandlers', () => {
     expect(mockCanvas.toFile).toHaveBeenCalledWith('output.png', { quality: 1 })
   })
 
-  it('delegates toSharp and returns buffer', async () => {
+  it('delegates saveAs to canvas', async () => {
     const mockCanvas = {
-      toSharp: vi.fn(() => ({ toBuffer: vi.fn(async () => Buffer.from('sharp')) })),
+      saveAs: vi.fn(async () => undefined),
       toBufferSync: vi.fn(),
       width: 100,
       height: 100,
@@ -126,9 +169,25 @@ describe('createCanvasHandlers', () => {
       renderRoot: vi.fn(),
     })
 
-    const buf = await handlers.callOnCanvas(0, 'toSharp', [{}])
-    expect(buf).toEqual(Buffer.from('sharp'))
-    expect(mockCanvas.toSharp).toHaveBeenCalledWith({})
+    await handlers.callOnCanvas(0, 'saveAs', ['out.png', { quality: 1 }])
+    expect(mockCanvas.saveAs).toHaveBeenCalledWith('out.png', { quality: 1 })
+  })
+
+  /**
+   * `toSharp` returns a Sharp instance, which cannot cross a thread boundary. It is built on the
+   * calling thread from raw pixels instead, so the worker must not offer it.
+   */
+  it('refuses toSharp over the async channel', async () => {
+    const mockCanvas = { toSharp: vi.fn(), toBufferSync: vi.fn(), width: 1, height: 1 }
+    const canvases = new Map<number, Canvas>([[0, asCanvas(mockCanvas)]])
+    const handlers = createCanvasHandlers({
+      canvases,
+      getNextCanvasId: () => 1,
+      renderRoot: vi.fn(),
+    })
+
+    await expect(handlers.callOnCanvas(0, 'toSharp', [{}])).rejects.toThrow('Unknown method: toSharp')
+    expect(mockCanvas.toSharp).not.toHaveBeenCalled()
   })
 
   it('throws for unknown callOnCanvas method', async () => {

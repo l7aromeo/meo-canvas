@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
-const mockRenderResult = { canvasId: 1, buffer: Buffer.from('png'), width: 100, height: 100 }
+const mockEngine = { renderer: 'CPU', api: 'Vulkan', device: 'mock', threads: 1 } as const
+const mockRenderResult = { canvasId: 1, width: 100, height: 100, gpu: false, engine: mockEngine }
 const mockEndpoint = {
   render: vi.fn<() => Promise<typeof mockRenderResult>>().mockResolvedValue(mockRenderResult),
   callOnCanvas: vi.fn<() => Promise<Buffer>>().mockResolvedValue(Buffer.from('result')),
@@ -13,7 +14,14 @@ const WorkerMock = vi.fn(function (this: Record<string, unknown>) {
   this.terminate = () => {}
 })
 
-vi.mock('node:worker_threads', () => ({ Worker: WorkerMock }))
+/** Ports handed to `SyncChannel`; the pool creates one channel per worker it spawns. */
+const portMock = () => ({ postMessage: vi.fn(), close: vi.fn(), unref: vi.fn(), on: vi.fn() })
+const MessageChannelMock = vi.fn(function (this: Record<string, unknown>) {
+  this.port1 = portMock()
+  this.port2 = portMock()
+})
+
+vi.mock('node:worker_threads', () => ({ Worker: WorkerMock, MessageChannel: MessageChannelMock }))
 
 vi.mock('node:url', () => ({
   fileURLToPath: () => '/mock/worker/comlink.pool.ts',
@@ -186,5 +194,42 @@ describe('ComlinkPool', () => {
     const [, callFn] = mockEndpoint.render.mock.calls[0] as unknown as [any, any]
     expect(callFn).toBeUndefined()
     pool.terminate()
+  })
+
+  it('should give each spawned worker its own sync channel', async () => {
+    const pool = new ComlinkPool(2)
+    await pool.render({ width: 100 } as any)
+
+    // One channel per worker — a shared one would let a second sync call clobber the control word
+    // a first caller is still parked on.
+    expect(MessageChannelMock).toHaveBeenCalledTimes(1)
+    pool.terminate()
+  })
+
+  it('should route syncCall to the channel of the owning worker', async () => {
+    const pool = new ComlinkPool(1)
+    await pool.render({ width: 100 } as any)
+
+    const channel = (pool as any).syncChannels[0]
+    const spy = vi.spyOn(channel, 'call').mockReturnValue(Buffer.from('svg'))
+
+    expect(pool.syncCall(0, 42, 'toBufferSync', ['svg'])).toEqual(Buffer.from('svg'))
+    expect(spy).toHaveBeenCalledWith(42, 'toBufferSync', ['svg'])
+    pool.terminate()
+  })
+
+  it('should reject syncCall for a worker that does not exist', () => {
+    const pool = new ComlinkPool(1)
+    expect(() => pool.syncCall(3, 1, 'toBufferSync', ['png'])).toThrow('Worker 3 is not available')
+    pool.terminate()
+  })
+
+  it('should close sync channels on terminate', async () => {
+    const pool = new ComlinkPool(1)
+    await pool.render({ width: 100 } as any)
+
+    const port = (pool as any).syncChannels[0].port
+    pool.terminate()
+    expect(port.close).toHaveBeenCalled()
   })
 })
