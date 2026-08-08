@@ -3,7 +3,7 @@ import { Comlink, nodeEndpoint } from '@/worker/comlink.setup.js'
 import { restoreFunctions } from '@/worker/comlink.pool.js'
 import { createCanvasHandlers } from '@/worker/canvas-handlers.js'
 import { RootNode } from '@/canvas/root.canvas.js'
-import type { Canvas } from 'skia-canvas'
+import type { Canvas } from 'phyron-skia-canvas'
 import type { WorkerAPI, CallFn } from '@/worker/worker.types.js'
 
 if (!parentPort) {

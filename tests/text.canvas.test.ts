@@ -1,14 +1,14 @@
 import { vi } from 'vitest'
-import type { CanvasRenderingContext2D } from 'skia-canvas'
+import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
 import Yoga, { Style } from '@/constant/common.const.js'
 import { ColumnNode } from '@/canvas/layout.canvas.js'
 import { createMockCanvasContext, createTestTextMetrics } from './helpers/mock-canvas-context.js'
 
-vi.mock('skia-canvas', () => import('@/__mocks__/skia-canvas.js'))
+vi.mock('phyron-skia-canvas', () => import('@/__mocks__/phyron-skia-canvas.js'))
 
 let TextNode: typeof import('@/canvas/text.canvas.js').TextNode
 let Text: typeof import('@/canvas/text.canvas.js').Text
-let skiaMockCtx: typeof import('@/__mocks__/skia-canvas.js').mockCanvasContext
+let skiaMockCtx: typeof import('@/__mocks__/phyron-skia-canvas.js').mockCanvasContext
 
 const chartWidthPerChar = 8
 
@@ -42,7 +42,7 @@ async function renderText(node: InstanceType<typeof TextNode>, parentWidth: numb
 describe('TextNode & Text factory', () => {
   beforeEach(async () => {
     vi.resetModules()
-    ;({ mockCanvasContext: skiaMockCtx } = await import('@/__mocks__/skia-canvas.js'))
+    ;({ mockCanvasContext: skiaMockCtx } = await import('@/__mocks__/phyron-skia-canvas.js'))
 
     skiaMockCtx.measureText.mockImplementation((text: string) => measureByCharLength(text))
 

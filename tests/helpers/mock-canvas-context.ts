@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { CanvasRenderingContext2D, TextMetrics } from 'skia-canvas'
+import type { CanvasRenderingContext2D, TextMetrics } from 'phyron-skia-canvas'
 
 export function createTestTextMetrics(overrides: Partial<TextMetrics> & Pick<TextMetrics, 'width'>): TextMetrics {
   const { width, ...rest } = overrides
@@ -64,8 +64,16 @@ export function createMockCanvasContext(): CanvasRenderingContext2D {
     letterSpacing: 'normal',
     wordSpacing: 'normal',
     fontVariant: 'normal',
-    createLinearGradient: vi.fn<CanvasRenderingContext2D['createLinearGradient']>(() => ({ addColorStop: vi.fn() })),
-    createRadialGradient: vi.fn<CanvasRenderingContext2D['createRadialGradient']>(() => ({ addColorStop: vi.fn() })),
+    createLinearGradient: vi.fn<CanvasRenderingContext2D['createLinearGradient']>(() => ({
+      addColorStop: vi.fn(),
+      interpolation: 'srgb' as const,
+      hueInterpolation: 'shorter' as const,
+    })),
+    createRadialGradient: vi.fn<CanvasRenderingContext2D['createRadialGradient']>(() => ({
+      addColorStop: vi.fn(),
+      interpolation: 'srgb' as const,
+      hueInterpolation: 'shorter' as const,
+    })),
     setLineDash: vi.fn<CanvasRenderingContext2D['setLineDash']>(),
   }
 

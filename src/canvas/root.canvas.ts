@@ -1,5 +1,5 @@
-import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'skia-canvas'
-import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'skia-canvas'
+import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'phyron-skia-canvas'
+import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions } from 'phyron-skia-canvas'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import type {
   BaseProps,

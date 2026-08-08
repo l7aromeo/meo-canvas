@@ -1,6 +1,6 @@
 import { BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import type { BaseProps, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint, CanvasElement } from '@/canvas/canvas.type.js'
-import type { CanvasRenderingContext2D } from 'skia-canvas'
+import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
 import { Style } from '@/constant/common.const.js'
 import { TextNode } from '@/canvas/text.canvas.js'
 

@@ -1,5 +1,5 @@
 import { vi, type MockInstance } from 'vitest'
-import type { CanvasRenderingContext2D } from 'skia-canvas'
+import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
 import type { ImageProps } from '@/canvas/canvas.type.js'
 import { Direction } from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
@@ -11,7 +11,7 @@ const mockFileTypeFromBuffer = vi.fn<(buf: any) => Promise<any>>()
 const mockFileTypeFromFile = vi.fn<(path: any) => Promise<any>>()
 const mockReadFile = vi.fn<(path: any) => Promise<any>>()
 
-vi.mock('skia-canvas', () => ({
+vi.mock('phyron-skia-canvas', () => ({
   loadImage: mockLoadImage,
   Image: vi.fn(),
   Canvas: vi.fn(),
@@ -56,8 +56,8 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     imageSmoothingEnabled: true,
     imageSmoothingQuality: 'high',
     globalCompositeOperation: 'source-over',
-    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn(), interpolation: 'srgb' as const, hueInterpolation: 'shorter' as const })),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn(), interpolation: 'srgb' as const, hueInterpolation: 'shorter' as const })),
   }
   return ctx as CanvasRenderingContext2D
 }
@@ -69,7 +69,7 @@ describe('ImageNode & Image factory', () => {
     vi.resetModules()
 
     // Re-setup mocks after module reset
-    vi.doMock('skia-canvas', () => ({
+    vi.doMock('phyron-skia-canvas', () => ({
       loadImage: mockLoadImage,
       Image: vi.fn(),
       Canvas: vi.fn(),

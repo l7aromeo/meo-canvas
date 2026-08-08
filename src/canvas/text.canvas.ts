@@ -1,5 +1,5 @@
 import type { TextProps, TextSegment, CanvasElement } from '@/canvas/canvas.type.js'
-import { Canvas, type CanvasRenderingContext2D, type FontVariantSetting } from 'skia-canvas'
+import { Canvas, type CanvasRenderingContext2D, type FontVariantSetting } from 'phyron-skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.js'
 import { Style, MeasureMode } from '@/constant/common.const.js'
 

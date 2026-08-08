@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/skia-canvas.js'
+import { __mocks__ as skiaCanvasMocks } from '@/__mocks__/phyron-skia-canvas.js'
 import { __mocks__ as fsMocks } from '@/__mocks__/node-fs.js'
 import { __mocks__ as pathMocks } from '@/__mocks__/node-path.js'
 import { ImageNode } from '@/__mocks__/image.canvas.js'

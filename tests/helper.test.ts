@@ -2,7 +2,7 @@ import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } 
 import { extractFunctions, restoreFunctions, FN_MARKER } from '@/worker/comlink.pool.js'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
-import type { CanvasRenderingContext2D } from 'skia-canvas'
+import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
 import { vi } from 'vitest'
 
 const createMockContext = () => {

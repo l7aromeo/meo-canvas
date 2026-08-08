@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { Canvas } from 'skia-canvas'
+import type { Canvas } from 'phyron-skia-canvas'
 import { createCanvasHandlers } from '@/worker/canvas-handlers.js'
 
 function asCanvas(mock: object): Canvas {

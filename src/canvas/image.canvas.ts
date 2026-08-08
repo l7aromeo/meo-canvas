@@ -1,5 +1,5 @@
 import type { BaseProps, ImageProps, CanvasElement } from '@/canvas/canvas.type.js'
-import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'skia-canvas'
+import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'phyron-skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.js'
 import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.js'
 import { promises as fs } from 'fs'

@@ -12,7 +12,7 @@ const pathMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('node:path', () => pathMocks)
-vi.mock('skia-canvas', async () => (await import('@/__mocks__/skia-canvas.js')).__mocks__)
+vi.mock('phyron-skia-canvas', async () => (await import('@/__mocks__/phyron-skia-canvas.js')).__mocks__)
 vi.mock('node:fs', async () => (await import('@/__mocks__/node-fs.js')).__mocks__)
 vi.mock('@/canvas/layout.canvas.js', async () => (await import('@/__mocks__/layout.canvas.js')).__mocks__)
 vi.mock('@/canvas/image.canvas.js', async () => (await import('@/__mocks__/image.canvas.js')).__mocks__)
@@ -28,12 +28,12 @@ vi.mock('node:worker_threads', () => ({
   },
 }))
 
-let Canvas: typeof import('skia-canvas').Canvas
-let FontLibrary: typeof import('skia-canvas').FontLibrary
+let Canvas: typeof import('phyron-skia-canvas').Canvas
+let FontLibrary: typeof import('phyron-skia-canvas').FontLibrary
 let Root: typeof import('@/canvas/root.canvas.js').Root
 let RootNode: typeof import('@/canvas/root.canvas.js').RootNode
 let ColumnNode: typeof import('@/canvas/layout.canvas.js').ColumnNode
-let skiaCanvasMocks: typeof import('@/__mocks__/skia-canvas.js').__mocks__
+let skiaCanvasMocks: typeof import('@/__mocks__/phyron-skia-canvas.js').__mocks__
 let fsMocks: typeof import('@/__mocks__/node-fs.js').__mocks__
 let layoutMocks: typeof import('@/__mocks__/layout.canvas.js').__mocks__
 let imageMocks: typeof import('@/__mocks__/image.canvas.js').__mocks__
@@ -42,7 +42,7 @@ describe('RootNode', () => {
   beforeEach(async () => {
     vi.resetModules()
 
-    skiaCanvasMocks = (await import('@/__mocks__/skia-canvas.js')).__mocks__
+    skiaCanvasMocks = (await import('@/__mocks__/phyron-skia-canvas.js')).__mocks__
     fsMocks = (await import('@/__mocks__/node-fs.js')).__mocks__
     layoutMocks = (await import('@/__mocks__/layout.canvas.js')).__mocks__
     imageMocks = (await import('@/__mocks__/image.canvas.js')).__mocks__
@@ -59,7 +59,7 @@ describe('RootNode', () => {
     })
 
     // Re-import modules after resetting
-    const skiaCanvasModule = await import('skia-canvas')
+    const skiaCanvasModule = await import('phyron-skia-canvas')
     Canvas = skiaCanvasModule.Canvas
     FontLibrary = skiaCanvasModule.FontLibrary
     const rootModule = await import('@/canvas/root.canvas.js')
