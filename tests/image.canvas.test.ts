@@ -1,5 +1,5 @@
 import { vi, type MockInstance } from 'vitest'
-import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
+import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 import type { ImageProps } from '@/canvas/canvas.type.js'
 import { Direction } from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
@@ -11,7 +11,7 @@ const mockFileTypeFromBuffer = vi.fn<(buf: any) => Promise<any>>()
 const mockFileTypeFromFile = vi.fn<(path: any) => Promise<any>>()
 const mockReadFile = vi.fn<(path: any) => Promise<any>>()
 
-vi.mock('phyron-skia-canvas', () => ({
+vi.mock('meo-skia-canvas', () => ({
   loadImage: mockLoadImage,
   Image: vi.fn(),
   Canvas: vi.fn(),
@@ -69,7 +69,7 @@ describe('ImageNode & Image factory', () => {
     vi.resetModules()
 
     // Re-setup mocks after module reset
-    vi.doMock('phyron-skia-canvas', () => ({
+    vi.doMock('meo-skia-canvas', () => ({
       loadImage: mockLoadImage,
       Image: vi.fn(),
       Canvas: vi.fn(),

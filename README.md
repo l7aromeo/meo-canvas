@@ -2,7 +2,7 @@
 
 A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
 functions, similar to the composition style of @meonode/ui.
-It uses `phyron-skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
+It uses `meo-skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
 
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
 image structure with components like `Box`, `Text`, `Image`, and `Grid`, and the library will handle the layout and
@@ -44,18 +44,9 @@ rendering to a canvas.
 bun add meo-canvas
 ```
 
-Installing with **bun** also needs this in your own `package.json`:
-
-```json
-{
-  "trustedDependencies": ["phyron-skia-canvas"]
-}
-```
-
-`phyron-skia-canvas` downloads a native binary from a postinstall script, and bun only runs those
-for packages a project trusts. The list is not inherited from dependencies, so without this entry
-the install reports success and the renderer then fails at runtime with a missing `skia.node`.
-npm, pnpm and yarn run the script without any extra configuration.
+No `trustedDependencies` entry is needed, on bun or anywhere else. `meo-skia-canvas` ships its
+native binary as one optional dependency per platform, selected by `os`/`cpu`/`libc`, so nothing
+has to run an install script for the renderer to work.
 
 ## Usage
 

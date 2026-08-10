@@ -4,7 +4,7 @@ import { BoxNode } from '@/canvas/layout.canvas.js'
 import { extractFunctions, restoreFunctions } from '@/worker/comlink.pool.js'
 import type { CartesianChartData, PieChartDataPoint } from '@/canvas/canvas.type.js'
 import { Style } from '@/constant/common.const.js'
-import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
+import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 
 const createMockContext = () => {
   const ctx = {

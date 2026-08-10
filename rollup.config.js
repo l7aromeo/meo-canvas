@@ -20,7 +20,7 @@ const common = {
   input: inputFiles,
   plugins: [tsconfigPaths(), nodeResolve({ exclude: 'node_modules/**' }), commonjs()],
   external: id => {
-    return ['phyron-skia-canvas', 'yoga-layout', 'lodash-es', 'tinycolor2', 'file-type', 'node:fs', 'path', 'node:worker_threads'].includes(id) || id.startsWith('tslib') || id.startsWith('comlink')
+    return ['meo-skia-canvas', 'yoga-layout', 'lodash-es', 'tinycolor2', 'file-type', 'node:fs', 'path', 'node:worker_threads'].includes(id) || id.startsWith('tslib') || id.startsWith('comlink')
   },
 }
 

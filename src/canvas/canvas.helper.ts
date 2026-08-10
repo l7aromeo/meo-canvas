@@ -1,4 +1,4 @@
-import type { CanvasRenderingContext2D } from 'phyron-skia-canvas'
+import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
 import type { BoxProps } from '@/canvas/canvas.type.js'

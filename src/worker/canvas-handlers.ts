@@ -1,5 +1,5 @@
 import type { RootProps } from '@/canvas/canvas.type.js'
-import type { Canvas } from 'phyron-skia-canvas'
+import type { Canvas } from 'meo-skia-canvas'
 import type { RenderResult } from '@/worker/worker.types.js'
 
 export interface CanvasHandlerDeps {

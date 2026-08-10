@@ -1,5 +1,5 @@
-import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'phyron-skia-canvas'
-import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions, EngineDetails } from 'phyron-skia-canvas'
+import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'meo-skia-canvas'
+import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions, EngineDetails } from 'meo-skia-canvas'
 import { createRequire } from 'node:module'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import type {

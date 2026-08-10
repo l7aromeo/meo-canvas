@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { CanvasRenderingContext2D, TextMetrics } from 'phyron-skia-canvas'
+import type { CanvasRenderingContext2D, TextMetrics } from 'meo-skia-canvas'
 
 export function createTestTextMetrics(overrides: Partial<TextMetrics> & Pick<TextMetrics, 'width'>): TextMetrics {
   const { width, ...rest } = overrides

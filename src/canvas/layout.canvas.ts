@@ -1,4 +1,4 @@
-import { Canvas, type CanvasRenderingContext2D } from 'phyron-skia-canvas'
+import { Canvas, type CanvasRenderingContext2D } from 'meo-skia-canvas'
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
 import Yoga, { Style, Node } from '@/constant/common.const.js'

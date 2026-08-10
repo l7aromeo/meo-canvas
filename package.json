@@ -82,13 +82,12 @@
   "dependencies": {
     "comlink": "^4.4.2",
     "file-type": "^22.0.0",
-    "phyron-skia-canvas": "^3.6.0",
+    "meo-skia-canvas": "^4.1.1",
     "tslib": "^2.8.1",
     "yoga-layout": "^3.2.1"
   },
   "trustedDependencies": [
-    "esbuild",
-    "phyron-skia-canvas"
+    "esbuild"
   ],
   "files": [
     "dist",

@@ -1,5 +1,5 @@
 import type { RootProps } from '@/canvas/canvas.type.js'
-import type { EngineDetails } from 'phyron-skia-canvas'
+import type { EngineDetails } from 'meo-skia-canvas'
 
 export type CallFn = (id: number, ...args: unknown[]) => Promise<unknown>
 

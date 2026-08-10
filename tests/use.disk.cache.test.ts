@@ -34,7 +34,7 @@ global.fetch = mockFetch as any
 // Module mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('phyron-skia-canvas', () => ({
+vi.mock('meo-skia-canvas', () => ({
   loadImage: mockLoadImage,
   Image: vi.fn(),
   Canvas: createMockCanvas(),
@@ -143,7 +143,7 @@ const TEST_KEY = 'abc123deadbeef'
 beforeEach(async () => {
   vi.resetModules()
 
-  vi.doMock('phyron-skia-canvas', () => ({
+  vi.doMock('meo-skia-canvas', () => ({
     loadImage: mockLoadImage,
     Image: vi.fn(),
     Canvas: createMockCanvas(),

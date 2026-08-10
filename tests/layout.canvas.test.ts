@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 import { BoxNode, Box, RowNode, Row, ColumnNode, Column } from '@/canvas/layout.canvas.js'
 import { drawBorders } from '@/canvas/canvas.helper.js'
 import Yoga, { Style } from '@/constant/common.const.js'
-import { Canvas } from 'phyron-skia-canvas'
+import { Canvas } from 'meo-skia-canvas'
 
 describe('BoxNode', () => {
   it('should construct with default props and children', () => {
