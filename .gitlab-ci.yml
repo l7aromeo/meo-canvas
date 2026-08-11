@@ -14,7 +14,9 @@ cache:
     - node_modules/
 
 .node_with_bun: &node_with_bun
-  image: node:alpine
+  # Pinned to the `engines.node` floor, not `node:alpine`. Floating meant CI only ever ran on the
+  # newest Node, so the declared minimum was never exercised and could have broken silently.
+  image: node:22-alpine
   before_script:
     - node --version
     - apk add --no-cache curl unzip bash
