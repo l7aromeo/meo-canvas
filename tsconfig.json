@@ -1,7 +1,15 @@
 {
   "compilerOptions": {
     "types": ["node", "vitest/globals"],
-    "target": "ESNext",
+    // Bounded to the `engines.node` floor rather than left at ESNext, so a TypeScript upgrade
+    // cannot start emitting syntax the supported runtimes reject without anything noticing.
+    // Emit is byte-identical to ESNext today.
+    "target": "ES2022",
+    // Spelled out because the default for a target is the *full* lib, which pulls in DOM by
+    // accident -- putting `document`, `window` and the rest in scope for a library that has none
+    // of them. The two DOM names comlink's declarations need are defined in
+    // `src/types/dom-shims.d.ts` instead.
+    "lib": ["ES2023"],
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "esModuleInterop": true,
