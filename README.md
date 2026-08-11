@@ -542,8 +542,22 @@ await canvas.toFile('output.png')
 canvas.release()
 ```
 
-> **Note:** A FinalizationRegistry provides automatic cleanup for forgotten `.release()` calls, but explicit cleanup is
-> recommended for deterministic memory management in production.
+Release in a `finally` if anything between render and export can throw, or the canvas is stranded on
+the error path:
+
+```typescript
+const canvas = await Root({width: 400, height: 400, children: [...]})
+try {
+  return await canvas.toBuffer('webp')
+} finally {
+  canvas.release()
+}
+```
+
+> **Note:** A `FinalizationRegistry` is wired up as a backstop, but do not rely on it. The memory it
+> guards is native, so it creates no pressure on the garbage collector and the callback may never
+> fire: 400 renders without an explicit release grew RSS from 247 MB to 677 MB with no plateau, even
+> forcing a collection every round. The same 400 renders releasing explicitly settle flat.
 
 ---
 
