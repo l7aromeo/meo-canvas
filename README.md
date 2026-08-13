@@ -25,16 +25,16 @@ rendering to a canvas.
 
 <table>
   <tr>
-    <td width="50%"><img src="https://i.ibb.co/VpPZybzF/profile-card.webp" alt="Image 1"></td>
-    <td width="50%"><img src="https://i.ibb.co/zTgrBWpT/profile-card-1.webp" alt="Image 2"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/showcase/profile-card.webp" alt="Discord profile card rendered by chutao-djs"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/showcase/profile-card-alt.webp" alt="Discord profile card, alternate layout"></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://i.ibb.co/F4xfHdBp/daily-notes.webp" alt="Image 3"></td>
-    <td width="50%"><img src="https://i.ibb.co/Jj0x6khB/character-archive-base.webp" alt="Image 4"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/showcase/daily-notes.webp" alt="Daily notes card"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/showcase/character-archive.webp" alt="Character archive card"></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://i.ibb.co.com/B24SZ0C9/charts.webp" alt="Image 5"/></td>
-    <td width="50%"><img src="https://i.ibb.co.com/jkBJMRgT/sample-nested-grids.png" alt="Image 6"/></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/chart_samples.png" alt="Chart samples: line, bar, pie and radar, from scripts/generate_sample_charts.ts"/></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/sample_nested_grids.png" alt="Nested grid samples: dashboards, spanning layouts and asymmetric content, from scripts/generate_sample_nested_grids.ts"/></td>
   </tr>
 </table>
 
