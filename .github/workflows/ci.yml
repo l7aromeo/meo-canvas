@@ -1,0 +1,90 @@
+name: CI
+
+# Ported from .gitlab-ci.yml. GitLab ran install as its own stage and passed
+# node_modules along as an artifact; here each job installs its own, because
+# uploading and downloading a node_modules tree between jobs costs more than
+# the install does.
+on:
+  push:
+    branches: [main, beta, alpha]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Pinned to the `engines.node` floor rather than `node:latest`. Floating meant
+  # CI only ever ran on the newest Node, so the declared minimum was never
+  # exercised and could have broken silently.
+  lint-and-test:
+    name: lint & unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # Installed from the official script rather than a third-party action, as
+      # .gitlab-ci.yml did — one less unpinned dependency in the release path.
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run test:ci
+
+  # `allow_failure: true` on GitLab. Kept advisory for now: these render real
+  # images and compare them, so they are the suite most likely to disagree with
+  # a runner's fonts rather than with the code.
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run test:integration
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

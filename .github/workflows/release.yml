@@ -1,0 +1,64 @@
+name: Release
+
+# Ported from the `release` stage of .gitlab-ci.yml.
+#
+# Publishing is OIDC, as it was on GitLab — no npm token lives here. GitLab
+# declared it with `id_tokens: NPM_ID_TOKEN`; on GitHub the equivalent is the
+# `id-token: write` permission below, and the trusted publisher registered on
+# npmjs.com has to name *this* repository and *this* workflow file. That
+# registration does not carry over from GitLab: it is issuer-specific, so it
+# must be recreated before the first release here, or the publish step fails
+# after semantic-release has already tagged.
+on:
+  push:
+    branches: [main, beta, alpha]
+
+# `resource_group: meonode_canvas_pipeline_lock` on GitLab. Two releases must
+# never overlap: both would read the same last tag and compute the same next
+# version, and the loser publishes into a version that already exists.
+# cancel-in-progress stays false — a release half-way through is not something
+# to interrupt.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create tags and GitHub releases
+  issues: write # comment on released issues
+  pull-requests: write # comment on released PRs
+  id-token: write # npm trusted publishing
+
+jobs:
+  release:
+    name: semantic-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # semantic-release derives the next version from the tags reachable
+          # on this branch, so a shallow clone makes it think nothing has ever
+          # been released and start again from 1.0.0.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # The npm bundled with Node 22 predates trusted publishing, in which case
+      # publishing falls back to looking for a token and fails.
+      - name: Use an npm that supports OIDC
+        run: npm install -g npm@latest
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun x semantic-release

@@ -20,11 +20,11 @@
   "author": "Ukasyah Rahmatullah Zada",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/l7aromeo/meo-canvas.git"
+    "url": "git+https://github.com/l7aromeo/meo-canvas.git"
   },
-  "homepage": "https://gitlab.com/l7aromeo/meo-canvas#readme",
+  "homepage": "https://github.com/l7aromeo/meo-canvas#readme",
   "bugs": {
-    "url": "https://gitlab.com/l7aromeo/meo-canvas/issues"
+    "url": "https://github.com/l7aromeo/meo-canvas/issues"
   },
   "publishConfig": {
     "access": "public"
@@ -57,7 +57,7 @@
     "@rollup/plugin-typescript": "^12.3.0",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/exec": "^7.1.0",
-    "@semantic-release/gitlab": "^13.3.3",
+    "@semantic-release/github": "^12.0.9",
     "@semantic-release/npm": "^13.1.5",
     "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/node": "^26.1.1",

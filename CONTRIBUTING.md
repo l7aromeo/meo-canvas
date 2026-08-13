@@ -4,11 +4,11 @@ First off, thank you for considering contributing! It's people like you that mak
 
 ## Where do I go from here?
 
-If you've noticed a bug or have a feature request, [make one](https://gitlab.com/l7aromeo/meo-canvas/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
+If you've noticed a bug or have a feature request, [make one](https://github.com/l7aromeo/meo-canvas/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
 
 ### Fork & create a branch
 
-If this is something you think you can fix, then [fork meo-canvas](https://gitlab.com/l7aromeo/meo-canvas/-/forks/new) and create a branch with a descriptive name.
+If this is something you think you can fix, then [fork meo-canvas](https://github.com/l7aromeo/meo-canvas/fork) and create a branch with a descriptive name.
 
 A good branch name would be (where issue #38 is the ticket you're working on):
 
@@ -55,7 +55,7 @@ Make sure your commit messages are clear and descriptive.
 At this point, you should switch back to your master branch and make sure it's up to date with the latest upstream master.
 
 ```sh
-git remote add upstream git@gitlab.com:l7aromeo/meo-canvas.git
+git remote add upstream git@github.com:l7aromeo/meo-canvas.git
 git checkout master
 git pull upstream master
 ```
@@ -68,7 +68,7 @@ git rebase master
 git push --force-with-lease origin 38-add-gaussian-blur-support
 ```
 
-Finally, go to GitLab and [make a Merge Request](https://gitlab.com/l7aromeo/meo-canvas/-/merge_requests/new) :D
+Finally, go to GitHub and [open a Pull Request](https://github.com/l7aromeo/meo-canvas/compare) :D
 
 We're happy to help you get your PR reviewed and merged.
 

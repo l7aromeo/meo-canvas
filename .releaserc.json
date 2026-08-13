@@ -29,9 +29,8 @@
       }
     ],
     [
-      "@semantic-release/gitlab",
+      "@semantic-release/github",
       {
-        "gitlabUrl": "https://gitlab.com",
         "assets": [
           {
             "path": "release/*.tgz",
