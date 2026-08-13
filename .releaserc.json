@@ -40,7 +40,9 @@
             "path": "release/*.tar.gz",
             "label": "Distribution (tar.gz)"
           }
-        ]
+        ],
+        "failComment": false,
+        "failTitle": false
       }
     ]
   ]

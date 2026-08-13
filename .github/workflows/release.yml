@@ -33,7 +33,11 @@ jobs:
     name: semantic-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: production
+    # Capitalised to match the environment that exists on the repository, and
+    # the name registered with npm's trusted publisher. The OIDC token carries
+    # this string; npm compares it literally, so a case difference here is a
+    # failed exchange rather than a warning.
+    environment: Production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
