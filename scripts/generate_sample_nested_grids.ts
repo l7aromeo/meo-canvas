@@ -10,10 +10,24 @@ function _darken(hex: string, amount: number): string {
   return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('')
 }
 
-function _alpha(hex: string, a: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
+const NAMED: Record<string, [number, number, number]> = {
+  white: [255, 255, 255],
+  black: [0, 0, 0],
+}
+
+/**
+ * Applies an alpha to a colour, accepting `#rrggbb` or one of the names above.
+ *
+ * The name handling is not a convenience. This used to slice hex digits
+ * unconditionally, so `_alpha('white', 0.7)` produced `rgba(NaN,NaN,NaN,0.7)`,
+ * which is not a colour the renderer accepts — the text fell back to black and
+ * sat there unreadable on a dark scrim. Silent, because an unparseable colour
+ * still renders something. It throws now rather than returning a value that
+ * looks like a colour and is not one.
+ */
+function _alpha(color: string, a: number): string {
+  const [r, g, b] = NAMED[color] ?? [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)]
+  if ([r, g, b].some(Number.isNaN)) throw new Error(`_alpha: cannot parse colour ${JSON.stringify(color)}`)
   return `rgba(${r},${g},${b},${a})`
 }
 
@@ -329,114 +343,130 @@ const deeplyNested = Section(
 )
 
 // ─── Sample 5: Unstable / Asymmetric Content Size (3 Cells) ──────────────────────
-// Mimics Genshin wish history card style: outer grid with 3 banner panels,
-// each having different item counts for both 5★ and 4★
+// Three panels whose two sub-sections hold different numbers of entries, so no
+// two cells in the outer grid resolve to the same height. That asymmetry is the
+// whole point: the outer grid has to lay out rows where the tallest cell is not
+// the one that starts the row, and where a panel's height is only known after
+// its nested grids have wrapped.
 
-// Rarity color map (similar to RarityColorMapper in the example)
-const RarityColor: Record<number, string> = {
-  5: '#C99024',
-  4: '#7B68C1',
+// Two tiers, so the nested grids differ in colour as well as in length.
+const TierColor: Record<string, string> = {
+  release: '#C99024',
+  patch: '#7B68C1',
 }
 
-// Mock banner data with asymmetric item counts
-const banners = [
+interface Entry {
+  name: string
+  kind: 'package' | 'service'
+  minutes: number
+  date: string
+}
+
+const stamp = (year: number, i: number, step = 1) => `${year}-${String((i % 12) + 1).padStart(2, '0')}-${String(((i * step) % 28) + 1).padStart(2, '0')}`
+
+// Deliberately uneven: 8/14, 5/9 and 7/11 entries. One name per project is long
+// enough to ellipsize, which keeps `maxLines: 1` under test — but the rest fit,
+// because a shared prefix like `patch/` truncates to nothing but the prefix and
+// every card ends up reading the same.
+const projects = [
   {
-    type: 'Character Event',
-    total: 487,
-    pity5: 32,
-    pity4: 7,
-    fiveStars: Array.from({ length: 8 }).map((_, i) => ({
-      name: ['Raiden', 'Hutao', 'Zhongli', 'Nahida', 'Furina', 'Neuvillette', 'Kazuha', 'Yelan'][i],
-      item_type: 'Character',
-      pity: [76, 45, 82, 61, 55, 78, 34, 90][i],
-      time: `2025-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+    name: 'Web Platform',
+    builds: 487,
+    passRate: 96,
+    median: 7,
+    releases: Array.from({ length: 8 }).map((_, i) => ({
+      name: ['v4.2.0', 'v4.1.0', 'v4.0.0', 'v3.9.0', 'v3.8.0', 'v3.7.0', 'v3.6.0', 'v3.5.0'][i],
+      kind: 'package' as const,
+      minutes: [12, 9, 21, 14, 8, 11, 17, 6][i],
+      date: stamp(2025, i),
     })),
-    fourStars: Array.from({ length: 14 }).map((_, i) => ({
+    patches: Array.from({ length: 14 }).map((_, i) => ({
       name: [
-        'Xiangling',
-        'Bennett',
-        'Xingqiu',
-        'Fischl',
-        'Sucrose',
-        'Beidou',
-        'Noelle',
-        'Barbara',
-        'Razor',
-        'Chongyun',
-        'Ningguang',
-        'Diona',
-        'Rosaria',
-        'Yanfei',
+        'login-fix',
+        'cache-warm',
+        'virtualised-table',
+        'i18n',
+        'icons',
+        'forms',
+        'sorting',
+        'modal',
+        'toast',
+        'theme',
+        'search',
+        'upload',
+        'avatar',
+        'footer',
       ][i],
-      item_type: i % 3 === 0 ? 'Weapon' : 'Character',
-      pity: [3, 8, 2, 5, 10, 1, 7, 4, 9, 6, 3, 8, 2, 5][i],
-      time: `2025-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+      kind: (i % 3 === 0 ? 'service' : 'package') as Entry['kind'],
+      minutes: [3, 8, 2, 5, 10, 1, 7, 4, 9, 6, 3, 8, 2, 5][i],
+      date: stamp(2025, i),
     })),
     color: Theme.primaryColor,
   },
   {
-    type: 'Weapon Event',
-    total: 214,
-    pity5: 58,
-    pity4: 3,
-    fiveStars: Array.from({ length: 5 }).map((_, i) => ({
-      name: ['Engulfing', 'Homa', 'Jade Spear', 'Mistsplitter', 'Aqua Sim.'][i],
-      item_type: 'Weapon',
-      pity: [63, 71, 44, 80, 55][i],
-      time: `2025-${String((i % 12) + 1).padStart(2, '0')}-${String(((i * 3) % 28) + 1).padStart(2, '0')}`,
+    name: 'Mobile Client',
+    builds: 214,
+    passRate: 89,
+    median: 19,
+    releases: Array.from({ length: 5 }).map((_, i) => ({
+      name: ['v2.8.0', 'v2.7.0', 'v2.6.0', 'v2.5.0', 'v2.4.0'][i],
+      kind: 'package' as const,
+      minutes: [24, 31, 18, 27, 22][i],
+      date: stamp(2025, i, 3),
     })),
-    fourStars: Array.from({ length: 9 }).map((_, i) => ({
-      name: ['Fav. Lance', 'Sacrificial', "Dragon's B.", 'Rainslasher', 'Rust', 'The Bell', 'Eye of Per.', 'Widsith', 'Stringless'][i],
-      item_type: 'Weapon',
-      pity: [5, 2, 8, 3, 10, 1, 6, 4, 7][i],
-      time: `2025-${String((i % 12) + 1).padStart(2, '0')}-${String(((i * 2) % 28) + 1).padStart(2, '0')}`,
+    patches: Array.from({ length: 9 }).map((_, i) => ({
+      name: ['push', 'deeplink', 'offline-sync-retry', 'camera', 'perms', 'onboarding', 'crash', 'locale', 'badge'][i],
+      kind: 'package' as const,
+      minutes: [5, 2, 8, 3, 10, 1, 6, 4, 7][i],
+      date: stamp(2025, i, 2),
     })),
     color: Theme.accentColor,
   },
   {
-    type: 'Standard',
-    total: 326,
-    pity5: 41,
-    pity4: 9,
-    fiveStars: Array.from({ length: 7 }).map((_, i) => ({
-      name: ['Diluc', 'Jean', 'Mona', 'Keqing', 'Qiqi', 'Tighnari', 'Dehya'][i],
-      item_type: 'Character',
-      pity: [78, 52, 85, 63, 90, 47, 71][i],
-      time: `2024-${String((i % 12) + 1).padStart(2, '0')}-${String(((i * 2) % 28) + 1).padStart(2, '0')}`,
+    name: 'Design System',
+    builds: 326,
+    passRate: 99,
+    median: 4,
+    releases: Array.from({ length: 7 }).map((_, i) => ({
+      name: ['v6.1.0', 'v6.0.0', 'v5.4.0', 'v5.3.0', 'v5.2.0', 'v5.1.0', 'v5.0.0'][i],
+      kind: 'package' as const,
+      minutes: [5, 13, 4, 9, 3, 7, 11][i],
+      date: stamp(2024, i, 2),
     })),
-    fourStars: Array.from({ length: 11 }).map((_, i) => ({
-      name: ['Amber', 'Kaeya', 'Lisa', 'Barbara', 'Xiangling', 'Noelle', 'Bennett', 'Fischl', 'Sucrose', 'Chongyun', 'Razor'][i],
-      item_type: i % 4 === 0 ? 'Weapon' : 'Character',
-      pity: [4, 7, 2, 9, 5, 1, 8, 3, 10, 6, 4][i],
-      time: `2024-${String((i % 12) + 1).padStart(2, '0')}-${String(((i * 3) % 28) + 1).padStart(2, '0')}`,
+    patches: Array.from({ length: 11 }).map((_, i) => ({
+      name: ['tokens', 'spacing', 'button', 'select', 'focus-ring-audit', 'tabs', 'chip', 'grid', 'motion', 'a11y', 'docs'][i],
+      kind: (i % 4 === 0 ? 'service' : 'package') as Entry['kind'],
+      minutes: [4, 7, 2, 9, 5, 1, 8, 3, 10, 6, 4][i],
+      date: stamp(2024, i, 3),
     })),
     color: Theme.secondaryColor,
   },
 ]
 
 /**
- * Renders star history sections (5★ and/or 4★) — mimics _renderStarHistory from the example
+ * Renders the two history sections of a panel, each its own nested grid.
  */
-const renderStarHistory = (banner: (typeof banners)[number]) => {
+const renderHistory = (project: (typeof projects)[number]) => {
   const sections: any[] = []
 
-  const renderSection = (label: string, items: { name: string; item_type: string; pity: number; time: string }[], starRarity: number) => {
-    if (items.length === 0) return
-    const reversed = [...items].reverse()
-    const bgColor = RarityColor[starRarity]
+  const renderSection = (label: string, entries: Entry[], tier: keyof typeof TierColor) => {
+    if (entries.length === 0) return
+    const reversed = [...entries].reverse()
+    const bgColor = TierColor[tier]
 
     sections.push(
       Text(label, {
         flexShrink: 0,
         fontSize: 16,
         fontWeight: 'bold',
+        color: Theme.darkColor,
         margin: { Top: 4 },
       }),
       Grid({
         flexShrink: 0,
         columns: 6,
         gap: 10,
-        children: reversed.map(star =>
+        children: reversed.map(entry =>
           Column({
             positionType: Style.PositionType.Relative,
             children: [
@@ -459,16 +489,18 @@ const renderStarHistory = (banner: (typeof banners)[number]) => {
                     justifyContent: Style.Justify.Center,
                     padding: 8,
                     height: 60,
-                    children: Text(star.item_type === 'Character' ? '👤' : '⚔️', { fontSize: 32 }),
+                    children: Text(entry.kind === 'package' ? '📦' : '⚙️', { fontSize: 32 }),
                   }),
-                  // Label area
+                  // Label area. The scrim was 0.5, where the secondary line measured
+                  // 5.10:1 over the lightest end of the gold gradient — passing, but
+                  // thin for 9px type. At 0.66 it is 9.98:1.
                   Column({
                     alignItems: Style.Align.Center,
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.66)',
                     padding: { All: 6, Left: 4, Right: 4 },
                     gap: 2,
                     children: [
-                      Text(star.name, {
+                      Text(entry.name, {
                         maxLines: 1,
                         ellipsis: true,
                         textAlign: 'center',
@@ -476,10 +508,10 @@ const renderStarHistory = (banner: (typeof banners)[number]) => {
                         fontWeight: '600',
                         color: 'white',
                       }),
-                      Text(`${star.pity} pulls · ${star.time.slice(2)}`, {
+                      Text(`${entry.minutes} min · ${entry.date.slice(2)}`, {
                         fontSize: 9,
                         textAlign: 'center',
-                        color: _alpha('white', 0.7),
+                        color: _alpha('white', 0.88),
                       }),
                     ],
                   }),
@@ -492,45 +524,49 @@ const renderStarHistory = (banner: (typeof banners)[number]) => {
     )
   }
 
-  renderSection('5★ History', banner.fiveStars, 5)
-  renderSection('4★ History', banner.fourStars, 4)
+  renderSection('Releases', project.releases, 'release')
+  renderSection('Patches', project.patches, 'patch')
 
   return sections
 }
 
 const unstableGrid = Section(
   '5. Unstable Content Size (3 Cells)',
-  'Outer 2-col grid — 3 banner panels with varying 5★ and 4★ item counts (mimics wish history cards)',
+  'Outer 2-col grid — 3 project panels whose nested release and patch grids hold different numbers of entries',
   Grid({
     columns: 2,
     gap: 20,
-    children: banners.map(banner =>
+    children: projects.map(project =>
       Box({
         flexShrink: 0,
-        backgroundColor: _alpha(banner.color, 0.15),
+        backgroundColor: _alpha(project.color, 0.15),
         borderRadius: 8,
         padding: 16,
         children: Column({
           flexShrink: 0,
           gap: 12,
           children: [
-            // Header row: banner name + total wishes
+            // Header row: project name + total builds
             Row({
               justifyContent: Style.Justify.SpaceBetween,
               alignItems: Style.Align.Center,
               children: [
-                Text(banner.type, {
+                Text(project.name, {
                   fontSize: 20,
                   fontWeight: 'bold',
+                  color: Theme.darkColor,
                 }),
-                Text(`${banner.total} wishes`, {
+                // Was black at 0.3, which measured 2.07:1 on the tinted panel and
+                // read as disabled rather than secondary. At 0.72 of the dark it
+                // is 4.74:1, the first of these to clear WCAG AA's 4.5:1.
+                Text(`${project.builds} builds`, {
                   fontSize: 16,
                   fontWeight: '600',
-                  color: _alpha('black', 0.3),
+                  color: _alpha(Theme.darkColor, 0.72),
                 }),
               ],
             }),
-            // Pity badges row
+            // Stat badges row
             Row({
               gap: 20,
               children: [
@@ -538,7 +574,7 @@ const unstableGrid = Section(
                   backgroundColor: Theme.secondaryColor,
                   borderRadius: 6,
                   padding: { All: 8, Left: 12, Right: 12 },
-                  children: Text(`5★ Pity: ${banner.pity5}`, {
+                  children: Text(`Pass rate: ${project.passRate}%`, {
                     fontSize: 16,
                     fontWeight: 'bold',
                     color: Theme.paperColor,
@@ -548,7 +584,7 @@ const unstableGrid = Section(
                   backgroundColor: Theme.secondaryColor,
                   borderRadius: 6,
                   padding: { All: 8, Left: 12, Right: 12 },
-                  children: Text(`4★ Pity: ${banner.pity4}`, {
+                  children: Text(`Median: ${project.median} min`, {
                     fontSize: 16,
                     fontWeight: 'bold',
                     color: Theme.paperColor,
@@ -556,8 +592,8 @@ const unstableGrid = Section(
                 }),
               ],
             }),
-            // 5★ and 4★ History sections
-            ...renderStarHistory(banner),
+            // Release and patch history, each a nested grid
+            ...renderHistory(project),
           ],
         }),
       }),
