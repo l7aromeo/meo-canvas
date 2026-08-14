@@ -8,6 +8,12 @@ import type {
   CanvasElement,
   RootPropsWithWorker,
   RootPropsWithoutWorker,
+  RootContent,
+  RootNodeProps,
+  AnimatedFormat,
+  StillFormat,
+  AnimationExportOptions,
+  StillExportOptions,
   Children,
   ImageProps,
   ChartProps,
@@ -19,6 +25,7 @@ import { deleteDiskCache } from '@/util/disk.cache.js'
 import { TextNode } from '@/canvas/text.canvas.js'
 import { ChartNode } from '@/canvas/chart.canvas.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.js'
+import { asNodeProps, planPages } from '@/canvas/page.plan.js'
 import { Style } from '@/constant/common.const.js'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
@@ -147,10 +154,14 @@ export class WorkerCanvas {
 
   // --- Sync methods: block on the worker, honour the format actually asked for ---
 
+  toBufferSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Buffer
+  toBufferSync(format?: StillFormat, options?: StillExportOptions): Buffer
   toBufferSync(format: ExportFormat = 'png', options?: ExportOptions): Buffer {
     return this._syncCached<Buffer>('toBufferSync', [format, options], asBuffer)
   }
 
+  toURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  toURLSync(format?: StillFormat, options?: StillExportOptions): string
   toURLSync(format: ExportFormat = 'png', options?: ExportOptions): string {
     return this._syncCached<string>('toURLSync', [format, options], String)
   }
@@ -159,6 +170,8 @@ export class WorkerCanvas {
    * Encodes to a data URL, blocking on the worker.
    * @deprecated `toDataURL()` is synchronous; use it instead.
    */
+  toDataURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  toDataURLSync(format?: StillFormat, options?: StillExportOptions): string
   toDataURLSync(format: ExportFormat = 'png', options?: ExportOptions): string {
     return this._syncCached<string>('toDataURLSync', [format, options], String)
   }
@@ -167,6 +180,12 @@ export class WorkerCanvas {
     return this._syncCached<string>('toDataURL', [format, quality], String)
   }
 
+  /**
+   * Writes the canvas to disk, blocking on the worker.
+   *
+   * Not split by format the way `toBuffer` is: the format comes from the filename extension here,
+   * so there is no format argument for the animation options to be checked against.
+   */
   toFileSync(filename: string, options?: SaveOptions): void {
     this._sync('toFileSync', [filename, options])
   }
@@ -181,10 +200,14 @@ export class WorkerCanvas {
 
   // --- Async methods: delegate to worker via Comlink ---
 
+  toBuffer(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<Buffer>
+  toBuffer(format: StillFormat, options?: StillExportOptions): Promise<Buffer>
   toBuffer(format: ExportFormat, options?: ExportOptions): Promise<Buffer> {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toBuffer', [format, options]).then(asBuffer)
   }
 
+  toURL(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<string>
+  toURL(format: StillFormat, options?: StillExportOptions): Promise<string>
   toURL(format: ExportFormat, options?: ExportOptions): Promise<string> {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toURL', [format, options]) as Promise<string>
   }
@@ -300,7 +323,7 @@ export function buildTree(descriptor: CanvasElement): BoxNode {
  * Inherits from ColumnNode to provide vertical layout capabilities.
  */
 export class RootNode extends ColumnNode {
-  declare props: RootProps & BaseProps
+  declare props: RootNodeProps & BaseProps
   /** The canvas instance used for rendering */
   private canvas: Canvas | undefined
   /** The 2D rendering context for the canvas */
@@ -319,7 +342,7 @@ export class RootNode extends ColumnNode {
    * @param props Configuration properties for the root node
    * @throws Error if width property is not provided
    */
-  constructor(props: RootProps & BaseProps) {
+  constructor(props: RootNodeProps & BaseProps) {
     // Call the parent constructor with root name and props
     super({ name: 'Root', ...props })
 
@@ -427,47 +450,13 @@ export class RootNode extends ColumnNode {
     const diskCacheKeys = this.props.useDiskCache ? new Set<string>() : undefined
 
     try {
-      // Step 1: Load all images with a concurrency limit to avoid overwhelming remote sources.
-      // A per-render cache deduplicates identical src+color combinations within this render pass.
-      const imageNodes = this.findAllImageNodes()
-      if (imageNodes.length > 0) {
-        const imageCache: RenderImageCache = new Map()
-        const queue = [...imageNodes]
-        let qIdx = 0
-        const workers = Array.from({ length: Math.min(this.imageConcurrency, queue.length) }, async () => {
-          while (qIdx < queue.length) {
-            const node = queue[qIdx++]
-            await node.load(imageCache, diskCacheKeys)
-          }
-        })
-        await Promise.allSettled(workers).then(results => {
-          results.forEach(r => {
-            if (r.status === 'rejected') console.warn('[RootNode] Image load worker failed:', r.reason)
-          })
-        })
-      }
+      const contentHeight = await this.prepare(new Map(), diskCacheKeys)
 
-      // Step 2: Calculate initial layout
-      this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
-
-      // Step 3: Allow nodes to finalize their layout
-      const needRecalculate = this.finalizeLayout()
-      if (needRecalculate) {
-        this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
-      }
-
-      // Step 4: Create a canvas with calculated dimensions
-      const calculatedContentHeight = this.node.getComputedHeight()
-      const finalCanvasWidth = Math.ceil(this.targetWidth * this.scale)
-      const finalCanvasHeight = this.targetHeight ? Math.ceil(this.targetHeight * this.scale) : Math.max(1, Math.ceil(calculatedContentHeight * this.scale))
-
-      // Step 5: Set up canvas context
-      this.canvas = new Canvas(finalCanvasWidth, finalCanvasHeight)
+      this.canvas = new Canvas(this.canvasWidth(), this.canvasHeight(contentHeight))
       this.ctx = this.canvas.getContext('2d')
       this.ctx.scale(this.scale, this.scale)
 
-      // Step 6: Render content
-      await super.render(this.ctx, 0, 0)
+      await this.drawInto(this.ctx)
 
       if (!this.canvas) {
         throw new Error('Canvas not initialized')
@@ -478,13 +467,86 @@ export class RootNode extends ColumnNode {
       // Freed before the disk cache is cleaned up, not after. Both run in the same `finally`, but
       // deleting cache files is asynchronous, and awaiting it first would hold the whole layout
       // tree in WASM memory across that I/O for no reason. This is the earliest point the tree is
-      // provably dead: layout is read during `super.render`, and nothing consults it afterwards.
+      // provably dead: layout is read during `drawInto`, and nothing consults it afterwards.
       this.freeLayoutTree()
 
       if (diskCacheKeys?.size) {
         await Promise.allSettled([...diskCacheKeys].map(key => deleteDiskCache(key)))
       }
     }
+  }
+
+  /**
+   * Loads images and settles the layout, returning the height the content came out at.
+   *
+   * Split from {@link RootNode.render} so a paged render can drive it directly: pages share one
+   * canvas but not one tree, and the canvas cannot be sized until the first tree has been laid out.
+   *
+   * `imageCache` is supplied by the caller rather than created here precisely so a paged render can
+   * pass the same map to every page. An image referenced by sixty frames then loads once instead of
+   * sixty times.
+   */
+  async prepare(imageCache: RenderImageCache, diskCacheKeys?: Set<string>): Promise<number> {
+    // Load all images with a concurrency limit to avoid overwhelming remote sources.
+    const imageNodes = this.findAllImageNodes()
+    if (imageNodes.length > 0) {
+      const queue = [...imageNodes]
+      let qIdx = 0
+      const workers = Array.from({ length: Math.min(this.imageConcurrency, queue.length) }, async () => {
+        while (qIdx < queue.length) {
+          const node = queue[qIdx++]
+          await node.load(imageCache, diskCacheKeys)
+        }
+      })
+      await Promise.allSettled(workers).then(results => {
+        results.forEach(r => {
+          if (r.status === 'rejected') console.warn('[RootNode] Image load worker failed:', r.reason)
+        })
+      })
+    }
+
+    this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+
+    // Allow nodes to finalize their layout, recalculating if any of them changed size.
+    const needRecalculate = this.finalizeLayout()
+    if (needRecalculate) {
+      this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+    }
+
+    return this.node.getComputedHeight()
+  }
+
+  /** Draws the prepared tree into a context. Call {@link RootNode.prepare} first. */
+  async drawInto(ctx: CanvasRenderingContext2D): Promise<void> {
+    await super.render(ctx, 0, 0)
+  }
+
+  /** Canvas width in device pixels. */
+  canvasWidth(): number {
+    return Math.ceil(this.targetWidth * this.scale)
+  }
+
+  /**
+   * Canvas height in device pixels, falling back to the height the content laid out at when no
+   * explicit height was given.
+   */
+  canvasHeight(contentHeight: number): number {
+    return this.targetHeight ? Math.ceil(this.targetHeight * this.scale) : Math.max(1, Math.ceil(contentHeight * this.scale))
+  }
+
+  /** Scale factor applied to every page's context. */
+  get renderScale(): number {
+    return this.scale
+  }
+
+  /** Registers this render's fonts. Public so a paged render can do it once for the whole sequence. */
+  registerFonts(): Promise<void> {
+    return this._registerFonts()
+  }
+
+  /** Releases the Yoga tree. Public so a paged render can free each page as soon as it is drawn. */
+  releaseLayoutTree(): void {
+    this.freeLayoutTree()
   }
 
   /**
@@ -519,6 +581,65 @@ export class RootNode extends ColumnNode {
 }
 
 /**
+ * Renders a sequence of pages onto one canvas.
+ *
+ * One `RootNode` per page, not one reused across pages: the tree is built in the constructor and
+ * freed once drawn, and a freed Yoga node cannot be laid out again. Building a fresh tree is cheap
+ * — plain object construction — next to the layout and image work each page needs anyway.
+ *
+ * The costly parts are shared instead. One image cache spans every page, so a source referenced by
+ * the whole sequence is fetched once; fonts register once; and the disk cache is swept once at the
+ * end rather than per page.
+ *
+ * Each page's tree is freed as soon as it has been drawn, so memory stays flat across a long
+ * sequence instead of holding every page's layout at once.
+ */
+export async function renderPages(props: RootProps, pages: (Children | Children[])[]): Promise<Canvas> {
+  const diskCacheKeys = props.useDiskCache ? new Set<string>() : undefined
+  const imageCache: RenderImageCache = new Map()
+
+  // Dropped rather than spread: `children` here is the builder that produced `pages`, and
+  // `pagedChildren` is the wire form of the same thing. A node draws one page and takes neither.
+  const { children: _builder, pagedChildren: _resolved, ...pageProps } = props
+
+  let canvas: Canvas | undefined
+  let fontsRegistered = false
+
+  try {
+    for (const children of pages) {
+      const node = new RootNode({ ...pageProps, children } as RootNodeProps & BaseProps)
+      try {
+        if (!fontsRegistered) {
+          await node.registerFonts()
+          fontsRegistered = true
+        }
+
+        const contentHeight = await node.prepare(imageCache, diskCacheKeys)
+        const width = node.canvasWidth()
+        const height = node.canvasHeight(contentHeight)
+
+        // The first page owns the canvas; every later one appends to it.
+        const ctx = canvas ? canvas.newPage(width, height) : (canvas = new Canvas(width, height)).getContext('2d')
+        ctx.scale(node.renderScale, node.renderScale)
+
+        await node.drawInto(ctx)
+      } finally {
+        node.releaseLayoutTree()
+      }
+    }
+
+    if (!canvas) {
+      throw new Error('[canvas] a paged render produced no pages')
+    }
+    return canvas
+  } finally {
+    if (diskCacheKeys?.size) {
+      await Promise.allSettled([...diskCacheKeys].map(key => deleteDiskCache(key)))
+    }
+  }
+}
+
+/**
  * Creates and renders a new root node with the given properties.
  * Rendering runs in worker threads by default for non-blocking operation.
  * @example
@@ -536,12 +657,19 @@ export class RootNode extends ColumnNode {
  * @param props Configuration properties for the root node
  * @returns Canvas with .release() in worker mode, plain Canvas otherwise
  */
-export function Root(props: RootPropsWithWorker): Promise<WorkerCanvas>
-export function Root(props: RootPropsWithoutWorker): Promise<Canvas>
+export function Root(props: RootPropsWithWorker & RootContent): Promise<WorkerCanvas>
+export function Root(props: RootPropsWithoutWorker & RootContent): Promise<Canvas>
 export async function Root(props: RootProps): Promise<Canvas | WorkerCanvas> {
   // Determine worker mode
   const workerMode = props.workerMode ?? true
   const workerPoolSize = props.workers ?? Math.max(1, cpus().length - 1)
+
+  // Runs on this thread even for a worker render. The builder is a function, and a function cannot
+  // be structured-cloned; resolving it here sends the worker plain data in a single transfer
+  // instead of a round trip per page. It also keeps nested `onLoad`/`onError` callbacks working —
+  // those are extracted from the props on the way out, which a tree returned later through the
+  // callback proxy would bypass.
+  const pages = await planPages(props)
 
   if (workerMode) {
     // Lazy initialize worker pool — dynamic import to avoid loading Comlink in non-worker contexts
@@ -549,10 +677,10 @@ export async function Root(props: RootProps): Promise<Canvas | WorkerCanvas> {
       const { ComlinkPool } = await import('@/worker/comlink.pool.js')
       _workerPool = new ComlinkPool(workerPoolSize)
     }
-    const result = await _workerPool.render(props)
+    const result = await _workerPool.render(pages ? { ...props, children: undefined, pagedChildren: pages } : props)
     return new WorkerCanvas({ ...result, pool: _workerPool })
   }
 
   // Non-worker mode — render directly and return Canvas
-  return new RootNode(props).render()
+  return pages ? renderPages(props, pages) : new RootNode(asNodeProps(props)).render()
 }

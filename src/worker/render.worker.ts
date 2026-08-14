@@ -2,7 +2,8 @@ import { parentPort, workerData, type MessagePort } from 'node:worker_threads'
 import { Comlink, nodeEndpoint } from '@/worker/comlink.setup.js'
 import { restoreFunctions } from '@/worker/comlink.pool.js'
 import { createCanvasHandlers } from '@/worker/canvas-handlers.js'
-import { RootNode } from '@/canvas/root.canvas.js'
+import { RootNode, renderPages } from '@/canvas/root.canvas.js'
+import { asNodeProps } from '@/canvas/page.plan.js'
 import type { Canvas } from 'meo-skia-canvas'
 import type { WorkerAPI, CallFn, SyncRequest, SyncResponse } from '@/worker/worker.types.js'
 
@@ -16,7 +17,9 @@ let nextCanvasId = 0
 const handlers = createCanvasHandlers({
   canvases,
   getNextCanvasId: () => nextCanvasId++,
-  renderRoot: async props => new RootNode(props).render(),
+  // A paged render arrives with its pages already resolved — `Root` runs the builder on the calling
+  // thread, since a function cannot cross a thread boundary by structured clone.
+  renderRoot: async props => (props.pagedChildren ? renderPages(props, props.pagedChildren) : new RootNode(asNodeProps(props)).render()),
 })
 
 const api: WorkerAPI = {

@@ -1,4 +1,5 @@
 import { BoxNode } from '@/canvas/layout.canvas.js'
+import type { ExportFormat, ExportOptions, SaveOptions } from 'meo-skia-canvas'
 import type { TextNode } from '@/canvas/text.canvas.js'
 import type { ImageNode } from '@/canvas/image.canvas.js'
 import type { GridNode } from '@/canvas/grid.canvas.js'
@@ -587,7 +588,86 @@ export interface GridItemProps extends BoxProps {
  * Root component props for canvas rendering.
  * Extends BoxProps for layout and styling capabilities.
  */
-export interface RootProps extends BoxProps {
+
+/**
+ * Describes one page to the function that builds it.
+ *
+ * A page is a frame for `gif`/`apng`, a sheet for `pdf`/`tiff`, and a size for `ico`.
+ */
+export interface PageInfo {
+  /** Zero-based position in the sequence. */
+  index: number
+
+  /** Total pages in this render. */
+  count: number
+
+  /**
+   * Position along the sequence, `0` on the first page and `1` on the last.
+   * Interpolation and easing want this. A single-page render reports `0`.
+   */
+  progress: number
+
+  /**
+   * Seconds elapsed at this page, derived as `index / fps`.
+   * Physics and spring integration want this rather than {@link PageInfo.progress}.
+   */
+  time: number
+}
+
+/**
+ * Builds the content of one page. May be async.
+ *
+ * Only `Root` accepts this form — pages exist at the canvas level, so a nested element has no page
+ * of its own to describe.
+ */
+export type PageBuilder = (page: PageInfo) => Children | Children[] | Promise<Children | Children[]>
+
+/**
+ * Props accepted by `Root`.
+ *
+ * `children` is widened here to include the page-builder form. The public `Root` overloads narrow
+ * it again into the mutually exclusive still and paged shapes; this interface is the internal union
+ * both collapse to, and the shape that crosses the worker boundary.
+ */
+export interface RootProps extends Omit<BoxProps, 'children'> {
+  /**
+   * Content to draw.
+   *
+   * Pass elements for a single-page render, or a function to render a sequence — one page per call.
+   * The function form requires either {@link RootProps.pages} or {@link RootProps.duration}.
+   */
+  children?: Children | Children[] | PageBuilder
+
+  /**
+   * Number of pages to render. Mutually exclusive with {@link RootProps.duration}.
+   * Only meaningful when `children` is a function.
+   */
+  pages?: number
+
+  /**
+   * Length of the sequence in seconds; the page count becomes `ceil(duration * fps)`.
+   * Mutually exclusive with {@link RootProps.pages}, and only meaningful when `children` is a function.
+   */
+  duration?: number
+
+  /**
+   * Frame rate used to derive {@link RootProps.duration} and {@link PageInfo.time}. Defaults to 30.
+   *
+   * This describes the render, not the encode: pass `fps` to `toBuffer('gif', { fps })` as well if
+   * the encoded animation should play at this rate.
+   */
+  fps?: number
+
+  /**
+   * Pages already resolved from the builder, one entry per page.
+   *
+   * Internal, and the only form a paged render takes across the worker boundary: the builder is a
+   * function, functions cannot be structured-cloned, and running it on the worker side would cost a
+   * round trip per page. `Root` resolves it on the calling thread and sends the result instead.
+   * @internal
+   */
+  pagedChildren?: (Children | Children[])[]
+
   /**
    * Width of the canvas in pixels.
    * @required
@@ -646,7 +726,7 @@ export interface RootProps extends BoxProps {
  * Root props when worker mode is enabled (default behavior).
  * Includes .release() method for memory cleanup.
  */
-export interface RootPropsWithWorker extends RootProps {
+interface RootPropsWithWorkerBase extends RootProps {
   /**
    * Worker mode enabled or default (undefined defaults to true).
    */
@@ -663,7 +743,7 @@ export interface RootPropsWithWorker extends RootProps {
  * Returns plain Canvas without .release() method.
  * workers prop is not available in this mode.
  */
-export interface RootPropsWithoutWorker extends RootProps {
+interface RootPropsWithoutWorkerBase extends RootProps {
   /**
    * Worker mode explicitly disabled.
    */
@@ -675,6 +755,86 @@ export interface RootPropsWithoutWorker extends RootProps {
    */
   workers?: never
 }
+
+/**
+ * Root props in worker mode, narrowed to one valid content shape.
+ */
+export type RootPropsWithWorker = RootPropsWithWorkerBase & RootContent
+
+/**
+ * Root props with worker mode disabled, narrowed to one valid content shape.
+ */
+export type RootPropsWithoutWorker = RootPropsWithoutWorkerBase & RootContent
+
+/**
+ * Props a {@link RootProps} render is reduced to before a `RootNode` is built.
+ *
+ * A node draws one page, so it never sees the builder form: `Root` resolves the sequence first and
+ * constructs one node per page with that page's already-built children.
+ */
+export type RootNodeProps = Omit<RootProps, 'children' | 'pages' | 'duration' | 'fps' | 'pagedChildren'> & {
+  children?: Children | Children[]
+}
+
+/**
+ * Single-page content: elements, drawn once.
+ *
+ * The page props are `never` here so that naming one alongside static children is a compile error
+ * rather than a silently ignored request. `resolvePageCount` rejects the same combination at
+ * runtime, which is the half that catches untyped callers.
+ */
+export interface StillContent {
+  children?: Children | Children[]
+  pages?: never
+  duration?: never
+  fps?: never
+}
+
+/**
+ * Multi-page content: a builder, run once per page.
+ *
+ * Exactly one of `pages` or `duration` is required — expressed as two members of a union rather
+ * than two optional properties, so omitting both and supplying both are each rejected.
+ */
+export type PagedContent = { children: PageBuilder } & ({ pages: number; duration?: never; fps?: number } | { duration: number; pages?: never; fps?: number })
+
+/** Content shapes `Root` accepts: one page of elements, or a sequence from a builder. */
+export type RootContent = StillContent | PagedContent
+
+/**
+ * Formats that play a canvas's pages as an animation.
+ *
+ * Everything else encodes a single page — `png` and friends take one, `pdf` and `tiff` gather them
+ * all as sheets — which is why the timing options below are rejected outside this pair.
+ */
+export type AnimatedFormat = Extract<ExportFormat, 'gif' | 'apng'>
+
+/** Formats that encode without a timeline. */
+export type StillFormat = Exclude<ExportFormat, AnimatedFormat>
+
+/**
+ * Encode options that only mean something for an animation.
+ *
+ * The renderer raises a `TypeError` when any of these reaches a format that cannot animate, rather
+ * than dropping it silently. Splitting the export signatures by format turns that runtime failure
+ * into a compile error.
+ */
+export interface AnimationExportOptions {
+  /** Frames per second; one page is one frame. Defaults to 30. */
+  fps?: number
+
+  /** Per-frame durations in milliseconds, one per page. Overrides {@link AnimationExportOptions.fps}. */
+  frameDelays?: number[]
+
+  /** Times the animation repeats. `0` — the default — loops forever. */
+  loop?: number
+}
+
+/** Export options accepted for a still format: everything except the animation timing. */
+export type StillExportOptions = Omit<ExportOptions, keyof AnimationExportOptions>
+
+/** Save options accepted for a still format. */
+export type StillSaveOptions = Omit<SaveOptions, keyof AnimationExportOptions>
 
 /**
  * Tracks can be specified as:

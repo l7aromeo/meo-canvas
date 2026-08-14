@@ -444,7 +444,10 @@ that inherits all `BoxProps`.
 | -------------- | --------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `width`        | `number`                          | -                   | **Required.** Width of the canvas in pixels.                                                          |
 | `height`       | `number`                          | -                   | Optional height of the canvas. If not set, it's calculated from content.                              |
-| `children`     | `CanvasElement | CanvasElement[]` | -                   | **Required.** The component tree to render.                                                           |
+| `children`     | `CanvasElement | CanvasElement[] | (page: PageInfo) => Children` | -     | **Required.** The component tree to render. Pass a function to render a sequence — one page per call.  |
+| `pages`        | `number`                          | -                   | Pages to render. Needs a `children` function; mutually exclusive with `duration`.                     |
+| `duration`     | `number`                          | -                   | Sequence length in seconds; pages become `ceil(duration * fps)`. Needs a `children` function.         |
+| `fps`          | `number`                          | `30`                | Rate used to derive `duration` and `PageInfo.time`. Describes the render, not the encode.             |
 | `scale`        | `number`                          | `1`                 | Scale factor for rendering (e.g., 2 for 2x resolution).                                               |
 | `fonts`        | `FontRegistrationInfo[]`          | -                   | An array of font files to register for use in the canvas.                                             |
 | `useDiskCache` | `boolean`                         | `false`             | Write fetched images to disk during render for faster re-decode. Entries are cleaned up after render. |
@@ -455,11 +458,54 @@ that inherits all `BoxProps`.
 Since `Root` extends `BoxProps`, it also accepts `backgroundColor`, `padding`, `gradient`, `boxShadow`, and all other
 layout props. See [Box, Row, and Column](#box-row-and-column) for the full list.
 
+#### Multi-page and Animated Output
+
+A page is a frame for `gif` and `apng`, a sheet for `pdf` and `tiff`, and a size for `ico`. Pass a function as
+`children` to render a sequence — it runs once per page.
+
+```javascript
+const canvas = await Root({
+  width: 200,
+  height: 200,
+  duration: 1.5, // 36 pages at 24fps
+  fps: 24,
+  children: ({ progress }) =>
+    Box({
+      width: 40 + progress * 120,
+      height: 40 + progress * 120,
+      borderRadius: 999,
+      borderWidth: 6,
+      borderColor: `hsl(${Math.round(progress * 320)}, 90%, 60%)`,
+    }),
+});
+
+await canvas.toBuffer('gif', { fps: 24, loop: 0 });
+```
+
+The function receives a `PageInfo`:
+
+| Field      | Type     | Description                                                                 |
+| ---------- | -------- | --------------------------------------------------------------------------- |
+| `index`    | `number` | Zero-based position in the sequence.                                          |
+| `count`    | `number` | Total pages in this render.                                                   |
+| `progress` | `number` | `0` on the first page, `1` on the last. Use for interpolation and easing.     |
+| `time`     | `number` | Seconds elapsed, `index / fps`. Use for physics or spring integration.        |
+
+The function may be async, so a page can await its own data. Use `pages: n` instead of `duration` when the count
+matters more than the timing — a three-page PDF is `pages: 3`.
+
+`fps` on `Root` sizes the sequence and derives `time`; it does not reach the encoder. Pass it again to `toBuffer` if
+the encoded animation should play at that rate, or give `frameDelays` one entry per page for uneven timing. GIF stores
+hundredths of a second, so 24fps alternates 40ms and 50ms frames; APNG stores a fraction and hits the rate exactly.
+
 #### Canvas Methods
 
 The `Root()` function returns a Canvas object with the following methods and properties.
 
 ##### Export Methods
+
+Animation timing — `fps`, `loop`, `frameDelays` — is accepted only by `gif` and `apng`. Passing it to any other format
+is a compile error, matching the renderer, which raises a `TypeError` rather than dropping it silently.
 
 
 | Method          | Signature                                                            | Description                                                       |
