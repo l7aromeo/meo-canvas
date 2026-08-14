@@ -499,6 +499,87 @@ matters more than the timing — a three-page PDF is `pages: 3`.
 The animated card in the [Showcase](#showcase) is built this way — staggered bars easing to their values, with no
 keyframes anywhere. See [`scripts/generate_sample_animated_card.ts`](./scripts/generate_sample_animated_card.ts).
 
+### Animation Utilities
+
+Everything below is a pure function of the page, so it can be called for any page in any order and
+never carries state between them.
+
+#### Tracks
+
+A `track` declares one animation and is sampled per page. It works in seconds, which is what
+`duration` and `fps` already speak.
+
+```javascript
+import { Root, Box, track } from 'meo-canvas'
+
+const grow = track({ from: 0, to: 1, duration: 0.75, delay: 0.1, stagger: 0.18, ease: 'outCubic' })
+
+const canvas = await Root({
+  width: 640,
+  height: 320,
+  duration: grow.totalDuration(3), // long enough for all three staggered items
+  fps: 24,
+  children: page => Box({ children: SERIES.map((s, i) => Bar({ fill: grow.at(page, i) })) }),
+})
+```
+
+| Option     | Type                        | Description                                                      |
+| ---------- | --------------------------- | ---------------------------------------------------------------- |
+| `from`     | `number \| string \| array` | Value before the track starts. Strings are colours.              |
+| `to`       | `number \| string \| array` | Value once it has finished.                                      |
+| `duration` | `number`                    | Seconds the motion lasts. Required unless `spring` supplies one. |
+| `delay`    | `number`                    | Seconds to wait before starting.                                 |
+| `stagger`  | `number`                    | Extra delay per item index, for offsetting a row of elements.    |
+| `ease`     | `EasingName \| function`    | Easing curve. Mutually exclusive with `spring`.                  |
+| `spring`   | `SpringConfig`              | Spring physics instead of an easing; supplies its own duration.  |
+
+`track.at(page, index?)` reads the value, `track.duration` is when the first item finishes, and
+`track.totalDuration(count)` is when the last staggered one does.
+
+#### Easing
+
+`easings` carries the standard catalogue — `linear`, plus `in`/`out`/`inOut` of `Quad`, `Cubic`,
+`Quart`, `Quint`, `Sine`, `Expo`, `Circ`, `Back`, `Elastic` and `Bounce`. Every curve is pinned to 0
+at the start and 1 at the end, and clamps outside that range. `cubicBezier(x1, y1, x2, y2)` builds a
+CSS-compatible curve, and `steps(n)` quantises.
+
+#### Springs
+
+Springs are solved in closed form, not simulated, so any page can be evaluated on its own:
+
+```javascript
+import { spring, springDuration, track } from 'meo-canvas';
+
+const config = { stiffness: 190, damping: 12 };
+
+// A spring settles asymptotically, so let the physics size the render.
+const canvas = await Root({ duration: springDuration(config), fps: 30, children: page => ... });
+
+const scale = track({ from: 0.6, to: 1, spring: config });
+```
+
+| Option      | Default | Description                                                           |
+| ----------- | ------- | --------------------------------------------------------------------- |
+| `stiffness` | `170`   | How hard it pulls toward the target.                                  |
+| `damping`   | `26`    | Resistance. Past critical it stops overshooting — and settles slower. |
+| `mass`      | `1`     | Inertia.                                                              |
+| `velocity`  | `0`     | Speed at t = 0, in units per second.                                  |
+
+#### Interpolation and colour
+
+```javascript
+lerp(0, 100, 0.25) // 25 — unclamped, so overshooting easings still overshoot
+mapRange(50, [0, 100], [0, 1], { clamp: true }) // 0.5
+interpolate(0.25, [0, 0.5, 1], [0, 100, 0]) // 50 — keyframes, holding at both ends
+mix('#000000', '#ffffff', 0.5) // '#808080'
+```
+
+`mix` blends numbers, arrays and colours. Colour parsing is delegated to the rendering engine rather
+than reimplemented, so **every format the engine accepts works** — named colours, `#rgb`/`#rgba`/
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` in both legacy and modern syntax, `hsl()`, `hwb()`, `lab()`,
+`lch()`, `oklab()`, `oklch()` and `color(display-p3 …)`. Anything the engine learns later works too.
+An unrecognised colour throws rather than rendering as a silent black.
+
 `fps` on `Root` sizes the sequence and derives `time`; it does not reach the encoder. Pass it again to `toBuffer` if
 the encoded animation should play at that rate, or give `frameDelays` one entry per page for uneven timing. GIF stores
 hundredths of a second, so 24fps alternates 40ms and 50ms frames; APNG stores a fraction and hits the rate exactly.

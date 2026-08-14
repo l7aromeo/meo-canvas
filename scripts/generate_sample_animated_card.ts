@@ -1,60 +1,50 @@
-import { Root, Column, Row, Box, Text, Style } from '../src/index.js'
+import { Root, Column, Row, Box, Text, Style, track, springDuration, mix, easings } from '../src/index.js'
 import path from 'path'
 import fs from 'fs'
 
 /**
- * Renders an animated stats card: one page per frame, driven entirely by the page's `progress`.
+ * Renders an animated stats card: one page per frame, described entirely with animation tracks.
  *
- * Nothing here is keyframed. Every moving value is a function of `progress`, which is what a page
- * builder is for — the sequence is described once and the renderer runs it per page.
+ * Nothing here is keyframed and nothing computes its own timing. Each moving value is a `track`
+ * declared once and sampled per page, so the stagger, the easing and the colour blend are the
+ * library's arithmetic rather than this script's.
  */
 
 const WIDTH = 640
 const HEIGHT = 320
-const DURATION_SECONDS = 2
 const FPS = 24
 
-/** Bars grow to these fractions of the track, in order. */
 const SERIES = [
   { label: 'Renders', value: 0.92, color: '#38bdf8' },
   { label: 'Cache hits', value: 0.74, color: '#a78bfa' },
   { label: 'Errors', value: 0.16, color: '#fb7185' },
 ]
 
-/** Each bar starts a little after the one above it, so the row staggers in rather than moving as a block. */
-const STAGGER = 0.12
-
-/** Fraction of the sequence a single bar spends growing, leaving the tail of the animation settled. */
-const GROW_SPAN = 0.55
-
-/** Bar track spans the card, less the padding either side and the value column's own width. */
 const BAR_TRACK_WIDTH = WIDTH - 64
 const BAR_HEIGHT = 14
-
 const RING_SIZE = 54
-/** The ring sweeps from cyan through violet across the sequence. */
-const RING_HUE_START = 200
-const RING_HUE_SWEEP = 120
 
-/** Smoothstep: eases in and out, so bars arrive without the dead stop a linear ramp gives. */
-const ease = (t: number): number => {
-  const clamped = Math.min(1, Math.max(0, t))
-  return clamped * clamped * (3 - 2 * clamped)
-}
+/** Each bar eases to full over its own window, the next starting a beat after the one above. */
+const growth = track({ from: 0, to: 1, duration: 0.75, delay: 0.1, stagger: 0.18, ease: 'outCubic' })
 
-/** Progress of one bar at a given point in the sequence, accounting for its stagger. */
-const barProgress = (progress: number, index: number): number => ease((progress - index * STAGGER) / GROW_SPAN)
+/** The ring's hue is a colour blend rather than hand-rolled `hsl()` arithmetic. */
+const ringColor = track({ from: '#38bdf8', to: '#f472b6', duration: 1.4, ease: 'inOutSine' })
+const ringFade = track({ from: 0.35, to: 1, duration: 1.4, ease: 'inOutSine' })
 
-const Bar = (series: (typeof SERIES)[number], progress: number, index: number) => {
-  const grown = barProgress(progress, index)
-  const filled = series.value * grown
+/** The ring also scales in on a spring, which overshoots the way an eased curve cannot. */
+const RING_SPRING = { stiffness: 190, damping: 12 }
+const ringScale = track({ from: 0.6, to: 1, spring: RING_SPRING })
+
+/** Long enough for every staggered bar to finish, and for the spring to stop moving. */
+const DURATION_SECONDS = Math.max(growth.totalDuration(SERIES.length), ringColor.duration, ringScale.duration)
+
+const Bar = (series: (typeof SERIES)[number], page: Parameters<typeof growth.at>[0], index: number) => {
+  const filled = series.value * growth.at(page, index)
 
   return Column({
     gap: 6,
     children: [
       Row({
-        // Width is explicit: a row sized to its content has no free space for SPACE_BETWEEN to
-        // distribute, and the label and value end up touching.
         width: BAR_TRACK_WIDTH,
         justifyContent: Style.Justify.SpaceBetween,
         alignItems: Style.Align.Center,
@@ -72,7 +62,8 @@ const Bar = (series: (typeof SERIES)[number], progress: number, index: number) =
           Box({
             width: Math.max(BAR_HEIGHT, BAR_TRACK_WIDTH * filled),
             height: BAR_HEIGHT,
-            backgroundColor: series.color,
+            // The fill deepens as it grows, blended from the track's own progress.
+            backgroundColor: mix('#334155', series.color, easings.outQuad(growth.at(page, index))),
             borderRadius: BAR_HEIGHT / 2,
           }),
         ],
@@ -91,7 +82,7 @@ void (async () => {
       fps: FPS,
       backgroundColor: '#0b1120',
       padding: 32,
-      children: ({ progress, index, count }) =>
+      children: page =>
         Column({
           width: '100%',
           gap: 22,
@@ -108,21 +99,21 @@ void (async () => {
                     Text('meo-canvas · animated card', { fontSize: 13, color: '#64748b' }),
                   ],
                 }),
-                // A ring that sweeps once through the sequence, so the header carries the timeline too.
                 Box({
                   width: RING_SIZE,
                   height: RING_SIZE,
                   borderRadius: RING_SIZE / 2,
                   border: 4,
-                  borderColor: `hsl(${Math.round(RING_HUE_START + ease(progress) * RING_HUE_SWEEP)}, 85%, 62%)`,
-                  opacity: 0.35 + ease(progress) * 0.65,
+                  borderColor: ringColor.at(page),
+                  opacity: ringFade.at(page),
+                  transform: { scale: ringScale.at(page) },
                 }),
               ],
             }),
 
-            Column({ gap: 16, children: SERIES.map((series, i) => Bar(series, progress, i)) }),
+            Column({ gap: 16, children: SERIES.map((series, i) => Bar(series, page, i)) }),
 
-            Text(`frame ${index + 1} / ${count}`, { fontSize: 12, color: '#475569' }),
+            Text(`frame ${page.index + 1} / ${page.count}`, { fontSize: 12, color: '#475569' }),
           ],
         }),
     })
@@ -135,7 +126,8 @@ void (async () => {
     const gifFile = path.join(outDir, 'sample_animated_card.gif')
     await canvas.toFile(gifFile, { fps: FPS, loop: 0 })
 
-    console.log(`Animated card generated at: ${gifFile} (${canvas.pages.length} pages)`)
+    console.log(`Animated card generated at: ${gifFile} (${canvas.pages.length} pages, ${DURATION_SECONDS.toFixed(2)}s)`)
+    console.log(`  ring spring settles after ${springDuration(RING_SPRING).toFixed(2)}s`)
   } catch (e) {
     console.error(e)
   }
