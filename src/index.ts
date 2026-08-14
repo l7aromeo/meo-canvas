@@ -9,6 +9,13 @@ export { Grid } from '@/canvas/grid.canvas.js'
 export { Chart } from '@/canvas/chart.canvas.js'
 export { clearDiskCache, setDiskCacheDir } from '@/util/disk.cache.js'
 
+// Animation utilities: pure, stateless, and safe to call from a page builder in any order.
+export { easings, cubicBezier, steps, resolveEasing, type Easing, type EasingFn, type EasingName } from '@/animate/easing.js'
+export { lerp, mapRange, interpolate, mix, type Animatable } from '@/animate/interpolate.js'
+export { parseColor, formatColor, mixColor, isColor, type Rgba } from '@/animate/color.js'
+export { spring, springDuration, type SpringConfig, type SpringDurationOptions } from '@/animate/spring.js'
+export { track, type Track, type TrackConfig } from '@/animate/track.js'
+
 /**
  * Re-exported from the renderer so consumers can name them without importing a transitive
  * dependency — a reach that breaks under pnpm's strict layout and Yarn PnP. These already appear in
