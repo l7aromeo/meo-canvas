@@ -442,20 +442,20 @@ that inherits all `BoxProps`.
 
 #### Root Props
 
-| Prop               | Type                     | Default             | Description                                                                                           |
-| ------------------ | ------------------------ | ------------------- | ----------------------------------------------------------------------------------------------------- |
-| `width`            | `number`                 | -                   | **Required.** Width of the canvas in pixels.                                                          |
-| `height`           | `number`                 | -                   | Optional height of the canvas. If not set, it's calculated from content.                              |
-| `children`         | `CanvasElement           | CanvasElement[]     | (page: PageInfo) => Children`                                                                         | -   | **Required.** The component tree to render. Pass a function to render a sequence — one page per call. |
-| `pages`            | `number`                 | -                   | Pages to render. Needs a `children` function; mutually exclusive with `duration`.                     |
-| `duration`         | `number`                 | -                   | Sequence length in seconds; pages become `ceil(duration * fps)`. Needs a `children` function.         |
-| `fps`              | `number`                 | `30`                | Rate used to derive `duration` and `PageInfo.time`. Describes the render, not the encode.             |
-| `scale`            | `number`                 | `1`                 | Scale factor for rendering (e.g., 2 for 2x resolution).                                               |
-| `fonts`            | `FontRegistrationInfo[]` | -                   | An array of font files to register for use in the canvas.                                             |
-| `useDiskCache`     | `boolean`                | `false`             | Write fetched images to disk during render for faster re-decode. Entries are cleaned up after render. |
-| `imageConcurrency` | `number`                 | `5`                 | Maximum number of images to fetch concurrently during render.                                         |
-| `workerMode`       | `boolean`                | `true`              | Enable worker thread rendering for non-blocking operation.                                            |
-| `workers`          | `number`                 | `cpus().length - 1` | Number of worker threads to use (only applies on first render with`workerMode: true`).                |
+| Prop               | Type                                                               | Default             | Description                                                                                           |
+| ------------------ | ------------------------------------------------------------------ | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `width`            | `number`                                                           | -                   | **Required.** Width of the canvas in pixels.                                                          |
+| `height`           | `number`                                                           | -                   | Optional height of the canvas. If not set, it's calculated from content.                              |
+| `children`         | `CanvasElement \| CanvasElement[] \| (page: PageInfo) => Children` | -                   | **Required.** The component tree to render. Pass a function to render a sequence — one page per call. |
+| `pages`            | `number`                                                           | -                   | Pages to render. Needs a `children` function; mutually exclusive with `duration`.                     |
+| `duration`         | `number`                                                           | -                   | Sequence length in seconds; pages become `ceil(duration * fps)`. Needs a `children` function.         |
+| `fps`              | `number`                                                           | `30`                | Rate used to derive `duration` and `PageInfo.time`. Describes the render, not the encode.             |
+| `scale`            | `number`                                                           | `1`                 | Scale factor for rendering (e.g., 2 for 2x resolution).                                               |
+| `fonts`            | `FontRegistrationInfo[]`                                           | -                   | An array of font files to register for use in the canvas.                                             |
+| `useDiskCache`     | `boolean`                                                          | `false`             | Write fetched images to disk during render for faster re-decode. Entries are cleaned up after render. |
+| `imageConcurrency` | `number`                                                           | `5`                 | Maximum number of images to fetch concurrently during render.                                         |
+| `workerMode`       | `boolean`                                                          | `true`              | Enable worker thread rendering for non-blocking operation.                                            |
+| `workers`          | `number`                                                           | `cpus().length - 1` | Number of worker threads to use (only applies on first render with`workerMode: true`).                |
 
 Since `Root` extends `BoxProps`, it also accepts `backgroundColor`, `padding`, `gradient`, `boxShadow`, and all other
 layout props. See [Box, Row, and Column](#box-row-and-column) for the full list.
@@ -617,9 +617,9 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 | Prop                    | Type                               | Description                                                                   |
 | ----------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
-| `width`, `height`       | `number                            | string`                                                                       | Sets the size of the node in pixels or percentage. |
-| `minWidth`, `minHeight` | `number                            | string`                                                                       | Sets the minimum size of the node.                 |
-| `maxWidth`, `maxHeight` | `number                            | string`                                                                       | Sets the maximum size of the node.                 |
+| `width`, `height`       | `number \| string`                 | Sets the size of the node in pixels or percentage.                            |
+| `minWidth`, `minHeight` | `number \| string`                 | Sets the minimum size of the node.                                            |
+| `maxWidth`, `maxHeight` | `number \| string`                 | Sets the maximum size of the node.                                            |
 | `flexDirection`         | `Style.FlexDirection`              | Defines the direction of the main axis (`Row`, `Column`, etc.).               |
 | `justifyContent`        | `Style.Justify`                    | Defines how items are distributed along the main axis.                        |
 | `alignItems`            | `Style.Align`                      | Defines how items are aligned along the cross axis.                           |
@@ -627,53 +627,53 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 | `alignContent`          | `Style.Align`                      | Defines how lines are distributed when content wraps.                         |
 | `flexGrow`              | `number`                           | Defines the ability of an item to grow.                                       |
 | `flexShrink`            | `number`                           | Defines the ability of an item to shrink.                                     |
-| `flexBasis`             | `number                            | 'auto'                                                                        | string`                                            | Defines the default size of an item along the main axis. |
+| `flexBasis`             | `number \| 'auto' \| string`       | Defines the default size of an item along the main axis.                      |
 | `flexWrap`              | `Style.Wrap`                       | Controls whether flex items wrap to multiple lines.                           |
 | `positionType`          | `Style.PositionType`               | Sets the positioning method (`Relative` or `Absolute`).                       |
-| `position`              | `object                            | number                                                                        | string`                                            | Sets the offset for a positioned element.                |
-| `margin`                | `object                            | number                                                                        | string`                                            | Sets the margin space on the outside of the node.        |
-| `padding`               | `object                            | number                                                                        | string`                                            | Sets the padding space on the inside of the node.        |
-| `border`                | `object                            | number`                                                                       | Sets the width of the node's border.               |
+| `position`              | `object \| number \| string`       | Sets the offset for a positioned element.                                     |
+| `margin`                | `object \| number \| string`       | Sets the margin space on the outside of the node.                             |
+| `padding`               | `object \| number \| string`       | Sets the padding space on the inside of the node.                             |
+| `border`                | `object \| number`                 | Sets the width of the node's border.                                          |
 | `aspectRatio`           | `number`                           | Locks the aspect ratio (width / height) of the node.                          |
 | `overflow`              | `Style.Overflow`                   | Defines how content that overflows is handled (`Visible`, `Hidden`).          |
 | `display`               | `Style.Display`                    | Controls if the node is included in layout (`Flex`, `None`).                  |
 | `direction`             | `Style.Direction`                  | Sets the primary layout direction (`LTR`, `RTL`).                             |
-| `gap`                   | `object                            | number                                                                        | string`                                            | Defines the space between flex items.                    |
+| `gap`                   | `object \| number \| string`       | Defines the space between flex items.                                         |
 | `boxSizing`             | `Style.BoxSizing`                  | Defines how`width` and `height` are interpreted (`ContentBox`, `BorderBox`).  |
 | `zIndex`                | `number`                           | Specifies the stack order of an element (only for`positionType: 'absolute'`). |
 | `children`              | `CanvasElement \| CanvasElement[]` | Child nodes to render inside this node.                                       |
 
 #### Styling Props
 
-| Prop              | Type             | Description                                                 |
-| ----------------- | ---------------- | ----------------------------------------------------------- |
-| `backgroundColor` | `string`         | Sets the background color of the node.                      |
-| `borderColor`     | `string`         | Sets the color of the node's border.                        |
-| `borderStyle`     | `Style.Border`   | Sets the style of the border (`Solid`, `Dashed`, `Dotted`). |
-| `borderRadius`    | `object          | number`                                                     | Sets the radius of the node's corners.  |
-| `opacity`         | `number`         | Sets the opacity of the node and its children (0-1).        |
-| `gradient`        | `object`         | Sets a linear or radial gradient as the background.         |
-| `boxShadow`       | `BoxShadowProps  | BoxShadowProps[]`                                           | Applies one or more box-shadow effects. |
-| `transform`       | `TransformProps` | Applies 2D transformations (translate, rotate, scale).      |
+| Prop              | Type                                 | Description                                                 |
+| ----------------- | ------------------------------------ | ----------------------------------------------------------- |
+| `backgroundColor` | `string`                             | Sets the background color of the node.                      |
+| `borderColor`     | `string`                             | Sets the color of the node's border.                        |
+| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`). |
+| `borderRadius`    | `object \| number`                   | Sets the radius of the node's corners.                      |
+| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).        |
+| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.         |
+| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                     |
+| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).      |
 
 #### Font & Text Props (Inheritable)
 
 These props, when set on a `Box`, `Row`, or `Column`, are inherited by any descendant `Text` nodes.
 
-| Prop            | Type                 | Description                                |
-| --------------- | -------------------- | ------------------------------------------ |
-| `fontSize`      | `number`             | Font size in pixels.                       |
-| `fontFamily`    | `string`             | Font family name.                          |
-| `fontWeight`    | `string              | number`                                    | Font weight ('normal', 'bold', 400, etc.). |
-| `fontStyle`     | `'normal'            | 'italic'`                                  | Font style.                                |
-| `color`         | `string`             | Text color.                                |
-| `textAlign`     | `'start'             | 'end'                                      | 'left'                                     | 'center'                 | 'right' | 'justify'` | Horizontal text alignment. |
-| `verticalAlign` | `'top'               | 'middle'                                   | 'bottom'`                                  | Vertical text alignment. |
-| `lineHeight`    | `number`             | Line height in pixels.                     |
-| `lineGap`       | `number`             | Additional vertical spacing between lines. |
-| `letterSpacing` | `number              | string`                                    | Spacing between letters.                   |
-| `wordSpacing`   | `number              | string`                                    | Spacing between words.                     |
-| `fontVariant`   | `FontVariantSetting` | Specifies font variation settings.         |
+| Prop            | Type                                                             | Description                                |
+| --------------- | ---------------------------------------------------------------- | ------------------------------------------ |
+| `fontSize`      | `number`                                                         | Font size in pixels.                       |
+| `fontFamily`    | `string`                                                         | Font family name.                          |
+| `fontWeight`    | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.). |
+| `fontStyle`     | `'normal' \| 'italic'`                                           | Font style.                                |
+| `color`         | `string`                                                         | Text color.                                |
+| `textAlign`     | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                 |
+| `verticalAlign` | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                   |
+| `lineHeight`    | `number`                                                         | Line height in pixels.                     |
+| `lineGap`       | `number`                                                         | Additional vertical spacing between lines. |
+| `letterSpacing` | `number \| string`                                               | Spacing between letters.                   |
+| `wordSpacing`   | `number \| string`                                               | Spacing between words.                     |
+| `fontVariant`   | `FontVariantSetting`                                             | Specifies font variation settings.         |
 
 ---
 
@@ -684,11 +684,11 @@ properties.
 
 #### Text-Specific Props
 
-| Prop         | Type             | Description                                           |
-| ------------ | ---------------- | ----------------------------------------------------- |
-| `maxLines`   | `number`         | Maximum number of lines to display before truncating. |
-| `ellipsis`   | `boolean         | string`                                               | If`true`, adds '...' when text is truncated. Can also be a custom string. |
-| `textShadow` | `TextShadowProps | TextShadowProps[]`                                    | Applies one or more shadow effects to the text itself.                    |
+| Prop         | Type                                   | Description                                                               |
+| ------------ | -------------------------------------- | ------------------------------------------------------------------------- |
+| `maxLines`   | `number`                               | Maximum number of lines to display before truncating.                     |
+| `ellipsis`   | `boolean \| string`                    | If`true`, adds '...' when text is truncated. Can also be a custom string. |
+| `textShadow` | `TextShadowProps \| TextShadowProps[]` | Applies one or more shadow effects to the text itself.                    |
 
 ---
 
@@ -698,17 +698,17 @@ The `Image` component renders an image. It inherits all `BoxProps` except for `c
 
 #### Image-Specific Props
 
-| Prop             | Type                     | Description                                                                                                                                                   |
-| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src`            | `string                  | Buffer`                                                                                                                                                       | The source URL, file path, or buffer of the image. |
-| `httpOptions`    | `RequestInit`            | Fetch options (headers, method, body, etc.) applied when `src` is a remote `http`/`https` URL. Ignored for file paths and buffers. Folded into the cache key. |
-| `objectFit`      | `'fill'                  | 'contain'                                                                                                                                                     | 'cover'                                            | 'none' | 'scale-down'` | Specifies how the image should be resized to fit its container. |
-| `objectPosition` | `object`                 | Specifies the alignment of the image within its box.                                                                                                          |
-| `saturate`       | `number`                 | Adjusts the image's saturation level (0 is grayscale, 1 is original).                                                                                         |
-| `dropShadow`     | `DropShadowProps`        | Applies a drop-shadow effect based on the image's alpha channel.                                                                                              |
-| `alt`            | `string`                 | Alternative text description (for accessibility).                                                                                                             |
-| `onLoad`         | `() => void`             | Callback function that executes when the image loads successfully.                                                                                            |
-| `onError`        | `(error: Error) => void` | Callback function that executes when the image fails to load.                                                                                                 |
+| Prop             | Type                                                       | Description                                                                                                                                                   |
+| ---------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src`            | `string \| Buffer`                                         | The source URL, file path, or buffer of the image.                                                                                                            |
+| `httpOptions`    | `RequestInit`                                              | Fetch options (headers, method, body, etc.) applied when `src` is a remote `http`/`https` URL. Ignored for file paths and buffers. Folded into the cache key. |
+| `objectFit`      | `'fill' \| 'contain' \| 'cover' \| 'none' \| 'scale-down'` | Specifies how the image should be resized to fit its container.                                                                                               |
+| `objectPosition` | `object`                                                   | Specifies the alignment of the image within its box.                                                                                                          |
+| `saturate`       | `number`                                                   | Adjusts the image's saturation level (0 is grayscale, 1 is original).                                                                                         |
+| `dropShadow`     | `DropShadowProps`                                          | Applies a drop-shadow effect based on the image's alpha channel.                                                                                              |
+| `alt`            | `string`                                                   | Alternative text description (for accessibility).                                                                                                             |
+| `onLoad`         | `() => void`                                               | Callback function that executes when the image loads successfully.                                                                                            |
+| `onError`        | `(error: Error) => void`                                   | Callback function that executes when the image fails to load.                                                                                                 |
 
 ---
 
@@ -754,11 +754,11 @@ The `Chart` component renders various types of charts. It inherits all `BoxProps
 
 #### Chart-Specific Props
 
-| Prop      | Type                | Description                                                                   |
-| --------- | ------------------- | ----------------------------------------------------------------------------- |
-| `type`    | `'bar'              | 'line'                                                                        | 'pie'                                                    | 'doughnut'` | The type of chart to render. |
-| `data`    | `CartesianChartData | PieChartDataPoint[]`                                                          | The data for the chart, which varies based on the`type`. |
-| `options` | `ChartOptions<T>`   | An object containing rendering and style options, specific to the chart type. |
+| Prop      | Type                                        | Description                                                                   |
+| --------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| `type`    | `'bar' \| 'line' \| 'pie' \| 'doughnut'`    | The type of chart to render.                                                  |
+| `data`    | `CartesianChartData \| PieChartDataPoint[]` | The data for the chart, which varies based on the`type`.                      |
+| `options` | `ChartOptions<T>`                           | An object containing rendering and style options, specific to the chart type. |
 
 #### ChartOptions
 
@@ -766,15 +766,15 @@ The `options` prop is a conditional type that changes based on the chart `type`.
 
 ##### Common Options (All Chart Types)
 
-| Prop               | Type                                         | Description                                |
-| ------------------ | -------------------------------------------- | ------------------------------------------ |
-| `showLabels`       | `boolean`                                    | If`true`, displays labels on the chart.    |
-| `showLegend`       | `boolean`                                    | If`true`, displays the chart legend.       |
-| `labelFontSize`    | `number`                                     | Font size for labels and legend text.      |
-| `labelColor`       | `string`                                     | Color for labels and legend text.          |
-| `legendPosition`   | `'top'                                       | 'bottom'                                   | 'left' | 'right'` | The position of the legend relative to the chart. |
-| `renderLabelItem`  | `(props: { item, index }) => BoxNode`        | A custom render function for chart labels. |
-| `renderLegendItem` | `(props: { item, index, color }) => BoxNode` | A custom render function for legend items. |
+| Prop               | Type                                         | Description                                       |
+| ------------------ | -------------------------------------------- | ------------------------------------------------- |
+| `showLabels`       | `boolean`                                    | If`true`, displays labels on the chart.           |
+| `showLegend`       | `boolean`                                    | If`true`, displays the chart legend.              |
+| `labelFontSize`    | `number`                                     | Font size for labels and legend text.             |
+| `labelColor`       | `string`                                     | Color for labels and legend text.                 |
+| `legendPosition`   | `'top' \| 'bottom' \| 'left' \| 'right'`     | The position of the legend relative to the chart. |
+| `renderLabelItem`  | `(props: { item, index }) => BoxNode`        | A custom render function for chart labels.        |
+| `renderLegendItem` | `(props: { item, index, color }) => BoxNode` | A custom render function for legend items.        |
 
 ##### Cartesian Chart Options (`bar`, `line`)
 
