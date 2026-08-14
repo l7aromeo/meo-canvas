@@ -146,6 +146,13 @@ describe('sequence', () => {
     expect(() => sequence({ from: 0, steps: [{ to: 1 }] })).toThrow(/duration/i)
   })
 
+  it('refuses a step whose spring carries its own from or to', () => {
+    // The step's `to` and the previous value define the range; a second pair on the spring would be
+    // silently dropped otherwise.
+    expect(() => sequence({ from: 0, steps: [{ to: 1, spring: { stiffness: 100, from: 9 } }] })).toThrow(/from|to/i)
+    expect(() => sequence({ from: 0, steps: [{ to: 1, spring: { stiffness: 100, to: 9 } }] })).toThrow(/from|to/i)
+  })
+
   it('rejects a step that is both sprung and eased', () => {
     expect(() => sequence({ from: 0, steps: [{ to: 1, duration: 1, spring: { stiffness: 100 }, ease: 'outCubic' }] })).toThrow(/spring.*ease|ease.*spring/i)
   })

@@ -38,13 +38,33 @@ function context(): NonNullable<typeof scratch> {
 }
 
 /**
- * Parsed colours, keyed by the exact input string.
+ * How many parsed colours are kept.
+ *
+ * Bounded because the cache outlives every render: it is module state, so without a limit a
+ * long-running server would accumulate one permanent entry per distinct colour it ever drew. A
+ * render that computes a colour per page — which is what a chained `mix()` produces — makes that a
+ * steady leak rather than a theoretical one. A few thousand entries is far more than any scene's
+ * palette and costs a few hundred kilobytes.
+ */
+export const COLOR_CACHE_LIMIT = 4096
+
+/**
+ * Parsed colours, keyed by the exact input string, most recently used last.
  *
  * An animation asks for the same two endpoints on every page, so this turns a per-page parse into
  * a map lookup. Entries are frozen, and callers get a copy — a mutable cached object would let one
  * caller corrupt every later reader.
+ *
+ * Eviction is least-recently-used rather than oldest-first, because age says nothing about whether
+ * a colour is still in play: an animation's endpoints are the oldest entries it has and also the
+ * two it reads on every single page.
  */
 const cache = new Map<string, Readonly<Rgba>>()
+
+/** Number of colours currently cached. Exposed for tests, which is why it is a function. */
+export function colorCacheSize(): number {
+  return cache.size
+}
 
 /**
  * Resolves any colour the rendering engine accepts into sRGB.
@@ -60,7 +80,13 @@ const cache = new Map<string, Readonly<Rgba>>()
  */
 export function parseColor(css: string): Rgba {
   const hit = cache.get(css)
-  if (hit) return { ...hit }
+  if (hit) {
+    // Re-inserted so it moves to the end: a Map iterates in insertion order, which is what makes
+    // "the first key" the least recently used one.
+    cache.delete(css)
+    cache.set(css, hit)
+    return { ...hit }
+  }
 
   const ctx = context()
 
@@ -77,7 +103,13 @@ export function parseColor(css: string): Rgba {
   }
 
   const parsed = Object.freeze(fromNormalized(fromA, ctx))
+
+  if (cache.size >= COLOR_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
   cache.set(css, parsed)
+
   return { ...parsed }
 }
 

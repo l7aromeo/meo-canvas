@@ -1,7 +1,7 @@
 import type { PageInfo } from '@/canvas/canvas.type.js'
 import { type Easing, resolveEasing } from '@/animate/easing.js'
 import { type Animatable, mix } from '@/animate/interpolate.js'
-import { type SpringConfig, spring, springDuration } from '@/animate/spring.js'
+import { type SpringConfig, assertSpringHasNoRange, spring, springDuration } from '@/animate/spring.js'
 import type { Track } from '@/animate/track.js'
 
 /** One leg of a sequence: where to move to, over how long, and how. */
@@ -67,6 +67,8 @@ export function sequence<T extends Animatable>(config: SequenceConfig<T>): Track
     if (step.spring && step.ease !== undefined) {
       throw new Error(`[canvas] sequence step ${index} takes \`spring\` or \`ease\`, not both — a spring carries its own curve`)
     }
+
+    if (step.spring) assertSpringHasNoRange(step.spring, `sequence step ${index}`)
 
     const duration = step.duration ?? (step.spring ? springDuration(step.spring) : undefined)
     if (duration === undefined) {

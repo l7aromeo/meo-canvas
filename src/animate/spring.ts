@@ -102,6 +102,20 @@ export function spring(t: number, config: SpringConfig = {}): number {
   return to + displacement
 }
 
+/**
+ * Rejects a spring whose own `from`/`to` would be discarded.
+ *
+ * A track and a sequence step each define their own range, and drive the spring over 0..1 so the
+ * physics stays independent of the units. A `from` or `to` on the spring itself therefore cannot be
+ * honoured — and dropping it silently would animate to a value the caller never asked for while
+ * looking like it had been obeyed.
+ */
+export function assertSpringHasNoRange(config: SpringConfig, owner: string): void {
+  if (config.from !== undefined || config.to !== undefined) {
+    throw new Error(`[canvas] ${owner} defines its own \`from\`/\`to\`, so the spring cannot carry them as well — remove them from the spring config`)
+  }
+}
+
 /** How long a spring takes to arrive, and how close counts as arrived. */
 export interface SpringDurationOptions {
   /** Fraction of the total distance still to travel when it counts as at rest. @default 0.005 */
@@ -111,6 +125,10 @@ export interface SpringDurationOptions {
 /** Ceiling on the search, so a barely damped spring cannot run the loop forever. */
 const MAX_SETTLE_SECONDS = 100
 const SETTLE_STEP_SECONDS = 1 / 240
+/** Oscillations a spring must spend inside the threshold before it counts as finished. */
+const SETTLE_WINDOW_CYCLES = 1
+/** Samples of quiet required when there is no oscillation to wait out. */
+const SETTLE_WINDOW_SAMPLES = 2
 
 /**
  * Seconds until the spring has settled, so a render can be sized by the motion rather than guessed.
@@ -131,11 +149,24 @@ export function springDuration(config: SpringConfig = {}, options: SpringDuratio
   const distance = Math.abs(to - from) || 1
   const threshold = restDelta * distance
 
+  // How long the spring has to stay inside the threshold before the scan can stop.
+  //
+  // A single sample near the target proves nothing: an underdamped spring passes straight through
+  // it twice per cycle. A full oscillation does prove it, because the envelope decays monotonically
+  // — a spring that stayed inside the threshold for one whole cycle can never leave it again.
+  // Without oscillation there is no cycle to wait out, so a couple of samples suffice.
+  const { omega0, zeta } = resolve(config)
+  const restWindow =
+    zeta < 1 - CRITICAL_BAND ? ((2 * Math.PI) / (omega0 * Math.sqrt(1 - zeta * zeta))) * SETTLE_WINDOW_CYCLES : SETTLE_STEP_SECONDS * SETTLE_WINDOW_SAMPLES
+
   let settled = 0
   for (let t = 0; t <= MAX_SETTLE_SECONDS; t += SETTLE_STEP_SECONDS) {
     if (Math.abs(spring(t, config) - to) > threshold) {
       // Still moving at t, so it cannot have been at rest before it.
       settled = t
+    } else if (t - settled >= restWindow) {
+      // At rest for a whole cycle, and the envelope only shrinks from here.
+      break
     }
   }
 

@@ -496,6 +496,10 @@ The function receives a `PageInfo`:
 The function may be async, so a page can await its own data. Use `pages: n` instead of `duration` when the count
 matters more than the timing — a three-page PDF is `pages: 3`.
 
+Every page must be the same size for `gif`, `apng` and `tiff`, so an animated render needs an explicit `height` —
+without one each page sizes itself to its own content and the encoder rejects the mismatch. `pdf` is the exception: it
+genuinely allows a different size per page, which is why `height` stays optional.
+
 The animated card in the [Showcase](#showcase) is built this way — staggered bars easing to their values, with no
 keyframes anywhere. See [`scripts/generate_sample_animated_card.ts`](./scripts/generate_sample_animated_card.ts).
 

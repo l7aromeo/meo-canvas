@@ -1,7 +1,7 @@
 import type { PageInfo } from '@/canvas/canvas.type.js'
 import { type Easing, resolveEasing } from '@/animate/easing.js'
 import { type Animatable, mix } from '@/animate/interpolate.js'
-import { type SpringConfig, spring, springDuration } from '@/animate/spring.js'
+import { type SpringConfig, assertSpringHasNoRange, spring, springDuration } from '@/animate/spring.js'
 
 /** A reusable animation: what to move between, when, and how. */
 export interface TrackConfig<T extends Animatable> {
@@ -45,6 +45,7 @@ export function track<T extends Animatable>(config: TrackConfig<T>): Track<T> {
   if (springConfig && ease !== undefined) {
     throw new Error('[canvas] a track takes `spring` or `ease`, not both — a spring carries its own curve')
   }
+  if (springConfig) assertSpringHasNoRange(springConfig, 'a track')
   if (delay < 0) throw new Error(`[canvas] track delay cannot be negative (got ${delay})`)
   if (stagger < 0) throw new Error(`[canvas] track stagger cannot be negative (got ${stagger})`)
 

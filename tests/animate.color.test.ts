@@ -1,4 +1,4 @@
-import { formatColor, isColor, mixColor, parseColor } from '@/animate/color.js'
+import { COLOR_CACHE_LIMIT, colorCacheSize, formatColor, isColor, mixColor, parseColor } from '@/animate/color.js'
 
 /**
  * Colour parsing is delegated to the rendering engine rather than reimplemented, so these tests
@@ -31,6 +31,14 @@ describe('parseColor', () => {
     const parsed = parseColor(css as string)
     expect(parsed.r).toBe(255)
     expect(parsed.a).toBeCloseTo(alpha as number, 2)
+  })
+
+  it("resolves alpha at the engine's precision, not the string's", () => {
+    // Worth stating outright. Alpha goes through two roundings on the way in: the engine stores it
+    // as one of 256 levels, then reports it to three decimals. 0.12345 becomes 31/255, printed as
+    // 0.122. A colour written with more precision than that does not come back unchanged.
+    expect(parseColor('rgba(9, 9, 9, 0.12345)').a).toBe(0.122)
+    expect(parseColor('rgba(9, 9, 9, 0.5)').a).toBe(0.502)
   })
 
   it('parses transparent as fully clear', () => {
@@ -119,5 +127,38 @@ describe('mixColor', () => {
     const reds = [0, 0.25, 0.5, 0.75, 1].map(t => parseColor(mixColor('#000000', '#ff0000', t)).r)
     expect(reds).toEqual([...reds].sort((a, b) => a - b))
     expect(new Set(reds).size).toBe(reds.length)
+  })
+})
+
+/**
+ * The cache is module-level, so anything it keeps is kept for the life of the process. A render
+ * that computes a colour per page — which is what chained `mix()` calls produce — would otherwise
+ * add a permanent entry per frame and grow without bound on a long-running server.
+ */
+describe('the colour cache is bounded', () => {
+  it('never grows past its limit, however many distinct colours it sees', () => {
+    for (let i = 0; i < COLOR_CACHE_LIMIT * 3; i++) {
+      parseColor(`rgba(1, 2, 3, ${(i / (COLOR_CACHE_LIMIT * 3)).toFixed(6)})`)
+    }
+
+    expect(colorCacheSize()).toBeLessThanOrEqual(COLOR_CACHE_LIMIT)
+  })
+
+  it('keeps a colour that is still being used, rather than evicting by age alone', () => {
+    const hot = 'rgba(9, 9, 9, 0.12345)'
+    parseColor(hot)
+
+    // Push far more than the limit through, touching the hot colour along the way as an animation
+    // would: its two endpoints are read on every single page.
+    for (let i = 0; i < COLOR_CACHE_LIMIT * 2; i++) {
+      parseColor(`rgba(4, 5, 6, ${(i / (COLOR_CACHE_LIMIT * 2)).toFixed(6)})`)
+      parseColor(hot)
+    }
+
+    const parsed = parseColor(hot)
+    expect([parsed.r, parsed.g, parsed.b]).toEqual([9, 9, 9])
+    // Alpha survives only to 8-bit precision, which is the engine's, not this cache's.
+    expect(parsed.a).toBeCloseTo(0.12345, 2)
+    expect(colorCacheSize()).toBeLessThanOrEqual(COLOR_CACHE_LIMIT)
   })
 })

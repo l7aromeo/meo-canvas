@@ -101,6 +101,14 @@ describe('track', () => {
       expect(peak).toBeGreaterThan(1)
     })
 
+    it('refuses a spring that carries its own from or to', () => {
+      // The track's own `from`/`to` define the range; a second pair on the spring can only be a
+      // misunderstanding, and silently ignoring it would animate to a value the caller never asked
+      // for while looking like it had been honoured.
+      expect(() => track({ from: 0, to: 100, spring: { ...config, from: 999 } })).toThrow(/from|to/i)
+      expect(() => track({ from: 0, to: 100, spring: { ...config, to: -999 } })).toThrow(/from|to/i)
+    })
+
     it('cannot also take an easing', () => {
       expect(() => track({ from: 0, to: 1, spring: config, ease: 'outCubic', duration: 1 })).toThrow(/spring.*ease|ease.*spring/i)
     })
