@@ -618,6 +618,19 @@ An unrecognised colour throws rather than rendering as a silent black.
 the encoded animation should play at that rate, or give `frameDelays` one entry per page for uneven timing. GIF stores
 hundredths of a second, so 24fps alternates 40ms and 50ms frames; APNG stores a fraction and hits the rate exactly.
 
+`loop` controls how many times it plays: `0` — the default — repeats forever, `1` plays it once, and any other number
+plays it that many times.
+
+```javascript
+await canvas.toBuffer('gif', { fps: 24, loop: 0 }) // forever
+await canvas.toBuffer('gif', { fps: 24, loop: 1 }) // once
+await canvas.toBuffer('apng', { fps: 24, loop: 3 }) // three times
+```
+
+The two formats disagree about how to say this, and the encoder reconciles it: GIF counts the repeats that follow the
+first play, so three plays is stored as `2`, and because `0` there already means "forever" a single play can only be
+expressed by leaving the block out entirely. APNG stores the play count directly.
+
 #### Canvas Methods
 
 The `Root()` function returns a Canvas object with the following methods and properties.
