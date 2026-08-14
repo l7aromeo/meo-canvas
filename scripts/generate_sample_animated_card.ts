@@ -1,4 +1,4 @@
-import { Root, Column, Row, Box, Text, Style, track, springDuration, mix, easings } from '../src/index.js'
+import { Root, Column, Row, Box, Text, Style, track, sequence, springDuration, mix, easings } from '../src/index.js'
 import path from 'path'
 import fs from 'fs'
 
@@ -35,8 +35,32 @@ const ringFade = track({ from: 0.35, to: 1, duration: 1.4, ease: 'inOutSine' })
 const RING_SPRING = { stiffness: 190, damping: 12 }
 const ringScale = track({ from: 0.6, to: 1, spring: RING_SPRING })
 
-/** Long enough for every staggered bar to finish, and for the spring to stop moving. */
-const DURATION_SECONDS = Math.max(growth.totalDuration(SERIES.length), ringColor.duration, ringScale.duration)
+/**
+ * The delta badge does three things in a row, which is what a sequence is for: it drops in on a
+ * spring, rests long enough to be read, then slides back out.
+ */
+const BADGE_TRAVEL = -28
+const badgeOffset = sequence({
+  from: BADGE_TRAVEL,
+  steps: [
+    { to: 0, spring: { stiffness: 200, damping: 15 } },
+    { to: 0, duration: 0.5, hold: 0.35 },
+    { to: BADGE_TRAVEL, duration: 0.3, ease: 'inCubic' },
+  ],
+  delay: 0.35,
+})
+const badgeFade = sequence({
+  from: 0,
+  steps: [
+    { to: 1, duration: 0.35 },
+    { to: 1, duration: 0.85, hold: 0.35 },
+    { to: 0, duration: 0.3 },
+  ],
+  delay: 0.35,
+})
+
+/** Long enough for every staggered bar to finish, for the spring to settle, and for the badge to leave. */
+const DURATION_SECONDS = Math.max(growth.totalDuration(SERIES.length), ringColor.duration, ringScale.duration, badgeOffset.duration)
 
 const Bar = (series: (typeof SERIES)[number], page: Parameters<typeof growth.at>[0], index: number) => {
   const filled = series.value * growth.at(page, index)
@@ -95,7 +119,21 @@ void (async () => {
                 Column({
                   gap: 4,
                   children: [
-                    Text('Weekly report', { fontSize: 26, fontWeight: 'bold', color: '#f8fafc' }),
+                    Row({
+                      gap: 10,
+                      alignItems: Style.Align.Center,
+                      children: [
+                        Text('Weekly report', { fontSize: 26, fontWeight: 'bold', color: '#f8fafc' }),
+                        Box({
+                          backgroundColor: '#134e4a',
+                          borderRadius: 999,
+                          padding: { Left: 10, Right: 10, Top: 3, Bottom: 3 },
+                          opacity: badgeFade.at(page),
+                          transform: { translateY: badgeOffset.at(page) },
+                          children: [Text('+12%', { fontSize: 12, fontWeight: 'bold', color: '#5eead4' })],
+                        }),
+                      ],
+                    }),
                     Text('meo-canvas · animated card', { fontSize: 13, color: '#64748b' }),
                   ],
                 }),

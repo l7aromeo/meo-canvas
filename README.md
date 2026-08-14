@@ -536,6 +536,40 @@ const canvas = await Root({
 `track.at(page, index?)` reads the value, `track.duration` is when the first item finishes, and
 `track.totalDuration(count)` is when the last staggered one does.
 
+#### Sequences
+
+A track moves between two values. When a value has to move, wait, then move again, `sequence`
+chains the legs — each starting where the previous finished — and returns the same shape a track
+does, so the two are interchangeable at the call site.
+
+```javascript
+import { sequence } from 'meo-canvas'
+
+const badge = sequence({
+  from: -40,
+  steps: [
+    { to: 0, spring: { stiffness: 200, damping: 14 } }, // drop in
+    { to: 0, duration: 0.6, hold: 0.6 }, // rest there
+    { to: -40, duration: 0.3, ease: 'inCubic' }, // leave
+  ],
+  delay: 0.2,
+  stagger: 0.1,
+})
+
+badge.at(page) // or badge.at(page, index) when staggered
+```
+
+| Step option | Type                        | Description                                                    |
+| ----------- | --------------------------- | -------------------------------------------------------------- |
+| `to`        | `number \| string \| array` | Value at the end of this leg.                                  |
+| `duration`  | `number`                    | Seconds this leg lasts. Required unless `spring` supplies one. |
+| `ease`      | `EasingName \| function`    | Easing for this leg. Mutually exclusive with `spring`.         |
+| `spring`    | `SpringConfig`              | Spring physics for this leg; supplies its own duration.        |
+| `hold`      | `number`                    | Seconds to rest at `to` before the next leg begins.            |
+
+A trailing `hold` is not counted in `duration`, since nothing moves during it — a render sized from
+`sequence.duration` would otherwise end on dead frames.
+
 #### Easing
 
 `easings` carries the standard catalogue — `linear`, plus `in`/`out`/`inOut` of `Quad`, `Cubic`,
