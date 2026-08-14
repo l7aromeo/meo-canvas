@@ -21,16 +21,19 @@ git checkout -b 38-add-gaussian-blur-support
 At this point, you're ready to make your changes! Feel free to ask for help; everyone is a beginner at first :smile_cat:
 
 1.  Install dependencies:
+
     ```sh
     bun install
     ```
 
 2.  Run the linter to ensure your code follows the project's style guidelines:
+
     ```sh
     bun run lint
     ```
 
 3.  Run the tests to make sure everything is working as expected:
+
     ```sh
     bun run test
     ```
@@ -38,9 +41,19 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
     > **Note:** Use `bun run test` (Vitest), not bare `bun test`. The Bun test runner does not load Vitest globals (`describe`, `vi`, etc.).
 
 4.  Build the project to generate the distribution files:
+
     ```sh
     bun run build
     ```
+
+5.  Run the integration tests, which render through the real engine rather than mocks:
+
+    ```sh
+    bun run test:integration
+    ```
+
+    > **Note:** Run these after `bun run build`. The worker pool starts a worker by path (`render.worker.js`), which
+    > only exists once the package has been built — the worker-mode cases skip themselves without it.
 
 ### Make your changes
 
@@ -74,4 +87,4 @@ We're happy to help you get your PR reviewed and merged.
 
 ---
 
-*This contribution guide was adapted from the [React-Boilerplate guide](https://github.com/react-boilerplate/react-boilerplate).*
+_This contribution guide was adapted from the [React-Boilerplate guide](https://github.com/react-boilerplate/react-boilerplate)._
