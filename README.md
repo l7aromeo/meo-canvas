@@ -925,8 +925,46 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 | `borderRadius`    | `object \| number`                   | Sets the radius of the node's corners.                      |
 | `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).        |
 | `gradient`        | `object`                             | Sets a linear or radial gradient as the background.         |
+| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.               |
 | `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                     |
 | `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).      |
+
+##### Masking
+
+`mask` limits what of a node reaches the canvas — its background, border, content and children alike, the way CSS
+`mask` does. Every component takes it, `Text`, `Image`, `Chart` and `Grid` included.
+
+```javascript
+// A shape inscribed in the node's box
+Image({ src: avatar, width: 96, height: 96, mask: { shape: 'circle' } })
+
+// SVG path data, in the node's own coordinates — 0,0 is its top-left corner
+Box({ width: 100, height: 100, mask: 'M 50 0 L 100 100 L 0 100 Z' })
+
+// A hole, via the even-odd rule
+Box({ mask: { path: 'M 0 0 H 200 V 80 H 0 Z M 20 20 H 80 V 60 H 20 Z', fillRule: 'evenodd' } })
+
+// A soft fade: only the alpha of each colour matters
+Box({ mask: { gradient: { type: 'linear', direction: 'to-bottom', colors: ['#000', 'transparent'] } } })
+```
+
+| Form                 | Meaning                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `'M 0 0 …'`          | SVG path data. Shorthand for `{ path }`.                                             |
+| `{ shape }`          | `'circle'` (sized by the shorter side) or `'ellipse'` (fills the box).               |
+| `{ path, fillRule }` | `'nonzero'` by default; `'evenodd'` makes nested subpaths cut holes.                 |
+| `{ gradient }`       | The same shape as the `gradient` prop. Opaque keeps a pixel, transparent removes it. |
+
+The two kinds cost differently. A shape or path **clips** — a yes-or-no test per pixel, cheap enough to put on every
+node in a list. A gradient **composites**: the node is drawn into an offscreen canvas of its own box and multiplied by
+the gradient's alpha, which is what buys the values in between. Reach for a shape unless you want a soft edge.
+
+Two limits worth knowing before you design around them:
+
+- The mask applies to the node's **layout box, before its own `transform`**. Content a transform pushes outside that
+  box is not masked back in.
+- A gradient that cannot be built — no colours, an unknown direction — drops the **mask**, not the node, and warns.
+  Losing what was drawn would be a worse answer than losing how it was cut.
 
 #### Font & Text Props (Inheritable)
 
