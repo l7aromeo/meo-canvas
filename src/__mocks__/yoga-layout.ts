@@ -57,6 +57,9 @@ export const mockNodeCreate = vi.fn(() => {
     isDirty: vi.fn(() => false),
     markDirty: vi.fn(),
     free: vi.fn(),
+    // Releases a node and its descendants. Present so renders that free their layout tree do so
+    // silently here too, rather than warning on a mock that happens to lack the method.
+    freeRecursive: vi.fn(),
   }
   createdNodes.push(node)
   return node

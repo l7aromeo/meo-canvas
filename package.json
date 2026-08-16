@@ -30,14 +30,14 @@
     "access": "public"
   },
   "type": "module",
-  "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/esm/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js"
-    }
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "bun -e \"fs.rmSync('./dist', {recursive:true, force:true})\" && rollup -c --bundleConfigAsCjs && bun scripts/rewrite-dts-aliases.ts",
@@ -47,16 +47,20 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix && bun run typecheck",
     "format": "prettier --write .",
-    "generate:samples": "npx tsx scripts/generate_sample_charts.ts && npx tsx scripts/generate_sample_grids.ts && npx tsx scripts/generate_sample_nested_grids.ts",
+    "generate:samples": "bun run typecheck && bunx tsx scripts/generate_sample_charts.ts && bunx tsx scripts/generate_sample_grids.ts && bunx tsx scripts/generate_sample_nested_grids.ts && bunx tsx scripts/generate_sample_animated_card.ts",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "@eslint/js": "^10.0.1",
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",
+    "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
     "@semantic-release/github": "^12.0.9",
     "@semantic-release/npm": "^13.1.5",
     "@semantic-release/release-notes-generator": "^14.1.0",
@@ -85,7 +89,7 @@
   "dependencies": {
     "comlink": "^4.4.2",
     "file-type": "^22.0.0",
-    "meo-skia-canvas": "^5.0.0",
+    "meo-skia-canvas": "^5.2.0",
     "tslib": "^2.8.1",
     "yoga-layout": "^3.2.1"
   },

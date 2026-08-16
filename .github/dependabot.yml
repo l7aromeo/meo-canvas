@@ -1,0 +1,33 @@
+version: 2
+
+updates:
+  # The workflows pin every action to a commit SHA, which is the right thing to do and also means
+  # nothing about them ever moves on its own. Without this, a pinned action stays pinned to the
+  # version it was pinned at, security releases included.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
+
+  # Grouped, because thirty-odd dev dependencies opening a pull request each is how a repository
+  # trains its maintainer to ignore them. Production dependencies stay separate: `meo-skia-canvas`
+  # is the renderer and `yoga-layout` is the layout engine, so a bump to either is worth reading on
+  # its own rather than inside a wall of tooling updates.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+    groups:
+      development:
+        dependency-type: development
+        patterns: ['*']

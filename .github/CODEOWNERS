@@ -1,0 +1,5 @@
+# Review is requested automatically from the owner of a path when a pull request touches it.
+# One maintainer today, so the pattern is broad — the value is that nothing merges unreviewed by
+# default once branch protection is on, not the routing.
+
+* @l7aromeo

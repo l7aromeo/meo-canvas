@@ -17,11 +17,10 @@ permissions:
   contents: read
 
 jobs:
-  # Pinned to the `engines.node` floor rather than `node:latest`. Floating meant
-  # CI only ever ran on the newest Node, so the declared minimum was never
-  # exercised and could have broken silently.
-  lint-and-test:
-    name: lint & unit tests
+  # Lint and typecheck do not vary by Node version, so they run once rather
+  # than once per matrix leg.
+  lint:
+    name: lint & typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,16 +39,55 @@ jobs:
           HUSKY: 0
         run: bun install --frozen-lockfile
       - run: bun run lint
-      - run: bun run test:ci
 
-  # `allow_failure: true` on GitLab. Kept advisory for now: these render real
-  # images and compare them, so they are the suite most likely to disagree with
-  # a runner's fonts rather than with the code.
-  integration:
-    name: integration tests
+  # 22 is the `engines.node` floor, and the floor is the version most likely to
+  # break without anyone noticing: nothing else here runs it. The others are the
+  # Node releases a consumer is plausibly on today, so a change that only works
+  # on one of them fails in CI rather than in an issue.
+  test:
+    name: unit tests (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run test:ci
+
+  # These render through the real engine and compare the pixels, so they are the
+  # only jobs that can catch a drawing bug at all — which is why they are no
+  # longer advisory. They were `allow_failure: true` on GitLab out of a concern
+  # about runner fonts; the suite registers a bundled Roboto and compares with a
+  # tolerance sized for anti-aliasing drift between skia builds, and the whole
+  # suite passes on Linux x64 against fixtures rendered elsewhere. If a platform
+  # ever does drift past the tolerance, the answer is a per-platform fixture or a
+  # wider bound on that one comparison, not muting the suite again.
+  #
+  # macOS is here because the renderer ships a different native binary per
+  # platform, and darwin-arm64 is the one this library is most developed on.
+  # Windows is a real gap: bun's installer there is a PowerShell one-liner rather
+  # than the script used above, and nobody has wired it up.
+  integration:
+    name: integration tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -63,6 +101,10 @@ jobs:
         env:
           HUSKY: 0
         run: bun install --frozen-lockfile
+      # The worker-mode cases start a worker by path from `dist`, and skip
+      # themselves when it is missing — so a build has to come first, or half
+      # this job silently tests nothing.
+      - run: bun run build
       - run: bun run test:integration
 
   build:
@@ -88,3 +130,76 @@ jobs:
           name: dist
           path: dist/
           retention-days: 7
+
+  # Everything above tests the source. This tests the package: what npm actually
+  # publishes, resolved the way a consumer resolves it. `require()` of this
+  # package was broken in every released version and no test noticed, because no
+  # test ever installed the tarball — the suite imports `src`, which resolves by
+  # a different set of rules entirely.
+  package:
+    name: package resolves
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Pack the tarball
+        run: npm pack --pack-destination /tmp
+      # Installed into a directory of its own, so what gets imported is the
+      # package as published rather than the working tree next door.
+      - name: Install the tarball into a clean project
+        run: |
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y > /dev/null
+          npm install /tmp/meo-canvas-*.tgz
+      - name: Import it as ESM
+        run: |
+          cd /tmp/consumer
+          node --input-type=module -e "
+            import { Root, Box, Text, easings, spring } from 'meo-canvas'
+            for (const [name, value] of Object.entries({ Root, Box, Text, spring })) {
+              if (typeof value !== 'function') throw new Error(name + ' is not exported as a function')
+            }
+            if (typeof easings.linear !== 'function') throw new Error('easings did not come through')
+            console.log('esm import ok')
+          "
+      # The package is ESM-only, deliberately: `yoga-layout` has a top-level
+      # await, which `require()` cannot load on any version of Node. A CommonJS
+      # caller reaches it through a dynamic import, and that is what has to keep
+      # working — a plain `require` failing to resolve is the intended answer.
+      - name: Import it dynamically from CommonJS
+        run: |
+          cd /tmp/consumer
+          node --input-type=commonjs -e "
+            import('meo-canvas').then(m => {
+              if (typeof m.Root !== 'function') throw new Error('Root did not come through a dynamic import')
+              console.log('dynamic import ok')
+            }).catch(error => { console.error(error); process.exit(1) })
+          "
+      - name: Render something with the installed package
+        run: |
+          cd /tmp/consumer
+          node --input-type=module -e "
+            import { Root, Box } from 'meo-canvas'
+            const canvas = await Root({ width: 32, height: 32, workerMode: false, children: [Box({ width: 32, height: 32, backgroundColor: '#1d4ed8' })] })
+            const png = await canvas.toBuffer('png')
+            if (png.subarray(1, 4).toString('latin1') !== 'PNG') throw new Error('the installed package did not produce a PNG')
+            console.log('render ok, ' + png.length + ' bytes')
+          "
+      # Checks the type declarations resolve under every resolution mode a
+      # consumer might use, not just the one this repository happens to compile
+      # with. The CommonJS leg reports "dynamic import only", which is correct
+      # here and not a failure.
+      - name: Check the published types
+        run: bunx --bun @arethetypeswrong/cli@latest /tmp/meo-canvas-*.tgz --ignore-rules cjs-resolves-to-esm

@@ -20,36 +20,25 @@ const common = {
   input: inputFiles,
   plugins: [tsconfigPaths(), nodeResolve({ exclude: 'node_modules/**' }), commonjs()],
   external: id => {
-    return ['meo-skia-canvas', 'yoga-layout', 'lodash-es', 'tinycolor2', 'file-type', 'node:fs', 'path', 'node:worker_threads'].includes(id) || id.startsWith('tslib') || id.startsWith('comlink')
+    return (
+      ['meo-skia-canvas', 'yoga-layout', 'lodash-es', 'tinycolor2', 'file-type', 'node:fs', 'path', 'node:worker_threads'].includes(id) ||
+      id.startsWith('tslib') ||
+      id.startsWith('comlink')
+    )
   },
 }
 
+// ESM only, because `yoga-layout` is: its entry awaits the WebAssembly module at the top level,
+// and `require()` refuses an ESM graph containing a top-level await on every version of Node. A
+// CommonJS build here would resolve, load, and then throw at the first import of the layout
+// engine, which is a worse answer than not offering one.
 export default [
-  // ESM build
   {
     ...common,
     plugins: [...common.plugins, typescript({ tsconfig: './tsconfig.esm.json' })],
     output: {
       dir: 'dist/esm',
       preserveModules: true,
-      entryFileNames: chunkInfo => {
-        return `${chunkInfo.name.replace('src/', '')}.js`
-      },
-      chunkFileNames: chunkInfo => {
-        return `${chunkInfo.name.replace('src/', '')}.js`
-      },
-    },
-  },
-  // CJS build
-  {
-    ...common,
-    plugins: [...common.plugins, typescript({ tsconfig: './tsconfig.cjs.json' })],
-    output: {
-      dir: 'dist/cjs',
-      format: 'cjs',
-      sourcemap: true,
-      preserveModules: true,
-      exports: 'named',
       entryFileNames: chunkInfo => {
         return `${chunkInfo.name.replace('src/', '')}.js`
       },

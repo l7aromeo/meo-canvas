@@ -1,0 +1,90 @@
+name: Bug report
+description: Something renders wrong, throws, or hangs.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Rendering happens in a native library through a WebAssembly layout engine, on whatever
+        platform you are on. Which platform, and which versions, is usually half the answer — so
+        the fields below are not paperwork.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        The smallest `Root(...)` call that shows it. A snippet someone can paste and run is worth
+        more than a description of one — most bugs here turn on an exact prop combination.
+      render: typescript
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: meo-canvas version
+      placeholder: 5.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: renderer-version
+    attributes:
+      label: meo-skia-canvas version
+      description: '`bun pm ls | grep meo-skia-canvas`, or the entry in your lockfile.'
+      placeholder: 5.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: '`node -v`'
+      placeholder: v22.11.0
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS, CPU architecture, and libc if you are on Linux — the renderer ships a different binary for each.
+      placeholder: macOS 15.1, arm64 / Ubuntu 24.04, x64, glibc / Alpine 3.20, x64, musl
+    validations:
+      required: true
+
+  - type: dropdown
+    id: worker-mode
+    attributes:
+      label: Worker mode
+      description: Whether the render ran in the worker pool. Worker and non-worker paths differ, and bugs rarely appear on both.
+      options:
+        - Worker pool (default)
+        - workerMode false
+        - Both
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: format
+    attributes:
+      label: Output format
+      description: What you exported, if the bug involves output at all.
+      placeholder: png, webp (animated), pdf, …
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Error or output
+      description: The stack trace, or the image that came out wrong. Attach the image if it is the evidence.

@@ -67,6 +67,16 @@ export const Canvas = vi.fn(function (this: any, width: number, height: number) 
     return mockCanvasContext
   })
   this.toBuffer = vi.fn(() => Buffer.from(''))
+
+  // One page exists from construction, as on a real Canvas; `newPage` appends and hands back the
+  // context to draw the new page with. Paged renders are counted through `pages`.
+  this.pages = [mockCanvasContext]
+  this.newPage = vi.fn((pageWidth?: number, pageHeight?: number) => {
+    if (pageWidth !== undefined) this.width = pageWidth
+    if (pageHeight !== undefined) this.height = pageHeight
+    this.pages.push(mockCanvasContext)
+    return mockCanvasContext
+  })
 })
 
 export const loadImage = vi.fn()
