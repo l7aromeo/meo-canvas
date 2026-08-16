@@ -480,6 +480,41 @@ that inherits all `BoxProps`.
 Since `Root` extends `BoxProps`, it also accepts `backgroundColor`, `padding`, `gradient`, `boxShadow`, and all other
 layout props. See [Box, Row, and Column](#box-row-and-column) for the full list.
 
+#### Choosing the engine
+
+Three props reach the canvas itself rather than the layout, and the rendered canvas reports what the engine settled on
+through `gpu`, `engine`, `colorType` and `colorSpace`.
+
+| Prop         | Type         | Default  | Description                                                                             |
+| ------------ | ------------ | -------- | --------------------------------------------------------------------------------------- |
+| `gpu`        | `boolean`    | `true`   | Rasterize on the GPU when one is available. `false` forces the CPU.                     |
+| `colorType`  | `ColorType`  | `'rgba'` | Pixel format the canvas composites in — the precision everything is drawn at.           |
+| `colorSpace` | `ColorSpace` | `'srgb'` | Space colours are interpreted in; anything outside its gamut is clipped as it is drawn. |
+
+```javascript
+// Identical output on every machine: GPU and CPU rasterizers resolve anti-aliased edges a level or
+// two apart, which a pixel comparison sees.
+await Root({ width: 600, gpu: false, children: [...] })
+
+// Sixteen-bit PNG, and colour outside sRGB kept rather than clipped as it is drawn.
+await Root({ width: 600, colorType: 'RGBAF32', colorSpace: 'display-p3', children: [...] })
+```
+
+**Asking is not getting.** These are requests: a build without GPU support, a driver that declines, and any float
+`colorType` all fall back to the CPU. Read the result rather than assuming it:
+
+```javascript
+const canvas = await Root({ width: 600, colorType: 'RGBAF32', gpu: true, children: [...] })
+canvas.gpu // false — no GPU composites float
+canvas.colorType // 'RGBAF32'
+canvas.engine.renderer // 'CPU'
+```
+
+`colorType` is the one with a cost attached. A float canvas is two to four times the memory, and while translucent
+layers are actually _faster_ in float, opaque fills are not — `RGBAF32` runs them several times slower. Reach for it
+when you need the depth or the gamut, not by default. Masks and shadows composite through offscreen canvases that
+inherit these settings, so a float render stays float all the way through.
+
 #### Multi-page and Animated Output
 
 A page is a frame for `gif`, `apng`, `webp` and `avif`, a sheet for `pdf` and `tiff`, and a size for `ico`. Pass a function as

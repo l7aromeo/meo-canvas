@@ -1,5 +1,5 @@
 import { BoxNode } from '@/canvas/layout.canvas.js'
-import type { Canvas, ExportFormat, ExportOptions, SaveOptions } from 'meo-skia-canvas'
+import type { Canvas, ColorSpace, ColorType, ExportFormat, ExportOptions, SaveOptions } from 'meo-skia-canvas'
 import type { TextNode } from '@/canvas/text.canvas.js'
 import type { ImageNode } from '@/canvas/image.canvas.js'
 import type { GridNode } from '@/canvas/grid.canvas.js'
@@ -775,6 +775,39 @@ export interface RootProps extends Omit<BoxProps, 'children'> {
    * Font files to register for use in the canvas.
    */
   fonts?: FontRegistrationInfo[]
+
+  /**
+   * Rasterize on the GPU when one is available. `false` forces the CPU backend.
+   *
+   * Asking is not getting: a build without GPU support, a driver that declines, and a float
+   * `colorType` all fall back to the CPU. The rendered canvas reports what it settled on through
+   * `gpu` and `engine`.
+   *
+   * Set it `false` for output that must be identical between machines — GPU and CPU rasterizers
+   * resolve anti-aliased edges a level or two apart, which a pixel comparison sees.
+   * @default true
+   */
+  gpu?: boolean
+
+  /**
+   * Pixel format the canvas composites in.
+   *
+   * Governs the precision everything is drawn at, and the depth the encoded formats that carry one
+   * write. `RGBAF32` keeps colour outside sRGB rather than clipping it as it is drawn, and is what
+   * a sixteen-bit PNG or a wide-gamut export needs — at the cost of the CPU backend, since no GPU
+   * composites float.
+   * @default 'rgba'
+   */
+  colorType?: ColorType
+
+  /**
+   * Space the canvas composites in.
+   *
+   * Fixed for the whole render rather than chosen per export: colours are interpreted in it, and
+   * one outside its gamut is clipped as it is drawn. Exports convert out of it when asked.
+   * @default 'srgb'
+   */
+  colorSpace?: ColorSpace
 
   /**
    * Write fetched images to disk during this render for faster re-decode

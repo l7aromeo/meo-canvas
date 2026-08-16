@@ -1,5 +1,6 @@
 import { Canvas, FontLibrary, type CanvasRenderingContext2D } from 'meo-skia-canvas'
-import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions, EngineDetails } from 'meo-skia-canvas'
+import type { ExportFormat, ExportOptions, SaveOptions, RenderOptions, EngineDetails, ColorType, ColorSpace } from 'meo-skia-canvas'
+import { createCanvas, type CanvasEngineOptions } from '@/canvas/canvas.engine.js'
 import { createRequire } from 'node:module'
 import { ColumnNode, BoxNode, RowNode } from '@/canvas/layout.canvas.js'
 import type {
@@ -117,9 +118,12 @@ function loadSharp(): (...args: never[]) => unknown {
 export class WorkerCanvas {
   readonly width: number
   readonly height: number
-  /** Snapshots, not proxies: neither can change once the canvas has been rendered. */
+  /** Snapshots, not proxies: none of these can change once the canvas has been rendered. */
   readonly gpu: boolean
   readonly engine: EngineDetails
+  /** What the engine settled on, which is not always what `Root` asked for. */
+  readonly colorType: ColorType
+  readonly colorSpace: ColorSpace
 
   private readonly _pool: ComlinkPoolType
   private readonly _workerIdx: number
@@ -139,6 +143,8 @@ export class WorkerCanvas {
     this.height = opts.height
     this.gpu = opts.gpu
     this.engine = opts.engine
+    this.colorType = opts.colorType
+    this.colorSpace = opts.colorSpace
     this._pool = opts.pool
     this._workerIdx = opts.workerIdx
     this._canvasId = opts.canvasId
@@ -489,7 +495,7 @@ export class RootNode extends ColumnNode {
     try {
       const contentHeight = await this.prepare(new Map(), diskCacheKeys)
 
-      this.canvas = new Canvas(this.canvasWidth(), this.canvasHeight(contentHeight))
+      this.canvas = createCanvas(this.canvasWidth(), this.canvasHeight(contentHeight), this.canvasOptions())
       this.ctx = this.canvas.getContext('2d')
       this.ctx.scale(this.scale, this.scale)
 
@@ -556,6 +562,23 @@ export class RootNode extends ColumnNode {
   /** Draws the prepared tree into a context. Call {@link RootNode.prepare} first. */
   async drawInto(ctx: CanvasRenderingContext2D): Promise<void> {
     await super.render(ctx, 0, 0)
+  }
+
+  /**
+   * Engine options for the canvas this root draws into, or `undefined` when none were named.
+   *
+   * Only the keys the caller gave are included, and nothing is passed at all when there are none:
+   * the defaults belong to the renderer rather than to this layer, which has no business restating
+   * them.
+   */
+  canvasOptions(): CanvasEngineOptions | undefined {
+    const { gpu, colorType, colorSpace } = this.props
+    const options: CanvasEngineOptions = {
+      ...(gpu !== undefined && { gpu }),
+      ...(colorType !== undefined && { colorType }),
+      ...(colorSpace !== undefined && { colorSpace }),
+    }
+    return Object.keys(options).length > 0 ? options : undefined
   }
 
   /** Canvas width in device pixels. */
@@ -674,7 +697,7 @@ export async function renderPages(props: RootProps, pages: (Children | Children[
         const height = node.canvasHeight(contentHeight)
 
         // The first page owns the canvas; every later one appends to it.
-        const ctx = canvas ? canvas.newPage(width, height) : (canvas = new Canvas(width, height)).getContext('2d')
+        const ctx = canvas ? canvas.newPage(width, height) : (canvas = createCanvas(width, height, node.canvasOptions())).getContext('2d')
         ctx.scale(node.renderScale, node.renderScale)
 
         await node.drawInto(ctx)

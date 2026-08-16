@@ -1,4 +1,5 @@
-import { Canvas, Path2D, type CanvasRenderingContext2D } from 'meo-skia-canvas'
+import { Path2D, type CanvasRenderingContext2D } from 'meo-skia-canvas'
+import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { createGradient, type GradientBox } from '@/canvas/gradient.canvas.js'
 import type { Gradient, Mask } from '@/canvas/canvas.type.js'
 
@@ -89,7 +90,7 @@ export async function drawWithGradientMask(
   const pixelHeight = Math.ceil(height * scale.y)
   if (pixelWidth <= 0 || pixelHeight <= 0) return false
 
-  const offscreen = new Canvas(pixelWidth, pixelHeight)
+  const offscreen = createCanvas(pixelWidth, pixelHeight, mirrorEngine(ctx))
   const offCtx = offscreen.getContext('2d')
   offCtx.imageSmoothingEnabled = true
   offCtx.imageSmoothingQuality = 'high'
