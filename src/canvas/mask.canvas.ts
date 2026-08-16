@@ -2,35 +2,25 @@ import { Canvas, Path2D, type CanvasRenderingContext2D } from 'meo-skia-canvas'
 import { createGradient, type GradientBox } from '@/canvas/gradient.canvas.js'
 import type { Gradient, Mask } from '@/canvas/canvas.type.js'
 
-/** Half of something, for the centre of a box or the radius of a shape inscribed in it. */
+/** Centre of a box, and radius of a shape inscribed in one. */
 const HALF = 0.5
 
-/** A full turn, for the arc that closes a circle. */
+/** Sweep of a closed arc. */
 const FULL_TURN = 2 * Math.PI
 
-/**
- * The fallback when a context reports no scale at all.
- *
- * A degenerate transform would size an offscreen canvas at zero pixels, which cannot be allocated —
- * so the mask would fail where an unmasked node would merely have drawn nothing.
- */
+/** Scale used when a context reports none; an offscreen canvas cannot be zero pixels wide. */
 const UNSCALED = 1
 
-/** Narrows a mask to the gradient form, which is the one that has to composite rather than clip. */
+/** True for the gradient form, which composites rather than clips. */
 export function isGradientMask(mask: Mask): mask is { gradient: Gradient } {
   return typeof mask === 'object' && 'gradient' in mask
 }
 
 /**
- * The mask as a path in canvas coordinates, or `null` when it is a gradient.
+ * The mask as a path in canvas coordinates, or `null` for a gradient.
  *
- * Shapes are inscribed in the node's box rather than given their own geometry: a circle in a square
- * is a circle, and in an oblong it is the largest circle that fits. That keeps a mask something you
- * put on a node you have already sized, instead of a second set of dimensions to keep in step with
- * the first.
- *
- * Path data is read in the node's own coordinates — `0,0` is its top-left corner, not the canvas's
- * — and translated here. Anything else would make a path depend on where its node happened to land.
+ * Shapes are inscribed in the node's box: a circle takes the shorter side, an ellipse both. Path
+ * data is in the node's own coordinates, where `0,0` is its top-left corner.
  */
 export function maskPath(mask: Mask, box: GradientBox): Path2D | null {
   const { x, y, width, height } = box
@@ -40,9 +30,8 @@ export function maskPath(mask: Mask, box: GradientBox): Path2D | null {
   if (typeof mask === 'string' || 'path' in mask) {
     const data = typeof mask === 'string' ? mask : mask.path
     const path = new Path2D()
-    // Translated by adding the node's origin to the path's own transform, which keeps the caller's
-    // coordinates untouched — the alternative, translating the context, would also move whatever
-    // the path is later intersected with.
+    // Translation carried by the path rather than the context, which would also move whatever the
+    // path is later intersected with.
     path.addPath(new Path2D(data), { a: 1, b: 0, c: 0, d: 1, e: x, f: y })
     return path
   }
@@ -60,41 +49,31 @@ export function maskPath(mask: Mask, box: GradientBox): Path2D | null {
   return path
 }
 
-/** The fill rule as `clip` takes it, which is where the two spellings have to agree. */
+/** Fill rule in the form `clip` accepts. */
 type ClipFillRule = Parameters<CanvasRenderingContext2D['clip']>[1]
 
-/** How the fill rule reaches `clip`, defaulting the way the Canvas API does. */
+/** The mask's fill rule, `nonzero` unless it names one. */
 export function maskFillRule(mask: Mask): ClipFillRule {
   return typeof mask === 'object' && 'fillRule' in mask && mask.fillRule ? mask.fillRule : 'nonzero'
 }
 
 /**
- * The horizontal and vertical scale a context is currently drawing at.
- *
- * An offscreen canvas is allocated in device pixels, and the context it will be drawn back onto is
- * already scaled — by `Root`'s `scale` prop, and by any `transform` above this node. Sizing the
- * offscreen from the layout box alone would render a masked node at one pixel per point and then
- * stretch it, which on a 2x card is visibly softer than everything around it.
+ * Horizontal and vertical scale a context draws at, from `Root`'s `scale` and any enclosing
+ * `transform`. An offscreen canvas is sized in device pixels, so it needs these to match.
  */
 export function contextScale(ctx: CanvasRenderingContext2D): { x: number; y: number } {
   const { a, b, c, d } = ctx.getTransform()
-  // Column lengths rather than `a` and `d`, so a rotated context reports the scale it draws at
-  // instead of the cosine of its angle.
+  // Column magnitude, so a rotated context reports its scale rather than the cosine of its angle.
   return { x: Math.hypot(a, b) || UNSCALED, y: Math.hypot(c, d) || UNSCALED }
 }
 
 /**
- * Draws content through a gradient's alpha.
+ * Draws content through a gradient's alpha: the node into an offscreen canvas of its box,
+ * multiplied by the gradient with `destination-in`, composited back.
  *
- * A gradient cannot clip — clipping is a yes-or-no test per pixel, and the whole point of a
- * gradient mask is the answers in between. So the node is drawn into an offscreen canvas of its
- * own, multiplied by the gradient with `destination-in`, and the result composited back.
- *
- * The offscreen is exactly the node's box: content that a `transform` pushes outside that box is
- * cut off, which is the one place this differs from clipping and is why it is documented rather
- * than discovered.
+ * Bounded by the node's box, so content a `transform` pushes outside it is cut off.
  * @param draw Renders the node into whichever context it is handed.
- * @returns Whether the mask was applied; `false` means the caller should draw normally instead.
+ * @returns Whether the mask was applied; `false` means draw normally instead.
  */
 export async function drawWithGradientMask(
   ctx: CanvasRenderingContext2D,
@@ -115,8 +94,7 @@ export async function drawWithGradientMask(
   offCtx.imageSmoothingEnabled = true
   offCtx.imageSmoothingQuality = 'high'
 
-  // The node draws at its layout position, which is somewhere on the page rather than at the
-  // offscreen's origin. Translating by its box lets the same drawing code run unchanged.
+  // The node draws at its page position; translating by its box maps that onto the offscreen.
   offCtx.scale(scale.x, scale.y)
   offCtx.translate(-x, -y)
 
@@ -128,14 +106,13 @@ export async function drawWithGradientMask(
     return false
   }
 
-  // `destination-in` keeps what is already there in proportion to what arrives, so filling the box
-  // with the gradient multiplies the node by its alpha. Colour is irrelevant; only alpha survives.
+  // `destination-in` keeps existing pixels in proportion to arriving alpha; colour is discarded.
   offCtx.globalCompositeOperation = 'destination-in'
   offCtx.fillStyle = alpha
   offCtx.fillRect(x, y, width, height)
 
-  // Back at the node's own size: the bitmap is in device pixels and the destination context is
-  // scaled, so the two agree and nothing is resampled.
+  // Drawn at the node's size: the bitmap is in device pixels and this context is scaled to match,
+  // so nothing is resampled.
   ctx.drawImage(offscreen, x, y, width, height)
   return true
 }
