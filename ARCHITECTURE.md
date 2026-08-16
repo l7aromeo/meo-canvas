@@ -46,6 +46,7 @@ src/
 │   ├── page.plan.ts     # Page-count resolution & page builder invocation
 │   ├── layout.canvas.ts # Box, Column, Row (flexbox via yoga-layout)
 │   ├── text.canvas.ts   # Text with inline HTML-like styling
+│   ├── text.metrics.ts  # Cached text measurement, invalidated when fonts register
 │   ├── image.canvas.ts  # Image loading, caching, fit/position
 │   ├── chart.canvas.ts  # Bar, Line, Pie, Doughnut charts
 │   └── grid.canvas.ts   # CSS Grid-like layout
@@ -91,6 +92,8 @@ All `ImageNode` instances in the tree are collected via BFS. Images from URLs or
 ### Phase 3 — Layout
 
 Each node creates a `yoga-layout` node and wires up flexbox properties (`width`, `height`, `flexDirection`, `justifyContent`, `alignItems`, `gap`, `margin`, `padding`, `border`). The tree is calculated top-down — `RootNode` calls `calculateLayout()` on the root yoga node, then each child reads its computed position/dimensions via `getComputedLayout()`.
+
+Text is the expensive part of this phase, and most of that expense is repetition: Yoga calls a text node's measure function several times per pass while it searches for a width that fits, truncation walks a string character by character, and every page of an animation re-measures text that did not change. On a 24-line card that came to 720 measurements per page resolving to 58 distinct questions. `text.metrics.ts` answers repeats from a bounded LRU keyed by the string and every piece of context state that shapes it — font, letter spacing, variant, baseline, direction — so a hit is the number the renderer would have computed. Registering a font bumps an epoch that makes every earlier answer unreachable, because the same `12px Roboto` measures differently once Roboto exists.
 
 ### Phase 4 — Drawing
 

@@ -4,7 +4,16 @@ import { BoxNode } from '@/canvas/layout.canvas.js'
 import { extractFunctions, restoreFunctions } from '@/worker/comlink.pool.js'
 import type { CartesianChartData, PieChartDataPoint } from '@/canvas/canvas.type.js'
 import { Style } from '@/constant/common.const.js'
+import { invalidateTextMeasurements } from '@/canvas/text.metrics.js'
 import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
+
+/**
+ * Measurements are cached across the process, and every mock context here reports the same font
+ * state — so the second test to measure `"Q1"` would be answered from what the first one measured
+ * and never reach its own spy. Retiring them between tests keeps each one measuring for itself,
+ * which is also what a fresh process does.
+ */
+beforeEach(() => invalidateTextMeasurements())
 
 const createMockContext = () => {
   const ctx = {
