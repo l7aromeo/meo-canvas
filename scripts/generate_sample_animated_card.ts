@@ -173,10 +173,12 @@ void (async () => {
       fs.mkdirSync(outDir)
     }
 
-    const gifFile = path.join(outDir, 'sample_animated_card.gif')
-    await canvas.toFile(gifFile, { fps: FPS, loop: 0 })
+    // WebP rather than GIF: the card is mostly flat colour and smooth gradients, which is what
+    // GIF's 256-colour palette bands worst, and each frame sends only the rectangle that changed.
+    const outFile = path.join(outDir, 'sample_animated_card.webp')
+    await canvas.toFile(outFile, { fps: FPS, loop: 0 })
 
-    console.log(`Animated card generated at: ${gifFile} (${canvas.pages.length} pages, ${DURATION_SECONDS.toFixed(2)}s)`)
+    console.log(`Animated card generated at: ${outFile} (${canvas.pages.length} pages, ${DURATION_SECONDS.toFixed(2)}s)`)
     console.log(`  ring spring settles after ${springDuration(RING_SPRING).toFixed(2)}s`)
   } catch (e) {
     console.error(e)

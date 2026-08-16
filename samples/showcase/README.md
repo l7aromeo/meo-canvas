@@ -8,7 +8,7 @@ be there.
 
 **Nothing regenerates these.** The scripts in `scripts/` each write one fixed
 filename into `samples/` — `chart_samples.png`, `sample_grids.png`,
-`sample_nested_grids.png` and `sample_animated_card.gif` — and never glob or
+`sample_nested_grids.png` and `sample_animated_card.webp` — and never glob or
 clean, so this directory is out of their reach by construction rather than by
 convention. Replacing an image here means exporting a new one from the bot and
 committing it.

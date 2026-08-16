@@ -37,7 +37,7 @@ rendering to a canvas.
     <td width="50%"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/sample_nested_grids.png" alt="Nested grid samples: dashboards, spanning layouts and asymmetric content, from scripts/generate_sample_nested_grids.ts"/></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/sample_animated_card.gif" alt="Animated stats card: staggered bars easing to their values over two seconds, from scripts/generate_sample_animated_card.ts"/></td>
+    <td colspan="2"><img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/samples/sample_animated_card.webp" alt="Animated stats card: staggered bars easing to their values over two seconds, from scripts/generate_sample_animated_card.ts"/></td>
   </tr>
 </table>
 
@@ -503,23 +503,110 @@ genuinely allows a different size per page, which is why `height` stays optional
 The animated card in the [Showcase](#showcase) is built this way — staggered bars easing to their values, with no
 keyframes anywhere. See [`scripts/generate_sample_animated_card.ts`](./scripts/generate_sample_animated_card.ts).
 
-#### Animated Image Sources
+#### Canvas Methods
 
-An animated `gif`, `apng`, `webp` or `avif` plays by itself in a paged render, advancing at the
-source's own rate — a 10fps GIF in a 24fps render changes on the pages it should, not once per page.
+The `Root()` function returns a Canvas object with the following methods and properties.
 
-```javascript
-// Plays. Nothing to compute.
-children: () => Image({ src: 'spinner.gif', width: 64, height: 64 })
+##### Export Methods
+
+Animation timing — `fps`, `loop`, `frameDelays` — is accepted only by `gif`, `apng`, `webp` and `avif`. Passing it to any other format
+is a compile error, matching the renderer, which raises a `TypeError` rather than dropping it silently.
+
+| Method          | Signature                                                            | Description                                                      |
+| --------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `toBuffer`      | `(format: ExportFormat, options?: ExportOptions) => Promise<Buffer>` | Encodes to the given format. **Preferred** — see the note below. |
+| `toBufferSync`  | `(format?: ExportFormat, options?: ExportOptions) => Buffer`         | Same, blocking the calling thread until the encode finishes.     |
+| `toURL`         | `(format: ExportFormat, options?: ExportOptions) => Promise<string>` | Returns a data URL.                                              |
+| `toURLSync`     | `(format?: ExportFormat, options?: ExportOptions) => string`         | Blocking data URL.                                               |
+| `toDataURL`     | `(format?: ExportFormat, quality?: number) => string`                | Blocking data URL, with a `0`–`1` quality shorthand.             |
+| `toFile`        | `(filename: string, options?: SaveOptions) => Promise<void>`         | Saves the canvas to a file.                                      |
+| `toFileSync`    | `(filename: string, options?: SaveOptions) => void`                  | Blocking file write.                                             |
+| `toSharp`       | `(options?: RenderOptions) => Sharp`                                 | A Sharp instance for further processing. Requires `sharp`.       |
+| `toSharpSync`   | `(options?: RenderOptions) => Sharp`                                 | Identical to `toSharp()`; both build the Sharp on this thread.   |
+| `saveAs`        | `(filename: string, options?: SaveOptions) => Promise<void>`         | _Deprecated_ — use `toFile()`.                                   |
+| `saveAsSync`    | `(filename: string, options?: SaveOptions) => void`                  | _Deprecated_ — use `toFileSync()`.                               |
+| `toDataURLSync` | `(format?: ExportFormat, options?: ExportOptions) => string`         | _Deprecated_ — use `toDataURL()`.                                |
+
+**Supported Export Formats:** `'png'`, `'jpg'` (or `'jpeg'`), `'webp'`, `'pdf'`, `'svg'`, `'raw'`
+
+> **Prefer the async methods in worker mode.** Both produce identical bytes, but `toBuffer()` runs
+> the encode off the event loop, while `toBufferSync()` blocks the calling thread for its whole
+> duration — the same way a synchronous method on a plain Canvas does. A sync call also queues
+> behind whatever its worker is currently rendering, because a Canvas is native memory pinned to the
+> thread that drew it.
+
+Repeated sync calls for the same format and options are served from a cache, so asking twice costs
+one encode.
+
+##### Convenience Getters
+
+| Getter  | Returns           | Description                                    |
+| ------- | ----------------- | ---------------------------------------------- |
+| `.png`  | `Promise<Buffer>` | Shortcut for`toBuffer('png')`                  |
+| `.jpg`  | `Promise<Buffer>` | Shortcut for`toBuffer('jpg')`                  |
+| `.webp` | `Promise<Buffer>` | Shortcut for`toBuffer('webp')`                 |
+| `.svg`  | `Promise<Buffer>` | Shortcut for`toBuffer('svg')`                  |
+| `.pdf`  | `Promise<Buffer>` | Shortcut for`toBuffer('pdf')`                  |
+| `.raw`  | `Promise<Buffer>` | Shortcut for`toBuffer('raw')` — raw pixel data |
+
+##### Canvas Properties
+
+| Property  | Type            | Description                                      |
+| --------- | --------------- | ------------------------------------------------ |
+| `.width`  | `number`        | Canvas width in pixels (after scale).            |
+| `.height` | `number`        | Canvas height in pixels (after scale).           |
+| `.gpu`    | `boolean`       | Whether the render used the GPU.                 |
+| `.engine` | `EngineDetails` | Renderer, graphics API, device and thread count. |
+
+##### Not available in worker mode
+
+`getContext()`, `newPage()` and `pages` each hand back a live rendering context bound to native
+memory inside the worker, which cannot cross a thread boundary — proxying one would mean a round
+trip per drawing call. They throw in worker mode. Use `Root({ workerMode: false })` if you need to
+drive a context directly; drawing is otherwise expressed as a component tree.
+
+##### Memory Management (Worker Mode)
+
+| Method       | Description                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `.release()` | **Required in worker mode.** Releases the Canvas from worker memory. Call when done to prevent memory leaks. |
+
+```typescript
+import {Root} from 'meo-canvas'
+
+// Render with default worker mode (enabled)
+const canvas = await Root({width: 400, height: 400, children: [...]})
+
+// Or explicitly disable worker mode
+const canvas = await Root({width: 400, height: 400, children: [...], workerMode: false})
+
+// Use the canvas
+const png = await canvas.png
+const jpg = await canvas.jpg
+await canvas.toFile('output.png')
+
+// Release memory (worker mode only)
+canvas.release()
 ```
 
-| Prop    | Type      | Description                                                                             |
-| ------- | --------- | --------------------------------------------------------------------------------------- |
-| `frame` | `number`  | Pin one frame instead of playing. Negative counts from the end; an absent frame throws. |
-| `loop`  | `boolean` | `false` holds the last frame rather than restarting. Default `true`.                    |
+Release in a `finally` if anything between render and export can throw, or the canvas is stranded on
+the error path:
 
-A still render draws the first frame, as it always has. Decoding happens once per source however
-many pages read it, so a long animation costs one decode rather than one per frame.
+```typescript
+const canvas = await Root({width: 400, height: 400, children: [...]})
+try {
+  return await canvas.toBuffer('webp')
+} finally {
+  canvas.release()
+}
+```
+
+> **Note:** A `FinalizationRegistry` is wired up as a backstop, but do not rely on it. The memory it
+> guards is native, so it creates no pressure on the garbage collector and the callback may never
+> fire: 400 renders without an explicit release grew RSS from 247 MB to 677 MB with no plateau, even
+> forcing a collection every round. The same 400 renders releasing explicitly settle flat.
+
+---
 
 ### Animation Utilities
 
@@ -698,111 +785,6 @@ The two formats disagree about how to say this, and the encoder reconciles it: G
 first play, so three plays is stored as `2`, and because `0` there already means "forever" a single play can only be
 expressed by leaving the block out entirely. APNG stores the play count directly.
 
-#### Canvas Methods
-
-The `Root()` function returns a Canvas object with the following methods and properties.
-
-##### Export Methods
-
-Animation timing — `fps`, `loop`, `frameDelays` — is accepted only by `gif`, `apng`, `webp` and `avif`. Passing it to any other format
-is a compile error, matching the renderer, which raises a `TypeError` rather than dropping it silently.
-
-| Method          | Signature                                                            | Description                                                      |
-| --------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `toBuffer`      | `(format: ExportFormat, options?: ExportOptions) => Promise<Buffer>` | Encodes to the given format. **Preferred** — see the note below. |
-| `toBufferSync`  | `(format?: ExportFormat, options?: ExportOptions) => Buffer`         | Same, blocking the calling thread until the encode finishes.     |
-| `toURL`         | `(format: ExportFormat, options?: ExportOptions) => Promise<string>` | Returns a data URL.                                              |
-| `toURLSync`     | `(format?: ExportFormat, options?: ExportOptions) => string`         | Blocking data URL.                                               |
-| `toDataURL`     | `(format?: ExportFormat, quality?: number) => string`                | Blocking data URL, with a `0`–`1` quality shorthand.             |
-| `toFile`        | `(filename: string, options?: SaveOptions) => Promise<void>`         | Saves the canvas to a file.                                      |
-| `toFileSync`    | `(filename: string, options?: SaveOptions) => void`                  | Blocking file write.                                             |
-| `toSharp`       | `(options?: RenderOptions) => Sharp`                                 | A Sharp instance for further processing. Requires `sharp`.       |
-| `toSharpSync`   | `(options?: RenderOptions) => Sharp`                                 | Identical to `toSharp()`; both build the Sharp on this thread.   |
-| `saveAs`        | `(filename: string, options?: SaveOptions) => Promise<void>`         | _Deprecated_ — use `toFile()`.                                   |
-| `saveAsSync`    | `(filename: string, options?: SaveOptions) => void`                  | _Deprecated_ — use `toFileSync()`.                               |
-| `toDataURLSync` | `(format?: ExportFormat, options?: ExportOptions) => string`         | _Deprecated_ — use `toDataURL()`.                                |
-
-**Supported Export Formats:** `'png'`, `'jpg'` (or `'jpeg'`), `'webp'`, `'pdf'`, `'svg'`, `'raw'`
-
-> **Prefer the async methods in worker mode.** Both produce identical bytes, but `toBuffer()` runs
-> the encode off the event loop, while `toBufferSync()` blocks the calling thread for its whole
-> duration — the same way a synchronous method on a plain Canvas does. A sync call also queues
-> behind whatever its worker is currently rendering, because a Canvas is native memory pinned to the
-> thread that drew it.
-
-Repeated sync calls for the same format and options are served from a cache, so asking twice costs
-one encode.
-
-##### Convenience Getters
-
-| Getter  | Returns           | Description                                    |
-| ------- | ----------------- | ---------------------------------------------- |
-| `.png`  | `Promise<Buffer>` | Shortcut for`toBuffer('png')`                  |
-| `.jpg`  | `Promise<Buffer>` | Shortcut for`toBuffer('jpg')`                  |
-| `.webp` | `Promise<Buffer>` | Shortcut for`toBuffer('webp')`                 |
-| `.svg`  | `Promise<Buffer>` | Shortcut for`toBuffer('svg')`                  |
-| `.pdf`  | `Promise<Buffer>` | Shortcut for`toBuffer('pdf')`                  |
-| `.raw`  | `Promise<Buffer>` | Shortcut for`toBuffer('raw')` — raw pixel data |
-
-##### Canvas Properties
-
-| Property  | Type            | Description                                      |
-| --------- | --------------- | ------------------------------------------------ |
-| `.width`  | `number`        | Canvas width in pixels (after scale).            |
-| `.height` | `number`        | Canvas height in pixels (after scale).           |
-| `.gpu`    | `boolean`       | Whether the render used the GPU.                 |
-| `.engine` | `EngineDetails` | Renderer, graphics API, device and thread count. |
-
-##### Not available in worker mode
-
-`getContext()`, `newPage()` and `pages` each hand back a live rendering context bound to native
-memory inside the worker, which cannot cross a thread boundary — proxying one would mean a round
-trip per drawing call. They throw in worker mode. Use `Root({ workerMode: false })` if you need to
-drive a context directly; drawing is otherwise expressed as a component tree.
-
-##### Memory Management (Worker Mode)
-
-| Method       | Description                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------------ |
-| `.release()` | **Required in worker mode.** Releases the Canvas from worker memory. Call when done to prevent memory leaks. |
-
-```typescript
-import {Root} from 'meo-canvas'
-
-// Render with default worker mode (enabled)
-const canvas = await Root({width: 400, height: 400, children: [...]})
-
-// Or explicitly disable worker mode
-const canvas = await Root({width: 400, height: 400, children: [...], workerMode: false})
-
-// Use the canvas
-const png = await canvas.png
-const jpg = await canvas.jpg
-await canvas.toFile('output.png')
-
-// Release memory (worker mode only)
-canvas.release()
-```
-
-Release in a `finally` if anything between render and export can throw, or the canvas is stranded on
-the error path:
-
-```typescript
-const canvas = await Root({width: 400, height: 400, children: [...]})
-try {
-  return await canvas.toBuffer('webp')
-} finally {
-  canvas.release()
-}
-```
-
-> **Note:** A `FinalizationRegistry` is wired up as a backstop, but do not rely on it. The memory it
-> guards is native, so it creates no pressure on the garbage collector and the callback may never
-> fire: 400 renders without an explicit release grew RSS from 247 MB to 677 MB with no plateau, even
-> forcing a collection every round. The same 400 renders releasing explicitly settle flat.
-
----
-
 ### Box, Row, and Column
 
 These are the fundamental layout components. `Row` and `Column` are wrappers around `Box` with a pre-set
@@ -898,6 +880,8 @@ The `Image` component renders an image. It inherits all `BoxProps` except for `c
 | `src`            | `string \| Buffer`                                         | The source URL, file path, or buffer of the image.                                                                                                            |
 | `httpOptions`    | `RequestInit`                                              | Fetch options (headers, method, body, etc.) applied when `src` is a remote `http`/`https` URL. Ignored for file paths and buffers. Folded into the cache key. |
 | `objectFit`      | `'fill' \| 'contain' \| 'cover' \| 'none' \| 'scale-down'` | Specifies how the image should be resized to fit its container.                                                                                               |
+| `frame`          | `number`                                                   | Frame to draw from an animated source instead of playing it. Negative counts from the end.                                                                    |
+| `loop`           | `boolean`                                                  | Whether an animated source restarts after its last frame. Default `true`.                                                                                     |
 | `objectPosition` | `object`                                                   | Specifies the alignment of the image within its box.                                                                                                          |
 | `saturate`       | `number`                                                   | Adjusts the image's saturation level (0 is grayscale, 1 is original).                                                                                         |
 | `dropShadow`     | `DropShadowProps`                                          | Applies a drop-shadow effect based on the image's alpha channel.                                                                                              |
@@ -906,6 +890,24 @@ The `Image` component renders an image. It inherits all `BoxProps` except for `c
 | `onError`        | `(error: Error) => void`                                   | Callback function that executes when the image fails to load.                                                                                                 |
 
 ---
+
+#### Animated Image Sources
+
+An animated `gif`, `apng`, `webp` or `avif` plays by itself in a paged render, advancing at the
+source's own rate — a 10fps GIF in a 24fps render changes on the pages it should, not once per page.
+
+```javascript
+// Plays. Nothing to compute.
+children: () => Image({ src: 'spinner.gif', width: 64, height: 64 })
+```
+
+| Prop    | Type      | Description                                                                             |
+| ------- | --------- | --------------------------------------------------------------------------------------- |
+| `frame` | `number`  | Pin one frame instead of playing. Negative counts from the end; an absent frame throws. |
+| `loop`  | `boolean` | `false` holds the last frame rather than restarting. Default `true`.                    |
+
+A still render draws the first frame, as it always has. Decoding happens once per source however
+many pages read it, so a long animation costs one decode rather than one per frame.
 
 ### Grid
 
