@@ -799,9 +799,21 @@ function _isColorOpaque(color: string): boolean {
 }
 
 /**
- * Creates a new BoxNode instance.
- * @param {BoxProps} props Box properties and configuration.
- * @returns {BoxNode} New BoxNode instance.
+ * A rectangle that lays its children out with flexbox.
+ *
+ * The base of every layout here: `Column` and `Row` are this with `flexDirection` preset.
+ * @param props Layout, style and children.
+ * @returns A descriptor the renderer turns into a node.
+ * @example
+ * ```ts
+ * Box({
+ *   width: 200,
+ *   padding: 16,
+ *   backgroundColor: '#0b1120',
+ *   borderRadius: 12,
+ *   children: [Text('hello', { color: '#f8fafc' })],
+ * })
+ * ```
  */
 export const Box = ({ children, ...rest }: BoxProps): CanvasElement => ({
   __type: 'Box',
@@ -826,9 +838,11 @@ export class ColumnNode extends BoxNode {
 }
 
 /**
- * Creates a new ColumnNode instance.
- * @param {BoxProps} props Column properties and configuration.
- * @returns {ColumnNode} New ColumnNode instance.
+ * A {@link Box} that stacks its children vertically.
+ * @example
+ * ```ts
+ * Column({ gap: 8, children: [Text('title'), Text('subtitle')] })
+ * ```
  */
 export const Column = ({ children, ...rest }: BoxProps): CanvasElement => ({
   __type: 'Column',
@@ -853,9 +867,19 @@ export class RowNode extends BoxNode {
 }
 
 /**
- * Creates a new RowNode instance.
- * @param {BoxProps} props Row properties and configuration.
- * @returns {RowNode} New RowNode instance.
+ * A {@link Box} that lays its children out side by side.
+ *
+ * A row sizes itself to its content, so give it a width before expecting
+ * `justifyContent: Style.Justify.SpaceBetween` to spread anything.
+ * @example
+ * ```ts
+ * Row({
+ *   width: '100%',
+ *   justifyContent: Style.Justify.SpaceBetween,
+ *   alignItems: Style.Align.Center,
+ *   children: [Text('left'), Text('right')],
+ * })
+ * ```
  */
 export const Row = ({ children, ...rest }: BoxProps): CanvasElement => ({
   __type: 'Row',

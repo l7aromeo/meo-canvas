@@ -1243,7 +1243,21 @@ export class TextNode extends BoxNode {
 }
 
 /**
- * Creates a new TextNode instance with rich text support
+ * Draws text, with inline markup for styling runs inside it.
+ *
+ * Supported inline tags: `<b>`, `<i>`, `<color="…">`, `<weight="…">` and `<size="…">`.
+ * @param text The string to draw. Numbers are accepted and stringified.
+ * @param props Font, colour, wrapping and layout.
+ * @example
+ * ```ts
+ * Text('Total: <b><color="#22c55e">98%</color></b>', {
+ *   fontSize: 18,
+ *   fontFamily: 'Roboto',
+ *   color: '#e2e8f0',
+ *   maxLines: 2,
+ *   ellipsis: true,
+ * })
+ * ```
  */
 export const Text = (text: number | string, props?: TextProps): CanvasElement => ({
   __type: 'Text',

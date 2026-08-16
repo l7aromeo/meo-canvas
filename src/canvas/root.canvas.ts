@@ -56,8 +56,18 @@ const canvasRegistry = new FinalizationRegistry<{ workerIdx: number; canvasId: n
 let _workerPool: ComlinkPoolType | null = null
 
 /**
- * Terminate all worker pools and free worker thread resources.
- * Call this when shutting down a long-running server to clean up immediately.
+ * Terminates every worker thread and frees the pool.
+ *
+ * The pool starts lazily on the first worker-mode render and lives for the life of the process, so
+ * a script that renders and exits will hang without this. A long-running server does not need it
+ * until shutdown.
+ * @example
+ * ```ts
+ * const canvas = await Root({ width: 400, children: [...] })
+ * await canvas.toFile('out.png')
+ * canvas.release()
+ * await terminate()
+ * ```
  */
 export function terminate() {
   if (_workerPool) {

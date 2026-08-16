@@ -47,6 +47,11 @@ const bounce = family(t => 1 - outBounce(1 - t))
  *
  * Every entry clamps its input, so a track that runs past its own duration holds at its end value
  * rather than continuing to accelerate off the curve.
+ * @example
+ * ```ts
+ * easings.outCubic(0.5)  // 0.875
+ * track({ from: 0, to: 1, duration: 1, ease: 'outCubic' })
+ * ```
  */
 export const easings = {
   linear: (t: number) => clamp01(t),
@@ -104,6 +109,10 @@ const BEZIER_MAX_ITERATIONS = 12
  * The curve is parametric, so drawing it at a given time means first finding the parameter whose x
  * equals that time. Newton's method converges in a few steps for well-behaved curves; a bisection
  * fallback covers the steep ones, where the derivative approaches zero and Newton stalls.
+ * @example
+ * ```ts
+ * const easeInOut = cubicBezier(0.42, 0, 0.58, 1) // the CSS ease-in-out curve
+ * ```
  */
 export function cubicBezier(x1: number, y1: number, x2: number, y2: number): EasingFn {
   const curve = (a: number, b: number, t: number) => {

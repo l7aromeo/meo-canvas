@@ -49,6 +49,20 @@ interface PlannedStep<T extends Animatable> {
  * later edit. Declaring the legs instead keeps the arithmetic in one place.
  *
  * Returns the same shape a track does, so the two are interchangeable at the call site.
+ * @example
+ * ```ts
+ * const badge = sequence({
+ *   from: -28,
+ *   steps: [
+ *     { to: 0, spring: { stiffness: 200, damping: 15 } }, // drop in
+ *     { to: 0, duration: 0.5, hold: 0.35 },               // rest there
+ *     { to: -28, duration: 0.3, ease: 'inCubic' },        // leave
+ *   ],
+ *   delay: 0.35,
+ * })
+ *
+ * Box({ transform: { translateY: badge.at(page) } })
+ * ```
  */
 export function sequence<T extends Animatable>(config: SequenceConfig<T>): Track<T> {
   const { from, steps, delay = 0, stagger = 0 } = config

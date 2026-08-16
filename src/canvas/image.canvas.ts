@@ -392,7 +392,21 @@ export class ImageNode extends BoxNode {
 }
 
 /**
- * Factory function to create ImageNode instances
+ * Draws an image from a URL, a file path or a `Buffer`.
+ *
+ * Remote sources are fetched during the render, so a paged render shares one cache across pages and
+ * loads a repeated source once.
+ * @example
+ * ```ts
+ * Image({
+ *   src: 'https://example.com/avatar.png',
+ *   width: 64,
+ *   height: 64,
+ *   objectFit: 'cover',
+ *   borderRadius: 32,
+ *   httpOptions: { headers: { Authorization: 'Bearer …' } },
+ * })
+ * ```
  */
 export const Image = (props: ImageProps): CanvasElement => ({
   __type: 'Image',

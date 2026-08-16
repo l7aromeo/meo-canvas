@@ -18,7 +18,11 @@ export class GridItemNode extends BoxNode {
 }
 
 /**
- * Factory for GridItem.
+ * One cell of a {@link Grid}, able to span columns or rows.
+ * @example
+ * ```ts
+ * GridItem({ columnSpan: 2, rowSpan: 1, children: [Text('spans two columns')] })
+ * ```
  */
 export const GridItem = ({ children, ...rest }: GridItemProps): CanvasElement => ({
   __type: 'GridItem',
@@ -441,7 +445,17 @@ export class GridNode extends RowNode {
 }
 
 /**
- * Factory function to create a new GridNode instance.
+ * A CSS-Grid-like container.
+ *
+ * Give it `columns` for an even split, or `templateColumns` for explicit tracks.
+ * @example
+ * ```ts
+ * Grid({
+ *   templateColumns: [100, '1fr', '1fr'],
+ *   gap: { Row: 8, Column: 12 },
+ *   children: [GridItem({ columnSpan: 2, children: [Text('header')] }), Text('a'), Text('b')],
+ * })
+ * ```
  */
 export const Grid = ({ children, ...rest }: GridProps): CanvasElement => ({
   __type: 'Grid',

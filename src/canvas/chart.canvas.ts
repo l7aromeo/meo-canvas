@@ -789,6 +789,25 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
 type ChartElement = Extract<CanvasElement, { __type: 'Chart' }>
 
+/**
+ * Draws a bar, line, pie or doughnut chart.
+ *
+ * The shape of `data` follows `type`: cartesian charts take labelled datasets, pie and doughnut take
+ * a flat list of slices.
+ * @example
+ * ```ts
+ * Chart({
+ *   type: 'bar',
+ *   width: 480,
+ *   height: 240,
+ *   data: {
+ *     labels: ['Mon', 'Tue', 'Wed'],
+ *     datasets: [{ label: 'Renders', data: [12, 19, 7], color: '#38bdf8' }],
+ *   },
+ *   options: { showValues: true, showLegend: true },
+ * })
+ * ```
+ */
 export const Chart = <T extends ChartType>(props: ChartProps<T> & BaseProps): ChartElement => ({
   __type: 'Chart' as const,
   props: props as unknown as ChartElement['props'],

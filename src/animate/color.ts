@@ -91,6 +91,12 @@ export function colorCacheSize(): number {
  * Wide-gamut inputs survive: the scratch surface holds floats, so a colour beyond sRGB comes back
  * as extended sRGB rather than clipped to the edge of it.
  * @throws if the engine does not recognise the colour, rather than returning a misleading black.
+ * @example
+ * ```ts
+ * parseColor('rebeccapurple')            // { r: 102, g: 51, b: 153, a: 1 }
+ * parseColor('oklch(0.7 0.2 30)')        // resolved by the engine
+ * parseColor('color(display-p3 1 0 0)')  // { r: 278.73, … } — beyond sRGB, kept
+ * ```
  */
 export function parseColor(css: string): Rgba {
   const hit = cache.get(css)
@@ -243,6 +249,11 @@ export function formatColor(color: Rgba): string {
  *
  * Interpolation happens in sRGB with a straight alpha, which is what the canvas compositing model
  * expects. `t` is clamped, so a track that overshoots cannot produce an impossible colour.
+ * @example
+ * ```ts
+ * mixColor('#000000', '#ffffff', 0.5) // '#808080'
+ * mixColor('red', 'blue', 0.25)       // a quarter of the way from red to blue
+ * ```
  */
 export function mixColor(from: string, to: string, t: number): string {
   const clamped = Math.min(1, Math.max(0, t))

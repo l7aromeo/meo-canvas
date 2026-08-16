@@ -9,12 +9,23 @@ export type Animatable = number | string | readonly (number | string)[]
  *
  * Deliberately unclamped: `outBack` and `outElastic` return values beyond 0–1, and clamping here
  * would flatten exactly the overshoot those curves exist to produce.
+ * @example
+ * ```ts
+ * lerp(0, 100, 0.25) // 25
+ * ```
  */
 export function lerp(from: number, to: number, t: number): number {
   return from + (to - from) * t
 }
 
-/** Rescales a value from one range to another. */
+/**
+ * Rescales a value from one range to another.
+ * @example
+ * ```ts
+ * mapRange(50, [0, 100], [0, 1])                  // 0.5
+ * mapRange(150, [0, 100], [0, 1], { clamp: true }) // 1
+ * ```
+ */
 export function mapRange(
   value: number,
   [inMin, inMax]: readonly [number, number],
@@ -40,6 +51,12 @@ export function mapRange(
  *
  * Strings are treated as colours because that is the only string this library animates; anything
  * else would have no meaningful midpoint.
+ * @example
+ * ```ts
+ * mix(0, 10, 0.5)                    // 5
+ * mix('#000000', '#ffffff', 0.5)     // '#808080'
+ * mix([0, 10], [10, 20], 0.5)        // [5, 15]
+ * ```
  */
 export function mix<T extends Animatable>(from: T, to: T, t: number): T {
   if (typeof from === 'number' && typeof to === 'number') {
@@ -65,6 +82,11 @@ export function mix<T extends Animatable>(from: T, to: T, t: number): T {
  *
  * Values hold outside the declared range rather than extrapolating, which is what a keyframe track
  * means — the first and last frames are states, not the start of a slope.
+ * @example
+ * ```ts
+ * interpolate(0.25, [0, 0.5, 1], [0, 100, 0])                    // 50
+ * interpolate(0.5, [0, 1], ['#000000', '#ffffff'])               // '#808080'
+ * ```
  */
 export function interpolate<T extends Animatable>(t: number, stops: readonly number[], values: readonly T[], options: { ease?: Easing } = {}): T {
   if (stops.length !== values.length) {

@@ -64,6 +64,10 @@ function resolve(config: SpringConfig): ResolvedSpring {
  * The three regimes are genuinely different solutions of the same equation, not a single formula
  * with edge cases — underdamped motion oscillates, critically damped is the fastest approach that
  * does not, and overdamped crawls in without ever crossing.
+ * @example
+ * ```ts
+ * spring(0.2, { from: 0, to: 100, stiffness: 190, damping: 12 }) // position at 200ms
+ * ```
  */
 export function spring(t: number, config: SpringConfig = {}): number {
   const { from, to, omega0, zeta, velocity } = resolve(config)

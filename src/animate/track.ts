@@ -38,6 +38,18 @@ export interface Track<T extends Animatable> {
  * delay expressed as a fraction of the whole sequence changes meaning whenever the sequence length
  * changes. `index` folds in the stagger, so a row of bars is one track rather than per-item
  * arithmetic at the call site.
+ * @example
+ * ```ts
+ * const grow = track({ from: 0, to: 1, duration: 0.75, delay: 0.1, stagger: 0.18, ease: 'outCubic' })
+ *
+ * await Root({
+ *   width: 640,
+ *   height: 320,
+ *   duration: grow.totalDuration(3),
+ *   fps: 24,
+ *   children: page => Row({ children: BARS.map((bar, i) => Box({ width: 300 * grow.at(page, i) })) }),
+ * })
+ * ```
  */
 export function track<T extends Animatable>(config: TrackConfig<T>): Track<T> {
   const { from, to, delay = 0, stagger = 0, ease, spring: springConfig } = config

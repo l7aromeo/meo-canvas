@@ -6,6 +6,7 @@ import type { GridNode } from '@/canvas/grid.canvas.js'
 import type { FontVariantSetting } from 'meo-skia-canvas'
 import * as Style from '@/constant/common.const.js'
 
+/** Fields every component accepts, whatever it draws. */
 export interface BaseProps {
   /**
    * Optional display name for debugging purposes.
@@ -18,8 +19,21 @@ export interface BaseProps {
   key?: string
 }
 
+/**
+ * Anything that can sit inside a container.
+ *
+ * `false` and `undefined` are allowed so `condition && Box({…})` reads naturally and renders
+ * nothing when the condition fails. There is deliberately no function member: that is what lets
+ * `Root` tell a page builder from ordinary children without ambiguity.
+ */
 export type Children = BoxNode | TextNode | ImageNode | GridNode | CanvasElement | false | undefined
 
+/**
+ * A component described as plain data, tagged by `__type`.
+ *
+ * Factories return these rather than live nodes, which is what lets a whole tree cross into a
+ * worker thread by structured clone.
+ */
 export type CanvasElement =
   | { __type: 'Box'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
   | { __type: 'Column'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
@@ -30,6 +44,13 @@ export type CanvasElement =
   | { __type: 'Text'; text: string | number; props?: TextProps }
   | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
 
+/**
+ * A font family and the files that provide it.
+ * @example
+ * ```ts
+ * { family: 'Roboto', paths: ['./fonts/Roboto-Regular.ttf', './fonts/Roboto-Bold.ttf'] }
+ * ```
+ */
 export interface FontRegistrationInfo {
   family: string
   paths: string[]
@@ -1068,6 +1089,7 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
   onError?: (error: Error) => void
 }
 
+/** Chart shapes {@link Chart} can draw. */
 export type ChartType = 'pie' | 'doughnut' | 'bar' | 'line'
 
 /**
@@ -1104,10 +1126,13 @@ export interface CartesianChartData {
   datasets: ChartDataset[]
 }
 
+/** One entry in a chart legend, handed to a custom `renderLegendItem`. */
 export type LegendItem<T extends ChartType> = T extends 'bar' | 'line' ? ChartDataset : PieChartDataPoint
 
+/** One axis or slice label, handed to a custom `renderLabelItem`. */
 export type LabelItem<T extends ChartType> = T extends 'bar' | 'line' ? string : PieChartDataPoint
 
+/** Grid lines behind a cartesian chart. */
 export interface GridOptions {
   show?: boolean
   color?: string
@@ -1158,6 +1183,7 @@ interface PieChartSpecificOptions {
 }
 
 // The main conditional type for options
+/** Rendering and style options for a chart, narrowed by its {@link ChartType}. */
 export type ChartOptions<T extends ChartType> = T extends 'bar' | 'line'
   ? BaseChartOptions<T> & CartesianChartSpecificOptions
   : T extends 'pie' | 'doughnut'
