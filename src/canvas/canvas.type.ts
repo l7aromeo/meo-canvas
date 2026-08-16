@@ -1,5 +1,5 @@
 import { BoxNode } from '@/canvas/layout.canvas.js'
-import type { ExportFormat, ExportOptions, SaveOptions } from 'meo-skia-canvas'
+import type { Canvas, ExportFormat, ExportOptions, SaveOptions } from 'meo-skia-canvas'
 import type { TextNode } from '@/canvas/text.canvas.js'
 import type { ImageNode } from '@/canvas/image.canvas.js'
 import type { GridNode } from '@/canvas/grid.canvas.js'
@@ -849,6 +849,34 @@ export interface AnimationExportOptions {
 
   /** Times the animation repeats. `0` — the default — loops forever. */
   loop?: number
+}
+
+/**
+ * The renderer's own `Canvas`, with its exports narrowed by format.
+ *
+ * A non-worker render hands back the real canvas, whose `toBuffer` accepts any format with any
+ * options — so `toBuffer('png', { fps: 30 })` compiled there while the identical call through
+ * `WorkerCanvas` did not. The same mistake was a compile error or a runtime `TypeError` depending
+ * only on which mode the render happened to use.
+ *
+ * This is that narrowing, and nothing else: the object handed back is unchanged, every other member
+ * is reachable, and a real `Canvas` is assignable to it.
+ */
+export type RenderedCanvas = Omit<Canvas, 'toBuffer' | 'toBufferSync' | 'toURL' | 'toURLSync' | 'toDataURLSync'> & {
+  toBuffer(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<Buffer>
+  toBuffer(format: StillFormat, options?: StillExportOptions): Promise<Buffer>
+
+  toBufferSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Buffer
+  toBufferSync(format: StillFormat, options?: StillExportOptions): Buffer
+
+  toURL(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<string>
+  toURL(format: StillFormat, options?: StillExportOptions): Promise<string>
+
+  toURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  toURLSync(format: StillFormat, options?: StillExportOptions): string
+
+  toDataURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  toDataURLSync(format: StillFormat, options?: StillExportOptions): string
 }
 
 /** Export options accepted for a still format: everything except the animation timing. */

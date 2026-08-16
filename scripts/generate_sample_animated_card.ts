@@ -1,4 +1,4 @@
-import { Root, Column, Row, Box, Text, Style, track, sequence, springDuration, mix, easings } from '../src/index.js'
+import { Root, Column, Row, Box, Text, Style, track, sequence, parallel, springDuration, mix, easings } from '../src/index.js'
 import path from 'path'
 import fs from 'fs'
 
@@ -27,13 +27,17 @@ const RING_SIZE = 54
 /** Each bar eases to full over its own window, the next starting a beat after the one above. */
 const growth = track({ from: 0, to: 1, duration: 0.75, delay: 0.1, stagger: 0.18, ease: 'outCubic' })
 
-/** The ring's hue is a colour blend rather than hand-rolled `hsl()` arithmetic. */
-const ringColor = track({ from: '#38bdf8', to: '#f472b6', duration: 1.4, ease: 'inOutSine' })
-const ringFade = track({ from: 0.35, to: 1, duration: 1.4, ease: 'inOutSine' })
-
-/** The ring also scales in on a spring, which overshoots the way an eased curve cannot. */
+/**
+ * Three things happen to the ring at once, so they are grouped: one sample per page, and one
+ * duration covering whichever of them finishes last. Its colour is a blend rather than hand-rolled
+ * `hsl()` arithmetic, and its scale runs on a spring, which overshoots as an eased curve cannot.
+ */
 const RING_SPRING = { stiffness: 190, damping: 12 }
-const ringScale = track({ from: 0.6, to: 1, spring: RING_SPRING })
+const ring = parallel({
+  color: track({ from: '#38bdf8', to: '#f472b6', duration: 1.4, ease: 'inOutSine' }),
+  fade: track({ from: 0.35, to: 1, duration: 1.4, ease: 'inOutSine' }),
+  scale: track({ from: 0.6, to: 1, spring: RING_SPRING }),
+})
 
 /**
  * The delta badge does three things in a row, which is what a sequence is for: it drops in on a
@@ -58,9 +62,14 @@ const badgeFade = sequence({
   ],
   delay: 0.35,
 })
+const badge = parallel({ offset: badgeOffset, fade: badgeFade })
 
-/** Long enough for every staggered bar to finish, for the spring to settle, and for the badge to leave. */
-const DURATION_SECONDS = Math.max(growth.totalDuration(SERIES.length), ringColor.duration, ringScale.duration, badgeOffset.duration)
+/**
+ * Long enough for everything to finish. Each group reports its own longest member, so adding a
+ * track to one of them cannot leave the render stopping before its own animation does.
+ */
+const scene = parallel({ bars: growth, ring, badge })
+const DURATION_SECONDS = scene.totalDuration(SERIES.length)
 
 const Bar = (series: (typeof SERIES)[number], page: Parameters<typeof growth.at>[0], index: number) => {
   const filled = series.value * growth.at(page, index)
@@ -106,8 +115,10 @@ void (async () => {
       fps: FPS,
       backgroundColor: '#0b1120',
       padding: 32,
-      children: page =>
-        Column({
+      children: page => {
+        const { ring: ringAt, badge: badgeAt } = scene.at(page)
+
+        return Column({
           width: '100%',
           gap: 22,
           children: [
@@ -128,8 +139,8 @@ void (async () => {
                           backgroundColor: '#134e4a',
                           borderRadius: 999,
                           padding: { Left: 10, Right: 10, Top: 3, Bottom: 3 },
-                          opacity: badgeFade.at(page),
-                          transform: { translateY: badgeOffset.at(page) },
+                          opacity: badgeAt.fade,
+                          transform: { translateY: badgeAt.offset },
                           children: [Text('+12%', { fontSize: 12, fontWeight: 'bold', color: '#5eead4' })],
                         }),
                       ],
@@ -142,9 +153,9 @@ void (async () => {
                   height: RING_SIZE,
                   borderRadius: RING_SIZE / 2,
                   border: 4,
-                  borderColor: ringColor.at(page),
-                  opacity: ringFade.at(page),
-                  transform: { scale: ringScale.at(page) },
+                  borderColor: ringAt.color,
+                  opacity: ringAt.fade,
+                  transform: { scale: ringAt.scale },
                 }),
               ],
             }),
@@ -153,7 +164,8 @@ void (async () => {
 
             Text(`frame ${page.index + 1} / ${page.count}`, { fontSize: 12, color: '#475569' }),
           ],
-        }),
+        })
+      },
     })
 
     const outDir = path.join(process.cwd(), 'samples')

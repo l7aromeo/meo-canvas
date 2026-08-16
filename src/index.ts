@@ -16,6 +16,7 @@ export { parseColor, formatColor, mixColor, isColor, type Rgba } from '@/animate
 export { spring, springDuration, type SpringConfig, type SpringDurationOptions } from '@/animate/spring.js'
 export { track, type Track, type TrackConfig } from '@/animate/track.js'
 export { sequence, type SequenceConfig, type SequenceStep } from '@/animate/sequence.js'
+export { parallel, type Sampled, type GroupValue } from '@/animate/parallel.js'
 
 /**
  * Re-exported from the renderer so consumers can name them without importing a transitive

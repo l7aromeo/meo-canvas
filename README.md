@@ -574,6 +574,36 @@ badge.at(page) // or badge.at(page, index) when staggered
 A trailing `hold` is not counted in `duration`, since nothing moves during it — a render sized from
 `sequence.duration` would otherwise end on dead frames.
 
+#### Groups
+
+`parallel` runs several of them at once: one sample per page, and one duration covering whichever
+member finishes last.
+
+```javascript
+import { parallel, track } from 'meo-canvas'
+
+const ring = parallel({
+  tint: track({ from: '#38bdf8', to: '#f472b6', duration: 1.4, ease: 'inOutSine' }),
+  scale: track({ from: 0.6, to: 1, spring: { stiffness: 190, damping: 12 } }),
+})
+
+const canvas = await Root({
+  width: 200,
+  height: 200,
+  duration: ring.duration, // the longest member, whichever that is
+  fps: 24,
+  children: page => {
+    const { tint, scale } = ring.at(page)
+    return Box({ borderColor: tint, transform: { scale } })
+  },
+})
+```
+
+Groups take tracks, sequences and other groups, since all three are sampled the same way. The
+duration is the point: writing `Math.max(a.duration, b.duration, …)` by hand has to be corrected
+every time a track is added, and forgetting one leaves the render ending before its own animation
+does — silently, mid-fade.
+
 #### Easing
 
 `easings` carries the standard catalogue — `linear`, plus `in`/`out`/`inOut` of `Quad`, `Cubic`,

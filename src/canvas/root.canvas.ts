@@ -10,6 +10,7 @@ import type {
   RootPropsWithoutWorker,
   RootContent,
   RootNodeProps,
+  RenderedCanvas,
   AnimatedFormat,
   StillFormat,
   AnimationExportOptions,
@@ -668,7 +669,7 @@ export async function renderPages(props: RootProps, pages: (Children | Children[
  * @returns Canvas with .release() in worker mode, plain Canvas otherwise
  */
 export function Root(props: RootPropsWithWorker & RootContent): Promise<WorkerCanvas>
-export function Root(props: RootPropsWithoutWorker & RootContent): Promise<Canvas>
+export function Root(props: RootPropsWithoutWorker & RootContent): Promise<RenderedCanvas>
 export async function Root(props: RootProps): Promise<Canvas | WorkerCanvas> {
   // Determine worker mode
   const workerMode = props.workerMode ?? true
