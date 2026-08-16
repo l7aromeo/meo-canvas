@@ -71,6 +71,36 @@ const badge = parallel({ offset: badgeOffset, fade: badgeFade })
 const scene = parallel({ bars: growth, ring, badge })
 const DURATION_SECONDS = scene.totalDuration(SERIES.length)
 
+/** Width of the sheen's soft band. */
+const SHEEN_WIDTH = WIDTH * 0.45
+
+/**
+ * A highlight sweeping across the card: a flat overlay shaped by a gradient mask, whose endpoints
+ * move with the page.
+ *
+ * A fill cannot do this — the band is transparent at both edges and opaque in the middle, which is
+ * an alpha ramp rather than a colour. `cycle` rather than `progress` keeps the sweep seamless: the
+ * last page is one step short of the first.
+ */
+const Sheen = (cycle: number) => {
+  // Travels from fully off the left edge to fully off the right, so the band only ever crosses.
+  const lead = cycle * (WIDTH + SHEEN_WIDTH * 2) - SHEEN_WIDTH
+
+  return Box({
+    positionType: Style.PositionType.Absolute,
+    position: 0,
+    backgroundColor: '#e0f2fe',
+    opacity: 0.16,
+    mask: {
+      gradient: {
+        type: 'linear',
+        colors: ['#00000000', '#000000ff', '#00000000'],
+        direction: [lead, 0, lead + SHEEN_WIDTH, HEIGHT],
+      },
+    },
+  })
+}
+
 const Bar = (series: (typeof SERIES)[number], page: Parameters<typeof growth.at>[0], index: number) => {
   const filled = series.value * growth.at(page, index)
 
@@ -163,6 +193,9 @@ void (async () => {
             Column({ gap: 16, children: SERIES.map((series, i) => Bar(series, page, i)) }),
 
             Text(`frame ${page.index + 1} / ${page.count}`, { fontSize: 12, color: '#475569' }),
+
+            // Last, so it lies over everything above it.
+            Sheen(page.cycle),
           ],
         })
       },
