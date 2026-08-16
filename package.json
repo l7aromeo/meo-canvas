@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix && bun run typecheck",
     "format": "prettier --write .",
-    "generate:samples": "bunx tsx scripts/generate_sample_charts.ts && bunx tsx scripts/generate_sample_grids.ts && bunx tsx scripts/generate_sample_nested_grids.ts && bunx tsx scripts/generate_sample_animated_card.ts",
+    "generate:samples": "bun run typecheck && bunx tsx scripts/generate_sample_charts.ts && bunx tsx scripts/generate_sample_grids.ts && bunx tsx scripts/generate_sample_nested_grids.ts && bunx tsx scripts/generate_sample_animated_card.ts",
     "prepare": "husky"
   },
   "devDependencies": {
