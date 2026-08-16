@@ -2,6 +2,8 @@
 
 First off, thank you for considering contributing! It's people like you that make open source such a great community.
 
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md). Found a security problem rather than a bug? [SECURITY.md](SECURITY.md) says how to report it privately.
+
 ## Where do I go from here?
 
 If you've noticed a bug or have a feature request, [make one](https://github.com/l7aromeo/meo-canvas/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.

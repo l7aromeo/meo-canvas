@@ -1,0 +1,37 @@
+name: Feature request
+description: Something the library should be able to do and cannot.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to draw
+      description: >
+        The end result, not the API you have in mind for it. A layout that will not come out right,
+        an export you cannot produce, a value you cannot animate — the concrete case usually shows
+        whether the answer is a new prop, a different prop, or a component that does not exist yet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you tried
+      description: How you work around it today, if you do, and where that falls short.
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What the API might look like
+      description: Optional. A sketch of the call you wish you could write.
+      render: typescript
+
+  - type: checkboxes
+    id: renderer
+    attributes:
+      label: Renderer support
+      description: >
+        This library draws through `meo-skia-canvas` and lays out through `yoga-layout`. Anything
+        neither of them can do has to land there first, so it is worth a look before filing.
+      options:
+        - label: I checked whether meo-skia-canvas already supports this
