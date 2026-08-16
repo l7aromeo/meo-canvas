@@ -8,10 +8,30 @@ const mockEndpoint = {
   releaseCanvas: vi.fn(),
 }
 
+/**
+ * Every worker the pool has spawned, in index order, with its listeners reachable.
+ *
+ * A thread dying is an event, so a test that cannot fire one cannot tell a pool that reports the
+ * failure apart from a pool that hangs forever — both simply never resolve.
+ */
+interface MockWorker {
+  listeners: Map<string, ((arg: never) => void)[]>
+  emit: (event: string, arg?: unknown) => void
+  terminate: () => void
+}
+const spawned: MockWorker[] = []
+
 /** Spied so tests can assert *when* threads are created, not just that rendering works. */
 const WorkerMock = vi.fn(function (this: Record<string, unknown>) {
-  this.on = () => this
+  const listeners = new Map<string, ((arg: never) => void)[]>()
+  this.listeners = listeners
+  this.on = (event: string, listener: (arg: never) => void) => {
+    listeners.set(event, [...(listeners.get(event) ?? []), listener])
+    return this
+  }
+  this.emit = (event: string, arg?: unknown) => listeners.get(event)?.forEach(listener => listener(arg as never))
   this.terminate = () => {}
+  spawned.push(this as unknown as MockWorker)
 })
 
 /** Ports handed to `SyncChannel`; the pool creates one channel per worker it spawns. */
@@ -40,6 +60,7 @@ let ComlinkPool: typeof import('@/worker/comlink.pool.js').ComlinkPool
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  spawned.length = 0
   mockEndpoint.render.mockResolvedValue(mockRenderResult)
 
   const mod = await import('@/worker/comlink.pool.js')
@@ -231,5 +252,133 @@ describe('ComlinkPool', () => {
     const port = (pool as any).syncChannels[0].port
     pool.terminate()
     expect(port.close).toHaveBeenCalled()
+  })
+})
+
+/**
+ * A worker that goes away owes an answer it can no longer send. Comlink settles a call by receiving
+ * a message, so without this the promise stays pending: the caller waits on a render that will
+ * never arrive, with no error and no timeout to end it. Every case here would hang before failing,
+ * which is why each one is written against a promise that must reject rather than a value.
+ */
+describe('ComlinkPool when a worker dies', () => {
+  /** A render the worker will never answer — the shape of a thread that died mid-call. */
+  const neverAnswers = () => mockEndpoint.render.mockReturnValue(new Promise(() => {}))
+
+  it('rejects the in-flight render when the thread errors', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(1)
+
+    const render = pool.render({ width: 100 } as any)
+    spawned[0].emit('error', new Error("Cannot find package 'comlink'"))
+
+    await expect(render).rejects.toThrow("Worker 0 died before its render finished: Cannot find package 'comlink'")
+    pool.terminate()
+  })
+
+  it('keeps the original failure as the cause', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(1)
+    const boom = new Error('native module failed to load')
+
+    const render = pool.render({ width: 100 } as any)
+    spawned[0].emit('error', boom)
+
+    await expect(render).rejects.toThrow(expect.objectContaining({ cause: boom }))
+    pool.terminate()
+  })
+
+  it('rejects the in-flight render when the thread exits non-zero', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(1)
+
+    const render = pool.render({ width: 100 } as any)
+    // How an out-of-memory kill arrives: no error object, just a thread that is gone.
+    spawned[0].emit('exit', 1)
+
+    await expect(render).rejects.toThrow('worker exited with code 1')
+    pool.terminate()
+  })
+
+  it('ignores a clean exit, which is a worker finishing rather than failing', async () => {
+    const pool = new ComlinkPool(1)
+    await pool.render({ width: 100 } as any)
+
+    spawned[0].emit('exit', 0)
+
+    // Still usable: a zero exit says nothing failed, so nothing should be retired over it.
+    await expect(pool.render({ width: 100 } as any)).resolves.toMatchObject({ workerIdx: 0 })
+    pool.terminate()
+  })
+
+  it('does not hand a dead worker out again', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(2)
+
+    const first = pool.render({ width: 100 } as any)
+    spawned[0].emit('error', new Error('gone'))
+    await expect(first).rejects.toThrow()
+
+    // The next render must reach a different thread; reusing the dead index would hang again.
+    mockEndpoint.render.mockResolvedValue(mockRenderResult)
+    await expect(pool.render({ width: 100 } as any)).resolves.toMatchObject({ workerIdx: 1 })
+    pool.terminate()
+  })
+
+  it('replaces a dead worker rather than counting it against the ceiling', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(1)
+
+    const first = pool.render({ width: 100 } as any)
+    spawned[0].emit('error', new Error('gone'))
+    await expect(first).rejects.toThrow()
+
+    mockEndpoint.render.mockResolvedValue(mockRenderResult)
+    await expect(pool.render({ width: 100 } as any)).resolves.toMatchObject({ workerIdx: 1 })
+    // A pool of one that lost its only worker has to be able to spawn another, or it is finished.
+    expect(WorkerMock).toHaveBeenCalledTimes(2)
+    pool.terminate()
+  })
+
+  it('fails a queued render when every worker dies under it', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(1)
+
+    const inFlight = pool.render({ width: 100 } as any)
+    const queued = pool.render({ width: 200 } as any)
+
+    spawned[0].emit('error', new Error('gone'))
+    await expect(inFlight).rejects.toThrow('Worker 0 died')
+
+    // The queued task was never bound to worker 0, so it moves to a replacement — and fails there
+    // too, once, rather than retrying against a failure that repeats.
+    spawned[1].emit('error', new Error('gone again'))
+    await expect(queued).rejects.toThrow('Worker 1 died')
+    pool.terminate()
+  })
+
+  it('rejects queued renders when the pool is terminated under them', async () => {
+    neverAnswers()
+    const pool = new ComlinkPool(1)
+
+    const inFlight = pool.render({ width: 100 } as any)
+    const queued = pool.render({ width: 200 } as any)
+
+    pool.terminate()
+
+    await expect(queued).rejects.toThrow('Pool was terminated before this render started')
+    // The in-flight one is the caller's to abandon; the queued one had never started, and dropping
+    // it silently left its promise pending forever.
+    void inFlight.catch(() => {})
+  })
+
+  it('stays quiet when terminate makes its own workers exit', async () => {
+    const pool = new ComlinkPool(1)
+    await pool.render({ width: 100 } as any)
+
+    pool.terminate()
+    // `terminate()` exits every thread non-zero on purpose. Treating that as a death would retire
+    // workers of an already-dead pool and reject through a `deaths` array that no longer exists.
+    expect(() => spawned[0].emit('exit', 1)).not.toThrow()
   })
 })
