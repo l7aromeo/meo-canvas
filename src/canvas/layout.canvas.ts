@@ -1,5 +1,6 @@
 import { Canvas, type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
+import { createGradient } from '@/canvas/gradient.canvas.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
 import Yoga, { Style, Node } from '@/constant/common.const.js'
 
@@ -585,107 +586,11 @@ export class BoxNode {
     if (hasFill) {
       let fillStyle: string | CanvasGradient = this.props.backgroundColor || 'transparent'
       if (this.props.gradient) {
-        const { type = 'linear', colors, direction = 'to-bottom' } = this.props.gradient
-        let grad: CanvasGradient | null = null
-        if (colors && colors.length > 0 && width > 0 && height > 0) {
-          if (type === 'linear') {
-            let x0 = 0,
-              y0 = 0,
-              x1 = 0,
-              y1 = 0
-            let directionIsValid = false
-            if (Array.isArray(direction) && direction.length === 4) {
-              ;[x0, y0, x1, y1] = direction
-              directionIsValid = true
-            } else if (typeof direction === 'string') {
-              switch (direction.toLowerCase()) {
-                case 'to-right':
-                  x0 = 0
-                  y0 = 0
-                  x1 = width
-                  y1 = 0
-                  directionIsValid = true
-                  break
-                case 'to-left':
-                  x0 = width
-                  y0 = 0
-                  x1 = 0
-                  y1 = 0
-                  directionIsValid = true
-                  break
-                case 'to-bottom':
-                  x0 = 0
-                  y0 = 0
-                  x1 = 0
-                  y1 = height
-                  directionIsValid = true
-                  break
-                case 'to-top':
-                  x0 = 0
-                  y0 = height
-                  x1 = 0
-                  y1 = 0
-                  directionIsValid = true
-                  break
-                case 'to-top-right':
-                  x0 = 0
-                  y0 = height
-                  x1 = width
-                  y1 = 0
-                  directionIsValid = true
-                  break
-                case 'to-top-left':
-                  x0 = width
-                  y0 = height
-                  x1 = 0
-                  y1 = 0
-                  directionIsValid = true
-                  break
-                case 'to-bottom-right':
-                  x0 = 0
-                  y0 = 0
-                  x1 = width
-                  y1 = height
-                  directionIsValid = true
-                  break
-                case 'to-bottom-left':
-                  x0 = width
-                  y0 = 0
-                  x1 = 0
-                  y1 = height
-                  directionIsValid = true
-                  break
-              }
-            }
-            if (directionIsValid) {
-              grad = ctx.createLinearGradient(x + x0, y + y0, x + x1, y + y1)
-            } else {
-              console.warn(`[BoxNode ${this.key}] Invalid linear gradient direction:`, direction)
-            }
-          } else if (type === 'radial') {
-            const centerX = x + width / 2
-            const centerY = y + height / 2
-            const r0 = 0
-            const r1 = 0.5 * Math.sqrt(width * width + height * height)
-            if (r1 > 0) {
-              grad = ctx.createRadialGradient(centerX, centerY, r0, centerX, centerY, r1)
-            }
-          }
-          if (grad) {
-            colors.forEach((color, i) => {
-              const stop = colors.length > 1 ? Math.max(0, Math.min(1, i / (colors.length - 1))) : 0.5
-              grad!.addColorStop(stop, color)
-            })
-            fillStyle = grad
-          } else {
-            console.warn(`[BoxNode ${this.key}] Could not create ${type} gradient. Falling back to backgroundColor.`)
-          }
+        const { gradient: grad, reason } = createGradient(ctx, this.props.gradient, { x, y, width, height })
+        if (grad) {
+          fillStyle = grad
         } else {
-          if (!colors?.length) {
-            console.warn(`[BoxNode ${this.key}] Gradient specified but no colors provided. Falling back to backgroundColor.`)
-          } else {
-            console.warn(`[BoxNode ${this.key}] Cannot draw gradient with zero width/height.`)
-          }
+          console.warn(`[BoxNode ${this.key}] ${reason} Falling back to backgroundColor.`)
         }
       }
       if (fillStyle && fillStyle !== 'transparent') {

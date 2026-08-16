@@ -158,6 +158,54 @@ export interface BoxShadowProps {
 }
 
 /**
+ * Where a gradient runs, either as a named edge-to-edge direction or as explicit endpoints.
+ *
+ * The tuple is `[x0, y0, x1, y1]` in the node's own coordinates, measured from its top-left corner,
+ * which is what a keyword resolves to once the node's size is known.
+ */
+export type GradientDirection =
+  [number, number, number, number] | 'to-top' | 'to-right' | 'to-bottom' | 'to-left' | 'to-top-right' | 'to-top-left' | 'to-bottom-right' | 'to-bottom-left'
+
+/**
+ * A gradient, as a background fill or as the alpha of a {@link Mask}.
+ *
+ * Colours are spread evenly from the first to the last; a single colour sits at the midpoint. A
+ * radial gradient runs from the node's centre to the corner, so it covers the whole box.
+ */
+export type Gradient = { type: 'linear'; colors: string[]; direction: GradientDirection } | { type: 'radial'; colors: string[]; direction?: GradientDirection }
+
+/** Shapes a {@link Mask} can name without writing a path, each inscribed in the node's box. */
+export type MaskShape = 'circle' | 'ellipse'
+
+/**
+ * What of a node is drawn, and how much of it.
+ *
+ * A mask covers everything the node renders — background, border, content and children alike — the
+ * way CSS `mask` does, rather than only its contents. It comes in two kinds, and they cost
+ * different amounts:
+ *
+ * - A **shape or path** clips. Hard edges, nothing else allocated, and cheap enough to put on every
+ *   node in a list.
+ * - A **gradient** composites, so the node is drawn into an offscreen canvas the size of its box
+ *   and then multiplied by the gradient's alpha. Soft edges, at the cost of that canvas.
+ *
+ * Applied within the node's own box: content pushed outside by `transform` is not masked back in.
+ * @example
+ * ```ts
+ * Box({ mask: { shape: 'circle' }, children: [avatar] })
+ * Box({ mask: 'M 0 0 L 100 0 L 50 100 Z' })
+ * Box({ mask: { gradient: { type: 'linear', direction: 'to-bottom', colors: ['#000', 'transparent'] } } })
+ * ```
+ */
+export type Mask =
+  /** SVG path data, in the node's own coordinates. Shorthand for `{ path }`. */
+  | string
+  | { shape: MaskShape }
+  | { path: string; fillRule?: 'nonzero' | 'evenodd' }
+  /** Only the alpha of each colour matters: opaque keeps a pixel, transparent removes it. */
+  | { gradient: Gradient }
+
+/**
  * Defines the layout and style properties for a BoxNode, analogous to CSS properties.
  */
 export interface BoxProps extends BaseProps {
@@ -430,35 +478,7 @@ export interface BoxProps extends BaseProps {
    * `direction`: Array of four numbers `[x0, y0, x1, y1]` defining the start and end points of the gradient line, relative to the node's top-left corner.
    * @default undefined
    */
-  gradient?:
-    | {
-        type: 'linear'
-        colors: string[]
-        direction:
-          | [number, number, number, number] // 0, y0, x1, y1 relative to node
-          | 'to-top'
-          | 'to-right'
-          | 'to-bottom'
-          | 'to-left'
-          | 'to-top-right'
-          | 'to-top-left'
-          | 'to-bottom-right'
-          | 'to-bottom-left'
-      }
-    | {
-        type: 'radial'
-        colors: string[]
-        direction?:
-          | [number, number, number, number]
-          | 'to-top'
-          | 'to-right'
-          | 'to-bottom'
-          | 'to-left'
-          | 'to-top-right'
-          | 'to-top-left'
-          | 'to-bottom-right'
-          | 'to-bottom-left'
-      }
+  gradient?: Gradient
 
   /**
    * Sets the opacity of the node and its children when drawing.

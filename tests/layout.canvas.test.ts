@@ -1418,9 +1418,11 @@ describe('BoxNode _renderContent', () => {
 
     node['_renderContent'](mockContext, 0, 0, 100, 100)
 
-    expect(warnSpy).toHaveBeenCalledTimes(2)
-    expect(warnSpy.mock.calls[0][0]).toContain('Invalid linear gradient direction')
-    expect(warnSpy.mock.calls[1][0]).toContain('Could not create linear gradient. Falling back to backgroundColor.')
+    // One warning, not two: what was wrong and what happens instead belong in the same message.
+    // The reason comes from the gradient helper and the consequence from the caller, because a mask
+    // failing the same way is dropped rather than falling back to a colour it does not have.
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0][0]).toContain('Invalid linear gradient direction: "invalid-direction". Falling back to backgroundColor.')
     expect(mockContext.createLinearGradient).not.toHaveBeenCalled()
     expect(mockContext.fillStyle).toBe('green') // Fallback to background color
     expect(mockContext.fill).toHaveBeenCalled()
