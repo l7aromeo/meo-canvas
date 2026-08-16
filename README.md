@@ -503,6 +503,24 @@ genuinely allows a different size per page, which is why `height` stays optional
 The animated card in the [Showcase](#showcase) is built this way — staggered bars easing to their values, with no
 keyframes anywhere. See [`scripts/generate_sample_animated_card.ts`](./scripts/generate_sample_animated_card.ts).
 
+#### Animated Image Sources
+
+An animated `gif`, `apng`, `webp` or `avif` plays by itself in a paged render, advancing at the
+source's own rate — a 10fps GIF in a 24fps render changes on the pages it should, not once per page.
+
+```javascript
+// Plays. Nothing to compute.
+children: () => Image({ src: 'spinner.gif', width: 64, height: 64 })
+```
+
+| Prop    | Type      | Description                                                                             |
+| ------- | --------- | --------------------------------------------------------------------------------------- |
+| `frame` | `number`  | Pin one frame instead of playing. Negative counts from the end; an absent frame throws. |
+| `loop`  | `boolean` | `false` holds the last frame rather than restarting. Default `true`.                    |
+
+A still render draws the first frame, as it always has. Decoding happens once per source however
+many pages read it, so a long animation costs one decode rather than one per frame.
+
 ### Animation Utilities
 
 Everything below is a pure function of the page, so it can be called for any page in any order and

@@ -5,6 +5,7 @@ import { loadImage } from 'meo-skia-canvas'
 import { Root } from '@/canvas/root.canvas.js'
 import { Box } from '@/canvas/layout.canvas.js'
 import { Text } from '@/canvas/text.canvas.js'
+import { Image } from '@/canvas/image.canvas.js'
 import { integrationFontFamily, integrationRootBase } from './helpers/integration-font.js'
 
 const WIDTH = 120
@@ -187,5 +188,130 @@ describe.skipIf(!built)('paged rendering in worker mode', () => {
     } finally {
       canvas.release()
     }
+  })
+})
+
+/**
+ * An animated source is the mirror of an animated export: the library can write one, so it should
+ * be able to draw one. The expectation people arrive with is `<img src="x.gif">` — it plays — and
+ * it has to play at the source's own rate, not at the render's, since the two rarely match.
+ */
+describe('animated image sources', () => {
+  /** A four-frame GIF whose frames are flat, distinct colours, with deliberately uneven timing. */
+  const FRAME_COLOURS = ['#ff0000', '#00ff00', '#0000ff', '#ffff00']
+  const SOURCE_DELAYS = [500, 500, 500, 500]
+
+  const animatedSource = async () => {
+    const frames = await Root({
+      ...integrationRootBase,
+      width: 20,
+      height: 20,
+      workerMode: false,
+      pages: FRAME_COLOURS.length,
+      children: ({ index }: { index: number }) => Box({ width: 20, height: 20, backgroundColor: FRAME_COLOURS[index] }),
+    } as never)
+    return frames.toBuffer('gif', { frameDelays: SOURCE_DELAYS })
+  }
+
+  /**
+   * The colour at the centre of one page, as `#rrggbb`.
+   *
+   * A raster export writes a single page — the current one unless asked otherwise — so the page has
+   * to be named. It is numbered from 1, which is the renderer's convention, not from 0.
+   */
+  const centre = (canvas: { toBufferSync(format: 'raw', options?: { page?: number }): Buffer }, page: number, size: number) => {
+    const raw = canvas.toBufferSync('raw', { page: page + 1 })
+    const offset = ((size / 2) * size + size / 2) * 4
+    return '#' + [raw[offset], raw[offset + 1], raw[offset + 2]].map(c => c.toString(16).padStart(2, '0')).join('')
+  }
+
+  it('plays at the source rate, so each half-second lands on the next frame', async () => {
+    const src = await animatedSource()
+    const SIZE = 20
+
+    // 2 frames a second against a source that changes twice a second: page N shows frame N/2.
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: SIZE,
+      height: SIZE,
+      workerMode: false,
+      pages: 8,
+      fps: 2,
+      children: () => Image({ src, width: SIZE, height: SIZE }),
+    } as never)
+
+    expect(canvas.pages).toHaveLength(8)
+    expect(centre(canvas, 0, SIZE)).toBe(FRAME_COLOURS[0])
+    expect(centre(canvas, 1, SIZE)).toBe(FRAME_COLOURS[1])
+    expect(centre(canvas, 2, SIZE)).toBe(FRAME_COLOURS[2])
+    expect(centre(canvas, 3, SIZE)).toBe(FRAME_COLOURS[3])
+    // Two seconds is the whole source, so it comes back around.
+    expect(centre(canvas, 4, SIZE)).toBe(FRAME_COLOURS[0])
+  })
+
+  it('holds the last frame when looping is off', async () => {
+    const src = await animatedSource()
+    const SIZE = 20
+
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: SIZE,
+      height: SIZE,
+      workerMode: false,
+      pages: 6,
+      fps: 2,
+      children: () => Image({ src, width: SIZE, height: SIZE, loop: false }),
+    } as never)
+
+    expect(centre(canvas, 5, SIZE)).toBe(FRAME_COLOURS[FRAME_COLOURS.length - 1])
+  })
+
+  it('pins the frame it is told to, ignoring the clock', async () => {
+    const src = await animatedSource()
+    const SIZE = 20
+
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: SIZE,
+      height: SIZE,
+      workerMode: false,
+      pages: 4,
+      fps: 2,
+      children: () => Image({ src, width: SIZE, height: SIZE, frame: 2 }),
+    } as never)
+
+    for (const page of [0, 1, 2, 3]) {
+      expect(centre(canvas, page, SIZE)).toBe(FRAME_COLOURS[2])
+    }
+  })
+
+  it('counts a negative frame from the end, as the renderer does', async () => {
+    const src = await animatedSource()
+    const SIZE = 20
+
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: SIZE,
+      height: SIZE,
+      workerMode: false,
+      children: [Image({ src, width: SIZE, height: SIZE, frame: -1 })],
+    } as never)
+
+    expect(centre(canvas, 0, SIZE)).toBe(FRAME_COLOURS[FRAME_COLOURS.length - 1])
+  })
+
+  it('draws the first frame in a still render, as it always has', async () => {
+    const src = await animatedSource()
+    const SIZE = 20
+
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: SIZE,
+      height: SIZE,
+      workerMode: false,
+      children: [Image({ src, width: SIZE, height: SIZE })],
+    } as never)
+
+    expect(centre(canvas, 0, SIZE)).toBe(FRAME_COLOURS[0])
   })
 })

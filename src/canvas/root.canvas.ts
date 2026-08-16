@@ -26,7 +26,7 @@ import { deleteDiskCache } from '@/util/disk.cache.js'
 import { TextNode } from '@/canvas/text.canvas.js'
 import { ChartNode } from '@/canvas/chart.canvas.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.js'
-import { asNodeProps, planPages } from '@/canvas/page.plan.js'
+import { asNodeProps, planPages, resolveFps } from '@/canvas/page.plan.js'
 import { Style } from '@/constant/common.const.js'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
@@ -273,6 +273,26 @@ export class WorkerCanvas {
   }
   get raw(): Promise<Buffer> {
     return this.toBuffer('raw')
+  }
+  /** Encodes at the renderer's default frame rate. Pass `fps` to {@link WorkerCanvas.toBuffer} to choose one. */
+  get gif(): Promise<Buffer> {
+    return this.toBuffer('gif')
+  }
+  /** Encodes at the renderer's default frame rate. Pass `fps` to {@link WorkerCanvas.toBuffer} to choose one. */
+  get apng(): Promise<Buffer> {
+    return this.toBuffer('apng')
+  }
+  get avif(): Promise<Buffer> {
+    return this.toBuffer('avif')
+  }
+  get tiff(): Promise<Buffer> {
+    return this.toBuffer('tiff')
+  }
+  get ico(): Promise<Buffer> {
+    return this.toBuffer('ico')
+  }
+  get bmp(): Promise<Buffer> {
+    return this.toBuffer('bmp')
   }
 
   // --- Members a worker-held canvas genuinely cannot provide ---
@@ -550,6 +570,19 @@ export class RootNode extends ColumnNode {
     return this.scale
   }
 
+  /**
+   * Tells every image in this tree which moment of the render it is being drawn for.
+   *
+   * Animated sources play at their own rate, so they need the page's clock rather than its index —
+   * a 10fps GIF drawn into a 24fps render advances on some pages and not others. Reuses the walk
+   * that collects images for loading, so a page pays for one traversal, not two.
+   */
+  setPageTime(seconds: number): void {
+    for (const image of this.findAllImageNodes()) {
+      image.setPageTime(seconds)
+    }
+  }
+
   /** Registers this render's fonts. Public so a paged render can do it once for the whole sequence. */
   registerFonts(): Promise<void> {
     return this._registerFonts()
@@ -606,6 +639,7 @@ export class RootNode extends ColumnNode {
  * sequence instead of holding every page's layout at once.
  */
 export async function renderPages(props: RootProps, pages: (Children | Children[])[]): Promise<Canvas> {
+  const fps = resolveFps(props.fps)
   const diskCacheKeys = props.useDiskCache ? new Set<string>() : undefined
   const imageCache: RenderImageCache = new Map()
 
@@ -617,9 +651,13 @@ export async function renderPages(props: RootProps, pages: (Children | Children[
   let fontsRegistered = false
 
   try {
-    for (const children of pages) {
+    for (const [index, children] of pages.entries()) {
       const node = new RootNode({ ...pageProps, children } as RootNodeProps & BaseProps)
       try {
+        // The same clock the page builder was handed, so an animated source and a track that were
+        // described against the same moment stay in step.
+        node.setPageTime(index / fps)
+
         if (!fontsRegistered) {
           await node.registerFonts()
           fontsRegistered = true

@@ -1059,6 +1059,30 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
   httpOptions?: RequestInit
 
   /**
+   * Frame to draw from an animated source, instead of playing it.
+   *
+   * An animated `gif`, `apng`, `webp` or `avif` plays by itself in a paged render, advancing at the
+   * source's own rate. Naming a frame pins it to that one — a poster, a thumbnail, or a sequence
+   * driven by hand. Negative counts from the end, and a frame the source does not have is refused.
+   * @example
+   * ```ts
+   * Image({ src: 'spinner.gif', frame: 0 })   // first frame, however long the animation is
+   * Image({ src: 'spinner.gif', frame: -1 })  // last frame
+   * ```
+   * @default undefined (plays in a paged render, first frame in a still one)
+   */
+  frame?: number
+
+  /**
+   * Whether an animated source restarts once it reaches its last frame.
+   *
+   * `false` holds the last frame instead, which is what a one-shot animation wants when the render
+   * outlasts it. Ignored when {@link ImageProps.frame} pins a frame.
+   * @default true
+   */
+  loop?: boolean
+
+  /**
    * Specifies how the image should be resized to fit its container.
    * - `fill`: Stretches the image to fill the container, ignoring an aspect ratio. (Default)
    * - `contain`: Scales the image to fit within the container while preserving an aspect ratio.

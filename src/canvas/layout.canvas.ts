@@ -869,12 +869,11 @@ export class RowNode extends BoxNode {
 /**
  * A {@link Box} that lays its children out side by side.
  *
- * A row sizes itself to its content, so give it a width before expecting
- * `justifyContent: Style.Justify.SpaceBetween` to spread anything.
+ * A row stretches to its parent's width by default, as flexbox does, so
+ * `justifyContent` has space to distribute without being given one.
  * @example
  * ```ts
  * Row({
- *   width: '100%',
  *   justifyContent: Style.Justify.SpaceBetween,
  *   alignItems: Style.Align.Center,
  *   children: [Text('left'), Text('right')],

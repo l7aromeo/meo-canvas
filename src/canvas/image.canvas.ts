@@ -5,6 +5,7 @@ import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.j
 import { promises as fs } from 'fs'
 import { Style } from '@/constant/common.const.js'
 import { hashBuffer, readDiskCache, writeDiskCache } from '@/util/disk.cache.js'
+import { frameAtTime } from '@/canvas/image.frames.js'
 import { hashHttpOptions } from '@/util/http.options.js'
 
 /**
@@ -38,6 +39,15 @@ export type RenderImageCache = Map<string, Promise<CanvasImage>>
 export class ImageNode extends BoxNode {
   declare props: ImageProps & BaseProps
   private loadedImage: CanvasImage | null = null
+
+  /**
+   * When this node is being drawn, in seconds from the start of the render.
+   *
+   * Set by the render rather than passed as a prop: an animated source plays at its own rate, and
+   * the page's clock is the only thing that knows how far along the sequence a page is. A still
+   * render leaves it undefined, which is what keeps such a source on its first frame.
+   */
+  private pageTime: number | undefined
   private naturalWidth = 0
   private naturalHeight = 0
   private loadingPromise: Promise<void> | null = null
@@ -52,6 +62,28 @@ export class ImageNode extends BoxNode {
       objectPosition: { Left: '50%', Top: '50%' },
       ...props,
     }
+  }
+
+  /** Tells this node which moment of the render it is being drawn for. */
+  setPageTime(seconds: number): void {
+    this.pageTime = seconds
+  }
+
+  /**
+   * The frame of an animated source to draw, resolved for this page.
+   *
+   * An explicit `frame` wins and is handed to the renderer as given, so a negative index counts
+   * from the end and an impossible one is refused there rather than quietly clamped here. With no
+   * `frame`, an animated source plays: the page's own time is matched against the source's delays.
+   */
+  private currentFrame(image: CanvasImage): CanvasImage {
+    if (image.frames <= 1) return image
+
+    const { frame, loop } = this.props
+    if (frame !== undefined) return image.frame(frame)
+    if (this.pageTime === undefined) return image
+
+    return image.frame(frameAtTime(image.delays, this.pageTime, { loop }))
   }
 
   public load(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
@@ -245,7 +277,7 @@ export class ImageNode extends BoxNode {
     await super._renderContent(ctx, x, y, width, height)
 
     if (!this.loadedImage || width <= 0 || height <= 0) return
-    const img = this.loadedImage
+    const img = this.currentFrame(this.loadedImage)
     const imgW = this.naturalWidth
     const imgH = this.naturalHeight
     if (imgW <= 0 || imgH <= 0) return
