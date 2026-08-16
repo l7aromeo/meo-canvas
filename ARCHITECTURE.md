@@ -113,7 +113,7 @@ Export signatures are split by format: `fps`, `loop` and `frameDelays` are accep
 A page is a frame for `gif` and `apng`, a sheet for `pdf` and `tiff`, and a size for `ico`. Passing a function as `children` renders a sequence — one page per call — and `page.plan.ts` owns the arithmetic:
 
 - `resolvePageCount()` turns `pages` or `duration * fps` into a count and rejects every contradictory combination. It runs at runtime because the type system cannot reach JavaScript callers, `as any`, or props arriving over the worker boundary; the `Root` overloads reject the same shapes at compile time.
-- `pageInfoAt()` builds the `PageInfo` a builder receives — `index`, `count`, `progress` for interpolation, and `time` for physics integration.
+- `pageInfoAt()` builds the `PageInfo` a builder receives — `index`, `count`, `progress` for one-shot interpolation, `cycle` for anything that repeats, and `time` for physics integration. `progress` spans the sequence inclusively and `cycle` half-open, which is the difference between an animation that ends on its final value and one that closes back onto its first.
 - `planPages()` runs the builder once per page, sequentially, so page order is the array order and a data-loading builder does not burst every request at once.
 
 `renderPages()` then builds **one `RootNode` per page**. The tree is constructed in the node's constructor and freed once drawn, and a freed Yoga node cannot be laid out again — so pages cannot share a node. What is expensive is shared instead: one image cache and one font registration for the whole sequence. Each page's tree is released in a `finally` as soon as it is drawn, so memory stays flat across a long sequence rather than holding every page's layout at once.

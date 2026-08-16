@@ -501,15 +501,31 @@ await canvas.toBuffer('gif', { fps: 24, loop: 0 })
 
 The function receives a `PageInfo`:
 
-| Field      | Type     | Description                                                               |
-| ---------- | -------- | ------------------------------------------------------------------------- |
-| `index`    | `number` | Zero-based position in the sequence.                                      |
-| `count`    | `number` | Total pages in this render.                                               |
-| `progress` | `number` | `0` on the first page, `1` on the last. Use for interpolation and easing. |
-| `time`     | `number` | Seconds elapsed, `index / fps`. Use for physics or spring integration.    |
+| Field      | Type     | Description                                                                                            |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `index`    | `number` | Zero-based position in the sequence.                                                                   |
+| `count`    | `number` | Total pages in this render.                                                                            |
+| `progress` | `number` | `0` on the first page, `1` on the last. Use for one-shot interpolation and easing.                     |
+| `cycle`    | `number` | `0` on the first page, approaching `1` on the last without reaching it. Use for anything that repeats. |
+| `time`     | `number` | Seconds elapsed, `index / fps`. Use for physics or spring integration.                                 |
 
 The function may be async, so a page can await its own data. Use `pages: n` instead of `duration` when the count
 matters more than the timing — a three-page PDF is `pages: 3`.
+
+#### Looping: reach for `cycle`, not `progress`
+
+`progress` spans the sequence inclusively, which is what a one-shot animation wants — it should finish on its end value
+on the frame the viewer stops on. Anything periodic wants the opposite, because `1` and `0` are the same point on a
+circle:
+
+```js
+Math.sin(progress * 2 * Math.PI) // the last page repeats page 0 — one frame stands still on every loop
+Math.sin(cycle * 2 * Math.PI) // the last page is one step short of the start — the loop closes seamlessly
+```
+
+The stutter is invisible frame by frame and only shows on the wrap, which is what makes it worth knowing about before
+you ship it. `time` shares `cycle`'s half-open span (`[0, duration)`), so time-driven periodic motion was already
+seamless.
 
 Every page must be the same size for `gif`, `apng` and `tiff`, so an animated render needs an explicit `height` —
 without one each page sizes itself to its own content and the encoder rejects the mismatch. `pdf` is the exception: it

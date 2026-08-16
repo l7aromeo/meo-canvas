@@ -91,16 +91,24 @@ export function resolveFps(fps: number | undefined): number {
 /**
  * Builds the descriptor handed to the page builder.
  *
- * `progress` and `time` answer different questions and neither replaces the other: `progress` is
- * position along the sequence, which is what interpolation and easing want, while `time` is
- * elapsed seconds, which is what physics integration needs. Both are derived here so a builder
- * never has to restate the frame rate it was configured with.
+ * `progress`, `cycle` and `time` answer different questions and none replaces the others.
+ * `progress` spans the sequence inclusively, which is what a one-shot animation wants — it should
+ * land on its end value on the frame the viewer stops on. `cycle` spans it exclusively, which is
+ * what a repeating one wants: `1` and `0` are the same point on a circle, so a full turn belongs
+ * to the next loop rather than to this one. `time` is elapsed seconds, which is what physics
+ * integration needs, and shares `cycle`'s half-open span for the same reason.
+ *
+ * All three are derived here so a builder never has to restate the frame rate it was configured
+ * with, or rediscover which divisor a seamless loop needs.
  */
 export function pageInfoAt(index: number, count: number, fps: number): PageInfo {
   return {
     index,
     count,
     progress: count > MIN_PAGES ? index / (count - 1) : SINGLE_PAGE_PROGRESS,
+    // No single-page guard, unlike `progress`: dividing by the count rather than by one less than
+    // it cannot reach zero, so `pages: 1` already reports 0 on its own.
+    cycle: index / count,
     time: index / fps,
   }
 }

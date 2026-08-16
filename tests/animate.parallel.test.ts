@@ -8,6 +8,7 @@ const pageAt = (time: number, count = 120): PageInfo => ({
   index: Math.round(time * FPS),
   count,
   progress: count > 1 ? Math.round(time * FPS) / (count - 1) : 0,
+  cycle: Math.round(time * FPS) / count,
   time,
 })
 
