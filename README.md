@@ -11,8 +11,8 @@ functions, similar to the composition style of @meonode/ui.
 It uses `meo-skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
 
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
-image structure with components like `Box`, `Text`, `Image`, and `Grid`, and the library will handle the layout and
-rendering to a canvas.
+image structure with components like `Box`, `Text`, `Image`, `Path`, and `Grid`, and the library will handle the layout
+and rendering to a canvas.
 
 ## Key Features
 
@@ -21,9 +21,18 @@ rendering to a canvas.
 - **Rich Text:** Render text with custom fonts and inline styling using simple HTML-like tags. Supported tags include
   `<color="value">`, `<weight="value">`, `<size="value">`, `<b>`, and `<i>`.
 - **Image Support:** Render images from URLs, file paths, or buffers, with `object-fit` and `object-position` support.
+  Animated sources play at their own rate.
 - **Chart Support:** Render bar, line, pie, and doughnut charts with customizable data and options.
 - **Styling:** Style your components with properties that mimic CSS, including borders, padding, margins, and more.
 - **Grid Layout:** A `Grid` component is provided for easy grid-based layouts.
+- **Arbitrary Shapes:** A `Path` component draws SVG path data — the escape hatch for what the components cannot
+  describe.
+- **Masking:** Cut any node to a shape, a path, or a gradient's alpha.
+- **Animated Output:** Render a sequence with one page per frame and export GIF, APNG, animated WebP or AVIF — or PDF
+  and TIFF sheets from the same tree.
+- **Animation Utilities:** Easings, springs solved in closed form, and `track`/`sequence`/`parallel` for composing
+  them. Colours interpolate in every format the engine parses.
+- **Engine Control:** Choose the GPU or CPU backend, the pixel format and the colour space.
 - **TypeScript Support:** Fully typed for a better development experience.
 - **[Architecture →](./ARCHITECTURE.md)**
 
@@ -817,6 +826,10 @@ does — silently, mid-fade.
 at the start and 1 at the end, and clamps outside that range. `cubicBezier(x1, y1, x2, y2)` builds a
 CSS-compatible curve, and `steps(n)` quantises.
 
+Anywhere an easing is accepted, it can be a name or a function — `resolveEasing(easing)` is what
+turns one into the other, and it is exported for building your own utilities on the same footing.
+An absent easing resolves to linear.
+
 #### Springs
 
 Springs are solved in closed form, not simulated, so any page can be evaluated on its own:
@@ -868,6 +881,17 @@ mix('#000000', '#ffffff', 0.5) // '#808080' — in gamut, so still hex
 
 Alpha is a separate matter: the engine serialises it as one of 256 levels, so `rgba(9, 9, 9, 0.12345)`
 resolves to `0.122`. That is the renderer's precision, not something this layer adds or removes.
+
+Two more are exported for when you want them directly. `mixColor(from, to, t)` is what `mix` calls
+for colours, usable on its own when you know both ends are colours. `isColor(css)` answers whether
+the engine recognises a string, and never throws — the way to check before handing user input to a
+prop that would otherwise reject it.
+
+```javascript
+mixColor('#000000', '#ffffff', 0.5) // '#808080'
+isColor('rebeccapurple') // true
+isColor('not a colour') // false
+```
 
 `fps` on `Root` sizes the sequence and derives `time`; it does not reach the encoder. Pass it again to `toBuffer` if
 the encoded animation should play at that rate, or give `frameDelays` one entry per page for uneven timing. GIF stores
