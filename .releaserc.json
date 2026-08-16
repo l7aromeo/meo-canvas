@@ -16,6 +16,12 @@
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     [
+      "@semantic-release/changelog",
+      {
+        "changelogTitle": "# Changelog\n\nEvery release, newest first. Generated from the commit messages merged into `main`, `beta`, and\n`alpha` — see CONTRIBUTING.md for what a commit message decides."
+      }
+    ],
+    [
       "./node_modules/@semantic-release/npm",
       {
         "npmPublish": true,
@@ -26,6 +32,13 @@
       "@semantic-release/exec",
       {
         "prepareCmd": "mkdir -p release && tar -czf release/meo-canvas-${nextRelease.version}.tar.gz dist/"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ],
     [
