@@ -462,7 +462,7 @@ layout props. See [Box, Row, and Column](#box-row-and-column) for the full list.
 
 #### Multi-page and Animated Output
 
-A page is a frame for `gif` and `apng`, a sheet for `pdf` and `tiff`, and a size for `ico`. Pass a function as
+A page is a frame for `gif`, `apng`, `webp` and `avif`, a sheet for `pdf` and `tiff`, and a size for `ico`. Pass a function as
 `children` to render a sequence — it runs once per page.
 
 ```javascript
@@ -641,7 +641,7 @@ The `Root()` function returns a Canvas object with the following methods and pro
 
 ##### Export Methods
 
-Animation timing — `fps`, `loop`, `frameDelays` — is accepted only by `gif` and `apng`. Passing it to any other format
+Animation timing — `fps`, `loop`, `frameDelays` — is accepted only by `gif`, `apng`, `webp` and `avif`. Passing it to any other format
 is a compile error, matching the renderer, which raises a `TypeError` rather than dropping it silently.
 
 | Method          | Signature                                                            | Description                                                      |

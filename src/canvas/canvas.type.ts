@@ -807,7 +807,7 @@ export type RootContent = StillContent | PagedContent
  * Everything else encodes a single page — `png` and friends take one, `pdf` and `tiff` gather them
  * all as sheets — which is why the timing options below are rejected outside this pair.
  */
-export type AnimatedFormat = Extract<ExportFormat, 'gif' | 'apng'>
+export type AnimatedFormat = Extract<ExportFormat, 'gif' | 'apng' | 'webp' | 'avif'>
 
 /** Formats that encode without a timeline. */
 export type StillFormat = Exclude<ExportFormat, AnimatedFormat>

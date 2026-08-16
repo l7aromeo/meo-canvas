@@ -83,9 +83,19 @@ describe('paged rendering', () => {
     const canvas = await pagedRoot({ pages: PAGE_COUNT })
     const apng = await canvas.toBuffer('apng', { fps: FPS })
 
-    // Read the count out of the file rather than via `loadImage`, which reports frame counts for
-    // GIF but not for APNG — it answers 1 for any APNG, however many frames the file declares.
+    // Both halves: what the file declares in `acTL`, and what a decoder actually walks. The
+    // renderer only learned to demux APNG in 5.2.0 — before that it read one back as a single
+    // still — so the two agreeing is itself the thing worth pinning.
     expect(apngFrameCount(apng)).toBe(PAGE_COUNT)
+    expect((await loadImage(apng)).frames).toBe(PAGE_COUNT)
+  })
+
+  it.each(['webp', 'avif'] as const)('round-trips an animated %s', async format => {
+    // WebP and AVIF animate as of the renderer's 5.2.0; before it they encoded a single page.
+    const canvas = await pagedRoot({ pages: PAGE_COUNT })
+    const encoded = await canvas.toBuffer(format, { fps: FPS })
+
+    expect((await loadImage(encoded)).frames).toBe(PAGE_COUNT)
   })
 
   it('honours per-page delays through frameDelays', async () => {

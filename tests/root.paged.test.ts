@@ -189,6 +189,9 @@ describe('export options are narrowed by format', () => {
       void canvas.toBuffer('gif', { fps: 30 })
       void canvas.toBuffer('apng', { loop: 0 })
       void canvas.toBuffer('gif', { frameDelays: [100, 200] })
+      // WebP and AVIF animate as of the renderer's 5.2.0.
+      void canvas.toBuffer('webp', { fps: 24 })
+      void canvas.toBuffer('avif', { fps: 24, loop: 2 })
       void canvas.toBufferSync('gif', { fps: 30 })
       void canvas.toURL('apng', { fps: 30 })
       void canvas.toURLSync('gif', { loop: 2 })
@@ -205,8 +208,8 @@ describe('export options are narrowed by format', () => {
       // @ts-expect-error — `pdf` gathers pages as sheets, with no timeline
       void canvas.toBuffer('pdf', { loop: 0 })
 
-      // @ts-expect-error — `webp` has no frame delays here
-      void canvas.toBuffer('webp', { frameDelays: [100] })
+      // @ts-expect-error — `tiff` gathers pages as sheets, with no timeline
+      void canvas.toBuffer('tiff', { frameDelays: [100] })
 
       // @ts-expect-error — the sync path is narrowed the same way
       void canvas.toBufferSync('jpg', { fps: 12 })
