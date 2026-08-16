@@ -192,6 +192,74 @@ describe.skipIf(!built)('paged rendering in worker mode', () => {
 })
 
 /**
+ * `pageRange` belongs to the renderer, and reaches callers here only because the export signatures
+ * forward its options rather than restating them. That is worth a test on this side: narrowing
+ * `toBuffer` by format is exactly the kind of change that drops an option nobody was watching, and
+ * the failure would be a silently ignored argument rather than an error.
+ *
+ * It also answers the one thing a single animated file cannot: an intro that plays once followed by
+ * a loop that repeats forever. One file carries one loop count, so the two halves are two exports
+ * of the same canvas.
+ */
+describe('exporting a range of pages', () => {
+  const SIZE = 20
+  const FRAME_COLOURS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7']
+
+  const sequence = () =>
+    Root({
+      ...integrationRootBase,
+      width: SIZE,
+      height: SIZE,
+      workerMode: false,
+      pages: FRAME_COLOURS.length,
+      fps: FPS,
+      children: ({ index }: { index: number }) => Box({ width: SIZE, height: SIZE, backgroundColor: FRAME_COLOURS[index] }),
+    } as never)
+
+  it('splits one canvas into an intro that plays once and a loop that repeats', async () => {
+    const canvas = await sequence()
+
+    const intro = await canvas.toBuffer('webp', { fps: FPS, pageRange: [1, 2], loop: 1 })
+    const loop = await canvas.toBuffer('webp', { fps: FPS, pageRange: [3, FRAME_COLOURS.length], loop: 0 })
+
+    expect((await loadImage(intro)).frames).toBe(2)
+    expect((await loadImage(loop)).frames).toBe(FRAME_COLOURS.length - 2)
+    // The whole thing is still available from the same canvas — a range is a view, not a consumption.
+    expect((await loadImage(await canvas.toBuffer('webp', { fps: FPS }))).frames).toBe(FRAME_COLOURS.length)
+  })
+
+  it('counts a negative bound from the end', async () => {
+    const canvas = await sequence()
+    const tail = await canvas.toBuffer('webp', { fps: FPS, pageRange: [3, -1] })
+
+    expect((await loadImage(tail)).frames).toBe(FRAME_COLOURS.length - 2)
+  })
+
+  it('gathers a span of a multi-page PDF', async () => {
+    const canvas = await sequence()
+
+    const chapter = await canvas.toBuffer('pdf', { pageRange: [2, 3] })
+    const whole = await canvas.toBuffer('pdf')
+
+    expect(chapter.subarray(0, 4).toString('latin1')).toBe('%PDF')
+    expect(chapter.length).toBeLessThan(whole.length)
+  })
+
+  it('refuses a bound the canvas does not have, rather than clamping it', async () => {
+    const canvas = await sequence()
+
+    // Thrown rather than rejected: the renderer validates its options before it starts encoding,
+    // so a non-worker canvas — which is the real `Canvas` — fails on the call itself. In worker
+    // mode the same mistake crosses the boundary and arrives as a rejection instead. `await` inside
+    // a `try` catches both; a bare `.catch()` would only see the worker one.
+    expect(() => canvas.toBuffer('webp', { fps: FPS, pageRange: [1, 99] })).toThrow(RangeError)
+    expect(() => canvas.toBuffer('webp', { fps: FPS, pageRange: [1, 99] })).toThrow(/out of bounds/i)
+    // The alternative — a quietly clamped range — would encode a different animation than the one
+    // that was asked for.
+  })
+})
+
+/**
  * An animated source is the mirror of an animated export: the library can write one, so it should
  * be able to draw one. The expectation people arrive with is `<img src="x.gif">` — it plays — and
  * it has to play at the source's own rate, not at the render's, since the two rarely match.

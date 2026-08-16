@@ -24,6 +24,7 @@ import type { ComlinkPool as ComlinkPoolType, PoolRenderResult } from '@/worker/
 import { ImageNode, type RenderImageCache } from '@/canvas/image.canvas.js'
 import { deleteDiskCache } from '@/util/disk.cache.js'
 import { TextNode } from '@/canvas/text.canvas.js'
+import { invalidateTextMeasurements } from '@/canvas/text.metrics.js'
 import { ChartNode } from '@/canvas/chart.canvas.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.js'
 import { asNodeProps, planPages, resolveFps } from '@/canvas/page.plan.js'
@@ -451,6 +452,11 @@ export class RootNode extends ColumnNode {
           if (newPaths.length > 0) {
             FontLibrary.use({ [family]: newPaths })
             newPaths.forEach(p => cachedPaths.add(p))
+
+            // A face that has just arrived changes what an identical font string measures — the
+            // same `12px Roboto` resolved to a fallback a moment ago. Measurements taken under the
+            // old set have to stop being reachable, or the fallback's geometry outlives it.
+            invalidateTextMeasurements()
           }
         }
       } finally {

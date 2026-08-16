@@ -46,6 +46,7 @@ src/
 │   ├── page.plan.ts     # Page-count resolution & page builder invocation
 │   ├── layout.canvas.ts # Box, Column, Row (flexbox via yoga-layout)
 │   ├── text.canvas.ts   # Text with inline HTML-like styling
+│   ├── text.metrics.ts  # Cached text measurement, invalidated when fonts register
 │   ├── image.canvas.ts  # Image loading, caching, fit/position
 │   ├── chart.canvas.ts  # Bar, Line, Pie, Doughnut charts
 │   └── grid.canvas.ts   # CSS Grid-like layout
@@ -92,6 +93,8 @@ All `ImageNode` instances in the tree are collected via BFS. Images from URLs or
 
 Each node creates a `yoga-layout` node and wires up flexbox properties (`width`, `height`, `flexDirection`, `justifyContent`, `alignItems`, `gap`, `margin`, `padding`, `border`). The tree is calculated top-down — `RootNode` calls `calculateLayout()` on the root yoga node, then each child reads its computed position/dimensions via `getComputedLayout()`.
 
+Text is the expensive part of this phase, and most of that expense is repetition: Yoga calls a text node's measure function several times per pass while it searches for a width that fits, truncation walks a string character by character, and every page of an animation re-measures text that did not change. On a 24-line card that came to 720 measurements per page resolving to 58 distinct questions. `text.metrics.ts` answers repeats from a bounded LRU keyed by the string and every piece of context state that shapes it — font, letter spacing, variant, baseline, direction — so a hit is the number the renderer would have computed. Registering a font bumps an epoch that makes every earlier answer unreachable, because the same `12px Roboto` measures differently once Roboto exists.
+
 ### Phase 4 — Drawing
 
 With layout computed, each node draws itself on the `meo-skia-canvas` context:
@@ -113,7 +116,7 @@ Export signatures are split by format: `fps`, `loop` and `frameDelays` are accep
 A page is a frame for `gif` and `apng`, a sheet for `pdf` and `tiff`, and a size for `ico`. Passing a function as `children` renders a sequence — one page per call — and `page.plan.ts` owns the arithmetic:
 
 - `resolvePageCount()` turns `pages` or `duration * fps` into a count and rejects every contradictory combination. It runs at runtime because the type system cannot reach JavaScript callers, `as any`, or props arriving over the worker boundary; the `Root` overloads reject the same shapes at compile time.
-- `pageInfoAt()` builds the `PageInfo` a builder receives — `index`, `count`, `progress` for interpolation, and `time` for physics integration.
+- `pageInfoAt()` builds the `PageInfo` a builder receives — `index`, `count`, `progress` for one-shot interpolation, `cycle` for anything that repeats, and `time` for physics integration. `progress` spans the sequence inclusively and `cycle` half-open, which is the difference between an animation that ends on its final value and one that closes back onto its first.
 - `planPages()` runs the builder once per page, sequentially, so page order is the array order and a data-loading builder does not burst every request at once.
 
 `renderPages()` then builds **one `RootNode` per page**. The tree is constructed in the node's constructor and freed once drawn, and a freed Yoga node cannot be laid out again — so pages cannot share a node. What is expensive is shared instead: one image cache and one font registration for the whole sequence. Each page's tree is released in a `finally` as soon as it is drawn, so memory stays flat across a long sequence rather than holding every page's layout at once.

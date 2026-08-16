@@ -450,6 +450,11 @@ properties.
 
 ## API Reference
 
+What follows covers the props and methods you reach for most. Every exported symbol carries a doc comment, so the
+complete generated reference — every type, every option, every overload — lives at
+**[jsdocs.io/package/meo-canvas](https://www.jsdocs.io/package/meo-canvas)**, and your editor shows the same text on
+hover.
+
 ### Root
 
 The `Root` function is the entry point for rendering. It returns a `Canvas` object. It is a specialized `ColumnNode`
@@ -501,15 +506,31 @@ await canvas.toBuffer('gif', { fps: 24, loop: 0 })
 
 The function receives a `PageInfo`:
 
-| Field      | Type     | Description                                                               |
-| ---------- | -------- | ------------------------------------------------------------------------- |
-| `index`    | `number` | Zero-based position in the sequence.                                      |
-| `count`    | `number` | Total pages in this render.                                               |
-| `progress` | `number` | `0` on the first page, `1` on the last. Use for interpolation and easing. |
-| `time`     | `number` | Seconds elapsed, `index / fps`. Use for physics or spring integration.    |
+| Field      | Type     | Description                                                                                            |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `index`    | `number` | Zero-based position in the sequence.                                                                   |
+| `count`    | `number` | Total pages in this render.                                                                            |
+| `progress` | `number` | `0` on the first page, `1` on the last. Use for one-shot interpolation and easing.                     |
+| `cycle`    | `number` | `0` on the first page, approaching `1` on the last without reaching it. Use for anything that repeats. |
+| `time`     | `number` | Seconds elapsed, `index / fps`. Use for physics or spring integration.                                 |
 
 The function may be async, so a page can await its own data. Use `pages: n` instead of `duration` when the count
 matters more than the timing — a three-page PDF is `pages: 3`.
+
+#### Looping: reach for `cycle`, not `progress`
+
+`progress` spans the sequence inclusively, which is what a one-shot animation wants — it should finish on its end value
+on the frame the viewer stops on. Anything periodic wants the opposite, because `1` and `0` are the same point on a
+circle:
+
+```js
+Math.sin(progress * 2 * Math.PI) // the last page repeats page 0 — one frame stands still on every loop
+Math.sin(cycle * 2 * Math.PI) // the last page is one step short of the start — the loop closes seamlessly
+```
+
+The stutter is invisible frame by frame and only shows on the wrap, which is what makes it worth knowing about before
+you ship it. `time` shares `cycle`'s half-open span (`[0, duration)`), so time-driven periodic motion was already
+seamless.
 
 Every page must be the same size for `gif`, `apng` and `tiff`, so an animated render needs an explicit `height` —
 without one each page sizes itself to its own content and the encoder rejects the mismatch. `pdf` is the exception: it
@@ -526,6 +547,9 @@ The `Root()` function returns a Canvas object with the following methods and pro
 
 Animation timing — `fps`, `loop`, `frameDelays` — is accepted only by `gif`, `apng`, `webp` and `avif`. Passing it to any other format
 is a compile error, matching the renderer, which raises a `TypeError` rather than dropping it silently.
+
+`page` picks one page and `pageRange` takes a span of them; every format that gathers pages accepts both. See
+[Exporting part of a sequence](#exporting-part-of-a-sequence).
 
 | Method          | Signature                                                            | Description                                                      |
 | --------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
@@ -799,6 +823,35 @@ await canvas.toBuffer('apng', { fps: 24, loop: 3 }) // three times
 The two formats disagree about how to say this, and the encoder reconciles it: GIF counts the repeats that follow the
 first play, so three plays is stored as `2`, and because `0` there already means "forever" a single play can only be
 expressed by leaving the block out entirely. APNG stores the play count directly.
+
+#### Exporting part of a sequence
+
+`pageRange` takes a span of pages instead of all of them — numbered from `1`, inclusive at both ends, with negative
+numbers counting from the end.
+
+```javascript
+await canvas.toBuffer('webp', { fps: 30, pageRange: [1, 20] }) // the first twenty pages
+await canvas.toBuffer('webp', { fps: 30, pageRange: [21, -1] }) // everything from the twenty-first on
+await canvas.toBuffer('pdf', { pageRange: [12, 18] }) // one chapter of a long document
+```
+
+The case it exists for is an intro that plays once followed by a loop that repeats forever. A single file cannot say
+that — it carries one loop count — so it is two exports of the same canvas:
+
+```javascript
+const canvas = await Root({ width: 600, height: 300, pages: 60, fps: 30, children: page => card(page) })
+
+const intro = await canvas.toBuffer('webp', { fps: 30, pageRange: [1, 20], loop: 1 })
+const loop = await canvas.toBuffer('webp', { fps: 30, pageRange: [21, 60], loop: 0 })
+```
+
+Worth knowing before you build around it: whatever must survive looping has to be at its final value on the loop
+segment's **first** page. No animated format has a loop-start marker, so a repeat restarts at that frame — anything
+still mid-transition there flickers on every pass.
+
+A bound the canvas does not have is a `RangeError` rather than a clamped range. The renderer validates before it
+encodes, so a non-worker canvas throws on the call itself while worker mode delivers the same error as a rejection —
+`await` inside a `try` catches both.
 
 ### Box, Row, and Column
 

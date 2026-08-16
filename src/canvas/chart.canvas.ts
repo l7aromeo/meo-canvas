@@ -3,6 +3,7 @@ import type { BaseProps, CartesianChartData, ChartDataset, ChartProps, ChartType
 import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 import { Style } from '@/constant/common.const.js'
 import { TextNode } from '@/canvas/text.canvas.js'
+import { measureText } from '@/canvas/text.metrics.js'
 
 /**
  * Releases a detached measurement node's Yoga tree.
@@ -146,7 +147,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
 
     const fontSize = this.chartOptions?.labelFontSize || 12
     ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-    const metrics = ctx.measureText('Mg')
+    const metrics = measureText(ctx, 'Mg')
     const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent
     const itemHeight = Math.ceil(textHeight + 8)
     const position = this.chartOptions.legendPosition
@@ -163,7 +164,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       let numRows = 1
       const itemPadding = 20
       legendItemLabels.forEach(label => {
-        const labelWidth = ctx.measureText(label).width
+        const labelWidth = measureText(ctx, label).width
         const itemWidth = boxSize + 5 + labelWidth + itemPadding
 
         if (currentX > 0 && currentX + itemWidth > totalWidth) {
@@ -176,7 +177,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       calculatedLegendWidth = totalWidth
     } else {
       // 'left' or 'right'
-      const maxLabelWidth = Math.max(...legendItemLabels.map(label => ctx.measureText(label).width))
+      const maxLabelWidth = Math.max(...legendItemLabels.map(label => measureText(ctx, label).width))
       calculatedLegendWidth = maxLabelWidth + boxSize + 25 // padding + box + padding + text
       calculatedLegendHeight = totalHeight
     }
@@ -253,7 +254,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       const fontSize = chartOptions.yAxisFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
       const maxLabel = chartOptions.yAxisLabelFormatter ? await chartOptions.yAxisLabelFormatter(maxValue) : this.getSmartYAxisFormatter(maxValue)(maxValue)
-      const yAxisWidth = ctx.measureText(maxLabel).width + 10
+      const yAxisWidth = measureText(ctx, maxLabel).width + 10
       chartX += yAxisWidth
       chartWidth -= yAxisWidth
     }
@@ -262,7 +263,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (chartOptions?.showLabels) {
       const fontSize = chartOptions.labelFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-      const metrics = ctx.measureText('Mg')
+      const metrics = measureText(ctx, 'Mg')
       labelHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 10 // with padding
     }
     const finalChartHeight = chartHeight - labelHeight
@@ -398,7 +399,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       const fontSize = chartOptions.yAxisFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
       const maxLabel = chartOptions.yAxisLabelFormatter ? await chartOptions.yAxisLabelFormatter(maxValue) : this.getSmartYAxisFormatter(maxValue)(maxValue)
-      const yAxisWidth = ctx.measureText(maxLabel).width + 10
+      const yAxisWidth = measureText(ctx, maxLabel).width + 10
       chartX += yAxisWidth
       chartWidth -= yAxisWidth
     }
@@ -407,7 +408,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     if (chartOptions?.showLabels) {
       const fontSize = chartOptions.labelFontSize || 12
       ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
-      const metrics = ctx.measureText('Mg')
+      const metrics = measureText(ctx, 'Mg')
       labelHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 10 // with padding
     }
     const finalChartHeight = chartHeight - labelHeight
@@ -709,7 +710,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
     const fontSize = this.chartOptions?.labelFontSize || 12
     ctx.font = `${fontSize}px ${this.props.fontFamily || 'sans-serif'}`
 
-    const metrics = ctx.measureText('Mg')
+    const metrics = measureText(ctx, 'Mg')
     const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent
     const itemHeight = Math.ceil(textHeight + 8)
     const boxSize = Math.min(15, itemHeight - 2)
@@ -723,7 +724,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
       legendItems.forEach((point, index) => {
         const color = point.color || this.generateColor(index)
         const label = 'datasets' in this.chartData ? point.label : `${point.label} (${point.value})`
-        const labelWidth = ctx.measureText(label).width
+        const labelWidth = measureText(ctx, label).width
         const itemWidth = boxSize + 5 + labelWidth
 
         if (currentRow.items.length > 0 && currentRow.width + itemPadding + itemWidth > width) {

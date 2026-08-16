@@ -1,6 +1,7 @@
 import type { TextProps, TextSegment, CanvasElement } from '@/canvas/canvas.type.js'
 import { Canvas, type CanvasRenderingContext2D, type FontVariantSetting } from 'meo-skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.js'
+import { measureText } from '@/canvas/text.metrics.js'
 import { Style, MeasureMode } from '@/constant/common.const.js'
 
 /**
@@ -316,7 +317,7 @@ export class TextNode extends BoxNode {
 
   /**
    * Adds manual letter spacing compensation to a measured text width.
-   * Needed because skia-canvas ctx.measureText() does not include letterSpacing in the returned width,
+   * Needed because skia-canvas `ctx.measureText()` does not include letterSpacing in the returned width,
    * even though letterSpacing IS applied during rendering (fillText/strokeText).
    */
   private addLetterSpacingExtra(text: string, measuredWidth: number, letterSpacingPx: number): number {
@@ -415,7 +416,7 @@ export class TextNode extends BoxNode {
     for (const segment of this.segments) {
       ctx.font = this.getFontString(segment)
       this._applyFontVariant(ctx, 'measureText (segment width)')
-      segment.width = this.addLetterSpacingExtra(segment.text, ctx.measureText(segment.text).width, parsedLetterSpacingPx)
+      segment.width = this.addLetterSpacingExtra(segment.text, measureText(ctx, segment.text).width, parsedLetterSpacingPx)
     }
 
     // Calculate available layout width
@@ -445,7 +446,7 @@ export class TextNode extends BoxNode {
       if (line.length === 0) {
         ctx.font = this.getFontString()
         this._applyFontVariant(ctx, 'measureText (empty line)')
-        const metrics = ctx.measureText(this.metricsString)
+        const metrics = measureText(ctx, this.metricsString)
         maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
         maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
         maxFontSizeOnLine = baseFontSize
@@ -460,7 +461,7 @@ export class TextNode extends BoxNode {
           ctx.font = this.getFontString(segment)
           this._applyFontVariant(ctx, 'measureText (segment height)')
 
-          const metrics = ctx.measureText(this.metricsString)
+          const metrics = measureText(ctx, this.metricsString)
           const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
           const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
 
@@ -473,7 +474,7 @@ export class TextNode extends BoxNode {
       if (maxAscent === 0 && maxDescent === 0 && line.length > 0) {
         ctx.font = this.getFontString()
         this._applyFontVariant(ctx, 'measureText (fallback)')
-        const metrics = ctx.measureText(this.metricsString)
+        const metrics = measureText(ctx, this.metricsString)
         maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
         maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
         maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
@@ -514,7 +515,7 @@ export class TextNode extends BoxNode {
         if (/^\s+$/.test(word)) continue
         ctx.font = this.getFontString(segment)
         this._applyFontVariant(ctx, 'measureText (single line width)')
-        const wordWidth = this.addLetterSpacingExtra(word, ctx.measureText(word).width, parsedLetterSpacingPx)
+        const wordWidth = this.addLetterSpacingExtra(word, measureText(ctx, word).width, parsedLetterSpacingPx)
         if (!firstWordInSingleLine) {
           singleLineWidth += spaceWidth + parsedWordSpacingPx
         }
@@ -657,7 +658,7 @@ export class TextNode extends BoxNode {
               } else {
                 ctx.font = this.getFontString(segmentStyle)
                 if (this.props.fontVariant) ctx.fontVariant = this.props.fontVariant
-                wordWidth = this.addLetterSpacingExtra(wordOrSpace, ctx.measureText(wordOrSpace).width, parsedLetterSpacingPx)
+                wordWidth = this.addLetterSpacingExtra(wordOrSpace, measureText(ctx, wordOrSpace).width, parsedLetterSpacingPx)
                 wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
               }
 
@@ -720,7 +721,7 @@ export class TextNode extends BoxNode {
           } else {
             ctx.font = this.getFontString(segmentStyle)
             if (this.props.fontVariant) ctx.fontVariant = this.props.fontVariant
-            wordWidth = this.addLetterSpacingExtra(wordOrSpace, ctx.measureText(wordOrSpace).width, parsedLetterSpacingPx)
+            wordWidth = this.addLetterSpacingExtra(wordOrSpace, measureText(ctx, wordOrSpace).width, parsedLetterSpacingPx)
             wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
           }
 
@@ -799,7 +800,7 @@ export class TextNode extends BoxNode {
     // Process word character by character to find valid break points
     for (const char of word) {
       const testPartText = currentPartText + char
-      const testPartWidth = this.addLetterSpacingExtra(testPartText, ctx.measureText(testPartText).width, parsedLetterSpacingPx)
+      const testPartWidth = this.addLetterSpacingExtra(testPartText, measureText(ctx, testPartText).width, parsedLetterSpacingPx)
 
       if (testPartWidth > maxWidth) {
         // Current accumulated text exceeds width - create new segment
@@ -807,13 +808,13 @@ export class TextNode extends BoxNode {
           brokenSegments.push({
             text: currentPartText,
             ...style,
-            width: this.addLetterSpacingExtra(currentPartText, ctx.measureText(currentPartText).width, parsedLetterSpacingPx),
+            width: this.addLetterSpacingExtra(currentPartText, measureText(ctx, currentPartText).width, parsedLetterSpacingPx),
           })
         }
 
         // Handle current character that caused overflow
         currentPartText = char
-        const currentCharWidth = ctx.measureText(currentPartText).width
+        const currentCharWidth = measureText(ctx, currentPartText).width
 
         if (currentCharWidth > maxWidth) {
           // Single character is too wide - force break after it
@@ -835,7 +836,7 @@ export class TextNode extends BoxNode {
       brokenSegments.push({
         text: currentPartText,
         ...style,
-        width: this.addLetterSpacingExtra(currentPartText, ctx.measureText(currentPartText).width, parsedLetterSpacingPx),
+        width: this.addLetterSpacingExtra(currentPartText, measureText(ctx, currentPartText).width, parsedLetterSpacingPx),
       })
     }
 
@@ -848,7 +849,7 @@ export class TextNode extends BoxNode {
   private measureSpaceWidth(ctx: CanvasRenderingContext2D): number {
     const originalFont = ctx.font
     ctx.font = this.getFontString()
-    const width = ctx.measureText(' ').width
+    const width = measureText(ctx, ' ').width
     ctx.font = originalFont
     return width > 0 ? width : (this.props.fontSize || 16) * 0.3
   }
@@ -942,7 +943,7 @@ export class TextNode extends BoxNode {
       if (line.length === 0) {
         ctx.font = this.getFontString()
         if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
-        const metrics = ctx.measureText(this.metricsString)
+        const metrics = measureText(ctx, this.metricsString)
         maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
         maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
         maxFontSizeOnLine = baseFontSize
@@ -956,7 +957,7 @@ export class TextNode extends BoxNode {
           ctx.font = this.getFontString(segment)
           if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
 
-          const metrics = ctx.measureText(this.metricsString)
+          const metrics = measureText(ctx, this.metricsString)
           const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
           const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
           maxAscent = Math.max(maxAscent, ascent)
@@ -967,7 +968,7 @@ export class TextNode extends BoxNode {
         // Fallback
         ctx.font = this.getFontString()
         if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
-        const metrics = ctx.measureText(this.metricsString)
+        const metrics = measureText(ctx, this.metricsString)
         maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
         maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
         maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
@@ -1037,7 +1038,7 @@ export class TextNode extends BoxNode {
       if (this.props.fontVariant) {
         ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
       }
-      ellipsisWidth = ctx.measureText(ellipsisChar).width
+      ellipsisWidth = measureText(ctx, ellipsisChar).width
       ctx.restore()
     }
 
@@ -1158,14 +1159,14 @@ export class TextNode extends BoxNode {
               if (availableWidthForSegment > 0) {
                 let truncatedText = ''
                 for (const char of segment.text) {
-                  if (ctx.measureText(truncatedText + char).width <= availableWidthForSegment) {
+                  if (measureText(ctx, truncatedText + char).width <= availableWidthForSegment) {
                     truncatedText += char
                   } else {
                     break
                   }
                 }
                 textToDraw = truncatedText
-                currentSegmentRenderWidth = ctx.measureText(textToDraw).width
+                currentSegmentRenderWidth = measureText(ctx, textToDraw).width
               } else {
                 textToDraw = ''
                 currentSegmentRenderWidth = 0

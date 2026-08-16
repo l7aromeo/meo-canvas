@@ -14,19 +14,31 @@ updates:
       actions:
         patterns: ['*']
 
+  # `bun`, not `npm`. The npm ecosystem maintains package-lock.json, yarn.lock and pnpm-lock.yaml,
+  # and this repository has none of them — so it updated package.json alone and left bun.lock
+  # describing the old versions. CI installs with `--frozen-lockfile`, which is the point of it, so
+  # every job failed on the install step before running anything:
+  #
+  #     error: lockfile had changes, but lockfile is frozen
+  #
   # Grouped, because thirty-odd dev dependencies opening a pull request each is how a repository
   # trains its maintainer to ignore them. Production dependencies stay separate: `meo-skia-canvas`
   # is the renderer and `yoga-layout` is the layout engine, so a bump to either is worth reading on
   # its own rather than inside a wall of tooling updates.
-  - package-ecosystem: npm
+  #
+  # `typescript` is excluded because its majors are not routine here — 7 is the native port, a
+  # different compiler rather than a newer one, and it belongs in a pull request that says so.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    versioning-strategy: increase-if-necessary
     commit-message:
       prefix: fix
       prefix-development: chore
+    ignore:
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
     groups:
       development:
         dependency-type: development

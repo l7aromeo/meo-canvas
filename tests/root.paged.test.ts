@@ -106,7 +106,77 @@ describe('pageInfoAt', () => {
 
   it('hands the builder every field the type promises', () => {
     const info: PageInfo = pageInfoAt(1, COUNT, DEFAULT_FPS)
-    expect(Object.keys(info).sort()).toEqual(['count', 'index', 'progress', 'time'])
+    expect(Object.keys(info).sort()).toEqual(['count', 'cycle', 'index', 'progress', 'time'])
+  })
+})
+
+/**
+ * `cycle` exists because `progress` is the wrong curve for anything that repeats, and wrong in a
+ * way that hides: the render looks right frame by frame, and only the wrap stutters. These assert
+ * the property that makes a loop seamless — the page after the last must land exactly where page 0
+ * did — rather than asserting the formula back at itself.
+ */
+describe('pageInfoAt cycle', () => {
+  const COUNT = 90
+  const TURN = 2 * Math.PI
+  const at = (index: number) => pageInfoAt(index, COUNT, DEFAULT_FPS)
+
+  it('starts at 0 and stops one step short of 1', () => {
+    expect(at(0).cycle).toBe(0)
+    expect(at(COUNT - 1).cycle).toBeCloseTo(1 - 1 / COUNT, 12)
+    expect(at(COUNT - 1).cycle).toBeLessThan(1)
+  })
+
+  it('closes the loop: one page past the end is page 0 again', () => {
+    // The page that would follow the last belongs to the next repeat, so it has to coincide with
+    // the first. `progress` fails this — it reaches 1 on the last page and overshoots past it.
+    expect(pageInfoAt(COUNT, COUNT, DEFAULT_FPS).cycle).toBe(1)
+    expect(Math.sin(pageInfoAt(COUNT, COUNT, DEFAULT_FPS).cycle * TURN)).toBeCloseTo(Math.sin(at(0).cycle * TURN), 12)
+  })
+
+  it('keeps the wrap step equal to every other step', () => {
+    // The stutter is exactly this: a wrap step of zero, where every other step advanced.
+    const step = at(1).cycle - at(0).cycle
+    const wrap = 1 - at(COUNT - 1).cycle
+    expect(wrap).toBeCloseTo(step, 12)
+  })
+
+  it('never revisits a point on the circle, which progress does on the wrap', () => {
+    // Measured as distance between points rather than as sines: a sine alone is symmetric about
+    // its peak, so two different phases share a value and a duplicate would hide in the collision.
+    // Distance, in turn, rather than formatted text, because a full turn lands on `sin(2π)` —
+    // -2.4e-16 rather than 0, the same point with a different sign of zero.
+    const point = (phase: number) => [Math.cos(phase * TURN), Math.sin(phase * TURN)] as const
+    const apart = (a: number, b: number) => Math.hypot(point(a)[0] - point(b)[0], point(a)[1] - point(b)[1])
+
+    // The bug, pinned: under `progress` the last page lands back on the first, so ninety pages
+    // only ever occupy eighty-nine positions and one frame of every repeat stands still.
+    expect(apart(at(COUNT - 1).progress, at(0).progress)).toBeCloseTo(0, 12)
+
+    // Under `cycle` the last page is a full step away from the first, exactly like every other
+    // pair of neighbours.
+    const step = apart(at(1).cycle, at(0).cycle)
+    expect(apart(at(COUNT - 1).cycle, at(0).cycle)).toBeCloseTo(step, 12)
+  })
+
+  it('reports 0 for a single page, without a guard', () => {
+    expect(pageInfoAt(0, 1, DEFAULT_FPS).cycle).toBe(0)
+  })
+
+  it('increases monotonically', () => {
+    const values = Array.from({ length: COUNT }, (_, i) => at(i).cycle)
+    expect(values).toEqual([...values].sort((a, b) => a - b))
+    expect(new Set(values).size).toBe(COUNT)
+  })
+
+  it('agrees with time, which already spans the loop half-open', () => {
+    // Anyone already driving periodic motion from `time` was never affected; the two have to match
+    // or the two ways of asking the same question would disagree.
+    const fps = 30
+    const duration = COUNT / fps
+    for (const index of [0, 1, 45, COUNT - 1]) {
+      expect(pageInfoAt(index, COUNT, fps).time / duration).toBeCloseTo(at(index).cycle, 12)
+    }
   })
 })
 

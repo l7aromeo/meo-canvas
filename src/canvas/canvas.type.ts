@@ -625,12 +625,39 @@ export interface PageInfo {
   /**
    * Position along the sequence, `0` on the first page and `1` on the last.
    * Interpolation and easing want this. A single-page render reports `0`.
+   *
+   * Spans the sequence inclusively, `index / (count - 1)`, which is what a one-shot animation
+   * wants: it should finish at its end value on the frame the viewer stops on. It is the wrong
+   * curve for anything that repeats — see {@link PageInfo.cycle}.
    */
   progress: number
 
   /**
+   * Position around a loop, `0` on the first page and approaching `1` on the last without
+   * reaching it — `index / count`.
+   *
+   * The one to feed anything periodic: a rotation, an orbit, a sine, a gradient sweep. `1` and `0`
+   * are the same point on a circle, so driving those from {@link PageInfo.progress} makes the last
+   * page a copy of the first, and the animation visibly stutters for one frame on every repeat.
+   * Because a full turn lands exactly where the next loop begins, this closes seamlessly instead:
+   *
+   * ```ts
+   * // stutters: the final page repeats page 0
+   * Math.sin(progress * 2 * Math.PI)
+   * // seamless: the final page is one step short of the start
+   * Math.sin(cycle * 2 * Math.PI)
+   * ```
+   *
+   * A single-page render reports `0`.
+   */
+  cycle: number
+
+  /**
    * Seconds elapsed at this page, derived as `index / fps`.
    * Physics and spring integration want this rather than {@link PageInfo.progress}.
+   *
+   * Spans `[0, duration)` for the same reason {@link PageInfo.cycle} does — the page after the last
+   * is the next loop's first — so time-driven periodic motion is already seamless.
    */
   time: number
 }

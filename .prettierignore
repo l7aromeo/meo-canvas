@@ -1,0 +1,7 @@
+# Written by semantic-release from the commit messages, and committed back by the release job.
+# Formatting it here would be a change nobody made, reverted by the next release.
+CHANGELOG.md
+
+# Build and coverage output — generated, and never read as source.
+dist
+coverage
