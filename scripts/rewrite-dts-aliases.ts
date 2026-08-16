@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const outDirs = process.argv.includes('--cjs-only') ? ['dist/cjs'] : process.argv.includes('--esm-only') ? ['dist/esm'] : ['dist/esm', 'dist/cjs']
+const outDirs = ['dist/esm']
 
 const aliasPattern = /@\/([A-Za-z0-9_./-]+)/g
 

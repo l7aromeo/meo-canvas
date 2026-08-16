@@ -51,6 +51,15 @@ No `trustedDependencies` entry is needed, on bun or anywhere else. `meo-skia-can
 native binary as one optional dependency per platform, selected by `os`/`cpu`/`libc`, so nothing
 has to run an install script for the renderer to work.
 
+Node 22 or newer, and **ESM only** — `import`, not `require`. That is not a preference: the layout
+engine, `yoga-layout`, awaits its WebAssembly module at the top level of its entry, and `require()`
+refuses an ESM graph containing a top-level await on every version of Node. A CommonJS file can
+still reach the library through a dynamic import:
+
+```js
+const { Root, Box, Text } = await import('meo-canvas')
+```
+
 ## Usage
 
 ### Simple Example
