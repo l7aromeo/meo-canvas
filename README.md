@@ -1077,6 +1077,50 @@ children: () => Image({ src: 'spinner.gif', width: 64, height: 64 })
 A still render draws the first frame, as it always has. Decoding happens once per source however
 many pages read it, so a long animation costs one decode rather than one per frame.
 
+### Path
+
+Draws an arbitrary shape from SVG path data — the escape hatch for what the other components cannot describe: an
+arrow, a tick, a connector, a badge with a notch.
+
+```javascript
+Path({ d: 'M 0 0 L 100 0 L 50 80 Z', fill: '#38bdf8', width: 100, height: 80 })
+Path({ d: 'M 0 20 H 80', stroke: '#f43f5e', lineWidth: 4, lineCap: 'round', width: 80, height: 40 })
+```
+
+| Prop             | Type                            | Description                                                   |
+| ---------------- | ------------------------------- | ------------------------------------------------------------- |
+| `d`              | `string`                        | **Required.** SVG path data, in the node's own coordinates.   |
+| `fill`           | `string \| Gradient`            | Paint for the interior. Nothing is filled without it.         |
+| `stroke`         | `string \| Gradient`            | Paint for the outline. Nothing is stroked without it.         |
+| `lineWidth`      | `number`                        | Stroke width. Default `1`.                                    |
+| `fillRule`       | `'nonzero' \| 'evenodd'`        | `evenodd` makes nested subpaths cut holes. Default `nonzero`. |
+| `lineCap`        | `'butt' \| 'round' \| 'square'` | Shape of a stroke's ends. Default `butt`.                     |
+| `lineJoin`       | `'bevel' \| 'round' \| 'miter'` | Shape of a stroke's corners. Default `miter`.                 |
+| `lineDash`       | `number[]`                      | Dash and gap lengths, as `[dash, gap, …]`.                    |
+| `lineDashOffset` | `number`                        | Where the dash pattern starts — animate it for marching ants. |
+
+It also takes every `BoxProps`, so it is laid out by flexbox and can carry a background, border, `mask`, `opacity` or
+`transform` like anything else.
+
+Two things worth knowing. **Coordinates are the node's own** — `0,0` is its top-left corner, as with `mask` — so the
+same path means the same shape wherever layout puts it. And **the path does not size the node**: give it a `width` and
+`height`, because layout is decided before the path is drawn and a path can extend anywhere.
+
+`fill` and `stroke` accept the same gradient shape the `gradient` prop takes, measured against the node's box rather
+than the path, so two shapes in one box share a ramp instead of each restarting it.
+
+This is deliberately declarative rather than a drawing context. A `CanvasRenderingContext2D` is native memory pinned to
+the thread that made it, so it cannot cross into a worker — `Path` is plain data and survives the trip. If you genuinely
+need the raw context, render with `workerMode: false` and take it from the finished canvas:
+
+```javascript
+const canvas = await Root({ workerMode: false, width: 600, children: [...] })
+const ctx = canvas.getContext('2d')
+ctx.filter = 'blur(2px)'
+ctx.drawImage(watermark, 20, 20)
+await canvas.toFile('out.png')
+```
+
 ### Grid
 
 The `Grid` component arranges its children in a grid layout. It is a specialized `RowNode` and inherits most `BoxProps`.

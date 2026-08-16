@@ -28,6 +28,7 @@ import { TextNode } from '@/canvas/text.canvas.js'
 import { invalidateTextMeasurements } from '@/canvas/text.metrics.js'
 import { ChartNode } from '@/canvas/chart.canvas.js'
 import { GridNode, GridItemNode } from '@/canvas/grid.canvas.js'
+import { PathNode } from '@/canvas/path.canvas.js'
 import { asNodeProps, planPages, resolveFps } from '@/canvas/page.plan.js'
 import { Style } from '@/constant/common.const.js'
 import * as path from 'node:path'
@@ -349,6 +350,8 @@ export function buildTree(descriptor: CanvasElement): BoxNode {
       return new GridItemNode({ ...descriptor.props, children: descriptor.children?.map(buildTree) as Children[] })
     case 'Image':
       return new ImageNode(descriptor.props as ImageProps)
+    case 'Path':
+      return new PathNode(descriptor.props)
     case 'Text':
       return new TextNode(descriptor.text, descriptor.props)
     case 'Chart':

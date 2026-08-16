@@ -41,6 +41,7 @@ export type CanvasElement =
   | { __type: 'Grid'; props: Omit<GridProps, 'children'>; children?: CanvasElement[] }
   | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: CanvasElement[] }
   | { __type: 'Image'; props: Omit<ImageProps, 'onLoad' | 'onError'> }
+  | { __type: 'Path'; props: PathProps }
   | { __type: 'Text'; text: string | number; props?: TextProps }
   | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
 
@@ -1128,6 +1129,71 @@ export interface TextShadowProps {
    * Accepts standard CSS color strings.
    */
   color?: string
+}
+
+/**
+ * How a {@link PathProps} path is painted: a CSS colour, or a gradient over the node's box.
+ *
+ * The gradient is the same shape the `gradient` prop takes, measured against the node rather than
+ * against the path — so two paths in the same box share a ramp instead of each restarting it.
+ */
+export type PathPaint = string | Gradient
+
+/**
+ * An arbitrary shape, drawn from SVG path data and laid out like any other node.
+ *
+ * The escape hatch for what the components cannot describe — an arrow, a tick, a connector, a
+ * badge with a notch. It stays declarative rather than exposing a drawing context, so it works in
+ * worker mode, where a context cannot go.
+ *
+ * Coordinates are the node's own: `0,0` is its top-left corner, as with {@link Mask}. Give it a
+ * `width` and `height` so flexbox has something to place — the path itself does not size the node,
+ * since a path can extend anywhere and layout has to be decided before it is drawn.
+ * @example
+ * ```ts
+ * Path({ d: 'M 0 0 L 100 0 L 50 80 Z', fill: '#38bdf8', width: 100, height: 80 })
+ * Path({ d: 'M 0 20 H 80', stroke: '#f43f5e', lineWidth: 4, lineCap: 'round', width: 80, height: 40 })
+ * ```
+ */
+export interface PathProps extends Omit<BoxProps, 'children'> {
+  /** SVG path data, in the node's own coordinates. */
+  d: string
+
+  /** Paint for the interior. Nothing is filled without it. */
+  fill?: PathPaint
+
+  /** Paint for the outline. Nothing is stroked without it. */
+  stroke?: PathPaint
+
+  /**
+   * Width of the stroke.
+   * @default 1
+   */
+  lineWidth?: number
+
+  /**
+   * Which side of a crossing counts as inside — `evenodd` makes nested subpaths cut holes.
+   * @default 'nonzero'
+   */
+  fillRule?: 'nonzero' | 'evenodd'
+
+  /**
+   * Shape of a stroke's ends.
+   * @default 'butt'
+   */
+  lineCap?: 'butt' | 'round' | 'square'
+
+  /**
+   * Shape of a stroke's corners.
+   * @default 'miter'
+   */
+  lineJoin?: 'bevel' | 'round' | 'miter'
+
+  /** Dash and gap lengths for the stroke, in the pattern `[dash, gap, …]`. */
+  lineDash?: number[]
+
+  /** Where the dash pattern starts, which is what animates a marching-ants outline. */
+  lineDashOffset?: number
 }
 
 /**
