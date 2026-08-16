@@ -47,6 +47,8 @@ src/
 │   ├── layout.canvas.ts # Box, Column, Row (flexbox via yoga-layout)
 │   ├── text.canvas.ts   # Text with inline HTML-like styling
 │   ├── text.metrics.ts  # Cached text measurement, invalidated when fonts register
+│   ├── gradient.canvas.ts # Gradient construction, shared by backgrounds and masks
+│   ├── mask.canvas.ts   # Mask geometry, and gradient masking through an offscreen
 │   ├── image.canvas.ts  # Image loading, caching, fit/position
 │   ├── chart.canvas.ts  # Bar, Line, Pie, Doughnut charts
 │   └── grid.canvas.ts   # CSS Grid-like layout
@@ -104,6 +106,8 @@ With layout computed, each node draws itself on the `meo-skia-canvas` context:
 - **ImageNode** draws the loaded image with `objectFit` / `objectPosition` / `saturate`
 - **ChartNode** draws chart elements (axes, bars, lines, pie slices)
 - **GridNode** positions children in a 2D grid based on column/row definitions
+
+Every one of those arrives through `BoxNode.render`; subclasses override `_renderContent` rather than `render` itself. That single entry is what lets `mask` apply to all of them without each knowing about it. A shape or path mask clips the context around the node's drawing. A gradient mask cannot — clipping is a yes-or-no test per pixel — so the node is drawn into an offscreen canvas of its own box, multiplied by the gradient's alpha with `destination-in`, and composited back. The offscreen is sized from `ctx.getTransform()`, not from the layout box, so a masked node on a 2× render is drawn at the same resolution as everything beside it.
 
 ### Phase 5 — Export
 

@@ -1418,9 +1418,11 @@ describe('BoxNode _renderContent', () => {
 
     node['_renderContent'](mockContext, 0, 0, 100, 100)
 
-    expect(warnSpy).toHaveBeenCalledTimes(2)
-    expect(warnSpy.mock.calls[0][0]).toContain('Invalid linear gradient direction')
-    expect(warnSpy.mock.calls[1][0]).toContain('Could not create linear gradient. Falling back to backgroundColor.')
+    // One warning, not two: what was wrong and what happens instead belong in the same message.
+    // The reason comes from the gradient helper and the consequence from the caller, because a mask
+    // failing the same way is dropped rather than falling back to a colour it does not have.
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0][0]).toContain('Invalid linear gradient direction: "invalid-direction". Falling back to backgroundColor.')
     expect(mockContext.createLinearGradient).not.toHaveBeenCalled()
     expect(mockContext.fillStyle).toBe('green') // Fallback to background color
     expect(mockContext.fill).toHaveBeenCalled()
@@ -1544,5 +1546,36 @@ describe('BoxNode _renderContent', () => {
     // Ensure the optimized path (with fillStyle black) was NOT taken for the shadow itself
     // (fillStyle will be set to the background color later)
     expect(mockContext.fillStyle).not.toBe('black')
+  })
+})
+
+/**
+ * `position: 0` is falsy and meaningful: an absolute node flush to all four sides fills its parent,
+ * which is how a full-bleed overlay is written.
+ */
+describe('a zero position is a position', () => {
+  const insets = (node: BoxNode) => {
+    const layout = node.node.getComputedLayout()
+    return { left: layout.left, top: layout.top, width: layout.width, height: layout.height }
+  }
+
+  const overlay = (position: number | string) => {
+    const parent = new BoxNode({ width: 200, height: 100 })
+    const child = new BoxNode({ positionType: Style.PositionType.Absolute, position } as never)
+    parent['appendChild'](child, 0)
+    parent.node.calculateLayout(200, 100, Style.Direction.LTR)
+    return insets(child)
+  }
+
+  it('stretches an absolute node to its parent, as four zero edges do', () => {
+    expect(overlay(0)).toEqual({ left: 0, top: 0, width: 200, height: 100 })
+  })
+
+  it('insets it evenly on every side', () => {
+    expect(overlay(10)).toEqual({ left: 10, top: 10, width: 180, height: 80 })
+  })
+
+  it('reads a percentage the same way', () => {
+    expect(overlay('10%')).toEqual({ left: 20, top: 10, width: 160, height: 80 })
   })
 })
