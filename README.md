@@ -1,5 +1,11 @@
 # meo-canvas
 
+[![npm](https://img.shields.io/npm/v/meo-canvas?logo=npm&color=cb3837)](https://www.npmjs.com/package/meo-canvas)
+[![CI](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/meo-canvas?logo=node.js&color=5fa04e)](https://nodejs.org)
+[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://www.jsdocs.io/package/meo-canvas)
+[![license](https://img.shields.io/npm/l/meo-canvas?color=blue)](LICENSE)
+
 A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
 functions, similar to the composition style of @meonode/ui.
 It uses `meo-skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
