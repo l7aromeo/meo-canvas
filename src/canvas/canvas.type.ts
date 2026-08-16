@@ -172,7 +172,8 @@ export type GradientDirection =
  * Colours are spread evenly from the first to the last; a single colour sits at the midpoint. A
  * radial gradient runs from the node's centre to the corner, so it covers the whole box.
  */
-export type Gradient = { type: 'linear'; colors: string[]; direction: GradientDirection } | { type: 'radial'; colors: string[]; direction?: GradientDirection }
+export type Gradient =
+  { type: 'linear'; colors: readonly string[]; direction: GradientDirection } | { type: 'radial'; colors: readonly string[]; direction?: GradientDirection }
 
 /** Shapes a {@link Mask} can name without writing a path, each inscribed in the node's box. */
 export type MaskShape = 'circle' | 'ellipse'
@@ -479,6 +480,21 @@ export interface BoxProps extends BaseProps {
    * @default undefined
    */
   gradient?: Gradient
+
+  /**
+   * Limits what of this node is drawn — see {@link Mask}.
+   *
+   * Covers everything the node renders, its background, border, content and children alike. A shape
+   * or path clips; a gradient fades. Inherited by every component, so `Text`, `Image`, `Chart` and
+   * `Grid` take it too.
+   * @default undefined (nothing masked)
+   * @example
+   * ```ts
+   * Image({ src: avatar, width: 96, height: 96, mask: { shape: 'circle' } })
+   * Box({ mask: { gradient: { type: 'linear', direction: 'to-bottom', colors: ['#000', 'transparent'] } } })
+   * ```
+   */
+  mask?: Mask
 
   /**
    * Sets the opacity of the node and its children when drawing.

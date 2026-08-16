@@ -1,6 +1,7 @@
 import { Canvas, type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
 import { createGradient } from '@/canvas/gradient.canvas.js'
+import { drawWithGradientMask, isGradientMask, maskFillRule, maskPath } from '@/canvas/mask.canvas.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
 import Yoga, { Style, Node } from '@/constant/common.const.js'
 
@@ -291,7 +292,47 @@ export class BoxNode {
    * @param {number} offsetX X offset for rendering.
    * @param {number} offsetY Y offset for rendering.
    */
+
+  /**
+   * Draws this node, through its `mask` when it has one.
+   *
+   * Every component's drawing arrives here — `Text`, `Image`, `Chart` and `Grid` override
+   * `_renderContent` rather than this — so masking one node type means masking all of them.
+   *
+   * The two kinds of mask are applied differently because they are different operations. A shape or
+   * path clips, which is a yes-or-no test per pixel and costs nothing but a `save`/`restore`. A
+   * gradient cannot: its whole purpose is the answers in between, so the node is composited through
+   * one instead. Both are applied to the node's layout box, before its own `transform`, which is
+   * what keeps the two consistent with each other.
+   */
   async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
+    const mask = this.props.mask
+    if (!mask) return this.renderNode(ctx, offsetX, offsetY)
+
+    const layout = this.node.getComputedLayout()
+    const box = { x: layout.left + offsetX, y: layout.top + offsetY, width: layout.width, height: layout.height }
+    if (box.width <= 0 || box.height <= 0) return
+
+    if (isGradientMask(mask)) {
+      const drawn = await drawWithGradientMask(ctx, mask.gradient, box, target => this.renderNode(target, offsetX, offsetY), `[BoxNode ${this.key}]`)
+      // A gradient that could not be built is not a reason to lose the node; it draws unmasked,
+      // having already said why.
+      return drawn ? undefined : this.renderNode(ctx, offsetX, offsetY)
+    }
+
+    const path = maskPath(mask, box)
+    if (!path) return this.renderNode(ctx, offsetX, offsetY)
+
+    ctx.save()
+    try {
+      ctx.clip(path, maskFillRule(mask))
+      await this.renderNode(ctx, offsetX, offsetY)
+    } finally {
+      ctx.restore()
+    }
+  }
+
+  private async renderNode(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
     const layout = this.node.getComputedLayout()
     const x = layout.left + offsetX
     const y = layout.top + offsetY
