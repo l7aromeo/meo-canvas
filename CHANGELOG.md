@@ -3,6 +3,23 @@
 Every release, newest first. Generated from the commit messages merged into `main`, `beta`, and
 `alpha` — see CONTRIBUTING.md for what a commit message decides.
 
+# [6.1.0](https://github.com/l7aromeo/meo-canvas/compare/v6.0.0...v6.1.0) (2026-08-16)
+
+
+### Bug Fixes
+
+* **worker:** fail the render when its worker dies, instead of hanging ([a92b1c4](https://github.com/l7aromeo/meo-canvas/commit/a92b1c47f740fb9624c121ae0f6dcc998ad0ac3f))
+
+
+### Features
+
+* **Root:** add page.cycle, so a looping animation closes on itself ([b12db35](https://github.com/l7aromeo/meo-canvas/commit/b12db352aa1a72304c90f3c389b7eba8e535aeaa))
+
+
+### Performance Improvements
+
+* **Text:** cache text measurement, which layout asks for relentlessly ([8b864be](https://github.com/l7aromeo/meo-canvas/commit/8b864be09fd35aee7dc0b401f94cb575150b4aaf))
+
 # [6.0.0](https://github.com/l7aromeo/meo-canvas/compare/v5.0.0...v6.0.0) (2026-08-16)
 
 
