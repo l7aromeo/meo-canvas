@@ -566,7 +566,23 @@ is a compile error, matching the renderer, which raises a `TypeError` rather tha
 | `saveAsSync`    | `(filename: string, options?: SaveOptions) => void`                  | _Deprecated_ — use `toFileSync()`.                               |
 | `toDataURLSync` | `(format?: ExportFormat, options?: ExportOptions) => string`         | _Deprecated_ — use `toDataURL()`.                                |
 
-**Supported Export Formats:** `'png'`, `'jpg'` (or `'jpeg'`), `'webp'`, `'pdf'`, `'svg'`, `'raw'`
+**Supported export formats** — every format the renderer encodes, since these types partition its
+own `ExportFormat` rather than restating it:
+
+| Format         | Kind      | Notes                                                                    |
+| -------------- | --------- | ------------------------------------------------------------------------ |
+| `png`          | still     | Lossless. 16-bit from a float or 16-bit canvas.                          |
+| `jpg` / `jpeg` | still     | Lossy; takes `quality`. Aliases for the same encoder.                    |
+| `webp`         | **both**  | One page is a still, several are an animation.                           |
+| `gif`          | animation | 256 colours; delays round to hundredths of a second.                     |
+| `apng`         | animation | Truecolour with alpha. Each frame carries only the rectangle it changed. |
+| `avif`         | animation | Also encodes a single page. Takes `bitDepth`.                            |
+| `tiff` / `tif` | sheets    | Gathers every page into one file. Aliases.                               |
+| `ico`          | sizes     | Each page is one icon size.                                              |
+| `bmp`          | still     | Uncompressed.                                                            |
+| `pdf`          | sheets    | The one format whose pages may differ in size.                           |
+| `svg`          | still     | Vector. `outline: true` converts text to paths.                          |
+| `raw`          | still     | Pixel data in the canvas's own `colorType`.                              |
 
 > **Prefer the async methods in worker mode.** Both produce identical bytes, but `toBuffer()` runs
 > the encode off the event loop, while `toBufferSync()` blocks the calling thread for its whole
@@ -579,14 +595,25 @@ one encode.
 
 ##### Convenience Getters
 
-| Getter  | Returns           | Description                                    |
-| ------- | ----------------- | ---------------------------------------------- |
-| `.png`  | `Promise<Buffer>` | Shortcut for`toBuffer('png')`                  |
-| `.jpg`  | `Promise<Buffer>` | Shortcut for`toBuffer('jpg')`                  |
-| `.webp` | `Promise<Buffer>` | Shortcut for`toBuffer('webp')`                 |
-| `.svg`  | `Promise<Buffer>` | Shortcut for`toBuffer('svg')`                  |
-| `.pdf`  | `Promise<Buffer>` | Shortcut for`toBuffer('pdf')`                  |
-| `.raw`  | `Promise<Buffer>` | Shortcut for`toBuffer('raw')` — raw pixel data |
+| Getter  | Returns           | Description                                     | Non-worker |
+| ------- | ----------------- | ----------------------------------------------- | ---------- |
+| `.png`  | `Promise<Buffer>` | Shortcut for `toBuffer('png')`                  | yes        |
+| `.jpg`  | `Promise<Buffer>` | Shortcut for `toBuffer('jpg')`                  | yes        |
+| `.webp` | `Promise<Buffer>` | Shortcut for `toBuffer('webp')`                 | yes        |
+| `.svg`  | `Promise<Buffer>` | Shortcut for `toBuffer('svg')`                  | yes        |
+| `.pdf`  | `Promise<Buffer>` | Shortcut for `toBuffer('pdf')`                  | yes        |
+| `.raw`  | `Promise<Buffer>` | Shortcut for `toBuffer('raw')` — raw pixel data | yes        |
+| `.gif`  | `Promise<Buffer>` | Shortcut for `toBuffer('gif')`                  | —          |
+| `.apng` | `Promise<Buffer>` | Shortcut for `toBuffer('apng')`                 | —          |
+| `.avif` | `Promise<Buffer>` | Shortcut for `toBuffer('avif')`                 | —          |
+| `.tiff` | `Promise<Buffer>` | Shortcut for `toBuffer('tiff')`                 | —          |
+| `.ico`  | `Promise<Buffer>` | Shortcut for `toBuffer('ico')`                  | —          |
+| `.bmp`  | `Promise<Buffer>` | Shortcut for `toBuffer('bmp')`                  | —          |
+
+The last six exist only on a worker-mode canvas. A non-worker render hands back the renderer's own
+`Canvas`, which carries the first six and no others — so `canvas.gif` is a compile error there, and
+`toBuffer('gif')` is the portable spelling. Every format works in both modes; only the shorthand
+differs.
 
 ##### Canvas Properties
 
