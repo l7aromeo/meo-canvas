@@ -50,6 +50,7 @@ src/
 │   ├── gradient.canvas.ts # Gradient construction, shared by backgrounds and masks
 │   ├── mask.canvas.ts   # Mask geometry, and gradient masking through an offscreen
 │   ├── image.canvas.ts  # Image loading, caching, fit/position
+│   ├── path.canvas.ts   # Arbitrary shapes from SVG path data
 │   ├── chart.canvas.ts  # Bar, Line, Pie, Doughnut charts
 │   └── grid.canvas.ts   # CSS Grid-like layout
 ├── worker/                # Worker thread infrastructure
@@ -104,6 +105,7 @@ With layout computed, each node draws itself on the `meo-skia-canvas` context:
 - **BoxNode** draws background color, background image, and borders before recursing into children
 - **TextNode** parses inline HTML-like tags and draws styled text segments
 - **ImageNode** draws the loaded image with `objectFit` / `objectPosition` / `saturate`
+- **PathNode** fills and strokes SVG path data, in the node's own coordinates
 - **ChartNode** draws chart elements (axes, bars, lines, pie slices)
 - **GridNode** positions children in a 2D grid based on column/row definitions
 

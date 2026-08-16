@@ -11,8 +11,8 @@ functions, similar to the composition style of @meonode/ui.
 It uses `meo-skia-canvas` for drawing and `yoga-layout` for flexbox-based layouts.
 
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
-image structure with components like `Box`, `Text`, `Image`, and `Grid`, and the library will handle the layout and
-rendering to a canvas.
+image structure with components like `Box`, `Text`, `Image`, `Path`, and `Grid`, and the library will handle the layout
+and rendering to a canvas.
 
 ## Key Features
 
@@ -21,9 +21,18 @@ rendering to a canvas.
 - **Rich Text:** Render text with custom fonts and inline styling using simple HTML-like tags. Supported tags include
   `<color="value">`, `<weight="value">`, `<size="value">`, `<b>`, and `<i>`.
 - **Image Support:** Render images from URLs, file paths, or buffers, with `object-fit` and `object-position` support.
+  Animated sources play at their own rate.
 - **Chart Support:** Render bar, line, pie, and doughnut charts with customizable data and options.
 - **Styling:** Style your components with properties that mimic CSS, including borders, padding, margins, and more.
 - **Grid Layout:** A `Grid` component is provided for easy grid-based layouts.
+- **Arbitrary Shapes:** A `Path` component draws SVG path data — the escape hatch for what the components cannot
+  describe.
+- **Masking:** Cut any node to a shape, a path, or a gradient's alpha.
+- **Animated Output:** Render a sequence with one page per frame and export GIF, APNG, animated WebP or AVIF — or PDF
+  and TIFF sheets from the same tree.
+- **Animation Utilities:** Easings, springs solved in closed form, and `track`/`sequence`/`parallel` for composing
+  them. Colours interpolate in every format the engine parses.
+- **Engine Control:** Choose the GPU or CPU backend, the pixel format and the colour space.
 - **TypeScript Support:** Fully typed for a better development experience.
 - **[Architecture →](./ARCHITECTURE.md)**
 
@@ -480,6 +489,41 @@ that inherits all `BoxProps`.
 Since `Root` extends `BoxProps`, it also accepts `backgroundColor`, `padding`, `gradient`, `boxShadow`, and all other
 layout props. See [Box, Row, and Column](#box-row-and-column) for the full list.
 
+#### Choosing the engine
+
+Three props reach the canvas itself rather than the layout, and the rendered canvas reports what the engine settled on
+through `gpu`, `engine`, `colorType` and `colorSpace`.
+
+| Prop         | Type         | Default  | Description                                                                             |
+| ------------ | ------------ | -------- | --------------------------------------------------------------------------------------- |
+| `gpu`        | `boolean`    | `true`   | Rasterize on the GPU when one is available. `false` forces the CPU.                     |
+| `colorType`  | `ColorType`  | `'rgba'` | Pixel format the canvas composites in — the precision everything is drawn at.           |
+| `colorSpace` | `ColorSpace` | `'srgb'` | Space colours are interpreted in; anything outside its gamut is clipped as it is drawn. |
+
+```javascript
+// Identical output on every machine: GPU and CPU rasterizers resolve anti-aliased edges a level or
+// two apart, which a pixel comparison sees.
+await Root({ width: 600, gpu: false, children: [...] })
+
+// Sixteen-bit PNG, and colour outside sRGB kept rather than clipped as it is drawn.
+await Root({ width: 600, colorType: 'RGBAF32', colorSpace: 'display-p3', children: [...] })
+```
+
+**Asking is not getting.** These are requests: a build without GPU support, a driver that declines, and any float
+`colorType` all fall back to the CPU. Read the result rather than assuming it:
+
+```javascript
+const canvas = await Root({ width: 600, colorType: 'RGBAF32', gpu: true, children: [...] })
+canvas.gpu // false — no GPU composites float
+canvas.colorType // 'RGBAF32'
+canvas.engine.renderer // 'CPU'
+```
+
+`colorType` is the one with a cost attached. A float canvas is two to four times the memory, and while translucent
+layers are actually _faster_ in float, opaque fills are not — `RGBAF32` runs them several times slower. Reach for it
+when you need the depth or the gamut, not by default. Masks and shadows composite through offscreen canvases that
+inherit these settings, so a float render stays float all the way through.
+
 #### Multi-page and Animated Output
 
 A page is a frame for `gif`, `apng`, `webp` and `avif`, a sheet for `pdf` and `tiff`, and a size for `ico`. Pass a function as
@@ -782,6 +826,10 @@ does — silently, mid-fade.
 at the start and 1 at the end, and clamps outside that range. `cubicBezier(x1, y1, x2, y2)` builds a
 CSS-compatible curve, and `steps(n)` quantises.
 
+Anywhere an easing is accepted, it can be a name or a function — `resolveEasing(easing)` is what
+turns one into the other, and it is exported for building your own utilities on the same footing.
+An absent easing resolves to linear.
+
 #### Springs
 
 Springs are solved in closed form, not simulated, so any page can be evaluated on its own:
@@ -833,6 +881,17 @@ mix('#000000', '#ffffff', 0.5) // '#808080' — in gamut, so still hex
 
 Alpha is a separate matter: the engine serialises it as one of 256 levels, so `rgba(9, 9, 9, 0.12345)`
 resolves to `0.122`. That is the renderer's precision, not something this layer adds or removes.
+
+Two more are exported for when you want them directly. `mixColor(from, to, t)` is what `mix` calls
+for colours, usable on its own when you know both ends are colours. `isColor(css)` answers whether
+the engine recognises a string, and never throws — the way to check before handing user input to a
+prop that would otherwise reject it.
+
+```javascript
+mixColor('#000000', '#ffffff', 0.5) // '#808080'
+isColor('rebeccapurple') // true
+isColor('not a colour') // false
+```
 
 `fps` on `Root` sizes the sequence and derives `time`; it does not reach the encoder. Pass it again to `toBuffer` if
 the encoded animation should play at that rate, or give `frameDelays` one entry per page for uneven timing. GIF stores
@@ -1041,6 +1100,50 @@ children: () => Image({ src: 'spinner.gif', width: 64, height: 64 })
 
 A still render draws the first frame, as it always has. Decoding happens once per source however
 many pages read it, so a long animation costs one decode rather than one per frame.
+
+### Path
+
+Draws an arbitrary shape from SVG path data — the escape hatch for what the other components cannot describe: an
+arrow, a tick, a connector, a badge with a notch.
+
+```javascript
+Path({ d: 'M 0 0 L 100 0 L 50 80 Z', fill: '#38bdf8', width: 100, height: 80 })
+Path({ d: 'M 0 20 H 80', stroke: '#f43f5e', lineWidth: 4, lineCap: 'round', width: 80, height: 40 })
+```
+
+| Prop             | Type                            | Description                                                   |
+| ---------------- | ------------------------------- | ------------------------------------------------------------- |
+| `d`              | `string`                        | **Required.** SVG path data, in the node's own coordinates.   |
+| `fill`           | `string \| Gradient`            | Paint for the interior. Nothing is filled without it.         |
+| `stroke`         | `string \| Gradient`            | Paint for the outline. Nothing is stroked without it.         |
+| `lineWidth`      | `number`                        | Stroke width. Default `1`.                                    |
+| `fillRule`       | `'nonzero' \| 'evenodd'`        | `evenodd` makes nested subpaths cut holes. Default `nonzero`. |
+| `lineCap`        | `'butt' \| 'round' \| 'square'` | Shape of a stroke's ends. Default `butt`.                     |
+| `lineJoin`       | `'bevel' \| 'round' \| 'miter'` | Shape of a stroke's corners. Default `miter`.                 |
+| `lineDash`       | `number[]`                      | Dash and gap lengths, as `[dash, gap, …]`.                    |
+| `lineDashOffset` | `number`                        | Where the dash pattern starts — animate it for marching ants. |
+
+It also takes every `BoxProps`, so it is laid out by flexbox and can carry a background, border, `mask`, `opacity` or
+`transform` like anything else.
+
+Two things worth knowing. **Coordinates are the node's own** — `0,0` is its top-left corner, as with `mask` — so the
+same path means the same shape wherever layout puts it. And **the path does not size the node**: give it a `width` and
+`height`, because layout is decided before the path is drawn and a path can extend anywhere.
+
+`fill` and `stroke` accept the same gradient shape the `gradient` prop takes, measured against the node's box rather
+than the path, so two shapes in one box share a ramp instead of each restarting it.
+
+This is deliberately declarative rather than a drawing context. A `CanvasRenderingContext2D` is native memory pinned to
+the thread that made it, so it cannot cross into a worker — `Path` is plain data and survives the trip. If you genuinely
+need the raw context, render with `workerMode: false` and take it from the finished canvas:
+
+```javascript
+const canvas = await Root({ workerMode: false, width: 600, children: [...] })
+const ctx = canvas.getContext('2d')
+ctx.filter = 'blur(2px)'
+ctx.drawImage(watermark, 20, 20)
+await canvas.toFile('out.png')
+```
 
 ### Grid
 

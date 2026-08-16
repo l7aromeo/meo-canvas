@@ -39,6 +39,8 @@ export function createCanvasHandlers(deps: CanvasHandlerDeps) {
         height: canvas.height,
         gpu: canvas.gpu,
         engine: canvas.engine,
+        colorType: canvas.colorType,
+        colorSpace: canvas.colorSpace,
       }
     },
 

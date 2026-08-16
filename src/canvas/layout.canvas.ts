@@ -1,6 +1,7 @@
-import { Canvas, type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
+import { type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
 import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
 import { createGradient } from '@/canvas/gradient.canvas.js'
+import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { drawWithGradientMask, isGradientMask, maskFillRule, maskPath } from '@/canvas/mask.canvas.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
 import Yoga, { Style, Node } from '@/constant/common.const.js'
@@ -579,7 +580,7 @@ export class BoxNode {
 
         if (offscreenWidth > 0 && offscreenHeight > 0) {
           // Create temporary canvas for shadow composition
-          const offscreenCanvas = new Canvas(offscreenWidth, offscreenHeight)
+          const offscreenCanvas = createCanvas(offscreenWidth, offscreenHeight, mirrorEngine(ctx))
           const offCtx = offscreenCanvas.getContext('2d')
           offCtx.imageSmoothingEnabled = true
           offCtx.imageSmoothingQuality = 'high'
