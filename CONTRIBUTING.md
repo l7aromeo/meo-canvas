@@ -61,23 +61,53 @@ Now, go to town on your feature or bug fix.
 
 ### Commit your changes
 
-Make sure your commit messages are clear and descriptive.
+Commit messages here are release input, not prose. Releases are cut by
+[semantic-release](https://semantic-release.gitbook.io/), which reads the messages merged into `main` and decides from
+them whether to publish nothing, a patch, a minor, or a major. A message it cannot parse is not a style problem — it is
+a version that never ships, found after the merge.
+
+So they follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<optional scope>): <description>
+
+<optional body>
+
+<optional footer>
+```
+
+The type is what decides the version:
+
+| Type                                                                | Release | Example                                                 |
+| ------------------------------------------------------------------- | ------- | ------------------------------------------------------- |
+| `fix`                                                               | patch   | `fix(Image): honour objectPosition on a cropped source` |
+| `feat`                                                              | minor   | `feat(animate): add a spring solver`                    |
+| any type with `!`, or a `BREAKING CHANGE:` footer                   | major   | `feat(Root)!: pages replace the children array`         |
+| `docs`, `test`, `chore`, `build`, `ci`, `refactor`, `perf`, `style` | none    | `docs: document the frame prop`                         |
+
+The scope is the thing you changed — a component (`Image`, `Root`, `Grid`), a module (`animate`, `build`), or nothing
+at all when the change is broad.
+
+Say why in the body, not just what. The diff already says what.
+
+A `commit-msg` hook runs [commitlint](https://commitlint.js.org/) over the message, so a malformed one is rejected as
+you write it rather than after review. It is installed by `bun install`.
 
 ### Push to your fork and submit a pull request
 
-At this point, you should switch back to your master branch and make sure it's up to date with the latest upstream master.
+At this point, you should switch back to your main branch and make sure it's up to date with the latest upstream main.
 
 ```sh
 git remote add upstream git@github.com:l7aromeo/meo-canvas.git
-git checkout master
-git pull upstream master
+git checkout main
+git pull upstream main
 ```
 
-Then, update your feature branch from your local copy of master, and push it!
+Then, update your feature branch from your local copy of main, and push it!
 
 ```sh
 git checkout 38-add-gaussian-blur-support
-git rebase master
+git rebase main
 git push --force-with-lease origin 38-add-gaussian-blur-support
 ```
 
