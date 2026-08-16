@@ -228,7 +228,9 @@ export class BoxNode {
     if (flexShrink !== undefined) this.node.setFlexShrink(flexShrink)
     if (positionType !== undefined) this.node.setPositionType(positionType)
     if (flexBasis !== undefined) this.node.setFlexBasis(flexBasis)
-    if (position) {
+    // `position: 0` is falsy and meaningful: an absolute node inset by nothing on all four sides
+    // fills its parent.
+    if (position !== undefined) {
       if (typeof position === 'number') {
         this.node.setPosition(Style.Edge.All, position)
       } else if (typeof position === 'string' && position.endsWith('%')) {
