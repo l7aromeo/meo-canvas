@@ -1,6 +1,11 @@
 import { Canvas, type CanvasRenderingContext2D } from 'meo-skia-canvas'
 
-/** Engine options a canvas is constructed with, named by the renderer's own constructor. */
+/**
+ * Engine options a canvas is constructed with — the renderer's `CanvasOptions`.
+ *
+ * Taken from the constructor rather than imported by name, so it follows whatever that parameter
+ * is called.
+ */
 export type CanvasEngineOptions = NonNullable<ConstructorParameters<typeof Canvas>[2]>
 
 /** Builds a canvas, passing options only when there are some to pass. */
