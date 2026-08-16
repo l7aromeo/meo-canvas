@@ -618,6 +618,21 @@ than reimplemented, so **every format the engine accepts works** — named colou
 `lch()`, `oklab()`, `oklch()` and `color(display-p3 …)`. Anything the engine learns later works too.
 An unrecognised colour throws rather than rendering as a silent black.
 
+Colours outside sRGB survive rather than being clipped. `color(display-p3 1 0 0)` is a redder red
+than sRGB can express, and it is carried as extended sRGB — channels above 255 or below 0 that name
+the same colour in sRGB's coordinates — so blending two wide-gamut colours does not quietly collapse
+them into duller ones. `formatColor` writes an ordinary colour as hex, or `rgba()` once alpha is
+involved, and switches to `color(srgb …)` only when a channel falls outside what hex can hold.
+
+```javascript
+parseColor('color(display-p3 1 0 0)') // { r: 278.73, g: -57.81, b: -38.28, a: 1 }
+mix('color(display-p3 1 0 0)', 'color(display-p3 0 1 0)', 0.5) // 'color(srgb 0.290625 0.395799 -0.230419)'
+mix('#000000', '#ffffff', 0.5) // '#808080' — in gamut, so still hex
+```
+
+Alpha is a separate matter: the engine serialises it as one of 256 levels, so `rgba(9, 9, 9, 0.12345)`
+resolves to `0.122`. That is the renderer's precision, not something this layer adds or removes.
+
 `fps` on `Root` sizes the sequence and derives `time`; it does not reach the encoder. Pass it again to `toBuffer` if
 the encoded animation should play at that rate, or give `frameDelays` one entry per page for uneven timing. GIF stores
 hundredths of a second, so 24fps alternates 40ms and 50ms frames; APNG stores a fraction and hits the rate exactly.

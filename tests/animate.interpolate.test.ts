@@ -86,7 +86,10 @@ describe('mix', () => {
 
   it('blends colours in any format the engine takes', () => {
     expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080')
-    expect(mix('red', 'oklch(0.7 0.2 30)', 0.5)).toMatch(/^#[0-9a-f]{6}$/)
+    expect(mix('red', 'blue', 0.5)).toMatch(/^#[0-9a-f]{6}$/)
+    // An oklch just outside sRGB keeps its gamut through the blend, so the result is written as
+    // `color(srgb …)` rather than clipped into hex.
+    expect(mix('red', 'oklch(0.7 0.2 30)', 0.5)).toMatch(/^color\(srgb /)
   })
 
   it('blends arrays element-wise', () => {

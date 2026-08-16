@@ -94,8 +94,14 @@ describe('formatColor', () => {
     expect(parseColor(formatColor(parsed))).toEqual(parsed)
   })
 
-  it('clamps and rounds out-of-range channels', () => {
-    expect(formatColor({ r: 300, g: -20, b: 127.6, a: 2 })).toBe('#ff0080')
+  it('preserves out-of-range channels rather than clamping them', () => {
+    // Out of range is how a colour beyond sRGB is spelled, so clamping here would turn a wide-gamut
+    // colour into a duller one silently. Alpha has no such meaning and is still clamped.
+    expect(formatColor({ r: 300, g: -20, b: 127.6, a: 2 })).toBe('color(srgb 1.176471 -0.078431 0.500392)')
+  })
+
+  it('rounds an in-gamut channel to the nearest 8-bit step', () => {
+    expect(formatColor({ r: 127.6, g: 0, b: 0, a: 1 })).toBe('#800000')
   })
 })
 
@@ -110,8 +116,12 @@ describe('mixColor', () => {
   })
 
   it('mixes across formats', () => {
-    // A named colour and an oklch one have nothing in common syntactically; both parse to sRGB.
-    expect(mixColor('red', 'oklch(0.7 0.2 30)', 0.5)).toMatch(/^#[0-9a-f]{6}$/)
+    // A named colour and an oklch one have nothing in common syntactically; both resolve to sRGB.
+    // This particular oklch sits just outside sRGB, so the midpoint does too and is written as
+    // `color(srgb …)` rather than clipped into hex.
+    expect(mixColor('red', 'oklch(0.7 0.2 30)', 0.5)).toBe('color(srgb 1.007081 0.190099 0.150522)')
+    // Two in-gamut colours still give hex.
+    expect(mixColor('red', 'blue', 0.5)).toMatch(/^#[0-9a-f]{6}$/)
   })
 
   it('interpolates alpha', () => {
@@ -160,5 +170,61 @@ describe('the colour cache is bounded', () => {
     // Alpha survives only to 8-bit precision, which is the engine's, not this cache's.
     expect(parsed.a).toBeCloseTo(0.12345, 2)
     expect(colorCacheSize()).toBeLessThanOrEqual(COLOR_CACHE_LIMIT)
+  })
+})
+
+/**
+ * Wide-gamut colours are carried as extended sRGB — values outside 0..255 that name a colour sRGB
+ * cannot reach. Clamping them at parse time would silently turn every Display P3 red into the
+ * duller sRGB one, and the caller would see a colour they never asked for.
+ */
+describe('colours outside sRGB', () => {
+  const P3_RED = 'color(display-p3 1 0 0)'
+
+  it('carries a P3 red beyond the sRGB range rather than clipping it', () => {
+    const parsed = parseColor(P3_RED)
+
+    // sRGB red is exactly 255; P3 red needs more than sRGB has.
+    expect(parsed.r).toBeGreaterThan(255)
+    expect(parsed.g).toBeLessThan(0)
+    expect(parsed.b).toBeLessThan(0)
+  })
+
+  it('distinguishes a P3 red from an sRGB one', () => {
+    // Before the float path these were identical, both landing on 255,0,0.
+    expect(parseColor(P3_RED)).not.toEqual(parseColor('#ff0000'))
+  })
+
+  it('writes an out-of-gamut colour in a form the engine reads back', () => {
+    const written = formatColor(parseColor(P3_RED))
+
+    expect(written).toMatch(/^color\(srgb /)
+    const reparsed = parseColor(written)
+    expect(reparsed.r).toBeCloseTo(parseColor(P3_RED).r, 3)
+    expect(reparsed.g).toBeCloseTo(parseColor(P3_RED).g, 3)
+  })
+
+  it('still writes an ordinary colour as hex', () => {
+    expect(formatColor(parseColor('#3366cc'))).toBe('#3366cc')
+    expect(formatColor(parseColor('rgba(255,0,0,0.5)'))).toMatch(/^rgba\(/)
+  })
+
+  it('mixes two wide-gamut colours without collapsing them into sRGB', () => {
+    const mixed = mixColor(P3_RED, 'color(display-p3 0 1 0)', 0.5)
+    const parsed = parseColor(mixed)
+
+    // Halfway between P3's red and its green is still outside sRGB — the blue channel has to go
+    // negative to name it. Clipping either endpoint first would have lost that.
+    expect(mixed).toMatch(/^color\(srgb /)
+    expect(parsed.b).toBeLessThan(0)
+    // And it is genuinely between them on both axes that moved.
+    expect(parsed.r).toBeGreaterThan(parseColor('color(display-p3 0 1 0)').r)
+    expect(parsed.r).toBeLessThan(parseColor(P3_RED).r)
+  })
+
+  it("keeps a fully transparent colour's hue, which a pixel readback cannot", () => {
+    // Premultiplied storage zeroes the channels at alpha 0, so this has to come from elsewhere.
+    const parsed = parseColor('rgba(255, 0, 0, 0)')
+    expect(parsed).toEqual({ r: 255, g: 0, b: 0, a: 0 })
   })
 })
