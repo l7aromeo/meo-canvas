@@ -9,9 +9,14 @@ name: Release
 # registration does not carry over from GitLab: it is issuer-specific, so it
 # must be recreated before the first release here, or the publish step fails
 # after semantic-release has already tagged.
+# `beta` and `alpha` were configured as prerelease channels and never used as
+# ones. `beta` fell 69 commits behind `main` while npm's `beta` dist-tag stayed
+# on 5.0.0-beta.5 — three majors old — so anyone installing `meo-canvas@beta`
+# got that, and any push to the branch would have released from that stale base.
+# Retired rather than repaired: nothing was shipping through them.
 on:
   push:
-    branches: [main, beta, alpha]
+    branches: [main]
 
 # `resource_group: meonode_canvas_pipeline_lock` on GitLab. Two releases must
 # never overlap: both would read the same last tag and compute the same next
