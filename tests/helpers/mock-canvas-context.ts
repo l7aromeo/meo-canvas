@@ -63,6 +63,7 @@ export function createMockCanvasContext(): CanvasRenderingContext2D {
     textBaseline: 'alphabetic' as const,
     letterSpacing: 'normal',
     wordSpacing: 'normal',
+    textDecoration: 'none',
     fontVariant: 'normal',
     createLinearGradient: vi.fn<CanvasRenderingContext2D['createLinearGradient']>(() => ({
       addColorStop: vi.fn(),

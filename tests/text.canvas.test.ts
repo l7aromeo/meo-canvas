@@ -691,3 +691,111 @@ describe('TextNode & Text factory', () => {
     })
   })
 })
+
+describe('TextNode decoration and overflow', () => {
+  let TextNodeClass: typeof import('@/canvas/text.canvas.js').TextNode
+
+  beforeEach(async () => {
+    vi.resetModules()
+    ;({ TextNode: TextNodeClass } = await import('@/canvas/text.canvas.js'))
+  })
+
+  /** Lays out one node in a parent of the given width and draws it on a recording context. */
+  async function draw(props: Record<string, unknown>, text: string, parentWidth = 400, parentHeight?: number) {
+    const node = new TextNodeClass(text, props)
+    const col = new ColumnNode({ width: parentWidth, height: parentHeight })
+    ;(col as unknown as { appendChild(child: unknown, index: number): void }).appendChild(node, 0)
+    col.node.calculateLayout(parentWidth, parentHeight, Style.Direction.LTR)
+
+    const ctx = createMockCanvasContext()
+    ctx.measureText = vi.fn<CanvasRenderingContext2D['measureText']>(t => createTestTextMetrics({ width: String(t).length * 8 }))
+    const layout = node.node.getComputedLayout()
+    await node.render(ctx, layout.left, layout.top)
+    return ctx
+  }
+
+  it('hands the decoration to the context', async () => {
+    const ctx = await draw({ textDecoration: 'underline', fontSize: 16 }, 'Sphinx of quartz')
+    expect(ctx.textDecoration).toBe('underline')
+  })
+
+  it('leaves the context alone when no decoration is asked for', async () => {
+    const ctx = await draw({ fontSize: 16 }, 'Sphinx of quartz')
+    // Untouched rather than reset, so nothing here disturbs a decoration an enclosing draw set.
+    expect(ctx.textDecoration).toBe('none')
+  })
+
+  it('draws a decorated line in one call, so its rule is unbroken', async () => {
+    const ctx = await draw({ textDecoration: 'underline', fontSize: 16 }, 'Sphinx of quartz')
+    expect(ctx.fillText).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws an undecorated line a word at a time, as before', async () => {
+    const ctx = await draw({ fontSize: 16 }, 'Sphinx of quartz')
+    expect((ctx.fillText as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('falls back to a word at a time for rich text, which has no single style', async () => {
+    const ctx = await draw({ textDecoration: 'underline', fontSize: 16 }, 'Plain <b>bold</b> plain')
+    expect((ctx.fillText as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('falls back to a word at a time when justifying, which needs the gaps', async () => {
+    const ctx = await draw({ textDecoration: 'underline', textAlign: 'justify', fontSize: 16 }, 'Sphinx of quartz judge my vow now', 120)
+    expect((ctx.fillText as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('does not clip to its box, since CSS clips only on overflow hidden', async () => {
+    const ctx = await draw({ fontSize: 16 }, 'Sphinx of quartz judge my vow', 80, 20)
+    expect(ctx.clip).not.toHaveBeenCalled()
+  })
+
+  it('clips when the node asks to hide its overflow', async () => {
+    const ctx = await draw({ fontSize: 16, overflow: Style.Overflow.Hidden }, 'Sphinx of quartz judge my vow', 80, 20)
+    expect(ctx.clip).toHaveBeenCalled()
+  })
+})
+
+describe('TextNode decoration with truncation', () => {
+  it('draws the last line a word at a time when it has to carry an ellipsis', async () => {
+    // The single-call path cannot truncate mid-line, so a decorated line about to be cut short
+    // keeps the per-word loop -- and its rule breaks, which is the cost of the ellipsis.
+    const body = [...Array(24)].map((_, i) => `term${i}`).join(' ')
+    const node = new TextNode(body, {
+      width: 168,
+      height: 420,
+      maxLines: 2,
+      ellipsis: true as const,
+      fontSize: 14,
+      textDecoration: 'underline',
+    })
+    attachAndLayout(380, node)
+
+    const ctx = createRenderContext()
+    await node.render(ctx, 0, 0)
+
+    const drawn = vi.mocked(ctx.fillText).mock.calls.map(call => call[0])
+    expect(drawn).toContain('...')
+    expect(drawn.length).toBeGreaterThan(2)
+  })
+})
+
+describe('TextNode decoration with a shadow', () => {
+  it('lays the shadow under the whole line rather than under each word', async () => {
+    const node = new TextNode('Sphinx of quartz', {
+      width: 400,
+      fontSize: 16,
+      textDecoration: 'underline',
+      textShadow: { color: '#00000055', blur: 4, offsetX: 2, offsetY: 2 },
+    })
+    attachAndLayout(400, node)
+
+    const ctx = createRenderContext()
+    await node.render(ctx, 0, 0)
+
+    // One pass for the shadow and one for the text, both of the whole line: a decorated line is
+    // drawn in a single call, and its shadow has to follow it.
+    const drawn = vi.mocked(ctx.fillText).mock.calls.map(call => call[0])
+    expect(drawn).toEqual(['Sphinx of quartz', 'Sphinx of quartz'])
+  })
+})

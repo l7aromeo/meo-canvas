@@ -12,6 +12,15 @@ export class TextNode extends BoxNode {
   private readonly segments: TextSegment[] = []
   private lines: TextSegment[][] = []
   private static measurementContext: CanvasRenderingContext2D | null = null
+
+  /**
+   * The string line metrics are taken through.
+   *
+   * Its content no longer matters: what is read back is the face's own ascent and descent, which
+   * every string in a face reports alike. One constant is kept so the measurement cache answers it
+   * once per font rather than once per line, and so a line's height cannot depend on what is
+   * written on it — the property CSS gets from a strut.
+   */
   private readonly metricsString = 'Ag|``'
   private lineHeights: number[] = []
   private lineAscents: number[] = []
@@ -434,36 +443,32 @@ export class TextNode extends BoxNode {
     let totalTextHeight = 0
     const linesToMeasure = this.getLinesToMeasureOrRender()
     const numLines = linesToMeasure.length
-    const defaultLineHeightMultiplier = 1.2 // Base leading multiplier
 
     // Calculate metrics for each line
     for (const line of linesToMeasure) {
       let maxAscent = 0
       let maxDescent = 0
-      let maxFontSizeOnLine = 0
 
       // Handle empty line metrics
       if (line.length === 0) {
         ctx.font = this.getFontString()
         this._applyFontVariant(ctx, 'measureText (empty line)')
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       } else {
         // Calculate max metrics across all segments in line
         for (const segment of line) {
           if (/^\s+$/.test(segment.text)) continue
 
           const segmentSize = segment.size || baseFontSize
-          maxFontSizeOnLine = Math.max(maxFontSizeOnLine, segmentSize)
 
           ctx.font = this.getFontString(segment)
           this._applyFontVariant(ctx, 'measureText (segment height)')
 
           const metrics = measureText(ctx, this.metricsString)
-          const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
-          const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
+          const ascent = metrics.fontBoundingBoxAscent ?? segmentSize * 0.8
+          const descent = metrics.fontBoundingBoxDescent ?? segmentSize * 0.2
 
           maxAscent = Math.max(maxAscent, ascent)
           maxDescent = Math.max(maxDescent, descent)
@@ -475,22 +480,19 @@ export class TextNode extends BoxNode {
         ctx.font = this.getFontString()
         this._applyFontVariant(ctx, 'measureText (fallback)')
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       }
-
-      maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
 
       // Calculate total content height for line
       const actualContentHeight = maxAscent + maxDescent
 
       // Determine final line box height with leading
-      const targetLineBoxHeight =
-        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : maxFontSizeOnLine * defaultLineHeightMultiplier
+      const targetLineBoxHeight = typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : actualContentHeight
 
-      // Use larger of target height or content height to prevent clipping
-      const finalLineHeight = Math.max(actualContentHeight, targetLineBoxHeight)
+      // The line box is what `lineHeight` asked for, even when that is less than the face needs: CSS
+      // lets a tight `line-height` overlap its neighbours rather than quietly growing the line.
+      const finalLineHeight = targetLineBoxHeight
 
       // Store line metrics for rendering
       this.lineHeights.push(finalLineHeight)
@@ -892,6 +894,10 @@ export class TextNode extends BoxNode {
     ctx.textBaseline = 'alphabetic'
     ctx.letterSpacing = this.formatSpacing(this.props.letterSpacing)
     ctx.wordSpacing = 'normal'
+    // Set for the whole node rather than per segment: the lines run under the text, and a rule that
+    // stopped and restarted at every `<b>` would be a different drawing from the one CSS makes.
+    // Left alone when unset, so nothing here disturbs a decoration an enclosing draw established.
+    if (this.props.textDecoration !== undefined) ctx.textDecoration = this.props.textDecoration
 
     const baseFontSize = this.props.fontSize || 16
     const parsedWordSpacingPx = this.parseSpacingToPx(this.props.wordSpacing, baseFontSize)
@@ -932,34 +938,30 @@ export class TextNode extends BoxNode {
     const lineHeights: number[] = []
     const lineAscents: number[] = []
     const lineContentHeights: number[] = []
-    const defaultLineHeightMultiplier = 1.2
     let totalTextHeight = 0
 
     for (const line of visibleLines) {
       let maxAscent = 0
       let maxDescent = 0
-      let maxFontSizeOnLine = 0
 
       if (line.length === 0) {
         ctx.font = this.getFontString()
         if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       } else {
         for (const segment of line) {
           if (/^\s+$/.test(segment.text)) continue
           const segmentSize = segment.size || baseFontSize
-          maxFontSizeOnLine = Math.max(maxFontSizeOnLine, segmentSize)
 
           // Style context for accurate metrics
           ctx.font = this.getFontString(segment)
           if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
 
           const metrics = measureText(ctx, this.metricsString)
-          const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
-          const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
+          const ascent = metrics.fontBoundingBoxAscent ?? segmentSize * 0.8
+          const descent = metrics.fontBoundingBoxDescent ?? segmentSize * 0.2
           maxAscent = Math.max(maxAscent, ascent)
           maxDescent = Math.max(maxDescent, descent)
         }
@@ -969,15 +971,12 @@ export class TextNode extends BoxNode {
         ctx.font = this.getFontString()
         if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       }
-      maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
       const actualContentHeight = maxAscent + maxDescent
-      const targetLineBoxHeight =
-        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : maxFontSizeOnLine * defaultLineHeightMultiplier
-      const finalLineHeight = Math.max(actualContentHeight, targetLineBoxHeight)
+      const targetLineBoxHeight = typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : actualContentHeight
+      const finalLineHeight = targetLineBoxHeight
 
       lineHeights.push(finalLineHeight)
       lineAscents.push(maxAscent)
@@ -1009,10 +1008,15 @@ export class TextNode extends BoxNode {
 
     let currentLineTopY = blockStartY
 
-    // Setup text content clipping region
-    ctx.beginPath()
-    ctx.rect(contentX, contentY, contentWidth, contentHeight)
-    ctx.clip()
+    // Clipped only when asked, as CSS clips only on `overflow: hidden`. Text taller or wider than
+    // its box spills out of it by default — a line box is allowed to exceed the block it sits in,
+    // and a caller who wants the box respected says so. `SCROLL` is not treated as clipping: it
+    // describes a box a reader can move, and nothing here is interactive.
+    if (this.props.overflow === Style.Overflow.Hidden) {
+      ctx.beginPath()
+      ctx.rect(contentX, contentY, contentWidth, contentHeight)
+      ctx.clip()
+    }
 
     // Configure ellipsis if needed
     const ellipsisChar = typeof this.props.ellipsis === 'string' ? this.props.ellipsis : '...'
@@ -1051,7 +1055,9 @@ export class TextNode extends BoxNode {
 
       // Calculate line spacing metrics
       const currentLineLeading = currentLineFinalHeight - currentLineContentHeight
-      const currentLineSpaceAbove = Math.max(0, currentLineLeading / 2)
+      // Half-leading, which goes negative for a line box shorter than the face — the case where CSS
+      // pulls the glyphs past the box rather than moving the baseline.
+      const currentLineSpaceAbove = currentLineLeading / 2
       const lineY = currentLineTopY + currentLineSpaceAbove + currentLineMaxAscent
 
       // Visibility culling check
@@ -1121,8 +1127,60 @@ export class TextNode extends BoxNode {
         }
       }
 
+      // A decoration has to be drawn in one call or it is not one line.
+      //
+      // The loop below draws a word at a time and synthesizes the gap between them, so the rule
+      // Skia draws under each call stops at every space. Drawing the line at once is the only way
+      // to get an unbroken one, and it is only equivalent while the line is a single style, is not
+      // being justified, and is not about to be truncated — the three things the per-word loop does
+      // that a single call cannot. Glyph positions are unchanged: the same words at the same
+      // advances, with the gap coming from `wordSpacing` rather than from arithmetic here.
+      const words = lineSegments.filter(segment => !/^\s+$/.test(segment.text))
+      const uniformStyle =
+        words.length > 0 &&
+        words.every(
+          segment =>
+            this.getFontString(segment) === this.getFontString(words[0]) &&
+            (segment.color || this.props.color || 'black') === (words[0].color || this.props.color || 'black'),
+        )
+
+      let drewWholeLine = false
+      if (this.props.textDecoration !== undefined && !isJustify && !(isLastRenderedLine && needsEllipsis) && uniformStyle) {
+        const lineText = words.reduce(
+          (text, segment, index) => text + (index > 0 && !noSpaceBeforePunctuation.test(segment.text) ? ' ' : '') + segment.text,
+          '',
+        )
+
+        ctx.font = this.getFontString(words[0])
+        ctx.fillStyle = words[0].color || this.props.color || 'black'
+        this._applyFontVariant(ctx, '_renderContent (whole line)')
+        ctx.textAlign = 'left'
+        // The gap the per-word path adds by hand, handed to the renderer instead so the run — and
+        // the rule under it — is continuous.
+        ctx.wordSpacing = `${parsedWordSpacingPx}px`
+
+        const shadows = this.props.textShadow ? (Array.isArray(this.props.textShadow) ? this.props.textShadow : [this.props.textShadow]) : []
+        ctx.save()
+        for (const shadow of shadows) {
+          ctx.shadowColor = shadow.color || 'transparent'
+          ctx.shadowBlur = shadow.blur || 0
+          ctx.shadowOffsetX = shadow.offsetX || 0
+          ctx.shadowOffsetY = shadow.offsetY || 0
+          ctx.fillText(lineText, currentX, lineY)
+        }
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+        ctx.shadowOffsetX = 0
+        ctx.shadowOffsetY = 0
+        ctx.fillText(lineText, currentX, lineY)
+        ctx.restore()
+
+        ctx.wordSpacing = 'normal'
+        drewWholeLine = true
+      }
+
       // Render line segments (skip rendering for truly empty lines)
-      if (lineSegments.length > 0 && !lineSegments.every(s => s.text.trim() === '')) {
+      if (!drewWholeLine && lineSegments.length > 0 && !lineSegments.every(s => s.text.trim() === '')) {
         let accumulatedWidth = 0
         let ellipsisApplied = false
         let firstWordDrawn = false
