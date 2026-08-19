@@ -12,6 +12,15 @@ export class TextNode extends BoxNode {
   private readonly segments: TextSegment[] = []
   private lines: TextSegment[][] = []
   private static measurementContext: CanvasRenderingContext2D | null = null
+
+  /**
+   * The string line metrics are taken through.
+   *
+   * Its content no longer matters: what is read back is the face's own ascent and descent, which
+   * every string in a face reports alike. One constant is kept so the measurement cache answers it
+   * once per font rather than once per line, and so a line's height cannot depend on what is
+   * written on it — the property CSS gets from a strut.
+   */
   private readonly metricsString = 'Ag|``'
   private lineHeights: number[] = []
   private lineAscents: number[] = []
@@ -434,36 +443,32 @@ export class TextNode extends BoxNode {
     let totalTextHeight = 0
     const linesToMeasure = this.getLinesToMeasureOrRender()
     const numLines = linesToMeasure.length
-    const defaultLineHeightMultiplier = 1.2 // Base leading multiplier
 
     // Calculate metrics for each line
     for (const line of linesToMeasure) {
       let maxAscent = 0
       let maxDescent = 0
-      let maxFontSizeOnLine = 0
 
       // Handle empty line metrics
       if (line.length === 0) {
         ctx.font = this.getFontString()
         this._applyFontVariant(ctx, 'measureText (empty line)')
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       } else {
         // Calculate max metrics across all segments in line
         for (const segment of line) {
           if (/^\s+$/.test(segment.text)) continue
 
           const segmentSize = segment.size || baseFontSize
-          maxFontSizeOnLine = Math.max(maxFontSizeOnLine, segmentSize)
 
           ctx.font = this.getFontString(segment)
           this._applyFontVariant(ctx, 'measureText (segment height)')
 
           const metrics = measureText(ctx, this.metricsString)
-          const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
-          const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
+          const ascent = metrics.fontBoundingBoxAscent ?? segmentSize * 0.8
+          const descent = metrics.fontBoundingBoxDescent ?? segmentSize * 0.2
 
           maxAscent = Math.max(maxAscent, ascent)
           maxDescent = Math.max(maxDescent, descent)
@@ -475,22 +480,19 @@ export class TextNode extends BoxNode {
         ctx.font = this.getFontString()
         this._applyFontVariant(ctx, 'measureText (fallback)')
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       }
-
-      maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
 
       // Calculate total content height for line
       const actualContentHeight = maxAscent + maxDescent
 
       // Determine final line box height with leading
-      const targetLineBoxHeight =
-        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : maxFontSizeOnLine * defaultLineHeightMultiplier
+      const targetLineBoxHeight = typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : actualContentHeight
 
-      // Use larger of target height or content height to prevent clipping
-      const finalLineHeight = Math.max(actualContentHeight, targetLineBoxHeight)
+      // The line box is what `lineHeight` asked for, even when that is less than the face needs: CSS
+      // lets a tight `line-height` overlap its neighbours rather than quietly growing the line.
+      const finalLineHeight = targetLineBoxHeight
 
       // Store line metrics for rendering
       this.lineHeights.push(finalLineHeight)
@@ -932,34 +934,30 @@ export class TextNode extends BoxNode {
     const lineHeights: number[] = []
     const lineAscents: number[] = []
     const lineContentHeights: number[] = []
-    const defaultLineHeightMultiplier = 1.2
     let totalTextHeight = 0
 
     for (const line of visibleLines) {
       let maxAscent = 0
       let maxDescent = 0
-      let maxFontSizeOnLine = 0
 
       if (line.length === 0) {
         ctx.font = this.getFontString()
         if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       } else {
         for (const segment of line) {
           if (/^\s+$/.test(segment.text)) continue
           const segmentSize = segment.size || baseFontSize
-          maxFontSizeOnLine = Math.max(maxFontSizeOnLine, segmentSize)
 
           // Style context for accurate metrics
           ctx.font = this.getFontString(segment)
           if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
 
           const metrics = measureText(ctx, this.metricsString)
-          const ascent = metrics.actualBoundingBoxAscent ?? segmentSize * 0.8
-          const descent = metrics.actualBoundingBoxDescent ?? segmentSize * 0.2
+          const ascent = metrics.fontBoundingBoxAscent ?? segmentSize * 0.8
+          const descent = metrics.fontBoundingBoxDescent ?? segmentSize * 0.2
           maxAscent = Math.max(maxAscent, ascent)
           maxDescent = Math.max(maxDescent, descent)
         }
@@ -969,15 +967,12 @@ export class TextNode extends BoxNode {
         ctx.font = this.getFontString()
         if (this.props.fontVariant) ctx.fontVariant = typeof this.props.fontVariant === 'string' ? this.props.fontVariant : 'normal'
         const metrics = measureText(ctx, this.metricsString)
-        maxAscent = metrics.actualBoundingBoxAscent ?? baseFontSize * 0.8
-        maxDescent = metrics.actualBoundingBoxDescent ?? baseFontSize * 0.2
-        maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
+        maxAscent = metrics.fontBoundingBoxAscent ?? baseFontSize * 0.8
+        maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       }
-      maxFontSizeOnLine = maxFontSizeOnLine || baseFontSize
       const actualContentHeight = maxAscent + maxDescent
-      const targetLineBoxHeight =
-        typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : maxFontSizeOnLine * defaultLineHeightMultiplier
-      const finalLineHeight = Math.max(actualContentHeight, targetLineBoxHeight)
+      const targetLineBoxHeight = typeof this.props.lineHeight === 'number' && this.props.lineHeight > 0 ? this.props.lineHeight : actualContentHeight
+      const finalLineHeight = targetLineBoxHeight
 
       lineHeights.push(finalLineHeight)
       lineAscents.push(maxAscent)
@@ -1051,7 +1046,9 @@ export class TextNode extends BoxNode {
 
       // Calculate line spacing metrics
       const currentLineLeading = currentLineFinalHeight - currentLineContentHeight
-      const currentLineSpaceAbove = Math.max(0, currentLineLeading / 2)
+      // Half-leading, which goes negative for a line box shorter than the face — the case where CSS
+      // pulls the glyphs past the box rather than moving the baseline.
+      const currentLineSpaceAbove = currentLineLeading / 2
       const lineY = currentLineTopY + currentLineSpaceAbove + currentLineMaxAscent
 
       // Visibility culling check

@@ -21,6 +21,9 @@ const context = () => {
       width: text.length * 8,
       actualBoundingBoxAscent: 10,
       actualBoundingBoxDescent: 3,
+      // A property of the face rather than the string, which is why they do not vary with `text`.
+      fontBoundingBoxAscent: 12,
+      fontBoundingBoxDescent: 4,
     })),
   }
   return ctx as unknown as CanvasRenderingContext2D & { measureText: ReturnType<typeof vi.fn> }
@@ -36,7 +39,22 @@ beforeEach(() => {
 describe('measureText', () => {
   it('returns what the renderer returned', () => {
     const ctx = context()
-    expect(measureText(ctx, 'hello')).toEqual({ width: 40, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 3 })
+    expect(measureText(ctx, 'hello')).toEqual({
+      width: 40,
+      actualBoundingBoxAscent: 10,
+      actualBoundingBoxDescent: 3,
+      fontBoundingBoxAscent: 12,
+      fontBoundingBoxDescent: 4,
+    })
+  })
+
+  it('carries the face metrics, which is what a line box is built from', () => {
+    // Dropped from the snapshot, these read back `undefined` and every line box silently falls to
+    // the fallback fraction of the font size instead of the face's own height.
+    const measurement = measureText(context(), 'hello')
+
+    expect(measurement.fontBoundingBoxAscent).toBe(12)
+    expect(measurement.fontBoundingBoxDescent).toBe(4)
   })
 
   it('asks the renderer once for a repeated question', () => {
@@ -106,7 +124,7 @@ describe('measureText', () => {
 
     // A layout pass mid-flight keeps reading the numbers it was given; changing them underneath it
     // would move geometry that has already been positioned.
-    expect(before).toEqual({ width: 40, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 3 })
+    expect(before).toEqual({ width: 40, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 3, fontBoundingBoxAscent: 12, fontBoundingBoxDescent: 4 })
   })
 
   it('stays bounded, so a process rendering endless text cannot grow it forever', () => {
