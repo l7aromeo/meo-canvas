@@ -35,6 +35,8 @@ and rendering to a canvas.
 - **Engine Control:** Choose the GPU or CPU backend, the pixel format and the colour space.
 - **Dithering:** `dither` breaks up the banding a long, subtle gradient shows on an eight-bit surface. Set it on
   `Root` for the page, or on any node for its own subtree.
+- **Browser-matching text:** Line boxes are built the way CSS builds them — baselines land within 0.15px of Chrome —
+  with `textAlign`, `verticalAlign`, `textDecoration` and `overflow` following the same rules.
 - **TypeScript Support:** Fully typed for a better development experience.
 - **[Architecture →](./ARCHITECTURE.md)**
 
@@ -1072,20 +1074,21 @@ Two limits worth knowing before you design around them:
 
 These props, when set on a `Box`, `Row`, or `Column`, are inherited by any descendant `Text` nodes.
 
-| Prop            | Type                                                             | Description                                                                                  |
-| --------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `fontSize`      | `number`                                                         | Font size in pixels.                                                                         |
-| `fontFamily`    | `string`                                                         | Font family name.                                                                            |
-| `fontWeight`    | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.).                                                   |
-| `fontStyle`     | `'normal' \| 'italic'`                                           | Font style.                                                                                  |
-| `color`         | `string`                                                         | Text color.                                                                                  |
-| `textAlign`     | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                                                                   |
-| `verticalAlign` | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                                                                     |
-| `lineHeight`    | `number`                                                         | Line box height in pixels. Defaults to the face's own height, as `line-height: normal` does. |
-| `lineGap`       | `number`                                                         | Additional vertical spacing between lines.                                                   |
-| `letterSpacing` | `number \| string`                                               | Spacing between letters.                                                                     |
-| `wordSpacing`   | `number \| string`                                               | Spacing between words.                                                                       |
-| `fontVariant`   | `FontVariantSetting`                                             | Specifies font variation settings.                                                           |
+| Prop             | Type                                                             | Description                                                                                  |
+| ---------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `fontSize`       | `number`                                                         | Font size in pixels.                                                                         |
+| `fontFamily`     | `string`                                                         | Font family name.                                                                            |
+| `fontWeight`     | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.).                                                   |
+| `fontStyle`      | `'normal' \| 'italic'`                                           | Font style.                                                                                  |
+| `color`          | `string`                                                         | Text color.                                                                                  |
+| `textAlign`      | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                                                                   |
+| `verticalAlign`  | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                                                                     |
+| `lineHeight`     | `number`                                                         | Line box height in pixels. Defaults to the face's own height, as `line-height: normal` does. |
+| `lineGap`        | `number`                                                         | Additional vertical spacing between lines.                                                   |
+| `letterSpacing`  | `number \| string`                                               | Spacing between letters.                                                                     |
+| `wordSpacing`    | `number \| string`                                               | Spacing between words.                                                                       |
+| `fontVariant`    | `FontVariantSetting`                                             | Specifies font variation settings.                                                           |
+| `textDecoration` | `string`                                                         | Lines on the text, in CSS `text-decoration` notation. Inherited.                             |
 
 ##### How text is positioned
 
@@ -1104,6 +1107,29 @@ Two consequences worth knowing:
   face's ascent plus descent.
 
 `lineGap` is extra space between lines on top of all that, with no CSS equivalent.
+
+**Overflow follows CSS too.** Text taller or wider than its box spills out of it; set
+`overflow: Style.Overflow.Hidden` on the node to clip it. `Style.Overflow.Scroll` is not treated as
+clipping — it describes a box a reader can move, and nothing here is interactive.
+
+##### Underlines and strikethroughs
+
+`textDecoration` takes the notation CSS `text-decoration` uses. A line keyword on its own is the
+common case; a style, a colour and a thickness may follow in any order, and two line keywords may be
+combined. Anything that does not parse draws nothing rather than throwing.
+
+```javascript
+Text('Sold out', { textDecoration: 'line-through' })
+Text('Heading', { textDecoration: 'underline 3px #2563eb' })
+Text('Misspelt', { textDecoration: 'underline wavy #dc2626' })
+Text('Both', { textDecoration: 'underline line-through' })
+```
+
+It is inherited, so decorating a `Box` decorates the text inside it.
+
+One limit worth knowing: a line is drawn in a single call so its rule is unbroken across the spaces,
+which is only possible while the whole line is one style. A line carrying rich-text markup --
+`<b>`, `<color>`, `<size>` -- is drawn a word at a time, and its rule breaks at each space.
 
 ---
 

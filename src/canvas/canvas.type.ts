@@ -598,6 +598,23 @@ export interface BoxProps extends BaseProps {
   textAlign?: 'start' | 'end' | 'left' | 'center' | 'right' | 'justify' // Canvas textAlign values + 'justify'
 
   /**
+   * Lines drawn on the text, in the notation CSS `text-decoration` uses.
+   *
+   * A line keyword on its own is the common case; a style, a colour and a thickness may follow in
+   * any order, and two line keywords may be combined. Anything that does not parse draws nothing
+   * rather than throwing. Inherited, so a heading and its nested spans are decorated together.
+   * @default undefined (no lines)
+   * @example
+   * ```ts
+   * Text('Sold out', { textDecoration: 'line-through' })
+   * Text('Heading', { textDecoration: 'underline 3px #2563eb' })
+   * Text('Misspelt', { textDecoration: 'underline wavy #dc2626' })
+   * Text('Both', { textDecoration: 'underline line-through' })
+   * ```
+   */
+  textDecoration?: 'none' | 'underline' | 'overline' | 'line-through' | (string & {})
+
+  /**
    * Vertical text alignment within the node's bounds.
    * Note: Simple implementation aligns based on the first line.
    * @default 'top'

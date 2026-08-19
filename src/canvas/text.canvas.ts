@@ -894,6 +894,10 @@ export class TextNode extends BoxNode {
     ctx.textBaseline = 'alphabetic'
     ctx.letterSpacing = this.formatSpacing(this.props.letterSpacing)
     ctx.wordSpacing = 'normal'
+    // Set for the whole node rather than per segment: the lines run under the text, and a rule that
+    // stopped and restarted at every `<b>` would be a different drawing from the one CSS makes.
+    // Left alone when unset, so nothing here disturbs a decoration an enclosing draw established.
+    if (this.props.textDecoration !== undefined) ctx.textDecoration = this.props.textDecoration
 
     const baseFontSize = this.props.fontSize || 16
     const parsedWordSpacingPx = this.parseSpacingToPx(this.props.wordSpacing, baseFontSize)
@@ -1004,10 +1008,15 @@ export class TextNode extends BoxNode {
 
     let currentLineTopY = blockStartY
 
-    // Setup text content clipping region
-    ctx.beginPath()
-    ctx.rect(contentX, contentY, contentWidth, contentHeight)
-    ctx.clip()
+    // Clipped only when asked, as CSS clips only on `overflow: hidden`. Text taller or wider than
+    // its box spills out of it by default — a line box is allowed to exceed the block it sits in,
+    // and a caller who wants the box respected says so. `SCROLL` is not treated as clipping: it
+    // describes a box a reader can move, and nothing here is interactive.
+    if (this.props.overflow === Style.Overflow.Hidden) {
+      ctx.beginPath()
+      ctx.rect(contentX, contentY, contentWidth, contentHeight)
+      ctx.clip()
+    }
 
     // Configure ellipsis if needed
     const ellipsisChar = typeof this.props.ellipsis === 'string' ? this.props.ellipsis : '...'
@@ -1118,8 +1127,60 @@ export class TextNode extends BoxNode {
         }
       }
 
+      // A decoration has to be drawn in one call or it is not one line.
+      //
+      // The loop below draws a word at a time and synthesizes the gap between them, so the rule
+      // Skia draws under each call stops at every space. Drawing the line at once is the only way
+      // to get an unbroken one, and it is only equivalent while the line is a single style, is not
+      // being justified, and is not about to be truncated — the three things the per-word loop does
+      // that a single call cannot. Glyph positions are unchanged: the same words at the same
+      // advances, with the gap coming from `wordSpacing` rather than from arithmetic here.
+      const words = lineSegments.filter(segment => !/^\s+$/.test(segment.text))
+      const uniformStyle =
+        words.length > 0 &&
+        words.every(
+          segment =>
+            this.getFontString(segment) === this.getFontString(words[0]) &&
+            (segment.color || this.props.color || 'black') === (words[0].color || this.props.color || 'black'),
+        )
+
+      let drewWholeLine = false
+      if (this.props.textDecoration !== undefined && !isJustify && !(isLastRenderedLine && needsEllipsis) && uniformStyle) {
+        const lineText = words.reduce(
+          (text, segment, index) => text + (index > 0 && !noSpaceBeforePunctuation.test(segment.text) ? ' ' : '') + segment.text,
+          '',
+        )
+
+        ctx.font = this.getFontString(words[0])
+        ctx.fillStyle = words[0].color || this.props.color || 'black'
+        this._applyFontVariant(ctx, '_renderContent (whole line)')
+        ctx.textAlign = 'left'
+        // The gap the per-word path adds by hand, handed to the renderer instead so the run — and
+        // the rule under it — is continuous.
+        ctx.wordSpacing = `${parsedWordSpacingPx}px`
+
+        const shadows = this.props.textShadow ? (Array.isArray(this.props.textShadow) ? this.props.textShadow : [this.props.textShadow]) : []
+        ctx.save()
+        for (const shadow of shadows) {
+          ctx.shadowColor = shadow.color || 'transparent'
+          ctx.shadowBlur = shadow.blur || 0
+          ctx.shadowOffsetX = shadow.offsetX || 0
+          ctx.shadowOffsetY = shadow.offsetY || 0
+          ctx.fillText(lineText, currentX, lineY)
+        }
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+        ctx.shadowOffsetX = 0
+        ctx.shadowOffsetY = 0
+        ctx.fillText(lineText, currentX, lineY)
+        ctx.restore()
+
+        ctx.wordSpacing = 'normal'
+        drewWholeLine = true
+      }
+
       // Render line segments (skip rendering for truly empty lines)
-      if (lineSegments.length > 0 && !lineSegments.every(s => s.text.trim() === '')) {
+      if (!drewWholeLine && lineSegments.length > 0 && !lineSegments.every(s => s.text.trim() === '')) {
         let accumulatedWidth = 0
         let ellipsisApplied = false
         let firstWordDrawn = false
