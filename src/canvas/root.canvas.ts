@@ -18,6 +18,7 @@ import type {
   StillExportOptions,
   Children,
   ImageProps,
+  ChartItem,
   ChartProps,
   ChartType,
 } from '@/canvas/canvas.type.js'
@@ -331,6 +332,38 @@ export class WorkerCanvas {
   }
 }
 
+/** The chart options whose value is a callback returning something to draw. */
+const CHART_ITEM_OPTIONS = ['renderLegendItem', 'renderLabelItem', 'renderValueItem'] as const
+
+/**
+ * Wraps a chart's item callbacks so a descriptor they return is built into a node.
+ *
+ * `Box`, `Row` and the rest hand back descriptors, and `BoxNode` is exported as a type only, so a
+ * descriptor is the only thing a consumer can return from one of these. The chart appends the
+ * result to a live tree, which needs a node — without this the tree rejects it and the item is
+ * silently missing from the drawing.
+ *
+ * Done here rather than in `ChartNode` because this is the one place that already knows how to
+ * build a descriptor: reaching for `buildTree` from the chart would import this module back.
+ */
+function withBuiltChartItems(props: ChartProps<ChartType>): ChartProps<ChartType> {
+  const options = props.options as Record<string, unknown> | undefined
+  if (!options) return props
+
+  const wrapped: Record<string, unknown> = {}
+  for (const name of CHART_ITEM_OPTIONS) {
+    const render = options[name]
+    if (typeof render !== 'function') continue
+    wrapped[name] = (args: unknown) => {
+      const item = (render as (a: unknown) => ChartItem)(args)
+      return item && '__type' in item ? buildTree(item) : item
+    }
+  }
+
+  if (!Object.keys(wrapped).length) return props
+  return { ...props, options: { ...options, ...wrapped } } as ChartProps<ChartType>
+}
+
 /**
  * Converts a CanvasElement tree into actual BoxNode instances.
  * Used both for non-worker rendering (inline tree building) and inside
@@ -355,7 +388,7 @@ export function buildTree(descriptor: CanvasElement): BoxNode {
     case 'Text':
       return new TextNode(descriptor.text, descriptor.props)
     case 'Chart':
-      return new ChartNode(descriptor.props as ChartProps<ChartType>)
+      return new ChartNode(withBuiltChartItems(descriptor.props as ChartProps<ChartType>))
   }
 }
 

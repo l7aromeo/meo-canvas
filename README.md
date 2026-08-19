@@ -33,6 +33,8 @@ and rendering to a canvas.
 - **Animation Utilities:** Easings, springs solved in closed form, and `track`/`sequence`/`parallel` for composing
   them. Colours interpolate in every format the engine parses.
 - **Engine Control:** Choose the GPU or CPU backend, the pixel format and the colour space.
+- **Dithering:** `dither` breaks up the banding a long, subtle gradient shows on an eight-bit surface. Set it on
+  `Root` for the page, or on any node for its own subtree.
 - **TypeScript Support:** Fully typed for a better development experience.
 - **[Architecture →](./ARCHITECTURE.md)**
 
@@ -72,7 +74,10 @@ refuses an ESM graph containing a top-level await on every version of Node. A Co
 still reach the library through a dynamic import:
 
 ```js
-const { Root, Box, Text } = await import('meo-canvas')
+// Top-level `await` is not available in CommonJS, so the import is consumed in a callback.
+import('meo-canvas').then(({ Root, Box, Text }) => {
+  // ...
+})
 ```
 
 ## Usage
@@ -164,14 +169,14 @@ async function generateComplexImage() {
           Row({
             width: '100%',
             alignItems: Style.Align.Center,
-            marginBottom: 20,
+            margin: { Bottom: 20 },
             children: [
               Image({
                 src: 'https://via.placeholder.com/80x80/FF0000/FFFFFF?text=Logo',
                 width: 80,
                 height: 80,
                 borderRadius: 40, // circle crop
-                marginRight: 20,
+                margin: { Right: 20 },
                 objectFit: 'cover',
               }),
               Text('Welcome to MeoNode Canvas!', {
@@ -197,7 +202,7 @@ async function generateComplexImage() {
                 fontWeight: 'bold',
                 fontFamily: 'Open Sans',
                 color: '#555',
-                marginBottom: 15,
+                margin: { Bottom: 15 },
               }),
               Text(
                 `This example demonstrates a more complex layout using various components.
@@ -214,7 +219,7 @@ async function generateComplexImage() {
                 src: 'https://via.placeholder.com/600x200/007bff/ffffff?text=Feature+Image',
                 width: '100%',
                 height: 200,
-                marginTop: 20,
+                margin: { Top: 20 },
                 borderRadius: 8,
                 objectFit: 'contain',
                 objectPosition: { Top: '50%', Left: '50%' }, // center within box
@@ -225,7 +230,7 @@ async function generateComplexImage() {
           // Footer: centered copyright line
           Row({
             width: '100%',
-            marginTop: 20,
+            margin: { Top: 20 },
             justifyContent: Style.Justify.Center,
             children: [
               Text('© 2025 MeoNode Canvas. All rights reserved.', {
@@ -301,7 +306,7 @@ generateBarChart().catch(console.error)
 #### Doughnut Chart with Custom Legend
 
 ```typescript
-import { Root, Chart, Row, Box, Text } from 'meo-canvas'
+import { Root, Chart, Row, Box, Text, Style } from 'meo-canvas'
 
 async function generateDoughnutChart() {
   const canvas = await Root({
@@ -324,10 +329,10 @@ async function generateDoughnutChart() {
           // custom legend item: colored dot + "Label: value" text
           renderLegendItem: ({ item, color }) =>
             Row({
-              alignItems: 'center',
+              alignItems: Style.Align.Center,
               children: [
                 Box({ width: 12, height: 12, backgroundColor: color, borderRadius: 6 }),
-                Text(`${item.label}: ${item.value}`, { fontSize: 16, marginLeft: 8 }),
+                Text(`${item.label}: ${item.value}`, { fontSize: 16, margin: { Left: 8 } }),
               ],
             }),
         },
@@ -487,7 +492,7 @@ that inherits all `BoxProps`.
 | `workers`          | `number`                                                           | `cpus().length - 1` | Number of worker threads to use (only applies on first render with`workerMode: true`).                |
 
 Since `Root` extends `BoxProps`, it also accepts `backgroundColor`, `padding`, `gradient`, `boxShadow`, and all other
-layout props. See [Box, Row, and Column](#box-row-and-column) for the full list.
+layout props, `dither` among them. See [Box, Row, and Column](#box-row-and-column) for the full list.
 
 #### Choosing the engine
 
@@ -523,6 +528,43 @@ canvas.engine.renderer // 'CPU'
 layers are actually _faster_ in float, opaque fills are not — `RGBAF32` runs them several times slower. Reach for it
 when you need the depth or the gamut, not by default. Masks and shadows composite through offscreen canvases that
 inherit these settings, so a float render stays float all the way through.
+
+#### Smoothing gradients: `dither`
+
+A long, subtle gradient bands on an eight-bit surface, because there are not enough values between its endpoints to
+fill the distance. A ramp from `#0b1220` to `#1e2b4a` across 400px has 42 blue levels to spend, which is a visible step
+every 19 pixels. More colour stops cannot help — the values do not exist.
+
+`dither` spreads each step over neighbouring pixels instead, so the eye averages them back into the tone that was
+meant:
+
+```javascript
+// The whole page.
+await Root({ width: 800, dither: true, children: [...] })
+
+// Or one subtree, which overrides whatever the page said.
+Box({ dither: false, children: [...] })
+```
+
+Unlike `gpu`, `colorType` and `colorSpace`, this is not a property of the canvas: it is inherited down the tree, so a
+node takes its nearest ancestor's answer and a node that sets its own leaves its siblings untouched. Masks carry it
+onto the offscreen they composite through.
+
+**It costs only what it fixes.** A flat fill, text and a blurred shadow encode to identical bytes either way — a
+dither only perturbs a pixel whose colour falls between two the surface can hold. Measured on a 800×400 card with a
+gradient background, text and shapes:
+
+| Format | Undithered | Dithered |
+| ------ | ---------- | -------- |
+| PNG    | 10,672 B   | 14,387 B |
+| WebP   | 7,728 B    | 7,808 B  |
+
+Lossy encoders absorb the noise almost entirely; PNG pays about a third more across the gradient itself.
+
+A float `colorType` is the other answer, and the two do not combine — `RGBAF16` has the precision to draw the ramp
+outright and exports it through a sixteen-bit PNG, with no noise at all. It also forces the CPU backend and costs
+several times the memory, and most delivery formats are eight-bit regardless, so `dither` is the one that applies to
+ordinary output.
 
 #### Multi-page and Animated Output
 
@@ -976,17 +1018,18 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 #### Styling Props
 
-| Prop              | Type                                 | Description                                                 |
-| ----------------- | ------------------------------------ | ----------------------------------------------------------- |
-| `backgroundColor` | `string`                             | Sets the background color of the node.                      |
-| `borderColor`     | `string`                             | Sets the color of the node's border.                        |
-| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`). |
-| `borderRadius`    | `object \| number`                   | Sets the radius of the node's corners.                      |
-| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).        |
-| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.         |
-| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.               |
-| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                     |
-| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).      |
+| Prop              | Type                                 | Description                                                                                                    |
+| ----------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                         |
+| `borderColor`     | `string`                             | Sets the color of the node's border.                                                                           |
+| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                    |
+| `borderRadius`    | `object \| number`                   | Sets the radius of the node's corners.                                                                         |
+| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                           |
+| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                            |
+| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants. |
+| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                  |
+| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                        |
+| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                         |
 
 ##### Masking
 
