@@ -483,6 +483,29 @@ export interface BoxProps extends BaseProps {
   gradient?: Gradient
 
   /**
+   * Dither this node's drawing, trading a little noise for the banding an eight-bit surface shows
+   * across a long, subtle gradient.
+   *
+   * Costs nothing where nothing bands: a flat fill, text and a blurred shadow encode to identical
+   * bytes either way, because a dither only perturbs a pixel whose colour falls between two the
+   * surface can hold. On a gradient reckon on about a third again the PNG bytes, and near nothing
+   * for WebP or JPEG, whose quantizers absorb the noise.
+   *
+   * Inherited by descendants, so setting it on `Root` covers the page and a node overrides it for
+   * its own subtree without touching its siblings. Pointless under a float `colorType`, which has
+   * the precision to draw the ramp outright.
+   * @default false
+   * @example
+   * ```ts
+   * Root({ width: 800, dither: true, children: [
+   *   Box({ height: 400, gradient: { type: 'linear', direction: 'to-bottom', colors: ['#0b1220', '#1e2b4a'] } }),
+   *   Box({ dither: false, children: [Text({ children: 'left alone' })] }),
+   * ] })
+   * ```
+   */
+  dither?: boolean
+
+  /**
    * Limits what of this node is drawn — see {@link Mask}.
    *
    * Covers everything the node renders, its background, border, content and children alike. A shape
@@ -1353,6 +1376,15 @@ export interface GridOptions {
   style?: 'solid' | 'dashed' | 'dotted'
 }
 
+/**
+ * What a chart's item callbacks may hand back.
+ *
+ * `Box`, `Row` and the rest return descriptors, and `BoxNode` is exported as a type only — so a
+ * descriptor is the only one of these a consumer outside the package can actually build. The chart
+ * appends the result to a live tree, and builds a descriptor into a node on the way.
+ */
+export type ChartItem = BoxNode | CanvasElement | null | undefined
+
 // Base options common to all charts
 interface BaseChartOptions<T extends ChartType> {
   showLabels?: boolean
@@ -1360,8 +1392,8 @@ interface BaseChartOptions<T extends ChartType> {
   labelFontSize?: number
   labelColor?: string
   legendPosition?: 'top' | 'bottom' | 'left' | 'right'
-  renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => BoxNode | null | undefined
-  renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => BoxNode | null | undefined
+  renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => ChartItem
+  renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => ChartItem
 }
 
 // Options specific to Cartesian charts
@@ -1371,7 +1403,7 @@ interface CartesianChartSpecificOptions {
   showValues?: boolean
   valueFontSize?: number
   valueColor?: string
-  renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => BoxNode | null | undefined
+  renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => ChartItem
   showYAxis?: boolean
   yAxisFontSize?: number
   yAxisColor?: string

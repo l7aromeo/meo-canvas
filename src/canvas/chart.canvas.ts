@@ -1,9 +1,18 @@
 import { BoxNode, RowNode } from '@/canvas/layout.canvas.js'
-import type { BaseProps, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint, CanvasElement } from '@/canvas/canvas.type.js'
+import type { BaseProps, CartesianChartData, ChartDataset, ChartItem, ChartProps, ChartType, PieChartDataPoint, CanvasElement } from '@/canvas/canvas.type.js'
 import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 import { Style } from '@/constant/common.const.js'
 import { TextNode } from '@/canvas/text.canvas.js'
 import { measureText } from '@/canvas/text.metrics.js'
+
+/**
+ * Narrows an item callback's return to what has actually arrived by the time the chart runs it.
+ *
+ * {@link ChartItem} also allows a descriptor, because that is the only form a consumer outside the
+ * package can build. `buildTree` wraps these callbacks and converts a descriptor before the node is
+ * constructed, so the drawing below only ever sees a node.
+ */
+const built = (item: ChartItem): BoxNode | null | undefined => item as BoxNode | null | undefined
 
 /**
  * Releases a detached measurement node's Yoga tree.
@@ -326,7 +335,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
           const valueY = barY - 5 // 5px padding above bar
 
           if (chartOptions.renderValueItem) {
-            const valueNode = await chartOptions.renderValueItem({ item: value, index, datasetIndex })
+            const valueNode = built(await chartOptions.renderValueItem({ item: value, index, datasetIndex }))
             if (valueNode) {
               valueNode.processInitialChildren()
               valueNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
@@ -351,7 +360,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const displayLabel = chartOptions.xAxisLabelFormatter ? await chartOptions.xAxisLabelFormatter(label, index) : label
 
         if (chartOptions.renderLabelItem) {
-          const labelNode = await chartOptions.renderLabelItem({ item: label, index })
+          const labelNode = built(await chartOptions.renderLabelItem({ item: label, index }))
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
@@ -486,7 +495,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const displayLabel = chartOptions.xAxisLabelFormatter ? await chartOptions.xAxisLabelFormatter(label, index) : label
 
         if (chartOptions.renderLabelItem) {
-          const labelNode = await chartOptions.renderLabelItem({ item: label, index })
+          const labelNode = built(await chartOptions.renderLabelItem({ item: label, index }))
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
@@ -555,7 +564,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const labelY = centerY + Math.sin(labelAngle) * labelRadius
 
         if (chartOptions.renderLabelItem) {
-          const labelNode = await chartOptions.renderLabelItem({ item: point, index })
+          const labelNode = built(await chartOptions.renderLabelItem({ item: point, index }))
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
@@ -626,7 +635,7 @@ export class ChartNode<T extends ChartType> extends BoxNode {
         const labelY = centerY + Math.sin(labelAngle) * labelRadius
 
         if (chartOptions.renderLabelItem) {
-          const labelNode = await chartOptions.renderLabelItem({ item: point, index })
+          const labelNode = built(await chartOptions.renderLabelItem({ item: point, index }))
           if (labelNode) {
             labelNode.processInitialChildren()
             labelNode.node.calculateLayout(undefined, undefined, Style.Direction.LTR)
@@ -656,27 +665,26 @@ export class ChartNode<T extends ChartType> extends BoxNode {
   private async renderLegend(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
     const chartOptions = this.chartOptions
 
-    const renderLegendItem = chartOptions?.renderLegendItem as
-      ((props: { item: unknown; index: number; color: string }) => BoxNode | null | undefined) | undefined
+    const renderLegendItem = chartOptions?.renderLegendItem as ((props: { item: unknown; index: number; color: string }) => ChartItem) | undefined
 
     if (renderLegendItem) {
       let legendNodes: (BoxNode | null | undefined)[]
       if (this.chartType === 'bar' || this.chartType === 'line') {
         const items = (this.chartData as CartesianChartData).datasets
-        const render = renderLegendItem as (props: { item: ChartDataset; index: number; color: string }) => BoxNode | null | undefined
+        const render = renderLegendItem as (props: { item: ChartDataset; index: number; color: string }) => ChartItem
         legendNodes = await Promise.all(
           items.map(async (item, index) => {
             const color = item.color || this.generateColor(index)
-            return render({ item, index, color })
+            return built(render({ item, index, color }))
           }),
         )
       } else {
         const items = this.chartData as PieChartDataPoint[]
-        const render = renderLegendItem as (props: { item: PieChartDataPoint; index: number; color: string }) => BoxNode | null | undefined
+        const render = renderLegendItem as (props: { item: PieChartDataPoint; index: number; color: string }) => ChartItem
         legendNodes = await Promise.all(
           items.map(async (item, index) => {
             const color = item.color || this.generateColor(index)
-            return render({ item, index, color })
+            return built(render({ item, index, color }))
           }),
         )
       }

@@ -290,13 +290,6 @@ export class BoxNode {
   }
 
   /**
-   * Renders the node and its children to the canvas.
-   * @param {CanvasRenderingContext2D} ctx Canvas rendering context (from skia-canvas).
-   * @param {number} offsetX X offset for rendering.
-   * @param {number} offsetY Y offset for rendering.
-   */
-
-  /**
    * Draws this node, through its `mask` when it has one.
    *
    * Every component's drawing arrives here — `Text`, `Image`, `Chart` and `Grid` override
@@ -307,8 +300,29 @@ export class BoxNode {
    * gradient cannot: its whole purpose is the answers in between, so the node is composited through
    * one instead. Both are applied to the node's layout box, before its own `transform`, which is
    * what keeps the two consistent with each other.
+   *
+   * `dither` is held on the context around all of it, so the node's mask, background, content and
+   * children are drawn with one answer and whatever draws next is left with its own.
    */
   async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
+    const { dither } = this.props
+    if (dither === undefined) return this.renderMasked(ctx, offsetX, offsetY)
+
+    // Put back by hand rather than through `save`/`restore`, which would clone the whole graphics
+    // state to carry one boolean. Putting it back at all is what keeps the node that draws next
+    // reading its own ancestor's answer rather than this one's, and a node that says nothing
+    // inherits by leaving the context alone.
+    const inherited = ctx.dither
+    ctx.dither = dither
+    try {
+      return await this.renderMasked(ctx, offsetX, offsetY)
+    } finally {
+      ctx.dither = inherited
+    }
+  }
+
+  /** {@link render} without the dither state around it: the mask, then the node itself. */
+  private async renderMasked(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
     const mask = this.props.mask
     if (!mask) return this.renderNode(ctx, offsetX, offsetY)
 

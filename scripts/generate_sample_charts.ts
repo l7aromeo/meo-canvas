@@ -21,7 +21,7 @@ async function run() {
     fontSize: 16,
     color: '#333',
     fontWeight: 'bold',
-    marginBottom: 10,
+    margin: { Bottom: 10 },
     textAlign: 'center',
   } as const
 

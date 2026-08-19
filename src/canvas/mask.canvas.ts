@@ -94,6 +94,9 @@ export async function drawWithGradientMask(
   const offCtx = offscreen.getContext('2d')
   offCtx.imageSmoothingEnabled = true
   offCtx.imageSmoothingQuality = 'high'
+  // Carried over for the same reason the engine options are: the node draws on this canvas instead
+  // of the page, so a masked gradient would band where an unmasked one beside it does not.
+  offCtx.dither = ctx.dither
 
   // The node draws at its page position; translating by its box maps that onto the offscreen.
   offCtx.scale(scale.x, scale.y)
