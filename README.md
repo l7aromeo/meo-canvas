@@ -1051,18 +1051,18 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 #### Styling Props
 
-| Prop              | Type                                 | Description                                                                                                    |
-| ----------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                         |
-| `borderColor`     | `string`                             | Sets the color of the node's border.                                                                           |
-| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                    |
-| `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                |
-| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                           |
-| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                            |
-| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants. |
-| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                  |
-| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                        |
-| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                         |
+| Prop              | Type                                 | Description                                                                                                        |
+| ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                             |
+| `borderColor`     | `string \| EdgeColors`               | Colour of the node's border — one string for all four edges, or a colour per edge. Unset edges fall back to black. |
+| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                        |
+| `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                    |
+| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                               |
+| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                                |
+| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants.     |
+| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                      |
+| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                            |
+| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                             |
 
 ##### Shadows
 

@@ -306,10 +306,6 @@ export type Mask =
     }
 
 /**
- * Defines the layout and style properties for a BoxNode, analogous to CSS properties.
- */
-
-/**
  * A radius for each corner, in pixels. A corner left out is not rounded.
  *
  * Radii larger than the box allows are scaled down together, so opposite corners meet rather than
@@ -326,6 +322,27 @@ export interface CornerRadii {
   BottomRight?: number
 }
 
+/**
+ * A colour for each edge. An edge left out falls back to `borderColor`'s single-string form, or to
+ * black when there is none.
+ *
+ * Where two edges of different colours meet at a corner, the corner is split between them — the
+ * same join CSS makes, so a card with one accent edge does not smear that colour round the bend.
+ */
+export interface EdgeColors {
+  /** Colour of the top edge. */
+  Top?: string
+  /** Colour of the right edge. */
+  Right?: string
+  /** Colour of the bottom edge. */
+  Bottom?: string
+  /** Colour of the left edge. */
+  Left?: string
+}
+
+/**
+ * Defines the layout and style properties for a BoxNode, analogous to CSS properties.
+ */
 export interface BoxProps extends BaseProps {
   /**
    * Sets the width of the node.
@@ -494,11 +511,19 @@ export interface BoxProps extends BaseProps {
   border?: Partial<Record<keyof typeof Style.Edge, number>> | number
 
   /**
-   * Sets the color of the node's border.
-   * Accepts standard CSS color strings (e.g., 'red', '#FF0000', 'rgba(255,0,0,0.5)').
+   * Colour of the node's border — one colour for every edge, or a colour per edge.
+   *
+   * Accepts standard CSS colour strings (`'red'`, `'#FF0000'`, `'rgba(255,0,0,0.5)'`). Given an
+   * object, an edge left out falls back to black. Where two edges of different colours meet at a
+   * rounded corner the arc is split between them, as CSS joins them.
    * @default 'black' (set in BoxNode constructor)
+   * @example
+   * ```ts
+   * Box({ border: 2, borderColor: '#cbd5e1' })
+   * Box({ border: { Left: 4 }, borderColor: { Left: '#2563eb' } })
+   * ```
    */
-  borderColor?: string | `#${string}`
+  borderColor?: string | `#${string}` | EdgeColors
 
   /**
    * Sets the style of the node's border.
