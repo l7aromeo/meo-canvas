@@ -110,13 +110,7 @@ describe('paintBackgroundImage', () => {
   it('reads a percentage position as a share of the slack, as CSS does', () => {
     const { ctx, drawn } = record()
 
-    paintBackgroundImage(
-      ctx,
-      IMAGE,
-      { src: 'x', size: 30, repeat: Style.BackgroundRepeat.NoRepeat, position: { x: '100%', y: '100%' } },
-      BOX,
-      NO_RADII,
-    )
+    paintBackgroundImage(ctx, IMAGE, { src: 'x', size: 30, repeat: Style.BackgroundRepeat.NoRepeat, position: { x: '100%', y: '100%' } }, BOX, NO_RADII)
 
     // Not 100px along, which would put the tile outside the box — the far edges line up: the box
     // is 100 wide and 50 tall, the tile 30, so 70 and 20.

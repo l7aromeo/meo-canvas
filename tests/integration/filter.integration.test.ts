@@ -122,6 +122,26 @@ describe('filter', () => {
     expect(outside[0]).toBeLessThan(250)
   })
 
+  it('casts a drop shadow outside the node, from the shape actually drawn', async () => {
+    // A `drop-shadow` reaches past the box like a blur does, so the offscreen has to be grown for
+    // it — cut to the node's own size, the shadow would be clipped away entirely.
+    const shadowed = await pixels(
+      [
+        Box({
+          width: 100,
+          height: 40,
+          padding: 10,
+          children: [Box({ width: 20, height: 20, backgroundColor: '#000000', filter: 'drop-shadow(30px 0 0 #ff0000)' })],
+        }),
+      ],
+      100,
+      40,
+      [45, 20],
+    )
+
+    expect(shadowed).toEqual([255, 0, 0])
+  })
+
   it('runs the saturate shorthand before the chain', async () => {
     const both = await pixels([Box({ width: 40, height: 40, backgroundColor: SOURCE, saturate: 2, filter: 'grayscale(1)' } as never)])
     const chainOnly = await pixels([Box({ width: 40, height: 40, backgroundColor: SOURCE, filter: 'saturate(2) grayscale(1)' })])
