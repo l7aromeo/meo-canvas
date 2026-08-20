@@ -1,13 +1,14 @@
 import type { BaseProps, ImageProps, CanvasElement } from '@/canvas/canvas.type.js'
-import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'meo-skia-canvas'
+import { type CanvasRenderingContext2D, Image as CanvasImage } from 'meo-skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.js'
 import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
+import { imageCacheKey, resolveCanvasImage, type ImageSource, type RenderImageCache } from '@/canvas/image.loader.js'
+
+export type { RenderImageCache, ImageSource }
+export { imageCacheKey, resolveCanvasImage }
 import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.js'
-import { promises as fs } from 'fs'
 import { Style } from '@/constant/common.const.js'
-import { hashBuffer, readDiskCache, writeDiskCache } from '@/util/disk.cache.js'
 import { frameAtTime } from '@/canvas/image.frames.js'
-import { hashHttpOptions } from '@/util/http.options.js'
 
 /**
  * Calculates pixel offset for image positioning based on percentage or pixel values.
@@ -31,7 +32,6 @@ function calculateOffsetFromValue(positionValue: number | `${number}%` | undefin
  * Scoped to a single RootNode.render() call; discarded after rendering.
  * Deduplicates concurrent fetches when multiple ImageNodes share the same src.
  */
-export type RenderImageCache = Map<string, Promise<CanvasImage>>
 
 /**
  * Renders images with configurable sizing, positioning, and effects.
@@ -121,89 +121,6 @@ export class ImageNode extends BoxNode {
   }
 
   /**
-   * Fetches and processes the image source into a CanvasImage.
-   * Does not touch node state — pure fetch logic.
-   *
-   * If `diskCacheKey` and `diskCacheKeys` are provided, the resolved image buffer
-   * is written to disk and the key is recorded so the caller can clean it up later.
-   */
-  private async _fetchCanvasImage(diskCacheKey?: string, diskCacheKeys?: Set<string>): Promise<CanvasImage> {
-    const { fileTypeFromBuffer, fileTypeFromFile } = await import('file-type')
-    let finalSource: string | Buffer
-    let isSvg: boolean
-    let contentBuffer: Buffer | null = null
-    let detectedMime: string | undefined
-
-    if (typeof this.props.src === 'string') {
-      if (this.props.src.startsWith('http')) {
-        const response = await fetch(this.props.src, this.props.httpOptions)
-        if (!response.ok) {
-          throw new Error(`HTTP error ${response.status} fetching image: ${this.props.src}`)
-        }
-        const imageArrayBuffer = await response.arrayBuffer()
-        contentBuffer = Buffer.from(imageArrayBuffer)
-        finalSource = contentBuffer
-
-        const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
-        detectedMime = fileTypeResult?.mime
-        isSvg = detectedMime === 'image/svg+xml'
-
-        if ((!detectedMime || detectedMime === 'application/xml') && contentBuffer.toString('utf-8').includes('<svg')) {
-          isSvg = true
-        }
-      } else {
-        finalSource = this.props.src
-        const filePath = this.props.src
-
-        try {
-          const fileTypeResult = await fileTypeFromFile(filePath)
-          detectedMime = fileTypeResult?.mime
-          isSvg = detectedMime === 'image/svg+xml'
-
-          if ((!detectedMime || detectedMime === 'application/xml') && filePath.toLowerCase().endsWith('.svg')) {
-            isSvg = true
-          }
-        } catch {
-          isSvg = filePath.toLowerCase().endsWith('.svg')
-        }
-
-        if (isSvg && this.props.color) {
-          try {
-            contentBuffer = await fs.readFile(filePath)
-          } catch {
-            isSvg = false
-            contentBuffer = null
-          }
-        }
-      }
-    } else {
-      contentBuffer = this.props.src
-      finalSource = contentBuffer
-
-      const fileTypeResult = await fileTypeFromBuffer(contentBuffer)
-      detectedMime = fileTypeResult?.mime
-      isSvg = detectedMime === 'image/svg+xml'
-    }
-
-    if (isSvg && this.props.color && contentBuffer) {
-      const svgString = contentBuffer.toString('utf-8')
-      const modifiedSvgString = svgString.replace(/fill="[^"]*"/g, `fill="${this.props.color}"`)
-      finalSource = modifiedSvgString !== svgString ? Buffer.from(modifiedSvgString) : contentBuffer
-    }
-
-    // Write to disk and track the key so the render owner can clean it up
-    if (diskCacheKey && diskCacheKeys) {
-      const cacheBuffer = Buffer.isBuffer(finalSource) ? finalSource : contentBuffer
-      if (cacheBuffer) {
-        await writeDiskCache(diskCacheKey, cacheBuffer)
-        diskCacheKeys.add(diskCacheKey)
-      }
-    }
-
-    return loadImage(finalSource as Buffer)
-  }
-
-  /**
    * Loads and processes an image.
    *
    * Resolution order:
@@ -226,46 +143,7 @@ export class ImageNode extends BoxNode {
     return new Promise(resolve => {
       const load = async () => {
         try {
-          const srcHash = typeof this.props.src === 'string' ? hashBuffer(Buffer.from(this.props.src)) : hashBuffer(this.props.src)
-          let cacheKey = this.props.color ? `${srcHash}|${this.props.color}` : srcHash
-
-          // httpOptions only affect remote fetches, so fold them into the key
-          // for http(s) sources only — same URL + different headers/body must
-          // not share a cached image.
-          const isHttpSrc = typeof this.props.src === 'string' && this.props.src.startsWith('http')
-          if (isHttpSrc && this.props.httpOptions) {
-            const optionsHash = hashHttpOptions(this.props.httpOptions)
-            if (optionsHash) cacheKey += `|${optionsHash}`
-          }
-
-          // 1. Disk cache read — only when disk caching is enabled for this render
-          if (diskCacheKeys) {
-            const diskBuffer = await readDiskCache(cacheKey)
-            if (diskBuffer) {
-              const img = await loadImage(diskBuffer as Buffer)
-              this.loadedImage = img
-              this.naturalWidth = img.width
-              this.naturalHeight = img.height
-              const calculatedAspectRatio = img.width > 0 && img.height > 0 ? img.width / img.height : undefined
-              this.node.setAspectRatio(this.sizingAspectRatio(calculatedAspectRatio))
-              this.props.onLoad?.()
-              resolve()
-              return
-            }
-          }
-
-          // 2. Per-render memory dedup cache or fresh fetch
-          let imagePromise: Promise<CanvasImage>
-          if (cache) {
-            if (!cache.has(cacheKey)) {
-              cache.set(cacheKey, this._fetchCanvasImage(diskCacheKeys ? cacheKey : undefined, diskCacheKeys))
-            }
-            imagePromise = cache.get(cacheKey)!
-          } else {
-            imagePromise = this._fetchCanvasImage(diskCacheKeys ? cacheKey : undefined, diskCacheKeys)
-          }
-
-          const img = await imagePromise
+          const img = await resolveCanvasImage({ src: this.props.src, color: this.props.color, httpOptions: this.props.httpOptions }, cache, diskCacheKeys)
 
           this.loadedImage = img
           this.naturalWidth = img.width

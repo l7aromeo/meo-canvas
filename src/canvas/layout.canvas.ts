@@ -1,6 +1,9 @@
 import { type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
 import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths } from '@/canvas/canvas.helper.js'
 import { createGradient } from '@/canvas/gradient.canvas.js'
+import { paintBackgroundImage } from '@/canvas/background.canvas.js'
+import { resolveCanvasImage, type RenderImageCache } from '@/canvas/image.loader.js'
+import type { Image as CanvasImage } from 'meo-skia-canvas'
 import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { drawWithGradientMask, isGradientMask, maskFillRule, maskPath } from '@/canvas/mask.canvas.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
@@ -370,6 +373,32 @@ export class BoxNode {
       ctx.drawImage(snapshot, 0, 0)
     } finally {
       ctx.restore()
+    }
+  }
+
+  /** The decoded background picture, once the render's load pass has fetched it. */
+  protected backgroundBitmap: CanvasImage | null = null
+
+  /**
+   * Fetches this node's background picture, if it has one.
+   *
+   * Runs in the same pass as the images, before layout, and through the same cache — so a picture
+   * used as one node's background and another's image is fetched once. A failure leaves the node
+   * without a picture rather than failing the render, which is what a missing background should do.
+   */
+  public async loadBackgroundImage(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
+    const background = this.props.backgroundImage
+    if (!background?.src) return
+
+    try {
+      this.backgroundBitmap = await resolveCanvasImage(
+        { src: background.src, color: background.color, httpOptions: background.httpOptions },
+        cache,
+        diskCacheKeys,
+      )
+    } catch (error) {
+      console.warn(`[BoxNode ${this.key}] Background image failed to load:`, error)
+      this.backgroundBitmap = null
     }
   }
 
@@ -805,6 +834,11 @@ export class BoxNode {
         drawRoundedRectPath(ctx, x, y, width, height, radii)
         ctx.fill()
       }
+    }
+
+    // Render the background picture, over the fill and under everything else — CSS order.
+    if (this.backgroundBitmap) {
+      paintBackgroundImage(ctx, this.backgroundBitmap, this.props.backgroundImage!, { x, y, width, height }, radii)
     }
 
     // Render inset shadows

@@ -268,12 +268,14 @@ export type Gradient =
       type: 'conic' | Style.GradientType.Conic
       /** Stops in order, spread evenly around the sweep. The first and last meet at the seam. */
       colors: readonly string[]
+
       /**
        * Where the sweep starts, in degrees clockwise from twelve o'clock. CSS `from <angle>`.
        * @unit Degrees.
        * @default 0 (twelve o'clock)
        */
       from?: number
+
       /**
        * The point the sweep turns about, as a fraction of the box or a percentage of it. CSS
        * `at <position>`.
@@ -744,6 +746,66 @@ export interface BoxProps extends BaseProps {
    * ```
    */
   mixBlendMode?: Style.BlendMode | 'normal' | 'multiply' | 'screen' | 'overlay' | (string & {})
+
+  /**
+   * A picture painted across the node's box, behind its content and over its background colour.
+   *
+   * CSS `background-image` and the properties that place it. The source is fetched and decoded
+   * before layout, the same way an {@link ImageProps.src} is, and shares the same cache — a picture
+   * used as one node's background and another's image is loaded once.
+   *
+   * Unlike an `Image`, this never affects layout: the box is whatever the box was.
+   * @default undefined (no picture)
+   * @example
+   * ```ts
+   * Box({ backgroundImage: { src: 'texture.png' } })
+   * Box({ backgroundImage: { src: 'hero.jpg', size: Style.BackgroundSize.Cover, repeat: Style.BackgroundRepeat.NoRepeat } })
+   * Box({ backgroundImage: { src: 'dot.svg', size: 12, position: { x: '50%', y: 0 } } })
+   * ```
+   */
+  backgroundImage?: {
+    /** A URL, a file path, or the bytes themselves. */
+    src: string | Buffer
+
+    /**
+     * How the picture tiles to fill the box.
+     * @default Style.BackgroundRepeat.Repeat (tiled both ways, as CSS does)
+     */
+    repeat?: Style.BackgroundRepeat | 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | 'space' | 'round'
+
+    /**
+     * How big each tile is drawn. A number is a width in pixels with the height following the
+     * picture's own proportions; a pair sizes both edges; `Cover` and `Contain` scale to the box.
+     * @default the picture's natural size
+     */
+    size?:
+      | Style.BackgroundSize
+      | 'cover'
+      | 'contain'
+      | number
+      | {
+          /** Width of one tile, or a share of the box's width. */
+          width?: number | `${number}%`
+          /** Height of one tile, or a share of the box's height. */
+          height?: number | `${number}%`
+        }
+
+    /**
+     * Where the first tile sits, from the box's top-left. Percentages place the picture the way CSS
+     * does — `'100%'` puts its far edge against the box's far edge rather than pushing it outside.
+     * @default the top-left corner
+     */
+    position?: {
+      /** Distance from the left edge, or the share of the slack CSS lines the picture up by. */
+      x?: number | `${number}%`
+      /** Distance from the top edge, read the same way. */
+      y?: number | `${number}%`
+    }
+    /** Recolours an SVG's fills before it is rasterised, as {@link ImageProps.color} does. */
+    color?: string
+    /** Options for a remote fetch. Ignored for a local path or a buffer. */
+    httpOptions?: ImageProps['httpOptions']
+  }
 
   /**
    * Sets the opacity of the node and its children when drawing.

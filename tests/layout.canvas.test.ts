@@ -1592,3 +1592,46 @@ describe('a zero position is a position', () => {
     expect(overlay('10%')).toEqual({ left: 20, top: 10, width: 160, height: 80 })
   })
 })
+
+describe('BoxNode background image loading', () => {
+  it('resolves the source through the shared cache', async () => {
+    // The same picture behind one node and inside another's `Image` is one fetch, so the
+    // background has to go through the render's cache rather than fetching for itself.
+    const node = new BoxNode({ backgroundImage: { src: 'behind.png' } })
+    const cache = new Map()
+    const decoded = { width: 10, height: 10 }
+    cache.set('preloaded', Promise.resolve(decoded))
+
+    const resolve = vi.spyOn(await import('@/canvas/image.loader.js'), 'resolveCanvasImage')
+    resolve.mockResolvedValue(decoded as never)
+
+    await node.loadBackgroundImage(cache as never, undefined)
+
+    expect(resolve).toHaveBeenCalledWith({ src: 'behind.png', color: undefined, httpOptions: undefined }, cache, undefined)
+    resolve.mockRestore()
+  })
+
+  it('does nothing for a node without one', async () => {
+    const node = new BoxNode({})
+    const resolve = vi.spyOn(await import('@/canvas/image.loader.js'), 'resolveCanvasImage')
+
+    await node.loadBackgroundImage(new Map() as never, undefined)
+
+    expect(resolve).not.toHaveBeenCalled()
+    resolve.mockRestore()
+  })
+
+  it('leaves the node without a picture when the load fails', async () => {
+    // A missing background should cost the node its background, not the whole render.
+    const node = new BoxNode({ backgroundImage: { src: 'gone.png' } })
+    const resolve = vi.spyOn(await import('@/canvas/image.loader.js'), 'resolveCanvasImage')
+    resolve.mockRejectedValue(new Error('404'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(node.loadBackgroundImage(new Map() as never, undefined)).resolves.toBeUndefined()
+
+    expect(warn).toHaveBeenCalled()
+    resolve.mockRestore()
+    warn.mockRestore()
+  })
+})

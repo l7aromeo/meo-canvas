@@ -1054,6 +1054,7 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 | Prop              | Type                                 | Description                                                                                                                        |
 | ----------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `backgroundColor` | `string`                             | Sets the background color of the node.                                                                                             |
+| `backgroundImage` | `{ src, repeat?, size?, position? }` | A picture behind the node's content, tiled as CSS `background-repeat` does — `space` and `round` included.                         |
 | `borderColor`     | `string \| EdgeColors`               | Colour of the node's border — one string for all four edges, or a colour per edge. Unset edges fall back to black.                 |
 | `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                                        |
 | `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                                    |
