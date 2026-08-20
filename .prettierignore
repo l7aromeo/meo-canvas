@@ -1,3 +1,4 @@
 # Build and coverage output — generated, and never read as source.
 dist
 coverage
+docs-site

@@ -10,7 +10,7 @@ const _HEX_ALPHA_RE = /^#([0-9a-fA-F]{8})$/
 
 /**
  * @class BoxNode
- * @classdesc Base node class for rendering rectangular boxes with layout, styling, and children.
+ * Base node class for rendering rectangular boxes with layout, styling, and children.
  * It uses the Yoga layout engine for positioning and sizing.
  */
 export class BoxNode {
@@ -893,7 +893,7 @@ export const Column = ({ children, ...rest }: BoxProps): CanvasElement => ({
 
 /**
  * @class RowNode
- * @classdesc Node class for horizontal row layout.
+ * Node class for horizontal row layout.
  */
 export class RowNode extends BoxNode {
   constructor(props: BoxProps & BaseProps = {}) {

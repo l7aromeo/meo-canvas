@@ -1,0 +1,65 @@
+name: Docs
+
+# Triggered by a published release rather than by a push to main, so the site always documents the
+# version that is actually on npm. A push-triggered build would publish whatever is on main,
+# including work that has not been released yet — and `includeVersion` would then print a version
+# number that does not exist.
+#
+# Nothing is committed to the repository. Pages is served from the artifact this workflow uploads,
+# which is why there is no `gh-pages` branch to keep in step and no generated HTML in the history.
+# This needs one setting made by hand, once: Settings > Pages > Source = GitHub Actions.
+on:
+  release:
+    types: [published]
+  # So the site can be rebuilt without cutting a release — after a docs-only fix, say.
+  workflow_dispatch:
+
+# Two deployments must not race for the same site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write # deploy to Pages
+  id-token: write # the deployment is authenticated by OIDC, not a token
+
+jobs:
+  build:
+    name: build docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # `github.event.release.tag_name` is empty on a manual run, where the default branch is what
+      # anyone asking for a rebuild means.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run docs
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: docs-site
+
+  deploy:
+    name: deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

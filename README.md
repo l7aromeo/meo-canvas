@@ -38,6 +38,7 @@ and rendering to a canvas.
 - **Browser-matching text:** Line boxes are built the way CSS builds them — baselines land within 0.15px of Chrome —
   with `textAlign`, `verticalAlign`, `textDecoration` and `overflow` following the same rules.
 - **TypeScript Support:** Fully typed for a better development experience.
+- **[API reference →](https://l7aromeo.github.io/meo-canvas/)** — generated from the source for each release.
 - **[Architecture →](./ARCHITECTURE.md)**
 
 ## Showcase

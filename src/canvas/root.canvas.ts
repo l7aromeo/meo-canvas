@@ -113,7 +113,7 @@ function loadSharp(): (...args: never[]) => unknown {
  * A Canvas that lives in a worker thread.
  *
  * Every method behaves as its counterpart on a real Canvas does. Sync methods block the calling
- * thread while the worker runs the real call (see {@link SyncChannel}); async methods go through
+ * thread while the worker runs the real call (over the pool's synchronous channel); async methods go through
  * Comlink. The two members that cannot be honoured — `getContext()` and `newPage()` — say so
  * instead of returning something that only resembles the real thing.
  */

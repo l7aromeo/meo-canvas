@@ -46,6 +46,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx,.mjs --fix && prettier --write \"**/*.md\" && bun run typecheck",
+    "docs": "typedoc",
     "format": "prettier --write .",
     "generate:samples": "bun run typecheck && bunx tsx scripts/generate_sample_charts.ts && bunx tsx scripts/generate_sample_grids.ts && bunx tsx scripts/generate_sample_nested_grids.ts && bunx tsx scripts/generate_sample_animated_card.ts",
     "prepare": "husky"
@@ -80,6 +81,7 @@
     "rollup": "^4.62.2",
     "rollup-plugin-tsconfig-paths": "^1.5.2",
     "semantic-release": "25.0.9",
+    "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"

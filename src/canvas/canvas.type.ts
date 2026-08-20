@@ -828,8 +828,8 @@ export interface RootProps extends Omit<BoxProps, 'children'> {
   pagedChildren?: (Children | Children[])[]
 
   /**
-   * Width of the canvas in pixels.
-   * @required
+   * Width of the canvas in pixels. Required — everything else can be derived from the content, but
+   * text cannot wrap without knowing how much room it has.
    */
   width: number
 
@@ -918,7 +918,7 @@ export interface RootProps extends Omit<BoxProps, 'children'> {
  * Root props when worker mode is enabled (default behavior).
  * Includes .release() method for memory cleanup.
  */
-interface RootPropsWithWorkerBase extends RootProps {
+export interface RootPropsWithWorkerBase extends RootProps {
   /**
    * Worker mode enabled or default (undefined defaults to true).
    */
@@ -935,7 +935,7 @@ interface RootPropsWithWorkerBase extends RootProps {
  * Returns plain Canvas without .release() method.
  * workers prop is not available in this mode.
  */
-interface RootPropsWithoutWorkerBase extends RootProps {
+export interface RootPropsWithoutWorkerBase extends RootProps {
   /**
    * Worker mode explicitly disabled.
    */
@@ -965,6 +965,7 @@ export type RootPropsWithoutWorker = RootPropsWithoutWorkerBase & RootContent
  * constructs one node per page with that page's already-built children.
  */
 export type RootNodeProps = Omit<RootProps, 'children' | 'pages' | 'duration' | 'fps' | 'pagedChildren'> & {
+  /** The tree for one page, already resolved — a builder has been run by the time this is built. */
   children?: Children | Children[]
 }
 
@@ -976,9 +977,13 @@ export type RootNodeProps = Omit<RootProps, 'children' | 'pages' | 'duration' | 
  * runtime, which is the half that catches untyped callers.
  */
 export interface StillContent {
+  /** The tree to draw. */
   children?: Children | Children[]
+  /** Not available on a still render — see the note above. */
   pages?: never
+  /** Not available on a still render — see the note above. */
   duration?: never
+  /** Not available on a still render — see the note above. */
   fps?: never
 }
 
@@ -1104,13 +1109,28 @@ export interface GridProps extends BoxProps {
  * Represents a text segment with styling information
  */
 export interface TextSegment {
+  /** The run of characters this segment draws. */
   text: string
+  /** Colour for this run, from a `<color>` tag. Falls back to the node's `color`. */
   color?: string
+  /** Weight for this run, from a `<weight>` tag. Falls back to the node's `fontWeight`. */
   weight?: BoxProps['fontWeight']
+  /** Whether a `<b>` tag encloses this run. */
   b?: boolean
+  /** Whether an `<i>` tag encloses this run. */
   i?: boolean
-  size?: number // Font size in pixels
-  width?: number // Used for pre-calculation optimizations
+
+  /**
+   * Size for this run, from a `<size>` tag. Falls back to the node's `fontSize`.
+   * @unit Pixels.
+   */
+  size?: number
+
+  /**
+   * The run's measured width, cached while the line is being laid out so wrapping does not measure
+   * the same run twice.
+   */
+  width?: number
 }
 
 /**
@@ -1456,7 +1476,7 @@ export interface GridOptions {
 export type ChartItem = BoxNode | CanvasElement | null | undefined
 
 // Base options common to all charts
-interface BaseChartOptions<T extends ChartType> {
+export interface BaseChartOptions<T extends ChartType> {
   /**
    * Draw the label beside each value — the category name on a bar or line chart, the slice's own
    * label on a pie or doughnut.
@@ -1501,7 +1521,7 @@ interface BaseChartOptions<T extends ChartType> {
 }
 
 // Options specific to Cartesian charts
-interface CartesianChartSpecificOptions {
+export interface CartesianChartSpecificOptions {
   /**
    * The grid lines behind the plot — see {@link GridOptions}.
    * @default undefined (no grid)
@@ -1571,7 +1591,7 @@ interface CartesianChartSpecificOptions {
 }
 
 // Options specific to Pie/Doughnut charts
-interface PieChartSpecificOptions {
+export interface PieChartSpecificOptions {
   /**
    * The radius of the inner circle in a doughnut chart, expressed as a
    * percentage of the outer radius. Should be between 0 and 1.
