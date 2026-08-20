@@ -907,10 +907,19 @@ export class TextNode extends BoxNode {
     const paddingTop = this.node.getComputedPadding(Style.Edge.Top) ?? 0
     const paddingRight = this.node.getComputedPadding(Style.Edge.Right) ?? 0
     const paddingBottom = this.node.getComputedPadding(Style.Edge.Bottom) ?? 0
-    const contentX = x + paddingLeft
-    const contentY = y + paddingTop
-    const contentWidth = Math.max(0, width - paddingLeft - paddingRight)
-    const contentHeight = Math.max(0, height - paddingTop - paddingBottom)
+
+    // The border counts as well as the padding: `x`/`y`/`width`/`height` are the node's border box —
+    // the same rectangle the background and the border itself are drawn on — so text laid out from
+    // there sits under its own border and wraps against a width that includes it.
+    const borderLeft = this.node.getComputedBorder(Style.Edge.Left) ?? 0
+    const borderTop = this.node.getComputedBorder(Style.Edge.Top) ?? 0
+    const borderRight = this.node.getComputedBorder(Style.Edge.Right) ?? 0
+    const borderBottom = this.node.getComputedBorder(Style.Edge.Bottom) ?? 0
+
+    const contentX = x + borderLeft + paddingLeft
+    const contentY = y + borderTop + paddingTop
+    const contentWidth = Math.max(0, width - borderLeft - borderRight - paddingLeft - paddingRight)
+    const contentHeight = Math.max(0, height - borderTop - borderBottom - paddingTop - paddingBottom)
 
     if (contentWidth <= 0 || contentHeight <= 0) {
       ctx.restore()
