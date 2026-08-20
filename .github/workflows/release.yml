@@ -71,6 +71,10 @@ jobs:
           HUSKY: 0
         run: bun install --frozen-lockfile
       - run: bun run build
+      # `successCmd` in .releaserc.json sets the `published` output the docs job reads. It cannot use
+      # `${...}`: @semantic-release/exec runs every command through a lodash template first, which
+      # treats that as an interpolation and tries to evaluate it as JavaScript. `${GITHUB_OUTPUT:-…}`
+      # failed 8.0.0's release that way, after the publish had already gone out.
       - name: semantic-release
         id: semantic
         env:
