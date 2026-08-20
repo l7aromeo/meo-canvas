@@ -1108,6 +1108,10 @@ Two consequences worth knowing:
 
 `lineGap` is extra space between lines on top of all that, with no CSS equivalent.
 
+**Bidirectional text is not laid out.** `direction` is Yoga's layout direction — it flips the flex
+axes — and does not reorder text. A right-to-left script renders in the order its characters were
+written rather than reordered by the Unicode bidi algorithm, so Arabic and Hebrew are not supported.
+
 **Overflow follows CSS too.** Text taller or wider than its box spills out of it; set
 `overflow: Style.Overflow.Hidden` on the node to clip it. `Style.Overflow.Scroll` is not treated as
 clipping — it describes a box a reader can move, and nothing here is interactive.
