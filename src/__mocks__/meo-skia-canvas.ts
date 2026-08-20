@@ -20,6 +20,8 @@ export const mockCanvasContext = {
   wordSpacing: 'normal',
   fontVariant: 'normal',
   save: vi.fn(),
+  // Group opacity opens an isolated layer instead of setting `globalAlpha`.
+  saveLayer: vi.fn(),
   restore: vi.fn(),
   filter: '',
   shadowOffsetX: 0,

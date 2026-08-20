@@ -1023,6 +1023,7 @@ describe('BoxNode Layout Properties', () => {
     const node = new BoxNode({ width: 100, height: 100, opacity: 0.5 })
     const mockFill = vi.fn()
     const mockGlobalAlphaValues: number[] = []
+    const mockSaveLayer = vi.fn()
     const mockContext = {
       fill: mockFill,
       beginPath: vi.fn(),
@@ -1044,14 +1045,17 @@ describe('BoxNode Layout Properties', () => {
       lineTo: vi.fn(),
       closePath: vi.fn(),
       arc: vi.fn(),
+      saveLayer: mockSaveLayer,
     }
     const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
 
-    expect(mockGlobalAlphaValues).toContain(0.5) // Check if 0.5 was set
-    expect(mockContext.globalAlpha).toBe(1) // After restoration, it should be 1
+    // Opened as a layer rather than by setting `globalAlpha`: the subtree is composited once and
+    // faded as a whole, so overlapping children do not darken each other.
+    expect(mockSaveLayer).toHaveBeenCalledWith(0.5)
+    expect(mockGlobalAlphaValues).not.toContain(0.5)
     getContextSpy.mockRestore()
   })
 

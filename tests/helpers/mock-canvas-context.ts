@@ -25,6 +25,8 @@ export function createMockCanvasContext(): CanvasRenderingContext2D {
   const ctx = {
     scale: vi.fn<CanvasRenderingContext2D['scale']>(),
     save: vi.fn<CanvasRenderingContext2D['save']>(),
+    // Group opacity opens an isolated layer instead of setting `globalAlpha`.
+    saveLayer: vi.fn(),
     restore: vi.fn<CanvasRenderingContext2D['restore']>(),
     translate: vi.fn<CanvasRenderingContext2D['translate']>(),
     rotate: vi.fn<CanvasRenderingContext2D['rotate']>(),

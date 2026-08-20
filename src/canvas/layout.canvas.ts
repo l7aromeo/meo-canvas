@@ -362,12 +362,18 @@ export class BoxNode {
     }
 
     // --- Opacity Setup ---
+    //
+    // A layer, not `globalAlpha`. CSS composites the whole subtree once and fades the result, so
+    // two overlapping children inside a half-transparent parent are as dark as one of them is.
+    // Setting `globalAlpha` fades every draw on its own instead, and the overlap comes out twice as
+    // opaque: two 50% reds on white read rgb(255,63,63) where CSS gives rgb(255,127,127).
+    //
+    // No bounds are passed: they would clip the layer, and a node's drawing reaches past its box
+    // through shadows, transforms and text allowed to overflow.
     const desiredOpacity = Math.max(0, Math.min(1, this.props.opacity ?? 1))
-    let originalAlpha: number | undefined = undefined
     let appliedOpacity = false
     if (desiredOpacity < 1) {
-      originalAlpha = ctx.globalAlpha
-      ctx.globalAlpha = originalAlpha * desiredOpacity
+      ctx.saveLayer(desiredOpacity)
       appliedOpacity = true
     }
     // --- End Opacity Setup ---
@@ -501,8 +507,9 @@ export class BoxNode {
       // --- End Transformation Restoration ---
     } finally {
       // --- Opacity Restoration ---
-      if (appliedOpacity && originalAlpha !== undefined) {
-        ctx.globalAlpha = originalAlpha
+      // Closing the layer is what composites it onto the page at the node's opacity.
+      if (appliedOpacity) {
+        ctx.restore()
       }
       // --- End Opacity Restoration ---
     }
