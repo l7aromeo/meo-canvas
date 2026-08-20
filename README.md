@@ -30,6 +30,8 @@ and rendering to a canvas.
   - [Root](#root)
   - [Animation Utilities](#animation-utilities)
   - [Box, Row, and Column](#box-row-and-column)
+    - [Effects](#effects-filter-backdropfilter-and-mixblendmode)
+    - [Background pictures](#background-pictures-backgroundimage)
   - [Text](#text)
   - [Image](#image)
   - [Path](#path)
@@ -61,6 +63,13 @@ and rendering to a canvas.
 - **Engine Control:** Choose the GPU or CPU backend, the pixel format and the colour space.
 - **Dithering:** `dither` breaks up the banding a long, subtle gradient shows on an eight-bit surface. Set it on
   `Root` for the page, or on any node for its own subtree.
+- **CSS Effects:** `filter` and `backdropFilter` take a CSS filter chain — the node's own picture, or the one behind
+  it — and `mixBlendMode` carries all sixteen blend modes. Each applies to a subtree as one picture, the way CSS
+  does. See [Effects](#effects-filter-backdropfilter-and-mixblendmode).
+- **Outlined Text:** `textStroke` draws `-webkit-text-stroke`, centred on the glyph and over the fill as a browser
+  draws it; `paintOrder` puts it underneath to keep the letterform whole.
+- **Backgrounds:** `backgroundImage` tiles a picture behind a node with every CSS `background-repeat` mode, `space`
+  and `round` included, and `gradient` sweeps conically as well as linearly and radially.
 - **Browser-matching text:** Line boxes are built the way CSS builds them — baselines land within 0.15px of Chrome —
   with `textAlign`, `verticalAlign`, `textDecoration` and `overflow` following the same rules.
 - **TypeScript Support:** Fully typed for a better development experience.
@@ -561,6 +570,64 @@ canvas.engine.renderer // 'CPU'
 layers are actually _faster_ in float, opaque fills are not — `RGBAF32` runs them several times slower. Reach for it
 when you need the depth or the gamut, not by default. Masks and shadows composite through offscreen canvases that
 inherit these settings, so a float render stays float all the way through.
+
+#### Effects: `filter`, `backdropFilter` and `mixBlendMode`
+
+Three properties that work on a node's picture rather than its layout. Each takes the subtree as a whole, which is
+what CSS does and is the part worth knowing:
+
+```javascript
+Box({ filter: 'grayscale(1) brightness(1.1)', children: [...] })
+
+// Frosted glass: the backdrop is filtered, then this node's own background paints over the result.
+Box({
+  backdropFilter: 'blur(12px) saturate(1.4)',
+  backgroundColor: 'rgba(255,255,255,0.15)',
+  borderRadius: 24,
+})
+
+Box({ backgroundColor: '#0af', mixBlendMode: Style.BlendMode.Multiply })
+```
+
+**A subtree is one picture.** Two overlapping children under one `filter` are composited first and filtered together,
+not filtered separately and then composited — the difference shows wherever a filter clamps or a child is
+translucent. `mixBlendMode` blends the finished subtree with what is behind it for the same reason, and `opacity`
+fades the filtered result rather than filtering a faded one.
+
+`filter` takes the ten CSS functions: `blur`, `brightness`, `contrast`, `drop-shadow`, `grayscale`, `hue-rotate`,
+`invert`, `opacity`, `saturate` and `sepia`. `saturate` on an `Image` is a shorthand for the same machinery and runs
+first where both are given. A blur or a drop shadow reaches past the node's box, as it does in CSS, and is not
+clipped to it.
+
+Only what has already been painted counts as a backdrop: a sibling declared after a `backdropFilter` node paints over
+it and is not included, and neither is the node's own background.
+
+#### Background pictures: `backgroundImage`
+
+A picture behind a node's content, placed by the CSS properties that place one. It never affects layout — the box is
+whatever the box was:
+
+```javascript
+Box({ width: 400, height: 200, backgroundImage: { src: 'texture.png' } })
+
+Box({
+  backgroundImage: {
+    src: 'hero.jpg',
+    size: Style.BackgroundSize.Cover,
+    repeat: Style.BackgroundRepeat.NoRepeat,
+  },
+})
+
+// Whole tiles with the leftover space shared out between them.
+Box({ backgroundImage: { src: 'dot.svg', size: 12, repeat: Style.BackgroundRepeat.Space } })
+```
+
+The source is fetched and decoded before layout, in the same pass and through the same cache as an `Image` — so a
+picture used as one node's background and another's image is loaded once, and both share the render's
+`imageConcurrency`. A source that fails to load costs the node its background rather than the render.
+
+Every CSS repeat mode is supported. `space` fits whole tiles and shares the remainder out as equal gaps, pinning the
+first and last to the edges; `round` scales the tile instead, so a whole number of them fills the box exactly.
 
 #### Smoothing gradients: `dither`
 
