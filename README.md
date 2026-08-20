@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/meo-canvas?logo=npm&color=cb3837)](https://www.npmjs.com/package/meo-canvas)
 [![CI](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml)
 [![node](https://img.shields.io/node/v/meo-canvas?logo=node.js&color=5fa04e)](https://nodejs.org)
-[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://l7aromeo.github.io/meo-canvas/)
+[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://l7aromeo.github.io/meo-canvas/latest/)
 [![license](https://img.shields.io/npm/l/meo-canvas?color=blue)](LICENSE)
 
 A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
@@ -13,6 +13,32 @@ It uses `meo-skia-canvas` for drawing and `yoga-layout` for flexbox-based layout
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
 image structure with components like `Box`, `Text`, `Image`, `Path`, and `Grid`, and the library will handle the layout
 and rendering to a canvas.
+
+## Contents
+
+- [Key Features](#key-features)
+- [Showcase](#showcase)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Simple Example](#simple-example)
+  - [Complex Layout](#complex-layout)
+- [Examples](#examples)
+  - [Charts](#charts)
+  - [Grid](#grid)
+- [Yoga Layout](#yoga-layout)
+- [API Reference](#api-reference)
+  - [Root](#root)
+  - [Animation Utilities](#animation-utilities)
+  - [Box, Row, and Column](#box-row-and-column)
+  - [Text](#text)
+  - [Image](#image)
+  - [Path](#path)
+  - [Grid](#grid-1)
+  - [GridItem](#griditem)
+  - [Chart](#chart)
+  - [Cleanup Functions](#cleanup-functions)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Key Features
 
@@ -38,7 +64,7 @@ and rendering to a canvas.
 - **Browser-matching text:** Line boxes are built the way CSS builds them — baselines land within 0.15px of Chrome —
   with `textAlign`, `verticalAlign`, `textDecoration` and `overflow` following the same rules.
 - **TypeScript Support:** Fully typed for a better development experience.
-- **[API reference →](https://l7aromeo.github.io/meo-canvas/)** — generated from the source for each release.
+- **[API reference →](https://l7aromeo.github.io/meo-canvas/latest/)** — generated from the source of each release.
 - **[Architecture →](./ARCHITECTURE.md)**
 
 ## Showcase
@@ -469,8 +495,12 @@ properties.
 
 What follows covers the props and methods you reach for most. Every exported symbol carries a doc comment, so the
 complete generated reference — every type, every option, every overload — lives at
-**[l7aromeo.github.io/meo-canvas](https://l7aromeo.github.io/meo-canvas/)**, built from the source for each release,
-and your editor shows the same text on hover.
+**[l7aromeo.github.io/meo-canvas/latest](https://l7aromeo.github.io/meo-canvas/latest/)**, and your editor shows the
+same text on hover.
+
+Each release is published at its own address — `/v8.0.0/`, `/v7.1.0/` and so on — and
+[the index](https://l7aromeo.github.io/meo-canvas/) lists them. `latest` follows the newest published version, never
+whatever is on `main`, so a link to it always describes something you can actually install.
 
 ### Root
 

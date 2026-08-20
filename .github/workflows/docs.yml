@@ -1,40 +1,40 @@
 name: Docs
 
-# Triggered by a published release rather than by a push to main, so the site always documents the
-# version that is actually on npm. A push-triggered build would publish whatever is on main,
-# including work that has not been released yet — and `includeVersion` would then print a version
-# number that does not exist.
+# Triggered by a published release rather than by a push to main, so the site documents versions
+# that are actually on npm. A push-triggered build would publish unreleased work under a version
+# number that does not exist yet, since `includeVersion` reads it from package.json.
 #
 # Nothing is committed to the repository. Pages is served from the artifact this workflow uploads,
-# which is why there is no `gh-pages` branch to keep in step and no generated HTML in the history.
-# This needs one setting made by hand, once: Settings > Pages > Source = GitHub Actions.
+# so there is no `gh-pages` branch to keep in step and no generated HTML in the history. That does
+# mean a deploy replaces the whole site, which is why every version is rebuilt here rather than
+# added to what is already published — the result is the same each time, and a site damaged by a
+# failed run repairs itself on the next release.
+#
+# Needs one setting made by hand, once: Settings > Pages > Source = GitHub Actions.
 on:
   release:
     types: [published]
   # So the site can be rebuilt without cutting a release — after a docs-only fix, say.
   workflow_dispatch:
 
-# Two deployments must not race for the same site.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 permissions:
   contents: read
-  pages: write # deploy to Pages
-  id-token: write # the deployment is authenticated by OIDC, not a token
+  pages: write
+  id-token: write
 
 jobs:
   build:
-    name: build docs
+    name: build every documented release
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-      # `github.event.release.tag_name` is empty on a manual run, where the default branch is what
-      # anyone asking for a rebuild means.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          fetch-depth: 0 # every tag, since each documented release is built from its own
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -42,15 +42,79 @@ jobs:
         run: |
           curl -fsSL https://bun.sh/install | bash
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
-      - name: Install dependencies
+
+      # Which tags can be built at all. Selected by whether the tag carries a typedoc config rather
+      # than by comparing version numbers: the docs were added in 8.0.0, and asking the tag itself
+      # is what keeps this from needing a floor written down and kept up to date. Prereleases are
+      # left out — the site documents what `npm install` gives you.
+      - name: Choose the releases to document
+        id: choose
+        run: |
+          versions=""
+          for tag in $(git tag --list 'v*' --sort=-v:refname); do
+            case "$tag" in *-*) continue ;; esac   # skip prereleases: v1.0.0-beta.1 and friends
+            if git cat-file -e "$tag:typedoc.json" 2>/dev/null; then
+              versions="$versions $tag"
+            fi
+          done
+          versions=$(echo $versions | xargs)
+          if [ -z "$versions" ]; then
+            echo "No tag carries a typedoc config yet — nothing to publish." >&2
+            exit 1
+          fi
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          echo "latest=$(echo $versions | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "Documenting: $versions"
+
+      - name: Build each release into its own directory
         env:
           HUSKY: 0
-        run: bun install --frozen-lockfile
-      - run: bun run docs
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          for tag in ${{ steps.choose.outputs.versions }}; do
+            echo "::group::$tag"
+            git checkout --force "$tag"
+            bun install --frozen-lockfile
+            bun run docs
+            mv docs-site "site/$tag"
+            echo "::endgroup::"
+          done
+
+      # `latest` is a copy of the newest release, not of whatever main happens to be, so a link to
+      # it never points at unreleased work.
+      - name: Point latest at the newest release
+        run: cp -r "site/${{ steps.choose.outputs.latest }}" site/latest
+
+      - name: Write the version index
+        env:
+          VERSIONS: ${{ steps.choose.outputs.versions }}
+          LATEST: ${{ steps.choose.outputs.latest }}
+        run: |
+          {
+            echo '<!doctype html><meta charset="utf-8"><title>meo-canvas API reference</title>'
+            echo '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            echo '<style>'
+            echo ':root{color-scheme:light dark;--fg:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#fff}'
+            echo '@media (prefers-color-scheme:dark){:root{--fg:#e2e8f0;--muted:#94a3b8;--line:#334155;--bg:#0f172a}}'
+            echo 'body{background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,sans-serif;margin:0;padding:3rem 1.5rem;display:flex;justify-content:center}'
+            echo 'main{max-width:34rem;width:100%}h1{font-size:1.5rem;margin:0 0 .25rem}p{color:var(--muted);margin:0 0 2rem}'
+            echo 'a{color:inherit;text-decoration:none}ul{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}'
+            echo 'li a{display:flex;justify-content:space-between;gap:1rem;padding:.85rem .25rem;border-bottom:1px solid var(--line)}'
+            echo 'li a:hover{background:color-mix(in srgb,var(--fg) 6%,transparent)}.tag{color:var(--muted);font-size:.85rem}'
+            echo '</style><main><h1>meo-canvas API reference</h1>'
+            echo "<p>Generated from the source of each release. <strong>latest</strong> tracks the newest published version, currently $LATEST.</p><ul>"
+            echo "<li><a href=\"./latest/\"><span>latest</span><span class=\"tag\">$LATEST</span></a></li>"
+            for tag in $VERSIONS; do
+              echo "<li><a href=\"./$tag/\"><span>$tag</span><span class=\"tag\">release</span></a></li>"
+            done
+            echo '</ul></main>'
+          } > site/index.html
+
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
-          path: docs-site
+          path: site
 
   deploy:
     name: deploy to Pages
