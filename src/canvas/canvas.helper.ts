@@ -333,3 +333,24 @@ export function filterSpill(filter: string): number {
 
   return Math.ceil(spill)
 }
+
+/** Every length in a filter chain, with the function name it belongs to. */
+const FILTER_FUNCTION_WITH_LENGTHS = /\b(blur|drop-shadow)\(([^)]*)\)/g
+
+/**
+ * Rewrites a filter chain's lengths from user units into device pixels.
+ *
+ * A canvas applies `filter` in device pixels, ignoring the transform in force, while CSS reads a
+ * filter's lengths in the element's own units — so on a `scale: 2` root an unscaled `blur(6px)`
+ * covers three user pixels rather than six, and the same tree exported at two scales does not
+ * produce the same picture. Only lengths move: a `brightness` factor or a `hue-rotate` angle means
+ * the same thing at any resolution.
+ */
+export function scaleFilterLengths(filter: string, scale: number): string {
+  if (!filter || scale === 1) return filter
+
+  return filter.replace(FILTER_FUNCTION_WITH_LENGTHS, (_whole, name: string, args: string) => {
+    const scaled = args.replace(/(-?[\d.]+)px/g, (_, length: string) => `${Number(length) * scale}px`)
+    return `${name}(${scaled})`
+  })
+}

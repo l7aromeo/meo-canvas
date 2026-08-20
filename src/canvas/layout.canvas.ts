@@ -1,5 +1,5 @@
 import { type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
-import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
+import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths } from '@/canvas/canvas.helper.js'
 import { createGradient } from '@/canvas/gradient.canvas.js'
 import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { drawWithGradientMask, isGradientMask, maskFillRule, maskPath } from '@/canvas/mask.canvas.js'
@@ -338,6 +338,42 @@ export class BoxNode {
   }
 
   /**
+   * Redraws what is behind the node through a filter, clipped to the node's own box.
+   *
+   * CSS filters the backdrop where the element sits, corners included, and then paints the
+   * element's background on top of the result. There is no way to filter pixels already on a
+   * canvas in place, so the canvas is copied and the copy drawn back through the clip.
+   *
+   * The clip is set while the node's transform is still in force and therefore survives the
+   * transform being reset, which is what lets the copy be drawn back pixel for pixel — a rotated
+   * or scaled node filters the region it actually covers rather than an upright box near it.
+   *
+   * The copy is the size of the whole canvas. A backdrop is a deliberate effect on a handful of
+   * nodes rather than something every node pays for, and copying only the node's own region would
+   * still have to account for however far the filter reaches beyond it.
+   */
+  private applyBackdropFilter(ctx: CanvasRenderingContext2D, filter: string, x: number, y: number, width: number, height: number) {
+    const surface = ctx.canvas
+    if (!surface?.width || !surface?.height) return
+
+    const snapshot = createCanvas(surface.width, surface.height, mirrorEngine(ctx))
+    const snapshotCtx = snapshot.getContext('2d')
+    snapshotCtx.drawImage(surface, 0, 0)
+
+    ctx.save()
+    try {
+      drawRoundedRectPath(ctx, x, y, width, height, parseBorderRadius(this.props.borderRadius))
+      ctx.clip()
+      const matrix = ctx.getTransform()
+      ctx.resetTransform()
+      ctx.filter = scaleFilterLengths(filter, (Math.hypot(matrix.a, matrix.b) + Math.hypot(matrix.c, matrix.d)) / 2 || 1)
+      ctx.drawImage(snapshot, 0, 0)
+    } finally {
+      ctx.restore()
+    }
+  }
+
+  /**
    * The CSS filter chain this node draws through, or an empty string for none.
    *
    * `saturate` came first and stays a shorthand for the same machinery, so it leads the chain and
@@ -391,7 +427,7 @@ export class BoxNode {
     ctx.save()
     try {
       if (desiredOpacity < 1) ctx.globalAlpha = desiredOpacity
-      ctx.filter = filter
+      ctx.filter = scaleFilterLengths(filter, (scaleX + scaleY) / 2)
       ctx.drawImage(offscreen, x - pad, y - pad, boxWidth, boxHeight)
     } finally {
       ctx.restore()
@@ -483,6 +519,14 @@ export class BoxNode {
         ctx.translate(-originAbsX, -originAbsY)
       }
       // --- End Transformation Setup ---
+
+      // --- Step 0: Backdrop Filter ---
+      // Filters what is already on the canvas behind this node, before the node itself is drawn —
+      // CSS paints the element's own background over the filtered backdrop, not under it.
+      if (this.props.backdropFilter) {
+        this.applyBackdropFilter(ctx, this.props.backdropFilter, x, y, width, height)
+      }
+      // --- End Backdrop Filter ---
 
       // --- Step 1: Render Parent Background/Borders/Content ---
       // This renders the current node's own visual appearance first.

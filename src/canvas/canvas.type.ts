@@ -683,6 +683,28 @@ export interface BoxProps extends BaseProps {
   filter?: string
 
   /**
+   * Graphical effects applied to whatever is painted behind the node, in CSS `filter` notation.
+   *
+   * The filtered backdrop is clipped to the node's own box, corners included, and the node's
+   * background paints over the result — so a translucent background over a blurred backdrop is the
+   * frosted glass CSS produces. A node with no background of its own shows the backdrop filtered
+   * and nothing else.
+   *
+   * Only what has already been drawn is a backdrop: a sibling declared after this node paints over
+   * it and is not included, as in CSS.
+   * @default undefined (the backdrop is untouched)
+   * @example
+   * ```ts
+   * Box({
+   *   backdropFilter: 'blur(12px) saturate(1.4)',
+   *   backgroundColor: 'rgba(255,255,255,0.15)',
+   *   borderRadius: 24,
+   * })
+   * ```
+   */
+  backdropFilter?: string
+
+  /**
    * Sets the opacity of the node and its children when drawing.
    * A value between 0 (fully transparent) and 1 (fully opaque).
    *

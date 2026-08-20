@@ -1,4 +1,4 @@
-import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
+import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths } from '@/canvas/canvas.helper.js'
 import { extractFunctions, restoreFunctions, FN_MARKER } from '@/worker/comlink.pool.js'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
@@ -642,5 +642,31 @@ describe('filterSpill', () => {
 
   it('ignores a length belonging to another function', () => {
     expect(filterSpill('opacity(0.5) contrast(200%)')).toBe(0)
+  })
+})
+
+describe('scaleFilterLengths', () => {
+  it('leaves a chain alone at scale 1', () => {
+    expect(scaleFilterLengths('blur(6px)', 1)).toBe('blur(6px)')
+    expect(scaleFilterLengths('', 2)).toBe('')
+  })
+
+  it('scales a blur radius into device pixels', () => {
+    // A canvas applies `filter` in device pixels whatever the transform, where CSS reads the length
+    // in the element's own units — so on a `scale: 2` root the length has to be doubled for the
+    // same picture to come out.
+    expect(scaleFilterLengths('blur(6px)', 2)).toBe('blur(12px)')
+    expect(scaleFilterLengths('blur(6px)', 3)).toBe('blur(18px)')
+  })
+
+  it('scales every length of a drop shadow, offsets included', () => {
+    expect(scaleFilterLengths('drop-shadow(2px 3px 4px #000)', 2)).toBe('drop-shadow(4px 6px 8px #000)')
+    expect(scaleFilterLengths('drop-shadow(-2px 0 1px red)', 2)).toBe('drop-shadow(-4px 0 2px red)')
+  })
+
+  it('leaves anything that is not a length', () => {
+    // A factor and an angle mean the same thing at any resolution.
+    expect(scaleFilterLengths('brightness(1.4) hue-rotate(90deg) saturate(200%)', 2)).toBe('brightness(1.4) hue-rotate(90deg) saturate(200%)')
+    expect(scaleFilterLengths('blur(4px) brightness(1.4)', 2)).toBe('blur(8px) brightness(1.4)')
   })
 })
