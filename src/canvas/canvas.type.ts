@@ -35,15 +35,75 @@ export type Children = BoxNode | TextNode | ImageNode | GridNode | CanvasElement
  * worker thread by structured clone.
  */
 export type CanvasElement =
-  | { __type: 'Box'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Column'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Row'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Grid'; props: Omit<GridProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Image'; props: Omit<ImageProps, 'onLoad' | 'onError'> }
-  | { __type: 'Path'; props: PathProps }
-  | { __type: 'Text'; text: string | number; props?: TextProps }
-  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
+  | {
+      /** A plain container. */
+      __type: 'Box'
+      /** Everything but the children, which are their own field. */
+      props: Omit<BoxProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A container that stacks its children vertically. */
+      __type: 'Column'
+      /** Everything but the children, which are their own field. */
+      props: Omit<BoxProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A container that lays its children out in a line. */
+      __type: 'Row'
+      /** Everything but the children, which are their own field. */
+      props: Omit<BoxProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A container that places its children on a grid. */
+      __type: 'Grid'
+      /** Everything but the children, which are their own field. */
+      props: Omit<GridProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** One cell of a grid, which may span several tracks. */
+      __type: 'GridItem'
+      /** Everything but the children, which are their own field. */
+      props: Omit<GridItemProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A raster image, fitted into its box by `objectFit`. */
+      __type: 'Image'
+      /** The load callbacks are dropped: a function cannot cross into a worker. */
+      props: Omit<ImageProps, 'onLoad' | 'onError'>
+    }
+  | {
+      /** An arbitrary shape from SVG path data. */
+      __type: 'Path'
+      /** The path and how it is painted. */
+      props: PathProps
+    }
+  | {
+      /** A run of text, which may carry inline markup. */
+      __type: 'Text'
+      /** The string to draw. Numbers are accepted so a count needs no conversion. */
+      text: string | number
+      /** Styling for the run. */
+      props?: TextProps
+    }
+  | {
+      /** A chart, drawn from data rather than from child nodes. */
+      __type: 'Chart'
+      /** The chart minus its options, which are widened so they survive the worker boundary. */
+      props: Omit<ChartProps<ChartType>, 'options'> & {
+        /** Chart options, typed loosely here and narrowed again when the node is built. */
+        options?: Record<string, unknown>
+      }
+    }
 
 /**
  * A font family and the files that provide it.
@@ -53,7 +113,9 @@ export type CanvasElement =
  * ```
  */
 export interface FontRegistrationInfo {
+  /** The name `fontFamily` will refer to. Any name may be chosen; it need not match the file. */
   family: string
+  /** Absolute paths to the font files that make up the family — one per weight or style. */
   paths: string[]
 }
 
@@ -152,6 +214,16 @@ export interface BoxShadowProps {
   blur?: number
 
   /**
+   * Grows the shadow beyond the node's box before it is blurred, as the fourth length of the CSS
+   * `box-shadow` shorthand does. A negative value shrinks it.
+   *
+   * An inset shadow spreads the other way, reaching further in from every edge.
+   * @unit Pixels.
+   * @default 0
+   */
+  spread?: number
+
+  /**
    * The color of the shadow.
    * Accepts standard CSS color strings.
    */
@@ -174,7 +246,22 @@ export type GradientDirection =
  * radial gradient runs from the node's centre to the corner, so it covers the whole box.
  */
 export type Gradient =
-  { type: 'linear'; colors: readonly string[]; direction: GradientDirection } | { type: 'radial'; colors: readonly string[]; direction?: GradientDirection }
+  | {
+      /** A straight run between two points. */
+      type: 'linear'
+      /** Stops in order, spread evenly from the first to the last. */
+      colors: readonly string[]
+      /** Which way the run goes — a named edge-to-edge direction, or explicit endpoints. */
+      direction: GradientDirection
+    }
+  | {
+      /** A run outward from the node's centre, reaching the corners. */
+      type: 'radial'
+      /** Stops in order, from the centre outwards. */
+      colors: readonly string[]
+      /** Unused for a radial gradient, which always runs centre to corner. */
+      direction?: GradientDirection
+    }
 
 /** Shapes a {@link Mask} can name without writing a path, each inscribed in the node's box. */
 export type MaskShape = 'circle' | 'ellipse'
@@ -202,10 +289,56 @@ export type MaskShape = 'circle' | 'ellipse'
 export type Mask =
   /** SVG path data, in the node's own coordinates. Shorthand for `{ path }`. */
   | string
-  | { shape: MaskShape }
-  | { path: string; fillRule?: 'nonzero' | 'evenodd' }
+  | {
+      /** A shape inscribed in the node's box. */
+      shape: MaskShape
+    }
+  | {
+      /** SVG path data, in the node's own coordinates. */
+      path: string
+      /** How the path's interior is decided where it crosses itself. */
+      fillRule?: 'nonzero' | 'evenodd'
+    }
   /** Only the alpha of each colour matters: opaque keeps a pixel, transparent removes it. */
-  | { gradient: Gradient }
+  | {
+      /** The gradient whose alpha the node is multiplied by. */
+      gradient: Gradient
+    }
+
+/**
+ * A radius for each corner, in pixels. A corner left out is not rounded.
+ *
+ * Radii larger than the box allows are scaled down together, so opposite corners meet rather than
+ * overlapping — the same rule CSS applies to `border-radius`.
+ */
+export interface CornerRadii {
+  /** Radius of the top-left corner. */
+  TopLeft?: number
+  /** Radius of the top-right corner. */
+  TopRight?: number
+  /** Radius of the bottom-left corner. */
+  BottomLeft?: number
+  /** Radius of the bottom-right corner. */
+  BottomRight?: number
+}
+
+/**
+ * A colour for each edge. An edge left out falls back to `borderColor`'s single-string form, or to
+ * black when there is none.
+ *
+ * Where two edges of different colours meet at a corner, the corner is split between them — the
+ * same join CSS makes, so a card with one accent edge does not smear that colour round the bend.
+ */
+export interface EdgeColors {
+  /** Colour of the top edge. */
+  Top?: string
+  /** Colour of the right edge. */
+  Right?: string
+  /** Colour of the bottom edge. */
+  Bottom?: string
+  /** Colour of the left edge. */
+  Left?: string
+}
 
 /**
  * Defines the layout and style properties for a BoxNode, analogous to CSS properties.
@@ -327,7 +460,13 @@ export interface BoxProps extends BaseProps {
   /**
    * Specifies the positioning method used for the node.
    * `RELATIVE`: Positioned according to the normal flow, then offset relative to that position.
-   * `ABSOLUTE`: Positioned relative to its nearest positioned ancestor (or the root). Layout calculation ignores this node.
+   * `ABSOLUTE`: Taken out of the flow and positioned against its **immediate parent**.
+   *
+   * That last part is where this differs from CSS, and the difference is Yoga's rather than this
+   * library's. CSS resolves an absolute node against the nearest *positioned* ancestor, skipping
+   * every static box in between; Yoga always uses the parent, whether or not it is positioned. A
+   * layout ported from the browser that relies on skipping an intermediate box will land somewhere
+   * else — give the node's own parent the offsets instead.
    * @see Style.PositionType (`RELATIVE`, `ABSOLUTE`)
    * @default Yoga default (`RELATIVE`)
    * @see https://yogalayout.dev/docs/styling/position
@@ -372,11 +511,19 @@ export interface BoxProps extends BaseProps {
   border?: Partial<Record<keyof typeof Style.Edge, number>> | number
 
   /**
-   * Sets the color of the node's border.
-   * Accepts standard CSS color strings (e.g., 'red', '#FF0000', 'rgba(255,0,0,0.5)').
+   * Colour of the node's border — one colour for every edge, or a colour per edge.
+   *
+   * Accepts standard CSS colour strings (`'red'`, `'#FF0000'`, `'rgba(255,0,0,0.5)'`). Given an
+   * object, an edge left out falls back to black. Where two edges of different colours meet at a
+   * rounded corner the arc is split between them, as CSS joins them.
    * @default 'black' (set in BoxNode constructor)
+   * @example
+   * ```ts
+   * Box({ border: 2, borderColor: '#cbd5e1' })
+   * Box({ border: { Left: 4 }, borderColor: { Left: '#2563eb' } })
+   * ```
    */
-  borderColor?: string | `#${string}`
+  borderColor?: string | `#${string}` | EdgeColors
 
   /**
    * Sets the style of the node's border.
@@ -393,14 +540,7 @@ export interface BoxProps extends BaseProps {
    * @unit Pixels.
    * @default undefined (no rounding)
    */
-  borderRadius?:
-    | Partial<{
-        TopLeft: number
-        TopRight: number
-        BottomLeft: number
-        BottomRight: number
-      }>
-    | number
+  borderRadius?: CornerRadii | number
 
   /**
    * Locks the aspect ratio (width / height) of the node.
@@ -415,7 +555,8 @@ export interface BoxProps extends BaseProps {
    * Defines how content that overflows the node's bounds is handled.
    * `VISIBLE`: Content is not clipped and may render outside the node's box.
    * `HIDDEN`: Content is clipped and the rest is invisible.
-   * `SCROLL`: Content is clipped, but Yoga calculates layout as if it were visible (used for scrollable containers, though an actual scrolling mechanism is external).
+   * `SCROLL`: Yoga lays the node out as a scroll container, but nothing is clipped — a scroll
+   * container is a box a reader moves, and nothing here is interactive. It draws as `VISIBLE`.
    * @see Style.Overflow (`VISIBLE`, `HIDDEN`, `SCROLL`)
    * @default Yoga default (`VISIBLE`)
    * @see https://yogalayout.dev/docs/styling/overflow
@@ -523,8 +664,12 @@ export interface BoxProps extends BaseProps {
   /**
    * Sets the opacity of the node and its children when drawing.
    * A value between 0 (fully transparent) and 1 (fully opaque).
-   * Opacity is applied to the entire rendered output of the node, including background, border, content, and children.
-   * Opacity values stack multiplicatively (e.g., a parent with 0.5 opacity containing a child with 0.5 opacity results in the child rendering at 0.25 opacity relative to the background).
+   *
+   * The node's whole drawing — background, border, content and children — is composited once and
+   * then faded, as CSS does. Two overlapping children inside a half-transparent parent are exactly
+   * as dark as one of them, rather than compounding into a darker patch where they meet.
+   *
+   * Nesting multiplies: a child at 0.5 inside a parent at 0.5 draws at 0.25 against the page.
    * @default 1
    */
   opacity?: number
@@ -622,9 +767,13 @@ export interface BoxProps extends BaseProps {
   verticalAlign?: 'top' | 'middle' | 'bottom'
 
   /**
-   * Line height.
-   * @unit Pixels. If not set, estimated from font size.
-   * @default undefined
+   * Height of each line box.
+   *
+   * Left unset, a line is the face's own height — its ascent plus its descent — which is what
+   * `line-height: normal` means in CSS and is a little over 1.3em for most text faces. Set smaller
+   * than that and the lines overlap rather than the box quietly growing, again as CSS does.
+   * @unit Pixels.
+   * @default undefined (the face's own height)
    */
   lineHeight?: number
 
@@ -675,11 +824,24 @@ export interface BoxProps extends BaseProps {
  */
 export interface GridItemProps extends BoxProps {
   /**
-   * Grid Placement Props
+   * Which columns the item occupies, in the notation CSS `grid-column` uses: a line-to-line range
+   * like `'1 / 3'`, or `'span 2'` to take that many from wherever the item lands.
+   * @default undefined (the next free cell)
    */
-  gridColumn?: string // e.g., "1 / 3" or "span 2"
-  gridRow?: string // e.g., "1 / 2"
-  gridArea?: string // shorthand
+  gridColumn?: string
+
+  /**
+   * Which rows the item occupies, read the same way as {@link gridColumn}.
+   * @default undefined (the next free cell)
+   */
+  gridRow?: string
+
+  /**
+   * Row and column together, as CSS `grid-area` writes them: `'1 / 2 / 3 / 4'` is
+   * row-start / column-start / row-end / column-end.
+   * @default undefined
+   */
+  gridArea?: string
 }
 
 /**
@@ -794,8 +956,8 @@ export interface RootProps extends Omit<BoxProps, 'children'> {
   pagedChildren?: (Children | Children[])[]
 
   /**
-   * Width of the canvas in pixels.
-   * @required
+   * Width of the canvas in pixels. Required — everything else can be derived from the content, but
+   * text cannot wrap without knowing how much room it has.
    */
   width: number
 
@@ -884,7 +1046,7 @@ export interface RootProps extends Omit<BoxProps, 'children'> {
  * Root props when worker mode is enabled (default behavior).
  * Includes .release() method for memory cleanup.
  */
-interface RootPropsWithWorkerBase extends RootProps {
+export interface RootPropsWithWorkerBase extends RootProps {
   /**
    * Worker mode enabled or default (undefined defaults to true).
    */
@@ -901,7 +1063,7 @@ interface RootPropsWithWorkerBase extends RootProps {
  * Returns plain Canvas without .release() method.
  * workers prop is not available in this mode.
  */
-interface RootPropsWithoutWorkerBase extends RootProps {
+export interface RootPropsWithoutWorkerBase extends RootProps {
   /**
    * Worker mode explicitly disabled.
    */
@@ -931,6 +1093,7 @@ export type RootPropsWithoutWorker = RootPropsWithoutWorkerBase & RootContent
  * constructs one node per page with that page's already-built children.
  */
 export type RootNodeProps = Omit<RootProps, 'children' | 'pages' | 'duration' | 'fps' | 'pagedChildren'> & {
+  /** The tree for one page, already resolved — a builder has been run by the time this is built. */
   children?: Children | Children[]
 }
 
@@ -942,9 +1105,13 @@ export type RootNodeProps = Omit<RootProps, 'children' | 'pages' | 'duration' | 
  * runtime, which is the half that catches untyped callers.
  */
 export interface StillContent {
+  /** The tree to draw. */
   children?: Children | Children[]
+  /** Not available on a still render — see the note above. */
   pages?: never
+  /** Not available on a still render — see the note above. */
   duration?: never
+  /** Not available on a still render — see the note above. */
   fps?: never
 }
 
@@ -954,7 +1121,27 @@ export interface StillContent {
  * Exactly one of `pages` or `duration` is required — expressed as two members of a union rather
  * than two optional properties, so omitting both and supplying both are each rejected.
  */
-export type PagedContent = { children: PageBuilder } & ({ pages: number; duration?: never; fps?: number } | { duration: number; pages?: never; fps?: number })
+export type PagedContent = {
+  /** Run once per page, and returns that page's tree. */
+  children: PageBuilder
+} & (
+  | {
+      /** How many pages to render. Mutually exclusive with `duration`. */
+      pages: number
+      /** Not available alongside `pages` — the count is already fixed. */
+      duration?: never
+      /** Rate the page times are derived at. Describes the render, not the encode. */
+      fps?: number
+    }
+  | {
+      /** How long the sequence runs, in seconds. The page count becomes `ceil(duration * fps)`. */
+      duration: number
+      /** Not available alongside `duration` — the count is derived from it. */
+      pages?: never
+      /** Rate the page count and page times are derived at. */
+      fps?: number
+    }
+)
 
 /** Content shapes `Root` accepts: one page of elements, or a sequence from a builder. */
 export type RootContent = StillContent | PagedContent
@@ -1000,19 +1187,29 @@ export interface AnimationExportOptions {
  * is reachable, and a real `Canvas` is assignable to it.
  */
 export type RenderedCanvas = Omit<Canvas, 'toBuffer' | 'toBufferSync' | 'toURL' | 'toURLSync' | 'toDataURLSync'> & {
+  /** Encodes the canvas and resolves with the bytes. An animated format takes every page. */
   toBuffer(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<Buffer>
+  /** Encodes the canvas and resolves with the bytes. */
   toBuffer(format: StillFormat, options?: StillExportOptions): Promise<Buffer>
 
+  /** `toBuffer`, blocking instead of resolving. */
   toBufferSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Buffer
+  /** `toBuffer`, blocking instead of resolving. */
   toBufferSync(format: StillFormat, options?: StillExportOptions): Buffer
 
+  /** `toBuffer`, resolved as a `data:` URL. */
   toURL(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<string>
+  /** `toBuffer`, resolved as a `data:` URL. */
   toURL(format: StillFormat, options?: StillExportOptions): Promise<string>
 
+  /** `toBuffer`, as a `data:` URL, blocking instead of resolving. */
   toURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  /** `toBuffer`, as a `data:` URL, blocking instead of resolving. */
   toURLSync(format: StillFormat, options?: StillExportOptions): string
 
+  /** `toURLSync` under its `HTMLCanvasElement` name. */
   toDataURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  /** `toURLSync` under its `HTMLCanvasElement` name. */
   toDataURLSync(format: StillFormat, options?: StillExportOptions): string
 }
 
@@ -1070,21 +1267,34 @@ export interface GridProps extends BoxProps {
  * Represents a text segment with styling information
  */
 export interface TextSegment {
+  /** The run of characters this segment draws. */
   text: string
+  /** Colour for this run, from a `<color>` tag. Falls back to the node's `color`. */
   color?: string
+  /** Weight for this run, from a `<weight>` tag. Falls back to the node's `fontWeight`. */
   weight?: BoxProps['fontWeight']
+  /** Whether a `<b>` tag encloses this run. */
   b?: boolean
+  /** Whether an `<i>` tag encloses this run. */
   i?: boolean
-  size?: number // Font size in pixels
-  width?: number // Used for pre-calculation optimizations
+
+  /**
+   * Size for this run, from a `<size>` tag. Falls back to the node's `fontSize`.
+   * @unit Pixels.
+   */
+  size?: number
+
+  /**
+   * The run's measured width, cached while the line is being laid out so wrapping does not measure
+   * the same run twice.
+   */
+  width?: number
 }
 
 /**
  * Defines the content and styling properties for a TextNode.
  */
 export interface TextProps extends Omit<BoxProps, 'children' | 'gap' | 'flexDirection' | 'justifyContent' | 'alignContent' | 'alignItems'> {
-  lineHeight?: number // Optional explicit line height
-
   /** Maximum number of lines to display. Text exceeding this limit will be truncated. */
   maxLines?: number
 
@@ -1353,8 +1563,11 @@ export type ChartType = 'pie' | 'doughnut' | 'bar' | 'line'
  * - `color`: Optional CSS color string to override the default dataset/series color for this point.
  */
 export interface PieChartDataPoint {
+  /** Shown in the legend and, unless `showLabels` is off, beside the slice. */
   label: string
+  /** The slice's size, as a share of every value in the set rather than as a percentage. */
   value: number
+  /** Left unset, a colour is chosen from the built-in sequence by position. */
   color?: string
 }
 
@@ -1365,8 +1578,11 @@ export interface PieChartDataPoint {
  * - `color`: Optional CSS color string for the entire dataset.
  */
 export interface ChartDataset {
+  /** Names the series in the legend. */
   label: string
+  /** One value per label on the category axis; a shorter array leaves the remaining slots empty. */
   data: number[]
+  /** Left unset, a colour is chosen from the built-in sequence by position. */
   color?: string
 }
 
@@ -1376,7 +1592,9 @@ export interface ChartDataset {
  * - `datasets`: An array of `ChartDataset` objects, each representing a series.
  */
 export interface CartesianChartData {
+  /** The category axis, one entry per position. Every dataset is read against these. */
   labels: string[]
+  /** One series per entry, drawn together against the same axes. */
   datasets: ChartDataset[]
 }
 
@@ -1388,8 +1606,21 @@ export type LabelItem<T extends ChartType> = T extends 'bar' | 'line' ? string :
 
 /** Grid lines behind a cartesian chart. */
 export interface GridOptions {
+  /**
+   * Draw the grid lines behind the plot.
+   * @default false
+   */
   show?: boolean
+
+  /**
+   * Colour of the grid lines. Accepts standard CSS colour strings.
+   */
   color?: string
+
+  /**
+   * How each line is drawn.
+   * @default 'solid'
+   */
   style?: 'solid' | 'dashed' | 'dotted'
 }
 
@@ -1402,34 +1633,123 @@ export interface GridOptions {
  */
 export type ChartItem = BoxNode | CanvasElement | null | undefined
 
-// Base options common to all charts
-interface BaseChartOptions<T extends ChartType> {
+/** Options every chart type understands. */
+export interface BaseChartOptions<T extends ChartType> {
+  /**
+   * Draw the label beside each value — the category name on a bar or line chart, the slice's own
+   * label on a pie or doughnut.
+   * @default true
+   */
   showLabels?: boolean
+
+  /**
+   * Draw the legend.
+   * @default true
+   */
   showLegend?: boolean
+
+  /**
+   * Size of the label text.
+   * @unit Pixels.
+   * @default 12
+   */
   labelFontSize?: number
+
+  /**
+   * Colour of the label text. Accepts standard CSS colour strings.
+   */
   labelColor?: string
+
+  /**
+   * Which side of the plot the legend sits on.
+   * @default 'bottom'
+   */
   legendPosition?: 'top' | 'bottom' | 'left' | 'right'
+
+  /**
+   * Draws one legend entry in place of the built-in one. Return nothing to leave that entry out.
+   * @example ({ item, color }) => Row({ children: [Box({ width: 12, height: 12, backgroundColor: color }), Text(item.label)] })
+   */
   renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => ChartItem
+
+  /**
+   * Draws one axis or slice label in place of the built-in one. Return nothing to leave it out.
+   */
   renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => ChartItem
 }
 
-// Options specific to Cartesian charts
-interface CartesianChartSpecificOptions {
+/** Options only a chart with axes understands — `bar` and `line`. */
+export interface CartesianChartSpecificOptions {
+  /**
+   * The grid lines behind the plot — see {@link GridOptions}.
+   * @default undefined (no grid)
+   */
   grid?: GridOptions
+
+  /**
+   * Colour of the axis lines. Accepts standard CSS colour strings.
+   */
   axisColor?: string
+
+  /**
+   * Print each value above its bar or point.
+   * @default false
+   */
   showValues?: boolean
+
+  /**
+   * Size of the printed values.
+   * @unit Pixels.
+   * @default 12
+   */
   valueFontSize?: number
+
+  /**
+   * Colour of the printed values. Accepts standard CSS colour strings.
+   */
   valueColor?: string
+
+  /**
+   * Draws the value printed above one bar or point in place of the built-in one. `datasetIndex`
+   * says which series it belongs to. Return nothing to leave it out.
+   */
   renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => ChartItem
+
+  /**
+   * Draw the value axis down the left of the plot.
+   * @default false
+   */
   showYAxis?: boolean
+
+  /**
+   * Size of the value axis labels.
+   * @unit Pixels.
+   * @default 12
+   */
   yAxisFontSize?: number
+
+  /**
+   * Colour of the value axis labels. Accepts standard CSS colour strings.
+   */
   yAxisColor?: string
+
+  /**
+   * Rewrites each value-axis label before it is drawn — for a currency prefix, a unit, or a
+   * thousands separator.
+   * @example (value) => `$${value.toLocaleString()}`
+   */
   yAxisLabelFormatter?: (value: number) => string
+
+  /**
+   * Rewrites each category-axis label before it is drawn. The index is its position along the axis,
+   * which is what lets every other one be dropped on a crowded chart.
+   * @example (label, index) => (index % 2 ? '' : label)
+   */
   xAxisLabelFormatter?: (value: string, index: number) => string
 }
 
-// Options specific to Pie/Doughnut charts
-interface PieChartSpecificOptions {
+/** Options only a chart of slices understands — `pie` and `doughnut`. */
+export interface PieChartSpecificOptions {
   /**
    * The radius of the inner circle in a doughnut chart, expressed as a
    * percentage of the outer radius. Should be between 0 and 1.

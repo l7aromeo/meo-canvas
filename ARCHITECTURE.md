@@ -42,6 +42,7 @@ src/
 ├── canvas/              # Core rendering nodes
 │   ├── canvas.type.ts   # TypeScript types & interfaces
 │   ├── canvas.helper.ts # Shared drawing utilities (borders)
+│   ├── canvas.engine.ts # Canvas construction, and mirroring engine options onto an offscreen
 │   ├── root.canvas.ts   # Root() entry point & rendering pipeline
 │   ├── page.plan.ts     # Page-count resolution & page builder invocation
 │   ├── layout.canvas.ts # Box, Column, Row (flexbox via yoga-layout)
@@ -50,6 +51,7 @@ src/
 │   ├── gradient.canvas.ts # Gradient construction, shared by backgrounds and masks
 │   ├── mask.canvas.ts   # Mask geometry, and gradient masking through an offscreen
 │   ├── image.canvas.ts  # Image loading, caching, fit/position
+│   ├── image.frames.ts  # Frame extraction from animated sources
 │   ├── path.canvas.ts   # Arbitrary shapes from SVG path data
 │   ├── chart.canvas.ts  # Bar, Line, Pie, Doughnut charts
 │   └── grid.canvas.ts   # CSS Grid-like layout
@@ -60,27 +62,41 @@ src/
 │   ├── sync.bridge.ts     # Blocking channel for the *Sync export methods
 │   ├── render.worker.ts   # Worker entry point (exposes WorkerAPI)
 │   └── worker.types.ts    # Worker message types
+├── animate/                 # Sampling helpers for paged renders — no drawing of their own
+│   ├── easing.ts            # Named easings, cubic-bezier and steps
+│   ├── interpolate.ts       # lerp, mapRange, and interpolation across types
+│   ├── color.ts             # Colour parsing and mixing, in every notation the engine takes
+│   ├── spring.ts            # Springs solved in closed form rather than integrated
+│   ├── track.ts             # One value over time, from keyframes
+│   ├── sequence.ts          # Tracks run one after another
+│   └── parallel.ts          # Tracks sampled together, optionally staggered
 ├── util/
-│   └── disk.cache.ts    # Disk-based image cache for re-decodes
+│   ├── disk.cache.ts    # Disk-based image cache for re-decodes
+│   └── http.options.ts  # Request options for fetched image sources
 ├── constant/
 │   └── common.const.ts  # Style enums (Border), Yoga constants re-export
+├── types/               # Ambient declarations for optional peers and DOM shims
 └── index.ts             # Public API barrel export
 ```
 
 ## Node Hierarchy
 
 ```
-BaseNode               (abstract — name, key, __type)
-  └── BoxNode           (base layout node — flexbox, margins, padding, borders, bg)
-        ├── RootNode    (entry point — font registration, image loading, render)
-        ├── ColumnNode  (shorthand: flexDirection = 'column')
-        └── RowNode     (shorthand: flexDirection = 'row')
-  ├── TextNode          (rich text with <color>, <weight>, <size>, <b>, <i>)
-  ├── ImageNode         (URL / file / buffer, objectFit, objectPosition, saturate)
-  ├── ChartNode         (Bar / Line / Pie / Doughnut)
-  ├── GridNode          (CSS Grid container)
-  └── GridItemNode      (Grid cell with column/row span)
+BoxNode                     (every node is one — flexbox, margins, padding, borders, background)
+  ├── ColumnNode            (shorthand: flexDirection = 'column')
+  │     └── RootNode        (entry point — font registration, image loading, render)
+  ├── RowNode               (shorthand: flexDirection = 'row')
+  │     └── GridNode        (CSS Grid container)
+  ├── GridItemNode          (grid cell, spanning columns or rows)
+  ├── TextNode              (rich text with <color>, <weight>, <size>, <b>, <i>)
+  ├── ImageNode             (URL / file / buffer, objectFit, objectPosition, saturate)
+  ├── PathNode              (arbitrary shapes from SVG path data)
+  └── ChartNode             (Bar / Line / Pie / Doughnut)
 ```
+
+There is no abstract base above `BoxNode`: everything that draws is a box first, which is what lets
+`mask`, `opacity`, `boxShadow`, `overflow` and the rest apply to every component without any of them
+knowing about it.
 
 ## Rendering Pipeline
 
@@ -103,13 +119,27 @@ Text is the expensive part of this phase, and most of that expense is repetition
 With layout computed, each node draws itself on the `meo-skia-canvas` context:
 
 - **BoxNode** draws background color, background image, and borders before recursing into children
-- **TextNode** parses inline HTML-like tags and draws styled text segments
-- **ImageNode** draws the loaded image with `objectFit` / `objectPosition` / `saturate`
+- **TextNode** parses inline HTML-like tags and draws styled text segments. Line boxes are built
+  from the face's own ascent and descent rather than from the ink of the glyphs, which is what keeps
+  a line from moving when it gains a descender and puts baselines within a fraction of a pixel of a
+  browser's. A line carrying a `textDecoration` is drawn in one call so its rule is unbroken across
+  the spaces; one carrying rich-text markup cannot be, and is drawn a word at a time
+- **ImageNode** draws the loaded image with `objectFit` / `objectPosition` / `saturate`. Its
+  intrinsic proportions are given to Yoga only when a dimension was left out, so an image told how
+  big to be is that size rather than being reshaped to its own ratio
 - **PathNode** fills and strokes SVG path data, in the node's own coordinates
 - **ChartNode** draws chart elements (axes, bars, lines, pie slices)
 - **GridNode** positions children in a 2D grid based on column/row definitions
 
-Every one of those arrives through `BoxNode.render`; subclasses override `_renderContent` rather than `render` itself. That single entry is what lets `mask` apply to all of them without each knowing about it. A shape or path mask clips the context around the node's drawing. A gradient mask cannot — clipping is a yes-or-no test per pixel — so the node is drawn into an offscreen canvas of its own box, multiplied by the gradient's alpha with `destination-in`, and composited back. The offscreen is sized from `ctx.getTransform()`, not from the layout box, so a masked node on a 2× render is drawn at the same resolution as everything beside it.
+Every one of those arrives through `BoxNode.render`; subclasses override `_renderContent` rather than `render` itself. That single entry is what lets `mask`, `opacity` and `dither` apply to all of them without each knowing about it.
+
+`opacity` opens an isolated compositing layer rather than setting `globalAlpha`, because CSS fades a
+subtree once rather than fading each drawing in it — otherwise two overlapping children inside a
+half-transparent parent come out twice as opaque where they meet.
+
+`dither` is context state, so it is set around the node's drawing and put back afterwards. That is
+what makes it inherit: a node that says nothing leaves the context alone and draws with whatever its
+nearest ancestor set, and a node that sets its own leaves its siblings untouched. A shape or path mask clips the context around the node's drawing. A gradient mask cannot — clipping is a yes-or-no test per pixel — so the node is drawn into an offscreen canvas of its own box, multiplied by the gradient's alpha with `destination-in`, and composited back. The offscreen is sized from `ctx.getTransform()`, not from the layout box, so a masked node on a 2× render is drawn at the same resolution as everything beside it.
 
 ### Phase 5 — Export
 
@@ -145,7 +175,7 @@ Server-side canvas rendering is CPU-heavy. Running it on the main thread blocks 
 
 ### Function serialization
 
-Some props contain callback functions (e.g., `ChartProps.renderValue`). Functions can't be `structuredClone`'d. The pool uses a **sentinel protocol**:
+Some props contain callback functions (e.g. `ChartOptions.renderValueItem`). Functions can't be `structuredClone`'d. The pool uses a **sentinel protocol**:
 
 1. `extractFunctions()` replaces every function with `{ __comlinkFnId: number }` and stores the original in a `Map`.
 2. A single `Comlink.proxy()` callback is created that dispatches `{__comlinkFnId, args}` back to the main thread.

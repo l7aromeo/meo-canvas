@@ -12,3 +12,6 @@ bun-error.log*
 /coverage
 .DS_Store
 .idea/
+
+# TypeDoc output — built in CI and deployed to Pages, never committed.
+docs-site

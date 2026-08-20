@@ -7,8 +7,8 @@ path is the fix.
 
 | Version | Supported |
 | ------- | --------- |
-| 5.x     | yes       |
-| < 5     | no        |
+| 8.x     | yes       |
+| < 8     | no        |
 
 ## Reporting a vulnerability
 

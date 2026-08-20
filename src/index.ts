@@ -1,12 +1,18 @@
 export * from '@/constant/common.const.js'
 export * from '@/canvas/canvas.type.js'
 export { Box, Column, Row, type BoxNode } from '@/canvas/layout.canvas.js'
-export { Image } from '@/canvas/image.canvas.js'
-export { Path } from '@/canvas/path.canvas.js'
-export { Text } from '@/canvas/text.canvas.js'
-export { Root, terminate } from '@/canvas/root.canvas.js'
-export { GridItem } from '@/canvas/grid.canvas.js'
-export { Grid } from '@/canvas/grid.canvas.js'
+export { Image, type ImageNode, type RenderImageCache } from '@/canvas/image.canvas.js'
+export { Path, type PathNode } from '@/canvas/path.canvas.js'
+export { Text, type TextNode } from '@/canvas/text.canvas.js'
+
+/**
+ * `WorkerCanvas` is what `Root` resolves to in worker mode, so a caller cannot annotate the result
+ * of their own render without it. The node types come with their factories for the same reason:
+ * `Children` is written in terms of them, and a helper returning one has to be able to say so.
+ */
+export { Root, terminate, type WorkerCanvas } from '@/canvas/root.canvas.js'
+export { GridItem, type GridItemNode } from '@/canvas/grid.canvas.js'
+export { Grid, type GridNode } from '@/canvas/grid.canvas.js'
 export { Chart } from '@/canvas/chart.canvas.js'
 export { clearDiskCache, setDiskCacheDir } from '@/util/disk.cache.js'
 

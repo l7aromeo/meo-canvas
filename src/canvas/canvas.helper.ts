@@ -39,7 +39,18 @@ export const drawBorders = ({
   const boxSizing = node.getBoxSizing()
 
   if (hasBorder && borderColor) {
-    ctx.strokeStyle = borderColor
+    // One colour or four. An edge left out of the object form falls back to black, which is what a
+    // node with no `borderColor` at all draws in.
+    const edge =
+      typeof borderColor === 'string'
+        ? { Top: borderColor, Right: borderColor, Bottom: borderColor, Left: borderColor }
+        : {
+            Top: borderColor.Top ?? 'black',
+            Right: borderColor.Right ?? 'black',
+            Bottom: borderColor.Bottom ?? 'black',
+            Left: borderColor.Left ?? 'black',
+          }
+
     ctx.lineCap = 'butt'
     ctx.lineJoin = 'miter' // Use miter for sharp corners unless rounded
 
@@ -69,8 +80,28 @@ export const drawBorders = ({
      * @param border1 The border width leading into the corner.
      * @param border2 The border width leading out of the corner.
      */
-    const drawCornerArc = (cx: number, cy: number, radius: number, startAngle: number, endAngle: number, border1: number, border2: number) => {
+    const drawCornerArc = (
+      cx: number,
+      cy: number,
+      radius: number,
+      startAngle: number,
+      endAngle: number,
+      border1: number,
+      border2: number,
+      colorFrom: string = edge.Top,
+      colorTo: string = edge.Top,
+    ) => {
       if (radius <= 0) return
+
+      // Two colours meeting here: draw the arc as two halves, each in the colour of the edge it
+      // runs into, so the join sits on the bend the way CSS mitres it.
+      if (colorFrom !== colorTo) {
+        const middle = (startAngle + endAngle) / 2
+        drawCornerArc(cx, cy, radius, startAngle, middle, border1, border2, colorFrom, colorFrom)
+        drawCornerArc(cx, cy, radius, middle, endAngle, border1, border2, colorTo, colorTo)
+        return
+      }
+      ctx.strokeStyle = colorFrom
 
       const cornerWidth = Math.max(border1, border2)
       if (cornerWidth <= 0) return
@@ -87,7 +118,7 @@ export const drawBorders = ({
 
         if (centerlineArcRadius <= 0 && radius > 0) {
           // Draw cap for border-box when border is thicker than radius allows for centerline arc
-          ctx.fillStyle = borderColor! // Use border color for fill
+          ctx.fillStyle = ctx.strokeStyle as string // whichever edge colour this arc is being drawn in
           ctx.beginPath()
           // Cap is centered on the visual corner center with the visual radius
           ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
@@ -111,8 +142,9 @@ export const drawBorders = ({
      * @param y2 The y-coordinate of the ending point.
      * @param borderWidth The width of the border.
      */
-    const drawLine = (x1: number, y1: number, x2: number, y2: number, borderWidth: number) => {
+    const drawLine = (x1: number, y1: number, x2: number, y2: number, borderWidth: number, color: string) => {
       if (borderWidth <= 0) return
+      ctx.strokeStyle = color
       ctx.beginPath()
       ctx.lineWidth = borderWidth
       setDash(borderWidth)
@@ -139,35 +171,35 @@ export const drawBorders = ({
     // For content-box, coordinates are offset *outwards* from x, y, width, height
     if (boxSizing === Style.BoxSizing.ContentBox) {
       // Top line segment
-      void drawLine(x + rTL, y - halfBt, x + width - rTR, y - halfBt, borderTop)
+      void drawLine(x + rTL, y - halfBt, x + width - rTR, y - halfBt, borderTop, edge.Top)
       // Right line segment
-      void drawLine(x + width + halfBr, y + rTR, x + width + halfBr, y + height - rBR, borderRight)
+      void drawLine(x + width + halfBr, y + rTR, x + width + halfBr, y + height - rBR, borderRight, edge.Right)
       // Bottom line segment
-      void drawLine(x + width - rBR, y + height + halfBb, x + rBL, y + height + halfBb, borderBottom)
+      void drawLine(x + width - rBR, y + height + halfBb, x + rBL, y + height + halfBb, borderBottom, edge.Bottom)
       // Left line segment
-      void drawLine(x - halfBl, y + height - rBL, x - halfBl, y + rTL, borderLeft)
+      void drawLine(x - halfBl, y + height - rBL, x - halfBl, y + rTL, borderLeft, edge.Left)
 
-      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop)
-      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight)
-      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom)
-      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft)
+      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop, edge.Left, edge.Top)
+      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight, edge.Top, edge.Right)
+      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom, edge.Right, edge.Bottom)
+      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft, edge.Bottom, edge.Left)
     } else {
       // For border-box, coordinates are offset *inwards* from x, y, width, height
       // Top line segment
-      void drawLine(x + rTL, y + halfBt, x + width - rTR, y + halfBt, borderTop)
+      void drawLine(x + rTL, y + halfBt, x + width - rTR, y + halfBt, borderTop, edge.Top)
       // Right line segment
-      void drawLine(x + width - halfBr, y + rTR, x + width - halfBr, y + height - rBR, borderRight)
+      void drawLine(x + width - halfBr, y + rTR, x + width - halfBr, y + height - rBR, borderRight, edge.Right)
       // Bottom line segment
-      void drawLine(x + width - rBR, y + height - halfBb, x + rBL, y + height - halfBb, borderBottom)
+      void drawLine(x + width - rBR, y + height - halfBb, x + rBL, y + height - halfBb, borderBottom, edge.Bottom)
       // Left line segment
-      void drawLine(x + halfBl, y + height - rBL, x + halfBl, y + rTL, borderLeft)
+      void drawLine(x + halfBl, y + height - rBL, x + halfBl, y + rTL, borderLeft, edge.Left)
 
       // Draw corner arcs (centers relative to layout box corners, adjusted for inward border)
       // Pass visual radius (rTL, rTR etc.) to drawCornerArc
-      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop) // Top-Left
-      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight) // Top-Right
-      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom) // Bottom-Right
-      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft) // Bottom-Left
+      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop, edge.Left, edge.Top) // Top-Left
+      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight, edge.Top, edge.Right) // Top-Right
+      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom, edge.Right, edge.Bottom) // Bottom-Right
+      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft, edge.Bottom, edge.Left) // Bottom-Left
     }
   }
 }

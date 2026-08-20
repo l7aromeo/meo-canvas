@@ -113,18 +113,22 @@ function loadSharp(): (...args: never[]) => unknown {
  * A Canvas that lives in a worker thread.
  *
  * Every method behaves as its counterpart on a real Canvas does. Sync methods block the calling
- * thread while the worker runs the real call (see {@link SyncChannel}); async methods go through
+ * thread while the worker runs the real call (over the pool's synchronous channel); async methods go through
  * Comlink. The two members that cannot be honoured — `getContext()` and `newPage()` — say so
  * instead of returning something that only resembles the real thing.
  */
 export class WorkerCanvas {
+  /** Width of the rendered canvas in device pixels — the root's width times its `scale`. */
   readonly width: number
+  /** Height of the rendered canvas in device pixels. */
   readonly height: number
   /** Snapshots, not proxies: none of these can change once the canvas has been rendered. */
   readonly gpu: boolean
+  /** Which backend took the render, and what it reports about itself. */
   readonly engine: EngineDetails
   /** What the engine settled on, which is not always what `Root` asked for. */
   readonly colorType: ColorType
+  /** The space the canvas composited in. Exports convert out of it when asked. */
   readonly colorSpace: ColorSpace
 
   private readonly _pool: ComlinkPoolType
@@ -174,12 +178,20 @@ export class WorkerCanvas {
 
   // --- Sync methods: block on the worker, honour the format actually asked for ---
 
+  /**
+   * Encodes the canvas and hands back the bytes, blocking until the worker has done it.
+   *
+   * An animated format takes every page as a frame; a still one takes the first. The result is
+   * cached, so asking twice for the same format and options costs a map lookup rather than a second
+   * encode.
+   */
   toBufferSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Buffer
   toBufferSync(format?: StillFormat, options?: StillExportOptions): Buffer
   toBufferSync(format: ExportFormat = 'png', options?: ExportOptions): Buffer {
     return this._syncCached<Buffer>('toBufferSync', [format, options], asBuffer)
   }
 
+  /** {@link toBufferSync}, encoded as a `data:` URL instead of raw bytes. */
   toURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
   toURLSync(format?: StillFormat, options?: StillExportOptions): string
   toURLSync(format: ExportFormat = 'png', options?: ExportOptions): string {
@@ -196,6 +208,10 @@ export class WorkerCanvas {
     return this._syncCached<string>('toDataURLSync', [format, options], String)
   }
 
+  /**
+   * The `HTMLCanvasElement` spelling of {@link toURLSync}, taking a quality rather than an options
+   * object. Synchronous despite the name, as it is on a real canvas.
+   */
   toDataURL(format: ExportFormat = 'png', quality?: number): string {
     return this._syncCached<string>('toDataURL', [format, quality], String)
   }
@@ -220,18 +236,26 @@ export class WorkerCanvas {
 
   // --- Async methods: delegate to worker via Comlink ---
 
+  /**
+   * Encodes the canvas on the worker and resolves with the bytes.
+   *
+   * The asynchronous form to prefer: the encode runs on the worker's thread, so several canvases
+   * can be encoded at once without blocking the caller.
+   */
   toBuffer(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<Buffer>
   toBuffer(format: StillFormat, options?: StillExportOptions): Promise<Buffer>
   toBuffer(format: ExportFormat, options?: ExportOptions): Promise<Buffer> {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toBuffer', [format, options]).then(asBuffer)
   }
 
+  /** {@link toBuffer}, resolved as a `data:` URL instead of raw bytes. */
   toURL(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<string>
   toURL(format: StillFormat, options?: StillExportOptions): Promise<string>
   toURL(format: ExportFormat, options?: ExportOptions): Promise<string> {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toURL', [format, options]) as Promise<string>
   }
 
+  /** Writes the canvas to disk, taking the format from the file's extension. */
   toFile(filename: string, options?: SaveOptions): Promise<void> {
     return this._pool.callOnCanvas(this._workerIdx, this._canvasId, 'toFile', [filename, options]) as Promise<void>
   }
@@ -259,27 +283,34 @@ export class WorkerCanvas {
     }).withMetadata({ density: density * 72 }) as ReturnType<Canvas['toSharp']>
   }
 
+  /** Hands the pixels to sharp for further processing, blocking on the worker. */
   toSharpSync(options?: RenderOptions): ReturnType<Canvas['toSharp']> {
     return this.toSharp(options)
   }
 
   // --- Async convenience getters ---
 
+  /** Shorthand for `toBuffer('png')`. Lossless, and the format to reach for unless there is a reason not to. */
   get png(): Promise<Buffer> {
     return this.toBuffer('png')
   }
+  /** Shorthand for `toBuffer('webp')`. Smaller than PNG at the same quality, and takes every page as an animation. */
   get webp(): Promise<Buffer> {
     return this.toBuffer('webp')
   }
+  /** Shorthand for `toBuffer('jpg')`. Lossy and opaque — no alpha channel. */
   get jpg(): Promise<Buffer> {
     return this.toBuffer('jpg')
   }
+  /** Shorthand for `toBuffer('svg')`. Vector output: the drawing as paths rather than pixels. */
   get svg(): Promise<Buffer> {
     return this.toBuffer('svg')
   }
+  /** Shorthand for `toBuffer('pdf')`. A document, one page per rendered page. */
   get pdf(): Promise<Buffer> {
     return this.toBuffer('pdf')
   }
+  /** Shorthand for `toBuffer('raw')`. Pixel data in the canvas's own `colorType`, with no container around it. */
   get raw(): Promise<Buffer> {
     return this.toBuffer('raw')
   }
@@ -291,15 +322,19 @@ export class WorkerCanvas {
   get apng(): Promise<Buffer> {
     return this.toBuffer('apng')
   }
+  /** Shorthand for `toBuffer('avif')`. Smaller again than WebP, at a much higher encode cost. */
   get avif(): Promise<Buffer> {
     return this.toBuffer('avif')
   }
+  /** Shorthand for `toBuffer('tiff')`. A sheet per page, for print pipelines. */
   get tiff(): Promise<Buffer> {
     return this.toBuffer('tiff')
   }
+  /** Shorthand for `toBuffer('ico')`. An icon, one size per page. */
   get ico(): Promise<Buffer> {
     return this.toBuffer('ico')
   }
+  /** Shorthand for `toBuffer('bmp')`. Uncompressed pixels in a container almost nothing needs. */
   get bmp(): Promise<Buffer> {
     return this.toBuffer('bmp')
   }
@@ -316,10 +351,12 @@ export class WorkerCanvas {
     throw new Error('[canvas] getContext() is not available in worker mode — describe drawing with a component tree, or use Root({ workerMode: false })')
   }
 
+  /** Not available in worker mode: a page is added while drawing, and drawing happens in the worker. */
   newPage(): never {
     throw new Error('[canvas] newPage() is not available in worker mode — use Root({ workerMode: false })')
   }
 
+  /** Not available in worker mode — see {@link newPage}. */
   get pages(): never {
     throw new Error('[canvas] pages is not available in worker mode — use Root({ workerMode: false })')
   }

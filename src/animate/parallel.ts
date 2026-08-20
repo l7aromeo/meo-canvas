@@ -8,8 +8,11 @@ import type { Animatable } from '@/animate/interpolate.js'
  * and lets a member be swapped for a sequence without the call site changing.
  */
 export interface Sampled<T> {
+  /** The value at one page. `index` overrides the page's own position when sampling a group. */
   at(page: PageInfo, index?: number): T
+  /** How long one pass takes, in seconds. */
   readonly duration: number
+  /** How long `count` pages take in total, in seconds — a pass plus whatever stagger separates them. */
   totalDuration(count: number): number
 }
 

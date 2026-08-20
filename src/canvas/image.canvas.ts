@@ -1,6 +1,7 @@
 import type { BaseProps, ImageProps, CanvasElement } from '@/canvas/canvas.type.js'
 import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'meo-skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.js'
+import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.js'
 import { promises as fs } from 'fs'
 import { Style } from '@/constant/common.const.js'
@@ -64,6 +65,25 @@ export class ImageNode extends BoxNode {
     }
   }
 
+  /**
+   * The aspect ratio Yoga should size this node by, or `undefined` to leave its dimensions alone.
+   *
+   * An intrinsic ratio only fills in a dimension the caller left out, which is what CSS does with
+   * an image's own proportions. Handing Yoga a ratio when both `width` and `height` are given lets
+   * it override one of them: a 40x20 image in a box declared 120x80 was laid out 160x80, and every
+   * `objectFit` mode then measured itself against a box the caller never asked for — `contain` and
+   * `cover` became indistinguishable from `fill`, because the node had been reshaped to the image's
+   * own ratio before the fit was computed.
+   */
+  private sizingAspectRatio(natural: number | undefined): number | undefined {
+    const asked = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
+    if (asked !== undefined) return asked
+
+    const hasWidth = this.props.width !== undefined
+    const hasHeight = this.props.height !== undefined
+    return hasWidth && hasHeight ? undefined : natural
+  }
+
   /** Tells this node which moment of the render it is being drawn for. */
   setPageTime(seconds: number): void {
     this.pageTime = seconds
@@ -86,6 +106,13 @@ export class ImageNode extends BoxNode {
     return image.frame(frameAtTime(image.delays, this.pageTime, { loop }))
   }
 
+  /**
+   * Fetches and decodes the source, then tells Yoga what proportions it has.
+   *
+   * `cache` is scoped to one render, so the same URL appearing on several nodes is fetched once.
+   * Safe to call more than once: the first call's promise is returned again rather than a second
+   * fetch being started.
+   */
   public load(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
     if (!this.loadingPromise) {
       this.loadingPromise = this._loadImage(cache, diskCacheKeys)
@@ -190,8 +217,7 @@ export class ImageNode extends BoxNode {
    */
   private _loadImage(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
     if (!this.props.src) {
-      const aspectRatioFromProps = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
-      this.node.setAspectRatio(aspectRatioFromProps)
+      this.node.setAspectRatio(this.sizingAspectRatio(undefined))
       this.naturalWidth = 0
       this.naturalHeight = 0
       return Promise.resolve()
@@ -221,8 +247,7 @@ export class ImageNode extends BoxNode {
               this.naturalWidth = img.width
               this.naturalHeight = img.height
               const calculatedAspectRatio = img.width > 0 && img.height > 0 ? img.width / img.height : undefined
-              const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
-              this.node.setAspectRatio(finalAspectRatio)
+              this.node.setAspectRatio(this.sizingAspectRatio(calculatedAspectRatio))
               this.props.onLoad?.()
               resolve()
               return
@@ -247,16 +272,13 @@ export class ImageNode extends BoxNode {
           this.naturalHeight = img.height
 
           const calculatedAspectRatio = this.naturalWidth > 0 && this.naturalHeight > 0 ? this.naturalWidth / this.naturalHeight : undefined
-          const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
-
-          this.node.setAspectRatio(finalAspectRatio)
+          this.node.setAspectRatio(this.sizingAspectRatio(calculatedAspectRatio))
           this.props.onLoad?.()
           resolve()
         } catch (error: any) {
           this.naturalWidth = 0
           this.naturalHeight = 0
-          const finalAspectRatioOnError = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
-          this.node.setAspectRatio(finalAspectRatioOnError)
+          this.node.setAspectRatio(this.sizingAspectRatio(undefined))
           this.props.onError?.(error)
           resolve()
         }
@@ -265,6 +287,7 @@ export class ImageNode extends BoxNode {
     })
   }
 
+  /** The in-flight load, starting one if nothing has asked yet. */
   public getLoadingPromise(): Promise<void> {
     return this.loadingPromise ?? this.load()
   }
@@ -298,8 +321,6 @@ export class ImageNode extends BoxNode {
 
     if (contentWidth <= 0 || contentHeight <= 0) return
 
-    // Apply clipping for border radius
-    ctx.save()
     const outerRadii = parseBorderRadius(this.props.borderRadius)
     const innerBorderRadii = {
       TopLeft: Math.max(0, outerRadii.TopLeft - borderTop),
@@ -313,9 +334,6 @@ export class ImageNode extends BoxNode {
       BottomRight: Math.max(0, innerBorderRadii.BottomRight - Math.max(paddingRight, paddingBottom)),
       BottomLeft: Math.max(0, innerBorderRadii.BottomLeft - Math.max(paddingLeft, paddingBottom)),
     }
-    drawRoundedRectPath(ctx, contentX, contentY, contentWidth, contentHeight, contentRadii)
-    ctx.clip()
-
     // Calculate image dimensions based on object-fit
     const nodeRatio = contentWidth / contentHeight
     const imgRatio = imgW / imgH
@@ -382,44 +400,61 @@ export class ImageNode extends BoxNode {
     const dx = contentX + offsetX
     const dy = contentY + offsetY
 
-    // Draw image with filters
-    ctx.save()
-    try {
-      if (this.props.dropShadow) {
-        const shadow = this.props.dropShadow
-        const shadowBlur = Math.max(shadow.offsetX ?? 0, shadow.offsetY ?? 0)
-        ctx.shadowOffsetX = shadow.offsetX ?? 0
-        ctx.shadowOffsetY = shadow.offsetY ?? 0
-        ctx.shadowBlur = Math.max(0, shadow.blur ?? shadowBlur)
-        ctx.shadowColor = shadow.color ?? 'black'
-      }
+    // Where the image lands, rounded to whole pixels so the sampler is not asked to filter a
+    // fractional destination.
+    const finalDX = Math.floor(dx)
+    const finalDY = Math.floor(dy)
+    const finalDW = Math.ceil(dw + (dx - finalDX))
+    const finalDH = Math.ceil(dh + (dy - finalDY))
 
-      const saturateValue = this.props.saturate ?? 1
-      let filterString = ''
-      if (saturateValue !== 1) {
-        filterString += `saturate(${saturateValue * 100}%) `
-      }
+    const saturateValue = this.props.saturate ?? 1
+    const filterString = saturateValue !== 1 ? `saturate(${saturateValue * 100}%)` : ''
 
-      if (filterString) {
-        const currentFilter = ctx.filter && ctx.filter !== 'none' ? ctx.filter + ' ' : ''
-        ctx.filter = currentFilter + filterString.trim()
+    /** Draws the image as this node paints it: clipped to the content box, corners and all. */
+    const paint = (target: CanvasRenderingContext2D) => {
+      target.save()
+      try {
+        drawRoundedRectPath(target, contentX, contentY, contentWidth, contentHeight, contentRadii)
+        target.clip()
+        if (filterString) {
+          const existing = target.filter && target.filter !== 'none' ? `${target.filter} ` : ''
+          target.filter = existing + filterString
+        }
+        if (finalDW > 0 && finalDH > 0) {
+          target.drawImage(img, sx, sy, sw, sh, finalDX, finalDY, finalDW, finalDH)
+        }
+      } catch (drawError) {
+        console.error('[ImageNode] Error drawing image:', drawError)
+      } finally {
+        target.restore()
       }
-
-      const finalDX = Math.floor(dx)
-      const finalDY = Math.floor(dy)
-      const finalDW = Math.ceil(dw + (dx - finalDX))
-      const finalDH = Math.ceil(dh + (dy - finalDY))
-
-      if (finalDW > 0 && finalDH > 0) {
-        ctx.drawImage(img, sx, sy, sw, sh, finalDX, finalDY, finalDW, finalDH)
-      }
-    } catch (drawError) {
-      console.error('[ImageNode] Error drawing image:', drawError)
-    } finally {
-      ctx.restore()
     }
 
-    ctx.restore()
+    // A drop shadow falls outside the node's box by definition, and the clip inside `paint` exists
+    // to keep the image within it — so a shadow cast inside that clip was clipped away and nothing
+    // appeared at all. CSS has the same order: `overflow` clips an element's content, and a
+    // `drop-shadow` filter applies to what is left afterwards.
+    //
+    // So the drawing is built once on an offscreen and then composited in a single call with the
+    // shadow set, which both places the image and casts the shadow from the pixels actually drawn —
+    // following a rounded corner or a transparent edge rather than outlining the box.
+    const shadow = this.props.dropShadow
+    if (shadow && width > 0 && height > 0) {
+      const silhouette = createCanvas(Math.ceil(width), Math.ceil(height), mirrorEngine(ctx))
+      const silhouetteCtx = silhouette.getContext('2d')
+      silhouetteCtx.translate(-x, -y)
+      paint(silhouetteCtx)
+
+      ctx.save()
+      ctx.shadowOffsetX = shadow.offsetX ?? 0
+      ctx.shadowOffsetY = shadow.offsetY ?? 0
+      ctx.shadowBlur = Math.max(0, shadow.blur ?? 0)
+      ctx.shadowColor = shadow.color ?? 'black'
+      ctx.drawImage(silhouette, x, y)
+      ctx.restore()
+    } else {
+      paint(ctx)
+    }
   }
 }
 

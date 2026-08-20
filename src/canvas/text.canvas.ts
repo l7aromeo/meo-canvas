@@ -8,6 +8,19 @@ import { Style, MeasureMode } from '@/constant/common.const.js'
  * Node for rendering text content with rich text styling support
  * Supports color and weight variations through HTML-like tags
  */
+
+/**
+ * The whitespace CSS collapses, which is not all of it.
+ *
+ * JavaScript's `\s` includes the no-break spaces, and treating those as collapsible loses exactly
+ * what a caller reached for them to keep: `a\u00a0\u00a0b` renders with one space instead of two,
+ * and a no-break space becomes a place the line may break. Space, tab, carriage return and newline
+ * collapse; U+00A0, U+202F, U+2007 and U+FEFF are drawn as written.
+ */
+const NO_BREAK_SPACES = '\u00a0\u202f\u2007\ufeff'
+const COLLAPSIBLE_RUN = new RegExp(`^[^\\S${NO_BREAK_SPACES}]+$`)
+const COLLAPSIBLE_SPLIT = new RegExp(`([^\\S${NO_BREAK_SPACES}]+)`)
+
 export class TextNode extends BoxNode {
   private readonly segments: TextSegment[] = []
   private lines: TextSegment[][] = []
@@ -26,7 +39,10 @@ export class TextNode extends BoxNode {
   private lineAscents: number[] = []
   private lineContentHeights: number[] = []
 
-  declare props: TextProps & { lineGap: number }
+  declare props: TextProps & {
+    /** Always present once defaults are applied, so the render path never has to check for it. */
+    lineGap: number
+  }
 
   constructor(text: number | string = '', props: TextProps = {}) {
     const initialProps = {
@@ -325,14 +341,22 @@ export class TextNode extends BoxNode {
   }
 
   /**
-   * Adds manual letter spacing compensation to a measured text width.
-   * Needed because skia-canvas `ctx.measureText()` does not include letterSpacing in the returned width,
-   * even though letterSpacing IS applied during rendering (fillText/strokeText).
+   * Brings a measured run up to the width CSS would give it under `letterSpacing`.
+   *
+   * The renderer already applies the spacing, but *between* characters: a run of `n` characters
+   * comes back `n - 1` spacings wider. CSS adds one after every character, including the last, so a
+   * run is one spacing short however long it is. Text is measured a word at a time here, and the
+   * spaces between words are measured on their own, so every one of those runs loses its own unit —
+   * which is why the shortfall grows with the number of words rather than being a single pixel at
+   * the end of the line.
+   *
+   * This used to add `n - 1` on the premise that the renderer applied none of it, and that premise
+   * had stopped being true: the spacing was counted twice, and a line came out roughly a third too
+   * wide at 2px on a sixteen-character string.
    */
   private addLetterSpacingExtra(text: string, measuredWidth: number, letterSpacingPx: number): number {
     if (letterSpacingPx === 0 || text.length === 0) return measuredWidth
-    const charCount = [...text].length
-    return measuredWidth + (charCount > 1 ? (charCount - 1) * letterSpacingPx : 0)
+    return measuredWidth + letterSpacingPx
   }
 
   /**
@@ -459,7 +483,7 @@ export class TextNode extends BoxNode {
       } else {
         // Calculate max metrics across all segments in line
         for (const segment of line) {
-          if (/^\s+$/.test(segment.text)) continue
+          if (COLLAPSIBLE_RUN.test(segment.text)) continue
 
           const segmentSize = segment.size || baseFontSize
 
@@ -508,23 +532,34 @@ export class TextNode extends BoxNode {
     const calculatedContentHeight = totalTextHeight + totalGapHeight
 
     // Calculate width required for text content
-    const spaceWidth = this.measureSpaceWidth(ctx)
-    let singleLineWidth = 0
-    let firstWordInSingleLine = true
+    const spaceWidth = this.measureSpaceWidth(ctx, parsedLetterSpacingPx)
+    // The widest line the text asks for, which an explicit newline ends. Summing across one would
+    // ask for room to lay every line end to end: a `Text` holding "a\nbbbb" needs the width of
+    // "bbbb", not of both together, and the box came out that much too wide.
+    let widestLine = 0
+    let lineWidth = 0
+    let firstWordInLine = true
     for (const segment of this.segments) {
-      const words = segment.text.split(/(\s+)/).filter(Boolean)
-      for (const word of words) {
-        if (/^\s+$/.test(word)) continue
-        ctx.font = this.getFontString(segment)
-        this._applyFontVariant(ctx, 'measureText (single line width)')
-        const wordWidth = this.addLetterSpacingExtra(word, measureText(ctx, word).width, parsedLetterSpacingPx)
-        if (!firstWordInSingleLine) {
-          singleLineWidth += spaceWidth + parsedWordSpacingPx
+      segment.text.split('\n').forEach((part, index) => {
+        if (index > 0) {
+          widestLine = Math.max(widestLine, lineWidth)
+          lineWidth = 0
+          firstWordInLine = true
         }
-        singleLineWidth += wordWidth
-        firstWordInSingleLine = false
-      }
+        for (const word of part.split(COLLAPSIBLE_SPLIT).filter(Boolean)) {
+          if (COLLAPSIBLE_RUN.test(word)) continue
+          ctx.font = this.getFontString(segment)
+          this._applyFontVariant(ctx, 'measureText (single line width)')
+          const wordWidth = this.addLetterSpacingExtra(word, measureText(ctx, word).width, parsedLetterSpacingPx)
+          if (!firstWordInLine) {
+            lineWidth += spaceWidth + parsedWordSpacingPx
+          }
+          lineWidth += wordWidth
+          firstWordInLine = false
+        }
+      })
     }
+    const singleLineWidth = Math.max(widestLine, lineWidth)
 
     // Determine final content width based on wrapping
     let requiredContentWidth: number
@@ -540,7 +575,7 @@ export class TextNode extends BoxNode {
           let firstWordOnWrappedLine = true
           for (const segment of line) {
             const segmentWidth = segment.width ?? 0
-            const isSpaceSegment = /^\s+$/.test(segment.text)
+            const isSpaceSegment = COLLAPSIBLE_RUN.test(segment.text)
             if (!isSpaceSegment) {
               if (!firstWordOnWrappedLine) {
                 currentLineWidth += spaceWidth + parsedWordSpacingPx
@@ -560,7 +595,7 @@ export class TextNode extends BoxNode {
         let firstWordOnWrappedLine = true
         for (const segment of line) {
           const segmentWidth = segment.width ?? 0
-          const isSpaceSegment = /^\s+$/.test(segment.text)
+          const isSpaceSegment = COLLAPSIBLE_RUN.test(segment.text)
           if (!isSpaceSegment) {
             if (!firstWordOnWrappedLine) {
               currentLineWidth += spaceWidth + parsedWordSpacingPx
@@ -610,13 +645,13 @@ export class TextNode extends BoxNode {
 
     let currentLineSegments: TextSegment[] = []
     let currentLineWidth = 0
-    const spaceWidth = this.measureSpaceWidth(ctx)
+    const spaceWidth = this.measureSpaceWidth(ctx, parsedLetterSpacingPx)
 
     // Helper to finalize current line and start new one
     const finalizeLine = (forceEmpty = false) => {
       // Remove trailing whitespace segments unless we're forcing an empty line
       if (!forceEmpty) {
-        while (currentLineSegments.length > 0 && /^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)) {
+        while (currentLineSegments.length > 0 && COLLAPSIBLE_RUN.test(currentLineSegments[currentLineSegments.length - 1].text)) {
           currentLineSegments.pop()
         }
       }
@@ -647,10 +682,10 @@ export class TextNode extends BoxNode {
 
           if (part.length > 0) {
             // Process this part normally
-            const wordsAndSpaces = part.split(/(\s+)/).filter(Boolean)
+            const wordsAndSpaces = part.split(COLLAPSIBLE_SPLIT).filter(Boolean)
 
             for (const wordOrSpace of wordsAndSpaces) {
-              const isSpace = /^\s+$/.test(wordOrSpace)
+              const isSpace = COLLAPSIBLE_RUN.test(wordOrSpace)
               let wordSegment: TextSegment
               let wordWidth: number
 
@@ -664,7 +699,7 @@ export class TextNode extends BoxNode {
                 wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
               }
 
-              const needsSpace = currentLineSegments.length > 0 && !/^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
+              const needsSpace = currentLineSegments.length > 0 && !COLLAPSIBLE_RUN.test(currentLineSegments[currentLineSegments.length - 1].text)
               const spaceToAdd = needsSpace ? spaceWidth + parsedWordSpacingPx : 0
 
               if (currentLineWidth + spaceToAdd + wordWidth <= maxWidth || currentLineSegments.length === 0) {
@@ -710,10 +745,10 @@ export class TextNode extends BoxNode {
         }
       } else {
         // No newlines - process normally
-        const wordsAndSpaces = segment.text.split(/(\s+)/).filter(Boolean)
+        const wordsAndSpaces = segment.text.split(COLLAPSIBLE_SPLIT).filter(Boolean)
 
         for (const wordOrSpace of wordsAndSpaces) {
-          const isSpace = /^\s+$/.test(wordOrSpace)
+          const isSpace = COLLAPSIBLE_RUN.test(wordOrSpace)
           let wordSegment: TextSegment
           let wordWidth: number
 
@@ -727,7 +762,7 @@ export class TextNode extends BoxNode {
             wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
           }
 
-          const needsSpace = currentLineSegments.length > 0 && !/^\s+$/.test(currentLineSegments[currentLineSegments.length - 1].text)
+          const needsSpace = currentLineSegments.length > 0 && !COLLAPSIBLE_RUN.test(currentLineSegments[currentLineSegments.length - 1].text)
           const spaceToAdd = needsSpace ? spaceWidth + parsedWordSpacingPx : 0
 
           if (currentLineWidth + spaceToAdd + wordWidth <= maxWidth || currentLineSegments.length === 0) {
@@ -848,12 +883,22 @@ export class TextNode extends BoxNode {
   /**
    * Measures width of space character using base font
    */
-  private measureSpaceWidth(ctx: CanvasRenderingContext2D): number {
+
+  /**
+   * The width of one inter-word space, spacing included.
+   *
+   * A space is measured on its own, and a single character comes back with no letter spacing at all
+   * — the renderer applies it between characters and there is nothing to be between. CSS gives the
+   * space its own spacing like any other character, so without this a line falls short by one unit
+   * per word gap.
+   */
+  private measureSpaceWidth(ctx: CanvasRenderingContext2D, letterSpacingPx = 0): number {
     const originalFont = ctx.font
     ctx.font = this.getFontString()
     const width = measureText(ctx, ' ').width
     ctx.font = originalFont
-    return width > 0 ? width : (this.props.fontSize || 16) * 0.3
+    const resolved = width > 0 ? width : (this.props.fontSize || 16) * 0.3
+    return this.addLetterSpacingExtra(' ', resolved, letterSpacingPx)
   }
 
   /**
@@ -907,10 +952,19 @@ export class TextNode extends BoxNode {
     const paddingTop = this.node.getComputedPadding(Style.Edge.Top) ?? 0
     const paddingRight = this.node.getComputedPadding(Style.Edge.Right) ?? 0
     const paddingBottom = this.node.getComputedPadding(Style.Edge.Bottom) ?? 0
-    const contentX = x + paddingLeft
-    const contentY = y + paddingTop
-    const contentWidth = Math.max(0, width - paddingLeft - paddingRight)
-    const contentHeight = Math.max(0, height - paddingTop - paddingBottom)
+
+    // The border counts as well as the padding: `x`/`y`/`width`/`height` are the node's border box —
+    // the same rectangle the background and the border itself are drawn on — so text laid out from
+    // there sits under its own border and wraps against a width that includes it.
+    const borderLeft = this.node.getComputedBorder(Style.Edge.Left) ?? 0
+    const borderTop = this.node.getComputedBorder(Style.Edge.Top) ?? 0
+    const borderRight = this.node.getComputedBorder(Style.Edge.Right) ?? 0
+    const borderBottom = this.node.getComputedBorder(Style.Edge.Bottom) ?? 0
+
+    const contentX = x + borderLeft + paddingLeft
+    const contentY = y + borderTop + paddingTop
+    const contentWidth = Math.max(0, width - borderLeft - borderRight - paddingLeft - paddingRight)
+    const contentHeight = Math.max(0, height - borderTop - borderBottom - paddingTop - paddingBottom)
 
     if (contentWidth <= 0 || contentHeight <= 0) {
       ctx.restore()
@@ -920,7 +974,7 @@ export class TextNode extends BoxNode {
     // Re-calculate lines based on the actual render width to ensure consistency
     // This fixes issues where Yoga Layout might use a cached measurement from a different
     // width constraint (e.g., during a flex shrink pass) but final layout is wider.
-    const spaceWidth = this.measureSpaceWidth(ctx)
+    const spaceWidth = this.measureSpaceWidth(ctx, this.parseSpacingToPx(this.props.letterSpacing, baseFontSize))
     // Use a small epsilon for float precision issues
     const epsilon = 0.01
     const parsedLetterSpacingPx = this.parseSpacingToPx(this.props.letterSpacing, baseFontSize)
@@ -952,7 +1006,7 @@ export class TextNode extends BoxNode {
         maxDescent = metrics.fontBoundingBoxDescent ?? baseFontSize * 0.2
       } else {
         for (const segment of line) {
-          if (/^\s+$/.test(segment.text)) continue
+          if (COLLAPSIBLE_RUN.test(segment.text)) continue
           const segmentSize = segment.size || baseFontSize
 
           // Style context for accurate metrics
@@ -1026,7 +1080,7 @@ export class TextNode extends BoxNode {
     if (needsEllipsis) {
       const lastRenderedLine = visibleLines[visibleLines.length - 1]
       // ... ellipsis calculation ...
-      const lastTextStyleSegment = [...lastRenderedLine].reverse().find(seg => !/^\s+$/.test(seg.text))
+      const lastTextStyleSegment = [...lastRenderedLine].reverse().find(seg => !COLLAPSIBLE_RUN.test(seg.text))
       ellipsisStyle = lastTextStyleSegment
         ? {
             color: lastTextStyleSegment.color,
@@ -1082,7 +1136,7 @@ export class TextNode extends BoxNode {
 
       for (const segment of lineSegments) {
         const segmentWidth = segment.width ?? 0
-        const isSpaceSegment = /^\s+$/.test(segment.text)
+        const isSpaceSegment = COLLAPSIBLE_RUN.test(segment.text)
 
         if (!isSpaceSegment) {
           if (!firstWordOnLine) {
@@ -1135,7 +1189,7 @@ export class TextNode extends BoxNode {
       // being justified, and is not about to be truncated — the three things the per-word loop does
       // that a single call cannot. Glyph positions are unchanged: the same words at the same
       // advances, with the gap coming from `wordSpacing` rather than from arithmetic here.
-      const words = lineSegments.filter(segment => !/^\s+$/.test(segment.text))
+      const words = lineSegments.filter(segment => !COLLAPSIBLE_RUN.test(segment.text))
       const uniformStyle =
         words.length > 0 &&
         words.every(
@@ -1189,7 +1243,7 @@ export class TextNode extends BoxNode {
           const segment = lineSegments[j]
           const segmentWidth = segment.width ?? 0
           const isLastSegmentOnLine = j === lineSegments.length - 1
-          const isSpaceSegment = /^\s+$/.test(segment.text)
+          const isSpaceSegment = COLLAPSIBLE_RUN.test(segment.text)
 
           // Calculate word spacing
           let spaceToAddBefore = 0

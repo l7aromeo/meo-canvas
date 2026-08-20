@@ -11,10 +11,27 @@ const mockFileTypeFromBuffer = vi.fn<(buf: any) => Promise<any>>()
 const mockFileTypeFromFile = vi.fn<(path: any) => Promise<any>>()
 const mockReadFile = vi.fn<(path: any) => Promise<any>>()
 
+/** Records the contexts handed out, so a test can see what was drawn on an offscreen. */
+const offscreenContexts: ReturnType<typeof createMockCtx>[] = []
+
 vi.mock('meo-skia-canvas', () => ({
   loadImage: mockLoadImage,
   Image: vi.fn(),
-  Canvas: vi.fn(),
+  // A drop shadow builds its drawing on an offscreen before compositing it, so the canvas this
+  // constructs has to hand back a context like the real one does.
+  Canvas: class {
+    width: number
+    height: number
+    constructor(width: number, height: number) {
+      this.width = width
+      this.height = height
+    }
+    getContext() {
+      const ctx = createMockCtx()
+      offscreenContexts.push(ctx)
+      return ctx
+    }
+  },
   FontLibrary: { use: vi.fn() },
 }))
 
@@ -35,6 +52,8 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     save: vi.fn(),
     restore: vi.fn(),
     clip: vi.fn(),
+    // The offscreen a drop shadow is built on is translated into the node's own coordinates.
+    translate: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -72,7 +91,21 @@ describe('ImageNode & Image factory', () => {
     vi.doMock('meo-skia-canvas', () => ({
       loadImage: mockLoadImage,
       Image: vi.fn(),
-      Canvas: vi.fn(),
+      // Matches the hoisted mock above: a drop shadow builds its drawing on an offscreen, so this
+      // has to hand back a context the way a real canvas does.
+      Canvas: class {
+        width: number
+        height: number
+        constructor(width: number, height: number) {
+          this.width = width
+          this.height = height
+        }
+        getContext() {
+          const ctx = createMockCtx()
+          offscreenContexts.push(ctx)
+          return ctx
+        }
+      },
       FontLibrary: { use: vi.fn() },
     }))
     vi.doMock('file-type', () => ({
@@ -249,16 +282,35 @@ describe('ImageNode & Image factory', () => {
       expect(dh).toBe(100)
     })
 
-    it('should set shadow properties when dropShadow is provided', async () => {
+    it('casts the shadow outside the clip that keeps the image in its box', async () => {
       const ctx = createMockCtx()
+      offscreenContexts.length = 0
       const node = await setupRenderableNode({
         src: 'test.png',
         dropShadow: { offsetX: 5, offsetY: 5, blur: 10, color: 'rgba(0,0,0,0.5)' },
       })
       await node.render(ctx, 0, 0)
-      // Shadow properties are set inside a save/restore block
-      // Verify drawImage was called (shadow was applied before it)
+
+      // The image is built on an offscreen and composited in one call with the shadow set. Drawn
+      // inside the node's own clip instead — which is there to keep the image in its box — the
+      // shadow falls outside it and is clipped away, which is what used to happen: nothing drew.
+      expect(offscreenContexts.length).toBeGreaterThan(0)
+      expect(offscreenContexts[0].drawImage).toHaveBeenCalled()
       expect(ctx.drawImage).toHaveBeenCalled()
+      expect(ctx.shadowColor).toBe('rgba(0,0,0,0.5)')
+      expect(ctx.shadowOffsetX).toBe(5)
+      expect(ctx.shadowOffsetY).toBe(5)
+      // Taken from `blur`, not derived from the offsets as it used to be.
+      expect(ctx.shadowBlur).toBe(10)
+    })
+
+    it('leaves the context alone when no shadow is asked for', async () => {
+      const ctx = createMockCtx()
+      const node = await setupRenderableNode({ src: 'test.png' })
+      await node.render(ctx, 0, 0)
+
+      expect(ctx.drawImage).toHaveBeenCalled()
+      expect(ctx.shadowColor).not.toBe('rgba(0,0,0,0.5)')
     })
 
     it('should set filter string when saturate is not 1', async () => {

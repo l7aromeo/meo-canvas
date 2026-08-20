@@ -974,10 +974,13 @@ describe('BoxNode Layout Properties', () => {
     const mockFill = vi.fn()
     const mockStroke = vi.fn()
     const mockClip = vi.fn()
+    const mockDrawImage = vi.fn()
     const mockContext = {
       fill: mockFill,
       beginPath: vi.fn(),
       rect: vi.fn(),
+      fillRect: vi.fn(),
+      drawImage: mockDrawImage,
       save: vi.fn(),
       restore: vi.fn(),
       moveTo: vi.fn(),
@@ -985,6 +988,8 @@ describe('BoxNode Layout Properties', () => {
       closePath: vi.fn(),
       arc: vi.fn(),
       fillStyle: '',
+      filter: 'none',
+      globalCompositeOperation: 'source-over',
       shadowColor: '',
       shadowOffsetX: 0,
       shadowOffsetY: 0,
@@ -996,16 +1001,20 @@ describe('BoxNode Layout Properties', () => {
     }
     const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
+    // Laid out before drawing: an inset shadow is composited at the node's own size, and an
+    // un-laid-out node measures zero, which is a box with nothing to draw a shadow inside.
+    node.node.calculateLayout(100, 100, Style.Direction.LTR)
+
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
 
+    // An inset shadow is built on an offscreen and composited inside the node's own shape, so what
+    // the page context sees is a clip and a draw. It used to be asserted through `stroke` and the
+    // shadow state — both of which this went on doing while the feature drew nothing at all, which
+    // is why the pixels are checked in `box.shadow.integration.test.ts` instead.
     expect(mockContext.save).toHaveBeenCalled()
     expect(mockClip).toHaveBeenCalled()
-    expect(mockContext.shadowColor).toBe('rgba(0,0,0,0.5)')
-    expect(mockContext.shadowOffsetX).toBe(5)
-    expect(mockContext.shadowOffsetY).toBe(5)
-    expect(mockContext.shadowBlur).toBe(10)
-    expect(mockStroke).toHaveBeenCalled()
+    expect(mockDrawImage).toHaveBeenCalled()
     expect(mockContext.restore).toHaveBeenCalled()
     getContextSpy.mockRestore()
   })
@@ -1014,6 +1023,7 @@ describe('BoxNode Layout Properties', () => {
     const node = new BoxNode({ width: 100, height: 100, opacity: 0.5 })
     const mockFill = vi.fn()
     const mockGlobalAlphaValues: number[] = []
+    const mockSaveLayer = vi.fn()
     const mockContext = {
       fill: mockFill,
       beginPath: vi.fn(),
@@ -1035,14 +1045,17 @@ describe('BoxNode Layout Properties', () => {
       lineTo: vi.fn(),
       closePath: vi.fn(),
       arc: vi.fn(),
+      saveLayer: mockSaveLayer,
     }
     const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
     await node.render(ctx, 0, 0)
 
-    expect(mockGlobalAlphaValues).toContain(0.5) // Check if 0.5 was set
-    expect(mockContext.globalAlpha).toBe(1) // After restoration, it should be 1
+    // Opened as a layer rather than by setting `globalAlpha`: the subtree is composited once and
+    // faded as a whole, so overlapping children do not darken each other.
+    expect(mockSaveLayer).toHaveBeenCalledWith(0.5)
+    expect(mockGlobalAlphaValues).not.toContain(0.5)
     getContextSpy.mockRestore()
   })
 
@@ -1262,6 +1275,9 @@ describe('BoxNode _renderContent', () => {
         addColorStop: vi.fn(),
       })),
       drawImage: vi.fn(),
+      // The offscreen an inset shadow is built on floods itself and then erases the node's shape.
+      fillRect: vi.fn(),
+      filter: 'none',
       setLineDash: vi.fn(),
       stroke: vi.fn(),
       // Mock properties
@@ -1339,21 +1355,18 @@ describe('BoxNode _renderContent', () => {
 
     node['_renderContent'](mockContext, 0, 0, 100, 100)
 
-    // Outset shadow assertions
-    expect(mockContext.save).toHaveBeenCalledTimes(2) // One for outset, one for inset
+    // The outset shadow is cast by the page context, so its state is readable here.
     expect(shadowColors[0]).toBe('rgba(0,0,0,0.5)')
     expect(shadowOffsetXValues[0]).toBe(5)
     expect(shadowOffsetYValues[0]).toBe(5)
     expect(shadowBlurValues[0]).toBe(10)
     expect(mockContext.fill).toHaveBeenCalled()
 
-    // Inset shadow assertions
+    // The inset one is composited from an offscreen inside the node's shape, so the page context
+    // sees a clip and a draw rather than shadow state of its own.
     expect(mockContext.clip).toHaveBeenCalled()
-    expect(shadowColors[1]).toBe('rgba(255,0,0,0.5)')
-    expect(shadowOffsetXValues[1]).toBe(2)
-    expect(shadowOffsetYValues[1]).toBe(2)
-    expect(shadowBlurValues[1]).toBe(5)
-    expect(mockContext.stroke).toHaveBeenCalled()
+    expect(mockContext.drawImage).toHaveBeenCalled()
+    expect(mockContext.save).toHaveBeenCalledTimes(2)
     expect(mockContext.restore).toHaveBeenCalledTimes(2)
   })
 

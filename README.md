@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/meo-canvas?logo=npm&color=cb3837)](https://www.npmjs.com/package/meo-canvas)
 [![CI](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml)
 [![node](https://img.shields.io/node/v/meo-canvas?logo=node.js&color=5fa04e)](https://nodejs.org)
-[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://www.jsdocs.io/package/meo-canvas)
+[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://l7aromeo.github.io/meo-canvas/latest/)
 [![license](https://img.shields.io/npm/l/meo-canvas?color=blue)](LICENSE)
 
 A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
@@ -13,6 +13,32 @@ It uses `meo-skia-canvas` for drawing and `yoga-layout` for flexbox-based layout
 This library allows you to build complex image layouts using a familiar component-based approach. You can define your
 image structure with components like `Box`, `Text`, `Image`, `Path`, and `Grid`, and the library will handle the layout
 and rendering to a canvas.
+
+## Contents
+
+- [Key Features](#key-features)
+- [Showcase](#showcase)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Simple Example](#simple-example)
+  - [Complex Layout](#complex-layout)
+- [Examples](#examples)
+  - [Charts](#charts)
+  - [Grid](#grid)
+- [Yoga Layout](#yoga-layout)
+- [API Reference](#api-reference)
+  - [Root](#root)
+  - [Animation Utilities](#animation-utilities)
+  - [Box, Row, and Column](#box-row-and-column)
+  - [Text](#text)
+  - [Image](#image)
+  - [Path](#path)
+  - [Grid](#grid-1)
+  - [GridItem](#griditem)
+  - [Chart](#chart)
+  - [Cleanup Functions](#cleanup-functions)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Key Features
 
@@ -38,6 +64,7 @@ and rendering to a canvas.
 - **Browser-matching text:** Line boxes are built the way CSS builds them — baselines land within 0.15px of Chrome —
   with `textAlign`, `verticalAlign`, `textDecoration` and `overflow` following the same rules.
 - **TypeScript Support:** Fully typed for a better development experience.
+- **[API reference →](https://l7aromeo.github.io/meo-canvas/latest/)** — generated from the source of each release.
 - **[Architecture →](./ARCHITECTURE.md)**
 
 ## Showcase
@@ -468,8 +495,12 @@ properties.
 
 What follows covers the props and methods you reach for most. Every exported symbol carries a doc comment, so the
 complete generated reference — every type, every option, every overload — lives at
-**[jsdocs.io/package/meo-canvas](https://www.jsdocs.io/package/meo-canvas)**, and your editor shows the same text on
-hover.
+**[l7aromeo.github.io/meo-canvas/latest](https://l7aromeo.github.io/meo-canvas/latest/)**, and your editor shows the
+same text on hover.
+
+Each release is published at its own address — `/v8.0.0/`, `/v7.1.0/` and so on — and
+[the index](https://l7aromeo.github.io/meo-canvas/) lists them. `latest` follows the newest published version, never
+whatever is on `main`, so a link to it always describes something you can actually install.
 
 ### Root
 
@@ -1020,18 +1051,41 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 #### Styling Props
 
-| Prop              | Type                                 | Description                                                                                                    |
-| ----------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                         |
-| `borderColor`     | `string`                             | Sets the color of the node's border.                                                                           |
-| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                    |
-| `borderRadius`    | `object \| number`                   | Sets the radius of the node's corners.                                                                         |
-| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                           |
-| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                            |
-| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants. |
-| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                  |
-| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                        |
-| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                         |
+| Prop              | Type                                 | Description                                                                                                        |
+| ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                             |
+| `borderColor`     | `string \| EdgeColors`               | Colour of the node's border — one string for all four edges, or a colour per edge. Unset edges fall back to black. |
+| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                        |
+| `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                    |
+| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                               |
+| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                                |
+| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants.     |
+| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                      |
+| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                            |
+| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                             |
+
+##### Shadows
+
+`boxShadow` takes one shadow or an array of them, drawn in the order given. The fields are the CSS
+`box-shadow` lengths under their own names:
+
+```javascript
+Box({ boxShadow: { offsetX: 0, offsetY: 4, blur: 12, color: 'rgba(0,0,0,0.2)' } })
+
+// A ring, which is what spread is for
+Box({ boxShadow: { offsetX: 0, offsetY: 0, blur: 0, spread: 3, color: '#2563eb' } })
+
+// Inset: the shadow falls inward from the edges the offset comes from
+Box({ boxShadow: { inset: true, offsetX: 0, offsetY: 2, blur: 6, color: 'rgba(0,0,0,0.35)' } })
+```
+
+`spread` grows the shape before it is blurred, so a spread shadow is a larger copy rather than a
+wider blur; a square corner stays square however far it spreads, as the spec requires. `blur` is the
+CSS radius, not a standard deviation — the shadow is at half strength on the silhouette's edge and
+fades out over roughly that distance beyond it.
+
+An outer shadow is never painted underneath its own box, which only shows when the background lets
+something through: a node with no background, or a translucent one, does not darken itself.
 
 ##### Masking
 
@@ -1107,6 +1161,15 @@ Two consequences worth knowing:
   face's ascent plus descent.
 
 `lineGap` is extra space between lines on top of all that, with no CSS equivalent.
+
+**Absolute positioning resolves against the immediate parent.** CSS resolves it against the nearest
+_positioned_ ancestor, skipping static boxes in between; Yoga always uses the parent. A layout ported
+from the browser that relies on that skipping will land somewhere else — put the offsets on the
+node's own parent instead.
+
+**Bidirectional text is not laid out.** `direction` is Yoga's layout direction — it flips the flex
+axes — and does not reorder text. A right-to-left script renders in the order its characters were
+written rather than reordered by the Unicode bidi algorithm, so Arabic and Hebrew are not supported.
 
 **Overflow follows CSS too.** Text taller or wider than its box spills out of it; set
 `overflow: Style.Overflow.Hidden` on the node to clip it. `Style.Overflow.Scroll` is not treated as

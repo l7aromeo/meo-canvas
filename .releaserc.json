@@ -1,5 +1,7 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "main"
+  ],
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
@@ -13,7 +15,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "mkdir -p release && tar -czf release/meo-canvas-${nextRelease.version}.tar.gz dist/"
+        "prepareCmd": "mkdir -p release && tar -czf release/meo-canvas-${nextRelease.version}.tar.gz dist/",
+        "successCmd": "echo \"published=true\" >> \"${GITHUB_OUTPUT:-/dev/null}\""
       }
     ],
     [
