@@ -113,6 +113,50 @@ export class TextNode extends BoxNode {
     ctx.restore()
   }
 
+  /**
+   * Puts a run of text down, with its outline if it has one.
+   *
+   * CSS centres a text stroke on the glyph's outline and paints it over the fill, so half the
+   * width falls inside the letter and a thick stroke visibly thins it. `paintOrder` swaps the two,
+   * which is the only way to have a heavy outline and whole letterforms at once.
+   *
+   * Every line goes through here, shadow passes included, so a shadow is cast by the outlined
+   * shape rather than by the fill alone.
+   */
+  private paintText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth?: number): void {
+    const stroke = this.props.textStroke
+    const strokeWidth = stroke?.width ?? 0
+
+    const fill = () => (maxWidth === undefined ? ctx.fillText(text, x, y) : ctx.fillText(text, x, y, maxWidth))
+
+    if (!stroke || strokeWidth <= 0) {
+      fill()
+      return
+    }
+
+    const outline = () => (maxWidth === undefined ? ctx.strokeText(text, x, y) : ctx.strokeText(text, x, y, maxWidth))
+
+    ctx.save()
+    try {
+      ctx.lineWidth = strokeWidth
+      ctx.strokeStyle = stroke.color ?? ctx.fillStyle
+      // Round, not the canvas default of a mitre: a mitre throws a spike off every sharp corner of
+      // a glyph, which is not what a browser draws for `-webkit-text-stroke`.
+      ctx.lineJoin = 'round'
+      ctx.miterLimit = 2
+
+      if (this.props.paintOrder === Style.PaintOrder.Stroke) {
+        outline()
+        fill()
+      } else {
+        fill()
+        outline()
+      }
+    } finally {
+      ctx.restore()
+    }
+  }
+
   protected override applyDefaults(): void {
     const textDefaults: Required<
       Pick<TextProps, 'fontSize' | 'fontFamily' | 'fontWeight' | 'fontStyle' | 'color' | 'textAlign' | 'verticalAlign' | 'ellipsis' | 'lineGap'>
@@ -1220,13 +1264,13 @@ export class TextNode extends BoxNode {
           ctx.shadowBlur = shadow.blur || 0
           ctx.shadowOffsetX = shadow.offsetX || 0
           ctx.shadowOffsetY = shadow.offsetY || 0
-          ctx.fillText(lineText, currentX, lineY)
+          this.paintText(ctx, lineText, currentX, lineY)
         }
         ctx.shadowColor = 'transparent'
         ctx.shadowBlur = 0
         ctx.shadowOffsetX = 0
         ctx.shadowOffsetY = 0
-        ctx.fillText(lineText, currentX, lineY)
+        this.paintText(ctx, lineText, currentX, lineY)
         ctx.restore()
 
         ctx.wordSpacing = 'normal'
@@ -1309,7 +1353,7 @@ export class TextNode extends BoxNode {
               ctx.shadowBlur = shadow.blur || 0
               ctx.shadowOffsetX = shadow.offsetX || 0
               ctx.shadowOffsetY = shadow.offsetY || 0
-              ctx.fillText(textToDraw, currentX, lineY, Math.max(0, remainingRenderWidth + 1))
+              this.paintText(ctx, textToDraw, currentX, lineY, Math.max(0, remainingRenderWidth + 1))
             }
 
             // Reset shadow to draw the main text
@@ -1318,7 +1362,7 @@ export class TextNode extends BoxNode {
             ctx.shadowOffsetX = 0
             ctx.shadowOffsetY = 0
 
-            ctx.fillText(textToDraw, currentX, lineY, Math.max(0, remainingRenderWidth + 1))
+            this.paintText(ctx, textToDraw, currentX, lineY, Math.max(0, remainingRenderWidth + 1))
 
             ctx.restore()
 
@@ -1338,7 +1382,7 @@ export class TextNode extends BoxNode {
               this._applyFontVariant(ctx, '_renderContent (ellipsis draw)')
 
               ctx.fillStyle = ellipsisStyle?.color || this.props.color || 'black'
-              ctx.fillText(ellipsisChar, currentX, lineY, Math.max(0, ellipsisRemainingWidth + 1))
+              this.paintText(ctx, ellipsisChar, currentX, lineY, Math.max(0, ellipsisRemainingWidth + 1))
               ctx.restore()
             }
             break

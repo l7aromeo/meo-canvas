@@ -833,6 +833,44 @@ export interface BoxProps extends BaseProps {
   textDecoration?: Style.TextDecoration | 'none' | 'underline' | 'overline' | 'line-through' | (string & {})
 
   /**
+   * An outline drawn on the glyphs, as CSS `-webkit-text-stroke`.
+   *
+   * The stroke is centred on the glyph's outline, so half of it falls inside the letter. Painted
+   * over the fill — which is what CSS does unless told otherwise — a thick stroke eats inward and
+   * thins the letterform; {@link TextProps.paintOrder} moves it under the fill, where it only
+   * widens the glyph outward.
+   * @default undefined (no outline)
+   * @example
+   * ```ts
+   * Text('Outlined', { color: '#ffd400', textStroke: { width: 4, color: '#102a43' } })
+   * Text('Whole letters', {
+   *   color: '#ffd400',
+   *   textStroke: { width: 4, color: '#102a43' },
+   *   paintOrder: Style.PaintOrder.Stroke,
+   * })
+   * ```
+   */
+  textStroke?: {
+    /**
+     * Thickness of the outline, centred on the glyph — half falls inside the letter, half outside.
+     * @unit Pixels.
+     * @default 0 (no outline)
+     */
+    width?: number
+    /**
+     * Colour of the outline.
+     * @default the text's own colour
+     */
+    color?: string
+  }
+
+  /**
+   * Whether a glyph's stroke is painted over its fill or under it. CSS `paint-order`.
+   * @default Style.PaintOrder.Fill (the stroke over the fill, as CSS does unasked)
+   */
+  paintOrder?: Style.PaintOrder | 'fill' | 'stroke'
+
+  /**
    * Vertical text alignment within the node's bounds.
    * Note: Simple implementation aligns based on the first line.
    * @default 'top'

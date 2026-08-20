@@ -1131,21 +1131,23 @@ Two limits worth knowing before you design around them:
 
 These props, when set on a `Box`, `Row`, or `Column`, are inherited by any descendant `Text` nodes.
 
-| Prop             | Type                                                             | Description                                                                                  |
-| ---------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `fontSize`       | `number`                                                         | Font size in pixels.                                                                         |
-| `fontFamily`     | `string`                                                         | Font family name.                                                                            |
-| `fontWeight`     | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.).                                                   |
-| `fontStyle`      | `'normal' \| 'italic'`                                           | Font style.                                                                                  |
-| `color`          | `string`                                                         | Text color.                                                                                  |
-| `textAlign`      | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                                                                   |
-| `verticalAlign`  | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                                                                     |
-| `lineHeight`     | `number`                                                         | Line box height in pixels. Defaults to the face's own height, as `line-height: normal` does. |
-| `lineGap`        | `number`                                                         | Additional vertical spacing between lines.                                                   |
-| `letterSpacing`  | `number \| string`                                               | Spacing between letters.                                                                     |
-| `wordSpacing`    | `number \| string`                                               | Spacing between words.                                                                       |
-| `fontVariant`    | `FontVariantSetting`                                             | Specifies font variation settings.                                                           |
-| `textDecoration` | `string`                                                         | Lines on the text, in CSS `text-decoration` notation. Inherited.                             |
+| Prop             | Type                                                             | Description                                                                                                             |
+| ---------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `fontSize`       | `number`                                                         | Font size in pixels.                                                                                                    |
+| `fontFamily`     | `string`                                                         | Font family name.                                                                                                       |
+| `fontWeight`     | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.).                                                                              |
+| `fontStyle`      | `'normal' \| 'italic'`                                           | Font style.                                                                                                             |
+| `color`          | `string`                                                         | Text color.                                                                                                             |
+| `textAlign`      | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                                                                                              |
+| `verticalAlign`  | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                                                                                                |
+| `lineHeight`     | `number`                                                         | Line box height in pixels. Defaults to the face's own height, as `line-height: normal` does.                            |
+| `lineGap`        | `number`                                                         | Additional vertical spacing between lines.                                                                              |
+| `letterSpacing`  | `number \| string`                                               | Spacing between letters.                                                                                                |
+| `wordSpacing`    | `number \| string`                                               | Spacing between words.                                                                                                  |
+| `fontVariant`    | `FontVariantSetting`                                             | Specifies font variation settings.                                                                                      |
+| `textDecoration` | `string`                                                         | Lines on the text, in CSS `text-decoration` notation. Inherited.                                                        |
+| `textStroke`     | `{ width, color }`                                               | An outline on the glyphs, as CSS `-webkit-text-stroke` — centred, and over the fill unless `paintOrder` says otherwise. |
+| `paintOrder`     | `Style.PaintOrder`                                               | Whether the stroke is painted over the fill (CSS's default) or under it, keeping the letterform whole.                  |
 
 ##### How text is positioned
 
