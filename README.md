@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/meo-canvas?logo=npm&color=cb3837)](https://www.npmjs.com/package/meo-canvas)
 [![CI](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/l7aromeo/meo-canvas/actions/workflows/ci.yml)
 [![node](https://img.shields.io/node/v/meo-canvas?logo=node.js&color=5fa04e)](https://nodejs.org)
-[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://www.jsdocs.io/package/meo-canvas)
+[![types](https://img.shields.io/npm/types/meo-canvas?logo=typescript)](https://l7aromeo.github.io/meo-canvas/)
 [![license](https://img.shields.io/npm/l/meo-canvas?color=blue)](LICENSE)
 
 A declarative, component-based library for server-side canvas image generation. Write complex visuals with simple
@@ -469,8 +469,8 @@ properties.
 
 What follows covers the props and methods you reach for most. Every exported symbol carries a doc comment, so the
 complete generated reference — every type, every option, every overload — lives at
-**[jsdocs.io/package/meo-canvas](https://www.jsdocs.io/package/meo-canvas)**, and your editor shows the same text on
-hover.
+**[l7aromeo.github.io/meo-canvas](https://l7aromeo.github.io/meo-canvas/)**, built from the source for each release,
+and your editor shows the same text on hover.
 
 ### Root
 
@@ -1026,13 +1026,36 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 | `backgroundColor` | `string`                             | Sets the background color of the node.                                                                         |
 | `borderColor`     | `string`                             | Sets the color of the node's border.                                                                           |
 | `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                    |
-| `borderRadius`    | `object \| number`                   | Sets the radius of the node's corners.                                                                         |
+| `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                |
 | `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                           |
 | `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                            |
 | `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants. |
 | `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                  |
 | `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                        |
 | `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                         |
+
+##### Shadows
+
+`boxShadow` takes one shadow or an array of them, drawn in the order given. The fields are the CSS
+`box-shadow` lengths under their own names:
+
+```javascript
+Box({ boxShadow: { offsetX: 0, offsetY: 4, blur: 12, color: 'rgba(0,0,0,0.2)' } })
+
+// A ring, which is what spread is for
+Box({ boxShadow: { offsetX: 0, offsetY: 0, blur: 0, spread: 3, color: '#2563eb' } })
+
+// Inset: the shadow falls inward from the edges the offset comes from
+Box({ boxShadow: { inset: true, offsetX: 0, offsetY: 2, blur: 6, color: 'rgba(0,0,0,0.35)' } })
+```
+
+`spread` grows the shape before it is blurred, so a spread shadow is a larger copy rather than a
+wider blur; a square corner stays square however far it spreads, as the spec requires. `blur` is the
+CSS radius, not a standard deviation — the shadow is at half strength on the silhouette's edge and
+fades out over roughly that distance beyond it.
+
+An outer shadow is never painted underneath its own box, which only shows when the background lets
+something through: a node with no background, or a translucent one, does not darken itself.
 
 ##### Masking
 

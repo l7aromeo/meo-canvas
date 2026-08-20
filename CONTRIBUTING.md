@@ -57,6 +57,15 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
     > **Note:** Run these after `bun run build`. The worker pool starts a worker by path (`render.worker.js`), which
     > only exists once the package has been built — the worker-mode cases skip themselves without it.
 
+6.  Build the API reference. It is published to GitHub Pages for each release, and the build fails on
+    a broken `{@link}`, on a type named in a public signature but never exported, and on an exported
+    member with no description — so adding a prop without documenting it is caught here rather than
+    showing up as a blank entry on the site:
+
+    ```sh
+    bun run docs
+    ```
+
 ### Make your changes
 
 Now, go to town on your feature or bug fix.
