@@ -1,6 +1,7 @@
 import type { BaseProps, ImageProps, CanvasElement } from '@/canvas/canvas.type.js'
 import { type CanvasRenderingContext2D, Image as CanvasImage, loadImage } from 'meo-skia-canvas'
 import { BoxNode } from '@/canvas/layout.canvas.js'
+import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { drawRoundedRectPath, parseBorderRadius } from '@/canvas/canvas.helper.js'
 import { promises as fs } from 'fs'
 import { Style } from '@/constant/common.const.js'
@@ -320,8 +321,6 @@ export class ImageNode extends BoxNode {
 
     if (contentWidth <= 0 || contentHeight <= 0) return
 
-    // Apply clipping for border radius
-    ctx.save()
     const outerRadii = parseBorderRadius(this.props.borderRadius)
     const innerBorderRadii = {
       TopLeft: Math.max(0, outerRadii.TopLeft - borderTop),
@@ -335,9 +334,6 @@ export class ImageNode extends BoxNode {
       BottomRight: Math.max(0, innerBorderRadii.BottomRight - Math.max(paddingRight, paddingBottom)),
       BottomLeft: Math.max(0, innerBorderRadii.BottomLeft - Math.max(paddingLeft, paddingBottom)),
     }
-    drawRoundedRectPath(ctx, contentX, contentY, contentWidth, contentHeight, contentRadii)
-    ctx.clip()
-
     // Calculate image dimensions based on object-fit
     const nodeRatio = contentWidth / contentHeight
     const imgRatio = imgW / imgH
@@ -404,44 +400,61 @@ export class ImageNode extends BoxNode {
     const dx = contentX + offsetX
     const dy = contentY + offsetY
 
-    // Draw image with filters
-    ctx.save()
-    try {
-      if (this.props.dropShadow) {
-        const shadow = this.props.dropShadow
-        const shadowBlur = Math.max(shadow.offsetX ?? 0, shadow.offsetY ?? 0)
-        ctx.shadowOffsetX = shadow.offsetX ?? 0
-        ctx.shadowOffsetY = shadow.offsetY ?? 0
-        ctx.shadowBlur = Math.max(0, shadow.blur ?? shadowBlur)
-        ctx.shadowColor = shadow.color ?? 'black'
-      }
+    // Where the image lands, rounded to whole pixels so the sampler is not asked to filter a
+    // fractional destination.
+    const finalDX = Math.floor(dx)
+    const finalDY = Math.floor(dy)
+    const finalDW = Math.ceil(dw + (dx - finalDX))
+    const finalDH = Math.ceil(dh + (dy - finalDY))
 
-      const saturateValue = this.props.saturate ?? 1
-      let filterString = ''
-      if (saturateValue !== 1) {
-        filterString += `saturate(${saturateValue * 100}%) `
-      }
+    const saturateValue = this.props.saturate ?? 1
+    const filterString = saturateValue !== 1 ? `saturate(${saturateValue * 100}%)` : ''
 
-      if (filterString) {
-        const currentFilter = ctx.filter && ctx.filter !== 'none' ? ctx.filter + ' ' : ''
-        ctx.filter = currentFilter + filterString.trim()
+    /** Draws the image as this node paints it: clipped to the content box, corners and all. */
+    const paint = (target: CanvasRenderingContext2D) => {
+      target.save()
+      try {
+        drawRoundedRectPath(target, contentX, contentY, contentWidth, contentHeight, contentRadii)
+        target.clip()
+        if (filterString) {
+          const existing = target.filter && target.filter !== 'none' ? `${target.filter} ` : ''
+          target.filter = existing + filterString
+        }
+        if (finalDW > 0 && finalDH > 0) {
+          target.drawImage(img, sx, sy, sw, sh, finalDX, finalDY, finalDW, finalDH)
+        }
+      } catch (drawError) {
+        console.error('[ImageNode] Error drawing image:', drawError)
+      } finally {
+        target.restore()
       }
-
-      const finalDX = Math.floor(dx)
-      const finalDY = Math.floor(dy)
-      const finalDW = Math.ceil(dw + (dx - finalDX))
-      const finalDH = Math.ceil(dh + (dy - finalDY))
-
-      if (finalDW > 0 && finalDH > 0) {
-        ctx.drawImage(img, sx, sy, sw, sh, finalDX, finalDY, finalDW, finalDH)
-      }
-    } catch (drawError) {
-      console.error('[ImageNode] Error drawing image:', drawError)
-    } finally {
-      ctx.restore()
     }
 
-    ctx.restore()
+    // A drop shadow falls outside the node's box by definition, and the clip inside `paint` exists
+    // to keep the image within it — so a shadow cast inside that clip was clipped away and nothing
+    // appeared at all. CSS has the same order: `overflow` clips an element's content, and a
+    // `drop-shadow` filter applies to what is left afterwards.
+    //
+    // So the drawing is built once on an offscreen and then composited in a single call with the
+    // shadow set, which both places the image and casts the shadow from the pixels actually drawn —
+    // following a rounded corner or a transparent edge rather than outlining the box.
+    const shadow = this.props.dropShadow
+    if (shadow && width > 0 && height > 0) {
+      const silhouette = createCanvas(Math.ceil(width), Math.ceil(height), mirrorEngine(ctx))
+      const silhouetteCtx = silhouette.getContext('2d')
+      silhouetteCtx.translate(-x, -y)
+      paint(silhouetteCtx)
+
+      ctx.save()
+      ctx.shadowOffsetX = shadow.offsetX ?? 0
+      ctx.shadowOffsetY = shadow.offsetY ?? 0
+      ctx.shadowBlur = Math.max(0, shadow.blur ?? 0)
+      ctx.shadowColor = shadow.color ?? 'black'
+      ctx.drawImage(silhouette, x, y)
+      ctx.restore()
+    } else {
+      paint(ctx)
+    }
   }
 }
 
