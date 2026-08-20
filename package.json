@@ -79,7 +79,7 @@
     "pixelmatch": "^7.2.0",
     "pngjs": "^7.0.0",
     "prettier": "^3.9.5",
-    "rollup": "^4.62.2",
+    "rollup": "^4.62.5",
     "rollup-plugin-tsconfig-paths": "^1.5.2",
     "semantic-release": "25.0.9",
     "typedoc": "^0.28.20",
