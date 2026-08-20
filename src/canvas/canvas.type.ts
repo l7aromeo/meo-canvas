@@ -1497,9 +1497,21 @@ export interface TextProps extends Omit<BoxProps, 'children' | 'gap' | 'flexDire
   maxLines?: number
 
   /**
-   * If true, adds '...' to the end of the last visible line when text is truncated due to `maxLines`.
-   * If a string is provided, that string is used as the ellipsis character(s).
-   * Defaults to false.
+   * Marks the last visible line when `maxLines` cuts the text short.
+   *
+   * `true` uses `…`, the character CSS uses. A string replaces it — a longer one simply leaves the
+   * text less room.
+   *
+   * The last line is filled to the character rather than to the last whole word that fitted, which
+   * is what a browser does: `Flower of Paradise Lost` in 140px ends `Flower of Par…`, not
+   * `Flower of…`. Text is drawn up from the lines `maxLines` discards to do it, but never across a
+   * newline in the text — that break was asked for, where a wrap is only where the width ran out.
+   * @default false
+   * @example
+   * ```ts
+   * Text('Flower of Paradise Lost', { width: 140, maxLines: 1, ellipsis: true })
+   * Text('Read the whole thing', { maxLines: 2, ellipsis: ' — more' })
+   * ```
    */
   ellipsis?: boolean | string
 
