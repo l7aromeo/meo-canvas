@@ -113,6 +113,26 @@ export class TextNode extends BoxNode {
     ctx.restore()
   }
 
+  /** Width of the text with nothing wrapped, from the last measure. */
+  private unwrappedWidth = 0
+
+  /**
+   * How far the text reaches past its own box.
+   *
+   * A line too long to fit still draws — nothing clips it unless `overflow` says so — so a group's
+   * offscreen has to allow for the part that hangs outside, or the tail is cut at a hard edge.
+   */
+  protected override inkOverflow(): number {
+    const layout = this.node.getComputedLayout()
+    const paddingLeft = this.node.getComputedPadding(Style.Edge.Left)
+    const paddingRight = this.node.getComputedPadding(Style.Edge.Right)
+    const borderLeft = this.node.getComputedBorder(Style.Edge.Left)
+    const borderRight = this.node.getComputedBorder(Style.Edge.Right)
+    const contentWidth = Math.max(0, layout.width - paddingLeft - paddingRight - borderLeft - borderRight)
+
+    return Math.max(0, this.unwrappedWidth - contentWidth)
+  }
+
   /**
    * Puts a run of text down, with its outline if it has one.
    *
@@ -604,6 +624,9 @@ export class TextNode extends BoxNode {
       })
     }
     const singleLineWidth = Math.max(widestLine, lineWidth)
+    // Kept for `inkOverflow`: a line wider than the box still draws, and a group's offscreen has to
+    // be told about it or it clips the tail.
+    this.unwrappedWidth = singleLineWidth
 
     // Determine final content width based on wrapping
     let requiredContentWidth: number
