@@ -152,6 +152,16 @@ export interface BoxShadowProps {
   blur?: number
 
   /**
+   * Grows the shadow beyond the node's box before it is blurred, as the fourth length of the CSS
+   * `box-shadow` shorthand does. A negative value shrinks it.
+   *
+   * An inset shadow spreads the other way, reaching further in from every edge.
+   * @unit Pixels.
+   * @default 0
+   */
+  spread?: number
+
+  /**
    * The color of the shadow.
    * Accepts standard CSS color strings.
    */

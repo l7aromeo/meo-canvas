@@ -566,7 +566,8 @@ export class BoxNode {
           ctx.shadowOffsetX = shadow.offsetX ?? 0
           ctx.shadowOffsetY = shadow.offsetY ?? 0
           ctx.shadowBlur = shadow.blur ?? Math.max(shadow.offsetX ?? 0, shadow.offsetY ?? 0)
-          drawRoundedRectPath(ctx, x + subtractOffset / 2, y + subtractOffset / 2, width - subtractOffset, height - subtractOffset, radii)
+          const shape = spreadShape(x + subtractOffset / 2, y + subtractOffset / 2, width - subtractOffset, height - subtractOffset, radii, shadow.spread ?? 0)
+          drawRoundedRectPath(ctx, shape.x, shape.y, shape.width, shape.height, shape.radii)
           ctx.fill()
         }
         ctx.restore()
@@ -581,7 +582,7 @@ export class BoxNode {
           const currentOffsetX = shadow.offsetX ?? 0
           const currentOffsetY = shadow.offsetY ?? 0
           const currentBlur = shadow.blur ?? Math.max(currentOffsetX, currentOffsetY)
-          maxBlur = Math.max(maxBlur, currentBlur)
+          maxBlur = Math.max(maxBlur, currentBlur + Math.max(0, shadow.spread ?? 0))
           maxOffsetX = Math.max(maxOffsetX, Math.abs(currentOffsetX))
           maxOffsetY = Math.max(maxOffsetY, Math.abs(currentOffsetY))
         }
@@ -611,14 +612,15 @@ export class BoxNode {
             offCtx.shadowOffsetX = shadowOffsetX
             offCtx.shadowOffsetY = shadowOffsetY
             offCtx.shadowBlur = Math.max(0, blur)
-            drawRoundedRectPath(
-              offCtx,
+            const shape = spreadShape(
               shapeOffsetX + subtractOffset / 2,
               shapeOffsetY + subtractOffset / 2,
               width - subtractOffset,
               height - subtractOffset,
               radii,
+              shadow.spread ?? 0,
             )
+            drawRoundedRectPath(offCtx, shape.x, shape.y, shape.width, shape.height, shape.radii)
             offCtx.fillStyle = 'rgba(0,0,0,1)'
             offCtx.fill()
             offCtx.restore()
@@ -659,25 +661,55 @@ export class BoxNode {
     }
 
     // Render inset shadows
-    // This logic uses standard context methods and remains unchanged.
-    if (insetShadows.length > 0) {
+    //
+    // Built on an offscreen the size of the node: flood it with the shadow colour, then erase the
+    // node's own shape from it, offset and blurred. What survives is the colour hugging the edges
+    // the shape has moved away from -- which is what CSS draws, and why `inset 20px 20px` darkens
+    // the top and left rather than the bottom and right.
+    //
+    // Erasing rather than casting a canvas shadow, because a canvas shadow is cast by what is
+    // actually painted and the paint would have to sit inside the clip to cast inward. This used to
+    // stroke a path with `strokeStyle = 'transparent'` on the note that only the shadow mattered;
+    // nothing is painted by a transparent stroke, so inset shadows drew nothing at all.
+    if (insetShadows.length > 0 && width > 0 && height > 0) {
       for (const shadow of insetShadows) {
-        ctx.save()
-        const color = shadow.color ?? 'black'
         const shadowOffsetX = shadow.offsetX ?? 0
         const shadowOffsetY = shadow.offsetY ?? 0
-        const blur = shadow.blur ?? Math.max(shadowOffsetX, shadowOffsetY)
+        const blur = Math.max(0, shadow.blur ?? 0)
+        const spread = shadow.spread ?? 0
+
+        const offscreen = createCanvas(Math.ceil(width), Math.ceil(height), mirrorEngine(ctx))
+        const offCtx = offscreen.getContext('2d')
+
+        offCtx.fillStyle = shadow.color ?? 'black'
+        offCtx.fillRect(0, 0, width, height)
+
+        // `filter` takes a standard deviation where a shadow blur takes a diameter, so the radius
+        // CSS names is half of it.
+        if (blur > 0) offCtx.filter = `blur(${blur / 2}px)`
+        offCtx.globalCompositeOperation = 'destination-out'
+
+        const holeRadii = {
+          TopLeft: Math.max(0, radii.TopLeft - spread),
+          TopRight: Math.max(0, radii.TopRight - spread),
+          BottomRight: Math.max(0, radii.BottomRight - spread),
+          BottomLeft: Math.max(0, radii.BottomLeft - spread),
+        }
+        drawRoundedRectPath(
+          offCtx,
+          shadowOffsetX + spread,
+          shadowOffsetY + spread,
+          Math.max(0, width - spread * 2),
+          Math.max(0, height - spread * 2),
+          holeRadii,
+        )
+        offCtx.fillStyle = 'rgba(0,0,0,1)'
+        offCtx.fill()
+
+        ctx.save()
         drawRoundedRectPath(ctx, x, y, width, height, radii)
         ctx.clip()
-        ctx.shadowColor = color
-        ctx.shadowOffsetX = shadowOffsetX
-        ctx.shadowOffsetY = shadowOffsetY
-        ctx.shadowBlur = blur
-        ctx.lineWidth = 1 // Minimal line width for the stroke.
-        ctx.strokeStyle = 'transparent' // Stroke color doesn't matter; only the shadow does.
-        // Draw a slightly offset path *inside* the clip to generate the inset shadow.
-        drawRoundedRectPath(ctx, x - shadowOffsetX, y - shadowOffsetY, width, height, radii)
-        ctx.stroke() // The stroke generates the shadow inside the clipped area.
+        ctx.drawImage(offscreen, x, y)
         ctx.restore()
       }
     }
@@ -695,6 +727,45 @@ export class BoxNode {
       borderColor: this.props.borderColor,
       borderStyle: this.props.borderStyle,
     })
+  }
+}
+
+/**
+ * A corner radius grown by `spread`.
+ *
+ * A square corner stays square however far the shadow spreads — CSS grows a radius only where there
+ * is one, so a spread shadow on a plain rectangle is a larger rectangle rather than a rounded one.
+ */
+function grownRadius(radius: number, spread: number): number {
+  return radius > 0 ? Math.max(0, radius + spread) : 0
+}
+
+/**
+ * The silhouette a shadow is cast from: the node's box grown by `spread`, corners included.
+ *
+ * CSS grows the box before the blur is applied, so a spread shadow is a larger copy of the shape
+ * rather than a wider blur. A negative spread shrinks it, and a corner cannot curve by less than
+ * nothing.
+ */
+function spreadShape(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radii: { TopLeft: number; TopRight: number; BottomRight: number; BottomLeft: number },
+  spread: number,
+) {
+  return {
+    x: x - spread,
+    y: y - spread,
+    width: Math.max(0, width + spread * 2),
+    height: Math.max(0, height + spread * 2),
+    radii: {
+      TopLeft: grownRadius(radii.TopLeft, spread),
+      TopRight: grownRadius(radii.TopRight, spread),
+      BottomRight: grownRadius(radii.BottomRight, spread),
+      BottomLeft: grownRadius(radii.BottomLeft, spread),
+    },
   }
 }
 
