@@ -12,6 +12,11 @@ name: Docs
 #
 # Needs one setting made by hand, once: Settings > Pages > Source = GitHub Actions.
 on:
+  # Called by the release workflow once semantic-release has published. It has to be a call rather
+  # than a `release: published` trigger: semantic-release creates that release with GITHUB_TOKEN,
+  # and GitHub does not start workflows from events raised by GITHUB_TOKEN, so the trigger would
+  # never fire. A release published by hand does raise it, which is what the trigger below is for.
+  workflow_call:
   release:
     types: [published]
   # So the site can be rebuilt without cutting a release — after a docs-only fix, say.

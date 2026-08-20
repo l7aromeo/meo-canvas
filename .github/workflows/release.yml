@@ -38,6 +38,10 @@ jobs:
     name: semantic-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Whether a release was actually cut. A merge carrying only `chore:` or `test:` commits releases
+    # nothing, and the docs job below has no reason to rebuild the site for it.
+    outputs:
+      published: ${{ steps.semantic.outputs.published }}
     # Capitalised to match the environment that exists on the repository, and
     # the name registered with npm's trusted publisher. The OIDC token carries
     # this string; npm compares it literally, so a case difference here is a
@@ -68,6 +72,20 @@ jobs:
         run: bun install --frozen-lockfile
       - run: bun run build
       - name: semantic-release
+        id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun x semantic-release
+
+  # The API reference documents released versions, so it is rebuilt here rather than on a push to
+  # main. Calling the workflow is what makes this run at all: semantic-release publishes the release
+  # with GITHUB_TOKEN, and events raised by that token do not start workflows of their own.
+  docs:
+    name: publish the API reference
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
