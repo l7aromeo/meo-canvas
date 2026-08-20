@@ -1,8 +1,8 @@
 name: Docs
 
-# Triggered by a published release rather than by a push to main, so the site documents versions
-# that are actually on npm. A push-triggered build would publish unreleased work under a version
-# number that does not exist yet, since `includeVersion` reads it from package.json.
+# Built from tags rather than from a push to main, so the site documents versions that are actually
+# on npm — a push-triggered build would publish unreleased work under a version number nobody can
+# install.
 #
 # Nothing is committed to the repository. Pages is served from the artifact this workflow uploads,
 # so there is no `gh-pages` branch to keep in step and no generated HTML in the history. That does
@@ -81,6 +81,10 @@ jobs:
             echo "::group::$tag"
             git checkout --force "$tag"
             bun install --frozen-lockfile
+            # semantic-release publishes the version it computed without committing it back, so the
+            # tag's package.json still carries the 1.0.0 placeholder. TypeDoc's `includeVersion`
+            # reads the title from there, which titled every release's docs v1.0.0 until this line.
+            npm pkg set version="${tag#v}"
             bun run docs
             mv docs-site "site/$tag"
             echo "::endgroup::"
