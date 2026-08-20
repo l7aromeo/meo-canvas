@@ -682,14 +682,28 @@ export interface BoxProps extends BaseProps {
   transform?: TransformProps
 
   /**
-   * Specifies the stack order of an element.
-   * Only applies to nodes with `positionType: 'absolute'`.
-   * Elements with a larger zIndex cover elements with a smaller one.
-   * If elements share the same zIndex, their stacking order is based on their
-   * original order in the children array.
-   * Elements without a defined zIndex or not absolutely positioned are treated
-   * as if they have zIndex: 0 for stacking relative to positioned siblings,
-   * but are rendered in their normal flow order relative to other non-positioned elements.
+   * Stack order among absolutely positioned siblings. A larger value paints over a smaller one, and
+   * equal values paint in the order they were declared.
+   *
+   * Only absolutely positioned nodes take part. An in-flow child is painted in flow order and is
+   * never lifted by a `zIndex`.
+   *
+   * Leaving it unset is CSS's `z-index: auto`, which shares a layer with `0` — so an absolutely
+   * positioned child still paints above in-flow siblings, whether it is declared before or after
+   * them. A negative value puts it below them instead, which is how a decoration is placed behind
+   * the content of its own parent.
+   *
+   * @example
+   * ```ts
+   * Box({
+   *   positionType: Style.PositionType.Relative,
+   *   children: [
+   *     // Behind the content, though it is declared first.
+   *     Box({ positionType: Style.PositionType.Absolute, zIndex: -1, backgroundColor: '#eef' }),
+   *     Text('over the decoration'),
+   *   ],
+   * })
+   * ```
    */
   zIndex?: number
 

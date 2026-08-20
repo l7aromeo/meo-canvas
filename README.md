@@ -1021,33 +1021,33 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 #### Layout Props
 
-| Prop                    | Type                               | Description                                                                   |
-| ----------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
-| `width`, `height`       | `number \| string`                 | Sets the size of the node in pixels or percentage.                            |
-| `minWidth`, `minHeight` | `number \| string`                 | Sets the minimum size of the node.                                            |
-| `maxWidth`, `maxHeight` | `number \| string`                 | Sets the maximum size of the node.                                            |
-| `flexDirection`         | `Style.FlexDirection`              | Defines the direction of the main axis (`Row`, `Column`, etc.).               |
-| `justifyContent`        | `Style.Justify`                    | Defines how items are distributed along the main axis.                        |
-| `alignItems`            | `Style.Align`                      | Defines how items are aligned along the cross axis.                           |
-| `alignSelf`             | `Style.Align`                      | Overrides the parent's`alignItems` for a specific item.                       |
-| `alignContent`          | `Style.Align`                      | Defines how lines are distributed when content wraps.                         |
-| `flexGrow`              | `number`                           | Defines the ability of an item to grow.                                       |
-| `flexShrink`            | `number`                           | Defines the ability of an item to shrink.                                     |
-| `flexBasis`             | `number \| 'auto' \| string`       | Defines the default size of an item along the main axis.                      |
-| `flexWrap`              | `Style.Wrap`                       | Controls whether flex items wrap to multiple lines.                           |
-| `positionType`          | `Style.PositionType`               | Sets the positioning method (`Relative` or `Absolute`).                       |
-| `position`              | `object \| number \| string`       | Sets the offset for a positioned element.                                     |
-| `margin`                | `object \| number \| string`       | Sets the margin space on the outside of the node.                             |
-| `padding`               | `object \| number \| string`       | Sets the padding space on the inside of the node.                             |
-| `border`                | `object \| number`                 | Sets the width of the node's border.                                          |
-| `aspectRatio`           | `number`                           | Locks the aspect ratio (width / height) of the node.                          |
-| `overflow`              | `Style.Overflow`                   | Defines how content that overflows is handled (`Visible`, `Hidden`).          |
-| `display`               | `Style.Display`                    | Controls if the node is included in layout (`Flex`, `None`).                  |
-| `direction`             | `Style.Direction`                  | Sets the primary layout direction (`LTR`, `RTL`).                             |
-| `gap`                   | `object \| number \| string`       | Defines the space between flex items.                                         |
-| `boxSizing`             | `Style.BoxSizing`                  | Defines how`width` and `height` are interpreted (`ContentBox`, `BorderBox`).  |
-| `zIndex`                | `number`                           | Specifies the stack order of an element (only for`positionType: 'absolute'`). |
-| `children`              | `CanvasElement \| CanvasElement[]` | Child nodes to render inside this node.                                       |
+| Prop                    | Type                               | Description                                                                                           |
+| ----------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `width`, `height`       | `number \| string`                 | Sets the size of the node in pixels or percentage.                                                    |
+| `minWidth`, `minHeight` | `number \| string`                 | Sets the minimum size of the node.                                                                    |
+| `maxWidth`, `maxHeight` | `number \| string`                 | Sets the maximum size of the node.                                                                    |
+| `flexDirection`         | `Style.FlexDirection`              | Defines the direction of the main axis (`Row`, `Column`, etc.).                                       |
+| `justifyContent`        | `Style.Justify`                    | Defines how items are distributed along the main axis.                                                |
+| `alignItems`            | `Style.Align`                      | Defines how items are aligned along the cross axis.                                                   |
+| `alignSelf`             | `Style.Align`                      | Overrides the parent's`alignItems` for a specific item.                                               |
+| `alignContent`          | `Style.Align`                      | Defines how lines are distributed when content wraps.                                                 |
+| `flexGrow`              | `number`                           | Defines the ability of an item to grow.                                                               |
+| `flexShrink`            | `number`                           | Defines the ability of an item to shrink.                                                             |
+| `flexBasis`             | `number \| 'auto' \| string`       | Defines the default size of an item along the main axis.                                              |
+| `flexWrap`              | `Style.Wrap`                       | Controls whether flex items wrap to multiple lines.                                                   |
+| `positionType`          | `Style.PositionType`               | Sets the positioning method (`Relative` or `Absolute`).                                               |
+| `position`              | `object \| number \| string`       | Sets the offset for a positioned element.                                                             |
+| `margin`                | `object \| number \| string`       | Sets the margin space on the outside of the node.                                                     |
+| `padding`               | `object \| number \| string`       | Sets the padding space on the inside of the node.                                                     |
+| `border`                | `object \| number`                 | Sets the width of the node's border.                                                                  |
+| `aspectRatio`           | `number`                           | Locks the aspect ratio (width / height) of the node.                                                  |
+| `overflow`              | `Style.Overflow`                   | Defines how content that overflows is handled (`Visible`, `Hidden`).                                  |
+| `display`               | `Style.Display`                    | Controls if the node is included in layout (`Flex`, `None`).                                          |
+| `direction`             | `Style.Direction`                  | Sets the primary layout direction (`LTR`, `RTL`).                                                     |
+| `gap`                   | `object \| number \| string`       | Defines the space between flex items.                                                                 |
+| `boxSizing`             | `Style.BoxSizing`                  | Defines how`width` and `height` are interpreted (`ContentBox`, `BorderBox`).                          |
+| `zIndex`                | `number`                           | Stack order among absolutely positioned siblings; unset paints above in-flow content, negative below. |
+| `children`              | `CanvasElement \| CanvasElement[]` | Child nodes to render inside this node.                                                               |
 
 #### Styling Props
 

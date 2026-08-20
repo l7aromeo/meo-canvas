@@ -409,11 +409,18 @@ export class BoxNode {
       const inFlowChildren: BoxNode[] = []
 
       this.children.forEach((child, index) => {
-        // Check if child participates in zIndex stacking
-        if (child.props.positionType === Style.PositionType.Absolute && child.props.zIndex !== undefined) {
+        // Every absolutely positioned child is a positioned descendant, whether or not it named a
+        // zIndex. CSS paints those above in-flow content, and `z-index: auto` shares a layer with
+        // `z-index: 0` — so an unindexed one defaults to 0 rather than falling back into the flow,
+        // where a later sibling would bury it.
+        //
+        // `Relative` stays in the flow. It is Yoga's default position type, so it is what every
+        // ordinary child already is — CSS `static` rather than CSS `relative` — and treating it as
+        // positioned would lift the whole tree into the positioned layer.
+        if (child.props.positionType === Style.PositionType.Absolute) {
           positionedChildren.push({
             node: child,
-            zIndex: child.props.zIndex,
+            zIndex: child.props.zIndex ?? 0,
             originalIndex: index, // Keep original order for tie-breaking
           })
         } else {
