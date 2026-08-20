@@ -1690,3 +1690,70 @@ describe('BoxNode group offscreen sizing', () => {
     expect(reachOf(parent, [0, 0, 60, 60])).toBe(30)
   })
 })
+
+describe('BoxNode backdrop region', () => {
+  /** A real surface with a hard black/white edge down the middle, so a blur is visible. */
+  const surface = () => {
+    const canvas = new Canvas(200, 120)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, 200, 120)
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, 100, 120)
+    return { canvas, ctx }
+  }
+
+  const applyBackdrop = (node: BoxNode, ctx: unknown, box: [number, number, number, number]) =>
+    (node as unknown as { applyBackdropFilter: (t: unknown, s: unknown, f: string, ...rest: number[]) => void }).applyBackdropFilter(
+      ctx,
+      ctx,
+      'blur(6px)',
+      ...box,
+    )
+
+  const colourAt = (ctx: ReturnType<typeof surface>['ctx'], x: number, y: number) => {
+    const { data } = ctx.getImageData(x, y, 1, 1)
+    return [data[0], data[1], data[2]]
+  }
+
+  it('filters inside the node and leaves the rest of the page alone', () => {
+    // Only the node's own region is copied now, rather than the whole surface — the filtering has
+    // to land in the same place regardless.
+    const { ctx } = surface()
+    const node = new BoxNode({ backdropFilter: 'blur(6px)' })
+
+    applyBackdrop(node, ctx, [80, 40, 60, 40])
+
+    // Just past the hard edge, inside the node: blurred, so neither black nor white.
+    const inside = colourAt(ctx, 104, 60)
+    expect(inside[0]).toBeGreaterThan(0)
+    expect(inside[0]).toBeLessThan(255)
+
+    // The same distance past the edge, outside the node: untouched.
+    expect(colourAt(ctx, 104, 10)).toEqual([255, 255, 255])
+    expect(colourAt(ctx, 96, 10)).toEqual([0, 0, 0])
+  })
+
+  it('handles a node hanging off the edge of the surface', () => {
+    // The copied region is clamped to the surface, or the node would ask for pixels that do not
+    // exist and the copy would come back empty.
+    const { ctx } = surface()
+    const node = new BoxNode({ backdropFilter: 'blur(6px)' })
+
+    expect(() => applyBackdrop(node, ctx, [-30, -20, 80, 60])).not.toThrow()
+
+    const inside = colourAt(ctx, 10, 10)
+    expect(inside[0]).toBeGreaterThanOrEqual(0)
+    expect(inside[0]).toBeLessThan(255)
+  })
+
+  it('draws nothing for a node with no area on the surface', () => {
+    const { ctx } = surface()
+    const node = new BoxNode({ backdropFilter: 'blur(6px)' })
+    const before = colourAt(ctx, 50, 50)
+
+    applyBackdrop(node, ctx, [-500, -500, 10, 10])
+
+    expect(colourAt(ctx, 50, 50)).toEqual(before)
+  })
+})

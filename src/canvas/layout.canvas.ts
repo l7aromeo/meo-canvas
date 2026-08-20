@@ -351,9 +351,10 @@ export class BoxNode {
    * transform being reset, which is what lets the copy be drawn back pixel for pixel — a rotated
    * or scaled node filters the region it actually covers rather than an upright box near it.
    *
-   * The copy is the size of the whole canvas. A backdrop is a deliberate effect on a handful of
-   * nodes rather than something every node pays for, and copying only the node's own region would
-   * still have to account for however far the filter reaches beyond it.
+   * Only the node's own region is copied, grown by how far the filter reaches in from outside it —
+   * a blur pulls in colour from past the edges, and cutting the copy at the box would leave a seam
+   * there. Copying the whole surface instead made a backdrop cost the page's area rather than the
+   * node's, which is the difference between 4ms and 33ms a node as a page grows.
    *
    * `target` and `source` come apart when the node also carries a `filter` or a blend: the subtree
    * is drawn into an offscreen, so the backdrop has to be read from the page and painted into that
@@ -377,18 +378,44 @@ export class BoxNode {
     const surface = source.canvas
     if (!surface?.width || !surface?.height) return
 
-    const snapshot = createCanvas(surface.width, surface.height, mirrorEngine(source))
-    const snapshotCtx = snapshot.getContext('2d')
-    snapshotCtx.drawImage(surface, 0, 0)
+    const matrix = target.getTransform()
+    const pageScale = (Math.hypot(matrix.a, matrix.b) + Math.hypot(matrix.c, matrix.d)) / 2 || 1
+    const scaled = scaleFilterLengths(filter, pageScale)
+
+    // Only the part of the page the node can actually show, grown by how far the filter reaches in
+    // from beyond the edges. Copying the whole surface instead costs the page's area per backdrop
+    // node rather than the node's own: on a 15 Mpx page that was 33ms a node against 4ms on a
+    // small one, for a node covering a hundredth of it either way.
+    const reach = filterSpill(scaled)
+    const corners = [
+      [x, y],
+      [x + width, y],
+      [x, y + height],
+      [x + width, y + height],
+    ].map(([cornerX, cornerY]) => ({
+      x: matrix.a * cornerX + matrix.c * cornerY + matrix.e - deviceOffsetX,
+      y: matrix.b * cornerX + matrix.d * cornerY + matrix.f - deviceOffsetY,
+    }))
+
+    const left = Math.max(0, Math.floor(Math.min(...corners.map(corner => corner.x)) - reach))
+    const top = Math.max(0, Math.floor(Math.min(...corners.map(corner => corner.y)) - reach))
+    const right = Math.min(surface.width, Math.ceil(Math.max(...corners.map(corner => corner.x)) + reach))
+    const bottom = Math.min(surface.height, Math.ceil(Math.max(...corners.map(corner => corner.y)) + reach))
+
+    const regionWidth = right - left
+    const regionHeight = bottom - top
+    if (regionWidth <= 0 || regionHeight <= 0) return
+
+    const snapshot = createCanvas(regionWidth, regionHeight, mirrorEngine(source))
+    snapshot.getContext('2d').drawImage(surface, left, top, regionWidth, regionHeight, 0, 0, regionWidth, regionHeight)
 
     target.save()
     try {
       drawRoundedRectPath(target, x, y, width, height, parseBorderRadius(this.props.borderRadius))
       target.clip()
-      const matrix = target.getTransform()
       target.resetTransform()
-      target.filter = scaleFilterLengths(filter, (Math.hypot(matrix.a, matrix.b) + Math.hypot(matrix.c, matrix.d)) / 2 || 1)
-      target.drawImage(snapshot, deviceOffsetX, deviceOffsetY)
+      target.filter = scaled
+      target.drawImage(snapshot, left + deviceOffsetX, top + deviceOffsetY)
     } finally {
       target.restore()
     }

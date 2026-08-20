@@ -166,6 +166,46 @@ describe('backdropFilter', () => {
     expect(blended.colourAt(at(44, 20))[0]).toBeLessThan(250)
   })
 
+  it('filters correctly when the node hangs off the edge of the canvas', async () => {
+    // Only the node's own region is copied, so the region has to be clamped to the surface — a node
+    // starting at a negative offset would otherwise ask for pixels that do not exist.
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: W,
+      height: H,
+      workerMode: false,
+      gpu: false,
+      backgroundColor: '#ffffff',
+      children: [
+        Box({
+          width: W,
+          height: H,
+          children: [
+            Box({ positionType: Style.PositionType.Absolute, position: { Top: 0, Left: 0 }, width: 40, height: H, backgroundColor: '#000000' }),
+            Box({ positionType: Style.PositionType.Absolute, position: { Top: 0, Left: -20 }, width: 60, height: H, backdropFilter: 'blur(6px)' }),
+          ],
+        }),
+      ],
+    })
+
+    const { data } = canvas.getContext('2d').getImageData(30, 20, 1, 1)
+    // Inside both the square and the overhanging panel: blurred, so neither black nor white.
+    expect(data[0]).toBeGreaterThan(0)
+    expect(data[0]).toBeLessThan(255)
+  })
+
+  it('filters the region a rotated node actually covers', async () => {
+    // The copied region comes from the node's corners under the transform in force, not from an
+    // upright box: a rotated panel filters what is behind where it really sits.
+    const rotated = await render([square(), panel({ transform: { rotate: 20 } })])
+    const unfiltered = await render([square(), panel({ transform: { rotate: 20 }, backdropFilter: undefined })])
+
+    // Sampled just past the square's hard edge, under the rotated panel: filtered it carries
+    // blurred ink, unfiltered the page is still white there.
+    expect(rotated.colourAt(at(44, 20))[0]).toBeLessThan(250)
+    expect(unfiltered.colourAt(at(44, 20))).toEqual([255, 255, 255])
+  })
+
   it('reaches the same distance in user px whatever the root scale', async () => {
     // A canvas applies `filter` in device pixels regardless of the transform, where CSS reads the
     // length in the element's own units. Unscaled, a `blur(6px)` covers three user px at

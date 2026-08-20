@@ -7,7 +7,7 @@
       "dependencies": {
         "comlink": "^4.4.2",
         "file-type": "^22.0.2",
-        "meo-skia-canvas": "^5.6.3",
+        "meo-skia-canvas": "^5.6.4",
         "tslib": "^2.8.1",
         "yoga-layout": "^3.2.1",
       },
@@ -809,21 +809,21 @@
 
     "mdurl": ["mdurl@2.1.0", "", {}, "sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg=="],
 
-    "meo-skia-canvas": ["meo-skia-canvas@5.6.3", "", { "dependencies": { "detect-libc": "^2.1.1", "follow-redirects": "^1.15.11", "https-proxy-agent": "^9.1.0", "string-split-by": "^1.0.0" }, "optionalDependencies": { "meo-skia-canvas-darwin-arm64": "5.6.3", "meo-skia-canvas-linux-arm64-glibc": "5.6.3", "meo-skia-canvas-linux-arm64-musl": "5.6.3", "meo-skia-canvas-linux-x64-glibc": "5.6.3", "meo-skia-canvas-linux-x64-musl": "5.6.3", "meo-skia-canvas-win32-arm64": "5.6.3", "meo-skia-canvas-win32-x64": "5.6.3" }, "peerDependencies": { "sharp": ">=0.33.0" }, "optionalPeers": ["sharp"] }, "sha512-eaSyxlXHJSH0JwYByySJPLcAq662+TqvVKAjD0WP5gYzclswLHJ1ghmnuU2jMqAV6BuIqLlOlaAb40lJD7zwGw=="],
+    "meo-skia-canvas": ["meo-skia-canvas@5.6.4", "", { "dependencies": { "detect-libc": "^2.1.1", "follow-redirects": "^1.15.11", "https-proxy-agent": "^9.1.0", "string-split-by": "^1.0.0" }, "optionalDependencies": { "meo-skia-canvas-darwin-arm64": "5.6.4", "meo-skia-canvas-linux-arm64-glibc": "5.6.4", "meo-skia-canvas-linux-arm64-musl": "5.6.4", "meo-skia-canvas-linux-x64-glibc": "5.6.4", "meo-skia-canvas-linux-x64-musl": "5.6.4", "meo-skia-canvas-win32-arm64": "5.6.4", "meo-skia-canvas-win32-x64": "5.6.4" }, "peerDependencies": { "sharp": ">=0.33.0" }, "optionalPeers": ["sharp"] }, "sha512-BRVcLoxEBSNTgR4K+v/5LL48v2uD9ntLVVWZnfyI+To5+6eKqAbWII59mpipZnmpSaXQjV4GNRNyszVT8MB0aw=="],
 
-    "meo-skia-canvas-darwin-arm64": ["meo-skia-canvas-darwin-arm64@5.6.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-egPFTVBcgSe6OA/iHwHy2vPvLD7YQzbs1feBujhg++RnroIHflordFCF4IweNEhW1s+AlV6NrtS+6nmEVkRA/w=="],
+    "meo-skia-canvas-darwin-arm64": ["meo-skia-canvas-darwin-arm64@5.6.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-nIDW+3BqQpnIJ7qxfsLGeHAEZvyllIPVKeYGGY4WT8Jwl2j4h4BzgRAy+V+qcvf0+MJT04dvvLohIjrfLNzKHA=="],
 
-    "meo-skia-canvas-linux-arm64-glibc": ["meo-skia-canvas-linux-arm64-glibc@5.6.3", "", { "os": "linux", "cpu": "arm64" }, "sha512-fZUZT3UGE34hLQ4QeiavARIQWWBrdbo8O/MWVoILasekSvF1NOnSwmp4SXPZTzGXuEYGzRpjEn4DofkAPAhmYA=="],
+    "meo-skia-canvas-linux-arm64-glibc": ["meo-skia-canvas-linux-arm64-glibc@5.6.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-thgzCSZYimXEA6bdVxENOV+5mghl5/0Tp7tTc+ytviccsR7HROcm1Ny2M1nvGDT2NWatOEJLlBjwK71ut8UvnQ=="],
 
-    "meo-skia-canvas-linux-arm64-musl": ["meo-skia-canvas-linux-arm64-musl@5.6.3", "", { "os": "linux", "cpu": "arm64" }, "sha512-rhNmzCaFdMKyk/jbI+ajW253WERYtP2AzC5HvDXqSJe6ZPCSVpmUjWb7A2NBpfmFmHP1LkBhBXszY6rOrihB+A=="],
+    "meo-skia-canvas-linux-arm64-musl": ["meo-skia-canvas-linux-arm64-musl@5.6.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-YcjNToJeicI1z6foeo9kpj/xXO+oen65hUC/1Gpahq/WWnCnj8kr6PV1reJN0Az/KzFACd7NyLtpDjhItvYQpA=="],
 
-    "meo-skia-canvas-linux-x64-glibc": ["meo-skia-canvas-linux-x64-glibc@5.6.3", "", { "os": "linux", "cpu": "x64" }, "sha512-nwuyVrNB47aF541NOCvxvqB2m/uiQSCse3H3vlMVN86r7WK/CKKCqv1+7WYj2k7DGB6n7OBxEsqkWQ/F25h+zQ=="],
+    "meo-skia-canvas-linux-x64-glibc": ["meo-skia-canvas-linux-x64-glibc@5.6.4", "", { "os": "linux", "cpu": "x64" }, "sha512-BmwBvN8D20ieGqoshOR/ZsCGv4c5vAotmKgTjfcp+cdwY7X41HrjN28xlJMUsgP1iV/W7n+TkOtvkBadXoFcpw=="],
 
-    "meo-skia-canvas-linux-x64-musl": ["meo-skia-canvas-linux-x64-musl@5.6.3", "", { "os": "linux", "cpu": "x64" }, "sha512-boAKzKUyB/OKTaj31qbKlMevcICNoHAze2vcMAAqVK6XwS+GQLpBWtqqm2fW5Wx7XjQ6GS/G8u8i9lQuCieB/Q=="],
+    "meo-skia-canvas-linux-x64-musl": ["meo-skia-canvas-linux-x64-musl@5.6.4", "", { "os": "linux", "cpu": "x64" }, "sha512-fQyh1PMgivz2P2UU2MoCZxvqlGMxanzr+YHOB49eZkRnlCShOuH+OX9R5nAFZl+fG5qzvBu9UFA4wuX9FaQPYQ=="],
 
-    "meo-skia-canvas-win32-arm64": ["meo-skia-canvas-win32-arm64@5.6.3", "", { "os": "win32", "cpu": "arm64" }, "sha512-utCk1g7EPz1ckGVTzNmeBW1uR29OdZfz7j0GQi2rJIXdDhwOjsvuQJAOfnuTtfIXNtLMOls05IDT9VCO0+BbLQ=="],
+    "meo-skia-canvas-win32-arm64": ["meo-skia-canvas-win32-arm64@5.6.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-4TLT8KyQWJjo64WwFlxn9WMS6QhPIcJZGsH/opN5Gib3RGNpYNbYyyJdeZBvLhCsS+NSXPE6Wk7qCVdFZUxa8w=="],
 
-    "meo-skia-canvas-win32-x64": ["meo-skia-canvas-win32-x64@5.6.3", "", { "os": "win32", "cpu": "x64" }, "sha512-5d1vGPxntKorV0MIsjRFGg3ol9UTimFUx8df6r4brn4yi8MDCCr8lmefxXZjWj1FZxTQZY7+tMjRTQp0nowF7g=="],
+    "meo-skia-canvas-win32-x64": ["meo-skia-canvas-win32-x64@5.6.4", "", { "os": "win32", "cpu": "x64" }, "sha512-qeVd8Zf9I0uFUorvVOtulPFImmjJyd0wdcZuCi+1V+gbAVp6Wychr0/4NDqDzRMN3sOkoDY5AnwAsFFTkJJ2Xw=="],
 
     "meow": ["meow@13.2.0", "https://registry.npmmirror.com/meow/-/meow-13.2.0.tgz", {}, "sha512-pxQJQzB6djGPXh08dacEloMFopsOqGVRKFPYvPOt9XDZ1HasbgDZA74CJGreSU4G3Ak7EFJGoiH2auq+yXISgA=="],
 
