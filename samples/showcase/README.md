@@ -13,9 +13,9 @@ clean, so this directory is out of their reach by construction rather than by
 convention. Replacing an image here means exporting a new one from the bot and
 committing it.
 
-**They were exported before 8.0.0.** That release changed where text sits — line boxes now come
-from the face's own metrics — so these show the older spacing. Re-exporting them from the bot is
-what brings them back in step; nothing in this repository can do it.
+**They were exported against 8.0.0**, so the text spacing here is the one that release
+settled on — line boxes taken from the face's own metrics. Both profile cards are animated
+WebP, which is why they are far larger than the two still images.
 
 The generated samples live one level up and are rebuilt with:
 
