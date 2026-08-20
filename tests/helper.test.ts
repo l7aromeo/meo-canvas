@@ -1,4 +1,4 @@
-import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
+import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
 import { extractFunctions, restoreFunctions, FN_MARKER } from '@/worker/comlink.pool.js'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
@@ -613,5 +613,34 @@ describe('restoreFunctions', () => {
     const mockCallFn = async () => null
     const buf = Buffer.from('hello')
     expect(restoreFunctions(buf, mockCallFn)).toBe(buf)
+  })
+})
+
+describe('filterSpill', () => {
+  const STANDARD_DEVIATIONS_TO_COVER = 3
+
+  it('is nothing for a chain that does not spread', () => {
+    expect(filterSpill('')).toBe(0)
+    expect(filterSpill('grayscale(1) saturate(2) hue-rotate(90deg)')).toBe(0)
+  })
+
+  it('covers three standard deviations of a blur', () => {
+    // A Gaussian takes its length as a standard deviation and is spent by three of them. Cutting
+    // the offscreen at the blur radius itself would clip the visible tail.
+    expect(filterSpill('blur(4px)')).toBe(4 * STANDARD_DEVIATIONS_TO_COVER)
+    expect(filterSpill('blur(4)')).toBe(4 * STANDARD_DEVIATIONS_TO_COVER)
+  })
+
+  it('adds up a chain, since a later filter spreads what an earlier one made', () => {
+    expect(filterSpill('blur(4px) blur(2px)')).toBe(18)
+  })
+
+  it('reaches a drop shadow’s offset plus its own blur', () => {
+    expect(filterSpill('drop-shadow(2px 3px 5px #000)')).toBe(3 + 5 * STANDARD_DEVIATIONS_TO_COVER)
+    expect(filterSpill('drop-shadow(-8px 1px 0 red)')).toBe(8)
+  })
+
+  it('ignores a length belonging to another function', () => {
+    expect(filterSpill('opacity(0.5) contrast(200%)')).toBe(0)
   })
 })

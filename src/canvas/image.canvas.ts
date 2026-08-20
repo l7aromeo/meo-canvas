@@ -407,19 +407,12 @@ export class ImageNode extends BoxNode {
     const finalDW = Math.ceil(dw + (dx - finalDX))
     const finalDH = Math.ceil(dh + (dy - finalDY))
 
-    const saturateValue = this.props.saturate ?? 1
-    const filterString = saturateValue !== 1 ? `saturate(${saturateValue * 100}%)` : ''
-
     /** Draws the image as this node paints it: clipped to the content box, corners and all. */
     const paint = (target: CanvasRenderingContext2D) => {
       target.save()
       try {
         drawRoundedRectPath(target, contentX, contentY, contentWidth, contentHeight, contentRadii)
         target.clip()
-        if (filterString) {
-          const existing = target.filter && target.filter !== 'none' ? `${target.filter} ` : ''
-          target.filter = existing + filterString
-        }
         if (finalDW > 0 && finalDH > 0) {
           target.drawImage(img, sx, sy, sw, sh, finalDX, finalDY, finalDW, finalDH)
         }

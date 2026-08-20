@@ -662,6 +662,27 @@ export interface BoxProps extends BaseProps {
   mask?: Mask
 
   /**
+   * Graphical effects applied to the node and everything inside it, in CSS `filter` notation.
+   *
+   * The whole subtree is drawn once and the chain applied to the result, which is what CSS does —
+   * so two overlapping children are filtered together rather than each on its own. Functions run
+   * left to right, and anything that does not parse is ignored rather than throwing.
+   *
+   * `saturate` on an {@link ImageProps} is the same machinery: where both are given, the shorthand
+   * runs first, then this chain.
+   *
+   * A blur reaches past the node's box, as it does in CSS, and is not clipped to it.
+   * @default undefined (no filter)
+   * @example
+   * ```ts
+   * Box({ filter: 'grayscale(1)' })
+   * Box({ filter: 'brightness(1.2) contrast(0.9)' })
+   * Box({ filter: 'blur(4px) hue-rotate(90deg)' })
+   * ```
+   */
+  filter?: string
+
+  /**
    * Sets the opacity of the node and its children when drawing.
    * A value between 0 (fully transparent) and 1 (fully opaque).
    *

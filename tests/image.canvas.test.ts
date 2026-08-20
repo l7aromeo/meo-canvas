@@ -52,8 +52,13 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     save: vi.fn(),
     restore: vi.fn(),
     clip: vi.fn(),
-    // The offscreen a drop shadow is built on is translated into the node's own coordinates.
+    // The offscreen a drop shadow or a filter is built on is translated into the node's own
+    // coordinates, and scaled to whatever resolution the real context is drawing at.
     translate: vi.fn(),
+    scale: vi.fn(),
+    // A filtered node reads the transform in force so its offscreen can be built at device
+    // resolution. Identity is right for a mock: nothing here scales.
+    getTransform: vi.fn(() => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 })) as unknown as CanvasRenderingContext2D['getTransform'],
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
