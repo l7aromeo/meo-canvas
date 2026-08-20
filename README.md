@@ -1051,18 +1051,22 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 #### Styling Props
 
-| Prop              | Type                                 | Description                                                                                                        |
-| ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                             |
-| `borderColor`     | `string \| EdgeColors`               | Colour of the node's border — one string for all four edges, or a colour per edge. Unset edges fall back to black. |
-| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                        |
-| `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                    |
-| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                               |
-| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                                |
-| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants.     |
-| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                      |
-| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                            |
-| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                             |
+| Prop              | Type                                 | Description                                                                                                                        |
+| ----------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `backgroundColor` | `string`                             | Sets the background color of the node.                                                                                             |
+| `backgroundImage` | `{ src, repeat?, size?, position? }` | A picture behind the node's content, tiled as CSS `background-repeat` does — `space` and `round` included.                         |
+| `borderColor`     | `string \| EdgeColors`               | Colour of the node's border — one string for all four edges, or a colour per edge. Unset edges fall back to black.                 |
+| `borderStyle`     | `Style.Border`                       | Sets the style of the border (`Solid`, `Dashed`, `Dotted`).                                                                        |
+| `borderRadius`    | `CornerRadii \| number`              | Radius of the node's corners — one number for all four, or a radius per corner.                                                    |
+| `opacity`         | `number`                             | Sets the opacity of the node and its children (0-1).                                                                               |
+| `filter`          | `string`                             | CSS `filter` chain applied to the node and its children as one picture — `blur(4px) grayscale(1)`.                                 |
+| `backdropFilter`  | `string`                             | CSS `backdrop-filter` — filters what is behind the node, clipped to its box; the node's own background paints over it.             |
+| `mixBlendMode`    | `Style.BlendMode`                    | How the node and its children combine with what is painted behind — `Multiply`, `Screen`, `Overlay` and the rest of CSS's sixteen. |
+| `gradient`        | `object`                             | A linear, radial or conic gradient as the background. A conic sweep starts at twelve o'clock, with `from` and `at`.                |
+| `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants.                     |
+| `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                                      |
+| `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                                            |
+| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                                             |
 
 ##### Shadows
 
@@ -1128,21 +1132,23 @@ Two limits worth knowing before you design around them:
 
 These props, when set on a `Box`, `Row`, or `Column`, are inherited by any descendant `Text` nodes.
 
-| Prop             | Type                                                             | Description                                                                                  |
-| ---------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `fontSize`       | `number`                                                         | Font size in pixels.                                                                         |
-| `fontFamily`     | `string`                                                         | Font family name.                                                                            |
-| `fontWeight`     | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.).                                                   |
-| `fontStyle`      | `'normal' \| 'italic'`                                           | Font style.                                                                                  |
-| `color`          | `string`                                                         | Text color.                                                                                  |
-| `textAlign`      | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                                                                   |
-| `verticalAlign`  | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                                                                     |
-| `lineHeight`     | `number`                                                         | Line box height in pixels. Defaults to the face's own height, as `line-height: normal` does. |
-| `lineGap`        | `number`                                                         | Additional vertical spacing between lines.                                                   |
-| `letterSpacing`  | `number \| string`                                               | Spacing between letters.                                                                     |
-| `wordSpacing`    | `number \| string`                                               | Spacing between words.                                                                       |
-| `fontVariant`    | `FontVariantSetting`                                             | Specifies font variation settings.                                                           |
-| `textDecoration` | `string`                                                         | Lines on the text, in CSS `text-decoration` notation. Inherited.                             |
+| Prop             | Type                                                             | Description                                                                                                             |
+| ---------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `fontSize`       | `number`                                                         | Font size in pixels.                                                                                                    |
+| `fontFamily`     | `string`                                                         | Font family name.                                                                                                       |
+| `fontWeight`     | `string \| number`                                               | Font weight ('normal', 'bold', 400, etc.).                                                                              |
+| `fontStyle`      | `'normal' \| 'italic'`                                           | Font style.                                                                                                             |
+| `color`          | `string`                                                         | Text color.                                                                                                             |
+| `textAlign`      | `'start' \| 'end' \| 'left' \| 'center' \| 'right' \| 'justify'` | Horizontal text alignment.                                                                                              |
+| `verticalAlign`  | `'top' \| 'middle' \| 'bottom'`                                  | Vertical text alignment.                                                                                                |
+| `lineHeight`     | `number`                                                         | Line box height in pixels. Defaults to the face's own height, as `line-height: normal` does.                            |
+| `lineGap`        | `number`                                                         | Additional vertical spacing between lines.                                                                              |
+| `letterSpacing`  | `number \| string`                                               | Spacing between letters.                                                                                                |
+| `wordSpacing`    | `number \| string`                                               | Spacing between words.                                                                                                  |
+| `fontVariant`    | `FontVariantSetting`                                             | Specifies font variation settings.                                                                                      |
+| `textDecoration` | `string`                                                         | Lines on the text, in CSS `text-decoration` notation. Inherited.                                                        |
+| `textStroke`     | `{ width, color }`                                               | An outline on the glyphs, as CSS `-webkit-text-stroke` — centred, and over the fill unless `paintOrder` says otherwise. |
+| `paintOrder`     | `Style.PaintOrder`                                               | Whether the stroke is painted over the fill (CSS's default) or under it, keeping the letterform whole.                  |
 
 ##### How text is positioned
 

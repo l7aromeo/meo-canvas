@@ -89,7 +89,7 @@
   "dependencies": {
     "comlink": "^4.4.2",
     "file-type": "^22.0.2",
-    "meo-skia-canvas": "^5.6.2",
+    "meo-skia-canvas": "^5.6.3",
     "tslib": "^2.8.1",
     "yoga-layout": "^3.2.1"
   },

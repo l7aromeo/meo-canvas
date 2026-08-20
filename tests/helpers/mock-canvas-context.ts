@@ -29,6 +29,9 @@ export function createMockCanvasContext(): CanvasRenderingContext2D {
     saveLayer: vi.fn(),
     restore: vi.fn<CanvasRenderingContext2D['restore']>(),
     translate: vi.fn<CanvasRenderingContext2D['translate']>(),
+    // A filtered node reads the transform in force so its offscreen can be built at device
+    // resolution. Identity is right for a mock: nothing here scales.
+    getTransform: vi.fn(() => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 })) as unknown as CanvasRenderingContext2D['getTransform'],
     rotate: vi.fn<CanvasRenderingContext2D['rotate']>(),
     setTransform: vi.fn<CanvasRenderingContext2D['setTransform']>(),
     beginPath: vi.fn<CanvasRenderingContext2D['beginPath']>(),

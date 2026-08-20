@@ -1,6 +1,9 @@
 import { type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
-import { drawBorders, drawRoundedRectPath, parseBorderRadius, parsePercentage } from '@/canvas/canvas.helper.js'
+import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths } from '@/canvas/canvas.helper.js'
 import { createGradient } from '@/canvas/gradient.canvas.js'
+import { paintBackgroundImage } from '@/canvas/background.canvas.js'
+import { resolveCanvasImage, type RenderImageCache } from '@/canvas/image.loader.js'
+import type { Image as CanvasImage } from 'meo-skia-canvas'
 import { createCanvas, mirrorEngine } from '@/canvas/canvas.engine.js'
 import { drawWithGradientMask, isGradientMask, maskFillRule, maskPath } from '@/canvas/mask.canvas.js'
 import type { BaseProps, BoxProps, BoxShadowProps, CanvasElement } from '@/canvas/canvas.type.js'
@@ -337,7 +340,149 @@ export class BoxNode {
     }
   }
 
-  private async renderNode(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
+  /**
+   * Redraws what is behind the node through a filter, clipped to the node's own box.
+   *
+   * CSS filters the backdrop where the element sits, corners included, and then paints the
+   * element's background on top of the result. There is no way to filter pixels already on a
+   * canvas in place, so the canvas is copied and the copy drawn back through the clip.
+   *
+   * The clip is set while the node's transform is still in force and therefore survives the
+   * transform being reset, which is what lets the copy be drawn back pixel for pixel — a rotated
+   * or scaled node filters the region it actually covers rather than an upright box near it.
+   *
+   * The copy is the size of the whole canvas. A backdrop is a deliberate effect on a handful of
+   * nodes rather than something every node pays for, and copying only the node's own region would
+   * still have to account for however far the filter reaches beyond it.
+   */
+  private applyBackdropFilter(ctx: CanvasRenderingContext2D, filter: string, x: number, y: number, width: number, height: number) {
+    const surface = ctx.canvas
+    if (!surface?.width || !surface?.height) return
+
+    const snapshot = createCanvas(surface.width, surface.height, mirrorEngine(ctx))
+    const snapshotCtx = snapshot.getContext('2d')
+    snapshotCtx.drawImage(surface, 0, 0)
+
+    ctx.save()
+    try {
+      drawRoundedRectPath(ctx, x, y, width, height, parseBorderRadius(this.props.borderRadius))
+      ctx.clip()
+      const matrix = ctx.getTransform()
+      ctx.resetTransform()
+      ctx.filter = scaleFilterLengths(filter, (Math.hypot(matrix.a, matrix.b) + Math.hypot(matrix.c, matrix.d)) / 2 || 1)
+      ctx.drawImage(snapshot, 0, 0)
+    } finally {
+      ctx.restore()
+    }
+  }
+
+  /** The decoded background picture, once the render's load pass has fetched it. */
+  protected backgroundBitmap: CanvasImage | null = null
+
+  /**
+   * Fetches this node's background picture, if it has one.
+   *
+   * Runs in the same pass as the images, before layout, and through the same cache — so a picture
+   * used as one node's background and another's image is fetched once. A failure leaves the node
+   * without a picture rather than failing the render, which is what a missing background should do.
+   */
+  public async loadBackgroundImage(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
+    const background = this.props.backgroundImage
+    if (!background?.src) return
+
+    try {
+      this.backgroundBitmap = await resolveCanvasImage(
+        { src: background.src, color: background.color, httpOptions: background.httpOptions },
+        cache,
+        diskCacheKeys,
+      )
+    } catch (error) {
+      console.warn(`[BoxNode ${this.key}] Background image failed to load:`, error)
+      this.backgroundBitmap = null
+    }
+  }
+
+  /**
+   * The CSS filter chain this node draws through, or an empty string for none.
+   *
+   * `saturate` came first and stays a shorthand for the same machinery, so it leads the chain and
+   * `filter` follows — the order they would appear in if the shorthand were written out.
+   */
+  protected filterChain(): string {
+    const parts: string[] = []
+    const saturate = (this.props as { saturate?: number }).saturate
+    if (saturate !== undefined && saturate !== 1) parts.push(`saturate(${saturate})`)
+    if (this.props.filter) parts.push(this.props.filter.trim())
+    return parts.join(' ').trim()
+  }
+
+  /**
+   * The blend mode this node composites with, or an empty string for the ordinary source-over.
+   *
+   * `normal` is the default and means exactly source-over, so it is not worth an offscreen.
+   */
+  protected blendMode(): string {
+    const mode = this.props.mixBlendMode
+    return !mode || mode === Style.BlendMode.Normal ? '' : mode
+  }
+
+  /**
+   * Draws the subtree into an offscreen and composites it back in one go.
+   *
+   * The offscreen is built at device resolution — the transform in force is read off the context
+   * and reproduced — so a filtered node on a `scale: 2` root is not drawn at half size and
+   * enlarged. It is also grown by however far the chain's blurs and drop shadows reach, since CSS
+   * lets a filter spill past the box rather than clipping to it.
+   */
+  private async renderAsGroup(
+    ctx: CanvasRenderingContext2D,
+    filter: string,
+    blend: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    offsetX: number,
+    offsetY: number,
+  ) {
+    const pad = filterSpill(filter)
+    const matrix = ctx.getTransform()
+    // Magnitudes rather than `a` and `d`: an ancestor's rotation puts the scale across both terms.
+    const scaleX = Math.hypot(matrix.a, matrix.b) || 1
+    const scaleY = Math.hypot(matrix.c, matrix.d) || 1
+
+    const boxWidth = width + pad * 2
+    const boxHeight = height + pad * 2
+    const pixelWidth = Math.max(1, Math.ceil(boxWidth * scaleX))
+    const pixelHeight = Math.max(1, Math.ceil(boxHeight * scaleY))
+
+    const offscreen = createCanvas(pixelWidth, pixelHeight, mirrorEngine(ctx))
+    const offCtx = offscreen.getContext('2d')
+    offCtx.scale(scaleX, scaleY)
+    offCtx.translate(-(x - pad), -(y - pad))
+
+    const desiredOpacity = Math.max(0, Math.min(1, this.props.opacity ?? 1))
+    await this.renderNode(offCtx, offsetX, offsetY, true)
+
+    ctx.save()
+    try {
+      if (desiredOpacity < 1) ctx.globalAlpha = desiredOpacity
+      if (filter) ctx.filter = scaleFilterLengths(filter, (scaleX + scaleY) / 2)
+      if (blend) ctx.globalCompositeOperation = blend as CanvasRenderingContext2D['globalCompositeOperation']
+      ctx.drawImage(offscreen, x - pad, y - pad, boxWidth, boxHeight)
+    } finally {
+      ctx.restore()
+    }
+  }
+
+  /**
+   * Draws the node and everything inside it.
+   *
+   * `groupEffectsApplied` is set on the recursive call this method makes into an offscreen while
+   * applying a filter: opacity and the filter itself belong to the group as a whole and have
+   * already been dealt with by the caller, so the inner pass draws the subtree plainly.
+   */
+  private async renderNode(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0, groupEffectsApplied: boolean = false) {
     const layout = this.node.getComputedLayout()
     const x = layout.left + offsetX
     const y = layout.top + offsetY
@@ -349,6 +494,27 @@ export class BoxNode {
       return
     }
 
+    // --- Filter Setup ---
+    //
+    // CSS applies a filter to the element and its descendants as one picture: the subtree is drawn,
+    // then the chain is applied to the result. Setting `ctx.filter` and drawing normally would
+    // filter every draw on its own, and two overlapping children would come out filtered twice —
+    // the same mistake `opacity` used to make with `globalAlpha`.
+    //
+    // Opacity stays outside this, because CSS fades the filtered result rather than filtering a
+    // faded one.
+    //
+    // A blend mode needs the same treatment for the same reason: CSS blends the element as one
+    // picture with what is behind it, so the subtree is composited into the offscreen first and the
+    // blend applied to the result rather than to each draw inside it.
+    const filter = groupEffectsApplied ? '' : this.filterChain()
+    const blend = groupEffectsApplied ? '' : this.blendMode()
+    if (filter || blend) {
+      await this.renderAsGroup(ctx, filter, blend, x, y, width, height, offsetX, offsetY)
+      return
+    }
+    // --- End Filter Setup ---
+
     // --- Opacity Setup ---
     //
     // A layer, not `globalAlpha`. CSS composites the whole subtree once and fades the result, so
@@ -358,7 +524,7 @@ export class BoxNode {
     //
     // No bounds are passed: they would clip the layer, and a node's drawing reaches past its box
     // through shadows, transforms and text allowed to overflow.
-    const desiredOpacity = Math.max(0, Math.min(1, this.props.opacity ?? 1))
+    const desiredOpacity = groupEffectsApplied ? 1 : Math.max(0, Math.min(1, this.props.opacity ?? 1))
     let appliedOpacity = false
     if (desiredOpacity < 1) {
       ctx.saveLayer(desiredOpacity)
@@ -399,6 +565,14 @@ export class BoxNode {
         ctx.translate(-originAbsX, -originAbsY)
       }
       // --- End Transformation Setup ---
+
+      // --- Step 0: Backdrop Filter ---
+      // Filters what is already on the canvas behind this node, before the node itself is drawn —
+      // CSS paints the element's own background over the filtered backdrop, not under it.
+      if (this.props.backdropFilter) {
+        this.applyBackdropFilter(ctx, this.props.backdropFilter, x, y, width, height)
+      }
+      // --- End Backdrop Filter ---
 
       // --- Step 1: Render Parent Background/Borders/Content ---
       // This renders the current node's own visual appearance first.
@@ -660,6 +834,11 @@ export class BoxNode {
         drawRoundedRectPath(ctx, x, y, width, height, radii)
         ctx.fill()
       }
+    }
+
+    // Render the background picture, over the fill and under everything else — CSS order.
+    if (this.backgroundBitmap) {
+      paintBackgroundImage(ctx, this.backgroundBitmap, this.props.backgroundImage!, { x, y, width, height }, radii)
     }
 
     // Render inset shadows

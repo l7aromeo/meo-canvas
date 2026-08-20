@@ -491,6 +491,19 @@ export class RootNode extends ColumnNode {
    * Traverses the node tree to find all ImageNode instances using breadth-first search
    * @returns Array of all ImageNode instances found in the tree
    */
+  /** Every node in the tree carrying a `backgroundImage`, whatever kind of node it is. */
+  private findAllBackgroundImageNodes(): BoxNode[] {
+    const nodes: BoxNode[] = []
+    const queue: BoxNode[] = [this]
+    let head = 0
+    while (head < queue.length) {
+      const node = queue[head++]
+      if (node.props.backgroundImage?.src) nodes.push(node)
+      queue.push(...node.children)
+    }
+    return nodes
+  }
+
   private findAllImageNodes(): ImageNode[] {
     const imageNodes: ImageNode[] = []
     const queue: BoxNode[] = [this]
@@ -604,14 +617,18 @@ export class RootNode extends ColumnNode {
    */
   async prepare(imageCache: RenderImageCache, diskCacheKeys?: Set<string>): Promise<number> {
     // Load all images with a concurrency limit to avoid overwhelming remote sources.
-    const imageNodes = this.findAllImageNodes()
-    if (imageNodes.length > 0) {
-      const queue = [...imageNodes]
+    // Both kinds of source go through one queue: an `Image`'s own picture and any node's
+    // `backgroundImage`, which share a cache and should share the concurrency limit too.
+    const queue: Array<() => Promise<void>> = [
+      ...this.findAllImageNodes().map(node => () => node.load(imageCache, diskCacheKeys)),
+      ...this.findAllBackgroundImageNodes().map(node => () => node.loadBackgroundImage(imageCache, diskCacheKeys)),
+    ]
+    if (queue.length > 0) {
       let qIdx = 0
       const workers = Array.from({ length: Math.min(this.imageConcurrency, queue.length) }, async () => {
         while (qIdx < queue.length) {
-          const node = queue[qIdx++]
-          await node.load(imageCache, diskCacheKeys)
+          const load = queue[qIdx++]
+          await load()
         }
       })
       await Promise.allSettled(workers).then(results => {

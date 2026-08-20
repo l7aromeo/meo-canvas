@@ -150,6 +150,54 @@ describe('TextNode & Text factory', () => {
     })
   })
 
+  describe('text stroke', () => {
+    it('paints the stroke after the fill by default, so it lands over it', async () => {
+      const node = new TextNode('Hello', { width: 160, height: 44, textStroke: { width: 4, color: '#102a43' } })
+      attachAndLayout(200, node)
+
+      const mockCtx = createRenderContext()
+      const order: string[] = []
+      mockCtx.fillText = vi.fn(() => void order.push('fill')) as unknown as CanvasRenderingContext2D['fillText']
+      mockCtx.strokeText = vi.fn(() => void order.push('stroke')) as unknown as CanvasRenderingContext2D['strokeText']
+
+      await node.render(mockCtx, 0, 0)
+
+      expect(order).toEqual(['fill', 'stroke'])
+      expect(mockCtx.lineWidth).toBe(4)
+      expect(mockCtx.strokeStyle).toBe('#102a43')
+    })
+
+    it('paints the stroke first when paintOrder asks for it', async () => {
+      const node = new TextNode('Hello', {
+        width: 160,
+        height: 44,
+        textStroke: { width: 4, color: '#102a43' },
+        paintOrder: Style.PaintOrder.Stroke,
+      })
+      attachAndLayout(200, node)
+
+      const mockCtx = createRenderContext()
+      const order: string[] = []
+      mockCtx.fillText = vi.fn(() => void order.push('fill')) as unknown as CanvasRenderingContext2D['fillText']
+      mockCtx.strokeText = vi.fn(() => void order.push('stroke')) as unknown as CanvasRenderingContext2D['strokeText']
+
+      await node.render(mockCtx, 0, 0)
+
+      expect(order).toEqual(['stroke', 'fill'])
+    })
+
+    it('does not stroke at all without a width', async () => {
+      const node = new TextNode('Hello', { width: 160, height: 44, textStroke: { color: '#102a43' } })
+      attachAndLayout(200, node)
+
+      const mockCtx = createRenderContext()
+      await node.render(mockCtx, 0, 0)
+
+      expect(mockCtx.strokeText).not.toHaveBeenCalled()
+      expect(mockCtx.fillText).toHaveBeenCalled()
+    })
+  })
+
   describe('Task 7 — truncation (ellipsis + maxLines)', () => {
     it('shows default ellipsis "..." when maxLines truncates wrapping text', async () => {
       const body = [...Array(24)].map((_, i) => `term${i}`).join(' ')

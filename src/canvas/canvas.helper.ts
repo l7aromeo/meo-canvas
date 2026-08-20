@@ -299,3 +299,58 @@ export function parsePercentage(value: number | string | undefined, base: number
   }
   return 0
 }
+
+/** A length in a filter function, in px. Unitless numbers are read as px, as canvas does. */
+const FILTER_LENGTH = String.raw`(-?[\d.]+)(?:px)?`
+const BLUR_FUNCTION = new RegExp(String.raw`blur\(\s*${FILTER_LENGTH}\s*\)`, 'g')
+const DROP_SHADOW_FUNCTION = /drop-shadow\(([^)]*)\)/g
+
+/**
+ * How far past its box a filter chain can reach, in pixels.
+ *
+ * CSS does not clip a filter to the element, so a blurred or shadowed node has to be drawn into
+ * something bigger than itself or the effect is cut off at the edge. A Gaussian blur takes its
+ * length as a standard deviation and is spent by three of them, which is the multiplier here;
+ * a drop shadow reaches its offset plus its own blur.
+ *
+ * Chains are read as additive, which is the worst case — filters run in sequence and a later one
+ * can spread what an earlier one produced.
+ */
+export function filterSpill(filter: string): number {
+  if (!filter) return 0
+  const STANDARD_DEVIATIONS_TO_COVER = 3
+  let spill = 0
+
+  for (const [, radius] of filter.matchAll(BLUR_FUNCTION)) {
+    spill += Math.abs(Number(radius)) * STANDARD_DEVIATIONS_TO_COVER
+  }
+
+  for (const [, args] of filter.matchAll(DROP_SHADOW_FUNCTION)) {
+    const lengths = [...args.matchAll(new RegExp(FILTER_LENGTH, 'g'))].map(match => Number(match[1])).filter(Number.isFinite)
+    const [offsetX = 0, offsetY = 0, blur = 0] = lengths
+    spill += Math.max(Math.abs(offsetX), Math.abs(offsetY)) + Math.abs(blur) * STANDARD_DEVIATIONS_TO_COVER
+  }
+
+  return Math.ceil(spill)
+}
+
+/** Every length in a filter chain, with the function name it belongs to. */
+const FILTER_FUNCTION_WITH_LENGTHS = /\b(blur|drop-shadow)\(([^)]*)\)/g
+
+/**
+ * Rewrites a filter chain's lengths from user units into device pixels.
+ *
+ * A canvas applies `filter` in device pixels, ignoring the transform in force, while CSS reads a
+ * filter's lengths in the element's own units — so on a `scale: 2` root an unscaled `blur(6px)`
+ * covers three user pixels rather than six, and the same tree exported at two scales does not
+ * produce the same picture. Only lengths move: a `brightness` factor or a `hue-rotate` angle means
+ * the same thing at any resolution.
+ */
+export function scaleFilterLengths(filter: string, scale: number): string {
+  if (!filter || scale === 1) return filter
+
+  return filter.replace(FILTER_FUNCTION_WITH_LENGTHS, (_whole, name: string, args: string) => {
+    const scaled = args.replace(/(-?[\d.]+)px/g, (_, length: string) => `${Number(length) * scale}px`)
+    return `${name}(${scaled})`
+  })
+}
