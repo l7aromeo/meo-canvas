@@ -54,46 +54,217 @@ const bounce = family(t => 1 - outBounce(1 - t))
  * ```
  */
 export const easings = {
+  /** No easing: the value moves at a constant rate from start to finish. */
   linear: (t: number) => clamp01(t),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by t squared — the gentlest of the power curves.
+   */
   inQuad: (t: number) => quad.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by t squared — the gentlest of the power curves.
+   */
   outQuad: (t: number) => quad.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by t squared — the gentlest of the power curves.
+   */
   inOutQuad: (t: number) => quad.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by t cubed — the usual choice when nothing else is called for.
+   */
   inCubic: (t: number) => cubic.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by t cubed — the usual choice when nothing else is called for.
+   */
   outCubic: (t: number) => cubic.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by t cubed — the usual choice when nothing else is called for.
+   */
   inOutCubic: (t: number) => cubic.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by t to the fourth — noticeably sharper than cubic.
+   */
   inQuart: (t: number) => quart.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by t to the fourth — noticeably sharper than cubic.
+   */
   outQuart: (t: number) => quart.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by t to the fourth — noticeably sharper than cubic.
+   */
   inOutQuart: (t: number) => quart.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by t to the fifth — the steepest of the plain powers.
+   */
   inQuint: (t: number) => quint.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by t to the fifth — the steepest of the plain powers.
+   */
   outQuint: (t: number) => quint.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by t to the fifth — the steepest of the plain powers.
+   */
   inOutQuint: (t: number) => quint.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by a quarter turn of a sine wave — the softest curve here, barely a curve at all.
+   */
   inSine: (t: number) => sine.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by a quarter turn of a sine wave — the softest curve here, barely a curve at all.
+   */
   outSine: (t: number) => sine.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by a quarter turn of a sine wave — the softest curve here, barely a curve at all.
+   */
   inOutSine: (t: number) => sine.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by a power of two — almost flat, then a rush — the most extreme of these.
+   */
   inExpo: (t: number) => expo.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by a power of two — almost flat, then a rush — the most extreme of these.
+   */
   outExpo: (t: number) => expo.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by a power of two — almost flat, then a rush — the most extreme of these.
+   */
   inOutExpo: (t: number) => expo.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by a quarter circle — idles, then leaves abruptly.
+   */
   inCirc: (t: number) => circ.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by a quarter circle — idles, then leaves abruptly.
+   */
   outCirc: (t: number) => circ.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by a quarter circle — idles, then leaves abruptly.
+   */
   inOutCirc: (t: number) => circ.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by a cubic that overshoots — pulls back before it sets off, and overshoots on arrival.
+   */
   inBack: (t: number) => back.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by a cubic that overshoots — pulls back before it sets off, and overshoots on arrival.
+   */
   outBack: (t: number) => back.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by a cubic that overshoots — pulls back before it sets off, and overshoots on arrival.
+   */
   inOutBack: (t: number) => back.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by a decaying sine — overshoots and wobbles to a stop, like something sprung.
+   */
   inElastic: (t: number) => elastic.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by a decaying sine — overshoots and wobbles to a stop, like something sprung.
+   */
   outElastic: (t: number) => elastic.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by a decaying sine — overshoots and wobbles to a stop, like something sprung.
+   */
   inOutElastic: (t: number) => elastic.inOut(clamp01(t)),
 
+  /**
+   * Starts at rest and accelerates, so the movement lands at full speed.
+   *
+   * Shaped by a series of parabolas — lands and bounces, each one smaller than the last.
+   */
   inBounce: (t: number) => bounce.in(clamp01(t)),
+
+  /**
+   * Starts at full speed and slows to rest, which is what most interface motion wants.
+   *
+   * Shaped by a series of parabolas — lands and bounces, each one smaller than the last.
+   */
   outBounce: (t: number) => bounce.out(clamp01(t)),
+
+  /**
+   * Accelerates from rest and slows to rest again, symmetric about the midpoint.
+   *
+   * Shaped by a series of parabolas — lands and bounces, each one smaller than the last.
+   */
   inOutBounce: (t: number) => bounce.inOut(clamp01(t)),
 } satisfies Record<string, EasingFn>
 
