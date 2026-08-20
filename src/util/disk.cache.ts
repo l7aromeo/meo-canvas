@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 
@@ -33,12 +33,28 @@ export async function readDiskCache(key: string): Promise<Buffer | null> {
   }
 }
 
+/**
+ * Writes an entry, and is safe to run while another render reads the same key.
+ *
+ * The bytes go to a scratch file that only this writer knows about and are moved into place with a
+ * rename, which is atomic within a directory. Writing straight to the key would let a concurrent
+ * reader open the file mid-write and decode a truncated image — two renders in one process share
+ * this cache, and a hash key means they collide precisely when they want the same picture.
+ *
+ * A rename onto an existing key is harmless: keys are content hashes, so the entry already there
+ * holds the same bytes. Where the platform refuses that rename, the scratch file is dropped and the
+ * existing entry stands.
+ */
 export async function writeDiskCache(key: string, data: Buffer): Promise<void> {
+  const target = join(_cacheDir, key)
+  const scratch = `${target}.${randomUUID()}.part`
   try {
     await ensureDir()
-    await fs.writeFile(join(_cacheDir, key), data)
+    await fs.writeFile(scratch, data)
+    await fs.rename(scratch, target)
   } catch {
     // best-effort — cache write failures are non-fatal
+    await fs.rm(scratch, { force: true }).catch(() => {})
   }
 }
 

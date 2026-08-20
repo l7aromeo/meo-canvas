@@ -692,7 +692,6 @@ export interface BoxProps extends BaseProps {
    * positioned child still paints above in-flow siblings, whether it is declared before or after
    * them. A negative value puts it below them instead, which is how a decoration is placed behind
    * the content of its own parent.
-   *
    * @example
    * ```ts
    * Box({
