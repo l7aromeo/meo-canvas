@@ -705,6 +705,23 @@ export interface BoxProps extends BaseProps {
   backdropFilter?: string
 
   /**
+   * How the node and everything inside it is combined with what is already painted behind it.
+   *
+   * CSS `mix-blend-mode`. The subtree is drawn once and the blend applied to the result, so two
+   * overlapping children blend with the backdrop together rather than each in turn.
+   *
+   * Only what has already been painted counts as a backdrop, which is the same rule
+   * `backdropFilter` follows.
+   * @default Style.BlendMode.Normal (painted straight over the backdrop)
+   * @example
+   * ```ts
+   * Box({ backgroundColor: '#0af', mixBlendMode: Style.BlendMode.Multiply })
+   * Text('watermark', { mixBlendMode: Style.BlendMode.Overlay })
+   * ```
+   */
+  mixBlendMode?: Style.BlendMode | 'normal' | 'multiply' | 'screen' | 'overlay' | (string & {})
+
+  /**
    * Sets the opacity of the node and its children when drawing.
    * A value between 0 (fully transparent) and 1 (fully opaque).
    *

@@ -388,16 +388,27 @@ export class BoxNode {
   }
 
   /**
-   * Draws the subtree into an offscreen and composites it back through `filter`, once.
+   * The blend mode this node composites with, or an empty string for the ordinary source-over.
+   *
+   * `normal` is the default and means exactly source-over, so it is not worth an offscreen.
+   */
+  protected blendMode(): string {
+    const mode = this.props.mixBlendMode
+    return !mode || mode === Style.BlendMode.Normal ? '' : mode
+  }
+
+  /**
+   * Draws the subtree into an offscreen and composites it back in one go.
    *
    * The offscreen is built at device resolution — the transform in force is read off the context
    * and reproduced — so a filtered node on a `scale: 2` root is not drawn at half size and
    * enlarged. It is also grown by however far the chain's blurs and drop shadows reach, since CSS
    * lets a filter spill past the box rather than clipping to it.
    */
-  private async renderThroughFilter(
+  private async renderAsGroup(
     ctx: CanvasRenderingContext2D,
     filter: string,
+    blend: string,
     x: number,
     y: number,
     width: number,
@@ -427,7 +438,8 @@ export class BoxNode {
     ctx.save()
     try {
       if (desiredOpacity < 1) ctx.globalAlpha = desiredOpacity
-      ctx.filter = scaleFilterLengths(filter, (scaleX + scaleY) / 2)
+      if (filter) ctx.filter = scaleFilterLengths(filter, (scaleX + scaleY) / 2)
+      if (blend) ctx.globalCompositeOperation = blend as CanvasRenderingContext2D['globalCompositeOperation']
       ctx.drawImage(offscreen, x - pad, y - pad, boxWidth, boxHeight)
     } finally {
       ctx.restore()
@@ -462,9 +474,14 @@ export class BoxNode {
     //
     // Opacity stays outside this, because CSS fades the filtered result rather than filtering a
     // faded one.
+    //
+    // A blend mode needs the same treatment for the same reason: CSS blends the element as one
+    // picture with what is behind it, so the subtree is composited into the offscreen first and the
+    // blend applied to the result rather than to each draw inside it.
     const filter = groupEffectsApplied ? '' : this.filterChain()
-    if (filter) {
-      await this.renderThroughFilter(ctx, filter, x, y, width, height, offsetX, offsetY)
+    const blend = groupEffectsApplied ? '' : this.blendMode()
+    if (filter || blend) {
+      await this.renderAsGroup(ctx, filter, blend, x, y, width, height, offsetX, offsetY)
       return
     }
     // --- End Filter Setup ---
