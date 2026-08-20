@@ -199,7 +199,7 @@ describe('TextNode & Text factory', () => {
   })
 
   describe('Task 7 — truncation (ellipsis + maxLines)', () => {
-    it('shows default ellipsis "..." when maxLines truncates wrapping text', async () => {
+    it('shows the default ellipsis when maxLines truncates wrapping text', async () => {
       const body = [...Array(24)].map((_, i) => `term${i}`).join(' ')
       const node = new TextNode(body, {
         width: 168,
@@ -214,7 +214,8 @@ describe('TextNode & Text factory', () => {
       await node.render(mockCtx, 0, 0)
 
       const calls = vi.mocked(mockCtx.fillText).mock.calls
-      expect(calls.some(args => args[0] === '...')).toBe(true)
+      // U+2026, as CSS uses — not three full stops.
+      expect(calls.some(args => args[0] === '\u2026')).toBe(true)
     })
 
     it('uses custom ellipsis character when ellipsis is a string', async () => {
@@ -687,7 +688,7 @@ describe('TextNode & Text factory', () => {
         fontSize: 14,
       })
       const ctx = await renderText(node, 120)
-      expect(vi.mocked(ctx.fillText).mock.calls.some(c => String(c[0]).includes('...'))).toBe(true)
+      expect(vi.mocked(ctx.fillText).mock.calls.some(c => String(c[0]).includes('\u2026'))).toBe(true)
     })
 
     it('character-truncates an overflowing last segment before drawing ellipsis', async () => {
@@ -702,7 +703,7 @@ describe('TextNode & Text factory', () => {
       const ctx = createRenderContext()
       ctx.measureText = vi.fn<CanvasRenderingContext2D['measureText']>(text =>
         createTestTextMetrics({
-          width: text === '...' ? 12 : text.length * 6,
+          width: text === '\u2026' ? 12 : text.length * 6,
           actualBoundingBoxAscent: 10,
           actualBoundingBoxDescent: 2,
         }),
@@ -712,8 +713,8 @@ describe('TextNode & Text factory', () => {
         drawn.push(String(text))
       })
       await node.render(ctx, 0, 0)
-      expect(drawn.some(t => t.length > 0 && t.length < 6 && t !== '...')).toBe(true)
-      expect(drawn).toContain('...')
+      expect(drawn.some(t => t.length > 0 && t.length < 6 && t !== '\u2026')).toBe(true)
+      expect(drawn).toContain('\u2026')
     })
 
     it('styles ellipsis from whitespace-only last visible lines when no text segment exists', async () => {
@@ -823,7 +824,7 @@ describe('TextNode decoration with truncation', () => {
     await node.render(ctx, 0, 0)
 
     const drawn = vi.mocked(ctx.fillText).mock.calls.map(call => call[0])
-    expect(drawn).toContain('...')
+    expect(drawn).toContain('\u2026')
     expect(drawn.length).toBeGreaterThan(2)
   })
 })

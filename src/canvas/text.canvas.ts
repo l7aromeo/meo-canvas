@@ -667,6 +667,86 @@ export class TextNode extends BoxNode {
   }
 
   /**
+   * Rebuilds the last visible line so it fills the width an ellipsis leaves it.
+   *
+   * Wrapping breaks at words, so the word that overflowed has already moved to a line `maxLines`
+   * throws away — leaving the last line ending at whatever word fitted, and an ellipsis tacked on.
+   * CSS does the opposite: the last line takes as many characters as fit, mid-word if that is where
+   * the room runs out, and the ellipsis follows. `Flower of Paradise Lost` in 140px is
+   * `Flower of Par…` in a browser, where breaking at the word gives `Flower of…`.
+   *
+   * Text is pulled up from the lines that follow, which is where the rest of the paragraph went —
+   * but never across a newline the caller wrote, since that is a break they asked for rather than
+   * one wrapping introduced.
+   */
+  private fillLineToWidth(
+    ctx: CanvasRenderingContext2D,
+    lines: TextSegment[][],
+    hardBreaks: boolean[],
+    fromIndex: number,
+    budget: number,
+    parsedWordSpacingPx: number,
+    parsedLetterSpacingPx: number,
+    spaceWidth: number,
+  ): TextSegment[] {
+    /** The lines this one may draw from: itself, then each soft-wrapped continuation. */
+    const source: TextSegment[] = []
+    for (let index = fromIndex; index < lines.length; index++) {
+      if (index > fromIndex) {
+        // The space the wrap consumed when it broke here.
+        const previous = source[source.length - 1]
+        source.push({ text: ' ', color: previous?.color, weight: previous?.weight, size: previous?.size, b: previous?.b, i: previous?.i, width: 0 })
+      }
+      source.push(...lines[index])
+      if (hardBreaks[index]) break
+    }
+
+    const filled: TextSegment[] = []
+    let used = 0
+    let firstWord = true
+
+    for (const segment of source) {
+      if (COLLAPSIBLE_RUN.test(segment.text)) {
+        // A space costs its own width plus any word spacing, but draws nothing — the render loop
+        // adds the gap itself, which is why these carry a width of zero.
+        filled.push({ ...segment, width: 0 })
+        continue
+      }
+
+      ctx.font = this.getFontString(segment)
+      this._applyFontVariant(ctx, 'fillLineToWidth')
+
+      const gap = firstWord ? 0 : spaceWidth + parsedWordSpacingPx
+      const wholeWidth = this.addLetterSpacingExtra(segment.text, measureText(ctx, segment.text).width, parsedLetterSpacingPx)
+
+      if (used + gap + wholeWidth <= budget) {
+        filled.push({ ...segment, width: wholeWidth })
+        used += gap + wholeWidth
+        firstWord = false
+        continue
+      }
+
+      // The word does not fit whole: keep the characters that do, and stop.
+      let kept = ''
+      let keptWidth = 0
+      for (const char of segment.text) {
+        const candidate = kept + char
+        const width = this.addLetterSpacingExtra(candidate, measureText(ctx, candidate).width, parsedLetterSpacingPx)
+        if (used + gap + width > budget) break
+        kept = candidate
+        keptWidth = width
+      }
+      if (kept) filled.push({ ...segment, text: kept, width: keptWidth })
+      break
+    }
+
+    // Trailing spaces would push the ellipsis away from the text it belongs to.
+    while (filled.length > 0 && COLLAPSIBLE_RUN.test(filled[filled.length - 1].text)) filled.pop()
+
+    return filled
+  }
+
+  /**
    * Wraps text segments into multiple lines while respecting width constraints and preserving styling.
    * Handles rich text attributes (color, weight, size, bold, italic) and proper word wrapping.
    * Also respects explicit newline characters (\n) for forced line breaks.
@@ -682,6 +762,7 @@ export class TextNode extends BoxNode {
     maxWidth: number,
     parsedWordSpacingPx: number,
     parsedLetterSpacingPx: number = 0,
+    hardBreaks?: boolean[],
   ): TextSegment[][] {
     const lines: TextSegment[][] = []
 
@@ -692,15 +773,18 @@ export class TextNode extends BoxNode {
     const spaceWidth = this.measureSpaceWidth(ctx, parsedLetterSpacingPx)
 
     // Helper to finalize current line and start new one
-    const finalizeLine = (forceEmpty = false) => {
+    const finalizeLine = (forceEmpty = false, endedAtNewline = false) => {
       // Remove trailing whitespace segments unless we're forcing an empty line
       if (!forceEmpty) {
         while (currentLineSegments.length > 0 && COLLAPSIBLE_RUN.test(currentLineSegments[currentLineSegments.length - 1].text)) {
           currentLineSegments.pop()
         }
       }
-      // Always push the line, even if empty (for \n\n cases)
+      // Always push the line, even if empty (for \n\n cases). `hardBreaks` records why each line
+      // ended: text can be pulled up across a soft wrap when a line is being filled to make room
+      // for an ellipsis, but never across a newline the caller wrote.
       lines.push(currentLineSegments)
+      hardBreaks?.push(endedAtNewline)
       currentLineSegments = []
       currentLineWidth = 0
     }
@@ -784,7 +868,7 @@ export class TextNode extends BoxNode {
           // Force line break after each part except the last
           // If part is empty, this creates an empty line (like \n\n)
           if (!isLastPart) {
-            finalizeLine(part.length === 0)
+            finalizeLine(part.length === 0, true)
           }
         }
       } else {
@@ -1022,7 +1106,8 @@ export class TextNode extends BoxNode {
     // Use a small epsilon for float precision issues
     const epsilon = 0.01
     const parsedLetterSpacingPx = this.parseSpacingToPx(this.props.letterSpacing, baseFontSize)
-    const allLines = this.wrapTextRich(ctx, this.segments, contentWidth + epsilon, parsedWordSpacingPx, parsedLetterSpacingPx)
+    const hardBreaks: boolean[] = []
+    const allLines = this.wrapTextRich(ctx, this.segments, contentWidth + epsilon, parsedWordSpacingPx, parsedLetterSpacingPx, hardBreaks)
 
     const needsEllipsis = this.props.ellipsis && this.props.maxLines !== undefined && allLines.length > this.props.maxLines
 
@@ -1117,7 +1202,9 @@ export class TextNode extends BoxNode {
     }
 
     // Configure ellipsis if needed
-    const ellipsisChar = typeof this.props.ellipsis === 'string' ? this.props.ellipsis : '...'
+    // U+2026, the character CSS uses — narrower than three full stops, which matters because its
+    // width is taken out of the room the text has.
+    const ellipsisChar = typeof this.props.ellipsis === 'string' ? this.props.ellipsis : '…'
     let ellipsisWidth = 0
     let ellipsisStyle: Partial<TextSegment> | undefined = undefined
 
@@ -1142,6 +1229,23 @@ export class TextNode extends BoxNode {
       }
       ellipsisWidth = measureText(ctx, ellipsisChar).width
       ctx.restore()
+
+      // The last line is rebuilt to fill the room the ellipsis leaves, taking characters from the
+      // lines `maxLines` discards. Without this it ends at whatever whole word fitted, which is a
+      // word earlier than a browser stops.
+      const lastIndex = visibleLines.length - 1
+      if (lastIndex >= 0) {
+        visibleLines[lastIndex] = this.fillLineToWidth(
+          ctx,
+          allLines,
+          hardBreaks,
+          lastIndex,
+          contentWidth - ellipsisWidth,
+          parsedWordSpacingPx,
+          parsedLetterSpacingPx,
+          spaceWidth,
+        )
+      }
     }
 
     // Render text content line by line
