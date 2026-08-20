@@ -383,3 +383,44 @@ describe('disk.cache', () => {
     })
   })
 })
+
+describe('concurrent access', () => {
+  it('only ever puts an entry in place with a rename, never a write to the key itself', async () => {
+    // Two renders in one process share this cache, and a content hash makes them collide exactly
+    // when they want the same picture. Writing straight to the key would let the other one open a
+    // half-written file and decode a truncated image, so the bytes have to land by rename — the
+    // one step a reader cannot catch halfway. Asserted on the calls rather than by racing a reader,
+    // because a torn read is timing-dependent and would pass by luck on a fast filesystem.
+    const key = 'd'.repeat(64)
+    const target = join(TEST_CACHE_DIR, key)
+
+    const writeSpy = vi.spyOn(fs, 'writeFile')
+    const renameSpy = vi.spyOn(fs, 'rename')
+
+    await writeDiskCache(key, Buffer.alloc(4096, 7))
+
+    const written = writeSpy.mock.calls.map(call => String(call[0]))
+    expect(written).toHaveLength(1)
+    expect(written[0]).not.toBe(target)
+    expect(written[0].startsWith(target)).toBe(true)
+    expect(written[0].endsWith('.part')).toBe(true)
+
+    expect(renameSpy).toHaveBeenCalledWith(written[0], target)
+    expect((await readDiskCache(key))?.length).toBe(4096)
+
+    writeSpy.mockRestore()
+    renameSpy.mockRestore()
+  })
+
+  it('leaves no scratch files behind', async () => {
+    await Promise.all([
+      writeDiskCache('b'.repeat(64), Buffer.alloc(1024, 1)),
+      writeDiskCache('b'.repeat(64), Buffer.alloc(1024, 1)),
+      writeDiskCache('c'.repeat(64), Buffer.alloc(1024, 2)),
+    ])
+
+    const entries = await fs.readdir(TEST_CACHE_DIR)
+    expect(entries.filter(name => name.endsWith('.part'))).toEqual([])
+    expect(entries.sort()).toEqual(['b'.repeat(64), 'c'.repeat(64)])
+  })
+})
