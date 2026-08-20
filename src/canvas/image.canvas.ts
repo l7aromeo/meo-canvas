@@ -64,6 +64,25 @@ export class ImageNode extends BoxNode {
     }
   }
 
+  /**
+   * The aspect ratio Yoga should size this node by, or `undefined` to leave its dimensions alone.
+   *
+   * An intrinsic ratio only fills in a dimension the caller left out, which is what CSS does with
+   * an image's own proportions. Handing Yoga a ratio when both `width` and `height` are given lets
+   * it override one of them: a 40x20 image in a box declared 120x80 was laid out 160x80, and every
+   * `objectFit` mode then measured itself against a box the caller never asked for — `contain` and
+   * `cover` became indistinguishable from `fill`, because the node had been reshaped to the image's
+   * own ratio before the fit was computed.
+   */
+  private sizingAspectRatio(natural: number | undefined): number | undefined {
+    const asked = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
+    if (asked !== undefined) return asked
+
+    const hasWidth = this.props.width !== undefined
+    const hasHeight = this.props.height !== undefined
+    return hasWidth && hasHeight ? undefined : natural
+  }
+
   /** Tells this node which moment of the render it is being drawn for. */
   setPageTime(seconds: number): void {
     this.pageTime = seconds
@@ -190,8 +209,7 @@ export class ImageNode extends BoxNode {
    */
   private _loadImage(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
     if (!this.props.src) {
-      const aspectRatioFromProps = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
-      this.node.setAspectRatio(aspectRatioFromProps)
+      this.node.setAspectRatio(this.sizingAspectRatio(undefined))
       this.naturalWidth = 0
       this.naturalHeight = 0
       return Promise.resolve()
@@ -221,8 +239,7 @@ export class ImageNode extends BoxNode {
               this.naturalWidth = img.width
               this.naturalHeight = img.height
               const calculatedAspectRatio = img.width > 0 && img.height > 0 ? img.width / img.height : undefined
-              const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
-              this.node.setAspectRatio(finalAspectRatio)
+              this.node.setAspectRatio(this.sizingAspectRatio(calculatedAspectRatio))
               this.props.onLoad?.()
               resolve()
               return
@@ -247,16 +264,13 @@ export class ImageNode extends BoxNode {
           this.naturalHeight = img.height
 
           const calculatedAspectRatio = this.naturalWidth > 0 && this.naturalHeight > 0 ? this.naturalWidth / this.naturalHeight : undefined
-          const finalAspectRatio = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : calculatedAspectRatio
-
-          this.node.setAspectRatio(finalAspectRatio)
+          this.node.setAspectRatio(this.sizingAspectRatio(calculatedAspectRatio))
           this.props.onLoad?.()
           resolve()
         } catch (error: any) {
           this.naturalWidth = 0
           this.naturalHeight = 0
-          const finalAspectRatioOnError = typeof this.props.aspectRatio === 'number' && this.props.aspectRatio > 0 ? this.props.aspectRatio : undefined
-          this.node.setAspectRatio(finalAspectRatioOnError)
+          this.node.setAspectRatio(this.sizingAspectRatio(undefined))
           this.props.onError?.(error)
           resolve()
         }
