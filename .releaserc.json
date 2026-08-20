@@ -16,7 +16,7 @@
       "@semantic-release/exec",
       {
         "prepareCmd": "mkdir -p release && tar -czf release/meo-canvas-${nextRelease.version}.tar.gz dist/",
-        "successCmd": "echo \"published=true\" >> \"${GITHUB_OUTPUT:-/dev/null}\""
+        "successCmd": "test -n \"$GITHUB_OUTPUT\" && echo published=true >> \"$GITHUB_OUTPUT\" || true"
       }
     ],
     [
