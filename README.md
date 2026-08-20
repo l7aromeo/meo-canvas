@@ -1061,7 +1061,7 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 | `filter`          | `string`                             | CSS `filter` chain applied to the node and its children as one picture — `blur(4px) grayscale(1)`.                                 |
 | `backdropFilter`  | `string`                             | CSS `backdrop-filter` — filters what is behind the node, clipped to its box; the node's own background paints over it.             |
 | `mixBlendMode`    | `Style.BlendMode`                    | How the node and its children combine with what is painted behind — `Multiply`, `Screen`, `Overlay` and the rest of CSS's sixteen. |
-| `gradient`        | `object`                             | Sets a linear or radial gradient as the background.                                                                                |
+| `gradient`        | `object`                             | A linear, radial or conic gradient as the background. A conic sweep starts at twelve o'clock, with `from` and `at`.                |
 | `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants.                     |
 | `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                                      |
 | `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                                            |

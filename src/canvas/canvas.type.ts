@@ -243,12 +243,13 @@ export type GradientDirection =
  * A gradient, as a background fill or as the alpha of a {@link Mask}.
  *
  * Colours are spread evenly from the first to the last; a single colour sits at the midpoint. A
- * radial gradient runs from the node's centre to the corner, so it covers the whole box.
+ * radial gradient runs from the node's centre to the corner, so it covers the whole box, and a
+ * conic gradient sweeps clockwise from twelve o'clock, as CSS does.
  */
 export type Gradient =
   | {
       /** A straight run between two points. */
-      type: 'linear'
+      type: 'linear' | Style.GradientType.Linear
       /** Stops in order, spread evenly from the first to the last. */
       colors: readonly string[]
       /** Which way the run goes — a named edge-to-edge direction, or explicit endpoints. */
@@ -256,11 +257,34 @@ export type Gradient =
     }
   | {
       /** A run outward from the node's centre, reaching the corners. */
-      type: 'radial'
+      type: 'radial' | Style.GradientType.Radial
       /** Stops in order, from the centre outwards. */
       colors: readonly string[]
       /** Unused for a radial gradient, which always runs centre to corner. */
       direction?: GradientDirection
+    }
+  | {
+      /** A sweep around a centre, the stops running clockwise from twelve o'clock. */
+      type: 'conic' | Style.GradientType.Conic
+      /** Stops in order, spread evenly around the sweep. The first and last meet at the seam. */
+      colors: readonly string[]
+      /**
+       * Where the sweep starts, in degrees clockwise from twelve o'clock. CSS `from <angle>`.
+       * @unit Degrees.
+       * @default 0 (twelve o'clock)
+       */
+      from?: number
+      /**
+       * The point the sweep turns about, as a fraction of the box or a percentage of it. CSS
+       * `at <position>`.
+       * @default the centre of the box
+       */
+      at?: {
+        /** Distance from the left edge — `0.25` and `'25%'` mean the same thing. */
+        x?: number | `${number}%`
+        /** Distance from the top edge. */
+        y?: number | `${number}%`
+      }
     }
 
 /** Shapes a {@link Mask} can name without writing a path, each inscribed in the node's box. */
@@ -857,6 +881,7 @@ export interface BoxProps extends BaseProps {
      * @default 0 (no outline)
      */
     width?: number
+
     /**
      * Colour of the outline.
      * @default the text's own colour

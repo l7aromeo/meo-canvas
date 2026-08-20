@@ -36,6 +36,26 @@ function endpointsFor(direction: GradientDirection, width: number, height: numbe
   return resolve ? resolve(width, height) : null
 }
 
+/** A quarter turn. Canvas measures a conic sweep from three o'clock; CSS measures it from twelve. */
+const QUARTER_TURN = Math.PI / 2
+
+/** Turns a CSS `from` angle into the one a canvas conic gradient wants. */
+function degreesToCanvasAngle(degrees: number): number {
+  return (degrees * Math.PI) / 180 - QUARTER_TURN
+}
+
+/**
+ * A position along one edge of the box, in the node's own coordinates.
+ *
+ * A percentage is a share of that edge, a plain number below one is the same share written as a
+ * fraction, and anything larger is taken as pixels. Missing means the middle.
+ */
+function alongEdge(value: number | `${number}%` | undefined, extent: number): number {
+  if (value === undefined) return extent / 2
+  if (typeof value === 'string') return (parseFloat(value) / 100) * extent
+  return value <= 1 ? value * extent : value
+}
+
 /**
  * A gradient, or the reason there isn't one.
  *
@@ -52,7 +72,8 @@ export type GradientResult = { gradient: CanvasGradient; reason?: undefined } | 
  * the colour, and nothing else differs.
  */
 export function createGradient(ctx: CanvasRenderingContext2D, gradient: Gradient, box: GradientBox): GradientResult {
-  const { type = 'linear', colors, direction = 'to-bottom' } = gradient
+  const { type = 'linear', colors } = gradient
+  const direction = 'direction' in gradient ? (gradient.direction ?? 'to-bottom') : 'to-bottom'
   const { x, y, width, height } = box
 
   if (!colors?.length) return { gradient: null, reason: 'Gradient specified but no colors provided.' }
@@ -71,6 +92,12 @@ export function createGradient(ctx: CanvasRenderingContext2D, gradient: Gradient
     const centerY = y + height / 2
     const radius = DIAGONAL_HALF * Math.sqrt(width * width + height * height)
     if (radius > 0) built = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
+  } else if (type === 'conic') {
+    const at = 'at' in gradient ? gradient.at : undefined
+    const from = ('from' in gradient ? gradient.from : undefined) ?? 0
+    const centerX = x + alongEdge(at?.x, width)
+    const centerY = y + alongEdge(at?.y, height)
+    built = ctx.createConicGradient(degreesToCanvasAngle(from), centerX, centerY)
   }
 
   if (!built) return { gradient: null, reason: `Could not create ${type} gradient.` }
