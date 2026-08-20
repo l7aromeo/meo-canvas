@@ -39,7 +39,10 @@ export class TextNode extends BoxNode {
   private lineAscents: number[] = []
   private lineContentHeights: number[] = []
 
-  declare props: TextProps & { lineGap: number }
+  declare props: TextProps & {
+    /** Always present once defaults are applied, so the render path never has to check for it. */
+    lineGap: number
+  }
 
   constructor(text: number | string = '', props: TextProps = {}) {
     const initialProps = {

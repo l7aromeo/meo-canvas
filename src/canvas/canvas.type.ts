@@ -35,15 +35,75 @@ export type Children = BoxNode | TextNode | ImageNode | GridNode | CanvasElement
  * worker thread by structured clone.
  */
 export type CanvasElement =
-  | { __type: 'Box'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Column'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Row'; props: Omit<BoxProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Grid'; props: Omit<GridProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'GridItem'; props: Omit<GridItemProps, 'children'>; children?: CanvasElement[] }
-  | { __type: 'Image'; props: Omit<ImageProps, 'onLoad' | 'onError'> }
-  | { __type: 'Path'; props: PathProps }
-  | { __type: 'Text'; text: string | number; props?: TextProps }
-  | { __type: 'Chart'; props: Omit<ChartProps<ChartType>, 'options'> & { options?: Record<string, unknown> } }
+  | {
+      /** A plain container. */
+      __type: 'Box'
+      /** Everything but the children, which are their own field. */
+      props: Omit<BoxProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A container that stacks its children vertically. */
+      __type: 'Column'
+      /** Everything but the children, which are their own field. */
+      props: Omit<BoxProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A container that lays its children out in a line. */
+      __type: 'Row'
+      /** Everything but the children, which are their own field. */
+      props: Omit<BoxProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A container that places its children on a grid. */
+      __type: 'Grid'
+      /** Everything but the children, which are their own field. */
+      props: Omit<GridProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** One cell of a grid, which may span several tracks. */
+      __type: 'GridItem'
+      /** Everything but the children, which are their own field. */
+      props: Omit<GridItemProps, 'children'>
+      /** Nested descriptors, drawn inside this one. */
+      children?: CanvasElement[]
+    }
+  | {
+      /** A raster image, fitted into its box by `objectFit`. */
+      __type: 'Image'
+      /** The load callbacks are dropped: a function cannot cross into a worker. */
+      props: Omit<ImageProps, 'onLoad' | 'onError'>
+    }
+  | {
+      /** An arbitrary shape from SVG path data. */
+      __type: 'Path'
+      /** The path and how it is painted. */
+      props: PathProps
+    }
+  | {
+      /** A run of text, which may carry inline markup. */
+      __type: 'Text'
+      /** The string to draw. Numbers are accepted so a count needs no conversion. */
+      text: string | number
+      /** Styling for the run. */
+      props?: TextProps
+    }
+  | {
+      /** A chart, drawn from data rather than from child nodes. */
+      __type: 'Chart'
+      /** The chart minus its options, which are widened so they survive the worker boundary. */
+      props: Omit<ChartProps<ChartType>, 'options'> & {
+        /** Chart options, typed loosely here and narrowed again when the node is built. */
+        options?: Record<string, unknown>
+      }
+    }
 
 /**
  * A font family and the files that provide it.
@@ -186,7 +246,22 @@ export type GradientDirection =
  * radial gradient runs from the node's centre to the corner, so it covers the whole box.
  */
 export type Gradient =
-  { type: 'linear'; colors: readonly string[]; direction: GradientDirection } | { type: 'radial'; colors: readonly string[]; direction?: GradientDirection }
+  | {
+      /** A straight run between two points. */
+      type: 'linear'
+      /** Stops in order, spread evenly from the first to the last. */
+      colors: readonly string[]
+      /** Which way the run goes — a named edge-to-edge direction, or explicit endpoints. */
+      direction: GradientDirection
+    }
+  | {
+      /** A run outward from the node's centre, reaching the corners. */
+      type: 'radial'
+      /** Stops in order, from the centre outwards. */
+      colors: readonly string[]
+      /** Unused for a radial gradient, which always runs centre to corner. */
+      direction?: GradientDirection
+    }
 
 /** Shapes a {@link Mask} can name without writing a path, each inscribed in the node's box. */
 export type MaskShape = 'circle' | 'ellipse'
@@ -214,14 +289,43 @@ export type MaskShape = 'circle' | 'ellipse'
 export type Mask =
   /** SVG path data, in the node's own coordinates. Shorthand for `{ path }`. */
   | string
-  | { shape: MaskShape }
-  | { path: string; fillRule?: 'nonzero' | 'evenodd' }
+  | {
+      /** A shape inscribed in the node's box. */
+      shape: MaskShape
+    }
+  | {
+      /** SVG path data, in the node's own coordinates. */
+      path: string
+      /** How the path's interior is decided where it crosses itself. */
+      fillRule?: 'nonzero' | 'evenodd'
+    }
   /** Only the alpha of each colour matters: opaque keeps a pixel, transparent removes it. */
-  | { gradient: Gradient }
+  | {
+      /** The gradient whose alpha the node is multiplied by. */
+      gradient: Gradient
+    }
 
 /**
  * Defines the layout and style properties for a BoxNode, analogous to CSS properties.
  */
+
+/**
+ * A radius for each corner, in pixels. A corner left out is not rounded.
+ *
+ * Radii larger than the box allows are scaled down together, so opposite corners meet rather than
+ * overlapping — the same rule CSS applies to `border-radius`.
+ */
+export interface CornerRadii {
+  /** Radius of the top-left corner. */
+  TopLeft?: number
+  /** Radius of the top-right corner. */
+  TopRight?: number
+  /** Radius of the bottom-left corner. */
+  BottomLeft?: number
+  /** Radius of the bottom-right corner. */
+  BottomRight?: number
+}
+
 export interface BoxProps extends BaseProps {
   /**
    * Sets the width of the node.
@@ -405,14 +509,7 @@ export interface BoxProps extends BaseProps {
    * @unit Pixels.
    * @default undefined (no rounding)
    */
-  borderRadius?:
-    | Partial<{
-        TopLeft: number
-        TopRight: number
-        BottomLeft: number
-        BottomRight: number
-      }>
-    | number
+  borderRadius?: CornerRadii | number
 
   /**
    * Locks the aspect ratio (width / height) of the node.
@@ -993,7 +1090,27 @@ export interface StillContent {
  * Exactly one of `pages` or `duration` is required — expressed as two members of a union rather
  * than two optional properties, so omitting both and supplying both are each rejected.
  */
-export type PagedContent = { children: PageBuilder } & ({ pages: number; duration?: never; fps?: number } | { duration: number; pages?: never; fps?: number })
+export type PagedContent = {
+  /** Run once per page, and returns that page's tree. */
+  children: PageBuilder
+} & (
+  | {
+      /** How many pages to render. Mutually exclusive with `duration`. */
+      pages: number
+      /** Not available alongside `pages` — the count is already fixed. */
+      duration?: never
+      /** Rate the page times are derived at. Describes the render, not the encode. */
+      fps?: number
+    }
+  | {
+      /** How long the sequence runs, in seconds. The page count becomes `ceil(duration * fps)`. */
+      duration: number
+      /** Not available alongside `duration` — the count is derived from it. */
+      pages?: never
+      /** Rate the page count and page times are derived at. */
+      fps?: number
+    }
+)
 
 /** Content shapes `Root` accepts: one page of elements, or a sequence from a builder. */
 export type RootContent = StillContent | PagedContent
@@ -1039,19 +1156,29 @@ export interface AnimationExportOptions {
  * is reachable, and a real `Canvas` is assignable to it.
  */
 export type RenderedCanvas = Omit<Canvas, 'toBuffer' | 'toBufferSync' | 'toURL' | 'toURLSync' | 'toDataURLSync'> & {
+  /** Encodes the canvas and resolves with the bytes. An animated format takes every page. */
   toBuffer(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<Buffer>
+  /** Encodes the canvas and resolves with the bytes. */
   toBuffer(format: StillFormat, options?: StillExportOptions): Promise<Buffer>
 
+  /** `toBuffer`, blocking instead of resolving. */
   toBufferSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Buffer
+  /** `toBuffer`, blocking instead of resolving. */
   toBufferSync(format: StillFormat, options?: StillExportOptions): Buffer
 
+  /** `toBuffer`, resolved as a `data:` URL. */
   toURL(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): Promise<string>
+  /** `toBuffer`, resolved as a `data:` URL. */
   toURL(format: StillFormat, options?: StillExportOptions): Promise<string>
 
+  /** `toBuffer`, as a `data:` URL, blocking instead of resolving. */
   toURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  /** `toBuffer`, as a `data:` URL, blocking instead of resolving. */
   toURLSync(format: StillFormat, options?: StillExportOptions): string
 
+  /** `toURLSync` under its `HTMLCanvasElement` name. */
   toDataURLSync(format: AnimatedFormat, options?: ExportOptions & AnimationExportOptions): string
+  /** `toURLSync` under its `HTMLCanvasElement` name. */
   toDataURLSync(format: StillFormat, options?: StillExportOptions): string
 }
 
@@ -1475,7 +1602,7 @@ export interface GridOptions {
  */
 export type ChartItem = BoxNode | CanvasElement | null | undefined
 
-// Base options common to all charts
+/** Options every chart type understands. */
 export interface BaseChartOptions<T extends ChartType> {
   /**
    * Draw the label beside each value — the category name on a bar or line chart, the slice's own
@@ -1520,7 +1647,7 @@ export interface BaseChartOptions<T extends ChartType> {
   renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => ChartItem
 }
 
-// Options specific to Cartesian charts
+/** Options only a chart with axes understands — `bar` and `line`. */
 export interface CartesianChartSpecificOptions {
   /**
    * The grid lines behind the plot — see {@link GridOptions}.
@@ -1590,7 +1717,7 @@ export interface CartesianChartSpecificOptions {
   xAxisLabelFormatter?: (value: string, index: number) => string
 }
 
-// Options specific to Pie/Doughnut charts
+/** Options only a chart of slices understands — `pie` and `doughnut`. */
 export interface PieChartSpecificOptions {
   /**
    * The radius of the inner circle in a doughnut chart, expressed as a

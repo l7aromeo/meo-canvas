@@ -268,6 +268,7 @@ export const easings = {
   inOutBounce: (t: number) => bounce.inOut(clamp01(t)),
 } satisfies Record<string, EasingFn>
 
+/** The name of any built-in easing — every key of {@link easings}. */
 export type EasingName = keyof typeof easings
 
 /** How close the solver has to get before it accepts a value of t. */

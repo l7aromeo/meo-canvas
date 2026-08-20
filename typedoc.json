@@ -17,7 +17,7 @@
   "validation": {
     "invalidLink": true,
     "notExported": true,
-    "notDocumented": false
+    "notDocumented": true
   },
   "treatWarningsAsErrors": true,
   "blockTags": [

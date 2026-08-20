@@ -14,34 +14,22 @@ const _HEX_ALPHA_RE = /^#([0-9a-fA-F]{8})$/
  * It uses the Yoga layout engine for positioning and sizing.
  */
 export class BoxNode {
-  /**
-   * @property {Partial<BoxProps>} initialProps - Original props passed to the constructor before any modifications.
-   */
+  /** Original props passed to the constructor before any modifications. */
   initialProps: Partial<BoxProps>
 
-  /**
-   * @property {Node} node - The Yoga layout engine node.
-   */
+  /** The Yoga layout engine node. */
   node: Node
 
-  /**
-   * @property {BoxNode[]} children - Child nodes.
-   */
+  /** Child nodes. */
   children: BoxNode[]
 
-  /**
-   * @property {BoxProps & BaseProps} props - Current props including defaults and inherited values.
-   */
+  /** Current props including defaults and inherited values. */
   props: BoxProps & BaseProps
 
-  /**
-   * @property {string} name - Node type name.
-   */
+  /** Node type name. */
   readonly name?: string
 
-  /**
-   * @property {string} key - Unique node identifier.
-   */
+  /** Unique node identifier. */
   key?: string
 
   /**

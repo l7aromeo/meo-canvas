@@ -105,6 +105,13 @@ export class ImageNode extends BoxNode {
     return image.frame(frameAtTime(image.delays, this.pageTime, { loop }))
   }
 
+  /**
+   * Fetches and decodes the source, then tells Yoga what proportions it has.
+   *
+   * `cache` is scoped to one render, so the same URL appearing on several nodes is fetched once.
+   * Safe to call more than once: the first call's promise is returned again rather than a second
+   * fetch being started.
+   */
   public load(cache?: RenderImageCache, diskCacheKeys?: Set<string>): Promise<void> {
     if (!this.loadingPromise) {
       this.loadingPromise = this._loadImage(cache, diskCacheKeys)
@@ -279,6 +286,7 @@ export class ImageNode extends BoxNode {
     })
   }
 
+  /** The in-flight load, starting one if nothing has asked yet. */
   public getLoadingPromise(): Promise<void> {
     return this.loadingPromise ?? this.load()
   }

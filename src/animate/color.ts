@@ -9,9 +9,13 @@ import { Canvas } from 'meo-skia-canvas'
  * sRGB red for the one that was asked for.
  */
 export interface Rgba {
+  /** Red, 0–255. */
   r: number
+  /** Green, 0–255. */
   g: number
+  /** Blue, 0–255. */
   b: number
+  /** Alpha, 0–1, where 0 is fully transparent. */
   a: number
 }
 
