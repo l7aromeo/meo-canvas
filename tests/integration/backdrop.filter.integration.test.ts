@@ -129,6 +129,43 @@ describe('backdropFilter', () => {
     expect(colourAt(at(44, 20))[0]).toBeLessThan(250)
   })
 
+  it('still filters the backdrop when the node also carries a filter', async () => {
+    // A node with a `filter` or a blend draws its subtree into an offscreen. Read from there the
+    // backdrop is blank, and painted onto the page it would sit under the offscreen and be covered
+    // — either way the effect vanishes. CSS puts the backdrop inside the filtered picture: given
+    // `backdrop-filter: blur` and `filter: grayscale`, Chrome shows the backdrop blurred *and*
+    // grey, which is what the reading below is.
+    // A coloured backdrop rather than the black one the other tests use: a blurred black square is
+    // grey whatever happens to it, which would prove nothing here.
+    const red = () =>
+      Box({
+        positionType: Style.PositionType.Absolute,
+        position: { Top: 0, Left: 0 },
+        width: 40,
+        height: H,
+        backgroundColor: '#cc2200',
+      })
+
+    const both = await render([red(), panel({ filter: 'grayscale(1)' })])
+    const backdropOnly = await render([red(), panel()])
+
+    const [r, g, b] = both.colourAt(at(44, 20))
+    expect(r).toBe(g)
+    expect(g).toBe(b)
+    expect(r).toBeLessThan(250)
+
+    // ...while the unfiltered case keeps the colour, so the grey came from the filter rather than
+    // from the backdrop having been lost altogether.
+    const plain = backdropOnly.colourAt(at(44, 20))
+    expect(plain[0]).toBeGreaterThan(plain[2] + 10)
+  })
+
+  it('still filters the backdrop when the node also carries a blend mode', async () => {
+    const blended = await render([square(), panel({ mixBlendMode: Style.BlendMode.Multiply })])
+
+    expect(blended.colourAt(at(44, 20))[0]).toBeLessThan(250)
+  })
+
   it('reaches the same distance in user px whatever the root scale', async () => {
     // A canvas applies `filter` in device pixels regardless of the transform, where CSS reads the
     // length in the element's own units. Unscaled, a `blur(6px)` covers three user px at
