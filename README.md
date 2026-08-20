@@ -1276,11 +1276,11 @@ properties.
 
 #### Text-Specific Props
 
-| Prop         | Type                                   | Description                                                               |
-| ------------ | -------------------------------------- | ------------------------------------------------------------------------- |
-| `maxLines`   | `number`                               | Maximum number of lines to display before truncating.                     |
-| `ellipsis`   | `boolean \| string`                    | If`true`, adds '...' when text is truncated. Can also be a custom string. |
-| `textShadow` | `TextShadowProps \| TextShadowProps[]` | Applies one or more shadow effects to the text itself.                    |
+| Prop         | Type                                   | Description                                                                                                              |
+| ------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `maxLines`   | `number`                               | Maximum number of lines to display before truncating.                                                                    |
+| `ellipsis`   | `boolean \| string`                    | If `true`, marks truncated text with `…`. The last line fills to the character, as CSS does. A string replaces the mark. |
+| `textShadow` | `TextShadowProps \| TextShadowProps[]` | Applies one or more shadow effects to the text itself.                                                                   |
 
 ---
 
