@@ -354,25 +354,43 @@ export class BoxNode {
    * The copy is the size of the whole canvas. A backdrop is a deliberate effect on a handful of
    * nodes rather than something every node pays for, and copying only the node's own region would
    * still have to account for however far the filter reaches beyond it.
+   *
+   * `target` and `source` come apart when the node also carries a `filter` or a blend: the subtree
+   * is drawn into an offscreen, so the backdrop has to be read from the page and painted into that
+   * offscreen instead — `deviceOffset` is where the page's origin falls in it. Painted onto the
+   * page directly in that case, the backdrop would sit under the offscreen and be covered by it;
+   * read from the offscreen, there would be no backdrop at all, since nothing has been drawn there
+   * yet. CSS puts the backdrop inside the filtered picture, so a greyscaled node greys what shows
+   * through it.
    */
-  private applyBackdropFilter(ctx: CanvasRenderingContext2D, filter: string, x: number, y: number, width: number, height: number) {
-    const surface = ctx.canvas
+  private applyBackdropFilter(
+    target: CanvasRenderingContext2D,
+    source: CanvasRenderingContext2D,
+    filter: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    deviceOffsetX: number = 0,
+    deviceOffsetY: number = 0,
+  ) {
+    const surface = source.canvas
     if (!surface?.width || !surface?.height) return
 
-    const snapshot = createCanvas(surface.width, surface.height, mirrorEngine(ctx))
+    const snapshot = createCanvas(surface.width, surface.height, mirrorEngine(source))
     const snapshotCtx = snapshot.getContext('2d')
     snapshotCtx.drawImage(surface, 0, 0)
 
-    ctx.save()
+    target.save()
     try {
-      drawRoundedRectPath(ctx, x, y, width, height, parseBorderRadius(this.props.borderRadius))
-      ctx.clip()
-      const matrix = ctx.getTransform()
-      ctx.resetTransform()
-      ctx.filter = scaleFilterLengths(filter, (Math.hypot(matrix.a, matrix.b) + Math.hypot(matrix.c, matrix.d)) / 2 || 1)
-      ctx.drawImage(snapshot, 0, 0)
+      drawRoundedRectPath(target, x, y, width, height, parseBorderRadius(this.props.borderRadius))
+      target.clip()
+      const matrix = target.getTransform()
+      target.resetTransform()
+      target.filter = scaleFilterLengths(filter, (Math.hypot(matrix.a, matrix.b) + Math.hypot(matrix.c, matrix.d)) / 2 || 1)
+      target.drawImage(snapshot, deviceOffsetX, deviceOffsetY)
     } finally {
-      ctx.restore()
+      target.restore()
     }
   }
 
@@ -460,6 +478,12 @@ export class BoxNode {
     const offCtx = offscreen.getContext('2d')
     offCtx.scale(scaleX, scaleY)
     offCtx.translate(-(x - pad), -(y - pad))
+
+    // The backdrop belongs inside the group: CSS filters and blends a node's picture with what
+    // shows through it included, so it is read from the page and painted into the offscreen first.
+    if (this.props.backdropFilter) {
+      this.applyBackdropFilter(offCtx, ctx, this.props.backdropFilter, x, y, width, height, -(x - pad) * scaleX, -(y - pad) * scaleY)
+    }
 
     const desiredOpacity = Math.max(0, Math.min(1, this.props.opacity ?? 1))
     await this.renderNode(offCtx, offsetX, offsetY, true)
@@ -569,8 +593,8 @@ export class BoxNode {
       // --- Step 0: Backdrop Filter ---
       // Filters what is already on the canvas behind this node, before the node itself is drawn —
       // CSS paints the element's own background over the filtered backdrop, not under it.
-      if (this.props.backdropFilter) {
-        this.applyBackdropFilter(ctx, this.props.backdropFilter, x, y, width, height)
+      if (this.props.backdropFilter && !groupEffectsApplied) {
+        this.applyBackdropFilter(ctx, ctx, this.props.backdropFilter, x, y, width, height)
       }
       // --- End Backdrop Filter ---
 
