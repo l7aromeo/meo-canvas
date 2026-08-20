@@ -753,7 +753,7 @@ export interface BoxProps extends BaseProps {
    * Horizontal text alignment within the node's bounds.
    * @default 'left'
    */
-  textAlign?: 'start' | 'end' | 'left' | 'center' | 'right' | 'justify' // Canvas textAlign values + 'justify'
+  textAlign?: Style.TextAlign | 'start' | 'end' | 'left' | 'center' | 'right' | 'justify'
 
   /**
    * Lines drawn on the text, in the notation CSS `text-decoration` uses.
@@ -770,14 +770,14 @@ export interface BoxProps extends BaseProps {
    * Text('Both', { textDecoration: 'underline line-through' })
    * ```
    */
-  textDecoration?: 'none' | 'underline' | 'overline' | 'line-through' | (string & {})
+  textDecoration?: Style.TextDecoration | 'none' | 'underline' | 'overline' | 'line-through' | (string & {})
 
   /**
    * Vertical text alignment within the node's bounds.
    * Note: Simple implementation aligns based on the first line.
    * @default 'top'
    */
-  verticalAlign?: 'top' | 'middle' | 'bottom'
+  verticalAlign?: Style.VerticalAlign | 'top' | 'middle' | 'bottom'
 
   /**
    * Height of each line box.
@@ -1516,7 +1516,7 @@ export interface ImageProps extends Omit<BoxProps, 'children'> {
    * - `scale-down`: Compares `contain` and `none`, picking the smaller concrete object size.
    * @default 'fill'
    */
-  objectFit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down'
+  objectFit?: Style.ObjectFit | 'fill' | 'contain' | 'cover' | 'none' | 'scale-down'
 
   /**
    * Specifies the alignment of the image's content within its box using an object.
