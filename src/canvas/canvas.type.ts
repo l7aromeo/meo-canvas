@@ -53,7 +53,9 @@ export type CanvasElement =
  * ```
  */
 export interface FontRegistrationInfo {
+  /** The name `fontFamily` will refer to. Any name may be chosen; it need not match the file. */
   family: string
+  /** Absolute paths to the font files that make up the family — one per weight or style. */
   paths: string[]
 }
 
@@ -425,7 +427,8 @@ export interface BoxProps extends BaseProps {
    * Defines how content that overflows the node's bounds is handled.
    * `VISIBLE`: Content is not clipped and may render outside the node's box.
    * `HIDDEN`: Content is clipped and the rest is invisible.
-   * `SCROLL`: Content is clipped, but Yoga calculates layout as if it were visible (used for scrollable containers, though an actual scrolling mechanism is external).
+   * `SCROLL`: Yoga lays the node out as a scroll container, but nothing is clipped — a scroll
+   * container is a box a reader moves, and nothing here is interactive. It draws as `VISIBLE`.
    * @see Style.Overflow (`VISIBLE`, `HIDDEN`, `SCROLL`)
    * @default Yoga default (`VISIBLE`)
    * @see https://yogalayout.dev/docs/styling/overflow
@@ -533,8 +536,12 @@ export interface BoxProps extends BaseProps {
   /**
    * Sets the opacity of the node and its children when drawing.
    * A value between 0 (fully transparent) and 1 (fully opaque).
-   * Opacity is applied to the entire rendered output of the node, including background, border, content, and children.
-   * Opacity values stack multiplicatively (e.g., a parent with 0.5 opacity containing a child with 0.5 opacity results in the child rendering at 0.25 opacity relative to the background).
+   *
+   * The node's whole drawing — background, border, content and children — is composited once and
+   * then faded, as CSS does. Two overlapping children inside a half-transparent parent are exactly
+   * as dark as one of them, rather than compounding into a darker patch where they meet.
+   *
+   * Nesting multiplies: a child at 0.5 inside a parent at 0.5 draws at 0.25 against the page.
    * @default 1
    */
   opacity?: number
@@ -632,9 +639,13 @@ export interface BoxProps extends BaseProps {
   verticalAlign?: 'top' | 'middle' | 'bottom'
 
   /**
-   * Line height.
-   * @unit Pixels. If not set, estimated from font size.
-   * @default undefined
+   * Height of each line box.
+   *
+   * Left unset, a line is the face's own height — its ascent plus its descent — which is what
+   * `line-height: normal` means in CSS and is a little over 1.3em for most text faces. Set smaller
+   * than that and the lines overlap rather than the box quietly growing, again as CSS does.
+   * @unit Pixels.
+   * @default undefined (the face's own height)
    */
   lineHeight?: number
 
@@ -685,11 +696,24 @@ export interface BoxProps extends BaseProps {
  */
 export interface GridItemProps extends BoxProps {
   /**
-   * Grid Placement Props
+   * Which columns the item occupies, in the notation CSS `grid-column` uses: a line-to-line range
+   * like `'1 / 3'`, or `'span 2'` to take that many from wherever the item lands.
+   * @default undefined (the next free cell)
    */
-  gridColumn?: string // e.g., "1 / 3" or "span 2"
-  gridRow?: string // e.g., "1 / 2"
-  gridArea?: string // shorthand
+  gridColumn?: string
+
+  /**
+   * Which rows the item occupies, read the same way as {@link gridColumn}.
+   * @default undefined (the next free cell)
+   */
+  gridRow?: string
+
+  /**
+   * Row and column together, as CSS `grid-area` writes them: `'1 / 2 / 3 / 4'` is
+   * row-start / column-start / row-end / column-end.
+   * @default undefined
+   */
+  gridArea?: string
 }
 
 /**
@@ -1093,8 +1117,6 @@ export interface TextSegment {
  * Defines the content and styling properties for a TextNode.
  */
 export interface TextProps extends Omit<BoxProps, 'children' | 'gap' | 'flexDirection' | 'justifyContent' | 'alignContent' | 'alignItems'> {
-  lineHeight?: number // Optional explicit line height
-
   /** Maximum number of lines to display. Text exceeding this limit will be truncated. */
   maxLines?: number
 
@@ -1363,8 +1385,11 @@ export type ChartType = 'pie' | 'doughnut' | 'bar' | 'line'
  * - `color`: Optional CSS color string to override the default dataset/series color for this point.
  */
 export interface PieChartDataPoint {
+  /** Shown in the legend and, unless `showLabels` is off, beside the slice. */
   label: string
+  /** The slice's size, as a share of every value in the set rather than as a percentage. */
   value: number
+  /** Left unset, a colour is chosen from the built-in sequence by position. */
   color?: string
 }
 
@@ -1375,8 +1400,11 @@ export interface PieChartDataPoint {
  * - `color`: Optional CSS color string for the entire dataset.
  */
 export interface ChartDataset {
+  /** Names the series in the legend. */
   label: string
+  /** One value per label on the category axis; a shorter array leaves the remaining slots empty. */
   data: number[]
+  /** Left unset, a colour is chosen from the built-in sequence by position. */
   color?: string
 }
 
@@ -1386,7 +1414,9 @@ export interface ChartDataset {
  * - `datasets`: An array of `ChartDataset` objects, each representing a series.
  */
 export interface CartesianChartData {
+  /** The category axis, one entry per position. Every dataset is read against these. */
   labels: string[]
+  /** One series per entry, drawn together against the same axes. */
   datasets: ChartDataset[]
 }
 
@@ -1398,8 +1428,21 @@ export type LabelItem<T extends ChartType> = T extends 'bar' | 'line' ? string :
 
 /** Grid lines behind a cartesian chart. */
 export interface GridOptions {
+  /**
+   * Draw the grid lines behind the plot.
+   * @default false
+   */
   show?: boolean
+
+  /**
+   * Colour of the grid lines. Accepts standard CSS colour strings.
+   */
   color?: string
+
+  /**
+   * How each line is drawn.
+   * @default 'solid'
+   */
   style?: 'solid' | 'dashed' | 'dotted'
 }
 
@@ -1414,27 +1457,116 @@ export type ChartItem = BoxNode | CanvasElement | null | undefined
 
 // Base options common to all charts
 interface BaseChartOptions<T extends ChartType> {
+  /**
+   * Draw the label beside each value — the category name on a bar or line chart, the slice's own
+   * label on a pie or doughnut.
+   * @default true
+   */
   showLabels?: boolean
+
+  /**
+   * Draw the legend.
+   * @default true
+   */
   showLegend?: boolean
+
+  /**
+   * Size of the label text.
+   * @unit Pixels.
+   * @default 12
+   */
   labelFontSize?: number
+
+  /**
+   * Colour of the label text. Accepts standard CSS colour strings.
+   */
   labelColor?: string
+
+  /**
+   * Which side of the plot the legend sits on.
+   * @default 'bottom'
+   */
   legendPosition?: 'top' | 'bottom' | 'left' | 'right'
+
+  /**
+   * Draws one legend entry in place of the built-in one. Return nothing to leave that entry out.
+   * @example ({ item, color }) => Row({ children: [Box({ width: 12, height: 12, backgroundColor: color }), Text(item.label)] })
+   */
   renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => ChartItem
+
+  /**
+   * Draws one axis or slice label in place of the built-in one. Return nothing to leave it out.
+   */
   renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => ChartItem
 }
 
 // Options specific to Cartesian charts
 interface CartesianChartSpecificOptions {
+  /**
+   * The grid lines behind the plot — see {@link GridOptions}.
+   * @default undefined (no grid)
+   */
   grid?: GridOptions
+
+  /**
+   * Colour of the axis lines. Accepts standard CSS colour strings.
+   */
   axisColor?: string
+
+  /**
+   * Print each value above its bar or point.
+   * @default false
+   */
   showValues?: boolean
+
+  /**
+   * Size of the printed values.
+   * @unit Pixels.
+   * @default 12
+   */
   valueFontSize?: number
+
+  /**
+   * Colour of the printed values. Accepts standard CSS colour strings.
+   */
   valueColor?: string
+
+  /**
+   * Draws the value printed above one bar or point in place of the built-in one. `datasetIndex`
+   * says which series it belongs to. Return nothing to leave it out.
+   */
   renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => ChartItem
+
+  /**
+   * Draw the value axis down the left of the plot.
+   * @default false
+   */
   showYAxis?: boolean
+
+  /**
+   * Size of the value axis labels.
+   * @unit Pixels.
+   * @default 12
+   */
   yAxisFontSize?: number
+
+  /**
+   * Colour of the value axis labels. Accepts standard CSS colour strings.
+   */
   yAxisColor?: string
+
+  /**
+   * Rewrites each value-axis label before it is drawn — for a currency prefix, a unit, or a
+   * thousands separator.
+   * @example (value) => `$${value.toLocaleString()}`
+   */
   yAxisLabelFormatter?: (value: number) => string
+
+  /**
+   * Rewrites each category-axis label before it is drawn. The index is its position along the axis,
+   * which is what lets every other one be dropped on a crowded chart.
+   * @example (label, index) => (index % 2 ? '' : label)
+   */
   xAxisLabelFormatter?: (value: string, index: number) => string
 }
 
