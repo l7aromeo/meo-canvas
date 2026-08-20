@@ -1635,3 +1635,58 @@ describe('BoxNode background image loading', () => {
     warn.mockRestore()
   })
 })
+
+describe('BoxNode group offscreen sizing', () => {
+  /** A node standing in for a child, with only what the reach walk reads off it. */
+  const child = (layout: { left: number; top: number; width: number; height: number }, props: Record<string, unknown> = {}) =>
+    ({
+      node: { getComputedLayout: () => layout },
+      props,
+      children: [],
+      filterChain: () => (props.filter as string) ?? '',
+      inkOverflow: () => 0,
+    }) as unknown as BoxNode
+
+  /** `subtreeReach` is private: this is the distance it hands `renderAsGroup` as padding. */
+  const reachOf = (node: BoxNode, box: [number, number, number, number]) =>
+    (node as unknown as { subtreeReach: (x: number, y: number, w: number, h: number) => number }).subtreeReach(...box)
+
+  it('is zero when every child sits inside the box', () => {
+    const parent = new BoxNode({})
+    parent.children = [child({ left: 10, top: 10, width: 20, height: 20 })]
+
+    expect(reachOf(parent, [0, 0, 60, 60])).toBe(0)
+  })
+
+  it('covers a child laid out past the box', () => {
+    const parent = new BoxNode({})
+    parent.children = [child({ left: 40, top: 0, width: 40, height: 20 })]
+
+    // The child ends 20px beyond a 60px box.
+    expect(reachOf(parent, [0, 0, 60, 60])).toBe(20)
+  })
+
+  it('covers a child translated past the box', () => {
+    const parent = new BoxNode({})
+    parent.children = [child({ left: 0, top: 0, width: 40, height: 40 }, { transform: { translateX: 60 } })]
+
+    expect(reachOf(parent, [0, 0, 60, 60])).toBe(40)
+  })
+
+  it('covers a child’s own shadow', () => {
+    const parent = new BoxNode({})
+    parent.children = [child({ left: 0, top: 0, width: 60, height: 60 }, { boxShadow: { offsetY: 10, blur: 5 } })]
+
+    // The shadow reaches 10 + 5 * 2 past the child, and the child fills the box.
+    expect(reachOf(parent, [0, 0, 60, 60])).toBe(20)
+  })
+
+  it('reaches through a grandchild, not just the first level', () => {
+    const parent = new BoxNode({})
+    const middle = child({ left: 0, top: 0, width: 60, height: 60 })
+    ;(middle as unknown as { children: BoxNode[] }).children = [child({ left: 50, top: 0, width: 40, height: 20 })]
+    parent.children = [middle]
+
+    expect(reachOf(parent, [0, 0, 60, 60])).toBe(30)
+  })
+})

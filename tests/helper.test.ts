@@ -1,4 +1,4 @@
-import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths } from '@/canvas/canvas.helper.js'
+import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths, shadowSpill } from '@/canvas/canvas.helper.js'
 import { extractFunctions, restoreFunctions, FN_MARKER } from '@/worker/comlink.pool.js'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
@@ -668,5 +668,46 @@ describe('scaleFilterLengths', () => {
     // A factor and an angle mean the same thing at any resolution.
     expect(scaleFilterLengths('brightness(1.4) hue-rotate(90deg) saturate(200%)', 2)).toBe('brightness(1.4) hue-rotate(90deg) saturate(200%)')
     expect(scaleFilterLengths('blur(4px) brightness(1.4)', 2)).toBe('blur(8px) brightness(1.4)')
+  })
+})
+
+describe('shadowSpill', () => {
+  it('is nothing without a shadow, or for an inset one', () => {
+    expect(shadowSpill(undefined)).toBe(0)
+    // An inset shadow is drawn within the box and cannot reach past it, so it must not grow a
+    // group's offscreen — every filtered node would pay for it.
+    expect(shadowSpill({ inset: true, offsetY: 10, blur: 20 })).toBe(0)
+  })
+
+  it('reaches the offset plus the blur either side', () => {
+    // A canvas takes the blur as a diameter and spreads about half of it each way, which is the
+    // allowance the shadow's own offscreen makes too.
+    expect(shadowSpill({ offsetY: 8, blur: 12 })).toBe(8 + 12 * 2)
+    expect(shadowSpill({ offsetX: -20, blur: 0 })).toBe(20)
+  })
+
+  it('counts spread as reach', () => {
+    expect(shadowSpill({ offsetY: 0, blur: 4, spread: 6 })).toBe((4 + 6) * 2)
+  })
+
+  it('takes the largest of several, wherever it sits in the list', () => {
+    // The first entry is not the biggest here: padding from it would clip the second.
+    const shadows = [
+      { offsetY: 1, blur: 1 },
+      { offsetY: 30, blur: 20 },
+      { offsetY: 2, blur: 2 },
+    ]
+
+    expect(shadowSpill(shadows)).toBe(shadowSpill({ offsetY: 30, blur: 20 }))
+    expect(shadowSpill(shadows)).toBeGreaterThan(shadowSpill(shadows[0]))
+  })
+
+  it('ignores an inset shadow sitting among outset ones', () => {
+    expect(
+      shadowSpill([
+        { inset: true, offsetY: 99, blur: 99 },
+        { offsetY: 4, blur: 2 },
+      ]),
+    ).toBe(shadowSpill({ offsetY: 4, blur: 2 }))
   })
 })

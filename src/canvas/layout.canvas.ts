@@ -1,5 +1,5 @@
 import { type CanvasRenderingContext2D, type CanvasGradient } from 'meo-skia-canvas'
-import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths } from '@/canvas/canvas.helper.js'
+import { drawBorders, drawRoundedRectPath, filterSpill, parseBorderRadius, parsePercentage, scaleFilterLengths, shadowSpill } from '@/canvas/canvas.helper.js'
 import { createGradient } from '@/canvas/gradient.canvas.js'
 import { paintBackgroundImage } from '@/canvas/background.canvas.js'
 import { resolveCanvasImage, type RenderImageCache } from '@/canvas/image.loader.js'
@@ -445,6 +445,83 @@ export class BoxNode {
   }
 
   /**
+   * How far this node's own drawing reaches past its box, beyond what its box model accounts for.
+   *
+   * Zero for a box, which paints within its bounds; {@link TextNode} overrides it, since a line too
+   * long for its box still draws unless something clips it. Used to size a group's offscreen, where
+   * anything unaccounted for is cut off at a hard edge.
+   */
+  protected inkOverflow(): number {
+    return 0
+  }
+
+  /**
+   * How far anything in this node's subtree reaches past its own box, in pixels.
+   *
+   * The group offscreen is sized from this. CSS only clips a subtree under `overflow: hidden`, so a
+   * child laid out or translated beyond its parent, or casting its own shadow, still draws — and an
+   * offscreen cut to the parent's box would lose it. Each descendant contributes its own box, its
+   * transform, and whatever its shadows and filters spill.
+   *
+   * The result is one symmetric distance rather than four. A rectangle per side would allocate less
+   * for a node whose subtree escapes one way, at the cost of carrying the asymmetry through the
+   * offscreen's origin and the composite; that is worth doing only if the offscreen's size is ever
+   * measured to matter.
+   */
+  private subtreeReach(originX: number, originY: number, width: number, height: number): number {
+    let reach = 0
+
+    const walk = (node: BoxNode, parentX: number, parentY: number) => {
+      const layout = node.node.getComputedLayout()
+      let left = parentX + layout.left
+      let top = parentY + layout.top
+      let right = left + layout.width
+      let bottom = top + layout.height
+
+      const transform = node.props.transform
+      if (transform) {
+        // Translation moves the box; a scale grows it about its centre. Rotation is taken as the
+        // box's diagonal, which is the most any rotation of it can reach.
+        const scaleX = transform.scaleX ?? transform.scale ?? 1
+        const scaleY = transform.scaleY ?? transform.scale ?? 1
+        const centreX = (left + right) / 2
+        const centreY = (top + bottom) / 2
+        let halfWidth = ((right - left) * Math.abs(scaleX)) / 2
+        let halfHeight = ((bottom - top) * Math.abs(scaleY)) / 2
+
+        if (transform.rotate) {
+          const diagonal = Math.hypot(halfWidth, halfHeight)
+          halfWidth = diagonal
+          halfHeight = diagonal
+        }
+
+        const translateX = typeof transform.translateX === 'number' ? transform.translateX : 0
+        const translateY = typeof transform.translateY === 'number' ? transform.translateY : 0
+        left = centreX - halfWidth + translateX
+        right = centreX + halfWidth + translateX
+        top = centreY - halfHeight + translateY
+        bottom = centreY + halfHeight + translateY
+      }
+
+      const spill = shadowSpill(node.props.boxShadow) + filterSpill(node.filterChain()) + node.inkOverflow()
+
+      reach = Math.max(
+        reach,
+        originX - (left - spill),
+        top !== undefined ? originY - (top - spill) : 0,
+        right + spill - (originX + width),
+        bottom + spill - (originY + height),
+      )
+
+      for (const child of node.children) walk(child, parentX + layout.left, parentY + layout.top)
+    }
+
+    for (const child of this.children) walk(child, originX, originY)
+
+    return Math.max(0, Math.ceil(reach))
+  }
+
+  /**
    * Draws the subtree into an offscreen and composites it back in one go.
    *
    * The offscreen is built at device resolution — the transform in force is read off the context
@@ -463,7 +540,11 @@ export class BoxNode {
     offsetX: number,
     offsetY: number,
   ) {
-    const pad = filterSpill(filter)
+    // The offscreen has to hold everything the subtree paints, not just this node's box. A filter
+    // spills, an outset shadow spills, and a child can be laid out or translated clean outside its
+    // parent — CSS clips none of that unless `overflow: hidden` says so, and an offscreen cut to
+    // the box turns each of them into a hard edge.
+    const pad = filterSpill(filter) + shadowSpill(this.props.boxShadow) + this.subtreeReach(x, y, width, height)
     const matrix = ctx.getTransform()
     // Magnitudes rather than `a` and `d`: an ancestor's rotation puts the scale across both terms.
     const scaleX = Math.hypot(matrix.a, matrix.b) || 1

@@ -1,7 +1,7 @@
 import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 import * as YogaTypes from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
-import type { BoxProps } from '@/canvas/canvas.type.js'
+import type { BoxProps, BoxShadowProps } from '@/canvas/canvas.type.js'
 
 export const drawBorders = ({
   ctx,
@@ -353,4 +353,34 @@ export function scaleFilterLengths(filter: string, scale: number): string {
     const scaled = args.replace(/(-?[\d.]+)px/g, (_, length: string) => `${Number(length) * scale}px`)
     return `${name}(${scaled})`
   })
+}
+
+/**
+ * How far a node's outset shadows reach past its border box, in pixels.
+ *
+ * CSS paints a `box-shadow` outside the border box and never clips it there, so anything drawing a
+ * node into a surface of its own has to allow for it — a surface the size of the box alone cuts the
+ * shadow off at a hard edge. Inset shadows are drawn within the box and cannot spill.
+ *
+ * The blur is doubled because a canvas takes a shadow's blur as a diameter where the Gaussian
+ * spreads about half of it either side, which is the same allowance the shadow's own offscreen
+ * makes.
+ */
+export function shadowSpill(boxShadow: BoxShadowProps | BoxShadowProps[] | undefined): number {
+  if (!boxShadow) return 0
+
+  const BLUR_REACHES_EITHER_SIDE = 2
+  const shadows = Array.isArray(boxShadow) ? boxShadow : [boxShadow]
+  let spill = 0
+
+  for (const shadow of shadows) {
+    if (shadow.inset) continue
+    const offsetX = shadow.offsetX ?? 0
+    const offsetY = shadow.offsetY ?? 0
+    const blur = shadow.blur ?? Math.max(offsetX, offsetY)
+    const reach = (Math.abs(blur) + Math.max(0, shadow.spread ?? 0)) * BLUR_REACHES_EITHER_SIDE + Math.max(Math.abs(offsetX), Math.abs(offsetY))
+    spill = Math.max(spill, reach)
+  }
+
+  return Math.ceil(spill)
 }
