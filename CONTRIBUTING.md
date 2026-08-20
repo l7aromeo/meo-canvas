@@ -57,7 +57,20 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
     > **Note:** Run these after `bun run build`. The worker pool starts a worker by path (`render.worker.js`), which
     > only exists once the package has been built — the worker-mode cases skip themselves without it.
 
-6.  Build the API reference. It is published to GitHub Pages for each release, and the build fails on
+6.  Check the cost of what you changed, if it draws anything.
+
+    ```sh
+    bun run bench                # every case
+    bun run bench backdrop       # cases whose name contains "backdrop"
+    ```
+
+    Each case draws the same nodes on the same surface, so the only variable is which path they
+    take. The two columns matter more than the total: `build` is the library's own work, `raster`
+    is turning that into pixels and encoding them. Drawing is deferred, so a case that looks
+    expensive in `raster` is usually telling you about the renderer or the codec rather than about
+    the code you touched.
+
+7.  Build the API reference. It is published to GitHub Pages for each release, and the build fails on
     a broken `{@link}`, on a type named in a public signature but never exported, and on an exported
     member with no description — so adding a prop without documenting it is caught here rather than
     showing up as a blank entry on the site:
