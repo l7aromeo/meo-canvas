@@ -1132,6 +1132,11 @@ Two consequences worth knowing:
 
 `lineGap` is extra space between lines on top of all that, with no CSS equivalent.
 
+**Absolute positioning resolves against the immediate parent.** CSS resolves it against the nearest
+_positioned_ ancestor, skipping static boxes in between; Yoga always uses the parent. A layout ported
+from the browser that relies on that skipping will land somewhere else — put the offsets on the
+node's own parent instead.
+
 **Bidirectional text is not laid out.** `direction` is Yoga's layout direction — it flips the flex
 axes — and does not reorder text. A right-to-left script renders in the order its characters were
 written rather than reordered by the Unicode bidi algorithm, so Arabic and Hebrew are not supported.

@@ -443,7 +443,13 @@ export interface BoxProps extends BaseProps {
   /**
    * Specifies the positioning method used for the node.
    * `RELATIVE`: Positioned according to the normal flow, then offset relative to that position.
-   * `ABSOLUTE`: Positioned relative to its nearest positioned ancestor (or the root). Layout calculation ignores this node.
+   * `ABSOLUTE`: Taken out of the flow and positioned against its **immediate parent**.
+   *
+   * That last part is where this differs from CSS, and the difference is Yoga's rather than this
+   * library's. CSS resolves an absolute node against the nearest *positioned* ancestor, skipping
+   * every static box in between; Yoga always uses the parent, whether or not it is positioned. A
+   * layout ported from the browser that relies on skipping an intermediate box will land somewhere
+   * else — give the node's own parent the offsets instead.
    * @see Style.PositionType (`RELATIVE`, `ABSOLUTE`)
    * @default Yoga default (`RELATIVE`)
    * @see https://yogalayout.dev/docs/styling/position
