@@ -1843,8 +1843,18 @@ export interface GridOptions {
  */
 export type ChartItem = BoxNode | CanvasElement | null | undefined
 
+/**
+ * A {@link ChartItem} once the descriptor arm has been built away.
+ *
+ * `buildTree` runs over these callbacks before a `ChartNode` is constructed, so by the time the
+ * drawing code reads one there is no descriptor left to handle. Naming that as a type rather than
+ * asserting it with a cast is what makes the chart's own code provably node-only: it takes
+ * `ChartProps<T, ResolvedChartItem>`, so a descriptor cannot reach it without a compile error.
+ */
+export type ResolvedChartItem = BoxNode | null | undefined
+
 /** Options every chart type understands. */
-export interface BaseChartOptions<T extends ChartType> {
+export interface BaseChartOptions<T extends ChartType, Item = ChartItem> {
   /**
    * Draw the label beside each value — the category name on a bar or line chart, the slice's own
    * label on a pie or doughnut.
@@ -1880,16 +1890,16 @@ export interface BaseChartOptions<T extends ChartType> {
    * Draws one legend entry in place of the built-in one. Return nothing to leave that entry out.
    * @example ({ item, color }) => Row({ children: [Box({ width: 12, height: 12, backgroundColor: color }), Text(item.label)] })
    */
-  renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => ChartItem
+  renderLegendItem?: (props: { item: LegendItem<T>; index: number; color: string }) => Item
 
   /**
    * Draws one axis or slice label in place of the built-in one. Return nothing to leave it out.
    */
-  renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => ChartItem
+  renderLabelItem?: (props: { item: LabelItem<T>; index: number }) => Item
 }
 
 /** Options only a chart with axes understands — `bar` and `line`. */
-export interface CartesianChartSpecificOptions {
+export interface CartesianChartSpecificOptions<Item = ChartItem> {
   /**
    * The grid lines behind the plot — see {@link GridOptions}.
    * @default undefined (no grid)
@@ -1923,7 +1933,7 @@ export interface CartesianChartSpecificOptions {
    * Draws the value printed above one bar or point in place of the built-in one. `datasetIndex`
    * says which series it belongs to. Return nothing to leave it out.
    */
-  renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => ChartItem
+  renderValueItem?: (props: { item: number; index: number; datasetIndex: number }) => Item
 
   /**
    * Draw the value axis down the left of the plot.
@@ -1977,11 +1987,11 @@ export interface PieChartSpecificOptions {
 
 // The main conditional type for options
 /** Rendering and style options for a chart, narrowed by its {@link ChartType}. */
-export type ChartOptions<T extends ChartType> = T extends 'bar' | 'line'
-  ? BaseChartOptions<T> & CartesianChartSpecificOptions
+export type ChartOptions<T extends ChartType, Item = ChartItem> = T extends 'bar' | 'line'
+  ? BaseChartOptions<T, Item> & CartesianChartSpecificOptions<Item>
   : T extends 'pie' | 'doughnut'
-    ? BaseChartOptions<T> & PieChartSpecificOptions
-    : BaseChartOptions<T>
+    ? BaseChartOptions<T, Item> & PieChartSpecificOptions
+    : BaseChartOptions<T, Item>
 
 /**
  * Properties for rendering a chart inside a `BoxNode`.
@@ -1991,7 +2001,7 @@ export type ChartOptions<T extends ChartType> = T extends 'bar' | 'line'
  * - `data`: Data for the chart. The structure depends on the chart type.
  * - `options`: Optional rendering and styling flags.
  */
-export interface ChartProps<T extends ChartType> extends BoxProps {
+export interface ChartProps<T extends ChartType, Item = ChartItem> extends BoxProps {
   /**
    * Chart type to render.
    * - 'bar' | 'line' | 'pie' | 'doughnut'
@@ -2008,5 +2018,13 @@ export interface ChartProps<T extends ChartType> extends BoxProps {
   /**
    * Optional rendering and style options, specific to the chart type.
    */
-  options?: ChartOptions<T>
+  options?: ChartOptions<T, Item>
 }
+
+/**
+ * {@link ChartProps} as the chart itself receives them, with every item callback already built.
+ *
+ * `withBuiltChartItems` returns this, which is where the narrowing is earned rather than asserted:
+ * its body converts each descriptor, and its signature is the proof the chart relies on.
+ */
+export type ResolvedChartProps<T extends ChartType> = ChartProps<T, ResolvedChartItem>

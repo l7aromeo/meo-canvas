@@ -19,6 +19,8 @@ import type {
   Children,
   ImageProps,
   ChartItem,
+  ResolvedChartItem,
+  ResolvedChartProps,
   ChartProps,
   ChartType,
 } from '@/canvas/canvas.type.js'
@@ -373,32 +375,35 @@ export class WorkerCanvas {
 const CHART_ITEM_OPTIONS = ['renderLegendItem', 'renderLabelItem', 'renderValueItem'] as const
 
 /**
- * Wraps a chart's item callbacks so a descriptor they return is built into a node.
+ * Builds a descriptor into a node, and hands a node straight back.
  *
- * `Box`, `Row` and the rest hand back descriptors, and `BoxNode` is exported as a type only, so a
- * descriptor is the only thing a consumer can return from one of these. The chart appends the
- * result to a live tree, which needs a node — without this the tree rejects it and the item is
- * silently missing from the drawing.
- *
- * Done here rather than in `ChartNode` because this is the one place that already knows how to
- * build a descriptor: reaching for `buildTree` from the chart would import this module back.
+ * The narrowing is the `in` check rather than an assertion: a descriptor carries `__type` and a
+ * `BoxNode` does not, so the compiler resolves the union itself and this returns a
+ * {@link ResolvedChartItem} because it provably cannot return anything else.
  */
-function withBuiltChartItems(props: ChartProps<ChartType>): ChartProps<ChartType> {
+function resolveChartItem(item: ChartItem): ResolvedChartItem {
+  if (!item) return item
+  return '__type' in item ? buildTree(item) : item
+}
+
+function withBuiltChartItems(props: ChartProps<ChartType>): ResolvedChartProps<ChartType> {
   const options = props.options as Record<string, unknown> | undefined
-  if (!options) return props
+  if (!options) return props as ResolvedChartProps<ChartType>
 
   const wrapped: Record<string, unknown> = {}
   for (const name of CHART_ITEM_OPTIONS) {
     const render = options[name]
     if (typeof render !== 'function') continue
-    wrapped[name] = (args: unknown) => {
-      const item = (render as (a: unknown) => ChartItem)(args)
-      return item && '__type' in item ? buildTree(item) : item
-    }
+    const callback = render as (args: never) => ChartItem
+    wrapped[name] = (args: never): ResolvedChartItem => resolveChartItem(callback(args))
   }
 
-  if (!Object.keys(wrapped).length) return props
-  return { ...props, options: { ...options, ...wrapped } } as ChartProps<ChartType>
+  // The keys are read by name from a `readonly string[]`, which no signature can follow, so the
+  // reassembly is asserted. What it asserts is exactly what the loop above just did, and the one
+  // claim that used to matter -- that no descriptor survives -- is now `resolveChartItem`'s return
+  // type rather than anybody's word for it.
+  if (!Object.keys(wrapped).length) return props as ResolvedChartProps<ChartType>
+  return { ...props, options: { ...options, ...wrapped } } as ResolvedChartProps<ChartType>
 }
 
 /**
