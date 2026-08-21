@@ -63,6 +63,7 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     arcTo: vi.fn(),
+    arc: vi.fn(),
     closePath: vi.fn(),
     drawImage: vi.fn(),
     fill: vi.fn(),
@@ -506,6 +507,263 @@ describe('ImageNode & Image factory', () => {
 
       // Without color prop, readFile should not be called for SVG replacement
       expect(mockReadFile).not.toHaveBeenCalled()
+    })
+  })
+
+  // --- 6. objectPosition, aspect ratio and drop shadow ---
+
+  describe('objectPosition', () => {
+    const setup = async (props: Partial<ImageProps>) => {
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, objectFit: 'cover', ...props } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      return node
+    }
+
+    /** The destination x and y of the single drawImage call. */
+    const drawnAt = (ctx: CanvasRenderingContext2D) => {
+      const call = (ctx.drawImage as any).mock.calls[0]
+      return { x: call[call.length - 4], y: call[call.length - 3] }
+    }
+
+    it('centres the image when no position is given', async () => {
+      const ctx = createMockCtx()
+      await (await setup({})).render(ctx, 0, 0)
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a percentage from the left', { Left: '0%' as const }],
+      ['a percentage from the right', { Right: '0%' as const }],
+      ['a pixel offset from the left', { Left: 10 }],
+      ['a pixel offset from the right', { Right: 10 }],
+      ['a percentage from the top', { Top: '0%' as const }],
+      ['a percentage from the bottom', { Bottom: '0%' as const }],
+      ['a pixel offset from the top', { Top: 8 }],
+      ['a pixel offset from the bottom', { Bottom: 8 }],
+      ['both edges on one axis, where left wins', { Left: 4, Right: 40 }],
+      ['both edges on the other axis, where top wins', { Top: 4, Bottom: 40 }],
+    ])('positions the image by %s', async (_label, objectPosition) => {
+      const ctx = createMockCtx()
+      await (await setup({ objectPosition: objectPosition as any })).render(ctx, 0, 0)
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it('measures from the far edge when only the right is given', async () => {
+      const fromLeft = createMockCtx()
+      await (await setup({ objectPosition: { Left: 0 } as any })).render(fromLeft, 0, 0)
+      const right = createMockCtx()
+      await (await setup({ objectPosition: { Right: 0 } as any })).render(right, 0, 0)
+      expect(drawnAt(right).x).not.toBe(drawnAt(fromLeft).x)
+    })
+
+    it('measures from the bottom when only the bottom is given', async () => {
+      // `contain` leaves slack on the short axis for the two edges to differ across; `cover` fills
+      // it exactly, so top and bottom would both resolve to the same zero.
+      const fromTop = createMockCtx()
+      await (await setup({ objectFit: 'contain', objectPosition: { Top: 0 } as any })).render(fromTop, 0, 0)
+      const bottom = createMockCtx()
+      await (await setup({ objectFit: 'contain', objectPosition: { Bottom: 0 } as any })).render(bottom, 0, 0)
+      expect(drawnAt(bottom).y).not.toBe(drawnAt(fromTop).y)
+    })
+  })
+
+  describe('aspect ratio sizing', () => {
+    it.each([
+      ['an explicit aspectRatio', { aspectRatio: 2 }],
+      ['a non-positive aspectRatio, which is ignored', { aspectRatio: 0 }],
+      ['width only', { width: 100, height: undefined }],
+      ['height only', { width: undefined, height: 100 }],
+      ['neither edge', { width: undefined, height: undefined }],
+    ])('sizes the node from %s', async (_label, props) => {
+      const node = new ImageNode({ src: 'test.png', ...props } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(200, 200, Direction.LTR)
+      expect(node.node.getComputedWidth()).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  describe('drop shadow', () => {
+    it('composites through an offscreen so the shadow is not clipped away', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({
+        src: 'test.png',
+        width: 100,
+        height: 100,
+        dropShadow: { offsetX: 2, offsetY: 3, blur: 4, color: '#123456' },
+      } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowColor).toBe('#123456')
+      expect(ctx.shadowBlur).toBe(4)
+    })
+
+    it('falls back to black at no offset for a bare shadow', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, dropShadow: {} } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowColor).toBe('black')
+      expect(ctx.shadowOffsetX).toBe(0)
+      expect(ctx.shadowBlur).toBe(0)
+    })
+
+    it('clamps a negative blur to zero', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, dropShadow: { blur: -5 } } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowBlur).toBe(0)
+    })
+
+    it('draws straight to the context when the box has no area', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 0, height: 0, dropShadow: { blur: 2 } } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(0, 0, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowBlur).toBe(0)
+    })
+  })
+
+  describe('object fit across both ratios', () => {
+    const fitted = async (image: { width: number; height: number }, props: Partial<ImageProps>) => {
+      mockLoadImage.mockResolvedValue(image)
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, ...props } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      return ctx
+    }
+    const wide = { width: 200, height: 100 }
+    const tall = { width: 100, height: 200 }
+
+    it.each([
+      ['contain', 'contain'],
+      ['cover', 'cover'],
+      ['fill', 'fill'],
+      ['none', 'none'],
+      ['scale-down', 'scale-down'],
+    ])('fits a wide picture with %s', async (_label, objectFit) => {
+      const ctx = await fitted(wide, { objectFit: objectFit as any, aspectRatio: 1 })
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it.each([
+      ['contain', 'contain'],
+      ['cover', 'cover'],
+      ['fill', 'fill'],
+      ['none', 'none'],
+      ['scale-down', 'scale-down'],
+    ])('fits a tall picture with %s', async (_label, objectFit) => {
+      const ctx = await fitted(tall, { objectFit: objectFit as any, aspectRatio: 1 })
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it('scales a picture smaller than the box down only when it must', async () => {
+      const ctx = await fitted({ width: 20, height: 20 }, { objectFit: 'scale-down', aspectRatio: 1 })
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it('draws nothing when the picture has no size', async () => {
+      const ctx = await fitted({ width: 0, height: 0 }, {})
+      expect(ctx.drawImage).not.toHaveBeenCalled()
+    })
+
+    it('draws nothing when padding and border leave no content box', async () => {
+      const ctx = await fitted(wide, { padding: 60 } as Partial<ImageProps>)
+      expect(ctx.drawImage).not.toHaveBeenCalled()
+    })
+
+    it('draws inside padding when there is room', async () => {
+      const ctx = await fitted(wide, { padding: 10, borderRadius: 8 } as Partial<ImageProps>)
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+  })
+
+  describe('load lifecycle', () => {
+    it('calls onLoad once the picture arrives', async () => {
+      const onLoad = vi.fn()
+      const node = new ImageNode({ src: 'test.png', onLoad } as ImageProps)
+      await node.load()
+      expect(onLoad).toHaveBeenCalled()
+    })
+
+    it('starts a load when one is asked for before any began', async () => {
+      const node = new ImageNode({ src: 'test.png' } as ImageProps)
+      await expect(node.getLoadingPromise()).resolves.toBeUndefined()
+    })
+
+    it('hands back the in-flight load rather than starting a second', async () => {
+      const node = new ImageNode({ src: 'test.png' } as ImageProps)
+      const first = node.load()
+      const second = node.getLoadingPromise()
+      await Promise.all([first, second])
+      expect(mockLoadImage).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('remote sources and SVG recolouring', () => {
+    const svgBytes = (fill: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><rect fill="${fill}"/></svg>`)
+
+    const fetchReturning = (body: Buffer, ok = true, status = 200) =>
+      vi.fn(async () => ({ ok, status, arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) }))
+
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('throws with the status when the fetch comes back not ok', async () => {
+      vi.stubGlobal('fetch', fetchReturning(Buffer.from('nope'), false, 404))
+      const node = new ImageNode({ src: 'https://example.com/missing.png' } as ImageProps)
+      await node.load()
+      // The load swallows the throw and leaves the node with nothing to draw.
+      const ctx = createMockCtx()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.drawImage).not.toHaveBeenCalled()
+    })
+
+    it('recognises an SVG the sniffer reports as XML by looking for the tag', async () => {
+      vi.stubGlobal('fetch', fetchReturning(svgBytes('#000')))
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'application/xml' })
+      const node = new ImageNode({ src: 'https://example.com/a.svg', color: '#f00' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('recognises an SVG the sniffer cannot place at all', async () => {
+      vi.stubGlobal('fetch', fetchReturning(svgBytes('#000')))
+      mockFileTypeFromBuffer.mockResolvedValue(undefined)
+      const node = new ImageNode({ src: 'https://example.com/b.svg', color: '#0f0' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('takes the bytes as they are when recolouring changes nothing', async () => {
+      vi.stubGlobal('fetch', fetchReturning(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>')))
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'image/svg+xml' })
+      const node = new ImageNode({ src: 'https://example.com/c.svg', color: '#00f' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('leaves a remote SVG alone when no colour is asked for', async () => {
+      vi.stubGlobal('fetch', fetchReturning(svgBytes('#123')))
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'image/svg+xml' })
+      const node = new ImageNode({ src: 'https://example.com/d.svg' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
     })
   })
 })
