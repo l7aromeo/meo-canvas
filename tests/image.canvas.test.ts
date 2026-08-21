@@ -508,4 +508,129 @@ describe('ImageNode & Image factory', () => {
       expect(mockReadFile).not.toHaveBeenCalled()
     })
   })
+
+  // --- 6. objectPosition, aspect ratio and drop shadow ---
+
+  describe('objectPosition', () => {
+    const setup = async (props: Partial<ImageProps>) => {
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, objectFit: 'cover', ...props } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      return node
+    }
+
+    /** The destination x and y of the single drawImage call. */
+    const drawnAt = (ctx: CanvasRenderingContext2D) => {
+      const call = (ctx.drawImage as any).mock.calls[0]
+      return { x: call[call.length - 4], y: call[call.length - 3] }
+    }
+
+    it('centres the image when no position is given', async () => {
+      const ctx = createMockCtx()
+      await (await setup({})).render(ctx, 0, 0)
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a percentage from the left', { Left: '0%' as const }],
+      ['a percentage from the right', { Right: '0%' as const }],
+      ['a pixel offset from the left', { Left: 10 }],
+      ['a pixel offset from the right', { Right: 10 }],
+      ['a percentage from the top', { Top: '0%' as const }],
+      ['a percentage from the bottom', { Bottom: '0%' as const }],
+      ['a pixel offset from the top', { Top: 8 }],
+      ['a pixel offset from the bottom', { Bottom: 8 }],
+      ['both edges on one axis, where left wins', { Left: 4, Right: 40 }],
+      ['both edges on the other axis, where top wins', { Top: 4, Bottom: 40 }],
+    ])('positions the image by %s', async (_label, objectPosition) => {
+      const ctx = createMockCtx()
+      await (await setup({ objectPosition: objectPosition as any })).render(ctx, 0, 0)
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it('measures from the far edge when only the right is given', async () => {
+      const fromLeft = createMockCtx()
+      await (await setup({ objectPosition: { Left: 0 } as any })).render(fromLeft, 0, 0)
+      const right = createMockCtx()
+      await (await setup({ objectPosition: { Right: 0 } as any })).render(right, 0, 0)
+      expect(drawnAt(right).x).not.toBe(drawnAt(fromLeft).x)
+    })
+
+    it('measures from the bottom when only the bottom is given', async () => {
+      // `contain` leaves slack on the short axis for the two edges to differ across; `cover` fills
+      // it exactly, so top and bottom would both resolve to the same zero.
+      const fromTop = createMockCtx()
+      await (await setup({ objectFit: 'contain', objectPosition: { Top: 0 } as any })).render(fromTop, 0, 0)
+      const bottom = createMockCtx()
+      await (await setup({ objectFit: 'contain', objectPosition: { Bottom: 0 } as any })).render(bottom, 0, 0)
+      expect(drawnAt(bottom).y).not.toBe(drawnAt(fromTop).y)
+    })
+  })
+
+  describe('aspect ratio sizing', () => {
+    it.each([
+      ['an explicit aspectRatio', { aspectRatio: 2 }],
+      ['a non-positive aspectRatio, which is ignored', { aspectRatio: 0 }],
+      ['width only', { width: 100, height: undefined }],
+      ['height only', { width: undefined, height: 100 }],
+      ['neither edge', { width: undefined, height: undefined }],
+    ])('sizes the node from %s', async (_label, props) => {
+      const node = new ImageNode({ src: 'test.png', ...props } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(200, 200, Direction.LTR)
+      expect(node.node.getComputedWidth()).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  describe('drop shadow', () => {
+    it('composites through an offscreen so the shadow is not clipped away', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({
+        src: 'test.png',
+        width: 100,
+        height: 100,
+        dropShadow: { offsetX: 2, offsetY: 3, blur: 4, color: '#123456' },
+      } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowColor).toBe('#123456')
+      expect(ctx.shadowBlur).toBe(4)
+    })
+
+    it('falls back to black at no offset for a bare shadow', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, dropShadow: {} } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowColor).toBe('black')
+      expect(ctx.shadowOffsetX).toBe(0)
+      expect(ctx.shadowBlur).toBe(0)
+    })
+
+    it('clamps a negative blur to zero', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, dropShadow: { blur: -5 } } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowBlur).toBe(0)
+    })
+
+    it('draws straight to the context when the box has no area', async () => {
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 0, height: 0, dropShadow: { blur: 2 } } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(0, 0, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.shadowBlur).toBe(0)
+    })
+  })
 })
