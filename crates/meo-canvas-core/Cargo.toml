@@ -1,0 +1,34 @@
+[package]
+name = "meo-canvas-core"
+description = "The rendering pipeline behind meo-canvas: resolve, measure, layout, paint and encode a scene."
+keywords = ["canvas", "layout", "rendering", "skia", "taffy"]
+categories = ["graphics", "rendering", "multimedia::images"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+meo-canvas-scene = { workspace = true }
+meo-skia-canvas = { workspace = true }
+taffy = { workspace = true }
+thiserror = { workspace = true }
+
+# No tokio, no smol, no async of any kind, and no HTTP client. The pipeline is a
+# function from bytes to bytes: a caller who wants a remote image resolves it
+# before calling, and the CLI's `net` feature is where a fetcher lives. A
+# runtime in this crate would be a runtime in every Rust consumer of the public
+# `meo-canvas` crate, including those already inside one.
+
+[lints]
+workspace = true
+
+# Declared for the pass that owns them, which is a signature and an
+# `unimplemented!()` body at this stage -- `cargo-machete` reads imports, and a
+# skeleton has none yet. Each entry comes out the moment its pass is written;
+# an entry still here when the crate is finished is a dependency to delete.
+[package.metadata.cargo-machete]
+ignored = ["meo-skia-canvas", "taffy"]

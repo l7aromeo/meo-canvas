@@ -1,0 +1,9 @@
+# Normalize line endings in the repository, and check out what the platform
+# uses. Set for everything, so a file type added later needs no entry here.
+* text=auto
+
+# Compiled addons and images carry bytes that a line-ending rewrite corrupts.
+*.node binary
+*.png  binary
+*.ttf  binary
+*.otf  binary

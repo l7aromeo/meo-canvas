@@ -1,0 +1,13 @@
+# The toolchain every contributor and every CI job builds with.
+#
+# Pinned rather than tracking stable, because `rustfmt.toml` turns on options
+# that only nightly reads and clippy gains lints between releases: an unpinned
+# toolchain reports clean against a different rule set than the one CI applies,
+# and the difference surfaces on push rather than locally.
+#
+# `just fmt` reaches for the pinned nightly by name instead, so formatting gets
+# the unstable options without putting the whole build on nightly.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+profile = "minimal"

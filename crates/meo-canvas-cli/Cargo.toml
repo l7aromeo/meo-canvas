@@ -1,0 +1,50 @@
+[package]
+name = "meo-canvas-cli"
+description = "Command-line renderer for meo-canvas scene files."
+keywords = ["canvas", "cli", "rendering", "layout", "graphics"]
+categories = ["command-line-utilities", "graphics", "rendering"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "meo-canvas"
+path = "src/main.rs"
+# The binary shares a name with the library crate, so both would write
+# `target/doc/meo_canvas/index.html` and cargo reports a filename collision. The
+# library's documentation is the one that gets published; the binary's interface
+# is `--help`.
+doc = false
+
+[features]
+# Off by default. With `net` the CLI resolves `ImageSource::Url` before handing
+# the scene to the core, which stays fetch-free either way; without it, a URL is
+# the same error a Rust caller gets. Default-off because a renderer that reaches
+# the network on an input file's say-so is a surprise, not a convenience.
+default = []
+net = ["dep:ureq"]
+
+[dependencies]
+meo-canvas-core = { workspace = true }
+meo-canvas-scene = { workspace = true }
+clap = { workspace = true }
+# Blocking by construction: ureq 3.4's required dependencies are `base64`,
+# `log`, `percent-encoding`, `ureq-proto` and `utf8-zero` -- no tokio, no
+# futures. reqwest lists `tokio`, `hyper`, `hyper-util` and `tower` as
+# non-optional even before its `blocking` feature is requested, which would put
+# an async runtime inside a synchronous program.
+ureq = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+# Declared for the pass that owns them, which is a signature and an
+# `unimplemented!()` body at this stage -- `cargo-machete` reads imports, and a
+# skeleton has none yet. Each entry comes out the moment its pass is written;
+# an entry still here when the crate is finished is a dependency to delete.
+[package.metadata.cargo-machete]
+ignored = ["meo-canvas-scene", "ureq"]

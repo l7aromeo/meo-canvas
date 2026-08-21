@@ -1,0 +1,48 @@
+[package]
+name = "meo-canvas-node"
+description = "The Node.js addon for meo-canvas: the single Neon module entry point for the shipped binary."
+keywords = ["canvas", "nodejs", "neon", "addon", "rendering"]
+categories = ["graphics", "rendering", "api-bindings"]
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+# `cdylib` only. There is no `rlib`: nothing depends on this crate from Rust, and
+# offering one would invite a dependency that drags Neon into a Rust-only build.
+crate-type = ["cdylib"]
+
+[features]
+# The GPU backend, chosen at build time and named by the platform that has one:
+# Metal on Apple targets, Vulkan elsewhere. Neither is default -- a build with
+# no backend named renders on the CPU, which is what a portable `cargo check`
+# needs and what CI runs before it picks a host.
+default = []
+metal = ["meo-skia-canvas/metal"]
+vulkan = ["meo-skia-canvas/vulkan"]
+
+[dependencies]
+meo-canvas-core = { workspace = true }
+meo-canvas-scene = { workspace = true }
+neon = { workspace = true }
+# Named here as well as under `meo-canvas-core` so the addon can re-export the
+# backend's own surface to JavaScript. `default-features = false` comes from the
+# workspace entry and is what keeps its `node-addon` feature -- and so its own
+# `#[neon::main]` -- out of this binary: a `.node` file has exactly one
+# module-init symbol, and the one in `src/lib.rs` is it.
+meo-skia-canvas = { workspace = true }
+
+[lints]
+workspace = true
+
+# Declared for the pass that owns them, which is a signature and an
+# `unimplemented!()` body at this stage -- `cargo-machete` reads imports, and a
+# skeleton has none yet. Each entry comes out the moment its pass is written;
+# an entry still here when the crate is finished is a dependency to delete.
+[package.metadata.cargo-machete]
+ignored = ["meo-canvas-core", "meo-canvas-scene", "meo-skia-canvas"]

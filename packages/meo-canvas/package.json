@@ -1,0 +1,42 @@
+{
+  "name": "meo-canvas",
+  "version": "0.1.0",
+  "description": "Declarative 2D scene rendering on Skia with CSS flexbox, grid and block layout.",
+  "keywords": [
+    "canvas",
+    "server-side",
+    "image-generation",
+    "declarative",
+    "skia",
+    "layout",
+    "node",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "Ukasyah Rahmatullah Zada",
+  "homepage": "https://github.com/l7aromeo/meo-canvas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l7aromeo/meo-canvas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/l7aromeo/meo-canvas/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["dist", "package.json", "LICENSE", "README.md"]
+}

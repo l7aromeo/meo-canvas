@@ -1,0 +1,116 @@
+[workspace]
+# Edition 2024's resolver, stated rather than inherited: a virtual manifest has
+# no `edition` of its own to infer it from, so leaving this out silently picks
+# resolver 2 for the whole graph.
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# 1.98 is the floor the workspace actually needs and the current stable
+# (`rustc 1.98.0 (88d9e12ae 2026-08-18)`). Nothing here reaches below it, and a
+# lower number would be a claim no CI job checks.
+rust-version = "1.98"
+license = "MIT"
+repository = "https://github.com/l7aromeo/meo-canvas"
+authors = ["L A Romeo <ukasyahrz@outlook.com>"]
+# `readme` is deliberately not inherited: an inherited path resolves against the
+# workspace root, so every member would advertise the same file. Each member
+# names its own.
+
+[workspace.dependencies]
+# Internal members. Both a `path` and a `version` because a member published to
+# crates.io carries the version and a local build follows the path; naming only
+# one makes the crate either unpublishable or untestable.
+meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.1.0" }
+meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0" }
+
+# The drawing backend, from crates.io rather than a path or a workspace member.
+# `default-features = false` is what keeps its `node-addon` feature off, and so
+# keeps its `#[neon::main]` out of the graph: a `.node` addon has exactly one
+# module-init symbol, and `meo-canvas-node` owns it.
+meo-skia-canvas = { version = "0.10.6", default-features = false }
+
+# Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
+# `*const ()` handle the caller resolves, so it adds a surface with no
+# implementation behind it. It is also not what makes `TaffyTree` `!Send` --
+# `CompactLengthInner.tagged_ptr` (taffy-0.13.0/src/style/compact_length.rs:62)
+# is the ungated representation of every length, and a build with `calc`
+# removed fails `assert_send::<TaffyTree<()>>()` identically.
+taffy = { version = "0.13", default-features = false, features = [
+    "flexbox",
+    "grid",
+    "block_layout",
+    "std",
+    "taffy_tree",
+    "content_size",
+] }
+
+neon = "1.1"
+clap = { version = "4.6", features = ["derive"] }
+# The one HTTP client that does not decide the consumer's runtime for them:
+# ureq 3.4's required dependencies are `base64`, `log`, `percent-encoding`,
+# `ureq-proto` and `utf8-zero`, with no tokio and no futures anywhere. reqwest
+# lists `tokio`, `hyper`, `hyper-util` and `tower` as non-optional even before
+# its `blocking` feature is asked for.
+ureq = "3.4"
+thiserror = "2.0"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+missing_debug_implementations = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+trivial_casts = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.rustdoc]
+all = { level = "deny", priority = -1 }
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+missing_crate_level_docs = "deny"
+unescaped_backticks = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# A crate named for its subject repeats that subject in its types. `scene::Scene`
+# and `codec::CodecError` are what a caller writes and what the module tree
+# already says; renaming them to satisfy the lint costs clarity at the call site.
+module_name_repetitions = "allow"
+# Layout arithmetic is `f32` throughout because Skia's and taffy's are. Every
+# integer-to-float and float-to-integer step here is a conversion between two
+# APIs that already disagree, so the casts are the interface, not an oversight.
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+# Geometry code names things `x`/`y`, `width`/`height`, `min`/`max` in pairs.
+# The lint reads those pairs as typo risk; renaming them to satisfy it makes the
+# formulas harder to check against the spec they implement.
+similar_names = "allow"
+# `#[must_use]` on every getter is noise that trains readers to skip the
+# attribute. It stays reserved for returns that are genuinely wasteful to drop.
+must_use_candidate = "allow"
+# The graph carries duplicate transitive versions the workspace does not choose
+# -- `meo-skia-canvas` and `taffy` pin their own. Failing our build over another
+# crate's dependency tree is a lint we could never act on.
+multiple_crate_versions = "allow"
+# `missing_docs = "deny"` already covers the public surface. Extending the same
+# demand to private items turns every three-line helper into a documentation
+# exercise without adding anything a reader of the file does not see.
+missing_docs_in_private_items = "allow"
+
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+undocumented_unsafe_blocks = "deny"
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "warn"
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+str_to_string = "warn"

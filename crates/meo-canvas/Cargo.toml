@@ -1,0 +1,24 @@
+[package]
+name = "meo-canvas"
+description = "Declarative 2D scene rendering on Skia with CSS flexbox, grid and block layout."
+keywords = ["canvas", "layout", "flexbox", "grid", "rendering"]
+categories = ["graphics", "rendering", "multimedia::images"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+meo-canvas-core = { workspace = true }
+meo-canvas-scene = { workspace = true }
+
+# `meo-skia-canvas` and `taffy` are absent on purpose. Both are reachable
+# through `meo-canvas-core`, and naming either here would put its types one
+# `pub use` away from this crate's surface, which is the way a public API
+# acquires a dependency it never meant to promise.
+
+[lints]
+workspace = true

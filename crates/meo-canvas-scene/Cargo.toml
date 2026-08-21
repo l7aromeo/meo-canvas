@@ -1,0 +1,20 @@
+[package]
+name = "meo-canvas-scene"
+description = "Scene description types and the binary wire format that carries them between the Node addon, the CLI and the renderer."
+keywords = ["canvas", "scene", "serialization", "layout", "graphics"]
+categories = ["graphics", "data-structures", "encoding"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# No dependencies at all. The scene is the contract three crates agree on, and a
+# type in that contract that names a skia, taffy or neon type would force every
+# consumer of the contract to link the thing it names.
+[dependencies]
+
+[lints]
+workspace = true

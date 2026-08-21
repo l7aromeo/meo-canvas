@@ -1,0 +1,38 @@
+# Options marked nightly are read only by the toolchain named in the justfile's
+# `fmt_toolchain`. Stable rustfmt ignores them in silence, so `cargo fmt` on
+# stable formats to a weaker rule set than CI checks against -- run `just fmt`,
+# which pins the toolchain that reads them.
+
+# Every option below the `unstable_features` gate needs it. nightly.
+unstable_features = true
+
+# Eighty columns. Comments and code wrap to the same measure, which is what
+# lets a rationale sit beside the line it explains without either reflowing
+# when the other changes.
+max_width = 80
+
+# Prose in doc comments wraps like code rather than running past the margin,
+# so a paragraph reads the same in the source as it does on the rendered page.
+# nightly.
+wrap_comments = true
+
+# Examples inside `///` blocks are formatted like the code around them. An
+# example that drifts from house style reads as a different author's. nightly.
+format_code_in_doc_comments = true
+
+# One `use` per crate, collapsed. The alternative -- a line per item -- turns
+# every added import into a diff hunk in a different place. nightly.
+imports_granularity = "Crate"
+
+# Standard library, then external crates, then this crate, each group apart.
+# Where a name comes from is then a matter of which block it sits in rather
+# than of reading the path. nightly.
+group_imports = "StdExternalCrate"
+
+# Associated items follow the order the trait declares rather than the order
+# they were written, so two impls of one trait read in the same sequence.
+# nightly.
+reorder_impl_items = true
+
+# `Point { x, y }` over `Point { x: x, y: y }`.
+use_field_init_shorthand = true

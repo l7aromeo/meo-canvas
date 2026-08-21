@@ -1,0 +1,88 @@
+# Deny by default, at every depth. Nothing is tracked unless named below.
+*
+
+# Directories are re-included so git descends into them; their contents stay
+# ignored by the rule above until a pattern below names them. A file cannot be
+# re-included while its parent directory is excluded, so this line comes before
+# every allow.
+!*/
+
+# -- Workspace root ---------------------------------------------------------
+!/Cargo.toml
+!/Cargo.lock
+!/justfile
+!/rust-toolchain.toml
+!/rustfmt.toml
+!/AGENTS.md
+!/.gitignore
+!/.gitattributes
+
+# Outward-facing package documentation, which AGENTS.md is not: the README is
+# what crates.io and npm render, and `clippy::cargo` requires the `readme` and
+# `license` metadata that names these. Internal prose stays in AGENTS.md alone.
+!/README.md
+!/LICENSE
+
+# -- Crates -----------------------------------------------------------------
+# Each crate carries its own README because `clippy::cargo` requires the
+# `readme` metadata and crates.io renders it per crate, not per workspace.
+!/crates/*/Cargo.toml
+!/crates/*/README.md
+!/crates/**/*.rs
+
+# What a test opens rather than constructs: a font a measurement needs, an
+# image a decode reads. Scoped to `tests/assets` so a stray binary anywhere
+# else in a crate stays denied.
+!/crates/*/tests/assets/**
+
+# -- TypeScript surface -----------------------------------------------------
+!/packages/*/package.json
+!/packages/*/tsconfig.json
+!/packages/*/README.md
+
+# The package manifest's `files` list names LICENSE, so the tarball npm
+# publishes carries one rather than claiming MIT with nothing to show.
+!/packages/*/LICENSE
+!/packages/**/*.ts
+!/packages/**/*.js
+!/packages/**/*.mjs
+
+# The vendored tree carries the licence of the project it came from. MIT asks
+# for the notice to travel with a substantial portion of the code, and the
+# whole JavaScript surface of another project is one. Keeping it beside the
+# code rather than in the root LICENSE means it stays true if the vendored
+# copy is ever dropped.
+!/packages/*/vendor/LICENSE
+
+# -- Formatter --------------------------------------------------------------
+# The lockfile is tracked because `npm ci` reads it, in CI and in the `fmt`
+# recipe's precondition alike; without it neither installs anything.
+!/package.json
+!/package-lock.json
+!/.prettierrc
+!/.prettierignore
+
+# -- Golden fixtures --------------------------------------------------------
+# Scenes and the images they must produce. The images are the assertion, so
+# they are tracked like source: a diff that changes one is a diff that changes
+# what the renderer draws. `.mcs` is the persistence format, named for the
+# `MCSC` magic that opens it; `.json` is for a case a human writes by hand.
+!/fixtures/**/*.mcs
+!/fixtures/**/*.json
+!/fixtures/**/*.png
+
+# -- CI ---------------------------------------------------------------------
+!/.github/workflows/*.yml
+
+# -- Build output and local configuration -----------------------------------
+# Re-ignored after the allows so git prunes them instead of walking every entry
+# to discover each one is ignored. `!*/` above otherwise makes it descend into
+# all of them.
+#
+# `.cargo/` holds the `[patch.crates-io]` that points meo-skia-canvas at a
+# sibling checkout. That patch is one machine's convenience, and committing it
+# would break every clone that does not have the sibling.
+target/
+node_modules/
+dist/
+.cargo/

@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A push onto a branch with a run already going cancels that run: the older
+# result describes code nobody has any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: ci (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Both platforms report. Cancelling the pair on one failure hides whether
+      # the fault is the code or the backend, which is the first thing to know.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Ahead of the toolchain steps because the step below reads a justfile
+      # variable through `just` itself. Pinned to the minor version the recipes
+      # are written against: the action that installs it is pinned by commit,
+      # and the tool it installs is pinned here, or a `just` release retunes
+      # every recipe without a commit.
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: "1.58.0"
+
+      # Both toolchains are named by the files that define them rather than
+      # restated here, so no version lives in two places and CI cannot install
+      # one toolchain while the recipes ask for another.
+      #
+      # The nightly is read with `just --evaluate` rather than grepped: the
+      # justfile owns that variable, and asking the tool that resolves it cannot
+      # drift from how a recipe resolves it. rust-toolchain.toml has no such
+      # tool on the runner yet, so its channel is read with grep.
+      - name: Read the pinned toolchains
+        id: toolchain
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "nightly=$(just --evaluate fmt_toolchain)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: clippy, llvm-tools-preview
+
+      # Two recipes ask for this toolchain by name and each needs a component of
+      # its own: `fmt-check` needs rustfmt, because rustfmt.toml turns on options
+      # only nightly reads, and `coverage` needs llvm-tools-preview, because
+      # `--branch` rests on `-Z coverage-options=branch` and stable rustc refuses
+      # a `-Z` flag. Installed beside the pinned stable rather than replacing it:
+      # everything else builds on stable.
+      #
+      # The date lives in the justfile, as `fmt_toolchain`, and is read above.
+      # One pin in one file: moving it moves CI with it.
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.nightly }}
+          components: rustfmt, llvm-tools-preview
+
+      # Caches ~/.cargo and target/. `cache-bin` covers ~/.cargo/bin, which is
+      # where the cargo tools below land, so compiling them is a cache-miss cost
+      # rather than a per-run one. Stated rather than left to the default: the
+      # coverage step depends on it, and a default that changes upstream would
+      # turn that into a silent several-minute regression on every run.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.os }}
+          cache-bin: true
+
+      # `just fmt-check` runs prettier, which needs a Node runtime and the
+      # package installed. `cache: npm` keys on package-lock.json, so a run
+      # that changes no dependency restores rather than downloads.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it installs exactly what the
+      # lockfile names and fails when the lockfile and package.json disagree,
+      # which is what a check job wants to hear about.
+      - name: Install the JavaScript dependencies
+        run: npm ci --ignore-scripts
+
+      # `--locked` so a run installs the versions the tools' own lockfiles
+      # name, rather than whatever published since the last cache miss.
+      - name: Install the cargo tools just ci calls
+        run: cargo install --locked cargo-llvm-cov cargo-machete
+
+      - run: just ci

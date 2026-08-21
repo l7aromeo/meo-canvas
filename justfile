@@ -1,0 +1,156 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# The formatting toolchain, by name. rustfmt.toml turns on options that only
+# nightly reads, and nightly rustfmt drifts daily, so the date is pinned and
+# the fmt job in .github/workflows/ci.yml installs this exact one.
+fmt_toolchain := "nightly-2026-08-10"
+
+# The GPU backend meo-skia-canvas compiles on this platform. Only
+# `meo-canvas-node` names it: it builds the cdylib, so it is the crate that
+# forwards a backend feature to meo-skia-canvas. Every other crate builds with
+# no features at all.
+host_features := if os() == "macos" { "metal" } else { "vulkan" }
+
+# Default: show available recipes.
+default:
+    @just --list
+
+# Prettier runs from node_modules, never through `npx`: `npx` reaches the
+# network when the binary is absent, so a formatting check could pull a
+# different version than the one package.json names and report against rules
+# nobody agreed to.
+[private]
+ensure-deps:
+    @test -d node_modules || npm ci --ignore-scripts
+
+# Aggregate: what CI runs. Uses non-fixing variants.
+ci: fmt-check typecheck lint-check layout-check docs test coverage unused
+
+# First-time setup on a fresh clone. Idempotent -- safe to re-run.
+#
+# The nightly carries llvm-tools-preview as well as rustfmt, because `coverage`
+# runs on it: `--branch` rests on `-Z coverage-options=branch`, which stable
+# rustc refuses. A nightly with rustfmt alone formats the tree and then fails
+# the first `just coverage` on a fresh clone.
+#
+# CLAUDE.md is a symlink, never a file: AGENTS.md is the only prose document in
+# the tree, and the symlink is what makes the same text reachable under the
+# other name without a second copy to keep in step. The .gitignore denies it,
+# so it stays local.
+[doc("Install the toolchain, the cargo tools, and the local symlink.")]
+setup:
+    rustup component add rustfmt clippy llvm-tools-preview
+    rustup toolchain install {{ fmt_toolchain }} --component rustfmt --component llvm-tools-preview
+    cargo install --locked cargo-llvm-cov cargo-machete
+    @test -L CLAUDE.md || ln -s AGENTS.md CLAUDE.md
+    @echo "ready -- run \`just ci\`"
+
+# Build every crate, plus the addon with its platform backend.
+#
+# Two invocations because they take different feature sets and one command
+# cannot: a workspace-wide `--features` names features on every member, and
+# only the node crate has a backend to name.
+[doc("Build the workspace and the native addon for this platform.")]
+build:
+    cargo build --workspace
+    cargo build -p meo-canvas-node --features "{{ host_features }}"
+
+# Run the test suite.
+test:
+    cargo test --workspace
+    cargo test -p meo-canvas-node --features "{{ host_features }}"
+
+# Coverage floor is 90%. `--fail-under-*` exits non-zero, so this is the gate
+# rather than a report.
+#
+# Regions, not lines, is the dimension that rots -- the one nothing guards
+# always does, and it is the one that drifts while lines hold.
+#
+# Runs on the pinned nightly so branches are measured at all: `--branch` needs
+# `-Z coverage-options=branch` and stable rustc refuses it. The same toolchain
+# formats the tree, so the pin is one date to move rather than two.
+#
+# The floor is lines and regions because those are the only ones the tool can
+# fail on -- there is no `--fail-under-branches`. Branch percentages reach the
+# report and `target/lcov.info` for reading; regions is what refuses a merge. A
+# region is a span with its own arm count, so an untaken arm still lands in the
+# number that gates.
+#
+# `--doctests` counts what `just test` already runs. Without it, code reached
+# only from a documentation example reads as uncovered and pulls the floor down
+# for being tested the one way the floor cannot see.
+#
+# Nothing is excluded from the denominator. A file earns an exclusion by being
+# generated rather than written, and it is named here one path at a time so
+# that the list is reviewable in a diff.
+[doc("Measure coverage and fail below the 90% floor.")]
+coverage:
+    cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests \
+      --fail-under-lines 90 --fail-under-regions 90 \
+      --lcov --output-path target/lcov.info
+
+# The report, opened, with no floor to fail. What to run while writing tests.
+[doc("Open the coverage report in a browser.")]
+coverage-open:
+    cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --open
+
+# Run clippy with autofix (modifies working tree).
+lint:
+    cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
+    cargo clippy -p meo-canvas-node --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
+
+# Run clippy without fixing (CI-safe).
+#
+# Two passes, because one feature set does not lint the crate. Code reachable
+# only with a backend compiled is dead code without one, and `-D warnings`
+# refuses it -- so the addon goes unlinted unless its own pass names a backend.
+[doc("Run clippy without fixing (CI-safe).")]
+lint-check:
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy -p meo-canvas-node --all-targets --features "{{ host_features }}" -- -D warnings
+
+# Rust on the pinned nightly, then JavaScript, TypeScript and Markdown through
+# prettier. Both halves in one recipe, because `just ci` checks both and a pair
+# of narrower recipes would let someone format one half, see green, and push a
+# tree the check still refuses.
+[doc("Format Rust, JavaScript, TypeScript and Markdown (rewrites the tree).")]
+fmt: ensure-deps
+    cargo +{{ fmt_toolchain }} fmt --all
+    ./node_modules/.bin/prettier --write "**/*.{js,mjs,ts,md}"
+
+# Verify formatting without writing.
+fmt-check: ensure-deps
+    cargo +{{ fmt_toolchain }} fmt --all -- --check
+    ./node_modules/.bin/prettier --check "**/*.{js,mjs,ts,md}"
+
+# The TypeScript surface is what the npm package publishes as its types, and
+# nothing else reads it: prettier parses the file without checking it, and no
+# Rust recipe sees it at all.
+#
+# Not `check`: the `-check` suffix on every other recipe here means "the variant
+# that reports instead of rewriting", and a bare `check` reads as the same idea
+# one word short.
+[doc("Type-check the shipped TypeScript surface.")]
+typecheck: ensure-deps
+    ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json
+
+# No legacy module layout: `foo.rs` beside a `foo/` directory, never a
+# `mod.rs`. No lint expresses this -- rustc, clippy and rustfmt all accept
+# either layout -- so a find is the gate.
+[doc("Fail the build on a mod.rs anywhere under crates/.")]
+layout-check:
+    @! find crates -name mod.rs -print | grep . || { echo "error: mod.rs is banned; use foo.rs beside foo/"; exit 1; }
+
+# `-D warnings` is the whole gate; the rustdoc lint table in Cargo.toml decides
+# which warnings. `--no-deps` keeps dependency documentation out of the build.
+[doc("Fail on a rustdoc warning -- broken intra-doc links above all.")]
+docs:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+# Report dependencies declared in Cargo.toml that nothing imports.
+unused:
+    cargo machete
+
+# Remove all build output.
+clean:
+    cargo clean
