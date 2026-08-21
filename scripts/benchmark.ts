@@ -88,6 +88,100 @@ const panels = (props: Partial<BoxProps>, children?: (index: number) => CanvasEl
   ],
 })
 
+/**
+ * A small backdrop over a source of `ops` drawn boxes.
+ *
+ * The backdrop covers a sliver of the page, so the only variable is how much drawing sits beneath
+ * it. That is the axis a clipped draw of a nested source is charged on, and no other case here
+ * varies it — every one of them draws `NODES` panels, which holds source complexity fixed by
+ * construction.
+ *
+ * Read each against its own control: the backdrop's cost is the difference, which leaves out the
+ * page simply having more to draw. What matters is then how that difference moves with the source.
+ * On 5.6.5 it is 7.6ms at both 40 and 2k ops and 11.3ms at 20k, so 3.7ms of it is charged on the
+ * source rather than on the region. If the cost is the region, that excess is gone and all three
+ * differences land together.
+ *
+ * The backdrop is large deliberately. At 180x24 the difference was near 1.3ms, which three runs
+ * could not separate from noise; at this size the same three runs hold every figure inside 0.4ms.
+ */
+const backdropOverSource = (ops: number, backdrop = true): Partial<RootProps> => ({
+  ...rootBase,
+  children: [
+    Box({
+      width: WIDTH,
+      height: HEIGHT,
+      children: [
+        Box({
+          positionType: Style.PositionType.Absolute,
+          position: { Top: 0, Left: 0 },
+          width: WIDTH,
+          height: HEIGHT,
+          children: [
+            Row({
+              flexWrap: Style.Wrap.Wrap,
+              children: Array.from({ length: ops }, (_, index) => Box({ width: 4, height: 4, backgroundColor: index % 2 ? '#e11d48' : '#0066cc' })),
+            }),
+          ],
+        }),
+        // Dropped for the control, so the pair differs by the backdrop and nothing else.
+        ...(backdrop
+          ? [
+              Box({
+                positionType: Style.PositionType.Absolute,
+                position: { Top: 40, Left: 40 },
+                width: 420,
+                height: 140,
+                borderRadius: 6,
+                backdropFilter: 'blur(12px)',
+                backgroundColor: 'rgba(255,255,255,0.2)',
+              }),
+            ]
+          : []),
+      ],
+    }),
+  ],
+})
+
+/**
+ * The same picture on a page large enough for per-page cost to show.
+ *
+ * Every other case draws 900x680. A cost charged on the page rather than on the node is invisible
+ * at that size: the v5.6.5 bump measured 21% faster on a 2000x1600 page and nothing at all here,
+ * and the bench was what was wrong.
+ */
+const largePageBackdrops = (): Partial<RootProps> => ({
+  ...rootBase,
+  width: 2000,
+  height: 1600,
+  children: [
+    Box({
+      width: 2000,
+      height: 1600,
+      children: [
+        Box({
+          positionType: Style.PositionType.Absolute,
+          position: { Top: 0, Left: 0 },
+          width: 2000,
+          height: 1600,
+          gradient: { type: 'conic', colors: ['#e11d48', '#0066cc', '#00aa00', '#e11d48'] },
+        }),
+        ...Array.from({ length: 6 }, (_, index) =>
+          Box({
+            positionType: Style.PositionType.Absolute,
+            position: { Top: 100 + index * 220, Left: 80 + index * 60 },
+            width: 180,
+            height: 90,
+            borderRadius: 12,
+            backdropFilter: 'blur(8px)',
+            backgroundColor: 'rgba(255,255,255,0.2)',
+          }),
+        ),
+      ],
+    }),
+  ],
+})
+
 const CASES: Case[] = [
   { name: 'baseline: plain boxes', build: () => panels({}) },
   { name: 'borderRadius', build: () => panels({ borderRadius: 10 }) },
@@ -120,6 +214,15 @@ const CASES: Case[] = [
   { name: 'mixBlendMode', build: () => panels({ mixBlendMode: Style.BlendMode.Multiply }) },
   { name: 'backdropFilter blur', build: () => panels({ backdropFilter: 'blur(6px)' }) },
   { name: 'backdropFilter + filter', build: () => panels({ backdropFilter: 'blur(6px)', filter: 'grayscale(1)' }) },
+  // Paired with a control at each size: the backdrop's own cost is the difference between the two,
+  // which is what isolates it from the page simply having more to draw.
+  { name: 'source 40 ops, no backdrop', group: 'backdrop-source', build: () => backdropOverSource(40, false) },
+  { name: 'backdrop over source 40 ops', group: 'backdrop-source', build: () => backdropOverSource(40) },
+  { name: 'source 2k ops, no backdrop', group: 'backdrop-source', build: () => backdropOverSource(2_000, false) },
+  { name: 'backdrop over source 2k ops', group: 'backdrop-source', build: () => backdropOverSource(2_000) },
+  { name: 'source 20k ops, no backdrop', group: 'backdrop-source', build: () => backdropOverSource(20_000, false) },
+  { name: 'backdrop over source 20k ops', group: 'backdrop-source', build: () => backdropOverSource(20_000) },
+  { name: 'large page backdrops', group: 'large-page', build: largePageBackdrops },
   { name: 'backgroundImage tiled', build: () => panels({ backgroundImage: { src: IMAGE, size: 20 } }) },
   {
     name: 'text plain',
