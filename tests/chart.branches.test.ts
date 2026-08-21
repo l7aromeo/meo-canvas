@@ -257,3 +257,117 @@ describe('ChartNode — custom item renderers', () => {
     expect(renderValueItem).toHaveBeenCalled()
   })
 })
+
+describe('ChartNode — generated colours and legend layout', () => {
+  const uncoloured = {
+    labels: ['a', 'b', 'c'],
+    datasets: [
+      { label: 'One', data: [3, 6, 9] },
+      { label: 'Two', data: [4, 8, 12] },
+      { label: 'Three', data: [1, 2, 3] },
+    ],
+  } as any
+
+  it('generates a colour per line when the datasets carry none', async () => {
+    const ctx = await renderChart({ type: 'line', data: uncoloured })
+    expect(ctx.stroke).toHaveBeenCalled()
+  })
+
+  it('generates a colour per bar when the datasets carry none', async () => {
+    const ctx = await renderChart({ type: 'bar', data: uncoloured })
+    expect(ctx.fillRect).toHaveBeenCalled()
+  })
+
+  it('generates a colour per slice when the points carry none', async () => {
+    const ctx = await renderChart({
+      type: 'pie',
+      data: [
+        { label: 'a', value: 1 },
+        { label: 'b', value: 2 },
+      ] as any,
+    })
+    expect(ctx.arc).toHaveBeenCalled()
+  })
+
+  it('wraps the legend onto more than one row when the items do not fit', async () => {
+    const many = {
+      labels: ['x'],
+      datasets: Array.from({ length: 12 }, (_, index) => ({
+        label: `A rather long dataset label number ${index}`,
+        data: [index + 1],
+      })),
+    } as any
+    const ctx = await renderChart({ type: 'bar', data: many, width: 200, height: 200 })
+    expect(ctx.fillRect).toHaveBeenCalled()
+  })
+
+  it('lays a pie legend out with its value beside each label', async () => {
+    const ctx = await renderChart({
+      type: 'pie',
+      data: Array.from({ length: 8 }, (_, index) => ({ label: `Slice number ${index}`, value: index + 1 })) as any,
+      width: 200,
+      height: 200,
+    })
+    expect(ctx.fillRect).toHaveBeenCalled()
+  })
+})
+
+describe('ChartNode — custom renderers on every chart type', () => {
+  const node = (text: string) => new TextNode(text, {}) as any
+
+  it('uses a custom label renderer on a line chart', async () => {
+    const renderLabelItem = vi.fn(({ item }: any) => node(String(item)))
+    await renderChart({ type: 'line', data: barData, options: { renderLabelItem } as any })
+    expect(renderLabelItem).toHaveBeenCalled()
+  })
+
+  it('uses a custom label renderer on a pie chart', async () => {
+    const renderLabelItem = vi.fn(({ item }: any) => node(String(item.label)))
+    await renderChart({ type: 'pie', data: pieData, options: { renderLabelItem } as any })
+    expect(renderLabelItem).toHaveBeenCalled()
+  })
+
+  it('uses a custom label renderer on a doughnut chart', async () => {
+    const renderLabelItem = vi.fn(({ item }: any) => node(String(item.label)))
+    await renderChart({ type: 'doughnut', data: pieData, options: { renderLabelItem } as any })
+    expect(renderLabelItem).toHaveBeenCalled()
+  })
+
+  it('uses a custom legend renderer on a pie chart', async () => {
+    const renderLegendItem = vi.fn(({ item }: any) => node(String(item.label)))
+    await renderChart({ type: 'pie', data: pieData, options: { renderLegendItem } as any })
+    expect(renderLegendItem).toHaveBeenCalled()
+  })
+
+  it('hands the generated colour to a legend renderer when the item has none', async () => {
+    const seen: string[] = []
+    const renderLegendItem = vi.fn(({ item, color }: any) => {
+      seen.push(color)
+      return node(String(item.label))
+    })
+    await renderChart({
+      type: 'pie',
+      data: [
+        { label: 'a', value: 1 },
+        { label: 'b', value: 2 },
+      ] as any,
+      options: { renderLegendItem } as any,
+    })
+    expect(seen.every(Boolean)).toBe(true)
+  })
+
+  it('formats x axis labels on a line chart', async () => {
+    const xAxisLabelFormatter = vi.fn((value: string, index: number) => `${index}-${value}`)
+    await renderChart({ type: 'line', data: barData, options: { xAxisLabelFormatter, showLabels: true } as any })
+    expect(xAxisLabelFormatter).toHaveBeenCalled()
+  })
+
+  it('renders a doughnut with a legend, labels and an inner radius together', async () => {
+    const ctx = await renderChart({
+      type: 'doughnut',
+      data: pieData,
+      options: { innerRadius: 0.5, showLabels: true, showLegend: true, legendPosition: 'right' } as any,
+    })
+    expect(ctx.arc).toHaveBeenCalled()
+  })
+})

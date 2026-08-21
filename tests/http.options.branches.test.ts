@@ -130,4 +130,39 @@ describe('hashHttpOptions — structure', () => {
   it('treats null as a value rather than an object', () => {
     expect(() => hashHttpOptions({ body: null })).not.toThrow()
   })
+
+  it('leaves two entries alike in both key and value in the order they came', () => {
+    const one = new URLSearchParams([
+      ['k', 'same'],
+      ['k', 'same'],
+    ])
+    const two = new URLSearchParams([
+      ['k', 'same'],
+      ['k', 'same'],
+    ])
+    expect(hashHttpOptions({ body: one })).toBe(hashHttpOptions({ body: two }))
+  })
+
+  it('keeps a key whose value survives normalisation', () => {
+    expect(hashHttpOptions({ method: 'GET', redirect: 'follow' })).not.toBe(hashHttpOptions({ method: 'GET' }))
+  })
+
+  it('normalises the elements of a nested array', () => {
+    expect(
+      differs(
+        {
+          headers: [
+            ['a', '1'],
+            ['b', '2'],
+          ],
+        },
+        {
+          headers: [
+            ['a', '1'],
+            ['b', '3'],
+          ],
+        },
+      ),
+    ).toBe(true)
+  })
 })

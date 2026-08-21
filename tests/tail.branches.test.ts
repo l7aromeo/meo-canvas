@@ -214,10 +214,21 @@ describe('cubicBezier', () => {
   })
 
   it('bisects when Newton stalls on a flat section', () => {
-    // A curve with a near-zero slope in the middle is exactly what defeats Newton's method.
-    const ease = cubicBezier(0, 1, 1, 0)
-    const value = ease(0.5)
+    // With both x controls at zero the slope is 3t^2, which near t=0 falls under the epsilon that
+    // stops Newton — the one shape that forces the bisection fallback.
+    const ease = cubicBezier(0, 0, 0, 1)
+    const value = ease(0.001)
     expect(Number.isFinite(value)).toBe(true)
+    expect(value).toBeGreaterThanOrEqual(0)
+    expect(value).toBeLessThanOrEqual(1)
+  })
+
+  it('bisects from both sides of the target', () => {
+    const ease = cubicBezier(0, 0, 0, 1)
+    // Several targets across the range so the search narrows from above and from below.
+    for (const t of [0.002, 0.01, 0.2, 0.6, 0.9]) {
+      expect(Number.isFinite(ease(t))).toBe(true)
+    }
   })
 
   it('holds the endpoints', () => {

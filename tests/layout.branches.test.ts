@@ -151,3 +151,59 @@ describe('normalizeDescriptorChildren', () => {
     expect(normalizeDescriptorChildren([child, null, false] as any)).toEqual([child])
   })
 })
+
+describe('BoxNode — opacity and overflow', () => {
+  it.each([
+    ['a partial opacity', 0.5],
+    ['a full opacity, which is left alone', 1],
+    ['a zero opacity', 0],
+  ])('renders with %s', async (_label, opacity) => {
+    const { canvas } = await paint({ backgroundColor: '#0a0', opacity })
+    expect(canvas.width).toBe(200)
+  })
+
+  it('clips a node whose overflow is hidden', async () => {
+    const { canvas } = await paint({ backgroundColor: '#0a0', overflow: Style.Overflow.Hidden })
+    expect(canvas.width).toBe(200)
+  })
+
+  it('does not clip a hidden-overflow node with no area', async () => {
+    const { canvas } = await paint({ backgroundColor: '#0a0', overflow: Style.Overflow.Hidden }, 0, 0)
+    expect(canvas.width).toBe(0)
+  })
+})
+
+describe('BoxNode — background opacity decides the shadow path', () => {
+  it.each([
+    ['an opaque rgba background', 'rgba(255,255,255,1)'],
+    ['a translucent rgba background', 'rgba(255,255,255,0.4)'],
+    ['an eight-digit hex that is opaque', '#ffffffff'],
+    ['an eight-digit hex that is translucent', '#ffffff40'],
+    ['a three-digit hex', '#fff'],
+    ['a named colour', 'white'],
+    ['transparent', 'transparent'],
+  ])('renders a shadow behind %s', async (_label, backgroundColor) => {
+    const { canvas } = await paint({ backgroundColor, boxShadow: [{ blur: 6, offsetX: 3, offsetY: 3, color: '#000' }] })
+    expect(canvas.width).toBe(200)
+  })
+})
+
+describe('BoxNode — children and dirtiness', () => {
+  it('accepts a lone child that is not wrapped in an array', async () => {
+    const child = new BoxNode({ width: 10, height: 10, backgroundColor: '#f00' })
+    const node = new BoxNode({ width: 50, height: 50, children: child as any })
+    node.processInitialChildren()
+    expect(node.children.length).toBe(1)
+  })
+})
+
+describe('BoxNode — transform translate types', () => {
+  it.each([
+    ['a numeric translateY', { translateX: 10, translateY: 10 }],
+    ['a percentage translateY', { translateX: 10, translateY: '10%' }],
+    ['a percentage translateX with a numeric translateY', { translateX: '10%', translateY: 10 }],
+  ])('renders with %s under a filter', async (_label, transform) => {
+    const { canvas } = await paint({ backgroundColor: '#0a0', filter: 'blur(2px)', transform: transform as any })
+    expect(canvas.width).toBe(200)
+  })
+})

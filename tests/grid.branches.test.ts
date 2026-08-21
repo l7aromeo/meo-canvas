@@ -135,3 +135,57 @@ describe('GridNode — track templates', () => {
     expect(grid.children.length).toBe(2)
   })
 })
+
+describe('GridNode — placement combinations', () => {
+  it.each([
+    ['a span paired with an end', { gridColumn: 'span 2 / 5' }],
+    ['a start paired with a span on rows', { gridRow: '2 / span 3' }],
+    ['a span paired with an end on rows', { gridRow: 'span 2 / 5' }],
+    ['a span on both halves', { gridColumn: 'span 2 / span 3' }],
+    ['a span on both halves of a row', { gridRow: 'span 2 / span 3' }],
+    ['an end before its start', { gridColumn: '4 / 2' }],
+    ['a row end before its start', { gridRow: '4 / 2' }],
+    ['a column fixed with a row span', { gridColumn: '2', gridRow: 'span 2' }],
+    ['a row fixed with a column span', { gridRow: '2', gridColumn: 'span 2' }],
+    ['a span wider than the grid', { gridColumn: 'span 9' }],
+    ['a start past the last track', { gridColumn: '9' }],
+  ])('places an item given %s', (_label, itemProps) => {
+    const grid = layoutGrid({ columns: 4, gap: 6 }, [itemProps, {}, {}])
+    expect(grid.children.length).toBe(3)
+  })
+
+  it('fills around several pinned items', () => {
+    const grid = layoutGrid({ columns: 3 }, [{ gridColumn: '1', gridRow: '1' }, { gridColumn: '3', gridRow: '1' }, {}, {}, { gridColumn: 'span 2' }])
+    expect(grid.children.length).toBe(5)
+  })
+
+  it('lays out explicit rows alongside implicit ones', () => {
+    const grid = layoutGrid({ templateColumns: ['1fr', '1fr'], templateRows: [40] }, [{}, {}, {}, {}])
+    expect(grid.children.length).toBe(4)
+  })
+
+  it('lays out with a row gap and a column gap that differ', () => {
+    const grid = layoutGrid({ columns: 2, gap: { Row: 4, Column: 20 } }, [{}, {}, {}, {}])
+    expect(grid.children.length).toBe(4)
+  })
+
+  it('lays out a grid with padding around it', () => {
+    const grid = layoutGrid({ columns: 2, gap: 8, padding: 16 } as any, [{}, {}, {}])
+    expect(grid.children.length).toBe(3)
+  })
+
+  it('lays out a single column', () => {
+    const grid = layoutGrid({ columns: 1 }, [{}, {}, {}])
+    expect(grid.children.length).toBe(3)
+  })
+
+  it('lays out an empty grid', () => {
+    const grid = layoutGrid({ columns: 3 }, [])
+    expect(grid.children.length).toBe(0)
+  })
+
+  it('lays out items taller than one row', () => {
+    const grid = layoutGrid({ columns: 2, gap: 4 }, [{ height: 120 }, { height: 20 }, { height: 60 }])
+    expect(grid.children.length).toBe(3)
+  })
+})

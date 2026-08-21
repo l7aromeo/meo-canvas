@@ -63,6 +63,7 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     arcTo: vi.fn(),
+    arc: vi.fn(),
     closePath: vi.fn(),
     drawImage: vi.fn(),
     fill: vi.fn(),
@@ -631,6 +632,138 @@ describe('ImageNode & Image factory', () => {
       node.node.calculateLayout(0, 0, Direction.LTR)
       await node.render(ctx, 0, 0)
       expect(ctx.shadowBlur).toBe(0)
+    })
+  })
+
+  describe('object fit across both ratios', () => {
+    const fitted = async (image: { width: number; height: number }, props: Partial<ImageProps>) => {
+      mockLoadImage.mockResolvedValue(image)
+      const ctx = createMockCtx()
+      const node = new ImageNode({ src: 'test.png', width: 100, height: 100, ...props } as ImageProps)
+      await node.load()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      return ctx
+    }
+    const wide = { width: 200, height: 100 }
+    const tall = { width: 100, height: 200 }
+
+    it.each([
+      ['contain', 'contain'],
+      ['cover', 'cover'],
+      ['fill', 'fill'],
+      ['none', 'none'],
+      ['scale-down', 'scale-down'],
+    ])('fits a wide picture with %s', async (_label, objectFit) => {
+      const ctx = await fitted(wide, { objectFit: objectFit as any, aspectRatio: 1 })
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it.each([
+      ['contain', 'contain'],
+      ['cover', 'cover'],
+      ['fill', 'fill'],
+      ['none', 'none'],
+      ['scale-down', 'scale-down'],
+    ])('fits a tall picture with %s', async (_label, objectFit) => {
+      const ctx = await fitted(tall, { objectFit: objectFit as any, aspectRatio: 1 })
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it('scales a picture smaller than the box down only when it must', async () => {
+      const ctx = await fitted({ width: 20, height: 20 }, { objectFit: 'scale-down', aspectRatio: 1 })
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+
+    it('draws nothing when the picture has no size', async () => {
+      const ctx = await fitted({ width: 0, height: 0 }, {})
+      expect(ctx.drawImage).not.toHaveBeenCalled()
+    })
+
+    it('draws nothing when padding and border leave no content box', async () => {
+      const ctx = await fitted(wide, { padding: 60 } as Partial<ImageProps>)
+      expect(ctx.drawImage).not.toHaveBeenCalled()
+    })
+
+    it('draws inside padding when there is room', async () => {
+      const ctx = await fitted(wide, { padding: 10, borderRadius: 8 } as Partial<ImageProps>)
+      expect(ctx.drawImage).toHaveBeenCalled()
+    })
+  })
+
+  describe('load lifecycle', () => {
+    it('calls onLoad once the picture arrives', async () => {
+      const onLoad = vi.fn()
+      const node = new ImageNode({ src: 'test.png', onLoad } as ImageProps)
+      await node.load()
+      expect(onLoad).toHaveBeenCalled()
+    })
+
+    it('starts a load when one is asked for before any began', async () => {
+      const node = new ImageNode({ src: 'test.png' } as ImageProps)
+      await expect(node.getLoadingPromise()).resolves.toBeUndefined()
+    })
+
+    it('hands back the in-flight load rather than starting a second', async () => {
+      const node = new ImageNode({ src: 'test.png' } as ImageProps)
+      const first = node.load()
+      const second = node.getLoadingPromise()
+      await Promise.all([first, second])
+      expect(mockLoadImage).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('remote sources and SVG recolouring', () => {
+    const svgBytes = (fill: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><rect fill="${fill}"/></svg>`)
+
+    const fetchReturning = (body: Buffer, ok = true, status = 200) =>
+      vi.fn(async () => ({ ok, status, arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) }))
+
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('throws with the status when the fetch comes back not ok', async () => {
+      vi.stubGlobal('fetch', fetchReturning(Buffer.from('nope'), false, 404))
+      const node = new ImageNode({ src: 'https://example.com/missing.png' } as ImageProps)
+      await node.load()
+      // The load swallows the throw and leaves the node with nothing to draw.
+      const ctx = createMockCtx()
+      node.processInitialChildren()
+      node.node.calculateLayout(100, 100, Direction.LTR)
+      await node.render(ctx, 0, 0)
+      expect(ctx.drawImage).not.toHaveBeenCalled()
+    })
+
+    it('recognises an SVG the sniffer reports as XML by looking for the tag', async () => {
+      vi.stubGlobal('fetch', fetchReturning(svgBytes('#000')))
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'application/xml' })
+      const node = new ImageNode({ src: 'https://example.com/a.svg', color: '#f00' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('recognises an SVG the sniffer cannot place at all', async () => {
+      vi.stubGlobal('fetch', fetchReturning(svgBytes('#000')))
+      mockFileTypeFromBuffer.mockResolvedValue(undefined)
+      const node = new ImageNode({ src: 'https://example.com/b.svg', color: '#0f0' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('takes the bytes as they are when recolouring changes nothing', async () => {
+      vi.stubGlobal('fetch', fetchReturning(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>')))
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'image/svg+xml' })
+      const node = new ImageNode({ src: 'https://example.com/c.svg', color: '#00f' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
+    })
+
+    it('leaves a remote SVG alone when no colour is asked for', async () => {
+      vi.stubGlobal('fetch', fetchReturning(svgBytes('#123')))
+      mockFileTypeFromBuffer.mockResolvedValue({ mime: 'image/svg+xml' })
+      const node = new ImageNode({ src: 'https://example.com/d.svg' } as ImageProps)
+      await node.load()
+      expect(mockLoadImage).toHaveBeenCalled()
     })
   })
 })

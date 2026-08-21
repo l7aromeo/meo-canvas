@@ -19,7 +19,14 @@ export default defineConfig({
       reportsDirectory: './coverage',
       exclude: ['node_modules/**', 'dist/**', 'scripts/**', '**/__mocks__/**', 'tests/**'],
       thresholds: {
-        'src/canvas/layout.canvas.ts': { lines: 90, statements: 90, functions: 90 },
+        // Global floors. Branches sat at 73% for a long time because only the per-file entries
+        // below existed and none of them named branches -- the one dimension nothing guarded is
+        // the one that drifted.
+        branches: 90,
+        lines: 90,
+        statements: 90,
+        functions: 90,
+        'src/canvas/layout.canvas.ts': { lines: 90, statements: 90, functions: 90, branches: 90 },
         'src/canvas/canvas.helper.ts': { lines: 90, statements: 90, functions: 90 },
         'src/canvas/text.canvas.ts': { lines: 90, statements: 90, functions: 90 },
         'src/util/disk.cache.ts': { lines: 90, statements: 90, functions: 90 },

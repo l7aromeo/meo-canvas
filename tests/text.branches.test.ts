@@ -360,4 +360,100 @@ describe('TextNode — branch coverage', () => {
       expect(ctx.fillText).toHaveBeenCalled()
     })
   })
+
+  describe('combinations the separate cases miss', () => {
+    const noFontBox: CanvasRenderingContext2D['measureText'] = text => createTestTextMetrics({ width: [...text].length * widthPerChar })
+
+    it.each([
+      ['a string fontVariant', 'small-caps'],
+      ['a non-string fontVariant', true],
+    ])('measures an empty line with %s', async (_label, fontVariant) => {
+      const ctx = await render(new TextNode('above\n\nbelow', { fontSize: 16, fontVariant } as any), 400)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a string fontVariant', 'small-caps'],
+      ['a non-string fontVariant', true],
+    ])('wraps rich text with %s', async (_label, fontVariant) => {
+      const ctx = await render(new TextNode('one <b>two</b> three four five six seven eight', { fontSize: 16, fontVariant } as any), 120)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('measures an empty line with a fontVariant and no font box', async () => {
+      const ctx = await render(new TextNode('a\n\nb', { fontSize: 16, fontVariant: 'small-caps' } as any), 400, noFontBox)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('breaks a long word with a fontVariant set', async () => {
+      const ctx = await render(new TextNode('supercalifragilisticexpialidocious', { fontSize: 16, fontVariant: 'small-caps', width: 80 } as any), 80)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('truncates rich text with a fontVariant set', async () => {
+      const ctx = await render(
+        new TextNode('one <b>two</b> three four five six', { fontSize: 16, maxLines: 1, ellipsis: true, fontVariant: 'small-caps' } as any),
+        100,
+      )
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('justifies rich text', async () => {
+      const ctx = await render(new TextNode('alpha <b>beta</b> gamma delta epsilon zeta eta', { fontSize: 16, textAlign: 'justify' } as any), 150)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('decorates rich text that wraps', async () => {
+      const ctx = await render(
+        new TextNode('alpha <color=#f00>beta</color> gamma delta epsilon zeta eta theta', {
+          fontSize: 16,
+          textDecoration: 'underline',
+        } as any),
+        140,
+      )
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('shadows rich text through the per-word path', async () => {
+      const ctx = await render(new TextNode('alpha <b>beta</b> gamma', { fontSize: 16, textShadow: { color: '#000', blur: 2 } } as any), 400)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('wraps text whose spacing pushes it over the edge', async () => {
+      const ctx = await render(new TextNode('one two three four', { fontSize: 16, wordSpacing: '2em', letterSpacing: '0.5em' } as any), 150)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('truncates with maxLines while a lineHeight is set', async () => {
+      const ctx = await render(new TextNode('one two three four five six seven', { fontSize: 16, maxLines: 2, ellipsis: true, lineHeight: 30 } as any), 110)
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('lays truncated text out inside padding and a border', async () => {
+      const ctx = await render(
+        new TextNode('one two three four five six seven', {
+          fontSize: 16,
+          maxLines: 1,
+          ellipsis: true,
+          padding: { Left: 8, Top: 6, Right: 8, Bottom: 6 },
+          border: { Left: 2, Top: 2, Right: 2, Bottom: 2 },
+          borderColor: '#000',
+        } as any),
+        140,
+      )
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+
+    it('renders a stroked and decorated line together', async () => {
+      const ctx = await render(
+        new TextNode('stroked and underlined', {
+          fontSize: 16,
+          textDecoration: 'underline',
+          textStroke: { width: 2, color: '#000' },
+        } as any),
+        400,
+      )
+      expect(ctx.fillText).toHaveBeenCalled()
+    })
+  })
 })

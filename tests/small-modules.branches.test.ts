@@ -159,3 +159,86 @@ describe('colour parsing edges', () => {
     expect(isColor('definitely not a colour')).toBe(false)
   })
 })
+
+describe('comlink proxy transfer handler', () => {
+  it('handles the four shapes canHandle must decide between', async () => {
+    const { Comlink } = await import('@/worker/comlink.setup.js')
+    const handler = Comlink.transferHandlers.get('proxy')!
+    const marked = { [Comlink.proxyMarker]: true }
+    const markedFn = Object.assign(() => {}, { [Comlink.proxyMarker]: true })
+
+    expect(handler.canHandle(marked)).toBe(true)
+    expect(handler.canHandle(markedFn)).toBe(true)
+    expect(handler.canHandle({})).toBe(false)
+    expect(handler.canHandle(null)).toBe(false)
+    expect(handler.canHandle(42)).toBe(false)
+    expect(handler.canHandle('a string')).toBe(false)
+  })
+
+  it('serialises a proxied object onto a Node message port and reads it back', async () => {
+    const { Comlink } = await import('@/worker/comlink.setup.js')
+    const handler = Comlink.transferHandlers.get('proxy')!
+    const [port, transfers] = handler.serialize({ [Comlink.proxyMarker]: true, double: (n: number) => n * 2 }) as [any, unknown[]]
+    expect(transfers).toHaveLength(1)
+
+    const wrapped = handler.deserialize(port) as unknown as { double: (n: number) => Promise<number> }
+    await expect(wrapped.double(21)).resolves.toBe(42)
+    port.close()
+  })
+})
+
+describe('gradient extras', () => {
+  const ctx = {
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createConicGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+  } as unknown as CanvasRenderingContext2D
+  const box = { x: 0, y: 0, width: 100, height: 50 }
+
+  it('reads a radial centre given as a fraction of the box', () => {
+    expect(createGradient(ctx, { type: 'radial', center: { x: 0.25, y: 0.5 }, colors: ['#000', '#fff'] } as any, box).gradient).not.toBeNull()
+  })
+
+  it('reads a radial centre given in pixels', () => {
+    expect(createGradient(ctx, { type: 'radial', center: { x: 40, y: 20 }, colors: ['#000', '#fff'] } as any, box).gradient).not.toBeNull()
+  })
+
+  it('reads a radial centre given as a percentage string', () => {
+    expect(createGradient(ctx, { type: 'radial', center: { x: '25%', y: '50%' }, colors: ['#000', '#fff'] } as any, box).gradient).not.toBeNull()
+  })
+
+  it('defaults a gradient with no direction key at all to top-to-bottom', () => {
+    expect(createGradient(ctx, { type: 'linear', colors: ['#000', '#fff'] } as any, box).gradient).not.toBeNull()
+  })
+
+  it('reports the reason when the renderer refuses to build one', () => {
+    const refusing = { ...ctx, createLinearGradient: vi.fn(() => null) } as unknown as CanvasRenderingContext2D
+    const result = createGradient(refusing, { type: 'linear', colors: ['#000', '#fff'] } as any, box)
+    expect(result.gradient).toBeNull()
+    expect(result.reason).toContain('linear')
+  })
+})
+
+describe('background tile origin', () => {
+  it('takes the natural size on both edges when the size object names neither', () => {
+    const { ctx, drawn } = recordingContext()
+    paintBackgroundImage(ctx, IMAGE, { image: 'x.png', size: {}, repeat: 'no-repeat' } as any, BOX, NO_RADII)
+    expect(drawn[0].slice(2)).toEqual([30, 60])
+  })
+
+  it('starts from the origin when a repeat lands no tile before it', () => {
+    const { ctx, drawn } = recordingContext()
+    paintBackgroundImage(ctx, IMAGE, { image: 'x.png', repeat: 'repeat', size: { width: 10, height: 10 }, position: { x: 0, y: 0 } } as any, BOX, NO_RADII)
+    expect(drawn.length).toBeGreaterThan(0)
+  })
+})
+
+describe('colour alpha defaults', () => {
+  it('defaults the alpha of a colour(srgb …) with none given', () => {
+    expect(parseColor('color(srgb 0.5 0.25 0.125)').a).toBe(1)
+  })
+
+  it('reads an explicit alpha on a colour(srgb …)', () => {
+    expect(parseColor('color(srgb 0.5 0.25 0.125 / 0.5)').a).toBeCloseTo(0.5, 2)
+  })
+})
