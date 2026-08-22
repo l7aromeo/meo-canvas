@@ -8,6 +8,7 @@ import { ArenaWriter, PROPERTY_TABLES, encodeScene, variant, type SideValue } fr
 import { ENUMS, NODE_TAG } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION, type ArenaProperty } from './generated/arena-tables.js'
 import { Box, Image, Path, RichText, Text, type SceneNode } from './node.js'
+import type { PositionType } from './index.js'
 import type { BackgroundImage, Gradient, GradientDirection, Style } from './style.js'
 
 /**
@@ -1175,6 +1176,22 @@ describe('a half-written shorthand', () => {
   })
 })
 
+describe('the positioned values', () => {
+  it('all cross as themselves', () => {
+    // Four values that are not `static`, and each has to reach its own variant:
+    // they differ in where they resolve rather than in when they paint, so a
+    // mix-up between two of them is invisible in paint order and visible only
+    // in a rendered position.
+    const of = (positionType: PositionType): unknown => page(Box({ positionType })).groups.layout?.position_type
+
+    expect(of('static')).toBe('Static')
+    expect(of('relative')).toBe('Relative')
+    expect(of('absolute')).toBe('Absolute')
+    expect(of('fixed')).toBe('Fixed')
+    expect(of('sticky')).toBe('Sticky')
+  })
+})
+
 describe('an offset with no position type', () => {
   it('crosses faithfully, and the layout is what ignores it', () => {
     // `PositionType` defaults to `Static`, CSS's initial value, which ignores
@@ -1566,7 +1583,7 @@ const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
   ['ObjectFit', ['fill', 'contain', 'cover', 'none', 'scale-down']],
   ['Overflow', ['visible', 'hidden', 'scroll']],
   ['PaintOrder', ['fill', 'stroke']],
-  ['PositionType', ['static', 'relative', 'absolute']],
+  ['PositionType', ['static', 'relative', 'absolute', 'fixed', 'sticky']],
   ['TextAlign', ['start', 'end', 'left', 'center', 'right', 'justify']],
   ['TextDecoration', ['none', 'underline', 'overline', 'line-through']],
   ['VerticalAlign', ['top', 'middle', 'bottom']],

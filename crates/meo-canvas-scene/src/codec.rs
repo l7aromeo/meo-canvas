@@ -158,7 +158,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -540,7 +540,7 @@ mod tests {
             opacity: 0.75,
             blend_mode: BlendMode::Luminosity,
             dither: true,
-            z_index: -12,
+            z_index: Some(-12),
         }
     }
 

@@ -134,8 +134,7 @@ wire_enum! {
 wire_enum! {
     /// Whether a node is placed by the flow or by its own offsets.
     ///
-    /// CSS's three positioning schemes that matter to a renderer with no
-    /// scrolling viewport. `static` and `relative` differ in two observable
+    /// CSS's positioning schemes. `static` and `relative` differ in two observable
     /// ways -- whether `inset` moves the node, and whether `z_index` gives it a
     /// place in its parent's stack -- and both were measured in Chrome rather
     /// than read off the specification; see [`LayoutStyle::inset`] and
@@ -159,6 +158,23 @@ wire_enum! {
         /// nothing reads.
         #[default]
         Static = 2,
+        /// Placed by `inset` against the page rather than against an ancestor.
+        ///
+        /// CSS resolves `fixed` against the viewport, and a still render's
+        /// viewport is its page — there is nothing to scroll relative to, so
+        /// the page is the whole of it.
+        Fixed = 3,
+        /// Placed by the flow, and **identical to [`Relative`] here**.
+        ///
+        /// [`Relative`]: PositionType::Relative
+        ///
+        /// Not a gap: CSS's `sticky` is defined against a scroll position, and
+        /// a still image has none. Chrome draws a sticky element exactly where
+        /// it draws a relative one at scroll offset zero, which is the only
+        /// offset a page ever has here. Carried as its own variant so a scene
+        /// ported from a document keeps saying what it meant, and so a future
+        /// paged or scrolling surface has the word already on the wire.
+        Sticky = 4,
     }
 }
 
@@ -435,7 +451,7 @@ mod tests {
         assert_eq!(FlexWrap::ALL.len(), 3);
         assert_eq!(Justify::ALL.len(), 6);
         assert_eq!(Align::ALL.len(), 8);
-        assert_eq!(PositionType::ALL.len(), 3);
+        assert_eq!(PositionType::ALL.len(), 5);
         assert_eq!(Overflow::ALL.len(), 3);
         assert_eq!(BoxSizing::ALL.len(), 2);
         assert_eq!(Direction::ALL.len(), 2);

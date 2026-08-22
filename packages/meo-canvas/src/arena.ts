@@ -1056,7 +1056,16 @@ const PAINT_PROPERTIES: readonly Property[] = [
   { index: 7, rust: 'opacity', keys: ['opacity'], write: (out, style) => out.f32(style.opacity as number) },
   { index: 8, rust: 'blend_mode', keys: ['mixBlendMode'], write: (out, style) => out.enum(variant(BLEND_MODE, style.mixBlendMode as string, 'mixBlendMode')) },
   { index: 9, rust: 'dither', keys: ['dither'], write: (out, style) => out.bool(style.dither as boolean) },
-  { index: 10, rust: 'z_index', keys: ['zIndex'], write: (out, style) => out.integer(style.zIndex as number) },
+  // Optional on the wire because CSS's `auto` is not a number: `Some(0)` and
+  // absent sort the same and differ in whether the node establishes a stacking
+  // context. A caller who writes `zIndex` means a number, so the surface has no
+  // spelling for `auto` — leaving it unset is what says it.
+  {
+    index: 10,
+    rust: 'z_index',
+    keys: ['zIndex'],
+    write: (out, style) => out.optional(style.zIndex, index => out.integer(index)),
+  },
 ]
 
 /**

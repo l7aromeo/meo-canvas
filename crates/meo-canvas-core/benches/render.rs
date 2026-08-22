@@ -273,7 +273,9 @@ fn benches(c: &mut Criterion) {
             for node in &black_box(&large).nodes {
                 let mut children = node.children.clone();
                 children.sort_by_key(|child| {
-                    large.get(*child).map_or(0, |c| c.paint.z_index)
+                    large
+                        .get(*child)
+                        .map_or(0, |c| c.paint.z_index.unwrap_or(0))
                 });
                 total += children.len();
             }

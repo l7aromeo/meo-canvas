@@ -39,6 +39,7 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("gradients", gradients()),
         ("text-descenders", text_descenders()),
         ("baseline-alignment", baseline_alignment()),
+        ("stacking-hoist", stacking_hoist()),
     ]
 }
 
@@ -407,6 +408,71 @@ fn baseline_alignment() -> Scene {
         .children([
             row(Align::Baseline, "align-items: baseline - DEFECTIVE, bottoms align"),
             row(Align::FlexStart, "align-items: flex-start - control row"),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// A negative-`z_index` child under three parents, two of which must hoist it.
+///
+/// **This fixture pins a defect.** A child at `z_index: -1` belongs to the
+/// nearest ancestor that establishes a stacking context, and paints there
+/// *before* that ancestor's own background. A parent that establishes no
+/// context does not keep the child: it hoists to the grandparent, where the
+/// parent's background then covers it.
+///
+/// This renderer sorts children within each node and only within each node, so
+/// every node behaves as though it established a context and the child is never
+/// lifted out. Two of these three cells are therefore wrong today.
+///
+/// The third is the control, and it is why there are three. It is the cell that
+/// looks right today and must **keep** looking right: its parent establishes a
+/// context for real, so the child belongs to it and paints above its
+/// background. Two cells flipping while one holds says the fix was the hoist
+/// rather than a change of sign.
+///
+/// The clipping cell is here for a second reason worth keeping. `overflow:
+/// hidden` is the trigger most often assumed to establish a context and does
+/// not, and this renderer is on the right side of that **by construction** —
+/// `enter_node` clips with `clip_to_box` rather than opening a layer. A future
+/// change that reaches for `save_layer` to clip would create a context the
+/// measurement says must not exist, and this cell is what would catch it.
+fn stacking_hoist() -> Scene {
+    let child = || {
+        BoxNode::new()
+            .position_type(PositionType::Absolute)
+            .position(sides(Some(px(10.0)), None, None, Some(px(10.0))))
+            .size(px(36.0), px(36.0))
+            .background_color(hex_rgb(0x28_50_dc))
+            .z_index(-1)
+    };
+    let cell = |name: &str| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(56.0), px(56.0))
+            .background_color(hex_rgb(0xdc_28_28))
+            .name(name)
+            .children(child())
+    };
+
+    Root::new(200.0, 72.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .align_items(Align::Center)
+        .gap_xy(px(0.0), px(8.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("PINNED DEFECT: cells 0 and 1 must hide the child and do not. See notes.json.")
+        .children([
+            cell("no context - DEFECTIVE, child must hoist and be covered"),
+            cell("overflow: hidden - DEFECTIVE, clipping is not a context")
+                .overflow(Overflow::Hidden),
+            // Opacity below one establishes a context in Chrome and opens a
+            // layer here, so this cell is correct today and must stay correct.
+            // 0.99 rather than something lower: the cell is about the context
+            // rather than about the blend, and a barely-transparent red is
+            // still red to a reader.
+            cell("opacity: 0.99 - CONTROL, a real context keeps its child")
+                .opacity(0.99),
         ])
         .into_scene()
         .unwrap_or_else(|error| unreachable!("{error}"))

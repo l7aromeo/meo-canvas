@@ -366,8 +366,27 @@ pub struct PaintStyle {
     /// Whether to dither the fill, which hides banding in a wide gradient at
     /// the cost of a noisier flat area.
     pub dither: bool,
-    /// Paint order among siblings. Higher draws later.
-    pub z_index: i32,
+    /// Paint order among siblings, and whether this node isolates them.
+    ///
+    /// `None` is CSS's `auto` and the initial value. **It is not the same as
+    /// `Some(0)`**, and the difference is not the paint order — the two sort
+    /// identically — but whether the node establishes a stacking context. A
+    /// positioned node at `z-index: 0` establishes one and confines its
+    /// negative-`z_index` descendants; the same node at `auto` does not, and
+    /// those descendants belong to an ancestor's context instead, where they
+    /// paint before this node's own background.
+    ///
+    /// Measured rather than read off the specification: a positioned parent
+    /// with a `z-index: -1` child hides that child at `z-index: auto` and
+    /// shows it at `z-index: 0`.
+    ///
+    /// The distinction has to live in the data, because an `i32` defaulting to
+    /// `0` says every positioned node establishes a context and no amount of
+    /// care in the painter can recover a difference the scene never recorded.
+    /// It is the same rule as [`crate::Scene::gpu`] and an unpinned `inset`
+    /// edge: a default that means something other than the same value stated
+    /// explicitly cannot be a default, it has to be absent.
+    pub z_index: Option<i32>,
 }
 
 impl Default for PaintStyle {
@@ -383,7 +402,7 @@ impl Default for PaintStyle {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             dither: false,
-            z_index: 0,
+            z_index: None,
         }
     }
 }
@@ -413,7 +432,7 @@ mod tests {
         assert_eq!(style.border_color_all, Color::BLACK);
         assert!((style.opacity - 1.0).abs() < f32::EPSILON);
         assert!(!style.dither);
-        assert_eq!(style.z_index, 0);
+        assert_eq!(style.z_index, None);
         assert!(style.gradient.is_none());
         assert!(style.background_image.is_none());
     }

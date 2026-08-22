@@ -1006,8 +1006,11 @@ impl Style {
         if let Some(value) = self.dither {
             paint.dither = value;
         }
+        // A caller who states a `z_index` means it, so the scene's `None` --
+        // CSS's `auto` -- is what an unset style leaves rather than something
+        // this surface can spell. Saying `auto` explicitly is saying nothing.
         if let Some(value) = self.z_index {
-            paint.z_index = value;
+            paint.z_index = Some(value);
         }
 
         text.font_family = self.font_family;
@@ -1172,7 +1175,7 @@ mod tests {
             12.0_f32.to_bits()
         );
         assert_eq!(paint.opacity.to_bits(), 0.5_f32.to_bits());
-        assert_eq!(paint.z_index, 3);
+        assert_eq!(paint.z_index, Some(3));
         assert!(paint.dither);
     }
 

@@ -7,7 +7,7 @@
 export const MAGIC = 1296649810
 
 /** The revision a writer of this table emits. */
-export const VERSION = 3
+export const VERSION = 4
 
 /**
  * Bits one mask slot holds.
@@ -76,7 +76,7 @@ export const PAINT: readonly ArenaProperty[] = [
   { index: 7, name: "opacity", type: "f32" },
   { index: 8, name: "blend_mode", type: "meo_canvas_scene::style::paint::BlendMode" },
   { index: 9, name: "dither", type: "bool" },
-  { index: 10, name: "z_index", type: "i32" },
+  { index: 10, name: "z_index", type: "Option<i32>" },
 ]
 
 /** Mask slots `paint` occupies. */

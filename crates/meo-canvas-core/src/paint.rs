@@ -356,10 +356,28 @@ pub fn draw(
 /// scene is caller data, and a tree deeper than the thread's stack would abort
 /// the process instead of returning an error. The explicit `Leave` is what
 /// keeps `save`/`restore` balanced without the call stack to unwind it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Step {
     Enter(NodeId),
-    Leave { layers: u8 },
+    /// A participant, and the clipping ancestors between it and its context.
+    ///
+    /// A hoisted node paints as a sibling of its context root rather than
+    /// nested under its parent, so nothing would apply the `overflow` of the
+    /// parents it was lifted past. Clipping is not stacking: CSS applies an
+    /// ancestor's clip to a descendant however the two are ordered.
+    ///
+    /// **Only a clip can be owed.** Every other thing an ancestor could impose
+    /// — a transform, an opacity, a blend, a mask, a filter — establishes a
+    /// stacking context, so a node carrying one is never an intermediate. That
+    /// is what makes this a list of rectangles rather than a replay of the
+    /// ancestors' state.
+    EnterClipped {
+        id: NodeId,
+        clips: Vec<NodeId>,
+    },
+    Leave {
+        layers: u8,
+    },
 }
 
 fn walk(
@@ -380,6 +398,43 @@ fn walk(
                 }
                 context.restore();
             }
+            Step::EnterClipped { id, clips } => {
+                let (Some(rect), Some(node)) = (layout.get(id), scene.get(id))
+                else {
+                    continue;
+                };
+
+                context.save();
+                // The clips this node was hoisted past, outermost first, so a
+                // nested `overflow` narrows in the order the tree does.
+                for owed in &clips {
+                    let (Some(rect), Some(owed)) =
+                        (layout.get(*owed), scene.get(*owed))
+                    else {
+                        continue;
+                    };
+                    clip_to_box(context, &owed.paint, rect)?;
+                }
+
+                let layers = enter_node(context, node, rect)?;
+                paint_box(context, resolved, id, node, rect)?;
+                paint_kind(
+                    context, resolved, layout, measurer, id, node, rect,
+                )?;
+
+                stack.push(Step::Leave { layers });
+                // **Only a context gathers.** A participant that establishes
+                // none was reached by its own context's walk, which already
+                // collected everything beneath it; gathering again here would
+                // paint that subtree a second time.
+                if establishes_stacking_context(node) {
+                    for participant in
+                        participants(scene, id, node).into_iter().rev()
+                    {
+                        stack.push(participant);
+                    }
+                }
+            }
             Step::Enter(id) => {
                 // A node with no rectangle was never laid out, which for a
                 // `Display::None` subtree is the whole subtree: layout does not
@@ -397,8 +452,14 @@ fn walk(
                 )?;
 
                 stack.push(Step::Leave { layers });
-                for &child in z_ordered(scene, node).iter().rev() {
-                    stack.push(Step::Enter(child));
+                // Everything this context paints, in CSS's order, gathered
+                // *through* descendants that establish no context of their own.
+                // A participant that does establish one is entered here and
+                // gathers its own.
+                for participant in
+                    participants(scene, id, node).into_iter().rev()
+                {
+                    stack.push(participant);
                 }
             }
         }
@@ -406,27 +467,151 @@ fn walk(
     Ok(())
 }
 
-/// Children in the order they are drawn.
+/// Everything one stacking context paints, in the order it paints them.
 ///
-/// `z_index` first, document order within it. The sort is stable, which is
-/// what makes "document order within a z-index" true rather than incidental.
+/// # Why this is not simply the children
 ///
-/// A child's `z_index` counts only where CSS says it does -- see
-/// [`stacks_by_z_index`]. A child it does not apply to sorts as though it
-/// carried zero, which leaves it in document order among its siblings instead
-/// of jumping the ones the index does apply to.
-fn z_ordered(scene: &meo_canvas_scene::Scene, node: &Node) -> Vec<NodeId> {
-    let mut children = node.children.clone();
-    children.sort_by_key(|child| {
-        scene.get(*child).map_or(0, |child| {
-            if stacks_by_z_index(node, child) {
-                child.paint.z_index
+/// A stacking context gathers its descendants **through** any that establish no
+/// context of their own. A `z-index: -1` child of a plain `<div>` does not
+/// belong to that div's stack — the div has no stack — it belongs to the
+/// nearest ancestor that has one, where it paints *before* that ancestor's
+/// content and so behind the div's own background.
+///
+/// Painting each node's children under that node, which is what this did
+/// before, gives every node a stack of its own. Measured: a `z-index: -1` child
+/// showed through in all three of a plain parent, an `overflow: hidden` parent
+/// and an `isolation: isolate` one, where Chrome shows it only in the third.
+///
+/// # The order
+///
+/// CSS's painting order, restricted to what a scene here can hold: negative
+/// `z_index` first, then descendants the index does not apply to, then those it
+/// does at zero or above. The sort is stable, so tree order decides within a
+/// rank — which is what makes "document order within a z-index" true rather
+/// than incidental.
+///
+/// A participant that establishes a context is one entry, entered whole. Its
+/// own descendants are gathered by its own call and never appear here.
+fn participants(
+    scene: &meo_canvas_scene::Scene,
+    root: NodeId,
+    node: &Node,
+) -> Vec<Step> {
+    /// One participant, the two keys it sorts by, and what it was hoisted past.
+    struct Ranked {
+        id: NodeId,
+        z: i32,
+        /// Whether the index applied. CSS paints the descendants it does not
+        /// apply to before the positioned ones at the same depth, so this
+        /// breaks a tie at zero in the direction the specification does.
+        indexed: bool,
+        /// Clipping ancestors between this node and the context root,
+        /// outermost first. See [`Step::EnterClipped`].
+        clips: Vec<NodeId>,
+    }
+
+    let mut found: Vec<Ranked> = Vec::new();
+    // Iterative for the reason `walk` is: a scene is caller data, and a tree
+    // deeper than the thread's stack would abort rather than return an error.
+    // A pre-order walk, so `found` is in document order before it is sorted and
+    // the sort's stability is what decides ties.
+    let mut pending: Vec<(NodeId, NodeId, Vec<NodeId>)> = node
+        .children
+        .iter()
+        .rev()
+        .map(|child| (*child, root, Vec::new()))
+        .collect();
+
+    while let Some((id, parent_id, clips)) = pending.pop() {
+        let (Some(source), Some(parent)) =
+            (scene.get(id), scene.get(parent_id))
+        else {
+            continue;
+        };
+
+        let indexed = stacks_by_z_index(parent, source);
+        found.push(Ranked {
+            id,
+            z: if indexed {
+                source.paint.z_index.unwrap_or(0)
             } else {
                 0
+            },
+            indexed,
+            clips: clips.clone(),
+        });
+
+        // Descend only through nodes with no context of their own. One that
+        // has a context is a single participant here and gathers its own
+        // descendants when it is entered.
+        if !establishes_stacking_context(source) {
+            // A child hoisted past this node still owes its clip.
+            let mut inherited = clips;
+            if clips_its_children(source) {
+                inherited.push(id);
             }
+            pending.extend(
+                source
+                    .children
+                    .iter()
+                    .rev()
+                    .map(|child| (*child, id, inherited.clone())),
+            );
+        }
+    }
+
+    found.sort_by_key(|ranked| (ranked.z, ranked.indexed));
+    found
+        .into_iter()
+        .map(|ranked| Step::EnterClipped {
+            id: ranked.id,
+            clips: ranked.clips,
         })
-    });
-    children
+        .collect()
+}
+
+/// Whether this node's `overflow` clips what is inside it.
+///
+/// Not a stacking-context trigger, which is the whole point: a clip binds a
+/// descendant however the two are ordered, so a node hoisted out of a clipping
+/// parent is still clipped by it.
+const fn clips_its_children(node: &Node) -> bool {
+    !matches!(node.layout.overflow.0, Overflow::Visible)
+        || !matches!(node.layout.overflow.1, Overflow::Visible)
+}
+
+/// Whether this node establishes a stacking context.
+///
+/// The declarations that create one, of the twenty-seven CSS lists, restricted
+/// to those a still renderer can observe and this scene can express:
+///
+/// - **positioned with a `z_index` other than `auto`** — `Some(_)`, not
+///   `Some(0)` against `None`: `Some(0)` creates a context and `None` does not,
+///   which is the whole reason [`PaintStyle::z_index`] is an `Option`
+/// - an `opacity` below one
+/// - a `blend_mode` other than `Normal`
+/// - a `mask`, which stands for CSS's `clip-path` and `mask-image` both
+/// - a `transform`
+/// - a `filter` or a `backdrop_filter`
+///
+/// `overflow` is **not** one, and that is the trap this list exists to avoid:
+/// clipping is not isolation. Measured in Chrome — a `z-index: -1` child of an
+/// `overflow: hidden` parent is hidden exactly as it is under a plain one.
+///
+/// Absent because the scene cannot say them: `isolation` and `contain`, whose
+/// only observable effect in a still render *is* the context, and which are
+/// worth adding once the painter can act on one. Absent because they mean
+/// nothing here: `will-change`, a promise about a future value in a renderer
+/// that draws once, and `perspective`, since nothing else here is 3D.
+fn establishes_stacking_context(node: &Node) -> bool {
+    let positioned = !matches!(node.layout.position_type, PositionType::Static);
+    (positioned && node.paint.z_index.is_some())
+        || node.paint.opacity < OPAQUE
+        || node.paint.blend_mode != BlendMode::Normal
+        || node.effects.mask.is_some()
+        || node.effects.transform.is_some()
+        || node.effects.filter.is_some()
+        || node.effects.backdrop_filter.is_some()
 }
 
 /// Whether `child`'s `z_index` gives it a place in `parent`'s stack.
@@ -1185,8 +1370,8 @@ mod tests {
 
     use super::{
         ColorSpace, ColorType, Display, GradientGeometry, LinearDirection,
-        PositionType, Surface, SurfaceOptions, draw, fit_image, gradient_line,
-        pixel_size, resolve_length, to_skia_blend, z_ordered,
+        Overflow, PositionType, Surface, SurfaceOptions, draw, fit_image,
+        gradient_line, participants, pixel_size, resolve_length, to_skia_blend,
     };
     use crate::{
         layout::LayoutResult,
@@ -1216,6 +1401,24 @@ mod tests {
             gpu: true,
             ..on_the_cpu()
         }
+    }
+
+    /// The ids `participants` returns, in order, for a test that cares only
+    /// about the order.
+    fn ordered_ids(scene: &Scene, root: NodeId) -> Vec<NodeId> {
+        let node = scene
+            .get(root)
+            .unwrap_or_else(|| unreachable!("the root is in the scene"));
+        participants(scene, root, node)
+            .into_iter()
+            .map(|step| match step {
+                super::Step::EnterClipped { id, .. }
+                | super::Step::Enter(id) => id,
+                super::Step::Leave { .. } => {
+                    unreachable!("participants yields no leave")
+                }
+            })
+            .collect()
     }
 
     fn box_rect(width: f32, height: f32) -> Rect {
@@ -1422,14 +1625,11 @@ mod tests {
                 .push(NodeId::ROOT, Node::container())
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = z;
+                node.paint.z_index = Some(z);
             }
             ids.push(id);
         }
-        let root = scene
-            .get(NodeId::ROOT)
-            .unwrap_or_else(|| unreachable!("a new scene has a root"));
-        let ordered = z_ordered(&scene, root);
+        let ordered = ordered_ids(&scene, NodeId::ROOT);
 
         // -1 first, then the two zeroes in the order they were added, then 2.
         assert_eq!(ordered, vec![ids[1], ids[2], ids[3], ids[0]]);
@@ -1450,18 +1650,101 @@ mod tests {
                 .push(NodeId::ROOT, Node::container())
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = z;
+                node.paint.z_index = Some(z);
                 // Explicit rather than left to the default, so the test still
                 // means what it says if the default ever moves.
                 node.layout.position_type = PositionType::Static;
             }
             ids.push(id);
         }
+        assert_eq!(ordered_ids(&scene, NodeId::ROOT), ids);
+    }
+
+    #[test]
+    fn a_negative_child_is_hoisted_out_of_a_parent_that_makes_no_context() {
+        // The defect `fixtures/stacking-hoist` pins, as an ordering assertion.
+        // A `z_index: -1` child of a parent with no stacking context belongs to
+        // the *grandparent's* context, where it paints before the parent's own
+        // background — so it comes first in the page's participant list rather
+        // than being nested under a parent that paints before it.
+        let mut scene = Scene::new(Size::new(40.0, 40.0));
+        let parent = scene
+            .push(NodeId::ROOT, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut child = Node::container();
+        child.layout.position_type = PositionType::Relative;
+        child.paint.z_index = Some(-1);
+        let child = scene
+            .push(parent, child)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(
+            ordered_ids(&scene, NodeId::ROOT),
+            vec![child, parent],
+            "the child should paint before the parent it was hoisted out of"
+        );
+    }
+
+    #[test]
+    fn a_parent_that_makes_a_context_keeps_its_negative_child() {
+        // The control cell. `z_index: Some(0)` on a positioned parent is a
+        // stacking context where `None` is not — the two sort identically and
+        // differ only here — so the child stays inside and the page's list
+        // holds the parent alone.
+        let mut scene = Scene::new(Size::new(40.0, 40.0));
+        let mut parent = Node::container();
+        parent.layout.position_type = PositionType::Relative;
+        parent.paint.z_index = Some(0);
+        let parent = scene
+            .push(NodeId::ROOT, parent)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut child = Node::container();
+        child.layout.position_type = PositionType::Relative;
+        child.paint.z_index = Some(-1);
+        let child = scene
+            .push(parent, child)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(ordered_ids(&scene, NodeId::ROOT), vec![parent]);
+        assert_eq!(ordered_ids(&scene, parent), vec![child]);
+    }
+
+    #[test]
+    fn a_hoisted_child_still_owes_the_clip_it_was_lifted_past() {
+        // Clipping is not stacking. `overflow` creates no context, so the child
+        // is hoisted — and it is still clipped by the parent it left, because
+        // CSS applies an ancestor's clip however the two are ordered.
+        let mut scene = Scene::new(Size::new(40.0, 40.0));
+        let mut parent = Node::container();
+        parent.layout.overflow = (Overflow::Hidden, Overflow::Hidden);
+        let parent = scene
+            .push(NodeId::ROOT, parent)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut child = Node::container();
+        child.layout.position_type = PositionType::Relative;
+        child.paint.z_index = Some(-1);
+        let child = scene
+            .push(parent, child)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
         let root = scene
             .get(NodeId::ROOT)
             .unwrap_or_else(|| unreachable!("a new scene has a root"));
+        let owed: Vec<Vec<NodeId>> = participants(&scene, NodeId::ROOT, root)
+            .into_iter()
+            .filter_map(|step| match step {
+                super::Step::EnterClipped { id, clips } if id == child => {
+                    Some(clips)
+                }
+                _ => None,
+            })
+            .collect();
 
-        assert_eq!(z_ordered(&scene, root), ids);
+        assert_eq!(
+            owed,
+            vec![vec![parent]],
+            "the hoisted child owes its clipping parent"
+        );
     }
 
     #[test]
@@ -1479,16 +1762,12 @@ mod tests {
                 .push(NodeId::ROOT, Node::container())
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = z;
+                node.paint.z_index = Some(z);
                 node.layout.position_type = PositionType::Relative;
             }
             ids.push(id);
         }
-        let root = scene
-            .get(NodeId::ROOT)
-            .unwrap_or_else(|| unreachable!("a new scene has a root"));
-
-        assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
+        assert_eq!(ordered_ids(&scene, NodeId::ROOT), vec![ids[1], ids[0]]);
     }
 
     #[test]
@@ -1505,17 +1784,13 @@ mod tests {
                 .push(NodeId::ROOT, Node::container())
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = z;
+                node.paint.z_index = Some(z);
                 node.layout.position_type = PositionType::Absolute;
             }
             ids.push(id);
         }
-        let root = scene
-            .get(NodeId::ROOT)
-            .unwrap_or_else(|| unreachable!("a new scene has a root"));
-
         // Second-added draws first: it is positioned, so its -1 counts.
-        assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
+        assert_eq!(ordered_ids(&scene, NodeId::ROOT), vec![ids[1], ids[0]]);
     }
 
     #[test]
@@ -1532,15 +1807,11 @@ mod tests {
                 .push(NodeId::ROOT, Node::container())
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = z;
+                node.paint.z_index = Some(z);
             }
             ids.push(id);
         }
-        let root = scene
-            .get(NodeId::ROOT)
-            .unwrap_or_else(|| unreachable!("a new scene has a root"));
-
-        assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
+        assert_eq!(ordered_ids(&scene, NodeId::ROOT), vec![ids[1], ids[0]]);
     }
 
     /// The renderer's [`meo_skia_canvas::PixelDepth`] as ours.

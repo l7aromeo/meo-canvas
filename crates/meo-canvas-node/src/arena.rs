@@ -151,7 +151,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 3.0;
+pub const VERSION: f64 = 4.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -724,7 +724,7 @@ arena_group! {
         7 => opacity: f32,
         8 => blend_mode: meo_canvas_scene::style::paint::BlendMode,
         9 => dither: bool,
-        10 => z_index: i32,
+        10 => z_index: Option<i32>,
     }
 }
 

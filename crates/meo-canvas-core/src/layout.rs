@@ -130,7 +130,15 @@ where
     // after the build asks which taffy node a scene node became.
     let mut to_scene: HashMap<taffy::NodeId, NodeId> = HashMap::new();
 
-    let root = build(scene, page, &mut tree, &mut to_scene)?;
+    // `Fixed` nodes are collected on the way down and attached to the page
+    // root here rather than to the parents they sit under in the scene. See
+    // `build`.
+    let mut fixed = Vec::new();
+    let root = build(scene, page, &mut tree, &mut to_scene, &mut fixed)?;
+    for node in fixed {
+        tree.add_child(root, node)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
     pin_page_root(scene, page, root, &mut tree)?;
 
     let available = taffy::Size {
@@ -221,11 +229,30 @@ fn pin_page_root(
 /// The scene defines the node and its descendants as neither laid out nor
 /// drawn, and a node taffy never sees cannot contribute a rectangle that paint
 /// would then have to know to skip.
+/// Builds the taffy tree for a subtree, hoisting its `Fixed` nodes.
+///
+/// # Why a `Fixed` node is not a child of its parent here
+///
+/// CSS resolves `fixed` against the viewport, and a still render's viewport is
+/// its page — there is nothing to scroll relative to, so the page is the whole
+/// of it. taffy resolves an absolute child against **its parent** and has no
+/// notion of a nearest positioned ancestor, so the containing block is decided
+/// by where a node is attached rather than by anything in its style.
+///
+/// So a `Fixed` node is built, left out of its parent's children, and handed up
+/// to be attached to the page root. It keeps its place in the *scene* tree,
+/// which is what the painter walks: out of flow for layout, in place for paint
+/// order and for style inheritance.
+///
+/// No sibling moves as a result. An out-of-flow child contributes nothing to
+/// its parent's flow, so removing it from that parent's children changes
+/// nothing the solver would have done with it.
 fn build(
     scene: &Scene,
     node: NodeId,
     tree: &mut taffy::TaffyTree<NodeId>,
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
+    fixed: &mut Vec<taffy::NodeId>,
 ) -> Result<taffy::NodeId, Error> {
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
@@ -233,16 +260,25 @@ fn build(
 
     let style = to_taffy_style(&source.layout);
 
-    let children: Vec<taffy::NodeId> = source
-        .children
-        .iter()
-        .filter(|child| {
-            scene
-                .get(**child)
-                .is_none_or(|child| child.layout.display != Display::None)
-        })
-        .map(|child| build(scene, *child, tree, to_scene))
-        .collect::<Result<_, _>>()?;
+    let mut children: Vec<taffy::NodeId> = Vec::new();
+    for child in &source.children {
+        let Some(source) = scene.get(*child) else {
+            // A dangling id is caught by `Scene::validate`; building it as a
+            // leaf here would report the wrong error from the wrong pass.
+            children.push(build(scene, *child, tree, to_scene, fixed)?);
+            continue;
+        };
+        if source.layout.display == Display::None {
+            continue;
+        }
+
+        let built = build(scene, *child, tree, to_scene, fixed)?;
+        if source.layout.position_type == PositionType::Fixed {
+            fixed.push(built);
+        } else {
+            children.push(built);
+        }
+    }
 
     // A childless node is given the measurer's context whatever it draws.
     // Layout does not know which kinds have an intrinsic size -- that is what
@@ -489,10 +525,18 @@ const fn to_taffy_inset(
 /// [`crate::paint`].
 const fn to_position(position: PositionType) -> taffy::Position {
     match position {
-        PositionType::Static | PositionType::Relative => {
-            taffy::Position::Relative
+        // `Sticky` is `Relative` here and not by approximation: CSS defines it
+        // against a scroll position and a still page has none, so Chrome itself
+        // draws the two identically at the only offset this renderer has.
+        PositionType::Static
+        | PositionType::Relative
+        | PositionType::Sticky => taffy::Position::Relative,
+        // `Fixed` is out of flow like `Absolute`; **which box it resolves
+        // against is not settled here** but by where the node sits in the tree
+        // handed to taffy. See `fixed_containing_block`.
+        PositionType::Absolute | PositionType::Fixed => {
+            taffy::Position::Absolute
         }
-        PositionType::Absolute => taffy::Position::Absolute,
     }
 }
 
@@ -996,6 +1040,90 @@ mod tests {
             super::to_taffy_style(&style).inset.top,
             taffy::LengthPercentageAuto::length(30.0),
             "a relative inset is not"
+        );
+    }
+
+    #[test]
+    fn a_fixed_node_resolves_against_the_page_and_an_absolute_one_against_its_parent()
+     {
+        // The whole difference between the two in a still render. CSS resolves
+        // `fixed` against the viewport, which here is the page; `absolute`
+        // resolves against its containing block, which taffy takes to be the
+        // parent. A padded, offset parent is what separates them: an absolute
+        // child lands inside it and a fixed one ignores it.
+        let placed = |position| {
+            let (mut scene, page) = scene_with_page(200.0, 200.0);
+            let mut parent = Node::container();
+            parent.layout.margin = Sides::all(Dimension::Points(40.0));
+            parent.layout.padding = Sides::all(Length::Points(10.0));
+            parent.layout.size =
+                (Dimension::Points(100.0), Dimension::Points(100.0));
+            let parent = scene
+                .push(page, parent)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut child = Node::container();
+            child.layout.position_type = position;
+            child.layout.inset = Sides {
+                top: Some(Length::Points(5.0)),
+                left: Some(Length::Points(5.0)),
+                right: None,
+                bottom: None,
+            };
+            child.layout.size =
+                (Dimension::Points(10.0), Dimension::Points(10.0));
+            let child = scene
+                .push(parent, child)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            solved(&scene, page)
+                .get(child)
+                .unwrap_or_else(|| unreachable!("the child is laid out"))
+                .origin
+        };
+
+        // Inside the parent: its margin of 40, then the inset of 5. The
+        // padding is not added — CSS measures an absolute inset from the
+        // padding *box*, whose origin is inside the border and outside the
+        // padding, so a padded parent does not push its absolute child in.
+        assert_eq!(placed(PositionType::Absolute), Point { x: 45.0, y: 45.0 });
+        // Against the page, which is what makes it fixed rather than absolute.
+        assert_eq!(placed(PositionType::Fixed), Point { x: 5.0, y: 5.0 });
+    }
+
+    #[test]
+    fn hoisting_a_fixed_node_moves_none_of_its_siblings() {
+        // An out-of-flow child contributes nothing to its parent's flow, so
+        // taking it out of that parent's children changes nothing the solver
+        // would have done. Asserted rather than argued, because the hoist is
+        // the one part of this that reaches into the tree shape.
+        let sibling_origin = |position| {
+            let (mut scene, page) = scene_with_page(200.0, 200.0);
+            let mut out_of_flow = Node::container();
+            out_of_flow.layout.position_type = position;
+            out_of_flow.layout.size =
+                (Dimension::Points(10.0), Dimension::Points(10.0));
+            scene
+                .push(page, out_of_flow)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut sibling = Node::container();
+            sibling.layout.size =
+                (Dimension::Points(20.0), Dimension::Points(20.0));
+            let sibling = scene
+                .push(page, sibling)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            solved(&scene, page)
+                .get(sibling)
+                .unwrap_or_else(|| unreachable!("the sibling is laid out"))
+                .origin
+        };
+
+        assert_eq!(
+            sibling_origin(PositionType::Fixed),
+            sibling_origin(PositionType::Absolute),
+            "hoisting the fixed node moved its sibling"
         );
     }
 

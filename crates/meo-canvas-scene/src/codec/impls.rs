@@ -620,7 +620,7 @@ impl Wire for PaintStyle {
         out.f32(self.opacity);
         self.blend_mode.write(out);
         out.bool(self.dither);
-        out.i32(self.z_index);
+        out.opt(self.z_index.as_ref());
     }
 
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
@@ -635,7 +635,7 @@ impl Wire for PaintStyle {
             opacity: input.f32()?,
             blend_mode: Wire::read(input)?,
             dither: input.bool()?,
-            z_index: input.i32()?,
+            z_index: input.opt()?,
         })
     }
 }

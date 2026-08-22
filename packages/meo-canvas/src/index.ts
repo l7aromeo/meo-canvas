@@ -43,8 +43,17 @@ export type Align = 'flex-start' | 'flex-end' | 'center' | 'stretch' | 'baseline
  * `'static'` is CSS's default and takes no offsets — a node with `position`
  * edges set under it ignores them. The scene distinguishes it from
  * `'relative'`, which is laid out the same way and does read them.
+ *
+ * `'sticky'` draws exactly as `'relative'` here: CSS defines it against a
+ * scroll position and a still page has none, so the two agree at the only
+ * offset this renderer ever has. It is carried as its own value so a ported
+ * scene keeps saying what it meant.
+ *
+ * All four of the non-static values stack: a positioned child paints above a
+ * static sibling whatever the document order, measured in Chrome across every
+ * display.
  */
-export type PositionType = 'static' | 'relative' | 'absolute'
+export type PositionType = 'static' | 'relative' | 'absolute' | 'fixed' | 'sticky'
 
 /**
  * What happens to content larger than its box.
