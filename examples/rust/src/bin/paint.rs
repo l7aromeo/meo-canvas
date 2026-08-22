@@ -233,7 +233,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // border is visible rather than assumed.
             row(vec![
                 filled().mask(Mask::Shape(MaskShape::Circle)),
-                filled().mask(Mask::Shape(MaskShape::Ellipse)),
+                // Not square, because an ellipse inscribed in a square box IS
+                // the circle beside it: on a 72 by 72 cell the two arms draw
+                // the same pixels and the picture says they are one keyword.
+                cell().children(
+                    BoxNode::new()
+                        .size(px(72.0), px(44.0))
+                        .margin(sides(px(14.0), px(0.0), px(0.0), px(0.0)))
+                        .background_color(FROM)
+                        .mask(Mask::Shape(MaskShape::Ellipse)),
+                ),
                 filled().mask(Mask::Path {
                     data: "M36 4 L68 68 L4 68 Z".into(),
                     fill_rule: meo_canvas::FillRule::NonZero,

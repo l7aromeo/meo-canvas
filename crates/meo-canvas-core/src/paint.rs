@@ -27,25 +27,28 @@
 //! covered by golden fixtures or not at all, and the tests do not pretend
 //! otherwise.
 
+use std::fmt::Write as _;
+
 use meo_canvas_scene::{
     ColorSpace, ColorType, Rect, Sides, Size,
-    node::{ImageSource, Node, NodeId, NodeKind, PathPaint},
+    node::{Node, NodeId, NodeKind, PathPaint},
     style::{
         Length,
-        effect::{BoxShadow, Effects, FillRule, Mask, MaskShape, Transform},
+        effect::{BoxShadow, FillRule, Mask, MaskShape, Transform},
         layout::{Display, Overflow, PositionType},
         paint::{
             BlendMode, Color, Gradient, GradientGeometry, LinearDirection,
             ObjectFit, PaintStyle,
         },
-        text::TextAlign,
+        text::{TextAlign, VerticalAlign},
     },
 };
 use meo_skia_canvas::{
-    BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
+    Affine, BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
     FillRule as SkiaFillRule, GradientInterpolation,
-    GradientStop as SkiaGradientStop, Path2D, PathBuilder, Point, RgbaLinear,
-    Shader, StrokeCap, StrokeJoin,
+    GradientStop as SkiaGradientStop, Image as SkiaImage, Path2D, PathBuilder,
+    PixelColorSpace, PixelDepth, PixelExportOptions, PixelFormat, Point,
+    RgbaLinear, Shader, StrokeCap, StrokeJoin,
 };
 
 use crate::{
@@ -101,9 +104,7 @@ pub struct SurfaceOptions {
 /// Exhaustive over ours, so a variant added here fails the build. The other
 /// direction is [`from_skia_color_type`], which is test-only and exists for
 /// exactly the direction this match cannot see.
-const fn to_skia_color_type(
-    color_type: ColorType,
-) -> meo_skia_canvas::PixelDepth {
+const fn to_skia_color_type(color_type: ColorType) -> PixelDepth {
     use meo_skia_canvas::PixelDepth as Skia;
     match color_type {
         ColorType::Uint8 => Skia::Uint8,
@@ -133,9 +134,7 @@ const fn to_skia_color_type(
 }
 
 /// This crate's [`ColorSpace`] as the renderer's.
-const fn to_skia_color_space(
-    color_space: ColorSpace,
-) -> meo_skia_canvas::PixelColorSpace {
+const fn to_skia_color_space(color_space: ColorSpace) -> PixelColorSpace {
     use meo_skia_canvas::PixelColorSpace as Skia;
     match color_space {
         ColorSpace::Srgb => Skia::Srgb,
@@ -343,10 +342,13 @@ pub fn draw(
         })?;
 
     let scale = surface.scale;
+    // Read before the context borrows the canvas: a backdrop readback has to
+    // stay inside the surface, and this is the only place its extent is known.
+    let device = Size::new(surface.canvas.width(), surface.canvas.height());
     let context = surface.context();
     context.save();
     context.scale(scale, scale);
-    let result = walk(context, resolved, layout, measurer, page);
+    let result = walk(context, resolved, layout, measurer, page, device);
     context.restore();
     result
 }
@@ -378,6 +380,12 @@ enum Step {
     },
     Leave {
         layers: u8,
+        /// The node whose mask is composited as its group layer closes.
+        ///
+        /// `Some` only for a node that opened one: masking is `DestinationIn`
+        /// against everything the group drew, so it has to happen inside the
+        /// layer and after the last of it.
+        masked: Option<NodeId>,
     },
 }
 
@@ -387,13 +395,20 @@ fn walk(
     layout: &LayoutResult,
     measurer: &mut SceneMeasurer<'_>,
     page: NodeId,
+    device: Size,
 ) -> Result<(), Error> {
     let scene = resolved.scene;
     let mut stack = vec![Step::Enter(page)];
 
     while let Some(step) = stack.pop() {
         match step {
-            Step::Leave { layers } => {
+            Step::Leave { layers, masked } => {
+                if let Some(id) = masked
+                    && let (Some(rect), Some(node)) =
+                        (layout.get(id), scene.get(id))
+                {
+                    apply_mask(context, resolved, id, node, rect)?;
+                }
                 for _ in 0..layers {
                     context.restore();
                 }
@@ -417,12 +432,15 @@ fn walk(
                     clip_to_box(context, &owed.paint, rect)?;
                 }
 
-                let layers = enter_node(context, node, rect)?;
+                let layers = enter_node(context, node, rect, device)?;
                 paint_own_content(
                     context, resolved, layout, measurer, id, node, rect,
                 )?;
 
-                stack.push(Step::Leave { layers });
+                stack.push(Step::Leave {
+                    layers,
+                    masked: node.effects.mask.as_ref().map(|_| id),
+                });
                 // **Only a context gathers.** A participant that establishes
                 // none was reached by its own context's walk, which already
                 // collected everything beneath it; gathering again here would
@@ -445,12 +463,15 @@ fn walk(
                 };
 
                 context.save();
-                let layers = enter_node(context, node, rect)?;
+                let layers = enter_node(context, node, rect, device)?;
                 paint_own_content(
                     context, resolved, layout, measurer, id, node, rect,
                 )?;
 
-                stack.push(Step::Leave { layers });
+                stack.push(Step::Leave {
+                    layers,
+                    masked: node.effects.mask.as_ref().map(|_| id),
+                });
                 // Everything this context paints, in CSS's order, gathered
                 // *through* descendants that establish no context of their own.
                 // A participant that does establish one is entered here and
@@ -738,8 +759,14 @@ fn enter_node(
     context: &mut Context2D,
     node: &Node,
     rect: Rect,
+    device: Size,
 ) -> Result<u8, Error> {
     apply_transform(context, node.effects.transform.as_ref(), rect);
+
+    // Before the node's own filter is set and before its group opens: the
+    // backdrop is what is **already** on the canvas, so it has to be read and
+    // put back while that is still all there is.
+    draw_backdrop(context, node, rect, device)?;
 
     // The node's own `overflow` is **not** applied here. It clips descendants,
     // and a descendant reaches this painter as a participant of whichever
@@ -911,10 +938,12 @@ fn draw_text(
     let baseline = rect.origin.y + baseline_from_top;
 
     // Read before the paragraph is borrowed mutably.
-    let needs_a_finite_width =
-        measurer.resolved().text(id).is_some_and(|text| {
-            !matches!(text.align, TextAlign::Start | TextAlign::Left)
-        });
+    let text = measurer.resolved().text(id);
+    let needs_a_finite_width = text.is_some_and(|text| {
+        !matches!(text.align, TextAlign::Start | TextAlign::Left)
+    });
+    let vertical_align =
+        text.map_or(VerticalAlign::Top, |text| text.vertical_align);
 
     let Some(paragraph) = measurer.paragraph_mut(id) else {
         return;
@@ -944,7 +973,24 @@ fn draw_text(
         // left-aligned node had been measured against the unconstrained one.
         paragraph.layout(rect.size.width.max(paragraph.width()));
     }
-    let top = baseline - paragraph.alphabetic_baseline();
+    // **The block within the node's box, not a line within its line box.**
+    // v1 measures the whole paragraph against the box and shifts it by what
+    // is left over, and where v2 and v1 disagree on what is drawn v1 wins.
+    // The name is CSS's and the behaviour is not: `vertical-align` in CSS
+    // places an inline box on its line, which a scene with one paragraph per
+    // node has no way to ask for.
+    //
+    // Not clamped at zero, also v1: a paragraph taller than its box hangs out
+    // of it, centred or bottom-aligned, rather than being pinned to the top.
+    // An auto-sized node has no leftover at all, so every alignment agrees
+    // there -- which is why a control for this has to give the box a height.
+    let free = rect.size.height - paragraph.height();
+    let shift = match vertical_align {
+        VerticalAlign::Top => 0.0,
+        VerticalAlign::Middle => free / 2.0,
+        VerticalAlign::Bottom => free,
+    };
+    let top = baseline - paragraph.alphabetic_baseline() + shift;
     context.draw_paragraph(paragraph, rect.origin.x, top);
 }
 
@@ -1614,9 +1660,446 @@ const fn to_skia_blend(mode: BlendMode) -> SkiaBlendMode {
     }
 }
 
-/// Named so the mask vocabulary is reachable from this file's documentation
-/// while masking itself is unimplemented.
-const _: Option<(Mask, MaskShape, ImageSource, Effects)> = None;
+/// Filters what is already on the canvas behind the node, in its own box.
+///
+/// # Why a readback rather than a filter on the layer
+///
+/// `save_layer_with` takes a backdrop [`ImageFilter`], which is the direct
+/// route — and the binding builds one only from its own typed `FilterOp`s.
+/// The CSS chain a scene carries is parsed by `parse_filter`, which is
+/// `pub(crate)`: reachable from `set_filter_css` and from nowhere else. So
+/// the chain is applied the one way a caller can apply it, to a draw, and the
+/// thing drawn is the backdrop itself read back off the surface.
+///
+/// # Why the transform is reset
+///
+/// `get_image_data` works in device pixels and ignores the transform, as the
+/// Canvas standard says it does. Rather than trying to unrotate a readback,
+/// the pixels go back down in device space too: the **clip is kept**, since
+/// Skia stores it in device space and it survives the reset, so a rotated or
+/// scaled node still filters exactly its own box. The blur is therefore in
+/// device pixels and grows with the page scale, which is what a browser does
+/// with a device pixel ratio.
+///
+/// A backdrop is read at eight bits in sRGB whatever the surface's own depth
+/// is. The image carries that space, so drawing it back into a wide-gamut or
+/// float surface converts rather than reinterprets; what is lost is precision
+/// in the filtered region, not colour.
+fn draw_backdrop(
+    context: &mut Context2D,
+    node: &Node,
+    rect: Rect,
+    device: Size,
+) -> Result<(), Error> {
+    let Some(css) = node.effects.backdrop_filter.as_deref() else {
+        return Ok(());
+    };
+
+    let transform = context.get_transform();
+    // The chain is applied to a draw made with the transform reset, so its
+    // lengths have to be device lengths. v1 rewrites them for exactly this
+    // reason, and without it the same tree exported at two scales is two
+    // different pictures -- `blur(6px)` at `scale: 2` covering three page
+    // pixels rather than six.
+    let scaled = scale_filter_lengths(css, page_scale(transform));
+    // Grown by how far the chain reaches in from outside, so a blur at the
+    // node's edge pulls in what is beyond it rather than smearing the edge
+    // pixel. Clamped to the surface, because a readback that leaves it is a
+    // failed read rather than a short one.
+    let reach = filter_spill(&scaled);
+    let bounds = device_bounds(transform, rect);
+    // Rounded outward, so a box landing between pixels filters the whole of
+    // every pixel it touches rather than losing its last row to a truncation.
+    let left = (bounds.origin.x - reach).floor().max(0.0);
+    let top = (bounds.origin.y - reach).floor().max(0.0);
+    let right = (bounds.origin.x + bounds.size.width + reach)
+        .ceil()
+        .min(device.width);
+    let bottom = (bounds.origin.y + bounds.size.height + reach)
+        .ceil()
+        .min(device.height);
+    let (width, height) = (right - left, bottom - top);
+    if width < 1.0 || height < 1.0 {
+        return Ok(());
+    }
+
+    // Premultiplied, which is how the surface already holds them: asking for
+    // unpremultiplied divides every channel by its alpha and the draw
+    // multiplies it straight back, which costs precision wherever the
+    // backdrop is translucent and gains nothing.
+    let data = context
+        .get_image_data_as(
+            left,
+            top,
+            width,
+            height,
+            PixelExportOptions {
+                color_space: PixelColorSpace::Srgb,
+                depth: PixelDepth::Uint8,
+                premultiplied: true,
+            },
+        )
+        .map_err(|error| Error::Paint(error.to_string()))?;
+    let backdrop = SkiaImage::from_pixels(
+        data.pixels(),
+        data.width(),
+        data.height(),
+        data.stride(),
+        PixelFormat::Rgba8UnormPremul,
+        PixelColorSpace::Srgb,
+    )
+    .map_err(|error| Error::Paint(error.to_string()))?;
+
+    context.save();
+    let result = (|context: &mut Context2D| {
+        clip_to_box(context, &node.paint, rect)?;
+        context.reset_transform();
+        context
+            .set_filter_css(&scaled)
+            .map_err(|error| Error::Paint(error.to_string()))?;
+        context.draw_image_sized(&backdrop, left, top, width, height);
+        Ok(())
+    })(context);
+    context.restore();
+    result
+}
+
+/// The average of the transform's two axis lengths.
+///
+/// One number for a transform that may scale the axes differently, which is
+/// what a filter's single radius needs. v1's own reading of the matrix.
+fn page_scale(transform: Affine) -> f32 {
+    let horizontal = transform.a.hypot(transform.b);
+    let vertical = transform.c.hypot(transform.d);
+    let scale = horizontal.midpoint(vertical);
+    if scale > 0.0 && scale.is_finite() {
+        scale
+    } else {
+        1.0
+    }
+}
+
+/// Rewrites a filter chain's `px` lengths into device pixels.
+///
+/// Only `blur` and `drop-shadow` carry lengths; a `brightness` factor or a
+/// `hue-rotate` angle means the same thing at any resolution. Only `px` is
+/// rewritten, which is v1's rule too -- an `em` resolves against the context's
+/// font size inside the binding, and a chain arriving in `em` is one this
+/// renderer has never been asked for.
+fn scale_filter_lengths(css: &str, scale: f32) -> String {
+    if (scale - 1.0).abs() < f32::EPSILON {
+        return css.to_owned();
+    }
+    let mut out = String::with_capacity(css.len());
+    let mut last = 0;
+    for call in filter_calls(css) {
+        let carries_lengths = call.name.eq_ignore_ascii_case("blur")
+            || call.name.eq_ignore_ascii_case("drop-shadow");
+        if !carries_lengths {
+            continue;
+        }
+        out.push_str(&css[last..call.args_start]);
+        out.push_str(&scale_pixel_lengths(
+            &css[call.args_start..call.args_end],
+            scale,
+        ));
+        last = call.args_end;
+    }
+    out.push_str(&css[last..]);
+    out
+}
+
+/// Multiplies every `<number>px` in one function's arguments by `scale`.
+fn scale_pixel_lengths(args: &str, scale: f32) -> String {
+    let mut out = String::with_capacity(args.len());
+    let mut rest = args;
+    while let Some((number, text, tail)) = next_pixel_length(rest) {
+        out.push_str(text);
+        write!(out, "{}px", number * scale).unwrap_or_else(|error| {
+            unreachable!("writing to a string cannot fail: {error}")
+        });
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The next `<number>px` in `args`: its value, what preceded it, what follows.
+fn next_pixel_length(args: &str) -> Option<(f32, &str, &str)> {
+    let mut search = 0;
+    while let Some(offset) = args[search..].find("px") {
+        let end = search + offset;
+        let start = args[..end]
+            .rfind(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+            .map_or(0, |index| index + 1);
+        if let Ok(number) = args[start..end].parse::<f32>() {
+            return Some((number, &args[..start], &args[end + 2..]));
+        }
+        search = end + 2;
+    }
+    None
+}
+
+/// How far past its own box a filter chain reaches, in the chain's own units.
+///
+/// Three standard deviations, which is where a Gaussian has given up
+/// nine-thousand-nine-hundred-and-seventy parts in ten thousand of its weight;
+/// v1's constant, and the reason a blurred backdrop does not show a seam at
+/// the node's edge. `drop-shadow` adds its offset on top of its blur.
+fn filter_spill(css: &str) -> f32 {
+    const DEVIATIONS_TO_COVER: f32 = 3.0;
+    let mut spill = 0.0;
+    for call in filter_calls(css) {
+        let args = &css[call.args_start..call.args_end];
+        if call.name.eq_ignore_ascii_case("blur") {
+            spill = pixel_lengths(args)
+                .first()
+                .unwrap_or(&0.0)
+                .abs()
+                .mul_add(DEVIATIONS_TO_COVER, spill);
+        } else if call.name.eq_ignore_ascii_case("drop-shadow") {
+            let lengths = pixel_lengths(args);
+            let offset_x = lengths.first().copied().unwrap_or(0.0);
+            let offset_y = lengths.get(1).copied().unwrap_or(0.0);
+            let blur = lengths.get(2).copied().unwrap_or(0.0);
+            spill += blur.abs().mul_add(
+                DEVIATIONS_TO_COVER,
+                offset_x.abs().max(offset_y.abs()),
+            );
+        }
+    }
+    spill.ceil()
+}
+
+/// Every `<number>px` in one function's arguments, in order.
+fn pixel_lengths(args: &str) -> Vec<f32> {
+    let mut lengths = Vec::new();
+    let mut rest = args;
+    while let Some((number, _, tail)) = next_pixel_length(rest) {
+        lengths.push(number);
+        rest = tail;
+    }
+    lengths
+}
+
+/// One `name(...)` in a filter chain.
+struct FilterCall<'css> {
+    /// The function's name, exactly as written.
+    name: &'css str,
+    /// Byte offset of the first character inside the parentheses.
+    args_start: usize,
+    /// Byte offset of the closing parenthesis.
+    args_end: usize,
+}
+
+/// The top-level function calls in a filter chain, outermost only.
+///
+/// Nested parentheses are skipped rather than reported: `drop-shadow(2px 2px
+/// 4px rgb(0 0 0 / 50%))` is one call whose arguments happen to contain
+/// another, and reading the `rgb` as a filter would look for lengths in a
+/// colour.
+fn filter_calls(css: &str) -> Vec<FilterCall<'_>> {
+    let mut calls = Vec::new();
+    let mut chars = css.char_indices();
+    while let Some((index, character)) = chars.next() {
+        if character != '(' {
+            continue;
+        }
+        let name_start = css[..index]
+            .rfind(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+            .map_or(0, |at| at + c_len(css, at));
+        let mut depth = 1_u32;
+        let mut close = None;
+        for (at, inner) in chars.by_ref() {
+            match inner {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(at);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else { break };
+        calls.push(FilterCall {
+            name: &css[name_start..index],
+            args_start: index + 1,
+            args_end: close,
+        });
+    }
+    calls
+}
+
+/// The byte length of the character starting at `at`.
+fn c_len(css: &str, at: usize) -> usize {
+    css[at..].chars().next().map_or(1, char::len_utf8)
+}
+
+/// The device-space bounding box of `rect` under `transform`.
+///
+/// All four corners rather than two, because a rotation sends the top-left
+/// corner somewhere that is neither the left nor the top.
+fn device_bounds(transform: Affine, rect: Rect) -> Rect {
+    let map = |x: f32, y: f32| {
+        (
+            transform.a.mul_add(x, transform.c * y) + transform.tx,
+            transform.b.mul_add(x, transform.d * y) + transform.ty,
+        )
+    };
+    let right = rect.origin.x + rect.size.width;
+    let bottom = rect.origin.y + rect.size.height;
+    let corners = [
+        map(rect.origin.x, rect.origin.y),
+        map(right, rect.origin.y),
+        map(rect.origin.x, bottom),
+        map(right, bottom),
+    ];
+    let left = corners.iter().map(|c| c.0).fold(f32::INFINITY, f32::min);
+    let top = corners.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
+    let far = corners
+        .iter()
+        .map(|c| c.0)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let low = corners
+        .iter()
+        .map(|c| c.1)
+        .fold(f32::NEG_INFINITY, f32::max);
+    Rect::new(
+        meo_canvas_scene::Point::new(left, top),
+        Size::new(far - left, low - top),
+    )
+}
+
+/// Composites the node's mask over everything its group layer drew.
+///
+/// # Why a layer of its own rather than a blended fill
+///
+/// `DestinationIn` keeps the destination only where the source has alpha —
+/// but a blend touches **only the pixels the draw covers**. Filling an
+/// ellipse with `DestinationIn` therefore trims nothing outside the ellipse:
+/// the rest of the group survives untouched, which is a mask that keeps
+/// everything. Drawing the mask into its own layer and closing that layer
+/// under `DestinationIn` composites the mask as one rectangle covering the
+/// group, so the transparent parts of it clear what they cover.
+///
+/// This is why the mask cannot be applied where the node is entered. The
+/// group has to be complete first, which is the moment [`Step::Leave`] names.
+///
+/// The group it composites against is the one [`enter_node`] opens: a mask is
+/// one of the three things `needs_group` tests for, so a masked node always
+/// has one. Drop it from that test and this would trim the page instead of
+/// the node.
+///
+/// # What each kind contributes
+///
+/// [`Mask::Shape`] and [`Mask::Path`] are opaque geometry: a hard edge, and
+/// the alpha is the coverage. [`Mask::Gradient`] and [`Mask::Image`] carry
+/// their own alpha, which is what makes a fade-out edge expressible — the
+/// gradient's stops and the image's alpha channel are read as the mask
+/// directly, not as a luminance the way CSS's default `mask-mode` does.
+fn apply_mask(
+    context: &mut Context2D,
+    resolved: &Resolved<'_>,
+    id: NodeId,
+    node: &Node,
+    rect: Rect,
+) -> Result<(), Error> {
+    let Some(mask) = node.effects.mask.as_ref() else {
+        return Ok(());
+    };
+
+    context.save();
+    context.set_global_composite_operation(SkiaBlendMode::DestinationIn);
+    context.save_layer();
+    // Inside the mask's own layer the drawing is ordinary again: the
+    // `DestinationIn` above belongs to the layer's composite, and leaving it
+    // set here would have the mask trim itself against an empty layer.
+    context.set_global_composite_operation(SkiaBlendMode::SourceOver);
+    context.set_global_alpha(OPAQUE);
+    context.set_fill_style(to_skia_color(Color::rgb(255, 255, 255)));
+
+    let result = draw_mask(context, resolved, id, mask, rect);
+
+    context.restore();
+    context.restore();
+    result
+}
+
+/// Draws one mask's coverage into the layer [`apply_mask`] opened.
+fn draw_mask(
+    context: &mut Context2D,
+    resolved: &Resolved<'_>,
+    id: NodeId,
+    mask: &Mask,
+    rect: Rect,
+) -> Result<(), Error> {
+    match mask {
+        Mask::Shape(shape) => {
+            let (radius_x, radius_y) = match shape {
+                // The largest circle that fits, so the smaller half-extent
+                // is both radii.
+                MaskShape::Circle => {
+                    let radius = rect.size.width.min(rect.size.height) / 2.0;
+                    (radius, radius)
+                }
+                MaskShape::Ellipse => {
+                    (rect.size.width / 2.0, rect.size.height / 2.0)
+                }
+            };
+            context.begin_path();
+            context
+                .ellipse(
+                    rect.origin.x + rect.size.width / 2.0,
+                    rect.origin.y + rect.size.height / 2.0,
+                    radius_x,
+                    radius_y,
+                    0.0,
+                    0.0,
+                    std::f32::consts::TAU,
+                    false,
+                )
+                .map_err(|error| Error::Paint(error.to_string()))?;
+            context.fill(SkiaFillRule::NonZero);
+            Ok(())
+        }
+        // Offset like a path node's own data, because the mask is written in
+        // the node's coordinate space and drawn in the page's.
+        Mask::Path { data, fill_rule } => {
+            let rule = to_skia_rule(*fill_rule);
+            let path = Path2D::from_svg(data, rule)
+                .map_err(|error| Error::Paint(error.to_string()))?
+                .offset(rect.origin.x, rect.origin.y);
+            context.fill_path(&path, rule);
+            Ok(())
+        }
+        Mask::Gradient(gradient) => {
+            let shader = build_gradient(gradient, rect)?;
+            context.set_fill_shader(&shader);
+            context.fill_rect(
+                rect.origin.x,
+                rect.origin.y,
+                rect.size.width,
+                rect.size.height,
+            );
+            Ok(())
+        }
+        Mask::Image(_) => {
+            if let Some(image) = resolved.mask(id).map(DecodedImage::inner) {
+                context.draw_image_sized(
+                    image,
+                    rect.origin.x,
+                    rect.origin.y,
+                    rect.size.width,
+                    rect.size.height,
+                );
+            }
+            Ok(())
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1627,9 +2110,11 @@ mod tests {
     };
 
     use super::{
-        ColorSpace, ColorType, Display, GradientGeometry, LinearDirection,
-        Overflow, PositionType, Surface, SurfaceOptions, draw, fit_image,
-        gradient_line, participants, pixel_size, resolve_length, to_skia_blend,
+        Affine, ColorSpace, ColorType, Display, GradientGeometry,
+        LinearDirection, Overflow, PositionType, Surface, SurfaceOptions,
+        device_bounds, draw, filter_spill, fit_image, gradient_line,
+        page_scale, participants, pixel_size, resolve_length,
+        scale_filter_lengths, to_skia_blend,
     };
     use crate::{
         layout::LayoutResult,
@@ -2607,5 +3092,103 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}"));
         draw(&mut surface, &resolved, &solved, &mut measurer)
             .unwrap_or_else(|error| unreachable!("{error}"));
+    }
+
+    #[test]
+    fn only_lengths_are_rewritten_for_the_device() {
+        // The factor and the angle mean the same at any resolution; the two
+        // radii do not.
+        assert_eq!(
+            scale_filter_lengths(
+                "blur(4px) saturate(150%) hue-rotate(90deg)",
+                2.0
+            ),
+            "blur(8px) saturate(150%) hue-rotate(90deg)"
+        );
+        // Every length in a `drop-shadow`, offsets included.
+        assert_eq!(
+            scale_filter_lengths("drop-shadow(2px -3px 4px black)", 2.0),
+            "drop-shadow(4px -6px 8px black)"
+        );
+        // A nested colour is not a filter, so nothing inside it is a length
+        // to scale -- and `50%` is not a `px` in any case.
+        assert_eq!(
+            scale_filter_lengths(
+                "drop-shadow(2px 2px 4px rgb(0 0 0 / 50%))",
+                2.0
+            ),
+            "drop-shadow(4px 4px 8px rgb(0 0 0 / 50%))"
+        );
+        // At the identity the string comes back untouched rather than
+        // reformatted: `blur(4.0px)` for `blur(4px)` is the same filter and a
+        // different string, and the string is what the binding echoes back.
+        assert_eq!(scale_filter_lengths("blur(4px)", 1.0), "blur(4px)");
+    }
+
+    #[test]
+    fn spill_covers_three_deviations_of_every_blur() {
+        assert!((filter_spill("blur(4px)") - 12.0).abs() < f32::EPSILON);
+        // A chain reaches as far as its parts together.
+        assert!(
+            (filter_spill("blur(2px) blur(3px)") - 15.0).abs() < f32::EPSILON
+        );
+        // The offset moves the shadow on top of what the blur spreads.
+        assert!(
+            (filter_spill("drop-shadow(6px 2px 1px black)") - 9.0).abs()
+                < f32::EPSILON
+        );
+        // Nothing that carries no length reaches anywhere.
+        assert!(
+            filter_spill("grayscale(1) saturate(200%)").abs() < f32::EPSILON
+        );
+        assert!(filter_spill("none").abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_rotation_is_bounded_by_all_four_corners() {
+        // A quarter turn about the origin sends the top-left corner to the
+        // top-right, so neither the left edge nor the top survives the map.
+        let quarter = Affine {
+            a: 0.0,
+            b: 1.0,
+            c: -1.0,
+            d: 0.0,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        let bounds = device_bounds(
+            quarter,
+            Rect::new(Point::new(10.0, 20.0), Size::new(30.0, 40.0)),
+        );
+        assert!((bounds.origin.x - -60.0).abs() < f32::EPSILON);
+        assert!((bounds.origin.y - 10.0).abs() < f32::EPSILON);
+        assert!((bounds.size.width - 40.0).abs() < f32::EPSILON);
+        assert!((bounds.size.height - 30.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn the_page_scale_is_one_number_for_two_axes() {
+        let stretched = Affine {
+            a: 3.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        assert!((page_scale(stretched) - 2.0).abs() < f32::EPSILON);
+        // A degenerate matrix would otherwise scale every length to nothing,
+        // which turns a blur into a filter that draws the backdrop back
+        // unchanged.
+        assert!((page_scale(Affine::IDENTITY) - 1.0).abs() < f32::EPSILON);
+        let collapsed = Affine {
+            a: 0.0,
+            b: 0.0,
+            c: 0.0,
+            d: 0.0,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        assert!((page_scale(collapsed) - 1.0).abs() < f32::EPSILON);
     }
 }

@@ -35,6 +35,7 @@ use meo_canvas_scene::{
     node::{ImageSource, NodeId, NodeKind},
     style::{
         PaintOrder,
+        effect::Mask,
         paint::Color,
         text::{
             FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
@@ -286,6 +287,7 @@ pub struct Resolved<'scene> {
     pub scene: &'scene Scene,
     images: HashMap<NodeId, DecodedImage>,
     backgrounds: HashMap<NodeId, DecodedImage>,
+    masks: HashMap<NodeId, DecodedImage>,
     text: HashMap<NodeId, ResolvedText>,
 }
 
@@ -304,6 +306,7 @@ impl<'scene> Resolved<'scene> {
             scene,
             images: HashMap::new(),
             backgrounds: HashMap::new(),
+            masks: HashMap::new(),
             text: HashMap::new(),
         };
 
@@ -328,6 +331,13 @@ impl<'scene> Resolved<'scene> {
                 let decoded = decode(id, &background.source)?;
                 resolved.backgrounds.insert(id, decoded);
             }
+            // A third table for the same reason the second one exists: a mask
+            // image is neither the node's own picture nor its background, and
+            // a node may carry all three at once.
+            if let Some(Mask::Image(source)) = node.effects.mask.as_ref() {
+                let decoded = decode(id, source)?;
+                resolved.masks.insert(id, decoded);
+            }
         }
 
         resolved.resolve_text(fonts)?;
@@ -344,6 +354,12 @@ impl<'scene> Resolved<'scene> {
     #[must_use]
     pub fn background(&self, node: NodeId) -> Option<&DecodedImage> {
         self.backgrounds.get(&node)
+    }
+
+    /// The decoded bitmap for a node's mask, if its mask is an image.
+    #[must_use]
+    pub fn mask(&self, node: NodeId) -> Option<&DecodedImage> {
+        self.masks.get(&node)
     }
 
     /// The fully-inherited text style for a text node, if it is one.

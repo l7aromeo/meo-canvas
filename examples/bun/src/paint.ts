@@ -131,7 +131,18 @@ const canvas = await Root({
     // visible rather than assumed.
     row([
       filled({ mask: { shape: 'circle' } }),
-      filled({ mask: { shape: 'ellipse' } }),
+      // Not square, because an ellipse inscribed in a square box IS the circle
+      // beside it: on a 72 by 72 cell the two arms draw the same pixels and the
+      // picture says they are one keyword.
+      cell({
+        children: Box({
+          width: 72,
+          height: 44,
+          margin: { top: 14, right: 0, bottom: 0, left: 0 },
+          backgroundColor: FROM,
+          mask: { shape: 'ellipse' },
+        }),
+      }),
       filled({ mask: { path: 'M36 4 L68 68 L4 68 Z', fillRule: 'nonzero' } }),
       filled({
         mask: {

@@ -49,13 +49,18 @@ wire_enum! {
 }
 
 wire_enum! {
-    /// Where a line of text sits within its line box.
+    /// Where the text sits within the node's box.
+    ///
+    /// CSS's `vertical-align` places one inline box on its line; this places
+    /// the **whole paragraph** in the box that holds it, which is what v1
+    /// does and what a scene with one paragraph per node can express. A node
+    /// sized to its own text has nothing left over, so the three agree there.
     pub enum VerticalAlign {
-        /// Against the top of the line box.
+        /// Against the top of the box.
         Top = 0,
-        /// Centred in the line box.
+        /// Centred in the box.
         Middle = 1,
-        /// Against the bottom of the line box.
+        /// Against the bottom of the box.
         Bottom = 2,
     }
 }
