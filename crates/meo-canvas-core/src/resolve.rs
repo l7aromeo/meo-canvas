@@ -576,7 +576,7 @@ pub(crate) mod tests {
                 source: ImageSource::Url("https://a.test/bg.png".to_owned()),
                 repeat:
                     meo_canvas_scene::style::paint::BackgroundRepeat::Repeat,
-                size: (None, None),
+                size: meo_canvas_scene::style::paint::BackgroundSize::AUTO,
                 position: (
                     meo_canvas_scene::Length::ZERO,
                     meo_canvas_scene::Length::ZERO,

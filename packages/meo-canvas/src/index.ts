@@ -64,6 +64,9 @@ export type BoxSizing = 'border-box' | 'content-box'
 /** How an image fills the box it was given. */
 export type ObjectFit = 'fill' | 'contain' | 'cover' | 'none' | 'scale-down'
 
+/** How a background image tiles to fill the box. */
+export type BackgroundRepeat = 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | 'space' | 'round'
+
 /**
  * Horizontal alignment of text within its box.
  *
@@ -173,8 +176,16 @@ export type {
   Length,
   Overflow as OverflowValue,
   PaintOrder,
+  BackgroundImage,
+  BackgroundPosition,
+  BackgroundSize,
   BoxShadow,
   FillRule,
+  Gradient,
+  GradientCenter,
+  GradientDirection,
+  GradientRamp,
+  GradientStop,
   Mask,
   MaskShape,
   Sides,

@@ -8,7 +8,7 @@ import { ArenaWriter, PROPERTY_TABLES, encodeScene, variant, type SideValue } fr
 import { ENUMS, NODE_TAG } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION, type ArenaProperty } from './generated/arena-tables.js'
 import { Box, Image, Path, RichText, Text, type SceneNode } from './node.js'
-import type { Style } from './style.js'
+import type { BackgroundImage, Gradient, GradientDirection, Style } from './style.js'
 
 /**
  * The reader this file checks the writer against.
@@ -97,6 +97,44 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
   TrackSize: input => tagged(input, ['auto', 'points', 'percent', 'fraction'], 'TrackSize'),
   Spacing: input => tagged(input, ['normal', 'points', 'em'], 'Spacing'),
   GridPlacement: input => ({ start: read(input, 'Option<i16>'), span: read(input, 'Option<u16>') }),
+  GradientStop: input => ({ offset: f32(input), color: color(input) }),
+  BackgroundSize: input => {
+    const tag = ['per-axis', 'cover', 'contain'][slot(input)]
+    if (tag === 'per-axis') return { tag, value: [read(input, 'Dimension'), read(input, 'Dimension')] }
+    if (tag === undefined) throw new RangeError('BackgroundSize has no such tag')
+    return { tag }
+  },
+  BackgroundImage: input => ({
+    source: (() => {
+      const tag = ['path', 'url', 'bytes'][slot(input)]
+      if (tag === undefined) throw new RangeError('ImageSource has no such tag')
+      return { tag, value: sourceValue(side(input)) }
+    })(),
+    repeat: read(input, 'BackgroundRepeat'),
+    size: read(input, 'BackgroundSize'),
+    position: [read(input, 'Length'), read(input, 'Length')],
+  }),
+  Gradient: input => ({ geometry: read(input, 'GradientGeometry'), stops: read(input, 'Vec<GradientStop>') }),
+  GradientGeometry: input => {
+    // The tag is `GradientKind`, a fieldless wire enum beside the data enum —
+    // the same split `NodeTag` has, and forced by the same thing: `from_wire`
+    // turns a byte back into a value and cannot invent a payload.
+    const kind = read(input, 'GradientKind') as string
+    if (kind === 'Linear') return { kind, direction: read(input, 'LinearDirection') }
+    const at = [read(input, 'Length'), read(input, 'Length')]
+    if (kind === 'Radial') return { kind, at }
+    return { kind, at, from: f32(input) }
+  },
+  LinearDirection: input => {
+    const tag = slot(input)
+    if (tag === 0) return { tag: 'angle', value: f32(input) }
+    if (tag !== 1) throw new RangeError(`LinearDirection has no tag ${tag}`)
+    return {
+      tag: 'between',
+      start: [read(input, 'Length'), read(input, 'Length')],
+      end: [read(input, 'Length'), read(input, 'Length')],
+    }
+  },
   Transform: input => ({
     translate_x: read(input, 'Length'),
     translate_y: read(input, 'Length'),
@@ -120,14 +158,13 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
     color: color(input),
   }),
   TextStroke: input => ({ width: f32(input), color: color(input) }),
-  // The gradient arm is absent on purpose: nothing writes one yet, so a mask
-  // reaching it would mean the writer invented something.
   Mask: input => {
     const tag = ['image', 'shape', 'path', 'gradient'][slot(input)]
     if (tag === 'shape') return { tag, value: read(input, 'MaskShape') }
     if (tag === 'path') return { tag, data: side(input), fillRule: read(input, 'FillRule') }
     if (tag === 'image') return { tag, value: sourceValue(side(input)) }
-    throw new TypeError(`this reader reads a shape, a path or an image mask, not ${String(tag)}`)
+    if (tag === 'gradient') return { tag, value: read(input, 'Gradient') }
+    throw new RangeError('Mask has no such tag')
   },
   // Only the solid arm. A gradient has no spelling on this surface yet, so one
   // reaching here would mean the writer invented something, and throwing says
@@ -450,6 +487,22 @@ const PROBES: Readonly<Record<string, Style>> = {
   vertical_align: { verticalAlign: 'middle' },
   word_spacing: { wordSpacing: 1 },
   z_index: { zIndex: 1 },
+  // `'100%'`, not the `'25%'` the kind cases use: this case's percentages come
+  // from `PROBE_FILL`, which is `1.0` for every property, so the probe has to
+  // match it. That is the blind spot #22 closes — a hundredfold units error is
+  // invisible at exactly this value — and the probe cannot step out of it
+  // alone, because the bytes it is compared against are written from the fill.
+  gradient: {
+    gradient: { type: 'radial', at: { x: '100%', y: '100%' }, stops: [{ offset: 1, color: '#00000001' }] },
+  },
+  background_image: {
+    backgroundImage: {
+      src: { url: 'probe' },
+      repeat: 'repeat-x',
+      size: 'cover',
+      position: { x: '100%', y: '100%' },
+    },
+  },
   transform: {
     transform: { translateX: '100%', translateY: '100%', rotate: 1, scaleX: 1, scaleY: 1, originX: '100%', originY: '100%' },
   },
@@ -468,10 +521,6 @@ const PROBES: Readonly<Record<string, Style>> = {
  * instead of leaving it silently absent from every scene this package writes.
  */
 const UNSPELT: Readonly<Record<string, string>> = {
-  gradient:
-    "waits on `Gradient` in the scene: v1's direction takes two explicit endpoints, `[x1, y1, x2, y2]`, and `angle_degrees` cannot say where a run starts and stops. Named directions and a raw angle are expressible today; the endpoint form is not, and the field is Agent One's",
-  background_image:
-    "waits on `BackgroundImage` in the scene: v1's `size` takes `'cover'` and `'contain'`, and `(Option<Length>, Option<Length>)` expresses a fixed size or an intrinsic one and neither of those. Agent One's field. It shares the gradient's vocabulary anyway, so it follows that one",
   font_variant: 'the thirty-five OpenType features need a spelling of their own',
 }
 
@@ -847,6 +896,112 @@ describe('the effects', () => {
   })
 })
 
+describe('a gradient', () => {
+  const of = (gradient: Gradient): unknown => page(Box({ gradient })).groups.paint?.gradient
+
+  it('resolves a named direction to the angle it means', () => {
+    // Eight names, clockwise from twelve. The scene holds an angle or two
+    // points, and a keyword is neither — it is a direction whose angle is known
+    // before the box is.
+    const angle = (direction: GradientDirection): unknown =>
+      (of({ type: 'linear', direction, colors: ['#000000ff'] }) as { geometry: { direction: unknown } }).geometry.direction
+
+    expect(angle('to-top')).toEqual({ tag: 'angle', value: 0 })
+    expect(angle('to-right')).toEqual({ tag: 'angle', value: 90 })
+    expect(angle('to-bottom-left')).toEqual({ tag: 'angle', value: 225 })
+    expect(angle(45)).toEqual({ tag: 'angle', value: 45 })
+  })
+
+  it('runs to the bottom when a linear gradient says nothing', () => {
+    // CSS's default for `linear-gradient`, and the only direction that can be
+    // assumed without inventing one.
+    expect(of({ type: 'linear', colors: ['#000000ff'] })).toMatchObject({
+      geometry: { kind: 'Linear', direction: { tag: 'angle', value: 180 } },
+    })
+  })
+
+  it('carries two explicit endpoints when it is given them', () => {
+    expect(of({ type: 'linear', direction: [0, 0, '25%', '75%'], colors: ['#000000ff'] })).toMatchObject({
+      geometry: {
+        direction: {
+          tag: 'between',
+          start: [
+            { tag: 'points', value: 0 },
+            { tag: 'points', value: 0 },
+          ],
+          end: [
+            { tag: 'percent', value: 0.25 },
+            { tag: 'percent', value: 0.75 },
+          ],
+        },
+      },
+    })
+  })
+
+  it('spreads a colour list evenly and puts one colour at the midpoint', () => {
+    // v1's rule for `colors`. A single colour is a flat fill, and the midpoint
+    // is where v1 puts it.
+    const stops = (colors: readonly string[]): unknown => (of({ type: 'linear', colors }) as { stops: { offset: number }[] }).stops.map(stop => stop.offset)
+
+    expect(stops(['#000000ff'])).toEqual([0.5])
+    expect(stops(['#000000ff', '#ffffffff'])).toEqual([0, 1])
+    expect(stops(['#000000ff', '#888888ff', '#ffffffff'])).toEqual([0, 0.5, 1])
+  })
+
+  it('gives a radial and a conic the middle of the box unless told', () => {
+    const centre = [
+      { tag: 'percent', value: 0.5 },
+      { tag: 'percent', value: 0.5 },
+    ]
+
+    expect(of({ type: 'radial', colors: ['#000000ff'] })).toMatchObject({ geometry: { kind: 'Radial', at: centre } })
+    expect(of({ type: 'conic', colors: ['#000000ff'] })).toMatchObject({ geometry: { kind: 'Conic', at: centre, from: 0 } })
+  })
+
+  it('is refused when the direction names nothing', () => {
+    expect(() => of({ type: 'linear', direction: 'to-nowhere' as 'to-top', colors: ['#000000ff'] })).toThrow(/no direction "to-nowhere"/)
+  })
+
+  it('can be the alpha of a mask', () => {
+    expect(page(Box({ mask: { gradient: { type: 'radial', colors: ['#000000ff', '#00000000'] } } })).groups.effects).toMatchObject({
+      mask: { tag: 'gradient', value: { geometry: { kind: 'Radial' } } },
+    })
+  })
+})
+
+describe('a background image', () => {
+  const of = (backgroundImage: BackgroundImage): unknown => page(Box({ backgroundImage })).groups.paint?.background_image
+
+  it('reads a bare string as a local path and tiles both ways', () => {
+    expect(of({ src: 'texture.png' })).toEqual({
+      source: { tag: 'path', value: 'texture.png' },
+      repeat: 'Repeat',
+      // The picture's own size on both axes, which is CSS's initial value and
+      // has exactly one spelling.
+      size: { tag: 'per-axis', value: [{ tag: 'auto' }, { tag: 'auto' }] },
+      position: [
+        { tag: 'points', value: 0 },
+        { tag: 'points', value: 0 },
+      ],
+    })
+  })
+
+  it('sizes the width from a bare value and leaves the height to the picture', () => {
+    // v1's reading of `size: 12`, and CSS's one-value form.
+    expect(of({ src: 'a.png', size: 12 })).toMatchObject({
+      size: { tag: 'per-axis', value: [{ tag: 'points', value: 12 }, { tag: 'auto' }] },
+    })
+    expect(of({ src: 'a.png', size: { height: '50%' } })).toMatchObject({
+      size: { tag: 'per-axis', value: [{ tag: 'auto' }, { tag: 'percent', value: 0.5 }] },
+    })
+  })
+
+  it('carries the two keywords that scale to the box', () => {
+    expect(of({ src: 'a.png', size: 'cover' })).toMatchObject({ size: { tag: 'cover' } })
+    expect(of({ src: 'a.png', size: 'contain' })).toMatchObject({ size: { tag: 'contain' } })
+  })
+})
+
 describe('the shorthands', () => {
   it('spread one value across four edges', () => {
     expect(page(Box({ padding: 4 })).groups.layout).toEqual({
@@ -1060,10 +1215,9 @@ describe('a number that is not one', () => {
  * One probe per node kind the surface can express, keyed by the case's name.
  *
  * The kind cases pin the **payload**, which the property cases cannot: every
- * one of those is a styled `Box`, so a change to how a text, image or path node
- * is written passed every gate here. It did, once — an arena text payload
- * changed, the whole suite stayed green, and the example died with
- * `slot 76 holds 15`.
+ * one of those is a styled `Box`, so without these a change to how a text,
+ * image or path node is written passes every gate in this file and fails first
+ * in a rendered example, as a slot the reader cannot make sense of.
  *
  * The probes are hand-written for the reason {@link PROBES} are: deriving them
  * from the fixture's `value` would mean writing the Rust-to-TypeScript adapter
@@ -1292,8 +1446,8 @@ describe('the bytes Rust writes for the same scene', () => {
  * a keyword with no variant behind it fails, and a variant with no keyword in
  * front of it fails. The second direction is the one that rots silently — a
  * variant added upstream is a value the scene can carry and this surface cannot
- * name, and nothing else here would notice. It has already happened once:
- * `PositionType::Static` arrived while this was being written.
+ * name, and nothing else here notices — the encoder throws only for a keyword
+ * with no variant, never for a variant with no keyword.
  *
  * The unions themselves are types, so they are gone at runtime and cannot be
  * read. This is that list written down where it can be checked.

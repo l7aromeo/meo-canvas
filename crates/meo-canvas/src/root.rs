@@ -109,6 +109,8 @@ pub enum BuildError {
     Render(Error),
     /// The bytes could not be written to the path given.
     Write(std::io::Error),
+    /// A filename's extension names no format this can write.
+    Format(String),
 }
 
 impl fmt::Display for BuildError {
@@ -118,6 +120,10 @@ impl fmt::Display for BuildError {
             Self::Scene(error) => error.fmt(out),
             Self::Render(error) => error.fmt(out),
             Self::Write(error) => error.fmt(out),
+            Self::Format(path) => write!(
+                out,
+                "cannot tell the format from {path:?}; name the file with an extension such as .png, or use `to_file_as`"
+            ),
         }
     }
 }
@@ -534,13 +540,41 @@ impl Canvas {
         Ok(self.painted.to_buffer(format, options)?)
     }
 
-    /// Encodes the canvas and writes it to `path`.
+    /// Encodes the canvas and writes it to `path`, taking the format from the
+    /// extension.
+    ///
+    /// `canvas.to_file("out.png")`, the same call a JavaScript caller writes.
+    /// An extension naming no format is an error rather than a default:
+    /// writing a PNG because nothing said otherwise turns a typo into a file
+    /// whose name lies about its contents. Use [`to_file_as`](Self::to_file_as)
+    /// to name the format instead — `raw` has to be named, because a `.bin` of
+    /// pixel bytes is not a filename any format may be inferred from.
     ///
     /// # Errors
     ///
-    /// Returns [`BuildError::Render`] when the encode fails or the file cannot
-    /// be written.
+    /// Returns [`BuildError::Format`] when the extension names no format, and
+    /// [`BuildError::Render`] or [`BuildError::Write`] when the encode or the
+    /// write fails.
     pub fn to_file(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<(), BuildError> {
+        let path = path.as_ref();
+        let format = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .and_then(ImageFormat::from_extension)
+            .ok_or_else(|| BuildError::Format(path.display().to_string()))?;
+        self.to_file_with(path, format, &EncodeOptions::default())
+    }
+
+    /// Encodes the canvas in the named format and writes it to `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::Render`] when the encode fails or
+    /// [`BuildError::Write`] when the file cannot be written.
+    pub fn to_file_as(
         &mut self,
         path: impl AsRef<Path>,
         format: ImageFormat,
@@ -800,12 +834,11 @@ mod tests {
 
     #[test]
     fn the_two_rasterisers_do_not_draw_the_same_pixels() {
-        // The check a fake cannot satisfy. `gpu` reached the addon through a
-        // paint-options object once, the addon stopped reading it there, and
-        // every test asserting the flag had been copied stayed green while it
-        // reached nothing. Two real renders that must differ cannot pass that
-        // way -- and if this build has no GPU compiled in, both are the CPU and
-        // the test says so rather than passing vacuously.
+        // The check a fake cannot satisfy. An assertion that a flag was copied
+        // from one object to another stays true when nothing on the far side
+        // reads it; two real renders that must differ do not. If this build has
+        // no GPU compiled in, both are the CPU and the test says so rather than
+        // passing vacuously.
         //
         // The content is load-bearing: the two rasterisers differ on
         // anti-aliased edges and agree exactly on a picture without any, so
@@ -951,6 +984,43 @@ mod tests {
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
         assert_eq!(&jpg[..2], b"\xff\xd8");
         assert_eq!(canvas.page_count(), 1);
+    }
+
+    #[test]
+    fn a_filename_names_the_format_it_is_written_in() {
+        // The same call a JavaScript caller writes,
+        // `canvas.to_file("out.png")`. An extension naming no format is
+        // refused rather than defaulted: a typo would otherwise produce
+        // a file whose name lies about its contents.
+        let renderer = Renderer::new();
+        let mut canvas = Root::new(4.0, 4.0)
+            .render(&renderer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let directory = std::env::temp_dir().join("meo-canvas-to-file");
+        std::fs::create_dir_all(&directory)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        canvas
+            .to_file(directory.join("out.png"))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let written = std::fs::read(directory.join("out.png"))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(&written[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(matches!(
+            canvas.to_file(directory.join("out.nonsense")),
+            Err(BuildError::Format(_))
+        ));
+        // `raw` is not inferable -- a `.bin` of pixel bytes is a file nothing
+        // reads back -- so it is named rather than guessed.
+        assert!(matches!(
+            canvas.to_file(directory.join("out.bin")),
+            Err(BuildError::Format(_))
+        ));
+        canvas
+            .to_file_as(directory.join("out.bin"), Format::Raw)
+            .unwrap_or_else(|error| unreachable!("{error}"));
     }
 
     #[test]

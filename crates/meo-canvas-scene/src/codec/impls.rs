@@ -24,7 +24,10 @@ use crate::{
             Transform,
         },
         layout::{GridPlacement, LayoutStyle, TrackSize},
-        paint::{BackgroundImage, Color, Gradient, GradientStop, PaintStyle},
+        paint::{
+            BackgroundImage, BackgroundSize, Color, Gradient, GradientGeometry,
+            GradientKind, GradientStop, LinearDirection, PaintStyle,
+        },
         text::{
             FontWeight, ParagraphStyle, Spacing, TextSegment, TextStroke,
             TextStyle,
@@ -380,22 +383,110 @@ impl Wire for GradientStop {
     }
 }
 
+impl Wire for LinearDirection {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::Angle(degrees) => {
+                out.u8(TAG_FIRST);
+                out.f32(*degrees);
+            }
+            Self::Between { start, end } => {
+                out.u8(TAG_FIRST + 1);
+                start.0.write(out);
+                start.1.write(out);
+                end.0.write(out);
+                end.1.write(out);
+            }
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            TAG_FIRST => Ok(Self::Angle(input.f32()?)),
+            1 => Ok(Self::Between {
+                start: (Length::read(input)?, Length::read(input)?),
+                end: (Length::read(input)?, Length::read(input)?),
+            }),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
+    }
+}
+
+impl Wire for GradientGeometry {
+    fn write(&self, out: &mut Writer<'_>) {
+        // The tag first, and it is `GradientKind` rather than a number written
+        // here: one definition of which shapes exist, shared with the arena and
+        // with the generated TypeScript table.
+        self.kind().write(out);
+        match self {
+            Self::Linear { direction } => direction.write(out),
+            Self::Radial { at } => {
+                at.0.write(out);
+                at.1.write(out);
+            }
+            Self::Conic { at, from } => {
+                at.0.write(out);
+                at.1.write(out);
+                out.f32(*from);
+            }
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        Ok(match GradientKind::read(input)? {
+            GradientKind::Linear => Self::Linear {
+                direction: LinearDirection::read(input)?,
+            },
+            GradientKind::Radial => Self::Radial {
+                at: (Length::read(input)?, Length::read(input)?),
+            },
+            GradientKind::Conic => Self::Conic {
+                at: (Length::read(input)?, Length::read(input)?),
+                from: input.f32()?,
+            },
+        })
+    }
+}
+
 impl Wire for Gradient {
     fn write(&self, out: &mut Writer<'_>) {
-        self.kind.write(out);
+        self.geometry.write(out);
         out.list(&self.stops);
-        out.f32(self.angle_degrees);
-        self.center.0.write(out);
-        self.center.1.write(out);
     }
 
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            kind: Wire::read(input)?,
+            geometry: GradientGeometry::read(input)?,
             stops: input.list()?,
-            angle_degrees: input.f32()?,
-            center: (Length::read(input)?, Length::read(input)?),
         })
+    }
+}
+
+impl Wire for BackgroundSize {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::PerAxis(width, height) => {
+                out.u8(TAG_FIRST);
+                width.write(out);
+                height.write(out);
+            }
+            Self::Cover => out.u8(TAG_FIRST + 1),
+            Self::Contain => out.u8(TAG_FIRST + 2),
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            TAG_FIRST => Ok(Self::PerAxis(
+                Dimension::read(input)?,
+                Dimension::read(input)?,
+            )),
+            1 => Ok(Self::Cover),
+            2 => Ok(Self::Contain),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
     }
 }
 
@@ -403,8 +494,7 @@ impl Wire for BackgroundImage {
     fn write(&self, out: &mut Writer<'_>) {
         self.source.write(out);
         self.repeat.write(out);
-        self.size.0.write(out);
-        self.size.1.write(out);
+        self.size.write(out);
         self.position.0.write(out);
         self.position.1.write(out);
     }
@@ -413,7 +503,7 @@ impl Wire for BackgroundImage {
         Ok(Self {
             source: ImageSource::read(input)?,
             repeat: Wire::read(input)?,
-            size: (Option::read(input)?, Option::read(input)?),
+            size: BackgroundSize::read(input)?,
             position: (Length::read(input)?, Length::read(input)?),
         })
     }

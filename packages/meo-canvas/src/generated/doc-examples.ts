@@ -8,6 +8,7 @@
 // property that no longer exists and every check stays green.
 
 import { Image, Path, Root, Row, Text } from '../index.js'
+import type { Gradient } from '../index.js'
 
 /** `node.ts`. */
 export async function example_node(): Promise<void> {
@@ -49,4 +50,11 @@ export async function example_Root(): Promise<void> {
   })
 
   await canvas.toFile('card.png')
+}
+
+/** `style.ts, Gradient`. */
+export async function example_Gradient(): Promise<void> {
+
+  const fade: Gradient = { type: 'linear', direction: 'to-bottom', colors: ['#101014', 'transparent'] }
+  const dial: Gradient = { type: 'conic', from: 90, stops: [{ offset: 0, color: '#f0c' }] }
 }

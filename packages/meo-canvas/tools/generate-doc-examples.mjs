@@ -3,9 +3,8 @@
 // The Rust half runs its examples: `just docs` fails the build on a doctest
 // naming a field that no longer exists. TypeScript compiles nothing inside a
 // comment, so a `.ts` doc example is prose — it can name a removed property and
-// every gate stays green. That happened: renaming `background` to
-// `backgroundColor` left two examples referring to the old key and `just
-// typecheck` passed.
+// every gate stays green. Renaming a style property leaves every example that
+// used the old name compiling, because none of them is compiled at all.
 //
 // So the examples are lifted into `src/generated/doc-examples.ts`, which the
 // existing `just typecheck` already covers because it covers `src`. That reuses
@@ -90,10 +89,10 @@ const DECLARATION = /^export (?:async )?(?:function|const|class|interface|type|e
 /**
  * The name of the item a block documents, found by reading forward from it.
  *
- * The artefact used to record the block's line number, which made it stale
- * whenever anything above the comment moved — four times in one day, none of
- * them a change to an example. A line number is where a thing is; the name is
- * what it is, and only the second is what this gate checks.
+ * The name rather than the block's line number, which would go stale whenever
+ * anything above the comment moved and force a regeneration for a change to no
+ * example. A line number is where a thing is; the name is what it is, and only
+ * the second is what this gate checks.
  *
  * `undefined` for a block in a module-level comment, which documents no item.
  */

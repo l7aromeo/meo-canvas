@@ -17,6 +17,7 @@
  * @packageDocumentation
  */
 
+import type { ImageSource } from './node.js'
 import type {
   Align,
   GridAutoFlow,
@@ -26,6 +27,7 @@ import type {
   FlexDirection,
   FlexWrap,
   Justify,
+  BackgroundRepeat,
   ObjectFit,
   PositionType,
   TextAlign,
@@ -123,6 +125,109 @@ export type BorderStyle = 'solid' | 'dashed' | 'dotted'
 export type Overflow = 'visible' | 'hidden' | 'scroll'
 
 /**
+ * How big each tile of a background image is drawn.
+ *
+ * CSS's `background-size` and nothing more: a length or `'auto'` per axis, or
+ * `'cover'` and `'contain'` which scale to the box. There is no `'fill'`,
+ * `'none'` or `'scale-down'` — those belong to `object-fit`, which is a
+ * different property on a different kind of node.
+ *
+ * A bare value sizes the width and leaves the height to the picture's own
+ * proportions, which is v1's reading of `size: 12`.
+ */
+export type BackgroundSize = 'cover' | 'contain' | Dimension | { readonly width?: Dimension; readonly height?: Dimension }
+
+/** Where the first tile of a background image sits, from the box's top-left. */
+export interface BackgroundPosition {
+  /** Distance from the left edge. */
+  readonly x?: Length
+  /** Distance from the top edge. */
+  readonly y?: Length
+}
+
+/** A picture painted over the background colour, and how it is placed. */
+export interface BackgroundImage {
+  /** A path, a URL, or the bytes themselves. A bare string is a local path. */
+  readonly src: string | ImageSource
+  /** How it tiles. Defaults to tiling both ways, as CSS does. */
+  readonly repeat?: BackgroundRepeat
+  /** How big each tile is drawn. Defaults to the picture's own size. */
+  readonly size?: BackgroundSize
+  /** Where the first tile sits. Defaults to the box's top-left corner. */
+  readonly position?: BackgroundPosition
+}
+
+/**
+ * Where a linear gradient runs.
+ *
+ * Either an edge-to-edge direction, an angle in degrees clockwise from twelve
+ * o'clock, or explicit endpoints. The tuple is `[x0, y0, x1, y1]` in the node's
+ * own coordinates from its top-left corner, which is what a keyword resolves to
+ * once the node's size is known — v1's wording and v1's shape.
+ *
+ * The bare angle is CSS's `linear-gradient(45deg, …)`, which v1 has no spelling
+ * for. The names are CSS's, so where v1 offers less than CSS the reference
+ * wins.
+ */
+export type GradientDirection =
+  | 'to-top'
+  | 'to-right'
+  | 'to-bottom'
+  | 'to-left'
+  | 'to-top-right'
+  | 'to-top-left'
+  | 'to-bottom-right'
+  | 'to-bottom-left'
+  | number
+  | readonly [Length, Length, Length, Length]
+
+/** One colour at one position along a gradient. */
+export interface GradientStop {
+  /** Where it sits, `0` at the start and `1` at the end. */
+  readonly offset: number
+  /** The colour there. */
+  readonly color: Color
+}
+
+/** The point a radial or conic gradient turns about. Defaults to the middle. */
+export interface GradientCenter {
+  /** Distance from the left edge. */
+  readonly x?: Length
+  /** Distance from the top edge. */
+  readonly y?: Length
+}
+
+/**
+ * The colours a gradient runs through.
+ *
+ * Two spellings, and exactly one of them: `colors` is v1's, a list spread
+ * evenly from the first to the last, and `stops` places each colour itself. The
+ * even spread is arithmetic rather than a second wire shape — the scene holds
+ * offsets either way.
+ */
+export type GradientRamp =
+  { readonly colors: readonly Color[]; readonly stops?: undefined } | { readonly stops: readonly GradientStop[]; readonly colors?: undefined }
+
+/**
+ * A gradient, as a fill or as the alpha of a {@link Mask}.
+ *
+ * One kind per geometry, and each carries only what it reads: a radial gradient
+ * has no direction and a linear one has no centre, so neither can be given a
+ * value nothing looks at.
+ *
+ * ```ts
+ * import type { Gradient } from 'meo-canvas'
+ *
+ * const fade: Gradient = { type: 'linear', direction: 'to-bottom', colors: ['#101014', 'transparent'] }
+ * const dial: Gradient = { type: 'conic', from: 90, stops: [{ offset: 0, color: '#f0c' }] }
+ * ```
+ */
+export type Gradient =
+  | ({ readonly type: 'linear'; readonly direction?: GradientDirection } & GradientRamp)
+  | ({ readonly type: 'radial'; readonly at?: GradientCenter } & GradientRamp)
+  | ({ readonly type: 'conic'; readonly at?: GradientCenter; readonly from?: number } & GradientRamp)
+
+/**
  * Moving, turning and scaling a node after layout.
  *
  * v1's field names, which are CSS's split apart: `translateX` rather than a
@@ -205,7 +310,7 @@ export type FillRule = 'nonzero' | 'evenodd'
  *
  * A bare string is path data, which is v1's shorthand for `{ path }`.
  */
-export type Mask = string | { readonly shape: MaskShape } | { readonly path: string; readonly fillRule?: FillRule }
+export type Mask = string | { readonly shape: MaskShape } | { readonly path: string; readonly fillRule?: FillRule } | { readonly gradient: Gradient }
 
 /** Where a grid item sits on one axis: a line, or a line and a span. */
 export interface GridPlacement {
@@ -375,6 +480,14 @@ export interface Style {
   readonly wordSpacing?: Spacing
 
   // -- Effects --------------------------------------------------------
+  /**
+   * A gradient painted over the background colour.
+   *
+   * One kind per geometry, each carrying only what it reads.
+   */
+  readonly gradient?: Gradient
+  /** A picture painted over the gradient. */
+  readonly backgroundImage?: BackgroundImage
   /**
    * Moves, turns and scales the node after it is laid out.
    *

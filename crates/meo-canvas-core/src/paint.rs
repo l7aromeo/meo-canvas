@@ -35,7 +35,8 @@ use meo_canvas_scene::{
         effect::{BoxShadow, Effects, FillRule, Mask, MaskShape, Transform},
         layout::{Display, Overflow, PositionType},
         paint::{
-            BlendMode, Color, Gradient, GradientKind, ObjectFit, PaintStyle,
+            BlendMode, Color, Gradient, GradientGeometry, LinearDirection,
+            ObjectFit, PaintStyle,
         },
     },
 };
@@ -1046,14 +1047,27 @@ fn build_gradient(gradient: &Gradient, rect: Rect) -> Result<Shader, Error> {
         })
         .collect();
 
-    let center = Point::new(
-        rect.origin.x + resolve_length(gradient.center.0, rect.size.width),
-        rect.origin.y + resolve_length(gradient.center.1, rect.size.height),
-    );
+    // A point given as a fraction of the box, placed in the box.
+    // Named `place` rather than `at`, which is now a field name in the
+    // geometry and would shadow it at every call site here.
+    let place = |point: (Length, Length)| {
+        Point::new(
+            rect.origin.x + resolve_length(point.0, rect.size.width),
+            rect.origin.y + resolve_length(point.1, rect.size.height),
+        )
+    };
 
-    let shader = match gradient.kind {
-        GradientKind::Linear => {
-            let (start, end) = gradient_line(gradient.angle_degrees, rect);
+    let shader = match gradient.geometry {
+        GradientGeometry::Linear { direction } => {
+            let (start, end) = match direction {
+                LinearDirection::Angle(degrees) => gradient_line(degrees, rect),
+                // Explicit endpoints, which is the thing an angle cannot say:
+                // where the ramp begins and ends rather than merely which way
+                // it runs.
+                LinearDirection::Between { start, end } => {
+                    (place(start), place(end))
+                }
+            };
             Shader::linear_gradient(
                 start,
                 end,
@@ -1061,21 +1075,21 @@ fn build_gradient(gradient: &Gradient, rect: Rect) -> Result<Shader, Error> {
                 GradientInterpolation::default(),
             )
         }
-        GradientKind::Radial => {
+        GradientGeometry::Radial { at } => {
             // The radius that reaches the furthest corner, which is CSS's
             // `farthest-corner` default for a radial gradient.
             let radius = rect.size.width.hypot(rect.size.height) / 2.0;
             Shader::radial_gradient(
-                center,
+                place(at),
                 radius,
                 &stops,
                 GradientInterpolation::default(),
             )
         }
-        GradientKind::Conic => Shader::sweep_gradient(
-            center,
-            gradient.angle_degrees,
-            gradient.angle_degrees + DEGREES_PER_TURN,
+        GradientGeometry::Conic { at, from } => Shader::sweep_gradient(
+            place(at),
+            from,
+            from + DEGREES_PER_TURN,
             &stops,
             GradientInterpolation::default(),
         ),
@@ -1170,9 +1184,9 @@ mod tests {
     };
 
     use super::{
-        ColorSpace, ColorType, Display, PositionType, Surface, SurfaceOptions,
-        draw, fit_image, gradient_line, pixel_size, resolve_length,
-        to_skia_blend, z_ordered,
+        ColorSpace, ColorType, Display, GradientGeometry, LinearDirection,
+        PositionType, Surface, SurfaceOptions, draw, fit_image, gradient_line,
+        pixel_size, resolve_length, to_skia_blend, z_ordered,
     };
     use crate::{
         layout::LayoutResult,
@@ -1723,17 +1737,7 @@ mod tests {
     /// the wrong pixels is caught by a fixture and by nothing in this file.
     #[test]
     fn the_decorated_paths_draw_without_error() {
-        use meo_canvas_scene::{
-            Corners, Sides,
-            style::{
-                effect::{BoxShadow, Effects, Transform},
-                layout::Overflow,
-                paint::{
-                    BackgroundImage, BackgroundRepeat, Color, Gradient,
-                    GradientKind, GradientStop,
-                },
-            },
-        };
+        use meo_canvas_scene::style::paint::{Color, GradientStop};
 
         let stops = vec![
             GradientStop {
@@ -1746,7 +1750,45 @@ mod tests {
             },
         ];
 
-        for kind in GradientKind::ALL {
+        draw_each_gradient_geometry(&stops);
+    }
+
+    /// Every gradient geometry, drawn. Split from the decorated-path test above
+    /// only because one function covering both runs past the line limit.
+    fn draw_each_gradient_geometry(
+        stops: &[meo_canvas_scene::style::paint::GradientStop],
+    ) {
+        use meo_canvas_scene::{
+            Corners, Sides,
+            style::{
+                effect::{BoxShadow, Effects, Transform},
+                layout::Overflow,
+                paint::{BackgroundImage, BackgroundRepeat, Color, Gradient},
+            },
+        };
+
+        let geometries = [
+            GradientGeometry::Linear {
+                direction: LinearDirection::Angle(45.0),
+            },
+            // The endpoint form, which no other test here exercises and which
+            // is the reason the geometry moved onto the kinds.
+            GradientGeometry::Linear {
+                direction: LinearDirection::Between {
+                    start: (Length::Percent(0.25), Length::ZERO),
+                    end: (Length::Percent(0.75), Length::Percent(1.0)),
+                },
+            },
+            GradientGeometry::Radial {
+                at: GradientGeometry::CENTER,
+            },
+            GradientGeometry::Conic {
+                at: (Length::Percent(0.25), Length::Percent(0.75)),
+                from: 45.0,
+            },
+        ];
+
+        for geometry in geometries {
             let mut scene = Scene::new(Size::new(80.0, 60.0));
             let child = scene
                 .push(NodeId::ROOT, Node::container())
@@ -1754,10 +1796,8 @@ mod tests {
 
             if let Some(node) = scene.get_mut(child) {
                 node.paint.gradient = Some(Gradient {
-                    kind: *kind,
-                    stops: stops.clone(),
-                    angle_degrees: 45.0,
-                    center: (Length::Percent(0.5), Length::Percent(0.5)),
+                    geometry,
+                    stops: stops.to_vec(),
                 });
                 node.paint.border_radius = Corners::all(3.0);
                 // Per-edge widths and colours, so the border takes the
@@ -1810,7 +1850,7 @@ mod tests {
                 node.paint.background_image = Some(BackgroundImage {
                     source: ImageSource::Bytes(RED_PNG.to_vec()),
                     repeat: BackgroundRepeat::NoRepeat,
-                    size: (None, None),
+                    size: meo_canvas_scene::style::paint::BackgroundSize::AUTO,
                     position: (Length::ZERO, Length::ZERO),
                 });
             }
@@ -1826,7 +1866,7 @@ mod tests {
                 crate::layout::solve(&scene, scene.pages[0], &mut measurer)
                     .unwrap_or_else(|error| unreachable!("{error}"));
             draw(&mut surface, &resolved, &solved, &mut measurer)
-                .unwrap_or_else(|error| unreachable!("{kind:?}: {error}"));
+                .unwrap_or_else(|error| unreachable!("{geometry:?}: {error}"));
         }
     }
 
@@ -1917,12 +1957,14 @@ mod tests {
             node::PathPaint,
             style::{
                 effect::FillRule,
-                paint::{Color, Gradient, GradientKind, GradientStop},
+                paint::{Color, Gradient, GradientStop},
             },
         };
 
         let gradient = Gradient {
-            kind: GradientKind::Linear,
+            geometry: GradientGeometry::Linear {
+                direction: LinearDirection::Angle(0.0),
+            },
             stops: vec![
                 GradientStop {
                     offset: 0.0,
@@ -1933,8 +1975,6 @@ mod tests {
                     color: Color::rgb(255, 255, 255),
                 },
             ],
-            angle_degrees: 0.0,
-            center: (Length::Percent(0.5), Length::Percent(0.5)),
         };
 
         let mut scene = Scene::new(Size::new(30.0, 30.0));

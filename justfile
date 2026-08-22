@@ -76,8 +76,8 @@ addon:
 #
 # Twice for the two crates that name a GPU backend, because a build without one
 # rasterises on the CPU and a test asserting that the two rasterisers differ
-# would pass vacuously. That is not hypothetical: `gpu` reached nothing for a
-# while and every test that asserted the flag had been copied stayed green.
+# would pass vacuously. A run without the features is a run where the assertion
+# that matters cannot fail.
 test:
     cargo test --workspace
     cargo test -p meo-canvas-node --features "{{ host_features }}"
@@ -201,9 +201,9 @@ typecheck: ensure-deps
 #
 # TypeScript compiles nothing inside a comment, so a `.ts` doc example is prose
 # and can name a property that no longer exists while every gate stays green.
-# That happened once: renaming `background` to `backgroundColor` left two
-# examples on the old key and `just typecheck` passed. The Rust half has no such
-# exposure -- `just docs` runs its doctests.
+# Renaming a style property leaves every example using the old name compiling,
+# because none of them is compiled at all. The Rust half has no such exposure --
+# `just docs` runs its doctests.
 #
 # The emitted file lands under `src`, which `typecheck` already covers, so this
 # reuses a gate rather than adding one.

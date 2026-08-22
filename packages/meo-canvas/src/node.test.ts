@@ -102,8 +102,8 @@ describe('styles', () => {
 
   it('take a style object spread into the props', () => {
     // A caller who keeps a shared style in a variable spreads it, as CSS-in-JS
-    // callers do. Nothing in the surface stops that; it is only worth stating
-    // because the nested form used to be the way to do it.
+    // callers do. Nothing in the surface stops that, and this says so: a flat
+    // props object is not a reason to give up a shared base.
     const theme: Style = { backgroundColor: '#101014', padding: 24 }
 
     expect(Box({ ...theme, gap: 16 }).style).toEqual({

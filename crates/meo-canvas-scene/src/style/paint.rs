@@ -8,7 +8,7 @@
 
 use crate::{
     geometry::{Corners, Sides},
-    style::Length,
+    style::{Dimension, Length},
     wire::wire_enum,
 };
 
@@ -176,23 +176,156 @@ pub struct GradientStop {
     pub color: Color,
 }
 
+/// Which way a linear gradient runs.
+///
+/// A union on one field rather than two kinds of gradient, which is where v1
+/// has it (`canvas.type.ts:239`: a `GradientDirection` is four numbers *or* one
+/// of eight keywords) and where CSS has it — `linear-gradient()` takes an angle
+/// or a `to <side>` and never changes function name for it. A caller porting a
+/// linear gradient should not have to work out which kind their direction
+/// implies.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LinearDirection {
+    /// Degrees clockwise from twelve o'clock, as CSS measures them.
+    ///
+    /// The eight keyword directions are this: `to right` is `90.0`, `to
+    /// bottom-right` is `135.0`. Resolving a keyword to an angle is arithmetic
+    /// and belongs to whichever surface offered the keyword.
+    Angle(f32),
+    /// Two explicit endpoints, as fractions of the box.
+    ///
+    /// What an angle cannot say: where the ramp begins and where it ends, as
+    /// against merely which way it runs. v1's four-number direction.
+    Between {
+        /// Where the first stop sits.
+        start: (Length, Length),
+        /// Where the last stop sits.
+        end: (Length, Length),
+    },
+}
+
+impl Default for LinearDirection {
+    fn default() -> Self {
+        // Top to bottom, which is what CSS's `linear-gradient()` does when
+        // given no direction at all.
+        Self::Angle(180.0)
+    }
+}
+
+/// A gradient's shape, and the geometry that shape reads.
+///
+/// One variant per [`GradientKind`], each carrying exactly the fields its kind
+/// uses. The fields were flat until the shape changed, and the type's own
+/// documentation admitted the problem: `angle_degrees` was ignored by `Radial`
+/// and `center` was ignored by `Linear`, so three kinds shared four fields and
+/// each read two. A radial gradient can no longer carry an angle nobody reads.
+///
+/// The tag stays a separate fieldless [`GradientKind`], as [`NodeTag`] is to
+/// [`NodeKind`]: `wire_enum!` writes `from_wire`, which turns a byte back into
+/// a value and cannot invent a payload to go with it. Keeping the tag apart is
+/// what lets both wire formats and the TypeScript keyword table stay exactly as
+/// they are.
+///
+/// [`NodeTag`]: crate::node::NodeTag
+/// [`NodeKind`]: crate::node::NodeKind
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GradientGeometry {
+    /// Along a line.
+    Linear {
+        /// Which way the line runs.
+        direction: LinearDirection,
+    },
+    /// Outward from a point.
+    Radial {
+        /// The point it radiates from, as a fraction of the box.
+        ///
+        /// Named `at` rather than `center` because that is what a caller
+        /// writes: v1 spells the conic one `at` (`canvas.type.ts:280`) and
+        /// both v2 surfaces follow it, under the settled rule that the
+        /// JavaScript name is authoritative and Rust snake-cases it.
+        at: (Length, Length),
+    },
+    /// Around a point.
+    Conic {
+        /// The point it sweeps around, as a fraction of the box.
+        at: (Length, Length),
+        /// The angle the sweep begins at, in degrees clockwise from twelve
+        /// o'clock.
+        ///
+        /// Named for CSS's own `from <angle>` keyword, which v1 also matched
+        /// (`canvas.type.ts:285`). The unit lives in this sentence rather than
+        /// in the name: a suffix is what a type reaches for when it cannot say
+        /// its unit any other way, and a doc comment can.
+        from: f32,
+    },
+}
+
+impl GradientGeometry {
+    /// The point CSS uses when a gradient names none: the middle of the box.
+    pub const CENTER: (Length, Length) =
+        (Length::Percent(0.5), Length::Percent(0.5));
+
+    /// Which kind this geometry describes.
+    #[must_use]
+    pub const fn kind(&self) -> GradientKind {
+        match self {
+            Self::Linear { .. } => GradientKind::Linear,
+            Self::Radial { .. } => GradientKind::Radial,
+            Self::Conic { .. } => GradientKind::Conic,
+        }
+    }
+}
+
+impl Default for GradientGeometry {
+    fn default() -> Self {
+        Self::Linear {
+            direction: LinearDirection::default(),
+        }
+    }
+}
+
 /// A gradient fill.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Gradient {
-    /// The shape the stops are laid along.
-    pub kind: GradientKind,
+    /// The shape, and the geometry that shape reads.
+    pub geometry: GradientGeometry,
     /// The stops, in increasing offset order.
     pub stops: Vec<GradientStop>,
-    /// Angle in degrees, measured clockwise from twelve o'clock.
+}
+
+/// How large a background image is drawn.
+///
+/// CSS's `background-size`, which is `auto | <length-percentage>{1,2} | cover |
+/// contain` and nothing else. Deliberately **not** [`ObjectFit`], which is the
+/// tempting reuse: that carries `Fill`, `None` and `ScaleDown`, none of which
+/// `background-size` has, and three keywords the renderer must ignore is worse
+/// than one more enum.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BackgroundSize {
+    /// A size per axis, where [`Dimension::Auto`] on an axis is that axis's
+    /// intrinsic size.
     ///
-    /// Read by [`GradientKind::Linear`] as the direction of the line and by
-    /// [`GradientKind::Conic`] as the angle the sweep begins at. Ignored by
-    /// [`GradientKind::Radial`].
-    pub angle_degrees: f32,
-    /// Centre of a radial or conic gradient, as a fraction of the box.
-    ///
-    /// `(0.5, 0.5)` is the middle, which is what CSS defaults to.
-    pub center: (Length, Length),
+    /// [`Dimension`] rather than `Option<Length>` because the per-axis auto
+    /// then has a name: `background-size: auto 50%` is valid CSS, so the pair
+    /// has to stay, and an `Option` would give the all-auto case two spellings
+    /// — this variant with two `None`s, and a separate `Auto` variant beside
+    /// it. One state, one spelling.
+    PerAxis(Dimension, Dimension),
+    /// Scaled to cover the box, cropping whichever axis overflows.
+    Cover,
+    /// Scaled to fit inside the box, leaving whichever axis falls short.
+    Contain,
+}
+
+impl BackgroundSize {
+    /// Both axes at their intrinsic size, which is CSS's initial value.
+    pub const AUTO: Self = Self::PerAxis(Dimension::Auto, Dimension::Auto);
+}
+
+impl Default for BackgroundSize {
+    fn default() -> Self {
+        Self::AUTO
+    }
 }
 
 /// A background image and how it is placed.
@@ -202,8 +335,8 @@ pub struct BackgroundImage {
     pub source: crate::node::ImageSource,
     /// How it tiles.
     pub repeat: BackgroundRepeat,
-    /// Drawn size. `None` on an axis leaves that axis at its intrinsic size.
-    pub size: (Option<Length>, Option<Length>),
+    /// Drawn size.
+    pub size: BackgroundSize,
     /// Offset of the first tile from the box's top-left corner.
     pub position: (Length, Length),
 }

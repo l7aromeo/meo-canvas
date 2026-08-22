@@ -787,9 +787,9 @@ mod tests {
 
     #[test]
     fn text_new_reads_its_string_as_markup() {
-        // The defect this closed: a Rust caller used to get the angle brackets
-        // literally while a JavaScript caller got a bold run, because the
-        // parser lived in TypeScript.
+        // The parser lives in `meo-canvas-core`, below every surface, so a
+        // Rust caller gets a bold run where a literal `<b>` would otherwise
+        // reach the glyphs.
         let NodeKind::Text { segments, .. } =
             Text::new("plain <b>bold</b>").kind
         else {

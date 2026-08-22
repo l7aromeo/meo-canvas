@@ -23,6 +23,7 @@
 import {
   ALIGN,
   BLEND_MODE,
+  BACKGROUND_REPEAT,
   BORDER_STYLE,
   BOX_SIZING,
   DIRECTION,
@@ -31,6 +32,7 @@ import {
   FLEX_DIRECTION,
   FLEX_WRAP,
   FONT_STYLE,
+  GRADIENT_KIND,
   MASK_SHAPE,
   GRID_AUTO_FLOW,
   JUSTIFY,
@@ -49,7 +51,27 @@ import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './gener
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
 import type { ColorSpace, ColorType, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode, TextSegment } from './node.js'
-import type { BoxShadow, Color, Corners, Dimension, FontWeight, GridPlacement, Length, Mask, Sides, Spacing, Style, TextShadow, Transform } from './style.js'
+import type {
+  BackgroundImage,
+  BackgroundSize,
+  BoxShadow,
+  Color,
+  Corners,
+  Dimension,
+  FontWeight,
+  Gradient,
+  GradientDirection,
+  GradientRamp,
+  GradientStop,
+  GridPlacement,
+  Length,
+  Mask,
+  Sides,
+  Spacing,
+  Style,
+  TextShadow,
+  Transform,
+} from './style.js'
 
 /** A value the arena cannot carry itself, held beside it. */
 export type SideValue = string | Uint8Array
@@ -321,14 +343,22 @@ const ALIASES: Readonly<Record<string, string>> = {
  */
 function variantName(keyword: string, table: Readonly<Record<string, number>>): string {
   if (table[keyword] !== undefined) return keyword
-  const alias = ALIASES[keyword]
-  if (alias !== undefined) return alias
+
   const exception = SPELLINGS[keyword]
   if (exception !== undefined) return exception
-  return keyword
+
+  // The derivation before the aliases, and this order is load-bearing:
+  // `ALIASES` is one table across every enum, and `'linear'` means
+  // `SrgbLinear` to a colour space and `Linear` to a gradient. Deriving first
+  // lets each enum keep its own reading of a word another enum has claimed, and
+  // an alias is consulted only when nothing in *this* table answers.
+  const derived = keyword
     .split('-')
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join('')
+  if (table[derived] !== undefined) return derived
+
+  return ALIASES[keyword] ?? derived
 }
 
 /**
@@ -613,6 +643,132 @@ function writeTextShadow(out: ArenaWriter, value: TextShadow): void {
   out.integer(value.color === undefined ? SHADOW_BLACK : packColor(value.color))
 }
 
+/**
+ * The angle each named direction resolves to, clockwise from twelve o'clock.
+ *
+ * The scene holds a linear direction as an angle or as two points, and a
+ * keyword is neither — it is a direction whose angle is known before the box
+ * is. CSS and v1 name the same eight.
+ */
+const DIRECTIONS: Readonly<Record<string, number>> = {
+  'to-top': 0,
+  'to-top-right': 45,
+  'to-right': 90,
+  'to-bottom-right': 135,
+  'to-bottom': 180,
+  'to-bottom-left': 225,
+  'to-left': 270,
+  'to-top-left': 315,
+}
+
+/** Writes a linear direction: an angle, or the two points it runs between. */
+function writeDirection(out: ArenaWriter, value: GradientDirection): void {
+  if (typeof value === 'number') {
+    out.enum(0)
+    out.f32(value)
+    return
+  }
+  if (typeof value === 'string') {
+    const angle = DIRECTIONS[value]
+    if (angle === undefined) {
+      throw new TypeError(
+        `a gradient has no direction ${JSON.stringify(value)}; it takes ${Object.keys(DIRECTIONS).join(', ')}, an angle in degrees, or [x0, y0, x1, y1]`,
+      )
+    }
+    out.enum(0)
+    out.f32(angle)
+    return
+  }
+  out.enum(1)
+  for (const point of value) writeLength(out, point)
+}
+
+/**
+ * The stops a ramp names.
+ *
+ * `colors` is spread evenly from the first to the last, which is v1's rule, and
+ * a single colour sits at the midpoint rather than at the start — a one-colour
+ * gradient is a flat fill and where it sits does not matter, but the midpoint
+ * is what v1 writes and a fixture would notice the difference.
+ */
+function rampStops(ramp: GradientRamp): readonly GradientStop[] {
+  if (ramp.stops !== undefined) return ramp.stops
+  const colors = ramp.colors
+  if (colors.length === 1) return [{ offset: 0.5, color: colors[0] as Color }]
+  return colors.map((color, index) => ({ offset: index / (colors.length - 1), color }))
+}
+
+/** Writes a gradient: its kind, the geometry that kind reads, then its stops. */
+function writeGradient(out: ArenaWriter, value: Gradient): void {
+  out.enum(variant(GRADIENT_KIND, value.type, 'gradient type'))
+
+  if (value.type === 'linear') {
+    writeDirection(out, value.direction ?? 'to-bottom')
+  } else {
+    // The middle of the box, which is what CSS defaults to and what the scene
+    // documents `(0.5, 0.5)` as.
+    writeLength(out, value.at?.x ?? '50%')
+    writeLength(out, value.at?.y ?? '50%')
+    if (value.type === 'conic') out.f32(value.from ?? 0)
+  }
+
+  const stops = rampStops(value)
+  out.count(stops.length)
+  for (const stop of stops) {
+    out.f32(stop.offset)
+    out.integer(packColor(stop.color))
+  }
+}
+
+/** Writes an image source: a tag, then the side value it names. */
+function writeSource(out: ArenaWriter, src: string | ImageSource): void {
+  const source = typeof src === 'string' ? { path: src } : src
+  if ('path' in source) {
+    out.enum(0)
+    out.text(source.path)
+    return
+  }
+  if ('url' in source) {
+    out.enum(1)
+    out.text(source.url)
+    return
+  }
+  out.enum(2)
+  out.bytes(source.bytes)
+}
+
+/** Writes a background size: a tag, and the pair only the per-axis arm carries. */
+function writeBackgroundSize(out: ArenaWriter, value: BackgroundSize): void {
+  if (value === 'cover') {
+    out.enum(1)
+    return
+  }
+  if (value === 'contain') {
+    out.enum(2)
+    return
+  }
+
+  out.enum(0)
+  if (typeof value === 'object') {
+    writeDimension(out, value.width ?? 'auto')
+    writeDimension(out, value.height ?? 'auto')
+    return
+  }
+  // A bare value sizes the width and leaves the height to the picture's own
+  // proportions, which is v1's reading and CSS's one-value form.
+  writeDimension(out, value)
+  writeDimension(out, 'auto')
+}
+
+/** Writes a background image: its source, how it tiles, how big, and where. */
+function writeBackgroundImage(out: ArenaWriter, value: BackgroundImage): void {
+  writeSource(out, value.src)
+  out.enum(variant(BACKGROUND_REPEAT, value.repeat ?? 'repeat', 'backgroundImage repeat'))
+  writeBackgroundSize(out, value.size ?? {})
+  writeLength(out, value.position?.x ?? 0)
+  writeLength(out, value.position?.y ?? 0)
+}
+
 /** Writes a mask: a tag, then whatever that arm carries. */
 function writeMask(out: ArenaWriter, value: Mask): void {
   // A bare string is path data, which is v1's shorthand for `{ path }`.
@@ -627,9 +783,14 @@ function writeMask(out: ArenaWriter, value: Mask): void {
     out.enum(variant(MASK_SHAPE, value.shape, 'mask shape'))
     return
   }
-  out.enum(2)
-  out.text(value.path)
-  out.enum(variant(FILL_RULE, value.fillRule ?? 'nonzero', 'mask fill rule'))
+  if ('path' in value) {
+    out.enum(2)
+    out.text(value.path)
+    out.enum(variant(FILL_RULE, value.fillRule ?? 'nonzero', 'mask fill rule'))
+    return
+  }
+  out.enum(3)
+  writeGradient(out, value.gradient)
 }
 
 /** Writes a list, counted. */
@@ -868,6 +1029,13 @@ function writePlacement(out: ArenaWriter, placement: GridPlacement | undefined):
  */
 const PAINT_PROPERTIES: readonly Property[] = [
   { index: 0, rust: 'background_color', keys: ['backgroundColor'], write: (out, style) => out.integer(packColor(style.backgroundColor as Color)) },
+  { index: 1, rust: 'gradient', keys: ['gradient'], write: (out, style) => out.optional(style.gradient, value => writeGradient(out, value)) },
+  {
+    index: 2,
+    rust: 'background_image',
+    keys: ['backgroundImage'],
+    write: (out, style) => out.optional(style.backgroundImage, value => writeBackgroundImage(out, value)),
+  },
   {
     index: 3,
     rust: 'border_color',

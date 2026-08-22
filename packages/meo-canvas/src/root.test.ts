@@ -76,9 +76,10 @@ describe('the canvas Root describes', () => {
   })
 
   it('carries the surface options in the arena, not beside it', async () => {
-    // Where this has to be asserted, and why: `gpu` used to travel in the
-    // paint options object and the addon stopped reading it there. A test
-    // against the fake renderer stayed green while the flag reached nothing.
+    // Asserted against the arena rather than against the paint options, because
+    // the arena is where these three travel. A test against the fake renderer
+    // can only check that a value was copied from one object to another, which
+    // is true whether or not the addon reads it.
     const { slots } = await arenaFor({
       width: 10,
       height: 10,
@@ -247,10 +248,9 @@ describe('the renderer Root reaches for when told nothing', () => {
   })
 
   it('draws different pixels on the two rasterisers', async () => {
-    // The check a fake renderer cannot satisfy, and the one that would have
-    // caught this: `gpu` travelled in the paint options object, the addon
-    // stopped reading it there, and the unit test asserting the flag had been
-    // copied from one object to another stayed green while it reached nothing.
+    // The check a fake renderer cannot satisfy. An assertion against a fake can
+    // only say that a value was copied from one object to another, which stays
+    // true when nothing on the far side reads it.
     //
     // Two real renders that must differ cannot pass by copying a field. When no
     // GPU backend is compiled in they are both the CPU and this says so rather

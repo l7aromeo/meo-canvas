@@ -151,7 +151,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 2.0;
+pub const VERSION: f64 = 3.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -1563,9 +1563,8 @@ mod tests {
     #[test]
     fn every_scene_type_reads_the_slots_the_specification_says() {
         use meo_canvas_scene::style::{
-            Length,
             layout::{Display, GridPlacement, TrackSize},
-            paint::{Gradient, GradientKind, GradientStop},
+            paint::GradientStop,
             text::{FontWeight, Spacing, TextStroke},
         };
 
@@ -1627,27 +1626,80 @@ mod tests {
         let stop = read_one::<GradientStop>(&[0.5, 255.0], &none)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert!((stop.offset - 0.5).abs() < f32::EPSILON);
+    }
 
+    /// A gradient's geometry, split from the composites above because three
+    /// kinds and two arms of a linear direction do not fit beside them.
+    #[test]
+    fn a_gradient_reads_the_geometry_its_kind_names() {
+        use meo_canvas_scene::style::{
+            Length,
+            paint::{
+                Gradient, GradientGeometry, GradientKind, LinearDirection,
+            },
+        };
+
+        let none = Values::default();
+
+        // A conic gradient: the kind tag, then the geometry that kind reads --
+        // a centre of two `Length`s and the angle the sweep begins at -- then
+        // the stops. The geometry precedes the stops because it belongs to the
+        // shape, which is what the tag named.
         let gradient = read_one::<Gradient>(
             &[
                 f64::from(GradientKind::Conic.to_wire()),
                 1.0,
-                0.0,
-                255.0,
+                0.25,
+                1.0,
+                0.75,
                 45.0,
                 1.0,
                 0.5,
-                1.0,
-                0.5,
+                0.0,
+                255.0,
             ],
             &none,
         )
         .unwrap_or_else(|error| unreachable!("{error}"));
-        assert_eq!(gradient.kind, GradientKind::Conic);
+        assert_eq!(
+            gradient.geometry,
+            GradientGeometry::Conic {
+                at: (Length::Percent(0.25), Length::Percent(0.75)),
+                from: 45.0,
+            }
+        );
         assert_eq!(gradient.stops.len(), 1);
-        assert_eq!(gradient.center.0, Length::Percent(0.5));
-
         assert!(gradient.stops[0].offset >= 0.0);
+
+        // The endpoint form of a linear direction, which is the arm the shape
+        // change exists for and which no other test here reaches.
+        let gradient = read_one::<Gradient>(
+            &[
+                f64::from(GradientKind::Linear.to_wire()),
+                1.0,
+                1.0,
+                0.25,
+                1.0,
+                0.0,
+                1.0,
+                0.75,
+                1.0,
+                1.0,
+                0.0,
+            ],
+            &none,
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(
+            gradient.geometry,
+            GradientGeometry::Linear {
+                direction: LinearDirection::Between {
+                    start: (Length::Percent(0.25), Length::Percent(0.0)),
+                    end: (Length::Percent(0.75), Length::Percent(1.0)),
+                },
+            }
+        );
+        assert!(gradient.stops.is_empty());
     }
 
     /// The three image sources, split out for the line cap.
@@ -1687,19 +1739,29 @@ mod tests {
     /// limit.
     #[test]
     fn every_composite_type_reads_the_slots_the_specification_says() {
-        use meo_canvas_scene::style::paint::{
-            BackgroundImage, BackgroundRepeat,
+        use meo_canvas_scene::style::{
+            Dimension,
+            paint::{BackgroundImage, BackgroundRepeat, BackgroundSize},
         };
 
         let side = Values::new(vec![SideValue::Text("a string".to_owned())]);
 
         let background = read_one::<BackgroundImage>(
             &[
+                // source: a path, from side value zero
                 0.0,
                 0.0,
                 f64::from(BackgroundRepeat::Space.to_wire()),
+                // size: per-axis, a quarter of the box wide and auto tall.
+                // A quarter rather than a whole, because `Percent(1.0)` is the
+                // one value at which a hundredfold units error between the two
+                // surfaces reads as correct.
+                0.0,
+                2.0,
+                0.25,
                 0.0,
                 0.0,
+                // position
                 0.0,
                 4.0,
                 1.0,
@@ -1709,7 +1771,10 @@ mod tests {
         )
         .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(background.repeat, BackgroundRepeat::Space);
-        assert_eq!(background.size, (None, None));
+        assert_eq!(
+            background.size,
+            BackgroundSize::PerAxis(Dimension::Percent(0.25), Dimension::Auto)
+        );
     }
 
     /// The effect and path types, split from the test above only because one

@@ -66,8 +66,9 @@ use meo_canvas_scene::{
             TrackSize,
         },
         paint::{
-            BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle, Color,
-            Gradient, GradientKind, GradientStop, ObjectFit,
+            BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+            BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
+            GradientStop, LinearDirection, ObjectFit,
         },
         text::{
             FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
@@ -313,12 +314,57 @@ json_struct!(Color { r, g, b, a });
 json_struct!(GradientStop { offset, color });
 json_struct!(GridPlacement { start, span });
 json_struct!(TextStroke { width, color });
-json_struct!(Gradient {
-    kind,
-    stops,
-    angle_degrees,
-    center
-});
+json_struct!(Gradient { geometry, stops });
+
+/// Hand-written rather than emitted by [`json_tagged`], which carries one bound
+/// value per variant where these carry two. Same reason [`kind_json`] is.
+impl ToJson for LinearDirection {
+    fn to_json(&self) -> String {
+        match self {
+            Self::Angle(degrees) => {
+                format!("{{\"tag\":\"angle\",\"value\":{}}}", degrees.to_json())
+            }
+            Self::Between { start, end } => format!(
+                "{{\"tag\":\"between\",\"start\":{},\"end\":{}}}",
+                start.to_json(),
+                end.to_json()
+            ),
+        }
+    }
+}
+
+impl ToJson for GradientGeometry {
+    fn to_json(&self) -> String {
+        match self {
+            Self::Linear { direction } => format!(
+                "{{\"kind\":\"Linear\",\"direction\":{}}}",
+                direction.to_json()
+            ),
+            Self::Radial { at } => {
+                format!("{{\"kind\":\"Radial\",\"at\":{}}}", at.to_json())
+            }
+            Self::Conic { at, from } => format!(
+                "{{\"kind\":\"Conic\",\"at\":{},\"from\":{}}}",
+                at.to_json(),
+                from.to_json()
+            ),
+        }
+    }
+}
+
+impl ToJson for BackgroundSize {
+    fn to_json(&self) -> String {
+        match self {
+            Self::PerAxis(width, height) => format!(
+                "{{\"tag\":\"per-axis\",\"width\":{},\"height\":{}}}",
+                width.to_json(),
+                height.to_json()
+            ),
+            Self::Cover => String::from("{\"tag\":\"cover\"}"),
+            Self::Contain => String::from("{\"tag\":\"contain\"}"),
+        }
+    }
+}
 json_struct!(BackgroundImage {
     source,
     repeat,
@@ -512,13 +558,21 @@ fn case_scene(apply: impl FnOnce(&mut Node)) -> Scene {
 /// strength of a path -- plus both arms of the text discriminant.
 fn kind_cases() -> Vec<KindCase> {
     let gradient = Gradient {
-        kind: GradientKind::Linear,
+        // The endpoint arm, which is the reason the geometry moved onto the
+        // kinds and which nothing else in the artefact reaches. Quarters and
+        // three-quarters rather than whole percentages: `Percent(1.0)` is the
+        // one value at which a hundredfold units disagreement between the two
+        // surfaces encodes identically, and a quarter is exact in an `f32`.
+        geometry: GradientGeometry::Linear {
+            direction: LinearDirection::Between {
+                start: (Length::Percent(0.25), Length::Points(3.0)),
+                end: (Length::Percent(0.75), Length::Percent(0.25)),
+            },
+        },
         stops: vec![GradientStop {
             offset: 0.5,
             color: Color::rgba(9, 8, 7, 6),
         }],
-        angle_degrees: 45.0,
-        center: (Length::Percent(0.25), Length::Points(3.0)),
     };
     let image = |source| NodeKind::Image {
         source,

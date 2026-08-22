@@ -158,7 +158,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -400,9 +400,9 @@ mod tests {
                 PositionType, TrackSize,
             },
             paint::{
-                BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle,
-                Color, Gradient, GradientKind, GradientStop, ObjectFit,
-                PaintStyle,
+                BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+                BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
+                GradientStop, LinearDirection, ObjectFit, PaintStyle,
             },
             text::{
                 FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
@@ -448,7 +448,10 @@ mod tests {
     /// anyway.
     fn populated_gradient() -> Gradient {
         Gradient {
-            kind: GradientKind::Conic,
+            geometry: GradientGeometry::Conic {
+                at: (Length::Percent(0.25), Length::Percent(0.75)),
+                from: 45.0,
+            },
             stops: vec![
                 GradientStop {
                     offset: 0.0,
@@ -459,8 +462,6 @@ mod tests {
                     color: Color::rgba(0, 0, 255, 128),
                 },
             ],
-            angle_degrees: 45.0,
-            center: (Length::Percent(0.25), Length::Points(8.0)),
         }
     }
 
@@ -516,7 +517,10 @@ mod tests {
             background_image: Some(BackgroundImage {
                 source: ImageSource::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF]),
                 repeat: BackgroundRepeat::Space,
-                size: (Some(Length::Points(16.0)), None),
+                size: BackgroundSize::PerAxis(
+                    Dimension::Points(16.0),
+                    Dimension::Auto,
+                ),
                 position: (Length::Percent(1.0), Length::Points(-3.0)),
             }),
             border_color: Sides {
@@ -687,10 +691,10 @@ mod tests {
     #[test]
     fn every_node_kind_round_trips_on_its_own() {
         let gradient = Gradient {
-            kind: GradientKind::Radial,
+            geometry: GradientGeometry::Radial {
+                at: (Length::ZERO, Length::ZERO),
+            },
             stops: Vec::new(),
-            angle_degrees: 0.0,
-            center: (Length::ZERO, Length::ZERO),
         };
         for kind in every_node_kind(&gradient) {
             let mut scene = Scene::new(Size::ZERO);
@@ -1010,13 +1014,13 @@ mod tests {
         round_trip(&Mask::Image(ImageSource::Path("/m".to_owned())));
         round_trip(&Mask::Shape(MaskShape::Circle));
         round_trip(&Mask::Gradient(Gradient {
-            kind: GradientKind::Linear,
+            geometry: GradientGeometry::Linear {
+                direction: LinearDirection::Angle(90.0),
+            },
             stops: vec![GradientStop {
                 offset: 0.5,
                 color: Color::BLACK,
             }],
-            angle_degrees: 90.0,
-            center: (Length::ZERO, Length::ZERO),
         }));
         round_trip(&PathPaint::Solid(Color::BLACK));
     }

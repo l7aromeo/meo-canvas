@@ -10,7 +10,7 @@
 //! a reader comparing these two files is the check on that.
 
 use meo_canvas::{
-    Column, Format, Justify, Renderer, Root, Row, Styled, Text, hex, px,
+    Column, Justify, Renderer, Root, Row, Styled, Text, hex, px,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .render(&renderer)?;
 
-    canvas.to_file("out.png", Format::Png)?;
+    canvas.to_file("out.png")?;
     println!("wrote out.png");
     Ok(())
 }

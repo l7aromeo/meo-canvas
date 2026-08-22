@@ -6,7 +6,7 @@
 use meo_canvas_scene::{
     node::{ImageSource, LineCap, LineJoin, NodeTag, PathPaint},
     style::{
-        Length, PaintOrder,
+        Dimension, Length, PaintOrder,
         effect::{BoxShadow, FillRule, Mask, MaskShape, TextShadow, Transform},
         layout::{
             Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
@@ -14,8 +14,9 @@ use meo_canvas_scene::{
             TrackSize,
         },
         paint::{
-            BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle, Color,
-            Gradient, GradientKind, GradientStop, ObjectFit,
+            BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+            BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
+            GradientStop, LinearDirection, ObjectFit,
         },
         text::{
             FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
@@ -164,14 +165,68 @@ impl ArenaValue for GradientStop {
     }
 }
 
+impl ArenaValue for LinearDirection {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let slot = input.offset();
+        match input.tag()? {
+            0 => Ok(Self::Angle(f32::read(input)?)),
+            1 => Ok(Self::Between {
+                start: <(Length, Length)>::read(input)?,
+                end: <(Length, Length)>::read(input)?,
+            }),
+            found => Err(ArenaError::UnknownTag {
+                slot,
+                what: "LinearDirection",
+                found: f64::from(found),
+            }),
+        }
+    }
+}
+
+impl ArenaValue for GradientGeometry {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        // The tag is `GradientKind`, the same fieldless enum the codec writes
+        // and the generator emits, so there is one list of which shapes exist.
+        Ok(match GradientKind::read(input)? {
+            GradientKind::Linear => Self::Linear {
+                direction: LinearDirection::read(input)?,
+            },
+            GradientKind::Radial => Self::Radial {
+                at: <(Length, Length)>::read(input)?,
+            },
+            GradientKind::Conic => Self::Conic {
+                at: <(Length, Length)>::read(input)?,
+                from: f32::read(input)?,
+            },
+        })
+    }
+}
+
 impl ArenaValue for Gradient {
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         Ok(Self {
-            kind: GradientKind::read(input)?,
+            geometry: GradientGeometry::read(input)?,
             stops: Vec::read(input)?,
-            angle_degrees: f32::read(input)?,
-            center: <(Length, Length)>::read(input)?,
         })
+    }
+}
+
+impl ArenaValue for BackgroundSize {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let slot = input.offset();
+        match input.tag()? {
+            0 => Ok(Self::PerAxis(
+                Dimension::read(input)?,
+                Dimension::read(input)?,
+            )),
+            1 => Ok(Self::Cover),
+            2 => Ok(Self::Contain),
+            found => Err(ArenaError::UnknownTag {
+                slot,
+                what: "BackgroundSize",
+                found: f64::from(found),
+            }),
+        }
     }
 }
 
@@ -198,7 +253,7 @@ impl ArenaValue for BackgroundImage {
         Ok(Self {
             source: ImageSource::read(input)?,
             repeat: BackgroundRepeat::read(input)?,
-            size: <(Option<Length>, Option<Length>)>::read(input)?,
+            size: BackgroundSize::read(input)?,
             position: <(Length, Length)>::read(input)?,
         })
     }
