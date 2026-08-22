@@ -22,3 +22,9 @@ fixtures
 # against each other. Reformatting buys consistency in files nobody edits and
 # spends the only tool there is for keeping them in step.
 packages/*/vendor
+
+# Emitted from the Rust property tables by `just gen-arena-tables`, so the
+# generator and prettier would disagree about a file neither of them owns --
+# and the regenerate-and-diff check would then fail on formatting rather than
+# on drift. Same reason the vendored tree is excluded.
+packages/*/src/generated

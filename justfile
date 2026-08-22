@@ -24,7 +24,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check typecheck lint-check layout-check docs test coverage unused
+ci: fmt-check typecheck arena-tables-check lint-check layout-check docs test coverage unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -133,6 +133,37 @@ fmt-check: ensure-deps
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json
+
+# Regenerates the TypeScript arena tables from the Rust that defines them.
+#
+# The property indices live in `arena_group!` invocations in
+# `crates/meo-canvas-node/src/arena.rs` and a writer needs every one. Emitting
+# them rather than transcribing them keeps one table rather than two agreeing
+# by inspection -- the failure already removed twice here, once for the format
+# table that was `pub(crate)` upstream and once for the node tags hand-written
+# in the byte codec.
+#
+# Generated rather than exported at runtime because the encoder runs per
+# property per node and that path has to stay cheap; a static table is
+# single-sourced and free, where a runtime-described one pays per write.
+[doc("Emit the TypeScript arena tables from the Rust tables.")]
+arena-tables:
+    node packages/meo-canvas/tools/generate-arena-tables.mjs
+
+# Fails when the checked-in tables no longer match the Rust.
+#
+# Regenerates and asks git whether anything moved. Drift fails a build rather
+# than a round trip, which is the point of generating them: a writer reading a
+# stale index writes the right number of slots into the wrong field, and no
+# length check catches that.
+#
+# `status --porcelain` rather than `diff --quiet`: a diff sees a tracked file
+# that changed and says nothing about one that is untracked, so a generated file
+# nobody had committed would pass a diff-based check while guarding nothing.
+[doc("Fail if the checked-in arena tables have drifted from the Rust.")]
+arena-tables-check: arena-tables
+    @test -z "$(git status --porcelain -- packages/meo-canvas/src/generated)" || \
+      { echo "error: the arena tables are stale or untracked; run \`just arena-tables\` and commit the result"; exit 1; }
 
 # Golden fixtures: a scene, and the picture it must produce.
 #
