@@ -199,8 +199,16 @@ build-js: ensure-deps
 #
 # The trees are removed first. A stale file from a renamed example would
 # otherwise sit in both trees, match itself, and be counted as agreement.
+#
+# `addon` as well as `build-js`, because the JavaScript half draws through the
+# compiled `.node` and the Rust half compiles from the same sources at run
+# time. Without it a painter change reaches one surface and not the other, and
+# the comparison reports a divergence that exists only between a stale binary
+# and a fresh one -- which it did, over background-image tiling, and reads
+# exactly like a real defect. The rule the two halves rest on is that both are
+# built from the tree as it stands.
 [doc("Run every example on both surfaces and compare every byte they wrote.")]
-example: build-js
+example: build-js addon
     ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
     rm -rf examples/bun/out examples/rust/out
     cd examples/bun && for source in src/*.ts; do [ "$source" = "src/write.ts" ] && continue; bun run "$source"; done

@@ -812,7 +812,7 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 ### What a check can and cannot see
 
-Four rules, each of which cost a bug or most of a day to learn.
+Each of these cost a bug or most of a day to learn.
 
 **A check written in the same currency as the thing it checks agrees with it
 whatever it does.** A probe and the bytes it is compared against are written
@@ -840,6 +840,21 @@ raw slot path and read as an integer were the same read. Only a value the suite
 did not contain separates them, which is why the probe reader answers by what
 the read asks for -- whole where a whole number is demanded, `0.25` where the
 slot is taken as written.
+
+**A control pair needs an input the property can act on.** A pair renders the
+same scene with a property and without it and asks only whether the two differ,
+which a property that reaches the painter and is dropped there cannot satisfy --
+but neither can a working property given nothing to change. Four instances in
+one day, each reported as a dead property that was not one: a mask image whose
+every pixel was opaque, so the alpha it is read for had no shape; `dither` on a
+ramp too steep to band; `vertical_align` on a text node sized to its own text,
+which has no leftover space to move the paragraph within; and `Round` and
+`Space` on a tile the box divides evenly, where there is no remainder to share
+and nothing to round to, so both collapse onto `Repeat`. Their siblings failed
+the same way from the other side: `backdrop_filter` under an _opaque_ square,
+where the filtered backdrop is covered by the node that asked for it, reported
+as broken by three separate readers. Before writing the pair, ask what the
+property would have to change and whether the subject offers it.
 
 **An assertion that cannot fail on the machine running it is not a test.** A
 rasteriser comparison passes vacuously where no backend is compiled, a
