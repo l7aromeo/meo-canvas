@@ -122,6 +122,91 @@ export type BorderStyle = 'solid' | 'dashed' | 'dotted'
 /** What happens to content larger than its box. */
 export type Overflow = 'visible' | 'hidden' | 'scroll'
 
+/**
+ * Moving, turning and scaling a node after layout.
+ *
+ * v1's field names, which are CSS's split apart: `translateX` rather than a
+ * `translate(…)` string, because a caller composing one from data should not
+ * have to build a string for a renderer to parse back.
+ */
+export interface Transform {
+  /** Horizontal movement. */
+  readonly translateX?: Length
+  /** Vertical movement. */
+  readonly translateY?: Length
+  /** Rotation in degrees, clockwise. */
+  readonly rotate?: number
+  /**
+   * Both scale factors at once.
+   *
+   * A convenience v1 has: `scaleX` or `scaleY` beside it wins on that axis.
+   */
+  readonly scale?: number
+  /** Horizontal scale factor. */
+  readonly scaleX?: number
+  /** Vertical scale factor. */
+  readonly scaleY?: number
+  /** The point it turns and scales about, from the left edge. Defaults to the middle. */
+  readonly originX?: Length
+  /** The point it turns and scales about, from the top edge. Defaults to the middle. */
+  readonly originY?: Length
+}
+
+/** A shadow cast by the border box. */
+export interface BoxShadow {
+  /** Drawn inside the box rather than behind it. */
+  readonly inset?: boolean
+  /** Horizontal offset. */
+  readonly offsetX?: number
+  /** Vertical offset. */
+  readonly offsetY?: number
+  /** How far the edge is softened. */
+  readonly blur?: number
+  /** How much the shadow grows before it is blurred. */
+  readonly spread?: number
+  /** Its colour. */
+  readonly color?: Color
+}
+
+/** A shadow cast by the glyphs. */
+export interface TextShadow {
+  /** Horizontal offset. */
+  readonly offsetX?: number
+  /** Vertical offset. */
+  readonly offsetY?: number
+  /** How far the edge is softened. */
+  readonly blur?: number
+  /** Its colour. */
+  readonly color?: Color
+}
+
+/** An outline along the glyph edges, centred on them. */
+export interface TextStroke {
+  /** Thickness in pixels. Half falls inside the letter and half outside. */
+  readonly width?: number
+  /** Its colour. */
+  readonly color?: Color
+}
+
+/** A shape a mask can name without writing a path. */
+export type MaskShape = 'circle' | 'ellipse'
+
+/** Which side of a winding counts as inside. */
+export type FillRule = 'nonzero' | 'evenodd'
+
+/**
+ * What of a node is drawn, and how much of it.
+ *
+ * Two kinds, and they cost differently. A **shape or path** clips: hard edges,
+ * nothing allocated, cheap enough to put on every node in a list. A
+ * **gradient** composites, so the node is drawn into an offscreen canvas the
+ * size of its box and multiplied by the gradient's alpha: soft edges, at the
+ * cost of that canvas.
+ *
+ * A bare string is path data, which is v1's shorthand for `{ path }`.
+ */
+export type Mask = string | { readonly shape: MaskShape } | { readonly path: string; readonly fillRule?: FillRule }
+
 /** Where a grid item sits on one axis: a line, or a line and a span. */
 export interface GridPlacement {
   /** The line it starts at, counting from one. Absent is auto-placement. */
@@ -290,6 +375,40 @@ export interface Style {
   readonly wordSpacing?: Spacing
 
   // -- Effects --------------------------------------------------------
+  /**
+   * Moves, turns and scales the node after it is laid out.
+   *
+   * Applied about {@link Transform.originX} and {@link Transform.originY},
+   * which default to the middle of the box. Layout does not see it: a
+   * transformed node still occupies the space it was given, as CSS's
+   * `transform` does.
+   */
+  readonly transform?: Transform
+  /**
+   * Shadows cast by the box, nearest first.
+   *
+   * One or many, as v1 takes them. Later shadows are drawn behind earlier ones,
+   * which is CSS's order.
+   */
+  readonly boxShadow?: BoxShadow | readonly BoxShadow[]
+  /**
+   * Shadows cast by the glyphs, nearest first.
+   *
+   * Distinct from {@link Style.boxShadow}: this follows the letterforms and
+   * that follows the border box.
+   */
+  readonly textShadow?: TextShadow | readonly TextShadow[]
+  /** An outline drawn along the glyph edges. Inherits. */
+  readonly textStroke?: TextStroke
+  /**
+   * What of the node is drawn.
+   *
+   * Covers everything the node renders — background, border, content and
+   * children alike — as CSS's `mask` does, rather than only its contents.
+   * Applied within the node's own box, so content pushed outside by
+   * {@link Style.transform} is not masked back in.
+   */
+  readonly mask?: Mask
   /** A CSS filter applied to this node's own drawing. */
   readonly filter?: string
   /** A CSS filter applied to what shows through this node. */

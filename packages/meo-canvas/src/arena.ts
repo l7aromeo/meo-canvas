@@ -31,6 +31,7 @@ import {
   FLEX_DIRECTION,
   FLEX_WRAP,
   FONT_STYLE,
+  MASK_SHAPE,
   GRID_AUTO_FLOW,
   JUSTIFY,
   LINE_CAP,
@@ -48,7 +49,7 @@ import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './gener
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
 import type { ColorSpace, ColorType, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode, TextSegment } from './node.js'
-import type { Color, Corners, Dimension, FontWeight, GridPlacement, Length, Sides, Spacing, Style } from './style.js'
+import type { BoxShadow, Color, Corners, Dimension, FontWeight, GridPlacement, Length, Mask, Sides, Spacing, Style, TextShadow, Transform } from './style.js'
 
 /** A value the arena cannot carry itself, held beside it. */
 export type SideValue = string | Uint8Array
@@ -259,10 +260,15 @@ function writeHeader(out: ArenaWriter, width: number, height: number, scale: num
  * finding `'oblique'` and `'baseline'` in this package's own unions, neither of
  * which the scene or v1 has, is what the derivation caught.
  *
- * This map holds the exceptions, which is one. CSS spells `nowrap` as a single
- * word and the scene spells the concept `NoWrap`.
+ * This map holds the exceptions, which are the words CSS runs together where
+ * the scene spells the concept in parts: `nowrap`, `nonzero`, `evenodd`.
  */
-const SPELLINGS: Readonly<Record<string, string>> = { nowrap: 'NoWrap' }
+const SPELLINGS: Readonly<Record<string, string>> = {
+  nowrap: 'NoWrap',
+  // CSS spells a fill rule as one word too, and so does v1's `Mask`.
+  nonzero: 'NonZero',
+  evenodd: 'EvenOdd',
+}
 
 /**
  * Upstream's own alternate spellings for the two surface enums.
@@ -549,6 +555,74 @@ function writeCorners(out: ArenaWriter, value: Corners): void {
   out.f32(value.topRight ?? 0)
   out.f32(value.bottomRight ?? 0)
   out.f32(value.bottomLeft ?? 0)
+}
+
+/** Black, which is what a shadow with no colour is. */
+const SHADOW_BLACK = 0xff
+
+/**
+ * Writes a transform, filling in the scene's defaults for what was not named.
+ *
+ * Every field is written whether or not the caller set it, because the wire
+ * shape is fixed — the mask bit says the property is present and the six values
+ * follow. Absent means the scene's default, which is why they are stated here
+ * rather than left to a zero: a `scale` of zero is not the same thing as no
+ * scale at all.
+ */
+function writeTransform(out: ArenaWriter, value: Transform): void {
+  writeLength(out, value.translateX ?? 0)
+  writeLength(out, value.translateY ?? 0)
+  out.f32(value.rotate ?? 0)
+  // `scale` sets both axes and a per-axis value beside it wins, which is v1's
+  // rule and the only place these two spellings meet.
+  out.f32(value.scaleX ?? value.scale ?? 1)
+  out.f32(value.scaleY ?? value.scale ?? 1)
+  writeLength(out, value.originX ?? '50%')
+  writeLength(out, value.originY ?? '50%')
+}
+
+/** Writes one box shadow. */
+function writeBoxShadow(out: ArenaWriter, value: BoxShadow): void {
+  out.bool(value.inset ?? false)
+  out.f32(value.offsetX ?? 0)
+  out.f32(value.offsetY ?? 0)
+  out.f32(value.blur ?? 0)
+  out.f32(value.spread ?? 0)
+  out.integer(value.color === undefined ? SHADOW_BLACK : packColor(value.color))
+}
+
+/** Writes one text shadow, which has no spread and no inset. */
+function writeTextShadow(out: ArenaWriter, value: TextShadow): void {
+  out.f32(value.offsetX ?? 0)
+  out.f32(value.offsetY ?? 0)
+  out.f32(value.blur ?? 0)
+  out.integer(value.color === undefined ? SHADOW_BLACK : packColor(value.color))
+}
+
+/** Writes a mask: a tag, then whatever that arm carries. */
+function writeMask(out: ArenaWriter, value: Mask): void {
+  // A bare string is path data, which is v1's shorthand for `{ path }`.
+  if (typeof value === 'string') {
+    out.enum(2)
+    out.text(value)
+    out.enum(FILL_RULE.NonZero)
+    return
+  }
+  if ('shape' in value) {
+    out.enum(1)
+    out.enum(variant(MASK_SHAPE, value.shape, 'mask shape'))
+    return
+  }
+  out.enum(2)
+  out.text(value.path)
+  out.enum(variant(FILL_RULE, value.fillRule ?? 'nonzero', 'mask fill rule'))
+}
+
+/** Writes a list, counted. */
+function writeList<T>(out: ArenaWriter, values: T | readonly T[], write: (value: T) => void): void {
+  const many = Array.isArray(values) ? (values as readonly T[]) : [values as T]
+  out.count(many.length)
+  for (const value of many) write(value)
 }
 
 /** The number a font weight names: the two keywords are the numbers CSS gives them. */
@@ -850,10 +924,37 @@ const TEXT_PROPERTIES: readonly Property[] = [
   { index: 10, rust: 'line_gap', keys: ['lineGap'], write: (out, style) => out.optional(style.lineGap, gap => out.f32(gap)) },
   { index: 11, rust: 'letter_spacing', keys: ['letterSpacing'], write: (out, style) => out.optional(style.letterSpacing, value => writeSpacing(out, value)) },
   { index: 12, rust: 'word_spacing', keys: ['wordSpacing'], write: (out, style) => out.optional(style.wordSpacing, value => writeSpacing(out, value)) },
+  {
+    index: 14,
+    rust: 'text_stroke',
+    keys: ['textStroke'],
+    write: (out, style) =>
+      out.optional(style.textStroke, stroke => {
+        out.f32(stroke.width ?? 0)
+        // Black rather than the text's own colour, which is what v1 documents:
+        // the scene's `TextStroke` carries a colour and has nowhere to say
+        // "whatever the glyphs are". Naming one is the honest form.
+        out.integer(stroke.color === undefined ? SHADOW_BLACK : packColor(stroke.color))
+      }),
+  },
 ]
 
 /** The effects group, in ascending index order. */
 const EFFECTS_PROPERTIES: readonly Property[] = [
+  { index: 0, rust: 'transform', keys: ['transform'], write: (out, style) => out.optional(style.transform, value => writeTransform(out, value)) },
+  {
+    index: 1,
+    rust: 'box_shadows',
+    keys: ['boxShadow'],
+    write: (out, style) => writeList(out, style.boxShadow as BoxShadow | readonly BoxShadow[], shadow => writeBoxShadow(out, shadow)),
+  },
+  {
+    index: 2,
+    rust: 'text_shadows',
+    keys: ['textShadow'],
+    write: (out, style) => writeList(out, style.textShadow as TextShadow | readonly TextShadow[], shadow => writeTextShadow(out, shadow)),
+  },
+  { index: 3, rust: 'mask', keys: ['mask'], write: (out, style) => out.optional(style.mask, value => writeMask(out, value)) },
   { index: 4, rust: 'filter', keys: ['filter'], write: (out, style) => out.optional(style.filter, value => out.text(value)) },
   { index: 5, rust: 'backdrop_filter', keys: ['backdropFilter'], write: (out, style) => out.optional(style.backdropFilter, value => out.text(value)) },
 ]

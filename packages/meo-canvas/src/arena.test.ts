@@ -97,6 +97,38 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
   TrackSize: input => tagged(input, ['auto', 'points', 'percent', 'fraction'], 'TrackSize'),
   Spacing: input => tagged(input, ['normal', 'points', 'em'], 'Spacing'),
   GridPlacement: input => ({ start: read(input, 'Option<i16>'), span: read(input, 'Option<u16>') }),
+  Transform: input => ({
+    translate_x: read(input, 'Length'),
+    translate_y: read(input, 'Length'),
+    rotate_degrees: f32(input),
+    scale_x: f32(input),
+    scale_y: f32(input),
+    origin: [read(input, 'Length'), read(input, 'Length')],
+  }),
+  BoxShadow: input => ({
+    inset: slot(input) === 1,
+    offset_x: f32(input),
+    offset_y: f32(input),
+    blur: f32(input),
+    spread: f32(input),
+    color: color(input),
+  }),
+  TextShadow: input => ({
+    offset_x: f32(input),
+    offset_y: f32(input),
+    blur: f32(input),
+    color: color(input),
+  }),
+  TextStroke: input => ({ width: f32(input), color: color(input) }),
+  // The gradient arm is absent on purpose: nothing writes one yet, so a mask
+  // reaching it would mean the writer invented something.
+  Mask: input => {
+    const tag = ['image', 'shape', 'path', 'gradient'][slot(input)]
+    if (tag === 'shape') return { tag, value: read(input, 'MaskShape') }
+    if (tag === 'path') return { tag, data: side(input), fillRule: read(input, 'FillRule') }
+    if (tag === 'image') return { tag, value: sourceValue(side(input)) }
+    throw new TypeError(`this reader reads a shape, a path or an image mask, not ${String(tag)}`)
+  },
   // Only the solid arm. A gradient has no spelling on this surface yet, so one
   // reaching here would mean the writer invented something, and throwing says
   // so rather than decoding it into a shape nothing checks.
@@ -418,6 +450,13 @@ const PROBES: Readonly<Record<string, Style>> = {
   vertical_align: { verticalAlign: 'middle' },
   word_spacing: { wordSpacing: 1 },
   z_index: { zIndex: 1 },
+  transform: {
+    transform: { translateX: '1%', translateY: '1%', rotate: 1, scaleX: 1, scaleY: 1, originX: '1%', originY: '1%' },
+  },
+  box_shadows: { boxShadow: { inset: true, offsetX: 1, offsetY: 1, blur: 1, spread: 1, color: '#00000001' } },
+  text_shadows: { textShadow: { offsetX: 1, offsetY: 1, blur: 1, color: '#00000001' } },
+  mask: { mask: { shape: 'ellipse' } },
+  text_stroke: { textStroke: { width: 1, color: '#00000001' } },
 }
 
 /**
@@ -429,14 +468,11 @@ const PROBES: Readonly<Record<string, Style>> = {
  * instead of leaving it silently absent from every scene this package writes.
  */
 const UNSPELT: Readonly<Record<string, string>> = {
-  gradient: 'gradients have no surface yet; the shape of the authoring API is not settled',
-  background_image: 'waits on the gradient surface, which it shares a vocabulary with',
+  gradient:
+    "waits on `Gradient` in the scene: v1's direction takes two explicit endpoints, `[x1, y1, x2, y2]`, and `angle_degrees` cannot say where a run starts and stops. Named directions and a raw angle are expressible today; the endpoint form is not, and the field is Agent One's",
+  background_image:
+    "waits on `BackgroundImage` in the scene: v1's `size` takes `'cover'` and `'contain'`, and `(Option<Length>, Option<Length>)` expresses a fixed size or an intrinsic one and neither of those. Agent One's field. It shares the gradient's vocabulary anyway, so it follows that one",
   font_variant: 'the thirty-five OpenType features need a spelling of their own',
-  text_stroke: 'waits on the paint surface that also gives a path its fill',
-  transform: 'waits on a decision about whether it takes a CSS string or a struct',
-  box_shadows: 'waits on the same decision as `transform`',
-  text_shadows: 'waits on the same decision as `transform`',
-  mask: 'waits on the gradient surface and on the image source vocabulary',
 }
 
 describe('the property tables', () => {
@@ -750,6 +786,64 @@ describe('a path node', () => {
 
     const transparent = page(Path({ d: 'M0 0', fill: 'transparent' })).payload as Record<string, unknown>
     expect(transparent.fill).toEqual({ tag: 'solid', value: { r: 0, g: 0, b: 0, a: 0 } })
+  })
+})
+
+describe('the effects', () => {
+  it('take one shadow or many', () => {
+    // v1 takes `BoxShadowProps | BoxShadowProps[]`, so a caller writing one
+    // does not wrap it. The scene holds a list either way.
+    const one = page(Box({ boxShadow: { offsetY: 2 } })).groups.effects
+    const two = page(Box({ boxShadow: [{ offsetY: 2 }, { offsetY: 4 }] })).groups.effects
+
+    expect((one?.box_shadows as unknown[]).length).toBe(1)
+    expect((two?.box_shadows as unknown[]).length).toBe(2)
+  })
+
+  it('fill a shadow in with the scene’s defaults, not with zeroes', () => {
+    // A shadow that names only an offset is black, unblurred, unspread and not
+    // inset — the same values the scene's `Default` gives, stated here because
+    // the wire shape is fixed and every field is written whatever was said.
+    expect(page(Box({ boxShadow: { offsetY: 2 } })).groups.effects).toEqual({
+      box_shadows: [{ inset: false, offset_x: 0, offset_y: 2, blur: 0, spread: 0, color: { r: 0, g: 0, b: 0, a: 255 } }],
+    })
+  })
+
+  it('give a transform the centre of the box to turn about', () => {
+    // CSS's `transform-origin` default, and the scene's. A transform naming
+    // only a rotation still writes six values, so the defaults have to be the
+    // scene's rather than zeroes — a `scale` of zero is not no scale.
+    expect(page(Box({ transform: { rotate: 90 } })).groups.effects).toEqual({
+      transform: {
+        translate_x: { tag: 'points', value: 0 },
+        translate_y: { tag: 'points', value: 0 },
+        rotate_degrees: 90,
+        scale_x: 1,
+        scale_y: 1,
+        origin: [
+          { tag: 'percent', value: 50 },
+          { tag: 'percent', value: 50 },
+        ],
+      },
+    })
+  })
+
+  it('let a per-axis scale win over the one that sets both', () => {
+    const both = page(Box({ transform: { scale: 2 } })).groups.effects
+    const mixed = page(Box({ transform: { scale: 2, scaleY: 3 } })).groups.effects
+
+    expect(both?.transform).toMatchObject({ scale_x: 2, scale_y: 2 })
+    expect(mixed?.transform).toMatchObject({ scale_x: 2, scale_y: 3 })
+  })
+
+  it('read a bare string mask as path data', () => {
+    // v1's shorthand for `{ path }`, and the fill rule CSS starts from.
+    expect(page(Box({ mask: 'M0 0 L4 4' })).groups.effects).toEqual({
+      mask: { tag: 'path', data: 'M0 0 L4 4', fillRule: 'NonZero' },
+    })
+    expect(page(Box({ mask: { path: 'M0 0', fillRule: 'evenodd' } })).groups.effects).toEqual({
+      mask: { tag: 'path', data: 'M0 0', fillRule: 'EvenOdd' },
+    })
   })
 })
 
@@ -1284,10 +1378,12 @@ const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
   ['BoxSizing', ['border-box', 'content-box']],
   ['Direction', ['ltr', 'rtl']],
   ['Display', ['flex', 'grid', 'block', 'none']],
+  ['FillRule', ['nonzero', 'evenodd']],
   ['FlexDirection', ['row', 'row-reverse', 'column', 'column-reverse']],
   ['FlexWrap', ['nowrap', 'wrap', 'wrap-reverse']],
   ['FontStyle', ['normal', 'italic']],
   ['GridAutoFlow', ['row', 'column', 'row-dense', 'column-dense']],
+  ['MaskShape', ['circle', 'ellipse']],
   ['Justify', ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly']],
   ['ObjectFit', ['fill', 'contain', 'cover', 'none', 'scale-down']],
   ['Overflow', ['visible', 'hidden', 'scroll']],
