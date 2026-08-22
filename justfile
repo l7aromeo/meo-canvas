@@ -256,7 +256,12 @@ doc-examples-check:
 # same way prettier and tsc are here: one place names the command, and it is
 # this file.
 [doc("Run the JavaScript tests.")]
-test-js: ensure-deps
+test-js: ensure-deps addon
+    # `addon` as well, because these read the compiled `.node`: a stale one
+    # makes the byte comparisons report a colour of zero, which reads as an
+    # encoder defect rather than as a stale binary. `ci` is already safe --
+    # it builds the addon first -- so this covers the recipe a person runs
+    # alone while working. Incremental, so it is free on a warm tree.
     ./node_modules/.bin/vitest run
 
 # The JavaScript suite again, with the same 90% floor the Rust half has.
@@ -269,7 +274,7 @@ test-js: ensure-deps
 # The floor and the exclusions live in `vitest.config.mts`, next to the reason
 # for each. Only generated files are excluded, one path at a time.
 [doc("Measure JavaScript coverage and fail below the 90% floor.")]
-coverage-js: ensure-deps
+coverage-js: ensure-deps addon
     ./node_modules/.bin/vitest run --coverage
 
 # Regenerates the TypeScript arena tables from the Rust that defines them.
