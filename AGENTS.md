@@ -855,6 +855,14 @@ reading the code cannot tell you whether the maintainers already know: taffy's
 baseline gap was issue #199 with the fix merged as PR #1091 two days after the
 release we pin. Search the tracker before drafting a report, not after.
 
+**Before trusting a green probe, ask what the wrong answer would have looked
+like.** If it looks the same, the probe is measuring nothing. Four probes in the
+v1 conformance sweep needed redesigning after their first measurement and every
+one had the same fault -- the two answers coincided: an absolute child whose
+containing block and parent both sat at x=0, a content-box probe sampled on the
+row where the top and bottom borders mitre, a grid whose track origin and page
+origin agreed. Each would have reported "we match" and been wrong.
+
 **A citation is a measurement, not a label.** A `grep -n` result is evidence that
 a string occurs, not evidence that the line quoted is the line that matters:
 taffy's baseline fallback sits at `flexbox.rs:1522` and `:1524` with the `} else
