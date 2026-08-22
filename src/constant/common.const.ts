@@ -188,12 +188,23 @@ const PositionType = {
   Sticky: 4,
 } as const
 
-/** The value of {@link Style.PositionType.Fixed}, which Yoga's own enum does not carry. */
+/** The value of `Style.PositionType.Fixed`, which Yoga's own enum does not carry. */
 export type FixedPositionType = (typeof PositionType)['Fixed']
 
-/** The value of {@link Style.PositionType.Sticky}, which Yoga's own enum does not carry. */
+/** The value of `Style.PositionType.Sticky`, which Yoga's own enum does not carry. */
 export type StickyPositionType = (typeof PositionType)['Sticky']
 
+/**
+ * Consolidated Style object combining Yoga layout constants and custom border styles
+ *
+ * Everything Yoga defines, plus the constants for the parts of drawing Yoga has no notion of. The
+ * custom enums are string-valued, and the values are the CSS keywords themselves — so a caller can
+ * pass either `Style.BlendMode.Multiply` or `'multiply'`, and a value can be handed to a canvas
+ * context without a lookup table in between. {@link Border} predates that and is numeric.
+ *
+ * `PositionType` is Yoga's three plus `Fixed` and `Sticky`, which Yoga has no notion of and this
+ * library resolves itself.
+ */
 export const Style: Omit<typeof All, 'PositionType'> & {
   /** Yoga's position types plus `Fixed`, which it does not define. */
   PositionType: typeof PositionType

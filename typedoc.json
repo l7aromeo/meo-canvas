@@ -74,6 +74,7 @@
     }
   },
   "intentionallyNotExported": [
-    "\"sharp\".Sharp"
+    "\"sharp\".Sharp",
+    "PositionType"
   ]
 }
