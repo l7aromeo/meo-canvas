@@ -106,8 +106,11 @@ fn render_off_thread(
         .ok_or_else(|| format!("no image format is called {format:?}"))?;
     let renderer = meo_canvas_core::Renderer::new();
     renderer
-        .render(&scene, format, &meo_canvas_core::EncodeOptions::default())
-        .map(|image| image.bytes)
+        .render_to_buffer(
+            &scene,
+            format,
+            &meo_canvas_core::EncodeOptions::default(),
+        )
         .map_err(|error| error.to_string())
 }
 

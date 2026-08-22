@@ -213,29 +213,28 @@ impl Renderer {
         &self.fonts
     }
 
-    /// Runs every pass over every page and returns the encoded image.
+    /// Runs every pass over every page and hands back the painted surface.
+    ///
+    /// Stops short of encoding, because encoding is not part of drawing. Two
+    /// formats of one picture are two encodes of one surface, not two renders:
+    /// `render` then two [`RenderedCanvas::to_buffer`] calls costs one resolve,
+    /// one shaping pass, one layout per page and one paint. Folding the encode
+    /// in would make the second format cost all of that again -- which is the
+    /// shape the JavaScript surface already avoids with `toBuffer`, and the two
+    /// surfaces are siblings rather than one wrapping the other.
     ///
     /// Resolving and shaping happen once for the whole scene; layout and paint
     /// run per page. That split is why the arena is one list: the caches are
     /// keyed by `NodeId` alone, with no page beside it.
     ///
-    /// `options` is a parameter rather than renderer state because two encodes
-    /// of one scene at different quality settings are two calls, not two
-    /// renderers.
-    ///
-    /// Takes `&self`: the measurer and its paragraph cache are built per
-    /// render and dropped with it, so nothing here outlives the call.
+    /// Takes `&self`: the measurer and its paragraph cache are built per render
+    /// and dropped with it, so nothing here outlives the call.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Scene`] if the scene is not a well-formed forest of
     /// pages, and otherwise [`Error`] from whichever pass fails first.
-    pub fn render(
-        &self,
-        scene: &Scene,
-        format: ImageFormat,
-        options: &EncodeOptions,
-    ) -> Result<EncodedImage, Error> {
+    pub fn render(&self, scene: &Scene) -> Result<RenderedCanvas, Error> {
         // Checked before anything is allocated. Without it a scene with no
         // pages renders the blank sheet `Surface::new` created and reports
         // success, which is a picture the caller never described.
@@ -255,7 +254,78 @@ impl Renderer {
             paint::draw(&mut surface, &resolved, &solved, &mut measurer)?;
         }
 
-        encode::encode(&mut surface, format, options)
+        Ok(RenderedCanvas { surface })
+    }
+
+    /// Renders a scene and encodes it once.
+    ///
+    /// The one-format case, which is most of them: the CLI writes one file and
+    /// a fixture compares one image. It earns its place because the split
+    /// otherwise costs every such caller a `let mut` and a second line to say
+    /// something they never wanted to say twice — and because a caller who
+    /// only ever wants one format should not have to hold a canvas to get it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Renderer::render`], plus whatever the encode reports.
+    pub fn render_to_buffer(
+        &self,
+        scene: &Scene,
+        format: ImageFormat,
+        options: &EncodeOptions,
+    ) -> Result<Vec<u8>, Error> {
+        self.render(scene)?.to_buffer(format, options)
+    }
+}
+
+/// A scene that has been drawn and not yet encoded.
+///
+/// Holds every page of the painted surface, so encoding it again in another
+/// format re-reads pixels rather than redrawing them.
+#[derive(Debug)]
+pub struct RenderedCanvas {
+    surface: Surface,
+}
+
+impl RenderedCanvas {
+    /// Encodes the painted pages in one format.
+    ///
+    /// Takes `&mut self` because encoding mutates: every encode entry point
+    /// upstream is `&mut self` since `Canvas::to_buffer` prepares the surface
+    /// before reading it (`meo-skia-canvas-0.11.0/src/canvas.rs:551`). That is
+    /// not a detail to hide behind interior mutability — a `RefCell` here would
+    /// let two encodes of one canvas read as independent when they are not.
+    /// `&mut` says encoding consumes preparation, which is true.
+    ///
+    /// Calling it twice is the point: two formats of one picture cost one
+    /// render.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Encode`] when the encoder refuses the surface, and
+    /// whatever [`EncodeOptions`] validation reports — the page count it
+    /// validates against is a property of the painted surface rather than of
+    /// the scene, which is why the check lives here and not in
+    /// [`Renderer::render`].
+    pub fn to_buffer(
+        &mut self,
+        format: ImageFormat,
+        options: &EncodeOptions,
+    ) -> Result<Vec<u8>, Error> {
+        encode::encode(&mut self.surface, format, options)
+            .map(|image| image.bytes)
+    }
+
+    /// How many pages were painted.
+    #[must_use]
+    pub fn page_count(&self) -> usize {
+        self.surface.page_count()
+    }
+
+    /// The device-pixel multiplier the pages were drawn at.
+    #[must_use]
+    pub const fn scale(&self) -> f32 {
+        self.surface.scale()
     }
 }
 
@@ -312,16 +382,19 @@ mod tests {
         scene.scale = 2.0;
 
         let image = renderer()
-            .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Png,
+                &EncodeOptions::default(),
+            )
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        assert_eq!(image.format, ImageFormat::Png);
-        assert_eq!(&image.bytes[..4], b"\x89PNG");
+        assert_eq!(&image[..4], b"\x89PNG");
 
         // Decoded rather than trusted: the scale is applied at paint time, so
         // a surface built at the logical size would still produce valid PNG
         // bytes and only the pixel count would betray it.
-        let decoded = meo_skia_canvas::Image::from_encoded(&image.bytes)
+        let decoded = meo_skia_canvas::Image::from_encoded(&image)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!((decoded.width(), decoded.height()), (80, 40));
     }
@@ -341,10 +414,14 @@ mod tests {
         assert_eq!(scene.pages.len(), PAGES);
 
         let image = renderer()
-            .render(&scene, ImageFormat::Gif, &EncodeOptions::default())
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Gif,
+                &EncodeOptions::default(),
+            )
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        let decoded = meo_skia_canvas::Image::from_encoded(&image.bytes)
+        let decoded = meo_skia_canvas::Image::from_encoded(&image)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(decoded.frame_count(), PAGES);
     }
@@ -355,10 +432,14 @@ mod tests {
     fn a_still_format_writes_one_page_of_a_multi_page_scene() {
         let scene = paged_scene(3, Size::new(24.0, 16.0));
         let image = renderer()
-            .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Png,
+                &EncodeOptions::default(),
+            )
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        let decoded = meo_skia_canvas::Image::from_encoded(&image.bytes)
+        let decoded = meo_skia_canvas::Image::from_encoded(&image)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(decoded.frame_count(), 1);
     }
@@ -381,7 +462,7 @@ mod tests {
             node.text.font_family = Some("NoSuchFamilyAnywhere".to_owned());
         }
 
-        let Err(error) = renderer().render(
+        let Err(error) = renderer().render_to_buffer(
             &scene,
             ImageFormat::Png,
             &EncodeOptions::default(),
@@ -402,7 +483,7 @@ mod tests {
         let renderer = renderer();
 
         let coarse = renderer
-            .render(
+            .render_to_buffer(
                 &scene,
                 ImageFormat::Jpeg,
                 &EncodeOptions {
@@ -412,7 +493,7 @@ mod tests {
             )
             .unwrap_or_else(|error| unreachable!("{error}"));
         let fine = renderer
-            .render(
+            .render_to_buffer(
                 &scene,
                 ImageFormat::Jpeg,
                 &EncodeOptions {
@@ -425,10 +506,10 @@ mod tests {
         // One renderer, two calls, two different results: the quality is a
         // property of the encode rather than of the renderer.
         assert!(
-            fine.bytes.len() > coarse.bytes.len(),
+            fine.len() > coarse.len(),
             "quality 1.0 produced {} bytes against {} at 0.1",
-            fine.bytes.len(),
-            coarse.bytes.len()
+            fine.len(),
+            coarse.len()
         );
     }
 
@@ -448,19 +529,24 @@ mod tests {
         // succeeding, which is the property the fixture gate depends on.
         let scene = paged_scene(1, Size::new(24.0, 16.0));
         let cpu = cpu_renderer
-            .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Png,
+                &EncodeOptions::default(),
+            )
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         let mut asking = renderer();
         asking.set_gpu(true);
         let requested = asking
-            .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Png,
+                &EncodeOptions::default(),
+            )
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        assert_eq!(
-            cpu.bytes, requested.bytes,
-            "asking for the GPU changed the picture"
-        );
+        assert_eq!(cpu, requested, "asking for the GPU changed the picture");
     }
 
     #[test]
@@ -481,7 +567,7 @@ mod tests {
             pages: Vec::new(),
             ..Scene::new(Size::new(10.0, 10.0))
         };
-        let Err(error) = renderer().render(
+        let Err(error) = renderer().render_to_buffer(
             &scene,
             ImageFormat::Png,
             &EncodeOptions::default(),
@@ -505,7 +591,7 @@ mod tests {
         let dangling = NodeId::new(99);
         scene.nodes[0].children.push(dangling);
 
-        let Err(error) = renderer().render(
+        let Err(error) = renderer().render_to_buffer(
             &scene,
             ImageFormat::Png,
             &EncodeOptions::default(),
@@ -520,5 +606,81 @@ mod tests {
             ),
             "expected the dangling node to be named, found {error}"
         );
+    }
+    /// Two formats of one picture cost one render.
+    ///
+    /// The property the split exists for. Asserted through the output rather
+    /// than by counting passes: the second encode must produce a real image of
+    /// the same surface, and the PNG must be byte-identical to what a fresh
+    /// single-format render produces — so re-encoding is not a different
+    /// drawing that happens to look similar.
+    #[test]
+    fn one_render_encodes_to_several_formats() {
+        let scene = paged_scene(1, Size::new(32.0, 24.0));
+        let renderer = renderer();
+
+        let mut canvas = renderer
+            .render(&scene)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(canvas.page_count(), 1);
+        assert!((canvas.scale() - scene.scale).abs() < f32::EPSILON);
+
+        let png = canvas
+            .to_buffer(ImageFormat::Png, &EncodeOptions::default())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let jpeg = canvas
+            .to_buffer(ImageFormat::Jpeg, &EncodeOptions::default())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(&png[..4], b"\x89PNG");
+        assert_eq!(&jpeg[..2], b"\xFF\xD8");
+
+        // The same surface, so the same picture as rendering once for PNG.
+        let once = renderer
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Png,
+                &EncodeOptions::default(),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(png, once, "re-encoding drew a different picture");
+
+        // And encoding the same format twice is idempotent, which says the
+        // first encode did not consume the pixels.
+        let again = canvas
+            .to_buffer(ImageFormat::Png, &EncodeOptions::default())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(png, again);
+    }
+
+    /// Option validation happens where the page count lives.
+    ///
+    /// A page index past the end is a property of the painted surface, not of
+    /// the scene, so `render` cannot catch it and `to_buffer` must.
+    #[test]
+    fn encode_options_are_validated_against_the_painted_pages() {
+        let scene = paged_scene(2, Size::new(16.0, 16.0));
+        let mut canvas = renderer()
+            .render(&scene)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(canvas.page_count(), 2);
+
+        let past_the_end = EncodeOptions {
+            page: Some(9),
+            ..EncodeOptions::default()
+        };
+        assert!(
+            canvas.to_buffer(ImageFormat::Png, &past_the_end).is_err(),
+            "a page index past the end should be refused"
+        );
+
+        // And the canvas is still usable afterwards: a refused encode is not a
+        // consumed one.
+        assert!(
+            canvas
+                .to_buffer(ImageFormat::Png, &EncodeOptions::default())
+                .is_ok()
+        );
+        assert!(!format!("{canvas:?}").is_empty());
     }
 }

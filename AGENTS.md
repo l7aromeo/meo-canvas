@@ -85,9 +85,26 @@ keeps its own process-wide font registry, so registering a face is visible
 process-wide whether or not our `Renderer` is. What this crate controls is
 adding no second global, and it adds none.
 
-`Renderer::render` takes the scene, the format, and the encode options. The
-options belong there rather than on the renderer because two encodes of one
-scene at different quality settings are two calls, not two renderers.
+`Renderer::render` takes a scene and returns a `RenderedCanvas` — the painted
+surface. Encoding is a separate call on that canvas, so two formats of one
+picture cost one resolve, one measure, one layout, one paint and two encodes.
+Rendering and encoding in one call would make the JavaScript surface, which
+retains its canvas, strictly faster than the Rust one for identical work.
+
+`RenderedCanvas::to_buffer` takes `&mut self`. Every encode entry point upstream
+does, because `Canvas::to_buffer` prepares the surface before reading it.
+Interior mutability would let two encodes of one canvas read as independent when
+they are not; `&mut` says encoding consumes preparation.
+
+`EncodeOptions::validate` runs inside `to_buffer`, because it needs the page
+count and that lives on the painted surface. A page index past the end is a
+property of the drawing rather than of the scene, so `render` structurally
+cannot catch it.
+
+`render_to_buffer` is the one-format convenience, and most callers are that: the
+CLI writes one file, a fixture compares one image, the addon encodes once. It
+returns bytes rather than an `EncodedImage`, since a caller who passed the
+format in already knows it.
 
 ### Pipeline
 
@@ -556,14 +573,14 @@ that has to exist before `cargo publish` will accept it.
 
 Every dependency is on its latest stable release.
 
-|                   |        |                                                           |
-| ----------------- | ------ | --------------------------------------------------------- |
-| `meo-skia-canvas` | 0.10.6 | Skia, text shaping, encoding. `default-features = false`. |
-| `taffy`           | 0.13   | Flexbox, CSS grid, block layout. Without `calc`.          |
-| `neon`            | 1.1    | Node addon.                                               |
-| `clap`            | 4.6    | CLI.                                                      |
-| `thiserror`       | 2.0    | Error types.                                              |
-| `ureq`            | 3.4    | Remote images, behind the CLI's optional `net` feature.   |
+|                   |      |                                                           |
+| ----------------- | ---- | --------------------------------------------------------- |
+| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`. |
+| `taffy`           | 0.13 | Flexbox, CSS grid, block layout. Without `calc`.          |
+| `neon`            | 1.1  | Node addon.                                               |
+| `clap`            | 4.6  | CLI.                                                      |
+| `thiserror`       | 2.0  | Error types.                                              |
+| `ureq`            | 3.4  | Remote images, behind the CLI's optional `net` feature.   |
 
 The core performs no network I/O and requires no async runtime. It accepts bytes
 or a reader, so a Rust caller with no runtime and the CLI are served by the same
@@ -573,4 +590,4 @@ code.
 as a tagged pointer, so `Style` itself holds a `*const ()`. No feature set
 changes this. A tree is therefore built and consumed on one thread and never
 crosses a boundary — which costs nothing, because `Scene` carries its own
-own style type and taffy's `Style` exists only inside the layout stage.
+style type and taffy's `Style` exists only inside the layout stage.

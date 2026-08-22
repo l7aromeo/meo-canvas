@@ -16,12 +16,10 @@ fn blank(width: f32, height: f32) -> Scene {
 fn a_png_decodes_to_the_scenes_pixel_size() {
     let scene = blank(8.0, 4.0);
     let image = Renderer::new()
-        .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+        .render_to_buffer(&scene, ImageFormat::Png, &EncodeOptions::default())
         .unwrap_or_else(|error| unreachable!("{error}"));
 
-    assert_eq!(image.format, ImageFormat::Png);
-
-    let decoder = png::Decoder::new(std::io::Cursor::new(&image.bytes));
+    let decoder = png::Decoder::new(std::io::Cursor::new(&image));
     let reader = decoder.read_info().unwrap_or_else(|error| {
         unreachable!("the bytes are not a PNG: {error}")
     });
@@ -36,10 +34,10 @@ fn the_scale_multiplies_the_pixels_and_not_the_layout() {
     scene.scale = 2.0;
 
     let image = Renderer::new()
-        .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+        .render_to_buffer(&scene, ImageFormat::Png, &EncodeOptions::default())
         .unwrap_or_else(|error| unreachable!("{error}"));
 
-    let decoder = png::Decoder::new(std::io::Cursor::new(&image.bytes));
+    let decoder = png::Decoder::new(std::io::Cursor::new(&image));
     let reader = decoder.read_info().unwrap_or_else(|error| {
         unreachable!("the bytes are not a PNG: {error}")
     });
@@ -59,17 +57,15 @@ fn a_gif_carries_one_frame_per_page() {
     assert_eq!(scene.pages.len(), 3);
 
     let image = Renderer::new()
-        .render(&scene, ImageFormat::Gif, &EncodeOptions::default())
+        .render_to_buffer(&scene, ImageFormat::Gif, &EncodeOptions::default())
         .unwrap_or_else(|error| unreachable!("{error}"));
 
     let mut options = gif::DecodeOptions::new();
     options.set_color_output(gif::ColorOutput::Indexed);
     let mut decoder =
-        options
-            .read_info(image.bytes.as_slice())
-            .unwrap_or_else(|error| {
-                unreachable!("the bytes are not a GIF: {error}")
-            });
+        options.read_info(image.as_slice()).unwrap_or_else(|error| {
+            unreachable!("the bytes are not a GIF: {error}")
+        });
 
     let mut frames = 0;
     while decoder
@@ -91,10 +87,10 @@ fn a_still_format_writes_one_page_of_a_multi_page_scene() {
         .unwrap_or_else(|error| unreachable!("{error}"));
 
     let image = Renderer::new()
-        .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+        .render_to_buffer(&scene, ImageFormat::Png, &EncodeOptions::default())
         .unwrap_or_else(|error| unreachable!("{error}"));
 
-    let decoder = png::Decoder::new(std::io::Cursor::new(&image.bytes));
+    let decoder = png::Decoder::new(std::io::Cursor::new(&image));
     let reader = decoder.read_info().unwrap_or_else(|error| {
         unreachable!("the bytes are not a PNG: {error}")
     });
@@ -110,7 +106,8 @@ fn a_frame_rate_named_for_a_png_is_refused_before_anything_is_drawn() {
         ..EncodeOptions::default()
     };
 
-    let refused = Renderer::new().render(&scene, ImageFormat::Png, &options);
+    let refused =
+        Renderer::new().render_to_buffer(&scene, ImageFormat::Png, &options);
 
     assert!(refused.is_err(), "a PNG has no clock");
 }

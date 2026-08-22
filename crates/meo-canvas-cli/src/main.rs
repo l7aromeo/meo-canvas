@@ -308,11 +308,13 @@ fn render(args: &RenderArgs) -> Result<(), Failure> {
     let renderer = build_renderer(&args.fonts)?;
     let options = encode_options(args);
 
-    let image = renderer.render(&scene, format, &options).map_err(|error| {
-        Failure::new(explain(&error), exit_code_for(&error))
-    })?;
+    let image = renderer
+        .render_to_buffer(&scene, format, &options)
+        .map_err(|error| {
+            Failure::new(explain(&error), exit_code_for(&error))
+        })?;
 
-    write_output(&image.bytes, args.output.as_deref())
+    write_output(&image, args.output.as_deref())
 }
 
 fn main() -> ExitCode {

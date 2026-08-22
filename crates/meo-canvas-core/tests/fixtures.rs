@@ -271,11 +271,10 @@ fn render_fixture(name: &str) -> Vec<u8> {
     scene.scale = FIXTURE_SCALE;
 
     fixture_renderer()
-        .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+        .render_to_buffer(&scene, ImageFormat::Png, &EncodeOptions::default())
         .unwrap_or_else(|error| {
             unreachable!("fixture `{name}` did not render: {error}")
         })
-        .bytes
 }
 
 // An ordinary test, so `cargo test --workspace` runs it and `cargo llvm-cov`
