@@ -839,19 +839,10 @@ fn paint_box(
         draw_box_shadow(context, paint, rect, shadow)?;
     }
 
-    if paint.background_image.is_some()
+    if let Some(background) = paint.background_image.as_ref()
         && let Some(image) = resolved.background(id).map(DecodedImage::inner)
     {
-        // Drawn to the box rather than tiled: repetition needs a pattern
-        // shader, and the tiling modes are a fixture-verified concern rather
-        // than an arithmetic one.
-        context.draw_image_sized(
-            image,
-            rect.origin.x,
-            rect.origin.y,
-            rect.size.width,
-            rect.size.height,
-        );
+        draw_background_image(context, paint, background, image, rect)?;
     }
 
     draw_border(context, node, rect)?;

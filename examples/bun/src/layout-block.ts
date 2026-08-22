@@ -6,9 +6,10 @@
  * whatever their width, and a margin between two of them collapses to the
  * larger rather than summing.
  *
- * The three panels currently draw empty: a block container that is not the page
- * root lays out none of its children. Left as written rather than worked
- * around — the directory exists to say which parts work.
+ * The three panels drew empty when this was written — a block container that
+ * was not the page root laid out none of its children — and they draw now. The
+ * cause was not layout at all: the child was painted before its own parent and
+ * the parent's background covered it.
  */
 
 import { Box, Root, type Children, type SceneNode } from 'meo-canvas'

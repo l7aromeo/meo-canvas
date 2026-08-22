@@ -3,8 +3,10 @@
  *
  * One string repeated with one property changed at a time. A property that does
  * nothing is a line that looks like the one above it, which is what a showcase
- * is for — `textDecoration` and a centred or right `textAlign` currently draw
- * nothing at all, and those rows are left in rather than removed.
+ * is for: `textDecoration` and a centred or right `textAlign` both drew exactly
+ * that, and both draw now. The two rows that still repeat their neighbour are
+ * `textStroke` and `paintOrder`, which the binding underneath cannot express —
+ * its text style carries a colour and no stroke width.
  */
 
 import { Box, RichText, Root, Text, type SceneNode } from 'meo-canvas'

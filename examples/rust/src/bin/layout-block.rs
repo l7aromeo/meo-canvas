@@ -59,10 +59,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .border_color(hex_rgb(0x14_14_1e)),
         ]);
 
-    // The three panels are `Display::Block` and their children currently do not
-    // draw: a block container that is not the page root lays out none of them.
-    // Left as written rather than worked around — the directory exists to say
-    // which parts work.
+    // The three panels are `Display::Block`. Their children drew nothing when
+    // this was written -- painted before their own parent, and covered by its
+    // background -- and they draw now.
     let root = Root::new(400.0, 110.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))

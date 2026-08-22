@@ -2,7 +2,10 @@
 //!
 //! One string repeated with one property changed at a time. A property that
 //! does nothing is a line that looks like the one above it, which is what a
-//! showcase is for.
+//! showcase is for: `text_decoration` and a centred or right `text_align` both
+//! drew exactly that, and both draw now. The two rows that still repeat their
+//! neighbour are `text_stroke` and `paint_order`, which the binding underneath
+//! cannot express -- its text style carries a colour and no stroke width.
 
 use meo_canvas::{
     Box as BoxNode, Element, FlexDirection, Root, Styled, Text, TextAlign,

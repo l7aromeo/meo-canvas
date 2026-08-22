@@ -46,10 +46,11 @@
 use meo_canvas::{
     Box as BoxNode, Element, Format, Renderer, Root, Styled, Text, hex_rgb, px,
     scene::{
-        BlendMode, BoxShadow, Color, FillRule, Gradient, GradientGeometry,
-        GradientStop, ImageSource, LinearDirection, Mask, MaskShape,
-        PaintOrder, TextAlign, TextDecoration, TextShadow, TextStroke,
-        Transform, VerticalAlign,
+        BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+        BoxShadow, Color, FillRule, Gradient, GradientGeometry, GradientStop,
+        ImageSource, Length, LinearDirection, Mask, MaskShape, PaintOrder,
+        TextAlign, TextDecoration, TextShadow, TextStroke, Transform,
+        VerticalAlign,
     },
     sides,
 };
@@ -168,6 +169,36 @@ fn line() -> Element {
         .color(hex_rgb(0x14_14_1e))
 }
 
+/// The same line in a box wider than it, so an alignment has room to move it.
+fn wide() -> Element {
+    line().width(px(72.0))
+}
+
+/// The picture the background-image cases paint: eight by four, so a tile is
+/// small enough for a repeat to be a pattern rather than one stretched copy.
+const STRIP: &[u8] = include_bytes!("assets/strip.png");
+
+/// A background image with the three fields that travel with it.
+fn tile(
+    repeat: BackgroundRepeat,
+    size: BackgroundSize,
+    position: (Length, Length),
+) -> BackgroundImage {
+    BackgroundImage {
+        source: ImageSource::Bytes(STRIP.to_vec()),
+        repeat,
+        size,
+        position,
+    }
+}
+
+/// A plain box, so a background image is the only thing in it.
+fn plain() -> Element {
+    BoxNode::new()
+        .size(px(72.0), px(72.0))
+        .background_color(hex_rgb(0xee_ee_f2))
+}
+
 /// A shadow that would be plainly visible if it were drawn.
 fn shadow(inset: bool) -> BoxShadow {
     BoxShadow {
@@ -206,6 +237,7 @@ fn fade() -> Gradient {
 fn cases() -> Vec<Case> {
     let mut all = composite_cases();
     all.extend(shape_cases());
+    all.extend(background_image_cases());
     all.extend(mask_cases());
     all.extend(text_cases());
     all
@@ -303,6 +335,109 @@ fn shape_cases() -> Vec<Case> {
 /// pixels, which is exactly the control mistake this file keeps finding.
 const MASK_IMAGE: &[u8] = include_bytes!("assets/mask-half.png");
 
+/// The strip the background-image cases paint, and the fields that travel
+/// with it.
+///
+/// Four rows rather than one: the source is a different question from the
+/// repeat, the size and the offset, and a source that draws while the three
+/// are ignored is exactly the shape this file exists to tell apart -- which is
+/// what it found. `paint.rs:842` draws the picture stretched to the box with
+/// `draw_image_sized` and says so in a comment: repetition wants a pattern
+/// shader. The source row draws; the three that travel with it do not.
+fn background_image_cases() -> Vec<Case> {
+    vec![
+        Case {
+            property: "background_image",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Repeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            without: plain,
+            effect: Effect::Draws,
+        },
+        Case {
+            property: "background_image repeat",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::NoRepeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            without: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Repeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            effect: Effect::Nothing,
+        },
+        // The two axes against each other rather than against `Repeat`. This
+        // is the failure a tiling implementation is most likely to ship: an
+        // axis the right way round for one keyword and swapped for the other
+        // draws a picture for both, so a pair against the unrepeated case
+        // would pass while the two keywords meant each other.
+        Case {
+            property: "background_image repeat axis",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::RepeatX,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            without: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::RepeatY,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            effect: Effect::Nothing,
+        },
+        Case {
+            property: "background_image size",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::NoRepeat,
+                    BackgroundSize::Cover,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            without: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::NoRepeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            effect: Effect::Nothing,
+        },
+        Case {
+            property: "background_image position",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Repeat,
+                    BackgroundSize::AUTO,
+                    (px(6.0), px(10.0)),
+                ))
+            },
+            without: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Repeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            effect: Effect::Nothing,
+        },
+    ]
+}
+
 /// The five ways a mask can be written, all on a box filled edge to edge.
 ///
 /// Each arm keeps a different part of the same square: a circle inscribed in
@@ -355,6 +490,24 @@ fn mask_cases() -> Vec<Case> {
 /// What a paint property does to glyphs.
 fn text_cases() -> Vec<Case> {
     vec![
+        // Both of these drew nothing earlier today -- decoration was resolved
+        // and never passed to the painter, and a centred line was laid out at
+        // an infinite width and placed about infinity. Nothing else guards
+        // them: no golden fixture sets either.
+        Case {
+            property: "text_decoration",
+            with: || line().text_decoration(TextDecoration::Underline),
+            without: line,
+            effect: Effect::Draws,
+        },
+        // The control is left-aligned in the *same* width, so what is compared
+        // is where the glyphs sit rather than how wide the box is.
+        Case {
+            property: "text_align",
+            with: || wide().text_align(TextAlign::Center),
+            without: || wide().text_align(TextAlign::Left),
+            effect: Effect::Draws,
+        },
         Case {
             property: "text_shadow",
             with: || {

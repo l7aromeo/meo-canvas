@@ -3,21 +3,26 @@
 //! Every cell is the same box with one property changed, so a cell that looks
 //! like its neighbour is a property that did nothing.
 //!
-//! `background_image` is missing from this half. The scene carries it and the
-//! JavaScript surface spells it; `meo_canvas::Style` has no setter for it, so
-//! neither example uses it and the gap is written down rather than drawn
-//! around.
+//! The last row is `background_image`, which this half could not spell until
+//! `meo_canvas::Style` grew a setter for it: the scene carried it and only the
+//! JavaScript surface could say it.
 
 use meo_canvas::{
     Box as BoxNode, Element, FlexDirection, Root, Styled, corners, hex_rgb,
     pct, px,
     scene::{
-        BlendMode, BorderStyle, BoxShadow, Color, Gradient, GradientGeometry,
-        GradientStop, LinearDirection, Mask, MaskShape, Transform,
+        BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+        BorderStyle, BoxShadow, Color, Gradient, GradientGeometry,
+        GradientStop, ImageSource, Length, LinearDirection, Mask, MaskShape,
+        Transform,
     },
     sides,
 };
 use meo_canvas_examples::{FORMATS, draw};
+
+/// The picture the background-image row paints, beside this file rather than
+/// beside the output.
+const STRIP: &str = "../../crates/meo-canvas/tests/assets/strip.png";
 
 /// The side of every cell.
 const SIDE: f32 = 72.0;
@@ -71,7 +76,7 @@ fn row(children: Vec<Element>) -> Element {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = Root::new(408.0, 488.0)
+    let root = Root::new(408.0, 568.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)
@@ -267,6 +272,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .border_color(TO)
                     .mask(Mask::Shape(MaskShape::Circle)),
             ]),
+            // A background image, and the three things that travel with it.
+            // The picture is eight by four, so a tile is small enough that the
+            // repeat is a pattern rather than one stretched copy.
+            //
+            // All five cells draw the same thing today: the picture is
+            // stretched to the box and the repeat, the size and the offset are
+            // ignored. Left in rather than reduced to one cell -- five cells
+            // that should differ and do not is the showcase saying which parts
+            // work.
+            row(vec![
+                tiled(
+                    BackgroundRepeat::Repeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ),
+                tiled(
+                    BackgroundRepeat::NoRepeat,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ),
+                tiled(
+                    BackgroundRepeat::RepeatX,
+                    BackgroundSize::AUTO,
+                    (px(0.0), px(0.0)),
+                ),
+                tiled(
+                    BackgroundRepeat::NoRepeat,
+                    BackgroundSize::Cover,
+                    (px(0.0), px(0.0)),
+                ),
+                // The offset of the first tile, which only a repeat that does
+                // not start at the corner can show.
+                tiled(
+                    BackgroundRepeat::Repeat,
+                    BackgroundSize::AUTO,
+                    (px(6.0), px(10.0)),
+                ),
+            ]),
         ]);
 
     draw("paint", root, FORMATS)
@@ -290,6 +333,20 @@ fn inner() -> Element {
         .size(px(40.0), px(40.0))
         .margin(sides(px(16.0), px(16.0), px(16.0), px(16.0)))
         .background_color(FROM)
+}
+
+/// A cell painted with the strip, under one repeat, size and offset.
+fn tiled(
+    repeat: BackgroundRepeat,
+    size: BackgroundSize,
+    position: (Length, Length),
+) -> Element {
+    cell().background_image(BackgroundImage {
+        source: ImageSource::Path(STRIP.into()),
+        repeat,
+        size,
+        position,
+    })
 }
 
 /// A cell filled edge to edge, so a mask's edge is the only edge in it.

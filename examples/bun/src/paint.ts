@@ -4,9 +4,8 @@
  * Every cell is the same box with one property changed, so a cell that looks
  * like its neighbour is a property that did nothing.
  *
- * `backgroundImage` is spellable here and nowhere on the Rust half, so it is
- * drawn by neither: the two surfaces must draw the same bytes, and a property
- * only one of them has cannot be in a picture both of them make.
+ * The last row is `backgroundImage`, which was spellable here and nowhere on
+ * the Rust half until `Style` grew a setter for it.
  */
 
 import { Box, Root, type Gradient, type GradientStop, type SceneNode } from 'meo-canvas'
@@ -51,9 +50,18 @@ const filled = (rest: Record<string, unknown> = {}): SceneNode => cell({ backgro
 /** One row of cells. */
 const row = (children: readonly SceneNode[]): SceneNode => Box({ gap: 8, children: [...children] })
 
+/** The picture the background-image row paints. */
+const STRIP = '../../crates/meo-canvas/tests/assets/strip.png'
+
+/** A cell painted with the strip, under one repeat, size and offset. */
+const tiled = (repeat: 'repeat' | 'no-repeat' | 'repeat-x', size: 'cover' | undefined, position: { x: number; y: number }): SceneNode =>
+  cell({
+    backgroundImage: { src: STRIP, repeat, ...(size === undefined ? {} : { size }), position },
+  })
+
 const canvas = await Root({
   width: 408,
-  height: 488,
+  height: 568,
   backgroundColor: '#ffffff',
   padding: 8,
   flexDirection: 'column',
@@ -157,6 +165,23 @@ const canvas = await Root({
         },
       }),
       filled({ border: 6, borderColor: TO, mask: { shape: 'circle' } }),
+    ]),
+    // A background image, and the three things that travel with it. The picture
+    // is eight by four, so a tile is small enough that the repeat is a pattern
+    // rather than one stretched copy.
+    //
+    // All five cells draw the same thing today: the picture is stretched to the
+    // box and the repeat, the size and the offset are ignored. Left in rather
+    // than reduced to one cell — five cells that should differ and do not is the
+    // showcase saying which parts work.
+    row([
+      tiled('repeat', undefined, { x: 0, y: 0 }),
+      tiled('no-repeat', undefined, { x: 0, y: 0 }),
+      tiled('repeat-x', undefined, { x: 0, y: 0 }),
+      tiled('no-repeat', 'cover', { x: 0, y: 0 }),
+      // The offset of the first tile, which only a repeat that does not start
+      // at the corner can show.
+      tiled('repeat', undefined, { x: 6, y: 10 }),
     ]),
   ],
 })

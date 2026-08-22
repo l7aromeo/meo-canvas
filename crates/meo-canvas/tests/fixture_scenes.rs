@@ -20,8 +20,9 @@ use meo_canvas::{
     Overflow, PositionType, Root, Styled, Text, corners, corners_all, hex_rgb,
     px,
     scene::{
-        BoxShadow, Color, Corners, FontWeight, Gradient, GradientGeometry,
-        GradientStop, Length, LinearDirection, Scene, Sides, codec,
+        BoxShadow, Color, Corners, FillRule, FontWeight, Gradient,
+        GradientGeometry, GradientStop, ImageSource, Length, LinearDirection,
+        Mask, MaskShape, Scene, Sides, VerticalAlign, codec,
     },
     sides,
 };
@@ -40,6 +41,9 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("text-descenders", text_descenders()),
         ("baseline-alignment", baseline_alignment()),
         ("stacking-hoist", stacking_hoist()),
+        ("mask-kinds", mask_kinds()),
+        ("backdrop-filter", backdrop_filter()),
+        ("vertical-align", vertical_align()),
         ("borders-square", borders_square()),
     ]
 }
@@ -475,6 +479,225 @@ fn stacking_hoist() -> Scene {
             // still red to a reader.
             cell("opacity: 0.99 - CONTROL, a real context keeps its child")
                 .opacity(0.99),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// The image `mask-kinds` reads for its alpha.
+///
+/// Eight by eight, the left half opaque white and the right half clear. Beside
+/// `STRIP` rather than in place of it, because a mask image is read for its
+/// **alpha** and every one of `strip.png`'s thirty-two pixels is opaque: a
+/// mask cell built on it would keep the whole box however well masking works.
+const MASK_IMAGE: &[u8] = include_bytes!("assets/mask-half.png");
+
+/// The five ways a mask can be written, beside the box that carries none.
+///
+/// **The control cell is the whole point.** `property_effect.rs` already
+/// proves each arm changes the picture; what it cannot say is *which* pixels
+/// changed, and that is the difference the border defect turned on -- a fix
+/// that moved something passed a middle-row sample while the bottom edge was
+/// still a diagonal. Here the control is the unmasked box, and every other
+/// cell is read against it at named points.
+///
+/// **The cells are wider than they are tall** so that `Circle` and `Ellipse`
+/// are different pictures. In a square box the largest circle that fits and
+/// the ellipse that fills it are the same shape, and a fixture of squares
+/// would pass with the two arms swapped.
+fn mask_kinds() -> Scene {
+    let cell = |name: &str, mask: Option<Mask>| {
+        let box_node = BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(56.0), px(40.0))
+            .background_color(hex_rgb(0x28_50_dc))
+            .name(name);
+        match mask {
+            Some(mask) => box_node.mask(mask),
+            None => box_node,
+        }
+    };
+    // Opaque to clear, left to right, so the gradient arm's alpha is read
+    // along a row rather than at one point.
+    let fade = Gradient {
+        geometry: GradientGeometry::Linear {
+            direction: LinearDirection::Angle(90.0),
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::rgb(0xff, 0xff, 0xff),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::TRANSPARENT,
+            },
+        ],
+    };
+
+    Root::new(392.0, 56.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .align_items(Align::Center)
+        .gap_xy(px(0.0), px(8.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("cell 0 carries no mask and is the control. See notes.json.")
+        .children([
+            cell("no mask - CONTROL, the whole box is blue", None),
+            cell(
+                "circle - the largest that fits, so it is as wide as the box is tall",
+                Some(Mask::Shape(MaskShape::Circle)),
+            ),
+            cell(
+                "ellipse - fills the box, so it reaches both ends of the middle row",
+                Some(Mask::Shape(MaskShape::Ellipse)),
+            ),
+            cell(
+                "path - a triangle with its apex at the top middle",
+                Some(Mask::Path {
+                    data: "M28 2 L54 38 L2 38 Z".to_owned(),
+                    fill_rule: FillRule::NonZero,
+                }),
+            ),
+            cell(
+                "gradient - opaque at the left edge and clear at the right",
+                Some(Mask::Gradient(fade)),
+            ),
+            cell(
+                "image - the left half of an 8x8 whose right half is clear",
+                Some(Mask::Image(ImageSource::Bytes(MASK_IMAGE.to_vec()))),
+            ),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// Three translucent panels over the same stripes, two of them filtered.
+///
+/// **Translucent because a backdrop filter is invisible under anything else.**
+/// Three separate sessions probed this property against an opaque box and each
+/// read the result as "draws nothing"; the trap is that the obvious control is
+/// the broken one. A panel that lets the stripes through is the only kind that
+/// can show a filter applied to them.
+///
+/// **`grayscale` and `blur` rather than two blurs.** They fail differently: a
+/// colour filter that never ran leaves the stripes coloured, and a blur that
+/// never ran leaves the stripe edge hard. A blur alone would also be a weak
+/// cell over smooth content -- blurring a linear ramp returns that ramp, so a
+/// backdrop blur can be perfect and change nothing. Stripes are chosen for
+/// exactly that reason.
+fn backdrop_filter() -> Scene {
+    let stripe = |color: Color| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(22.0), px(72.0))
+            .background_color(color)
+    };
+    let stripes = BoxNode::new()
+        .position_type(PositionType::Absolute)
+        .position(sides(Some(px(0.0)), None, None, Some(px(0.0))))
+        .size(px(264.0), px(72.0))
+        .children(
+            (0..12)
+                .map(|index| {
+                    stripe(match index % 2 {
+                        0 => Color::rgb(0xdc, 0x28, 0x28),
+                        _ => Color::rgb(0x28, 0x50, 0xdc),
+                    })
+                })
+                .collect::<Vec<_>>(),
+        );
+    let panel = |name: &str, left: f32, filter: Option<&str>| {
+        let box_node = BoxNode::new()
+            .position_type(PositionType::Absolute)
+            .position(sides(Some(px(8.0)), None, None, Some(px(left))))
+            .size(px(72.0), px(56.0))
+            .background_color(Color::rgba(0xff, 0xff, 0xff, 0x40))
+            .name(name);
+        match filter {
+            Some(filter) => box_node.backdrop_filter(filter),
+            None => box_node,
+        }
+    };
+
+    Root::new(264.0, 72.0)
+        .position_type(PositionType::Relative)
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("panel 0 filters nothing and is the control. See notes.json.")
+        .children([
+            stripes,
+            panel(
+                "CONTROL - translucent white over the stripes, unfiltered",
+                8.0,
+                None,
+            ),
+            panel(
+                "grayscale(1) - the stripes behind it lose their colour",
+                96.0,
+                Some("grayscale(1)"),
+            ),
+            panel(
+                "blur(4px) - the stripe edges behind it soften",
+                184.0,
+                Some("blur(4px)"),
+            ),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// The same line of text in three boxes taller than it is, aligned three ways.
+///
+/// **Each box is taller than its text on purpose.** The property moves the
+/// paragraph by what the box has left over, and a text node sized to its own
+/// content has nothing left over -- so the three alignments agree exactly
+/// where a fixture is easiest to write. A control pair built that way reports
+/// a working property as dead, which is how this one was first measured.
+///
+/// The cells share a grey ground so that the box each line sits in is visible
+/// in the picture, rather than being a rectangle the reader has to take on
+/// trust from the numbers.
+///
+/// `Top` is the control: it is the default, and every other text fixture in
+/// this suite is drawing it already.
+fn vertical_align() -> Scene {
+    let cell = |name: &str, align: VerticalAlign| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(80.0), px(72.0))
+            .background_color(hex_rgb(0xf0_f0_f0))
+            .name(name)
+            .children(
+                Text::new("Hxgp")
+                    .position_type(PositionType::Relative)
+                    .size(px(80.0), px(72.0))
+                    .font_family("Fixture")
+                    .font_size(18.0)
+                    .color(hex_rgb(0x14_14_1e))
+                    .vertical_align(align),
+            )
+    };
+
+    Root::new(280.0, 88.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .align_items(Align::Center)
+        .gap_xy(px(0.0), px(8.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("cell 0 is Top, the default, and is the control. See notes.json.")
+        .children([
+            cell(
+                "top - CONTROL, the default every other text fixture draws",
+                VerticalAlign::Top,
+            ),
+            cell(
+                "middle - the paragraph centred in what the box has left over",
+                VerticalAlign::Middle,
+            ),
+            cell(
+                "bottom - the paragraph against the bottom of the box",
+                VerticalAlign::Bottom,
+            ),
         ])
         .into_scene()
         .unwrap_or_else(|error| unreachable!("{error}"))
