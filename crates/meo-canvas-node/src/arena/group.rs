@@ -145,6 +145,18 @@ macro_rules! arena_group {
             /// Every property's index, in the order they are written.
             pub(crate) const INDICES: &[u32] = &[$($index),+];
 
+            /// Every property's name, in the same order.
+            ///
+            /// The table describing itself. The round-trip artefact is keyed by
+            /// these, so a property added to the table appears in the artefact
+            /// on the next regeneration rather than being quietly untested.
+            ///
+            /// Test-only, like [`probe`]: nothing the addon does at runtime
+            /// needs a property's name, and a table of strings compiled into
+            /// the shipped binary would be paid for by every caller of it.
+            #[cfg(test)]
+            pub(crate) const NAMES: &[&str] = &[$(stringify!($field)),+];
+
             /// How many properties this group declares.
             pub(crate) const COUNT: usize = INDICES.len();
 
@@ -167,6 +179,44 @@ macro_rules! arena_group {
                     "the table needs more mask slots than a record carries"
                 );
             };
+
+            /// A group with exactly one property set to its probe value.
+            ///
+            /// The probe value is whatever [`crate::arena::value::ArenaValue`]
+            /// reads out of a slot stream of ones -- see
+            /// [`crate::arena::probe_reader`]. Using the decoder to produce it
+            /// rather than a second table of literals is what stops the probe
+            /// from drifting: there is no separate definition of "the value for
+            /// a `Length`" that could disagree with how a `Length` is read.
+            ///
+            /// Returns `None` for an index this group does not declare.
+            #[cfg(test)]
+            pub(crate) fn probe(index: u32) -> Option<$target> {
+                let mut value = <$target>::default();
+                let mut found = false;
+                $(
+                    if index == $index {
+                        let base = <$target>::default();
+                        for fill in crate::arena::probe_fills() {
+                            let (slots, values) =
+                                crate::arena::probe_slots(fill);
+                            let mut input =
+                                Reader::new_for_probe(&slots, &values);
+                            if let Ok(read) = ArenaValue::read(&mut input) {
+                                value.$field = read;
+                                found = true;
+                                // The first fill that says something the
+                                // default does not. A value equal to the
+                                // default leaves an encoder nothing to write.
+                                if value != base {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                )+
+                found.then_some(value)
+            }
 
             /// Reads the properties this record carries onto a default.
             pub(crate) fn read(

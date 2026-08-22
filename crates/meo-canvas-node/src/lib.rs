@@ -61,6 +61,7 @@
 pub mod arena;
 
 use arena::{SideValue, Values};
+use meo_canvas_core::{EncodeOptions, Renderer, Surface};
 use neon::{prelude::*, types::buffer::TypedArray};
 
 /// Reads the arena and its side array out of the call's arguments.
@@ -127,23 +128,76 @@ fn render_off_thread(
         arena::decode(slots, values).map_err(|error| error.to_string())?;
     let format = meo_canvas_core::ImageFormat::from_extension(format)
         .ok_or_else(|| format!("no image format is called {format:?}"))?;
-    let renderer = meo_canvas_core::Renderer::new();
+    let renderer = Renderer::new();
     renderer
-        .render_to_buffer(
-            &scene,
-            format,
-            &meo_canvas_core::EncodeOptions::default(),
-        )
+        .render_to_buffer(&scene, format, &EncodeOptions::default())
         .map_err(|error| error.to_string())
 }
 
-/// Reports which backend the addon resolved, as a JSON string.
+/// Reports which rasteriser a render would use, and which one it asks for.
 ///
-/// A string rather than an object because the shape is diagnostic output that
-/// JavaScript logs or parses, and a stable JSON document survives fields being
-/// added where a hand-built object's property order does not.
-fn backend(mut _cx: FunctionContext<'_>) -> JsResult<'_, JsString> {
-    unimplemented!()
+/// Two questions, not one, and they can disagree: `requested` is what the
+/// renderer asks for and `active` is what asking got. A build with no GPU
+/// backend compiled rasterises on the CPU whatever is requested, which is the
+/// distinction `Canvas::gpu`'s own documentation draws — "the request, not the
+/// outcome".
+///
+/// Answered by making a one-pixel canvas and asking it, rather than by
+/// reasoning about which features were compiled: the compiled feature set is
+/// what a caller would have to reason from, and this reports what actually
+/// happens instead.
+///
+/// Returns an object rather than a JSON string. A string would make every
+/// caller parse what this already knows, and a field added later reaches a
+/// JavaScript caller as a property rather than as a schema change.
+fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
+    let requested = Renderer::new().gpu();
+    let probe = Surface::new(PROBE_SIZE, PROBE_SCALE, requested)
+        .or_else(|error| cx.throw_error(error.to_string()))?;
+
+    let object = cx.empty_object();
+    let active = cx.string(probe.engine());
+    object.set(&mut cx, "active", active)?;
+    let requested = cx.boolean(requested);
+    object.set(&mut cx, "requestsGpu", requested)?;
+    Ok(object)
+}
+
+/// The surface [`backend`] asks. One pixel, because nothing is drawn on it.
+const PROBE_SIZE: meo_canvas_scene::Size = meo_canvas_scene::Size {
+    width: 1.0,
+    height: 1.0,
+};
+
+/// The scale [`backend`]'s probe surface uses. One, so its pixel is its pixel.
+const PROBE_SCALE: f32 = 1.0;
+
+/// Re-encodes an arena through the byte format.
+///
+/// Takes the arena and its side values, decodes the scene, and returns what
+/// [`meo_canvas_scene::codec`] writes for it. The two representations
+/// producing one `Scene` is the property the TypeScript round trip asserts,
+/// and this is what makes the assertion literally that claim: comparing
+/// rendered images instead would let two different scenes pass as one, and a
+/// property the encoder forgot that happens to change nothing visible would go
+/// unnoticed.
+///
+/// **Throws on a malformed arena rather than returning short bytes.** A
+/// half-written encoder should fail at the boundary naming the slot, not
+/// produce a buffer that compares unequal for a reason the test cannot
+/// attribute.
+///
+/// Synchronous, unlike [`render`]: decoding an arena and writing bytes is
+/// microseconds of work with no rasteriser in it, so a Promise would cost a
+/// tick to save nothing.
+fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
+    let (slots, values) = arguments(&mut cx)?;
+    let scene = match arena::decode(&slots, &values) {
+        Ok(scene) => scene,
+        Err(error) => return cx.throw_error(error.to_string()),
+    };
+    let bytes = meo_canvas_scene::codec::encode(&scene);
+    JsBuffer::from_slice(&mut cx, &bytes)
 }
 
 /// The module's single registration point.
@@ -156,5 +210,6 @@ fn backend(mut _cx: FunctionContext<'_>) -> JsResult<'_, JsString> {
 fn main(mut cx: ModuleContext<'_>) -> NeonResult<()> {
     cx.export_function("render", render)?;
     cx.export_function("backend", backend)?;
+    cx.export_function("sceneBytes", scene_bytes)?;
     Ok(())
 }

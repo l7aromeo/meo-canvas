@@ -116,10 +116,16 @@ export interface Style {
   // -- Layout ---------------------------------------------------------
   /** How this node's children are arranged. */
   readonly display?: Display
-  /** Whether the node is placed by the flow or by its own offsets. */
-  readonly position?: PositionType
+  /**
+   * Whether the node is placed by the flow or by its own offsets.
+   *
+   * `positionType`, not `position`: v1 spells the offsets `position`, so the
+   * two would collide. A caller porting a v1 tree writes both and neither means
+   * the other.
+   */
+  readonly positionType?: PositionType
   /** Offsets from the container's edges. */
-  readonly inset?: Sides<Length>
+  readonly position?: Sides<Length>
   /** Requested width. */
   readonly width?: Dimension
   /** Requested height. */
@@ -139,7 +145,7 @@ export interface Style {
   /** Space inside the border. */
   readonly padding?: Sides<Length>
   /** Border thickness, which occupies space whether or not it is painted. */
-  readonly borderWidth?: Sides<number>
+  readonly border?: Sides<number>
   /** The axis children run along. */
   readonly flexDirection?: FlexDirection
   /** Whether children overflow onto further lines. */
@@ -158,19 +164,30 @@ export interface Style {
   readonly alignSelf?: Align
   /** Cross-axis distribution of wrapped lines. */
   readonly alignContent?: Align
-  /** Space between children, on both axes. */
-  readonly gap?: Length
-  /** Space between rows, overriding `gap`. */
-  readonly rowGap?: Length
-  /** Space between columns, overriding `gap`. */
-  readonly columnGap?: Length
+  /**
+   * Space between children.
+   *
+   * A single value applies to both axes; `{ row, column }` names them apart.
+   * v1 takes the same pair of forms and has no separate `rowGap`.
+   */
+  readonly gap?: Length | { readonly row?: Length; readonly column?: Length }
   /** Clipping behaviour, on both axes. */
   readonly overflow?: Overflow
   /** Whether `width` and `height` include padding and border. */
   readonly boxSizing?: BoxSizing
   /** Inline direction, which decides which edge is the start. */
   readonly direction?: Direction
-  /** The grid's column tracks. */
+  /**
+   * The grid's column tracks.
+   *
+   * The CSS spelling rather than v1's `templateColumns`, and the rule already
+   * decides it: the names are CSS's, because someone porting a design should
+   * not have to translate. v1's shorter name was unambiguous only because its
+   * grid properties lived on a separate `GridProps` type; in one flat style it
+   * would sit beside `padding` with nothing saying which box model it belongs
+   * to. Where v1 itself diverges from the reference, the reference wins — the
+   * same clause that settled the bare container's defaults.
+   */
   readonly gridTemplateColumns?: readonly TrackSize[]
   /** The grid's row tracks. */
   readonly gridTemplateRows?: readonly TrackSize[]
@@ -189,13 +206,22 @@ export interface Style {
   /**
    * The box's fill.
    *
-   * CSS's `background-color`, and distinct from {@link Style.color}, which is
+   * `backgroundColor`, as v1 spells it and as CSS names the property, and
+   * distinct from {@link Style.color}, which is
    * the text colour. The two sit adjacent and mean different things; that is
    * CSS's trap and keeping its names is what lets a design be ported without
    * translation.
    */
-  readonly background?: Color
-  /** Border colour, on every edge or per edge. */
+  readonly backgroundColor?: Color
+  /**
+   * Border colour, on every edge or per edge.
+   *
+   * One property, as v1 has one. The scene splits it — a fallback colour beside
+   * per-edge overrides — but that split exists for the wire format's
+   * convenience rather than the caller's, so the encoder routes the scalar form
+   * to one field and the edge form to the other and no v2-only name reaches
+   * this surface.
+   */
   readonly borderColor?: Sides<Color>
   /** Whether the border is solid, dashed or dotted. */
   readonly borderStyle?: BorderStyle
@@ -204,7 +230,7 @@ export interface Style {
   /** Opacity of this node and its subtree, from `0` to `1`. */
   readonly opacity?: number
   /** How this node composites onto what is beneath it. */
-  readonly blendMode?: BlendMode
+  readonly mixBlendMode?: BlendMode
   /** Whether gradients are dithered. */
   readonly dither?: boolean
   /** Paint order among positioned siblings. */
@@ -251,7 +277,7 @@ export interface Style {
    * Read only by an image, as CSS's `object-fit` applies to replaced elements
    * and is inert on everything else.
    */
-  readonly fit?: ObjectFit
+  readonly objectFit?: ObjectFit
   /** Which frame of an animated source to draw. Read only by an image. */
   readonly frame?: number
 }

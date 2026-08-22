@@ -11,7 +11,7 @@
  * import { Column, Row, Text } from 'meo-canvas'
  *
  * const card = Row({
- *   style: { gap: 16, padding: 24, background: '#101014' },
+ *   style: { gap: 16, padding: 24, backgroundColor: '#101014' },
  *   children: [Text('Ukasyah', { style: { fontSize: 24, fontWeight: 'bold' } })],
  * })
  * ```
@@ -180,7 +180,7 @@ export interface ImageProps {
    * accepted it, never by the renderer.
    */
   readonly src: string | ImageSource
-  /** How the image is styled. `fit` and `frame` are read here and nowhere else. */
+  /** How the image is styled. `objectFit` and `frame` are read here and nowhere else. */
   readonly style?: Style
   /** A name carried through for diagnostics. */
   readonly name?: string
@@ -192,7 +192,7 @@ export interface ImageProps {
  * ```ts
  * import { Image } from 'meo-canvas'
  *
- * const avatar = Image({ src: 'avatar.png', style: { width: 64, height: 64, fit: 'cover' } })
+ * const avatar = Image({ src: 'avatar.png', style: { width: 64, height: 64, objectFit: 'cover' } })
  * ```
  */
 export function Image(props: ImageProps): SceneNode {

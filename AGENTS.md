@@ -321,6 +321,22 @@ precede its children. Buffering to reorder is the intermediate tree again, less
 visibly. So the factories build plain objects and `Root` encodes them in one
 pass.
 
+### Throwing and rejecting are different failures
+
+An argument of the wrong shape **throws synchronously**. A failure inside the
+render **rejects the Promise**. The split is not incidental: every V8 read
+happens in one pass before the work is handed to the pool, so an argument error
+is raised while there is still a call to throw from, and a render error is
+raised when there is not.
+
+```js
+expect(() => render(notATypedArray)).toThrow(TypeError)
+await expect(render(malformedArena)).rejects.toThrow()
+```
+
+A test asserting that either one always happens is wrong, and it would fail for
+the right reason and be repaired the wrong way.
+
 ### The retained canvas
 
 `Root` is async because resolve performs I/O, and it runs the render on a

@@ -336,6 +336,68 @@ pub(crate) struct Reader<'a> {
     offset: usize,
 }
 
+/// How many ones a probe stream carries.
+///
+/// Thirty-two, comfortably past the widest single property. The largest is
+/// `Option<BackgroundImage>` at fourteen slots -- a presence flag, a tagged
+/// source with its side index, a repeat mode, two optional lengths and two
+/// lengths -- and `Sides<Option<Length>>` is twelve. A stream longer than a
+/// property needs costs nothing, because a read stops when its value is
+/// complete; one slot short and the probe silently has no value, which is what
+/// `every_property_has_a_probe_that_differs_from_its_default` catches.
+#[cfg(test)]
+const PROBE_SLOTS: usize = 32;
+
+/// The value a probe stream is filled with.
+///
+/// One: the smallest fill that is a valid reading of every tagged type, since
+/// every enum and every tag in the format has at least two variants.
+#[cfg(test)]
+const PROBE_FILL: f64 = 1.0;
+
+/// The fill used where [`PROBE_FILL`] lands on the property's own default.
+///
+/// Two properties default to `1.0` -- `flex_shrink` and `opacity` -- so a
+/// ones-probe of either sets it to what it already was, and a case built from
+/// it would exercise no write path at all. Two is the next fill that is still a
+/// valid reading of every tagged type: `Dimension` reads `2` as a percentage,
+/// and a type with only two tags is never reached by these two properties,
+/// which are both plain numbers.
+#[cfg(test)]
+const PROBE_FILL_ALTERNATE: f64 = 2.0;
+
+/// The fills a probe tries, in order.
+///
+/// Trying rather than listing which property needs which: a list would be a
+/// second table to keep in step, and
+/// `every_property_has_a_probe_that_differs_from_its_default` fails if neither
+/// fill produces a distinguishable value.
+#[cfg(test)]
+pub(crate) const fn probe_fills() -> [f64; 2] {
+    [PROBE_FILL, PROBE_FILL_ALTERNATE]
+}
+
+/// The slot stream and side array a probe value is read out of.
+///
+/// A stream of one value throughout, which is a valid reading for every type
+/// in the format: a number is the fill, a `bool` is true, an enum takes the
+/// variant at that index, an `Option` is present, a list holds that many items,
+/// and a tagged value takes that tag. Two side values so a string index of one
+/// resolves.
+///
+/// The fill is [`PROBE_FILL`] for every property but the two whose default is
+/// already `1.0`; those take [`PROBE_FILL_ALTERNATE`]. See [`probe_fills`].
+#[cfg(test)]
+pub(crate) fn probe_slots(fill: f64) -> ([f64; PROBE_SLOTS], Values) {
+    (
+        [fill; PROBE_SLOTS],
+        Values::new(vec![
+            SideValue::Text("probe".to_owned()),
+            SideValue::Text("probe".to_owned()),
+        ]),
+    )
+}
+
 impl<'a> Reader<'a> {
     const fn new(slots: &'a [f64], values: &'a Values) -> Self {
         Self {
@@ -343,6 +405,18 @@ impl<'a> Reader<'a> {
             values,
             offset: 0,
         }
+    }
+
+    /// A reader over a probe stream.
+    ///
+    /// Separate constructor rather than making [`Reader::new`] visible, so the
+    /// only thing outside this module that can build a reader is the probe.
+    #[cfg(test)]
+    pub(crate) const fn new_for_probe(
+        slots: &'a [f64],
+        values: &'a Values,
+    ) -> Self {
+        Self::new(slots, values)
     }
 
     /// The slot the next read starts at.
@@ -1558,5 +1632,154 @@ mod tests {
             Mask::read(&mut input, 2),
             Err(ArenaError::Truncated { .. })
         ));
+    }
+    /// `sceneBytes`'s own path, without the V8 half.
+    ///
+    /// The neon export is `decode` then `codec::encode`; this checks the pair
+    /// produces a scene the byte format reads back identically, which is the
+    /// property the TypeScript round trip rests on.
+    #[test]
+    fn an_arena_re_encodes_through_the_byte_format() {
+        let (slots, values) = minimal();
+        let scene = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let bytes = meo_canvas_scene::codec::encode(&scene);
+        let round_tripped = meo_canvas_scene::codec::decode(&bytes)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        // The two representations produce one scene, which is the whole claim.
+        assert_eq!(scene, round_tripped);
+    }
+
+    /// A malformed arena is an error, not short bytes.
+    #[test]
+    fn re_encoding_a_broken_arena_fails_rather_than_truncating() {
+        let (mut slots, values) = minimal();
+        slots[6] = 99.0;
+        assert!(decode(&slots, &values).is_err());
+    }
+    /// Every property has a probe value distinguishable from its default.
+    ///
+    /// The check Agent Zero asked for, as a test rather than as a rule stated
+    /// in prose. A case whose value equals the property's default gives an
+    /// encoder nothing to do: a correct writer may legitimately leave the mask
+    /// bit clear, the case still round-trips, and the test passes while
+    /// exercising no write path. Sixty such cases would be sixty green results
+    /// that prove nothing, and nothing would say which.
+    ///
+    /// Where the ones-stream lands on the default -- `flex_shrink` and
+    /// `opacity` both default to `1.0` -- the generator must choose another
+    /// value, and this is what tells it which properties those are.
+    #[test]
+    fn every_property_has_a_probe_that_differs_from_its_default() {
+        let mut same = Vec::new();
+
+        for (index, name) in layout::INDICES.iter().zip(layout::NAMES) {
+            let probe = layout::probe(*index);
+            assert!(probe.is_some(), "layout::{name} has no probe");
+            if probe
+                == Some(meo_canvas_scene::style::layout::LayoutStyle::default())
+            {
+                same.push(format!("layout::{name}"));
+            }
+        }
+        for (index, name) in paint::INDICES.iter().zip(paint::NAMES) {
+            let probe = paint::probe(*index);
+            assert!(probe.is_some(), "paint::{name} has no probe");
+            if probe
+                == Some(meo_canvas_scene::style::paint::PaintStyle::default())
+            {
+                same.push(format!("paint::{name}"));
+            }
+        }
+        for (index, name) in text::INDICES.iter().zip(text::NAMES) {
+            let probe = text::probe(*index);
+            assert!(probe.is_some(), "text::{name} has no probe");
+            if probe
+                == Some(meo_canvas_scene::style::text::TextStyle::default())
+            {
+                same.push(format!("text::{name}"));
+            }
+        }
+        for (index, name) in effects::INDICES.iter().zip(effects::NAMES) {
+            let probe = effects::probe(*index);
+            assert!(probe.is_some(), "effects::{name} has no probe");
+            if probe
+                == Some(meo_canvas_scene::style::effect::Effects::default())
+            {
+                same.push(format!("effects::{name}"));
+            }
+        }
+
+        assert!(
+            same.is_empty(),
+            "these properties probe to their own default, so a case built from \
+             the ones-stream would exercise nothing: {same:?}"
+        );
+    }
+
+    /// No two groups name a property the same thing.
+    ///
+    /// The round-trip artefact is keyed by the Rust field name, flat across all
+    /// four groups, so a name used twice would put two cases in one key and
+    /// silently drop one of them. Sixty-two names are unique today; this is
+    /// what keeps that true when a group grows. `text::opacity` beside
+    /// `paint::opacity` is the shape of the mistake, and it would be an
+    /// entirely reasonable field to add.
+    #[test]
+    fn no_property_name_is_used_by_two_groups() {
+        let mut seen: std::collections::BTreeMap<&str, &str> =
+            std::collections::BTreeMap::new();
+        let mut collisions = Vec::new();
+
+        for (group, names) in [
+            ("layout", layout::NAMES),
+            ("paint", paint::NAMES),
+            ("text", text::NAMES),
+            ("effects", effects::NAMES),
+        ] {
+            for name in names {
+                if let Some(first) = seen.insert(name, group) {
+                    collisions.push(format!("{name} in {first} and {group}"));
+                }
+            }
+        }
+
+        assert!(
+            collisions.is_empty(),
+            "the artefact is keyed by field name across every group, so these \
+             would collide: {collisions:?}"
+        );
+        assert_eq!(
+            seen.len(),
+            layout::COUNT + paint::COUNT + text::COUNT + effects::COUNT
+        );
+    }
+
+    /// Each table names as many properties as it indexes, without repeats.
+    #[test]
+    fn every_table_names_each_of_its_properties_once() {
+        for (group, indices, names) in [
+            ("layout", layout::INDICES, layout::NAMES),
+            ("paint", paint::INDICES, paint::NAMES),
+            ("text", text::INDICES, text::NAMES),
+            ("effects", effects::INDICES, effects::NAMES),
+        ] {
+            assert_eq!(
+                indices.len(),
+                names.len(),
+                "{group} indexes {} properties and names {}",
+                indices.len(),
+                names.len()
+            );
+            let unique: std::collections::BTreeSet<&&str> =
+                names.iter().collect();
+            assert_eq!(
+                unique.len(),
+                names.len(),
+                "{group} names a property twice"
+            );
+        }
     }
 }

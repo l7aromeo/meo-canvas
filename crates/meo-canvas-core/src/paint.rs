@@ -160,6 +160,20 @@ impl Surface {
         self.gpu
     }
 
+    /// Which rasteriser this surface actually got.
+    ///
+    /// Distinct from [`Surface::gpu`], which is what was asked for: a build
+    /// with no GPU backend compiled reports `"cpu"` however the request was
+    /// set. A string rather than the backend's own enum, because no public
+    /// signature of this crate names a Skia type.
+    #[must_use]
+    pub fn engine(&self) -> &'static str {
+        match self.canvas.engine_kind() {
+            meo_skia_canvas::EngineKind::Gpu => "gpu",
+            meo_skia_canvas::EngineKind::Cpu => "cpu",
+        }
+    }
+
     /// The device-pixel multiplier every page is drawn at.
     #[must_use]
     pub const fn scale(&self) -> f32 {

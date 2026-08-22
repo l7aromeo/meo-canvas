@@ -31,7 +31,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check typecheck arena-tables-check lint-check layout-check docs test test-js coverage unused
+ci: fmt-check doc-examples-check typecheck arena-tables-check lint-check layout-check docs test test-js coverage unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -151,6 +151,33 @@ fmt-check: ensure-deps
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.test.json
+
+# Lifts the fenced examples out of the doc comments into a compiled file.
+#
+# TypeScript compiles nothing inside a comment, so a `.ts` doc example is prose
+# and can name a property that no longer exists while every gate stays green.
+# That happened once: renaming `background` to `backgroundColor` left two
+# examples on the old key and `just typecheck` passed. The Rust half has no such
+# exposure -- `just docs` runs its doctests.
+#
+# The emitted file lands under `src`, which `typecheck` already covers, so this
+# reuses a gate rather than adding one.
+[doc("Emit the TypeScript doc examples as compilable code.")]
+doc-examples:
+    node packages/meo-canvas/tools/generate-doc-examples.mjs
+
+# Fails when the checked-in examples no longer match the doc comments.
+#
+# Regenerates to a disposable path and diffs, for the reason
+# `arena-tables-check` does: git reports a file as changed whether it is
+# untracked, written or staged, so a check built on it refuses the workflow it
+# exists to support.
+[doc("Fail if the extracted doc examples have drifted from the comments.")]
+doc-examples-check:
+    @mkdir -p target
+    @node packages/meo-canvas/tools/generate-doc-examples.mjs target/doc-examples.check.ts
+    @diff -u packages/meo-canvas/src/generated/doc-examples.ts target/doc-examples.check.ts \
+      || { echo "error: the extracted doc examples are stale; run \`just doc-examples\` and commit the result"; exit 1; }
 
 # The JavaScript suite.
 #
