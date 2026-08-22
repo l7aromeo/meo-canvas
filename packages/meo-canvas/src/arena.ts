@@ -403,43 +403,6 @@ export function variant(table: Readonly<Record<string, number>>, keyword: string
   return found
 }
 
-/** How many hexadecimal digits each accepted `#` form has. */
-const HEX_FORMS = new Set([3, 4, 6, 8])
-
-/**
- * A colour packed as `r<<24 | g<<16 | b<<8 | a`.
- *
- * One slot rather than four is three fewer stores per colour on this side,
- * which is the side the format exists to make cheap.
- *
- * Hex and `'transparent'` only, for now. A CSS colour name would need the
- * hundred-and-fifty-entry table in this package rather than in Skia, because
- * the arena carries channels rather than a string — v1 could pass the name
- * through and this cannot. Refusing is better than approximating: a name that
- * silently became black would be a wrong picture rather than an error.
- */
-function packColor(color: Color): number {
-  if (color === 'transparent') return 0
-
-  const digits = color.startsWith('#') ? color.slice(1) : ''
-  if (!HEX_FORMS.has(digits.length) || !/^[0-9a-fA-F]+$/.test(digits)) {
-    throw new TypeError(`${JSON.stringify(color)} is not a colour this package reads; write #rgb, #rgba, #rrggbb, #rrggbbaa or 'transparent'`)
-  }
-
-  const short = digits.length < 6
-  const channel = (index: number): number => {
-    const at = short ? index : index * 2
-    const text = short ? `${digits[at]}${digits[at]}` : digits.slice(at, at + 2)
-    return Number.parseInt(text, 16)
-  }
-
-  const alpha = digits.length === 4 || digits.length === 8 ? channel(3) : 0xff
-  // `* 2 ** 24` rather than `<< 24`: a shift is a signed 32-bit operation, so a
-  // red channel above 127 would make the packed value negative and the reader
-  // would refuse it as out of range.
-  return channel(0) * 2 ** 24 + channel(1) * 2 ** 16 + channel(2) * 2 ** 8 + alpha
-}
-
 /**
  * The fraction a `'…%'` string names, or `undefined` if it is not one.
  *
@@ -602,7 +565,7 @@ function writeCorners(out: ArenaWriter, value: Corners): void {
 }
 
 /** Black, which is what a shadow with no colour is. */
-const SHADOW_BLACK = 0xff
+const SHADOW_BLACK = '#000000'
 
 /**
  * Writes a transform, filling in the scene's defaults for what was not named.
@@ -632,7 +595,7 @@ function writeBoxShadow(out: ArenaWriter, value: BoxShadow): void {
   out.f32(value.offsetY ?? 0)
   out.f32(value.blur ?? 0)
   out.f32(value.spread ?? 0)
-  out.integer(value.color === undefined ? SHADOW_BLACK : packColor(value.color))
+  out.text(value.color ?? SHADOW_BLACK)
 }
 
 /** Writes one text shadow, which has no spread and no inset. */
@@ -640,7 +603,7 @@ function writeTextShadow(out: ArenaWriter, value: TextShadow): void {
   out.f32(value.offsetX ?? 0)
   out.f32(value.offsetY ?? 0)
   out.f32(value.blur ?? 0)
-  out.integer(value.color === undefined ? SHADOW_BLACK : packColor(value.color))
+  out.text(value.color ?? SHADOW_BLACK)
 }
 
 /**
@@ -716,7 +679,7 @@ function writeGradient(out: ArenaWriter, value: Gradient): void {
   out.count(stops.length)
   for (const stop of stops) {
     out.f32(stop.offset)
-    out.integer(packColor(stop.color))
+    out.text(stop.color)
   }
 }
 
@@ -1028,7 +991,7 @@ function writePlacement(out: ArenaWriter, placement: GridPlacement | undefined):
  * the edge form to `border_color`, and no v2-only name reaches the surface.
  */
 const PAINT_PROPERTIES: readonly Property[] = [
-  { index: 0, rust: 'background_color', keys: ['backgroundColor'], write: (out, style) => out.integer(packColor(style.backgroundColor as Color)) },
+  { index: 0, rust: 'background_color', keys: ['backgroundColor'], write: (out, style) => out.text(style.backgroundColor as Color) },
   { index: 1, rust: 'gradient', keys: ['gradient'], write: (out, style) => out.optional(style.gradient, value => writeGradient(out, value)) },
   {
     index: 2,
@@ -1041,15 +1004,14 @@ const PAINT_PROPERTIES: readonly Property[] = [
     rust: 'border_color',
     keys: ['borderColor'],
     present: style => perEdge(style.borderColor),
-    write: (out, style) =>
-      writeSides(style.borderColor as Sides<Color>, undefined as Color | undefined, edge => out.optional(edge, color => out.integer(packColor(color)))),
+    write: (out, style) => writeSides(style.borderColor as Sides<Color>, undefined as Color | undefined, edge => out.optional(edge, color => out.text(color))),
   },
   {
     index: 4,
     rust: 'border_color_all',
     keys: ['borderColor'],
     present: style => style.borderColor !== undefined && !perEdge(style.borderColor),
-    write: (out, style) => out.integer(packColor(style.borderColor as Color)),
+    write: (out, style) => out.text(style.borderColor as Color),
   },
   { index: 5, rust: 'border_style', keys: ['borderStyle'], write: (out, style) => out.enum(variant(BORDER_STYLE, style.borderStyle as string, 'borderStyle')) },
   { index: 6, rust: 'border_radius', keys: ['borderRadius'], write: (out, style) => writeCorners(out, style.borderRadius as Corners) },
@@ -1086,7 +1048,7 @@ const TEXT_PROPERTIES: readonly Property[] = [
     keys: ['fontStyle'],
     write: (out, style) => out.optional(style.fontStyle, value => out.enum(variant(FONT_STYLE, value, 'fontStyle'))),
   },
-  { index: 4, rust: 'color', keys: ['color'], write: (out, style) => out.optional(style.color, color => out.integer(packColor(color))) },
+  { index: 4, rust: 'color', keys: ['color'], write: (out, style) => out.optional(style.color, color => out.text(color)) },
   {
     index: 5,
     rust: 'text_align',
@@ -1125,7 +1087,7 @@ const TEXT_PROPERTIES: readonly Property[] = [
         // Black rather than the text's own colour, which is what v1 documents:
         // the scene's `TextStroke` carries a colour and has nowhere to say
         // "whatever the glyphs are". Naming one is the honest form.
-        out.integer(stroke.color === undefined ? SHADOW_BLACK : packColor(stroke.color))
+        out.text(stroke.color ?? SHADOW_BLACK)
       }),
   },
 ]
@@ -1230,8 +1192,8 @@ function writeStyle(out: ArenaWriter, style: Style | undefined): void {
   }
 }
 
-/** Black, packed: the fill a path takes when nothing names one. */
-const BLACK = 0xff
+/** Black: the fill a path takes when nothing names one. */
+const BLACK = '#000000'
 
 /**
  * The centre of the box, which is where an image sits when nothing says
@@ -1308,7 +1270,7 @@ function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | un
  * The arm is chosen by shape, since the surface type carries no tag: a gradient
  * is the object, and every string is a colour or `'none'`.
  */
-function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback: number | undefined): void {
+function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback: Color | undefined): void {
   if (paint === 'none' || (paint === undefined && fallback === undefined)) {
     out.absent()
     return
@@ -1321,7 +1283,7 @@ function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback
     return
   }
   out.enum(0)
-  out.integer(paint === undefined ? (fallback as number) : packColor(paint))
+  out.text(paint === undefined ? (fallback as Color) : paint)
 }
 
 /** Writes the payload only a path node has. */

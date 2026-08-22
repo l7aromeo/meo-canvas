@@ -283,6 +283,13 @@ pub enum ArenaError {
         /// The largest this crate allocates for.
         limit: usize,
     },
+    /// A colour string no CSS colour syntax matches.
+    UnreadableColor {
+        /// The slot the string's index was read from.
+        slot: usize,
+        /// What the writer sent.
+        found: String,
+    },
     /// The arena decoded, but the tree it describes is not one.
     InvalidScene(SceneError),
     /// Slots remain after the scene ends.
@@ -331,6 +338,13 @@ impl core::fmt::Display for ArenaError {
             } => write!(f, "slot {slot} names side value {index} of {length}"),
             Self::WrongValueKind { slot, wanted } => {
                 write!(f, "slot {slot} names a side value that is not {wanted}")
+            }
+            Self::UnreadableColor { slot, found } => {
+                write!(
+                    f,
+                    "slot {slot} names {found:?}, which is not a colour any \
+                     CSS syntax spells"
+                )
             }
             Self::TooManyNodes { found, limit } => {
                 write!(
@@ -471,6 +485,9 @@ pub(crate) const fn probe_fills() -> [ProbeFills; 2] {
 /// What each read actually receives is decided by [`ProbeFills`], not by these
 /// slots. See [`probe_fills`].
 #[cfg(test)]
+pub(crate) const PROBE_TEXT: &str = "#0a141e";
+
+#[cfg(test)]
 pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
     (
         // The contents no longer decide the values a probe reads -- the reader
@@ -478,9 +495,15 @@ pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
         // a stream shorter than a property is a truncation, which is the check
         // that a probe reaching no value is caught.
         [PROBE_FILL; PROBE_SLOTS],
+        // A colour string rather than an arbitrary word: every text read in
+        // the arena takes whatever it is given, but a colour is parsed, so a
+        // probe value that is not a colour fails the one property that reads
+        // one. `#0a141e` is a family name nobody would write and a colour
+        // every reader accepts, which is the pair of constraints this value
+        // has to satisfy at once.
         Values::new(vec![
-            SideValue::Text("probe".to_owned()),
-            SideValue::Text("probe".to_owned()),
+            SideValue::Text(PROBE_TEXT.to_owned()),
+            SideValue::Text(PROBE_TEXT.to_owned()),
         ]),
     )
 }
@@ -1400,14 +1423,17 @@ mod tests {
     }
 
     #[test]
-    fn a_colour_is_one_packed_slot() {
-        // Bit 0 of the paint mask is `background_color`.
-        let packed = f64::from(u32::from_be_bytes([0x11, 0x22, 0x33, 0x44]));
-        let (slots, values) = Writer::default()
+    fn a_colour_is_one_slot_naming_a_string() {
+        // Bit 0 of the paint mask is `background_color`. The slot is an index
+        // into the side array, as every string is; what is parsed is the CSS
+        // the caller wrote.
+        let (writer, colour) =
+            Writer::default().text_value("rgba(17, 34, 51, 0.267)");
+        let (slots, values) = writer
             .header(Size::new(10.0, 10.0), 1.0, 1)
             .slot(f64::from(NodeTag::Box.to_wire()))
             .slots(&[0.0, 1.0, 0.0, 0.0])
-            .slot(packed)
+            .slot(colour)
             .slot(0.0)
             .slot(0.0)
             .finish();
@@ -1418,6 +1444,71 @@ mod tests {
             scene.nodes[0].paint.background_color,
             Color::rgba(0x11, 0x22, 0x33, 0x44)
         );
+    }
+
+    #[test]
+    fn a_colour_no_css_syntax_spells_is_an_error_naming_it() {
+        let (writer, colour) = Writer::default().text_value("potato");
+        let (slots, values) = writer
+            .header(Size::new(10.0, 10.0), 1.0, 1)
+            .slot(f64::from(NodeTag::Box.to_wire()))
+            .slots(&[0.0, 1.0, 0.0, 0.0])
+            .slot(colour)
+            .slot(0.0)
+            .slot(0.0)
+            .finish();
+
+        let Err(error) = decode(&slots, &values) else {
+            unreachable!("`potato` is not a colour and must not decode")
+        };
+        assert!(
+            error.to_string().contains("potato"),
+            "the message should quote what the writer sent: {error}"
+        );
+    }
+
+    #[test]
+    fn every_css_colour_syntax_reaches_the_scene() {
+        // The point of the change: a caller writes what CSS lets them write,
+        // and `parse_color` is the only thing that reads it. v1 forwarded the
+        // string and took all of these; the packed-channel format took the
+        // first two and refused the rest.
+        for (written, expected) in [
+            (
+                "#1122 33 44".replace(' ', ""),
+                Color::rgba(0x11, 0x22, 0x33, 0x44),
+            ),
+            ("transparent".to_owned(), Color::rgba(0, 0, 0, 0)),
+            ("red".to_owned(), Color::rgba(255, 0, 0, 255)),
+            (
+                "rgba(255,255,255,0.15)".to_owned(),
+                Color::rgba(255, 255, 255, 38),
+            ),
+            (
+                "rgb(40 80 220 / 60%)".to_owned(),
+                Color::rgba(40, 80, 220, 153),
+            ),
+            (
+                "hsl(210 80% 50%)".to_owned(),
+                Color::rgba(26, 128, 230, 255),
+            ),
+        ] {
+            let (writer, colour) = Writer::default().text_value(&written);
+            let (slots, values) = writer
+                .header(Size::new(10.0, 10.0), 1.0, 1)
+                .slot(f64::from(NodeTag::Box.to_wire()))
+                .slots(&[0.0, 1.0, 0.0, 0.0])
+                .slot(colour)
+                .slot(0.0)
+                .slot(0.0)
+                .finish();
+            let scene = decode(&slots, &values)
+                .unwrap_or_else(|error| unreachable!("{written}: {error}"));
+            assert_eq!(
+                scene.nodes[0].paint.background_color, expected,
+                "{written} did not reach the scene as itself"
+            );
+        }
     }
 
     #[test]
@@ -1716,15 +1807,18 @@ mod tests {
             read_one::<GridPlacement>(&[1.0, -2.0, 1.0, 3.0], &none),
             Ok(GridPlacement::spanning(-2, 3))
         );
+        // A colour crosses as the string the caller wrote, so both of these
+        // name index 0 of the side array rather than carrying channels.
+        let black = Values::new(vec![SideValue::Text("black".to_owned())]);
         assert_eq!(
-            read_one::<TextStroke>(&[1.5, 255.0], &none),
+            read_one::<TextStroke>(&[1.5, 0.0], &black),
             Ok(TextStroke {
                 width: 1.5,
                 color: Color::rgba(0, 0, 0, 255)
             })
         );
 
-        let stop = read_one::<GradientStop>(&[0.5, 255.0], &none)
+        let stop = read_one::<GradientStop>(&[0.5, 0.0], &black)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert!((stop.offset - 0.5).abs() < f32::EPSILON);
     }
@@ -1740,7 +1834,9 @@ mod tests {
             },
         };
 
-        let none = Values::default();
+        // One side value: the stop's colour, which crosses as the string the
+        // caller wrote and so names an index like every other string.
+        let colours = Values::new(vec![SideValue::Text("#0000ff".to_owned())]);
 
         // A conic gradient: the kind tag, then the geometry that kind reads --
         // a centre of two `Length`s and the angle the sweep begins at -- then
@@ -1757,9 +1853,8 @@ mod tests {
                 1.0,
                 0.5,
                 0.0,
-                255.0,
             ],
-            &none,
+            &colours,
         )
         .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(
@@ -1788,7 +1883,7 @@ mod tests {
                 1.0,
                 0.0,
             ],
-            &none,
+            &colours,
         )
         .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(
@@ -1891,6 +1986,9 @@ mod tests {
 
         let none = Values::default();
         let side = Values::new(vec![SideValue::Text("a string".to_owned())]);
+        // Index 0 is the colour every shadow and paint below reads, since a
+        // colour crosses as the string the caller wrote.
+        let colours = Values::new(vec![SideValue::Text("#000000".to_owned())]);
 
         let transform = read_one::<Transform>(
             &[0.0, 1.0, 0.0, 2.0, 30.0, 1.5, 0.5, 1.0, 0.5, 1.0, 0.5],
@@ -1901,12 +1999,12 @@ mod tests {
         assert_eq!(transform.origin, Transform::ORIGIN_CENTER);
 
         let shadow =
-            read_one::<BoxShadow>(&[1.0, 1.0, 2.0, 3.0, 4.0, 255.0], &none)
+            read_one::<BoxShadow>(&[1.0, 1.0, 2.0, 3.0, 4.0, 0.0], &colours)
                 .unwrap_or_else(|error| unreachable!("{error}"));
         assert!(shadow.inset);
         assert!((shadow.spread - 4.0).abs() < f32::EPSILON);
         let text_shadow =
-            read_one::<TextShadow>(&[1.0, 2.0, 3.0, 255.0], &none)
+            read_one::<TextShadow>(&[1.0, 2.0, 3.0, 0.0], &colours)
                 .unwrap_or_else(|error| unreachable!("{error}"));
         assert!((text_shadow.blur - 3.0).abs() < f32::EPSILON);
 
@@ -1924,7 +2022,7 @@ mod tests {
         assert!(read_one::<Mask>(&[7.0], &none).is_err());
 
         assert_eq!(
-            read_one::<PathPaint>(&[0.0, 255.0], &none),
+            read_one::<PathPaint>(&[0.0, 0.0], &colours),
             Ok(PathPaint::Solid(Color::rgba(0, 0, 0, 255)))
         );
         assert!(read_one::<PathPaint>(&[7.0], &none).is_err());

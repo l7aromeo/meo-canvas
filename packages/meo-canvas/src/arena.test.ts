@@ -71,14 +71,37 @@ function tagged(input: Cursor, tags: readonly string[], what: string): Tagged {
   return name === 'auto' || name === 'normal' ? { tag: name } : { tag: name, value }
 }
 
-/** Reads a colour, unpacked into the channels the fixture names. */
+/**
+ * Reads a colour, parsed into the channels the fixture names.
+ *
+ * A colour crosses as a **string** now, one side value like a font family, and
+ * the renderer parses it — so this reader parses too, and only the hex forms
+ * the cases are written in. That is deliberate: a reader that took every CSS
+ * syntax would be a second implementation of the thing under test, and the
+ * point of this file is to read what the writer wrote rather than to agree
+ * with it. A case written in a syntax this cannot read fails here, which is
+ * the right place to find out.
+ */
 function color(input: Cursor): Record<string, number> {
-  const packed = slot(input)
+  const text = side(input)
+  if (typeof text !== 'string') throw new TypeError('a colour is a side string')
+  if (text === 'transparent') return { r: 0, g: 0, b: 0, a: 0 }
+
+  const digits = text.startsWith('#') ? text.slice(1) : ''
+  if (![3, 4, 6, 8].includes(digits.length) || !/^[0-9a-fA-F]+$/.test(digits)) {
+    throw new TypeError(`this reader reads the hex forms, not ${JSON.stringify(text)}`)
+  }
+
+  const short = digits.length < 6
+  const channel = (index: number): number => {
+    const at = short ? index : index * 2
+    return Number.parseInt(short ? `${digits[at]}${digits[at]}` : digits.slice(at, at + 2), 16)
+  }
   return {
-    r: Math.floor(packed / 2 ** 24) & 0xff,
-    g: Math.floor(packed / 2 ** 16) & 0xff,
-    b: Math.floor(packed / 2 ** 8) & 0xff,
-    a: packed & 0xff,
+    r: channel(0),
+    g: channel(1),
+    b: channel(2),
+    a: digits.length === 4 || digits.length === 8 ? channel(3) : 0xff,
   }
 }
 
@@ -453,31 +476,42 @@ const SCALE = cases.$scale as number
  * case the suite contained; only a value the suite did not contain separates
  * them.
  */
+/**
+ * The one string every string-valued probe is written with.
+ *
+ * A colour now crosses as a string and is **parsed** on the far side, so a
+ * probe value that is not a colour fails the one property that reads one --
+ * which is why the filters, the family and a URL are all spelled as a colour
+ * here rather than as the word `probe` they used to be. It is a colour first
+ * and a string second, and every case that only needs a string is indifferent.
+ */
+const PROBE_STRING = '#0a141e'
+
 const PROBES: Readonly<Record<string, Style>> = {
   align_content: { alignContent: 'flex-end' },
   align_items: { alignItems: 'flex-end' },
   align_self: { alignSelf: 'flex-end' },
   aspect_ratio: { aspectRatio: 0.25 },
-  backdrop_filter: { backdropFilter: 'probe' },
-  background_color: { backgroundColor: '#00000001' },
+  backdrop_filter: { backdropFilter: PROBE_STRING },
+  background_color: { backgroundColor: PROBE_STRING },
   blend_mode: { mixBlendMode: 'multiply' },
   border: { border: 0.25 },
-  border_color: { borderColor: { top: '#00000001', right: '#00000001', bottom: '#00000001', left: '#00000001' } },
-  border_color_all: { borderColor: '#00000001' },
+  border_color: { borderColor: { top: PROBE_STRING, right: PROBE_STRING, bottom: PROBE_STRING, left: PROBE_STRING } },
+  border_color_all: { borderColor: PROBE_STRING },
   border_radius: { borderRadius: 0.25 },
   border_style: { borderStyle: 'dashed' },
   box_sizing: { boxSizing: 'content-box' },
-  color: { color: '#00000001' },
+  color: { color: PROBE_STRING },
   direction: { direction: 'rtl' },
   display: { display: 'grid' },
   dither: { dither: true },
-  filter: { filter: 'probe' },
+  filter: { filter: PROBE_STRING },
   flex_basis: { flexBasis: 0.25 },
   flex_direction: { flexDirection: 'row-reverse' },
   flex_grow: { flexGrow: 0.25 },
   flex_shrink: { flexShrink: 0.25 },
   flex_wrap: { flexWrap: 'wrap' },
-  font_family: { fontFamily: 'probe' },
+  font_family: { fontFamily: PROBE_STRING },
   font_size: { fontSize: 0.25 },
   font_style: { fontStyle: 'italic' },
   font_weight: { fontWeight: 1 },
@@ -514,11 +548,11 @@ const PROBES: Readonly<Record<string, Style>> = {
   // invisible at exactly this value — and the probe cannot step out of it
   // alone, because the bytes it is compared against are written from the fill.
   gradient: {
-    gradient: { type: 'radial', at: { x: '25%', y: '25%' }, stops: [{ offset: 0.25, color: '#00000001' }] },
+    gradient: { type: 'radial', at: { x: '25%', y: '25%' }, stops: [{ offset: 0.25, color: PROBE_STRING }] },
   },
   background_image: {
     backgroundImage: {
-      src: { url: 'probe' },
+      src: { url: PROBE_STRING },
       repeat: 'repeat-x',
       size: 'cover',
       position: { x: '25%', y: '25%' },
@@ -527,10 +561,10 @@ const PROBES: Readonly<Record<string, Style>> = {
   transform: {
     transform: { translateX: '25%', translateY: '25%', rotate: 0.25, scaleX: 0.25, scaleY: 0.25, originX: '25%', originY: '25%' },
   },
-  box_shadows: { boxShadow: { inset: true, offsetX: 0.25, offsetY: 0.25, blur: 0.25, spread: 0.25, color: '#00000001' } },
-  text_shadows: { textShadow: { offsetX: 0.25, offsetY: 0.25, blur: 0.25, color: '#00000001' } },
+  box_shadows: { boxShadow: { inset: true, offsetX: 0.25, offsetY: 0.25, blur: 0.25, spread: 0.25, color: PROBE_STRING } },
+  text_shadows: { textShadow: { offsetX: 0.25, offsetY: 0.25, blur: 0.25, color: PROBE_STRING } },
   mask: { mask: { shape: 'ellipse' } },
-  text_stroke: { textStroke: { width: 0.25, color: '#00000001' } },
+  text_stroke: { textStroke: { width: 0.25, color: PROBE_STRING } },
 }
 
 /**
@@ -660,9 +694,43 @@ describe('the arena', () => {
   })
 })
 
+describe('a colour in every syntax a browser takes', () => {
+  // The regression this fixes was on the surface most callers use: a colour
+  // was packed into one slot here, so only the forms this package could parse
+  // crossed, and `rgba(255,255,255,0.15)`, `red` and `hsl(...)` all threw
+  // where v1 forwarded them. The string is what crosses now and the renderer
+  // parses it.
+  //
+  // Asserted against the **scene bytes** rather than against a decoded value,
+  // because the parse happens on the far side: two spellings of one colour
+  // have to reach the same channels, and the reader in this file only knows
+  // the hex forms on purpose.
+  it('reaches the same channels however it is written', () => {
+    const hex = throughTheAddon({ backgroundColor: '#0a141e' })
+
+    for (const written of ['rgb(10, 20, 30)', 'rgb(10 20 30)', 'rgb(10 20 30 / 100%)']) {
+      expect(throughTheAddon({ backgroundColor: written }), written).toBe(hex)
+    }
+  })
+
+  it('takes the forms the packed slot refused', () => {
+    // Each of these threw before, and each is something a caller writes: a
+    // name, a percentage alpha, and a syntax that is not hexadecimal at all.
+    for (const written of ['red', 'rebeccapurple', 'rgba(255,255,255,0.15)', 'hsl(210 90% 40%)', 'hwb(120 10% 20%)']) {
+      expect(() => throughTheAddon({ backgroundColor: written }), written).not.toThrow()
+    }
+  })
+
+  it('is refused by the renderer, naming what it was given', () => {
+    // The type cannot be the check -- no TypeScript type spells CSS colour
+    // syntax -- so the error is, and it quotes the string rather than
+    // describing a shape.
+    expect(() => throughTheAddon({ backgroundColor: 'potato' })).toThrow(/potato/)
+  })
+})
+
 describe('a value the format cannot carry', () => {
   it('is refused rather than approximated', () => {
-    expect(() => roundTrip({ backgroundColor: 'rebeccapurple' })).toThrow(/not a colour this package reads/)
     expect(() => roundTrip({ padding: 'thin' as unknown as number })).toThrow(/not a length/)
     expect(() => roundTrip({ width: 'wide' as unknown as number })).toThrow(/not a size/)
     expect(() => roundTrip({ gridTemplateColumns: ['1x' as unknown as number] })).toThrow(/not a track size/)

@@ -70,8 +70,38 @@ export type Corners =
       readonly bottomLeft?: number
     }
 
-/** A colour, as CSS spells one: `'#101014'`, `'#f0c'`, `'#80808080'`. */
-export type Color = string
+/**
+ * A colour, as CSS spells one.
+ *
+ * Whatever the renderer's parser takes, which is what a browser takes:
+ * `'#101014'`, `'#f0c'`, `'#80808080'`, `'red'`, `'rgb(40 80 220 / 60%)'`,
+ * `'rgba(255,255,255,0.15)'`, `'hsl(210 90% 40%)'`, `'hwb(...)'`, `'lab(...)'`
+ * and `'oklch(...)'`.
+ *
+ * The named forms are here for the completions they give an editor, and
+ * `(string & {})` is what keeps every other syntax accepted alongside them —
+ * without it the union would refuse strings the renderer takes. **No
+ * TypeScript type can spell CSS colour syntax**, so the type cannot be the
+ * check: an unreadable colour is refused by the renderer, quoting what it
+ * received — `slot 12 names "potato", which is not a colour any CSS syntax
+ * spells` — rather than described by a shape the compiler wanted.
+ */
+export type Color =
+  | `#${string}`
+  | 'transparent'
+  | 'currentColor'
+  | 'black'
+  | 'white'
+  | 'red'
+  | 'green'
+  | 'blue'
+  | 'yellow'
+  | 'orange'
+  | 'purple'
+  | 'grey'
+  | 'gray'
+  // eslint-disable-next-line @typescript-eslint/ban-types -- the one idiom that keeps a union's completions and accepts the rest
+  | (string & {})
 
 /** Weight from 1 to 1000, or the two keywords CSS names. */
 export type FontWeight = number | 'normal' | 'bold'
