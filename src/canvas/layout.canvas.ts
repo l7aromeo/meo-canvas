@@ -233,7 +233,9 @@ export class BoxNode {
       overflow,
       display,
       boxSizing = Style.BoxSizing.BorderBox,
-      direction = Style.Direction.LTR,
+      // Inherited rather than defaulted to `LTR`: defaulting meant every node was given an
+      // explicit direction, so a page set to `RTL` never reached its children and nothing reversed.
+      direction = Style.Direction.Inherit,
       flexWrap,
     } = props
 

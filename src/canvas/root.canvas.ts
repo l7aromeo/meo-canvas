@@ -643,12 +643,16 @@ export class RootNode extends ColumnNode {
       })
     }
 
-    this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+    // The page's own direction, not always left to right. Yoga takes the owner's direction here,
+    // and the root has no owner -- passing `LTR` regardless made `direction: RTL` do nothing at
+    // all: a row did not reverse, and `Start` and `End` stayed on the left and the right.
+    const rootDirection = this.props.direction ?? Style.Direction.LTR
+    this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
 
     // Allow nodes to finalize their layout, recalculating if any of them changed size.
     const needRecalculate = this.finalizeLayout()
     if (needRecalculate) {
-      this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+      this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
     }
 
     return this.node.getComputedHeight()
