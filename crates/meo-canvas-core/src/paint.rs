@@ -545,18 +545,20 @@ fn participants(
         // has a context is a single participant here and gathers its own
         // descendants when it is entered.
         if !establishes_stacking_context(source) {
-            // A child hoisted past this node still owes its clip.
-            let mut inherited = clips;
-            if clips_its_children(source) {
-                inherited.push(id);
+            let clipper = clips_its_children(source);
+            for child in source.children.iter().rev() {
+                let mut inherited = clips.clone();
+                // Decided per child rather than once for all of them: whether
+                // this node's clip reaches a child depends on that child.
+                if clipper
+                    && scene
+                        .get(*child)
+                        .is_none_or(|child| !escapes_clip(source, child))
+                {
+                    inherited.push(id);
+                }
+                pending.push((*child, id, inherited));
             }
-            pending.extend(
-                source
-                    .children
-                    .iter()
-                    .rev()
-                    .map(|child| (*child, id, inherited.clone())),
-            );
         }
     }
 
@@ -568,6 +570,27 @@ fn participants(
             clips: ranked.clips,
         })
         .collect()
+}
+
+/// Whether `child` slips out of `clipper`'s `overflow`.
+///
+/// `overflow` clips a node's **content**, and an absolutely positioned node is
+/// not a box's content merely by sitting inside it: it is laid out against its
+/// containing block, and CSS clips it only where the clipper is that containing
+/// block or lies between it and one. So an unpositioned box clips its in-flow
+/// children and lets an absolute one through.
+///
+/// Ported from v1's `b434a23`, which fixed the same defect there, and measured
+/// against it: a 50-wide absolute child in a 20-wide clipper is clipped when
+/// the clipper is `relative` and not when the clipper names no position.
+///
+/// **`Fixed` is not covered here.** Its containing block is the page, so it
+/// should escape every ancestor clip; it currently escapes none. That is the
+/// same gap as its carrying an ancestor's transform, and it is recorded with
+/// it rather than half-closed here.
+const fn escapes_clip(clipper: &Node, child: &Node) -> bool {
+    matches!(child.layout.position_type, PositionType::Absolute)
+        && matches!(clipper.layout.position_type, PositionType::Static)
 }
 
 /// Whether this node's `overflow` clips what is inside it.
@@ -1744,6 +1767,54 @@ mod tests {
             owed,
             vec![vec![parent]],
             "the hoisted child owes its clipping parent"
+        );
+    }
+
+    #[test]
+    fn an_absolute_child_escapes_an_unpositioned_clipper_and_not_a_positioned_one()
+     {
+        // `overflow` clips a box's content, and an absolute node is not a box's
+        // content merely by sitting inside it. Ported from v1's `b434a23` and
+        // measured against it: a 50-wide absolute child in a 20-wide clipper
+        // paints 50 columns through a static clipper and 20 through a relative
+        // one.
+        let owed_by = |clipper_position| {
+            let mut scene = Scene::new(Size::new(40.0, 40.0));
+            let mut clipper = Node::container();
+            clipper.layout.position_type = clipper_position;
+            clipper.layout.overflow = (Overflow::Hidden, Overflow::Hidden);
+            let clipper = scene
+                .push(NodeId::ROOT, clipper)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut child = Node::container();
+            child.layout.position_type = PositionType::Absolute;
+            let child = scene
+                .push(clipper, child)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let root = scene
+                .get(NodeId::ROOT)
+                .unwrap_or_else(|| unreachable!("a new scene has a root"));
+            participants(&scene, NodeId::ROOT, root)
+                .into_iter()
+                .find_map(|step| match step {
+                    super::Step::EnterClipped { id, clips } if id == child => {
+                        Some(clips)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| unreachable!("the child is a participant"))
+        };
+
+        assert!(
+            owed_by(PositionType::Static).is_empty(),
+            "an unpositioned clipper is not the child's containing block"
+        );
+        assert_eq!(
+            owed_by(PositionType::Relative).len(),
+            1,
+            "a positioned clipper is, and clips it"
         );
     }
 
