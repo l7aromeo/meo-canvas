@@ -71,6 +71,10 @@ jobs:
           HUSKY: 0
         run: bun install --frozen-lockfile
       - run: bun run build
+      # Before the publish, not after. The docs job below runs once semantic-release has already put
+      # the package on npm, so a reference that will not build cannot stop the release by then --
+      # 9.0.0 went out that way. Building it here fails the job while the version is still uncut.
+      - run: bun run docs
       # `successCmd` in .releaserc.json sets the `published` output the docs job reads. It cannot use
       # `${...}`: @semantic-release/exec runs every command through a lodash template first, which
       # treats that as an interpolation and tries to evaluate it as JavaScript. `${GITHUB_OUTPUT:-…}`
