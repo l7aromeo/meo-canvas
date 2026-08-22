@@ -362,6 +362,21 @@ export class GridNode extends RowNode {
     // Tracks run from the inline start, which is the right under RTL. Mirrored here rather than
     // left to Yoga: an item is placed absolutely at a computed offset, and an absolute node's
     // offset is a physical left whatever the direction says.
+    // Yoga resolves an absolute node against the nearest ancestor whose position type is not
+    // `Static`, and a grid is static unless the caller said otherwise. Its items are made absolute
+    // only so the tracks can be honoured, so the grid has to take that containing block back:
+    // without it the items resolve past the grid to whatever box above it is positioned, and the
+    // grid's own place in the flow -- a preceding sibling, an ancestor's padding -- drops out of
+    // their offsets. The page is that box in the common case, which is why they land at its origin.
+    //
+    // Recorded the same way a placed item is: CSS keeps the grid static, so a descendant the caller
+    // did position absolutely still resolves past it, and the paint pass shifts it back out.
+    const declared = this.props.positionType
+    if (declared === undefined || declared === Style.PositionType.Static) {
+      this.node.setPositionType(Style.PositionType.Relative)
+      this.placedByLayout = true
+    }
+
     const rightToLeft = this.resolvedDirection() === Style.Direction.RTL
     const trackSpan = colOffsets[colOffsets.length - 1] - colGap
 
