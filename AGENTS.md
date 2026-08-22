@@ -817,6 +817,14 @@ drew them, and `Canvas::engine` reports a string instead. When a check cannot be
 made in one currency, reach for another currency rather than concluding there is
 no check.
 
+**A fixture that pins a defect needs a cell that must not move.** Two cells
+flipping while a third holds says the fix was the one intended rather than a
+change of sign: `fixtures/stacking-hoist` would pass with only its two defective
+cells if the painter started hiding every negative-`z_index` child instead of
+hoisting the ones that belong to a grandparent. The control cell is what
+separates the two outcomes, and it is chosen from a property the surface can
+already express, so it does not have to be built twice.
+
 **A fixture with one value per type checks the shape of a read and not its
 kind.** While every slot held `1`, an `Option`'s presence flag read through the
 raw slot path and read as an integer were the same read. Only a value the suite
