@@ -217,6 +217,10 @@ blanket `impl IntoElements for I: IntoIterator` overlaps `Vec`, `[T; N]` and
 make `Option` an iterator. The syntax differs because the languages do; what a
 caller can express does not.
 
+**A change's two sides land in one commit.** Ownership decides who edits a file,
+not what a commit is: splitting a wire change across two commits to respect a
+boundary leaves `ci` red between them for a change that was never in two parts.
+
 **Neither surface ships a capability the other lacks, and neither is finished
 first.** A change to one is not done until the other has it. The two examples
 are the check: `examples/bun` and `examples/rust` draw the same picture, and
@@ -796,6 +800,45 @@ one needs to know how: it registers exactly one font from this repository under
 the family `Fixture` and refuses a scene naming any other, pins the scale, and
 turns `gpu` off. The platform's installed faces answer `has_family` too, so a
 fixture asking for Helvetica would pass here and differ on any other machine.
+
+### What a check can and cannot see
+
+Four rules, each of which cost a bug or most of a day to learn.
+
+**A check written in the same currency as the thing it checks agrees with it
+whatever it does.** A probe and the bytes it is compared against are written
+from one number, so a units error in that number encodes identically on both
+sides: `'50%'` reaching the painter as five thousand per cent passed the round
+trip, the 54-property boundary comparison and the two surfaces' own byte
+comparison at once. `fixtures/percentages` is the answer, in rendered pixels.
+The same shape recurs -- a float pixel layout changes compositing depth whether
+or not the rasteriser falls back, so no comparison of buffers can say which one
+drew them, and `Canvas::engine` reports a string instead. When a check cannot be
+made in one currency, reach for another currency rather than concluding there is
+no check.
+
+**A fixture with one value per type checks the shape of a read and not its
+kind.** While every slot held `1`, an `Option`'s presence flag read through the
+raw slot path and read as an integer were the same read. Only a value the suite
+did not contain separates them, which is why the probe reader answers by what
+the read asks for -- whole where a whole number is demanded, `0.25` where the
+slot is taken as written.
+
+**An assertion that cannot fail on the machine running it is not a test.** A
+rasteriser comparison passes vacuously where no backend is compiled, a
+`--features`-less run never reaches the branch that matters, and an assertion
+against a fake renderer can only ever say that a field was copied -- which is
+how `gpu` reached the scene while reaching no pixel. Guard on the precondition
+and assert the trivial case explicitly, so the run that cannot check the claim
+says so rather than passing.
+
+**A crate's own tests can name what the crate does not export.** Using the
+surface finds what testing it cannot: a gradient whose argument had no
+exportable name, `into_scene` documented "to write to disk" with nothing that
+turns a scene into bytes, `left(..)` unable to express an inset, and
+`IntoSides<Dimension>` refusing a `Length` so a `margin` could not be written at
+all. `examples/bun` and `examples/rust` reach the package the way a stranger
+does, which is what makes them worth running in `ci`.
 
 Coverage is measured with `cargo-llvm-cov` on the pinned nightly, because
 `--branch` needs `-Z coverage-options=branch` and stable rustc refuses it. That
