@@ -135,6 +135,7 @@ lint:
 lint-check:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --all-targets --features "{{ host_features }}" -- -D warnings
+    cargo clippy --manifest-path examples/rust/Cargo.toml --all-targets --features "{{ host_features }}" -- -D warnings
 
 # Rust on the pinned nightly, then JavaScript, TypeScript and Markdown through
 # prettier. Both halves in one recipe, because `just ci` checks both and a pair
@@ -143,11 +144,17 @@ lint-check:
 [doc("Format Rust, JavaScript, TypeScript and Markdown (rewrites the tree).")]
 fmt: ensure-deps
     cargo +{{ fmt_toolchain }} fmt --all
+    # `examples/rust` is its own workspace, so `--all` and `--workspace` stop at
+    # its edge. A consumer of the published surface is the last place worth
+    # leaving unformatted or unlinted, since a lint about that surface shows
+    # there and nowhere else.
+    cargo +{{ fmt_toolchain }} fmt --manifest-path examples/rust/Cargo.toml --all
     ./node_modules/.bin/prettier --write "**/*.{js,mjs,ts,mts,md}"
 
 # Verify formatting without writing.
 fmt-check: ensure-deps
     cargo +{{ fmt_toolchain }} fmt --all -- --check
+    cargo +{{ fmt_toolchain }} fmt --manifest-path examples/rust/Cargo.toml --all -- --check
     ./node_modules/.bin/prettier --check "**/*.{js,mjs,ts,mts,md}"
 
 # The TypeScript surface is what the npm package publishes as its types, and
@@ -165,10 +172,10 @@ fmt-check: ensure-deps
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
 
-# The consumer projects: typecheck them against the built package, run them, and
-# compare what they drew.
+# The consumer projects: typecheck them against the built package, run every
+# example in both, and compare every file the two of them wrote.
 #
-# Both of them, deliberately. They draw the same picture from the two surfaces,
+# Both of them, deliberately. They draw the same pictures from the two surfaces,
 # so a surface left behind fails this command rather than being noticed later.
 # Each reaches `meo-canvas` the way anyone else would -- the JavaScript one
 # through the package's exports rather than into its source, the Rust one
@@ -183,14 +190,25 @@ build-js: ensure-deps
 # GPU and the other on the CPU while both reported `gpu: true` -- `Surface::gpu`
 # reports the request rather than the outcome. Hence `--features` here, and the
 # `metal`/`vulkan` forwarding in `meo-canvas` and `meo-canvas-core`.
-[doc("Typecheck and run both consumer examples.")]
+#
+# Neither half names its examples: each runs every source file it has, so an
+# example added to one surface and forgotten on the other is reported by name
+# rather than quietly compared against nothing. `diff -rq` is what compares
+# them, because it names a file that differs *and* a file only one side wrote,
+# and both of those are the same failure -- the surfaces disagreed.
+#
+# The trees are removed first. A stale file from a renamed example would
+# otherwise sit in both trees, match itself, and be counted as agreement.
+[doc("Run every example on both surfaces and compare every byte they wrote.")]
 example: build-js
     ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
-    cd examples/bun && bun run index.ts
-    cd examples/rust && cargo run --quiet --features "{{ host_features }}"
-    @cmp -s examples/bun/out.png examples/rust/out.png \
-      || { echo "error: the two surfaces drew different pictures; examples/bun/out.png and examples/rust/out.png differ"; exit 1; }
-    @echo "both surfaces drew the same bytes"
+    rm -rf examples/bun/out examples/rust/out
+    cd examples/bun && for source in src/*.ts; do [ "$source" = "src/write.ts" ] && continue; bun run "$source"; done
+    cd examples/rust && for source in src/bin/*.rs; do cargo run --quiet --features "{{ host_features }}" --bin "$(basename "$source" .rs)"; done
+    @test -d examples/bun/out || { echo "error: the JavaScript surface wrote nothing to compare"; exit 1; }
+    @diff -rq examples/bun/out examples/rust/out \
+      || { echo "error: the two surfaces did not write the same bytes; each line above names a file they disagree on"; exit 1; }
+    @echo "both surfaces wrote the same bytes in $(find examples/bun/out -type f | wc -l | tr -d ' ') files"
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps

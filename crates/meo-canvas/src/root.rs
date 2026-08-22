@@ -543,12 +543,16 @@ impl Canvas {
     /// Encodes the canvas and writes it to `path`, taking the format from the
     /// extension.
     ///
-    /// `canvas.to_file("out.png")`, the same call a JavaScript caller writes.
-    /// An extension naming no format is an error rather than a default:
-    /// writing a PNG because nothing said otherwise turns a typo into a file
-    /// whose name lies about its contents. Use [`to_file_as`](Self::to_file_as)
-    /// to name the format instead — `raw` has to be named, because a `.bin` of
-    /// pixel bytes is not a filename any format may be inferred from.
+    /// `canvas.to_file("out.png")`, the same call a JavaScript caller writes,
+    /// and it accepts the same extensions — `.raw` among them. An extension
+    /// naming no format is an error rather than a default: writing a PNG
+    /// because nothing said otherwise turns a typo into a file whose name lies
+    /// about its contents.
+    ///
+    /// Resolved through [`ImageFormat::from_named`] rather than
+    /// `from_extension`, which refuses `raw` — correctly, for a filename found
+    /// on disk, and wrongly for one the caller has just typed. This once
+    /// accepted a narrower set than `toFile` did on the JavaScript surface.
     ///
     /// # Errors
     ///
@@ -563,7 +567,7 @@ impl Canvas {
         let format = path
             .extension()
             .and_then(|extension| extension.to_str())
-            .and_then(ImageFormat::from_extension)
+            .and_then(ImageFormat::from_named)
             .ok_or_else(|| BuildError::Format(path.display().to_string()))?;
         self.to_file_with(path, format, &EncodeOptions::default())
     }
@@ -692,6 +696,52 @@ mod tests {
         Box as BoxNode, ColorSpace, ColorType, Column, Format, Renderer, Row,
         Styled, Text, hex_rgb, px,
     };
+
+    #[test]
+    fn to_file_accepts_the_extensions_the_javascript_surface_does() {
+        // `.raw` among them. `ImageFormat::from_extension` refuses it, and
+        // rightly for a filename found on disk — upstream calls that container
+        // `.bin` and a `.bin` of pixel bytes implies no format. A path the
+        // caller has just typed is the other question, and this once answered
+        // it more narrowly than `toFile` did.
+        let dir = std::env::temp_dir()
+            .join(format!("meo-to-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let mut canvas = Root::new(8.0, 4.0)
+            .children(BoxNode::new())
+            .render(&Renderer::new())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        for extension in ["png", "raw", "RAW"] {
+            let path = dir.join(format!("out.{extension}"));
+            assert!(
+                canvas.to_file(&path).is_ok(),
+                ".{extension} should name a format"
+            );
+        }
+        // Eight by four at four bytes a pixel, so the bytes are the pixels and
+        // nothing else -- which is the whole of what `raw` promises.
+        assert_eq!(
+            std::fs::metadata(dir.join("out.raw"))
+                .unwrap_or_else(|error| unreachable!("{error}"))
+                .len(),
+            8 * 4 * 4
+        );
+
+        // `.bin` is upstream's name for the container and not a format tag, so
+        // neither surface takes it. Refusing it here is the parity, not a gap.
+        for extension in ["bin", "nonsense"] {
+            let path = dir.join(format!("out.{extension}"));
+            assert!(
+                matches!(canvas.to_file(&path), Err(BuildError::Format(_))),
+                ".{extension} names no format"
+            );
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     /// The scene `root` describes, or the failure it reports.
     fn scene_of(root: Root) -> meo_canvas_scene::Scene {

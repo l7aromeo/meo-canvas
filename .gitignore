@@ -74,8 +74,16 @@
 # -- Examples ---------------------------------------------------------------
 # A real consumer project, installed by link rather than from a registry, so it
 # exercises the package boundary — the exports map, the types field, the entry
-# point — rather than reaching into `src` the way the tests do. Its rendered
-# output is not tracked: it is something to look at, not something to check.
+# point — rather than reaching into `src` the way the tests do.
+#
+# Only `src` is tracked. What each example writes goes to its own `out/`, which
+# is denied below by name rather than by falling through the default: a reader
+# who has just seen `fixtures/**/*.png` allowed deserves to see why these are
+# not. A fixture image *is* the assertion — a diff that changes one changes what
+# the renderer draws. An example's output is checked against the other surface
+# by `just example` at the moment it is written, so it asserts nothing once
+# written and tracking it would put megabytes of regenerable pictures in every
+# clone.
 !/examples/*/package.json
 !/examples/*/tsconfig*.json
 !/examples/**/*.ts
@@ -98,4 +106,5 @@
 target/
 node_modules/
 dist/
+examples/*/out/
 .cargo/

@@ -271,16 +271,12 @@ fn paint_options(
 
 /// The [`ImageFormat`] a JavaScript format tag names.
 ///
-/// [`ImageFormat::from_extension`] answers everything but `raw`, which it
-/// refuses on purpose -- a `.bin` of pixel bytes is a file nothing reads back,
-/// so it is not a format a filename may imply. Across this boundary the tag is
-/// not a filename; the caller said `raw` by name, which is exactly the way that
-/// documentation says to ask for it.
+/// A tag is a name the caller wrote, not a filename to infer from, which is
+/// [`ImageFormat::from_named`]'s question rather than `from_extension`'s. This
+/// held its own copy of that distinction until the Rust surface's `to_file`
+/// turned out to need the same one and answer differently.
 fn format_from_tag(tag: &str) -> Option<ImageFormat> {
-    if tag == "raw" {
-        return Some(ImageFormat::Raw);
-    }
-    ImageFormat::from_extension(tag)
+    ImageFormat::from_named(tag)
 }
 
 /// Reads the encode options object, which may be absent or empty.

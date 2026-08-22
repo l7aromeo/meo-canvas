@@ -156,6 +156,29 @@ impl ImageFormat {
         to_skia_format(self).mime_type()
     }
 
+    /// The format a **caller** named, by extension or by name.
+    ///
+    /// [`ImageFormat::from_extension`] answers the other question: what format
+    /// a filename *found on disk* implies. It refuses `raw` deliberately, and
+    /// rightly — upstream calls that container `.bin`, and a `.bin` of pixel
+    /// bytes is not something any format may be inferred from.
+    ///
+    /// This is for a path the caller has just typed, where `.raw` is as plain a
+    /// statement of intent as `.png`. A caller who writes `to_file("x.raw")`
+    /// has named the format; nothing is being inferred.
+    ///
+    /// The two questions were being answered in three places — here, the
+    /// addon's format tag, and the JavaScript surface's `formatForPath` — with
+    /// the Rust half of the pair disagreeing with the other two. `to_file`
+    /// refused a `.raw` path that `toFile` accepted.
+    #[must_use]
+    pub fn from_named(name: &str) -> Option<Self> {
+        if name.eq_ignore_ascii_case("raw") {
+            return Some(Self::Raw);
+        }
+        Self::from_extension(name)
+    }
+
     /// The format a filename extension names, if any.
     ///
     /// Delegates to the renderer rather than matching here, so the aliases it
@@ -451,6 +474,31 @@ mod tests {
         assert_eq!(ImageFormat::Png.media_type(), "image/png");
         assert_eq!(ImageFormat::Jpeg.media_type(), "image/jpeg");
         assert_eq!(ImageFormat::Raw.media_type(), "application/octet-stream");
+    }
+
+    #[test]
+    fn a_caller_may_name_raw_where_a_filename_may_not_imply_it() {
+        // The two questions this crate answers about a string, and the one
+        // place they differ. Inference from a filename found on disk refuses
+        // `raw`; a caller typing `.raw` has named it.
+        assert_eq!(ImageFormat::from_extension("raw"), None);
+        assert_eq!(ImageFormat::from_named("raw"), Some(ImageFormat::Raw));
+        assert_eq!(ImageFormat::from_named("RAW"), Some(ImageFormat::Raw));
+
+        // Everything else answers the same to both, so the pair cannot drift
+        // into two different tables.
+        for format in ImageFormat::ALL {
+            if *format == ImageFormat::Raw {
+                continue;
+            }
+            let extension = format.extension();
+            assert_eq!(
+                ImageFormat::from_named(extension),
+                ImageFormat::from_extension(extension),
+                "{format} answers differently to the two questions"
+            );
+        }
+        assert_eq!(ImageFormat::from_named("nonsense"), None);
     }
 
     #[test]
