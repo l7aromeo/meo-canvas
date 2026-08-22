@@ -9,7 +9,7 @@ import { integrationRootBase } from './helpers/integration-font.js'
  * Two rules meet here and neither is obvious on its own. A static box ignores its own insets, so a
  * parent that names `Left`/`Top` without a `positionType` does not move — and its children start
  * from where it would have been anyway. An absolutely positioned box resolves against the nearest
- * *positioned* ancestor, so a static parent is skipped and a relative one is not.
+ * positioned* ancestor, so a static parent is skipped and a relative one is not.
  *
  * Every expectation is what Chrome put there, read with `getBoundingClientRect` on the equivalent
  * markup. Geometry rather than paint order, which is why a layout query was trustworthy here where

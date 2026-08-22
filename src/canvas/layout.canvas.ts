@@ -245,7 +245,13 @@ export class BoxNode {
     // offers `Static` for exactly that, and leaving the default in place made every ancestor a
     // containing block -- so an absolute node landed against its immediate parent wherever CSS
     // would have gone further up.
-    this.node.setPositionType(positionType ?? Style.PositionType.Static)
+    // Yoga has no `Fixed`, so it is laid out as `Absolute` and moved to its own containing block
+    // when it is painted -- see `collectStacking`.
+    this.node.setPositionType(
+      positionType === Style.PositionType.Fixed
+        ? Style.PositionType.Absolute
+        : (positionType ?? Style.PositionType.Static),
+    )
     if (flexBasis !== undefined) this.node.setFlexBasis(flexBasis)
     // `position: 0` is falsy and meaningful: an absolute node inset by nothing on all four sides
     // fills its parent.
@@ -696,6 +702,12 @@ export class BoxNode {
    * box whose `z-index` is `auto` forms none, which is why its positioned descendants compete in
    * the nearest ancestor's context rather than being trapped inside it.
    */
+  /** Whether this node is the box a `Fixed` descendant resolves against. CSS: a transform or a
+   * filter captures one, and nothing else between it and the page does. */
+  private capturesFixed(): boolean {
+    return Boolean(this.props.transform || this.props.filter || this.props.backdropFilter)
+  }
+
   private createsStackingContext(): boolean {
     if (this.props.zIndex !== undefined) return true
     if ((this.props.opacity ?? 1) < 1) return true
@@ -722,9 +734,17 @@ export class BoxNode {
     lifted: Set<BoxNode>,
     depth = 0,
     clips: ClipFrame[] = [],
+    positionedOrigin: { x: number; y: number } = { x: originX, y: originY },
+    fixedOrigin: { x: number; y: number } = { x: originX, y: originY },
   ): void {
     node.children.forEach((child, index) => {
       if (child.stacksAmongSiblings()) {
+        // A fixed node is laid out against the nearest positioned ancestor, because that is all
+        // Yoga can do. Shifting the origin by the distance between that box and its real containing
+        // block lands it where CSS puts it, without re-resolving its insets by hand.
+        const fixed = child.props.positionType === Style.PositionType.Fixed
+        const shiftX = fixed ? fixedOrigin.x - positionedOrigin.x : 0
+        const shiftY = fixed ? fixedOrigin.y - positionedOrigin.y : 0
         into.push({
           node: child,
           // `z-index: auto` shares a layer with `0`, so an absent index sorts as 0 rather than as a
@@ -732,8 +752,8 @@ export class BoxNode {
           zIndex: child.props.zIndex ?? 0,
           // Depth first, so a lifted node ties after the siblings it was lifted past.
           order: depth * 1_000_000 + index,
-          originX,
-          originY,
+          originX: originX + shiftX,
+          originY: originY + shiftY,
           // Escaping a stacking context does not escape a clip: the two are independent, and a
           // node lifted out of its parent is still cut by whatever clipped it on the way up.
           clips,
@@ -745,7 +765,21 @@ export class BoxNode {
         const childX = originX + layout.left
         const childY = originY + layout.top
         const nested = child.clipFrame(childX, childY)
-        this.collectStacking(child, childX, childY, into, lifted, depth + 1, nested ? [...clips, nested] : clips)
+        const childPositioned =
+          child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
+        this.collectStacking(
+          child,
+          childX,
+          childY,
+          into,
+          lifted,
+          depth + 1,
+          nested ? [...clips, nested] : clips,
+          // The box a `Absolute` descendant resolves against, and the one a `Fixed` one does. They
+          // part company at a transform or a filter, which captures `Fixed` and nothing else.
+          childPositioned ? { x: childX, y: childY } : positionedOrigin,
+          child.capturesFixed() ? { x: childX, y: childY } : fixedOrigin,
+        )
       }
     })
   }
