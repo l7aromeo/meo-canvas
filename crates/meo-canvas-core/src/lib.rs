@@ -53,6 +53,7 @@
 pub mod color;
 pub mod encode;
 pub mod layout;
+pub mod lines;
 pub mod markup;
 pub mod measure;
 pub mod paint;

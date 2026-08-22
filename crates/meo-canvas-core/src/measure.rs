@@ -26,24 +26,34 @@
 
 use std::collections::HashMap;
 
+// The paragraph path is test-only now: text is measured and drawn through
+// `crate::lines`, and what remains of Skia's own text stack is the
+// comparison report those tests run. See `build_paragraph`.
+#[cfg(test)]
+use meo_canvas_scene::style::{
+    effect::TextShadow,
+    text::{
+        FontStyle, ParagraphStyle, Spacing, TextAlign, TextDecoration,
+        TextSegment,
+    },
+};
 use meo_canvas_scene::{
     Size,
     node::{NodeId, NodeKind},
-    style::{
-        effect::TextShadow,
-        text::{
-            FontStyle, ParagraphStyle, Spacing, TextAlign, TextDecoration,
-            TextSegment,
-        },
-    },
 };
+#[cfg(test)]
 use meo_skia_canvas::{
     Paragraph, RgbaLinear, TextAlign as SkiaTextAlign,
     TextDecoration as SkiaTextDecoration, TextEngine,
     TextShadow as SkiaTextShadow, TextSlant, TextStyle as SkiaTextStyle,
 };
 
-use crate::resolve::{Fonts, Resolved, ResolvedText};
+#[cfg(test)]
+use crate::resolve::ResolvedText;
+use crate::{
+    lines::{self, Block, Metrics, TextMeasurer},
+    resolve::{Fonts, Resolved},
+};
 
 /// The name a text node falls back to when it names no family of its own.
 ///
@@ -168,15 +178,16 @@ pub trait Measure {
 /// failure is raised. After that the [`Measure`] implementation cannot fail,
 /// because taffy's closure has nowhere to put an error.
 ///
-/// # One paragraph per text node, built once
+/// # Where the shaping is cached
 ///
-/// Building a paragraph is where shaping happens. Laying one out again at a
-/// different width is not: taffy asks about a leaf several times in a single
-/// solve, and rebuilding would reshape the string each time. So a paragraph is
-/// built in [`SceneMeasurer::prepare`], stored, and re-laid-out in place.
+/// Wrapping asks the same question relentlessly -- taffy calls a leaf several
+/// times per pass while it searches for a width that fits -- and shaping is
+/// the expensive half of answering. [`TextMeasurer`] holds the answers for the
+/// life of this measurer, which is one render. See [`crate::lines`].
 pub struct SceneMeasurer<'resolved> {
     resolved: &'resolved Resolved<'resolved>,
-    paragraphs: HashMap<NodeId, Paragraph>,
+    /// The shaping cache every line box is built through.
+    text: TextMeasurer,
     /// Answers already given, keyed by the question.
     ///
     /// A solve asks about one leaf at several widths and repeats questions
@@ -223,7 +234,7 @@ impl core::fmt::Debug for SceneMeasurer<'_> {
         // runs would not help a reader anyway. The counts are what says whether
         // preparation found what it expected.
         f.debug_struct("SceneMeasurer")
-            .field("paragraphs", &self.paragraphs.len())
+            .field("shaped", &self.text.cached())
             .field("answers", &self.answers.len())
             .finish_non_exhaustive()
     }
@@ -245,52 +256,69 @@ impl<'resolved> SceneMeasurer<'resolved> {
         resolved: &'resolved Resolved<'resolved>,
         fonts: &Fonts,
     ) -> Result<Self, crate::Error> {
-        let engine = TextEngine::new(fonts.library());
-        let mut paragraphs = HashMap::new();
-
+        // Every family a text node names, checked here so that the failure is
+        // raised in the one pass that can raise one. Nothing is shaped yet:
+        // shaping happens against a width, and no width is known until taffy
+        // asks.
         for (index, node) in resolved.scene.nodes.iter().enumerate() {
             // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
             let id = NodeId::new(index as u32);
-            let NodeKind::Text {
-                segments,
-                paragraph,
-            } = &node.kind
-            else {
+            if !matches!(node.kind, NodeKind::Text { .. }) {
                 continue;
-            };
+            }
             let Some(style) = resolved.text(id) else {
                 continue;
             };
-            paragraphs.insert(
-                id,
-                build_paragraph(
-                    &engine,
-                    style,
-                    segments,
-                    paragraph,
-                    &node.effects.text_shadows,
-                ),
-            );
+            if !style.family.is_empty() && !fonts.has(&style.family) {
+                return Err(crate::Error::UnknownFont(style.family.clone()));
+            }
         }
 
         Ok(Self {
             resolved,
-            paragraphs,
+            text: TextMeasurer::new(),
             answers: HashMap::new(),
         })
     }
 
-    /// The shaped paragraph for a text node, for the paint pass.
+    /// Lays a text node's content out at `width`, for the paint pass.
     ///
-    /// Crate-internal: `Paragraph` is a Skia type and no public signature of
-    /// this crate names one. Handed out mutably because painting lays the
-    /// paragraph out at its final width first, and Skia draws a paragraph at
-    /// whatever width it last saw.
-    pub(crate) fn paragraph_mut(
+    /// Crate-internal, and re-done rather than remembered: the width layout
+    /// settles on is not always the width it last asked about, and a block
+    /// carried over from the wrong question is the defect that made the old
+    /// painter lay every paragraph out a second time.
+    pub(crate) fn block(&mut self, node: NodeId, width: f32) -> Option<Block> {
+        let style = self.resolved.text(node)?;
+        let scene_node = self.resolved.scene.get(node)?;
+        let NodeKind::Text {
+            segments,
+            paragraph,
+        } = &scene_node.kind
+        else {
+            return None;
+        };
+        Some(lines::layout(
+            &mut self.text,
+            style,
+            segments,
+            width,
+            paragraph,
+            Metrics::of(style),
+        ))
+    }
+
+    /// The width of one inter-word space in a node's own face.
+    ///
+    /// The painter needs it for the same reason the wrap does: a space is a
+    /// run of no width, and the gap it stands for is arithmetic. Answered
+    /// through the same cache, so asking here costs nothing the wrap has not
+    /// already paid.
+    pub(crate) fn space(
         &mut self,
-        node: NodeId,
-    ) -> Option<&mut Paragraph> {
-        self.paragraphs.get_mut(&node)
+        base: &lines::RunStyle,
+        letter_spacing: f32,
+    ) -> f32 {
+        self.text.space_width(base, letter_spacing)
     }
 
     /// The scene this measurer answers for.
@@ -299,63 +327,56 @@ impl<'resolved> SceneMeasurer<'resolved> {
         self.resolved
     }
 
-    /// Measures a text node by laying its prepared paragraph out again.
+    /// Measures a text node by wrapping it at the width on offer.
+    ///
+    /// # Which width
+    ///
+    /// The space offered, never the content's own measure of itself. Laying
+    /// out at exactly what the content occupies loses the last word to a float
+    /// comparison, and that boundary is not a corner case: flexbox settles an
+    /// auto-sized item at precisely its max-content width and asks again with
+    /// that as a known dimension, so every text node that fits is asked this
+    /// question.
+    ///
+    /// So an open axis wraps at infinity -- the one width with no boundary to
+    /// land on -- and narrows only when the budget is genuinely less than what
+    /// the content occupies. `MinContent` is the exception that is not one:
+    /// wrapping at every space *is* what min-content means.
     fn measure_text(
-        paragraph: &mut Paragraph,
+        &mut self,
+        node: NodeId,
         known: (Option<f32>, Option<f32>),
         available: (Available, Available),
     ) -> MeasuredLeaf {
-        // The width laid out at is the space offered, never the content's own
-        // measure of itself. Laying out at `max_intrinsic_width()` looks
-        // equivalent and is not: that value is the width the content needs, and
-        // a budget of exactly that width loses the last word to a float
-        // comparison -- "Body text" at 16px reports an intrinsic 55.010 and
-        // wraps to two lines when laid out at 55.010. An unconstrained layout
-        // has no boundary to land on.
-        //
-        // `MinContent` is the exception that is not one: laying out at the
-        // longest word is what min-content means, and wrapping at every space
-        // is the correct answer rather than an artefact.
         let budget = match (known.0, available.0) {
             (Some(fixed), _) => fixed,
             (None, Available::Definite(budget)) => budget,
-            (None, Available::MinContent) => paragraph.min_intrinsic_width(),
+            (None, Available::MinContent) => 0.0,
             (None, Available::MaxContent) => f32::INFINITY,
         };
 
-        // Laid out unconstrained first, and only again if the budget is
-        // genuinely narrower than what the content occupies.
-        //
-        // Laying out at the budget directly loses the last word whenever the
-        // budget equals the content's own width: "Body text" at 16px occupies
-        // 55.010 and wraps to two lines when laid out at 55.010. That boundary
-        // is not a corner case -- flexbox settles an auto-sized item at
-        // precisely its max-content width and re-asks with that as a known
-        // dimension, so every text node that fits is asked exactly this
-        // question.
-        //
-        // The comparison is against `width()` -- the longest laid-out line --
-        // rather than `max_intrinsic_width()`, which reads slightly wider and
-        // so lets the boundary case slip through the guard. An unconstrained
-        // layout is the only width with no boundary to land on, and re-laying
-        // out is the cheap half: shaping already happened when the paragraph
-        // was built.
-        paragraph.layout(f32::INFINITY);
-        if budget < paragraph.width() {
-            paragraph.layout(budget);
-        }
+        let Some(loose) = self.block(node, f32::INFINITY) else {
+            return MeasuredLeaf::EMPTY;
+        };
+        let block = if budget < loose.width {
+            self.block(node, budget).unwrap_or(loose)
+        } else {
+            loose
+        };
 
-        // `Paragraph::width` reports `longest_line` -- what the content
-        // occupies, not the budget it was given -- so an unfixed axis takes it.
-        // A fixed axis takes the value layout already settled: the trait says a
-        // `known` axis is not the measurer's to choose, and a text run narrower
-        // than its box does not shrink the box.
         MeasuredLeaf {
             size: Size::new(
-                known.0.unwrap_or_else(|| paragraph.width()),
-                known.1.unwrap_or_else(|| paragraph.height()),
+                known.0.unwrap_or(block.width),
+                known.1.unwrap_or(block.height),
             ),
-            first_baseline: Some(paragraph.alphabetic_baseline()),
+            // The first line's own baseline, which is what places its glyphs.
+            // taffy discards it -- `compute/leaf.rs` returns `Point::NONE` for
+            // every measured leaf -- but this crate keeps it, and the painter
+            // reads it from `LayoutResult`.
+            first_baseline: block
+                .lines
+                .first()
+                .map(lines::Line::baseline_from_top),
         }
     }
 }
@@ -376,8 +397,8 @@ impl Measure for SceneMeasurer<'_> {
             return *answer;
         }
 
-        let answer = if let Some(paragraph) = self.paragraphs.get_mut(&node) {
-            Self::measure_text(paragraph, known, available)
+        let answer = if self.resolved.text(node).is_some() {
+            self.measure_text(node, known, available)
         } else if let Some(image) = self.resolved.image(node) {
             MeasuredLeaf::sized(fit_intrinsic(
                 image.intrinsic_size(),
@@ -440,7 +461,16 @@ const fn clamp_to(intrinsic: f32, available: Available) -> f32 {
 }
 
 /// Shapes one text node into a paragraph, ready to be laid out at any width.
-fn build_paragraph(
+///
+/// **Nothing in the renderer uses this any more.** Text is measured and drawn
+/// through [`crate::lines`], which computes its own line boxes the way v1 and
+/// a browser do. What keeps this alive is the comparison report in that
+/// module's tests: two independent statements of one layout, with their
+/// disagreements enumerated rather than accepted. It is the evidence the port
+/// was equivalent where it meant to be and deliberate where it was not, and it
+/// goes when that stops being worth re-running.
+#[cfg(test)]
+pub(crate) fn build_paragraph(
     engine: &TextEngine,
     style: &ResolvedText,
     segments: &[TextSegment],
@@ -461,6 +491,9 @@ fn build_paragraph(
 }
 
 /// Translates a resolved style into the backend's own.
+///
+/// Test-only, with [`build_paragraph`], and for the same reason.
+#[cfg(test)]
 fn skia_style(
     style: &ResolvedText,
     paragraph: &ParagraphStyle,
@@ -533,6 +566,9 @@ fn skia_style(
 }
 
 /// A [`Spacing`] as the absolute pixel count the backend takes.
+///
+/// Test-only: the live path resolves spacing in [`crate::lines::Metrics`].
+#[cfg(test)]
 fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
     match spacing {
         Spacing::Normal => 0.0,

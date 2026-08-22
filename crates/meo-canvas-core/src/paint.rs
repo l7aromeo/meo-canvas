@@ -33,7 +33,7 @@ use meo_canvas_scene::{
     ColorSpace, ColorType, Rect, Sides, Size,
     node::{Node, NodeId, NodeKind, PathPaint},
     style::{
-        Dimension, Length,
+        Dimension, Length, PaintOrder,
         effect::{BoxShadow, FillRule, Mask, MaskShape, Transform},
         layout::{Display, Overflow, PositionType},
         paint::{
@@ -41,7 +41,7 @@ use meo_canvas_scene::{
             Color, Gradient, GradientGeometry, LinearDirection, ObjectFit,
             PaintStyle,
         },
-        text::{TextAlign, VerticalAlign},
+        text::{TextAlign, TextDecoration, VerticalAlign},
     },
 };
 use meo_skia_canvas::{
@@ -49,14 +49,17 @@ use meo_skia_canvas::{
     FillRule as SkiaFillRule, GradientInterpolation,
     GradientStop as SkiaGradientStop, Image as SkiaImage, Path2D, PathBuilder,
     PixelColorSpace, PixelDepth, PixelExportOptions, PixelFormat, Point,
-    RgbaLinear, Shader, StrokeCap, StrokeJoin,
+    RgbaLinear, Shader, StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
+    TextBaseline as SkiaTextBaseline, TextDecoration as SkiaTextDecoration,
+    TextDecorationStyle as SkiaDecorationStyle,
 };
 
 use crate::{
     Error,
     layout::LayoutResult,
+    lines::{Line, Metrics, Run, RunStyle, line_width},
     measure::SceneMeasurer,
-    resolve::{DecodedImage, Resolved},
+    resolve::{DecodedImage, Resolved, ResolvedText},
 };
 
 /// Opacity at or above which a node needs no isolation layer.
@@ -66,19 +69,6 @@ use crate::{
 /// it there is nothing to fade and the layer would cost an offscreen surface
 /// for no visible difference.
 const OPAQUE: f32 = 1.0;
-
-/// How much narrower than its content a text box may be before painting
-/// treats the shortfall as a caller's wrap rather than as rounding.
-///
-/// One pixel, which is exactly taffy's bound and not a tolerance chosen by
-/// eye: `round_layout` rounds each edge to a whole pixel and takes the
-/// difference, so a width can differ from the unrounded one by at most one --
-/// half a pixel at each edge, rounding opposite ways. An auto-sized text node
-/// is settled at precisely its content width, so its rounded box is routinely
-/// a fraction narrower than the text it was measured to hold. Re-wrapping on
-/// that shortfall would contradict the measurement layout was solved from and
-/// put a word on its own line in every such node.
-const ROUNDING_SLACK: f32 = 1.0;
 
 /// Degrees in a full turn, for converting a scene's rotation to radians.
 const DEGREES_PER_TURN: f32 = 360.0;
@@ -434,9 +424,7 @@ fn walk(
                 }
 
                 let layers = enter_node(context, node, rect, device)?;
-                paint_own_content(
-                    context, resolved, layout, measurer, id, node, rect,
-                )?;
+                paint_own_content(context, resolved, measurer, id, node, rect)?;
 
                 stack.push(Step::Leave {
                     layers,
@@ -465,9 +453,7 @@ fn walk(
 
                 context.save();
                 let layers = enter_node(context, node, rect, device)?;
-                paint_own_content(
-                    context, resolved, layout, measurer, id, node, rect,
-                )?;
+                paint_own_content(context, resolved, measurer, id, node, rect)?;
 
                 stack.push(Step::Leave {
                     layers,
@@ -518,13 +504,48 @@ fn participants(
     root: NodeId,
     node: &Node,
 ) -> Vec<Step> {
-    /// One participant, the two keys it sorts by, and what it was hoisted past.
+    /// One participant, the key it sorts by, and what it was hoisted past.
     struct Ranked {
         id: NodeId,
-        z: i32,
+        /// One `(z, layer, order)` triple per step from the context root down
+        /// to this node, compared in order. See the sort at the end of this
+        /// function.
+        key: Key,
         /// Clipping ancestors between this node and the context root,
         /// outermost first. See [`Step::EnterClipped`].
         clips: Vec<NodeId>,
+    }
+
+    /// A node's place in its context's order: one `(z, layer, order)` triple
+    /// per step from the context root down to it.
+    type Key = Vec<(i32, u8, u32)>;
+
+    /// A node still to be walked: where it is, whose child it is, the clips it
+    /// owes, and the key of the ancestor it hangs from.
+    type Pending = (NodeId, NodeId, Vec<NodeId>, Key);
+
+    /// Which of CSS's painting steps a node belongs to within its parent.
+    ///
+    /// Appendix E orders a stacking context's contents: in-flow
+    /// non-positioned descendants at steps 3 and 5, then at step 6
+    /// **everything positioned and every child stacking context with a
+    /// `z_index` of zero**. So the upper band is not "positioned" alone.
+    ///
+    /// The case that separates the two readings is a **static flex or grid
+    /// item with `z_index: 0`**. Flexbox §5.4 gives such an item a stacking
+    /// context even though it is not positioned, which puts it at step 6,
+    /// while a static item with `auto` paints as an inline block at step 5 --
+    /// so the indexed one is above whatever the document order. Measured
+    /// against Chrome, which disagreed on exactly those two rows when this
+    /// asked about position alone.
+    const fn layer(node: &Node, indexed: bool) -> u8 {
+        let positioned =
+            !matches!(node.layout.position_type, PositionType::Static);
+        if positioned || (indexed && node.paint.z_index.is_some()) {
+            1
+        } else {
+            0
+        }
     }
 
     let mut found: Vec<Ranked> = Vec::new();
@@ -536,7 +557,7 @@ fn participants(
     // intermediate's is — it is not applied around them, so that a node
     // entitled to escape it can.
     let root_clips = clips_its_children(node);
-    let mut pending: Vec<(NodeId, NodeId, Vec<NodeId>)> = node
+    let mut pending: Vec<Pending> = node
         .children
         .iter()
         .rev()
@@ -550,24 +571,65 @@ fn participants(
             } else {
                 Vec::new()
             };
-            (*child, root, owed)
+            (*child, root, owed, Vec::new())
         })
         .collect();
 
-    while let Some((id, parent_id, clips)) = pending.pop() {
+    while let Some((id, parent_id, clips, ancestry)) = pending.pop() {
         let (Some(source), Some(parent)) =
             (scene.get(id), scene.get(parent_id))
         else {
             continue;
         };
 
-        found.push(Ranked {
-            id,
-            z: if stacks_by_z_index(parent, source) {
+        // **A non-zero `z_index` joins the context root's own ordering**
+        // rather than its ancestor's place in it. CSS puts such a child
+        // stacking context at step 2 or step 7 of the *context* -- before
+        // every in-flow descendant or after every positioned one -- so a
+        // `z_index: -1` child of a plain block paints beneath that block's
+        // background, which is the hoist `fixtures/stacking-hoist` exists for.
+        // Starting its key afresh is what lets it overtake its own ancestor.
+        //
+        // **Zero is not one of those, and that is the whole of this
+        // distinction.** Step 6 holds positioned descendants with `auto` *and*
+        // child stacking contexts with `0`, together, in tree order -- so
+        // `z_index: 0` and `z_index: auto` do not rank against each other at
+        // all and the later box wins. Measured against Chrome, where ranking
+        // the explicit zero above the automatic one disagreed in three rows,
+        // one per container kind. The two differ in whether a stacking
+        // context is established, which is [`establishes_stacking_context`]'s
+        // question and not this one.
+        let indexed = stacks_by_z_index(parent, source);
+        let explicit =
+            indexed && source.paint.z_index.is_some_and(|index| index != 0);
+        // The third component is the node's place in the pre-order walk,
+        // which is document order. Without it a *sibling's* descendant
+        // compares against a shorter key as though it were an ancestor: three
+        // absolutely-positioned panels and the twelve stripes behind them all
+        // key as `(0, 1)`, and the stripes' children would sort after the
+        // panels and paint over them.
+        //
+        // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
+        let own = (
+            if indexed {
                 source.paint.z_index.unwrap_or(0)
             } else {
                 0
             },
+            layer(source, indexed),
+            found.len() as u32,
+        );
+        let key = if explicit {
+            vec![own]
+        } else {
+            let mut key = ancestry.clone();
+            key.push(own);
+            key
+        };
+
+        found.push(Ranked {
+            id,
+            key: key.clone(),
             clips: clips.clone(),
         });
 
@@ -587,24 +649,29 @@ fn participants(
                 {
                     inherited.push(id);
                 }
-                pending.push((*child, id, inherited));
+                pending.push((*child, id, inherited, key.clone()));
             }
         }
     }
 
-    // By `z` alone, and the sort is stable, so everything else keeps tree
-    // order — which is what puts an ancestor before its own descendant.
+    // **By the path, not by a flat key.** Each node's key is one `(z, layer)`
+    // pair per step from the context root down to it, compared in order, and
+    // the sort is stable so tree order decides the rest.
     //
-    // A second key almost went in here: CSS paints in-flow descendants before
-    // positioned ones at the same level, so ranking by "did the index apply"
-    // looked like a free improvement. It is not. Applied across depths it sorts
-    // a static grandchild *before* its own parent, and the parent's background
-    // then covers it — `display: block` below the page root painted no children
-    // at all, because a block container's static child is not indexed while the
-    // container itself is. Getting that nicety right needs grouping by ancestor
-    // rather than a flat key, and a flat key breaks the invariant that a
-    // descendant paints after the box it sits in.
-    found.sort_by_key(|ranked| ranked.z);
+    // A flat key was tried first and is wrong twice over. Ranking by `z` alone
+    // loses CSS's rule that a positioned box paints above an in-flow one
+    // whatever the document order — 66 of 231 rows of the paint-order table
+    // disagreed with Chrome on exactly that, every one of them
+    // `relative`, `absolute` or `sticky` against `static`. And adding a
+    // "positioned" key *flat* sorts a static grandchild before its own
+    // positioned parent, whose background then covers it: `display: block`
+    // below the page root painted no children at all.
+    //
+    // The path key has both properties by construction. An ancestor's key is a
+    // strict prefix of its descendant's, and a prefix sorts first, so a
+    // descendant can never overtake the box it sits in; and within one parent
+    // the last pair decides, which is where CSS's ordering belongs.
+    found.sort_by(|left, right| left.key.cmp(&right.key));
     found
         .into_iter()
         .map(|ranked| Step::EnterClipped {
@@ -730,7 +797,6 @@ const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
 fn paint_own_content(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
-    layout: &LayoutResult,
     measurer: &mut SceneMeasurer<'_>,
     id: NodeId,
     node: &Node,
@@ -745,9 +811,8 @@ fn paint_own_content(
     if clips_its_children(node) {
         clip_to_box(context, &node.paint, rect)?;
     }
-    let result = paint_box(context, resolved, id, node, rect).and_then(|()| {
-        paint_kind(context, resolved, layout, measurer, id, node, rect)
-    });
+    let result = paint_box(context, resolved, id, node, rect)
+        .and_then(|()| paint_kind(context, resolved, measurer, id, node, rect));
     context.restore();
     result
 }
@@ -854,7 +919,6 @@ fn paint_box(
 fn paint_kind(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
-    layout: &LayoutResult,
     measurer: &mut SceneMeasurer<'_>,
     id: NodeId,
     node: &Node,
@@ -862,10 +926,7 @@ fn paint_kind(
 ) -> Result<(), Error> {
     match &node.kind {
         NodeKind::Box => Ok(()),
-        NodeKind::Text { .. } => {
-            draw_text(context, layout, measurer, id, rect);
-            Ok(())
-        }
+        NodeKind::Text { .. } => draw_text(context, measurer, id, node, rect),
         NodeKind::Image { fit, position, .. } => {
             let Some(image) = resolved.image(id).map(DecodedImage::inner)
             else {
@@ -916,74 +977,265 @@ fn paint_kind(
     }
 }
 
-/// Draws a paragraph, placed by its baseline.
+/// Draws a text node, line box by line box.
+///
+/// # The content box, not the border box
+///
+/// Text lays out inside the border **and** the padding, which is v1's rule and
+/// CSS's. The rectangle handed down here is the border box -- the same one the
+/// background and the border are drawn on -- so a node that drew its text from
+/// it put the first glyph under its own border and wrapped against a width
+/// that included it.
+///
+/// # Why the wrap happens again here
+///
+/// Layout settles a width; the width it last *asked* about is not always that
+/// one, because a flex pass narrows an item and then re-offers it. v1 re-wraps
+/// in its render pass for exactly this reason and says so. The shaping is
+/// cached, so what this costs is the wrap arithmetic and not the shaping.
 fn draw_text(
     context: &mut Context2D,
-    layout: &LayoutResult,
     measurer: &mut SceneMeasurer<'_>,
     id: NodeId,
+    node: &Node,
     rect: Rect,
-) {
-    let Some(baseline_from_top) = layout.baseline(id) else {
-        return;
+) -> Result<(), Error> {
+    let Some(style) = measurer.resolved().text(id).cloned() else {
+        return Ok(());
     };
-    let baseline = rect.origin.y + baseline_from_top;
-
-    // Read before the paragraph is borrowed mutably.
-    let text = measurer.resolved().text(id);
-    let needs_a_finite_width = text.is_some_and(|text| {
-        !matches!(text.align, TextAlign::Start | TextAlign::Left)
-    });
-    let vertical_align =
-        text.map_or(VerticalAlign::Top, |text| text.vertical_align);
-
-    let Some(paragraph) = measurer.paragraph_mut(id) else {
-        return;
-    };
-    // Laid out again at the width layout settled on: Skia paints a paragraph
-    // at whatever width it last saw, and the measurer's last question was not
-    // necessarily this one.
-    //
-    // Unconstrained first, then narrowed only if the box is genuinely narrower
-    // than the content, for the reason `measure_text` does the same: laying
-    // out at exactly the content's own width loses the last word to a float
-    // comparison, and an auto-sized text node's box *is* exactly its content
-    // width. Painting at the box width directly wrapped every such node.
-    paragraph.layout(f32::INFINITY);
-    if rect.size.width + ROUNDING_SLACK < paragraph.width() {
-        paragraph.layout(rect.size.width);
-    } else if needs_a_finite_width {
-        // **Skia aligns within the width it last saw**, so a paragraph left at
-        // `INFINITY` centres about infinity and paints nothing at all:
-        // `text_align: center` and `right` drew zero ink where `left` was
-        // correct, because only they depend on the width.
-        //
-        // Only for those alignments, and never below the natural width. Doing
-        // it for every paragraph moved `baseline-alignment` — a word vanished
-        // and the ink ran 50 pixels lower — because the height and baseline
-        // Skia reports depend on the width it was laid out at, and every
-        // left-aligned node had been measured against the unconstrained one.
-        paragraph.layout(rect.size.width.max(paragraph.width()));
+    let content = content_box(node, rect);
+    if content.size.width <= 0.0 || content.size.height <= 0.0 {
+        return Ok(());
     }
+
+    let Some(block) = measurer.block(id, content.size.width) else {
+        return Ok(());
+    };
+    if block.lines.is_empty() {
+        return Ok(());
+    }
+
+    let metrics = Metrics::of(&style);
+    let base = RunStyle::base(&style);
+    let space = measurer.space(&base, metrics.letter_spacing);
+    let gap = space + metrics.word_spacing;
+
     // **The block within the node's box, not a line within its line box.**
-    // v1 measures the whole paragraph against the box and shifts it by what
-    // is left over, and where v2 and v1 disagree on what is drawn v1 wins.
-    // The name is CSS's and the behaviour is not: `vertical-align` in CSS
-    // places an inline box on its line, which a scene with one paragraph per
-    // node has no way to ask for.
+    // CSS's `vertical-align` places one inline box on its line, which a scene
+    // with one paragraph per node cannot ask for; v1 places the whole
+    // paragraph in the box that holds it, and where the two disagree v1 wins.
     //
     // Not clamped at zero, also v1: a paragraph taller than its box hangs out
-    // of it, centred or bottom-aligned, rather than being pinned to the top.
-    // An auto-sized node has no leftover at all, so every alignment agrees
-    // there -- which is why a control for this has to give the box a height.
-    let free = rect.size.height - paragraph.height();
-    let shift = match vertical_align {
-        VerticalAlign::Top => 0.0,
-        VerticalAlign::Middle => free / 2.0,
-        VerticalAlign::Bottom => free,
+    // of it rather than being pinned to the top. A node sized to its own text
+    // has nothing left over, so all three alignments agree there.
+    let free = content.size.height - block.height;
+    let mut top = content.origin.y
+        + match style.vertical_align {
+            VerticalAlign::Top => 0.0,
+            VerticalAlign::Middle => free / 2.0,
+            VerticalAlign::Bottom => free,
+        };
+
+    context.save();
+    context.set_text_baseline(SkiaTextBaseline::Alphabetic);
+    context.set_text_align(SkiaTextAlign::Left);
+    context.set_letter_spacing(metrics.letter_spacing);
+    // Held at zero and added by hand: a space is a run of no width here, and
+    // the gap between two words is arithmetic the alignment can redistribute.
+    context.set_word_spacing(0.0);
+    set_text_decoration(context, style.decoration);
+
+    let last = block.lines.len().saturating_sub(1);
+    let mut draw = |context: &mut Context2D| {
+        for (index, line) in block.lines.iter().enumerate() {
+            let width = line_width(line, space, metrics.word_spacing);
+            // **Justification skips the last line**, which is CSS's rule and
+            // v1's: stretching a line that ends a paragraph spaces out a few
+            // words across the whole measure.
+            let justify = matches!(style.align, TextAlign::Justify)
+                && index != last
+                && width < content.size.width;
+            let mut x = content.origin.x
+                + match style.align {
+                    TextAlign::Start | TextAlign::Left | TextAlign::Justify => {
+                        0.0
+                    }
+                    TextAlign::Center => (content.size.width - width) / 2.0,
+                    TextAlign::End | TextAlign::Right => {
+                        content.size.width - width
+                    }
+                }
+                .max(0.0);
+            let gap = if justify {
+                let gaps = gap_count(line);
+                if gaps > 0 {
+                    gap + (content.size.width - width) / gaps as f32
+                } else {
+                    gap
+                }
+            } else {
+                gap
+            };
+            let baseline = top + line.baseline_from_top();
+
+            // The gap belongs to a space run that is actually there. Two
+            // runs can meet with nothing between them -- `<b>a</b><b>b</b>`
+            // is one word in two styles -- and a gap inserted between every
+            // pair would draw a space the text does not contain.
+            let mut pending = false;
+            let mut started = false;
+            for run in &line.runs {
+                if run.is_space() {
+                    pending = started;
+                    continue;
+                }
+                if pending {
+                    x += gap;
+                }
+                draw_run(context, node, &style, run, x, baseline);
+                x += run.width;
+                pending = false;
+                started = true;
+            }
+            top += line.height + metrics.line_gap;
+        }
+        Ok(())
     };
-    let top = baseline - paragraph.alphabetic_baseline() + shift;
-    context.draw_paragraph(paragraph, rect.origin.x, top);
+    let result = draw(context);
+
+    context.restore();
+    result
+}
+
+/// Draws one run: its shadows, then the glyphs themselves.
+///
+/// Every shadow is a full pass over the run before the real one, which is v1's
+/// shape and the reason a shadow is cast by the **outlined** glyph rather than
+/// by the fill alone.
+fn draw_run(
+    context: &mut Context2D,
+    node: &Node,
+    style: &ResolvedText,
+    run: &Run,
+    x: f32,
+    baseline: f32,
+) {
+    context.set_font(&run.style.to_font());
+    context.set_fill_style(to_skia_color(style.color));
+
+    for shadow in &node.effects.text_shadows {
+        context.save();
+        context.set_shadow_color(to_skia_color(shadow.color));
+        // CSS gives a blur *radius* and the backend takes a Gaussian sigma.
+        // Half is the conversion every CSS engine uses.
+        context.set_shadow_blur(shadow.blur / 2.0);
+        context.set_shadow_offset(shadow.offset_x, shadow.offset_y);
+        paint_run(context, style, run, x, baseline);
+        context.restore();
+    }
+
+    paint_run(context, style, run, x, baseline);
+}
+
+/// Puts one run down, with its outline if it has one.
+///
+/// CSS centres a text stroke on the glyph's outline and paints it **over** the
+/// fill, so half the width falls inside the letter and a thick stroke visibly
+/// thins it. `paint_order` swaps the two, which is the only way to have a
+/// heavy outline and whole letterforms at once.
+///
+/// A round join rather than the canvas default of a mitre: a mitre throws a
+/// spike off every sharp corner of a glyph, which is not what a browser draws
+/// for `-webkit-text-stroke`. v1's reasoning, and v1's `miterLimit` with it.
+fn paint_run(
+    context: &mut Context2D,
+    style: &ResolvedText,
+    run: &Run,
+    x: f32,
+    baseline: f32,
+) {
+    let Some(stroke) = style.text_stroke.filter(|stroke| stroke.width > 0.0)
+    else {
+        context.fill_text(&run.text, x, baseline, None);
+        return;
+    };
+
+    context.save();
+    context.set_line_width(stroke.width);
+    context.set_stroke_style(to_skia_color(stroke.color));
+    context.set_line_join(StrokeJoin::Round);
+    context.set_miter_limit(2.0);
+    match style.paint_order {
+        PaintOrder::Stroke => {
+            context.stroke_text(&run.text, x, baseline, None);
+            context.fill_text(&run.text, x, baseline, None);
+        }
+        PaintOrder::Fill => {
+            context.fill_text(&run.text, x, baseline, None);
+            context.stroke_text(&run.text, x, baseline, None);
+        }
+    }
+    context.restore();
+}
+
+/// How many inter-word gaps a line has to spread justification across.
+///
+/// A gap for each space run that separates two words, which is not the same as
+/// one per pair of runs: two runs can meet with nothing between them.
+fn gap_count(line: &Line) -> usize {
+    let mut gaps = 0;
+    let mut pending = false;
+    let mut started = false;
+    for run in &line.runs {
+        if run.is_space() {
+            pending = started;
+            continue;
+        }
+        if pending {
+            gaps += 1;
+        }
+        pending = false;
+        started = true;
+    }
+    gaps
+}
+
+/// The rectangle a node's own content sits in: inside its border and padding.
+fn content_box(node: &Node, rect: Rect) -> Rect {
+    let border = node.layout.border;
+    let padding = &node.layout.padding;
+    let left = border.left + resolve_length(padding.left, rect.size.width);
+    let right = border.right + resolve_length(padding.right, rect.size.width);
+    let top = border.top + resolve_length(padding.top, rect.size.width);
+    let bottom =
+        border.bottom + resolve_length(padding.bottom, rect.size.width);
+    Rect::new(
+        meo_canvas_scene::Point::new(rect.origin.x + left, rect.origin.y + top),
+        Size::new(
+            (rect.size.width - left - right).max(0.0),
+            (rect.size.height - top - bottom).max(0.0),
+        ),
+    )
+}
+
+/// Sets the rule drawn under, over or through a run.
+///
+/// One flag set at a time: the scene carries a single keyword where the
+/// backend takes three independent lines, which is CSS's own shape --
+/// `text-decoration-line` is a set — narrowed to what the wire can say.
+fn set_text_decoration(context: &mut Context2D, decoration: TextDecoration) {
+    let lines = match decoration {
+        TextDecoration::None => SkiaTextDecoration::default(),
+        TextDecoration::Underline => SkiaTextDecoration::underline(),
+        TextDecoration::Overline => SkiaTextDecoration::overline(),
+        TextDecoration::LineThrough => SkiaTextDecoration::line_through(),
+    };
+    context.set_text_decoration(
+        lines,
+        SkiaDecorationStyle::default(),
+        None,
+        None,
+    );
 }
 
 /// Where an image sits inside its box under an object-fit rule.
@@ -2789,6 +3041,99 @@ mod tests {
             ordered_ids(&scene, NodeId::ROOT),
             vec![panel, child],
             "the panel must paint before the child inside it"
+        );
+    }
+
+    #[test]
+    fn a_positioned_box_paints_above_an_in_flow_one_whatever_the_order() {
+        // Measured against Chrome across 231 combinations of position and
+        // container: 66 disagreed, every one of them `relative`, `absolute`
+        // or `sticky` against `static`, and every one because this list was
+        // sorted by `z` alone and so kept document order. CSS 2.1 Appendix E
+        // paints in-flow non-positioned descendants at steps 3 and 5 and
+        // everything positioned at step 6.
+        let mut scene = Scene::new(Size::new(40.0, 40.0));
+        let mut positioned = Node::container();
+        positioned.layout.position_type = PositionType::Relative;
+        let first = scene
+            .push(NodeId::ROOT, positioned)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let second = scene
+            .push(NodeId::ROOT, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        // The static box is written second and paints first, so the
+        // positioned one is on top.
+        assert_eq!(
+            ordered_ids(&scene, NodeId::ROOT),
+            vec![second, first],
+            "a relative box should paint above a static one written after it"
+        );
+    }
+
+    #[test]
+    fn an_explicit_zero_ranks_with_auto_and_not_above_it() {
+        // CSS step 6 holds positioned descendants with `auto` and child
+        // stacking contexts with `0` **together**, in tree order. So these two
+        // do not rank against each other and the later one wins, however the
+        // index is spelled -- measured against Chrome in three rows, one per
+        // container kind, where ranking the explicit zero above the automatic
+        // one put the wrong box on top.
+        //
+        // Nested one level down, because that is where the two spellings came
+        // apart: an explicit index starts its key afresh at the context root,
+        // and a zero doing that would overtake an `auto` sibling written after
+        // it.
+        let mut scene = Scene::new(Size::new(40.0, 40.0));
+        let container = scene
+            .push(NodeId::ROOT, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let mut zero = Node::container();
+        zero.layout.position_type = PositionType::Relative;
+        zero.paint.z_index = Some(0);
+        let zero = scene
+            .push(container, zero)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let mut auto = Node::container();
+        auto.layout.position_type = PositionType::Relative;
+        let auto = scene
+            .push(container, auto)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(
+            ordered_ids(&scene, NodeId::ROOT),
+            vec![container, zero, auto],
+            "`z_index: 0` written first should paint below an `auto` sibling \
+             written after it"
+        );
+    }
+
+    #[test]
+    fn a_descendant_still_paints_after_the_box_it_sits_in() {
+        // The invariant the positioned rule must not break, and did once: a
+        // flat "is it positioned" key sorted a static grandchild *before* its
+        // own positioned parent, whose background then covered it, and
+        // `display: block` below the page root painted no children at all.
+        let mut scene = Scene::new(Size::new(40.0, 40.0));
+        let mut positioned = Node::container();
+        positioned.layout.position_type = PositionType::Relative;
+        let parent = scene
+            .push(NodeId::ROOT, positioned)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let child = scene
+            .push(parent, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let sibling = scene
+            .push(NodeId::ROOT, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        // The static sibling first, then the positioned parent, then its own
+        // child -- which is inside it and cannot overtake it.
+        assert_eq!(
+            ordered_ids(&scene, NodeId::ROOT),
+            vec![sibling, parent, child]
         );
     }
 

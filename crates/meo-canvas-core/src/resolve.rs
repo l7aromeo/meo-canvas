@@ -39,7 +39,7 @@ use meo_canvas_scene::{
         paint::Color,
         text::{
             FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
-            TextDecoration, TextStyle, VerticalAlign,
+            TextDecoration, TextStroke, TextStyle, VerticalAlign,
         },
     },
 };
@@ -146,6 +146,10 @@ impl Fonts {
     }
 
     /// The registry the measure pass builds its text engine from.
+    /// Test-only: the live path measures through
+    /// [`crate::lines::TextMeasurer`], whose canvas resolves families from the
+    /// process-wide font library without being handed one.
+    #[cfg(test)]
     pub(crate) const fn library(&self) -> &meo_skia_canvas::FontLibrary {
         &self.library
     }
@@ -180,6 +184,8 @@ pub struct ResolvedText {
     pub decoration: TextDecoration,
     /// Vertical placement within the line box.
     pub vertical_align: VerticalAlign,
+    /// An outline drawn around the glyphs, if the style asks for one.
+    pub text_stroke: Option<TextStroke>,
     /// Which of fill and stroke is drawn on top.
     pub paint_order: PaintOrder,
     /// Line box height as a multiple of the font size.
@@ -214,6 +220,7 @@ impl ResolvedText {
             align: TextAlign::Start,
             decoration: TextDecoration::None,
             vertical_align: VerticalAlign::Top,
+            text_stroke: None,
             paint_order: PaintOrder::Fill,
             line_height: Self::NORMAL_LINE_HEIGHT,
             line_gap: 0.0,
@@ -243,6 +250,7 @@ impl ResolvedText {
             vertical_align: overlay
                 .vertical_align
                 .unwrap_or(self.vertical_align),
+            text_stroke: overlay.text_stroke.or(self.text_stroke),
             paint_order: overlay.paint_order.unwrap_or(self.paint_order),
             line_height: overlay.line_height.unwrap_or(self.line_height),
             line_gap: overlay.line_gap.unwrap_or(self.line_gap),
