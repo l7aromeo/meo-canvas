@@ -503,7 +503,7 @@ export interface BoxProps extends BaseProps {
    * @default Yoga default (`RELATIVE`)
    * @see https://yogalayout.dev/docs/styling/position
    */
-  positionType?: Style.PositionType | Style.FixedPositionType
+  positionType?: Style.PositionType | Style.FixedPositionType | Style.StickyPositionType
 
   /**
    * Specifies the offset distances for positioned elements (`positionType: 'ABSOLUTE'` or `RELATIVE`).

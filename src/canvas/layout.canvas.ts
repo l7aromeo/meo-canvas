@@ -247,15 +247,21 @@ export class BoxNode {
     // would have gone further up.
     // Yoga has no `Fixed`, so it is laid out as `Absolute` and moved to its own containing block
     // when it is painted -- see `collectStacking`.
-    this.node.setPositionType(
+    // A sticky node stays in the flow, so Yoga lays it out as `Relative`; its insets are a
+    // constraint on where it may sit rather than an offset, and are applied when it is painted.
+    const sticky = positionType === Style.PositionType.Sticky
+    type YogaPosition = Parameters<typeof this.node.setPositionType>[0]
+    const yogaPosition =
       positionType === Style.PositionType.Fixed
         ? Style.PositionType.Absolute
-        : (positionType ?? Style.PositionType.Static),
-    )
+        : sticky
+          ? Style.PositionType.Relative
+          : (positionType ?? Style.PositionType.Static)
+    this.node.setPositionType(yogaPosition as YogaPosition)
     if (flexBasis !== undefined) this.node.setFlexBasis(flexBasis)
     // `position: 0` is falsy and meaningful: an absolute node inset by nothing on all four sides
     // fills its parent.
-    if (position !== undefined) {
+    if (position !== undefined && !sticky) {
       if (typeof position === 'number') {
         this.node.setPosition(Style.Edge.All, position)
       } else if (typeof position === 'string' && position.endsWith('%')) {
@@ -702,14 +708,50 @@ export class BoxNode {
    * box whose `z-index` is `auto` forms none, which is why its positioned descendants compete in
    * the nearest ancestor's context rather than being trapped inside it.
    */
-  /** Whether this node is the box a `Fixed` descendant resolves against. CSS: a transform or a
-   * filter captures one, and nothing else between it and the page does. */
+
+  /**
+   * Whether this node is the box a `Fixed` descendant resolves against. CSS: a transform or a
+   * filter captures one, and nothing else between it and the page does.
+   */
+  /**
+   * How far a sticky node is pushed off its flow position by its own insets.
+   *
+   * The insets are a constraint rather than an offset: the node moves only where the flow would
+   * put it nearer an edge of the scrollport than the inset allows. Nothing scrolls here, so this is
+   * the whole of what sticky does -- and it is what Chrome does with no scrolling ancestor too.
+   */
+  protected stickyShift(flowX: number, flowY: number, port: { x: number; y: number; width: number; height: number }) {
+    const layout = this.node.getComputedLayout()
+    const edge = (value: unknown, extent: number): number | undefined => {
+      if (typeof value === 'number') return value
+      if (typeof value === 'string' && value.endsWith('%')) return (parseFloat(value) / 100) * extent
+      return undefined
+    }
+    const position = this.props.position
+    const named = typeof position === 'object' && position !== null ? (position as Record<string, unknown>) : {}
+    const all = typeof position === 'number' || typeof position === 'string' ? position : undefined
+
+    let x = flowX
+    let y = flowY
+    const left = edge(named.Left ?? all, port.width)
+    const top = edge(named.Top ?? all, port.height)
+    const right = edge(named.Right ?? all, port.width)
+    const bottom = edge(named.Bottom ?? all, port.height)
+    if (left !== undefined) x = Math.max(x, port.x + left)
+    if (top !== undefined) y = Math.max(y, port.y + top)
+    if (right !== undefined) x = Math.min(x, port.x + port.width - right - layout.width)
+    if (bottom !== undefined) y = Math.min(y, port.y + port.height - bottom - layout.height)
+    return { x: x - flowX, y: y - flowY }
+  }
+
   private capturesFixed(): boolean {
     return Boolean(this.props.transform || this.props.filter || this.props.backdropFilter)
   }
 
   private createsStackingContext(): boolean {
     if (this.props.zIndex !== undefined) return true
+    // CSS forms one for sticky whatever its z-index says, unlike relative and absolute.
+    if (this.props.positionType === Style.PositionType.Sticky) return true
     if ((this.props.opacity ?? 1) < 1) return true
     if (this.props.transform) return true
     if (this.props.filter || this.props.backdropFilter) return true
@@ -736,6 +778,14 @@ export class BoxNode {
     clips: ClipFrame[] = [],
     positionedOrigin: { x: number; y: number } = { x: originX, y: originY },
     fixedOrigin: { x: number; y: number } = { x: originX, y: originY },
+    // Nothing scrolls, so the scrollport a sticky node is held inside is the page. Taken from the
+    // outermost node this walk starts at, which is that page.
+    port: { x: number; y: number; width: number; height: number } = {
+      x: originX,
+      y: originY,
+      width: node.node.getComputedLayout().width,
+      height: node.node.getComputedLayout().height,
+    },
   ): void {
     node.children.forEach((child, index) => {
       if (child.stacksAmongSiblings()) {
@@ -743,8 +793,14 @@ export class BoxNode {
         // Yoga can do. Shifting the origin by the distance between that box and its real containing
         // block lands it where CSS puts it, without re-resolving its insets by hand.
         const fixed = child.props.positionType === Style.PositionType.Fixed
-        const shiftX = fixed ? fixedOrigin.x - positionedOrigin.x : 0
-        const shiftY = fixed ? fixedOrigin.y - positionedOrigin.y : 0
+        let shiftX = fixed ? fixedOrigin.x - positionedOrigin.x : 0
+        let shiftY = fixed ? fixedOrigin.y - positionedOrigin.y : 0
+        if (child.props.positionType === Style.PositionType.Sticky) {
+          const own = child.node.getComputedLayout()
+          const held = child.stickyShift(originX + own.left, originY + own.top, port)
+          shiftX = held.x
+          shiftY = held.y
+        }
         into.push({
           node: child,
           // `z-index: auto` shares a layer with `0`, so an absent index sorts as 0 rather than as a
@@ -765,8 +821,7 @@ export class BoxNode {
         const childX = originX + layout.left
         const childY = originY + layout.top
         const nested = child.clipFrame(childX, childY)
-        const childPositioned =
-          child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
+        const childPositioned = child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
         this.collectStacking(
           child,
           childX,
@@ -779,6 +834,7 @@ export class BoxNode {
           // part company at a transform or a filter, which captures `Fixed` and nothing else.
           childPositioned ? { x: childX, y: childY } : positionedOrigin,
           child.capturesFixed() ? { x: childX, y: childY } : fixedOrigin,
+          port,
         )
       }
     })
