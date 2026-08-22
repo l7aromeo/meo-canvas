@@ -24,7 +24,10 @@ interface ClipFrame {
   width: number
   height: number
   radii: { TopLeft: number; TopRight: number; BottomRight: number; BottomLeft: number }
+  /** Whether this clipper is the containing block an `Absolute` node resolves against. */
   containsAbsolutes: boolean
+  /** Whether it is the one a `Fixed` node resolves against, which only a transform or filter is. */
+  containsFixed: boolean
 }
 
 /** One node in a stacking order, with where to paint it and what still clips it. */
@@ -685,6 +688,7 @@ export class BoxNode {
       },
       // An absolute node is cut by a clipper only where that clipper is its containing block.
       containsAbsolutes: this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static,
+      containsFixed: this.capturesFixed(),
     }
   }
 
@@ -713,6 +717,7 @@ export class BoxNode {
    * Whether this node is the box a `Fixed` descendant resolves against. CSS: a transform or a
    * filter captures one, and nothing else between it and the page does.
    */
+
   /**
    * How far a sticky node is pushed off its flow position by its own insets.
    *
@@ -970,7 +975,6 @@ export class BoxNode {
       // Applied per child rather than once around them all, so the two kinds can be interleaved
       // without disturbing the paint order worked out above.
       const clips = this.props.overflow === Style.Overflow.Hidden && (width > 0 || height > 0)
-      const isContainingBlock = this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static
 
       /** Applies one remembered clipper's rectangle. */
       const applyFrame = (frame: ClipFrame) => {
@@ -987,9 +991,14 @@ export class BoxNode {
       /** Draws one child under whatever clips still reach it. */
       const paintChild = async (child: BoxNode, originX: number = x, originY: number = y, inherited: ClipFrame[] = []) => {
         const absolute = child.props.positionType === Style.PositionType.Absolute
-        const own = clips && !(absolute && !isContainingBlock) ? this.clipFrame(x, y) : null
-        // A clipper only cuts an absolute node where it is that node's containing block.
-        const frames = [...inherited, ...(own ? [own] : [])].filter(frame => !absolute || frame.containsAbsolutes)
+        const fixed = child.props.positionType === Style.PositionType.Fixed
+        // Whether a clipper reaches this child at all. A positioned node is cut only where the
+        // clipper is its containing block, and the two kinds do not share one: an absolute node's
+        // is any positioned ancestor, a fixed node's is only a transform or a filter -- so a plain
+        // `overflow: hidden` never cuts a fixed node however it is positioned.
+        const reaches = (frame: ClipFrame) => (fixed ? frame.containsFixed : absolute ? frame.containsAbsolutes : true)
+        const own = clips ? this.clipFrame(x, y) : null
+        const frames = [...inherited, ...(own ? [own] : [])].filter(reaches)
 
         if (frames.length > 0) ctx.save()
         try {

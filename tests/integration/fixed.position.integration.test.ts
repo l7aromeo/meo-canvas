@@ -113,3 +113,90 @@ describe('position fixed', () => {
     expect(isRed(canvas.getContext('2d').getImageData(W / 2, H / 2, 1, 1).data)).toBe(true)
   })
 })
+
+describe('position fixed against overflow and zIndex', () => {
+  /** Two fixed nodes captured by a transformed row, so both land in the same place to be compared. */
+  async function firstWins(za: number | undefined, zb: number | undefined) {
+    const box = (zIndex: number | undefined, colour: string) =>
+      Box({
+        positionType: Style.PositionType.Fixed,
+        position: { Top: 0, Left: 0 },
+        width: W,
+        height: 40,
+        backgroundColor: colour,
+        ...(zIndex === undefined ? {} : { zIndex }),
+      })
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: W,
+      height: 40,
+      workerMode: false,
+      gpu: false,
+      backgroundColor: '#ffffff',
+      children: [Box({ width: W, height: 40, transform: { translateX: 0 }, children: [box(za, '#dd1111'), box(zb, '#0066cc')] })],
+    })
+    return isRed(canvas.getContext('2d').getImageData(W / 2, 20, 1, 1).data)
+  }
+
+  it('orders two fixed nodes by zIndex, whichever came first', async () => {
+    expect(await firstWins(2, 1)).toBe(true)
+    expect(await firstWins(1, 2)).toBe(false)
+  })
+
+  it('gives a tie to the one declared later', async () => {
+    expect(await firstWins(undefined, undefined)).toBe(false)
+  })
+
+  it('puts a negative zIndex below an auto one', async () => {
+    expect(await firstWins(-1, undefined)).toBe(false)
+  })
+
+  /** Whether a fixed node survives a clipping ancestor of the given kind. */
+  async function escapesClip(clipper: Partial<BoxProps>) {
+    const canvas = await Root({
+      ...integrationRootBase,
+      width: W,
+      height: 40,
+      workerMode: false,
+      gpu: false,
+      backgroundColor: '#ffffff',
+      children: [
+        Box({
+          width: W,
+          height: 40,
+          positionType: Style.PositionType.Relative,
+          children: [
+            Box({
+              width: 100,
+              height: 40,
+              overflow: Style.Overflow.Hidden,
+              backgroundColor: '#bbbbbb',
+              ...clipper,
+              children: [
+                Box({
+                  positionType: Style.PositionType.Fixed,
+                  position: { Top: 0, Left: 120 },
+                  width: 60,
+                  height: 40,
+                  backgroundColor: '#dd1111',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+    return isRed(canvas.getContext('2d').getImageData(150, 20, 1, 1).data)
+  }
+
+  it('is not cut by a clipper that does not contain it', async () => {
+    // Neither a static nor a relative box is a fixed node's containing block, so neither cuts it —
+    // where either would cut an absolute one.
+    expect(await escapesClip({})).toBe(true)
+    expect(await escapesClip({ positionType: Style.PositionType.Relative })).toBe(true)
+  })
+
+  it('is cut by the transformed ancestor that captures it', async () => {
+    expect(await escapesClip({ transform: { translateX: 0 } })).toBe(false)
+  })
+})
