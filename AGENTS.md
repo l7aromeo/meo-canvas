@@ -137,19 +137,21 @@ rather than inside a single render.
 
 ### The JavaScript boundary
 
-A `Box()` or `Text()` call in JavaScript writes opcodes and numeric arguments
-into a growable `Float64Array`. Strings, buffers, and anything else a float
-cannot hold go into a side `values` array, and the record stores an index into
-it. A bitmask per node names which properties are present, so a node that sets
-five of its available properties consumes five slots rather than all of them.
+The encoder walks the tree the node factories built and writes opcodes and
+numeric properties into a growable `Float64Array`. Strings, buffers, and
+anything else a float cannot hold go into a side `values` array, and the record
+stores an index into it. A bitmask per node names which properties are present,
+so a node that sets five of its available properties consumes five slots rather
+than all of them.
 
 The mask is carried in `f64` slots holding **53 bits each**, not 64: a double
 represents integers exactly only up to 2^53, and a 64-bit mask written into one
 slot loses every bit above that silently. Two slots therefore name 106
 properties, and a node kind whose property count passes 106 takes a third.
 
-`render()` hands the arena over in a single call. A scene of any size crosses
-once.
+`Root()` hands the arena over in a single call. A scene of any size crosses
+once, and `toBuffer` afterwards carries only a format tag — see "The JavaScript
+surface" for what that buys.
 
 This is the shape it is because reading a value out of V8 is what costs, not the
 crossing: a `lineTo` in `meo-skia-canvas` costs 82 nanoseconds, of which 17 is
@@ -170,6 +172,160 @@ entry point uncompiled.
 The addon re-exports `meo-skia-canvas`'s operations alongside its own, so one
 55 MB binary serves both the declarative surface and the imperative canvas API
 beneath it. Two addons would mean two copies of Skia resident in one process.
+
+## The Rust surface
+
+`meo-canvas` is the authoring layer. It exists because the scene contract is an
+arena — a flat `Vec<Node>` indexed by `NodeId`, which a codec can round-trip and
+a person cannot comfortably write.
+
+A node carries a constructor, a style, and its children. Three methods, and the
+set never grows: a new property is a new method on `Style`, not on nine node
+types.
+
+```rust
+Row::new()
+    .style(Style::new().gap(px(16.0)).padding(all(px(24.0))).background(hex("#101014")))
+    .children([
+        Image::path("avatar.png").style(Style::new().size(px(64.0), px(64.0)).fit(Cover)),
+        Text::new("Ukasyah").style(Style::new().font_size(24.0).bold()),
+    ])
+```
+
+`Style` is one flat type, not four. Authoring is flat because CSS is flat and
+because v1's `BoxProps` mixes layout, paint, text and effect into one object —
+so a reader never has to know which group `gap` lives in versus `background`.
+The scene keeps them grouped, because the codec needs them grouped;
+`Style::into_parts` splits at `into_scene` time.
+
+**The names and the behaviour are CSS's.** `color` is the inherited text colour,
+`background` is the fill, and a `color` set on a container reaches every
+descendant. Chrome is the reference, so someone porting a design does not
+translate. Where a CSS name is a known trap — `color` and `background` sitting
+adjacent and meaning different things — it is CSS's trap and not one invented
+here.
+
+Setters are `const fn` wherever the property allows, which makes a reusable base
+a `const`:
+
+```rust
+const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
+
+Row::new().style(CARD.background(hex("#101014")))
+Row::new().style(CARD.background(hex("#1c1c22")))
+```
+
+A `const` is substituted at each use, so every `CARD` is a fresh value and a
+`self`-taking setter can consume it. No clone, no lifetime.
+
+The line a setter cannot cross is **whether the field's type needs dropping**,
+not whether it holds a `String` or a `Vec` — assigning over an owning field in a
+`const fn` is E0493, and `gradient` and `mask` hit it despite carrying no
+`String` of their own. Eight setters are therefore not `const`:
+`font_family`, `grid_columns`, `grid_rows`, `box_shadow`, `text_shadow`,
+`filter`, `backdrop_filter`, `gradient`, `mask`. A function returning a `Style`
+serves the same purpose there, and each one says so in its own doc.
+
+`px` takes an `f32`, so `px(16.0)` and not `px(16)` — Rust does not coerce an
+integer literal, `impl Into<f32>` cannot be `const`, and an `i32` parameter
+would lose `px(0.5)`.
+
+`Style` is deliberately not `#[non_exhaustive]`: the rest pattern above is the
+documented escape hatch for a property with no setter, and `non_exhaustive`
+forbids exactly that.
+
+Every field stays public, so a property with no setter is still reachable:
+
+```rust
+.style(Style { aspect_ratio: Some(1.618), ..Style::new().gap(px(8.0)) })
+```
+
+## The JavaScript surface
+
+Object literals, not builders. The two surfaces are siblings, so each is
+idiomatic in its own language rather than one imitating the other — and this is
+the shape v1 already has.
+
+```js
+const canvas = await Root({
+  width: 800,
+  height: 400,
+  children: [
+    Row({
+      style: { gap: 16, padding: 24, background: '#101014' },
+      children: [
+        Image({ src: 'avatar.png', style: { width: 64, height: 64, fit: 'cover' } }),
+        Text('Ukasyah', { style: { fontSize: 24, fontWeight: 'bold' } }),
+      ],
+    }),
+  ],
+})
+
+const png = await canvas.toBuffer('png')
+const jpg = canvas.toBufferSync('jpg')
+```
+
+Same `style` key as the Rust surface, same CSS names, same values — `'row'`
+where Rust has `Row`, `16` where Rust has `px(16)`. The string-literal unions in
+`packages/meo-canvas/src/index.ts` are what make `'cover'` complete and `'covr'`
+a compile error.
+
+`width` and `height` belong on `Root` because the canvas is the sized thing and
+the tree is drawn into it. A retained canvas has a size.
+
+### One crossing, and when
+
+| call                | what crosses                                                |
+| ------------------- | ----------------------------------------------------------- |
+| `Row(…)`, `Text(…)` | nothing — plain objects, no native call                     |
+| `await Root({…})`   | the entire arena, one `Float64Array` and one `values` array |
+| `toBuffer(fmt)`     | a format tag and options                                    |
+
+A scene of any size is **one** crossing. There is no per-node call and no
+per-property call.
+
+### Why the tree is built before it is encoded
+
+JavaScript evaluates arguments inside out, so `Row({children: [Text('a')]})`
+runs `Text` before `Row`. Writing opcodes as each factory runs would land them
+post-order, and the arena is pre-order — a parent's opcode and child count
+precede its children. Buffering to reorder is the intermediate tree again, less
+visibly. So the factories build plain objects and `Root` encodes them in one
+pass.
+
+### The retained canvas
+
+`Root` is async because resolve performs I/O, and it runs the render on a
+`cx.task` thread so a server's event loop is never blocked by a paint.
+
+It returns a handle holding a `JsBox<RenderedCanvas>` — the painted `Surface`
+and its `Renderer`. `toBuffer` encodes that surface again at a different format;
+**it does not re-render.** Two formats of one picture cost one resolve, one
+measure, one layout, one paint, and two encodes.
+
+`JsBox` requires `Finalize`, so the Skia surface is freed when the handle is
+collected. No `FinalizationRegistry`: v1 needed one because its canvas lived in
+a worker, and this one does not. `toBufferSync` needs no `Atomics` bridge for
+the same reason. `release()` exists for a caller that will not wait for a
+collection.
+
+### Where the overhead is
+
+The crossing is one call, so the only JavaScript cost that scales with the scene
+is building the tree and encoding it.
+
+**Node objects are monomorphic** — the same keys in the same order on every
+node, absent fields present as `undefined`. A node that sometimes carries `src`
+gets a second hidden class and deoptimises every property read in the encoder.
+
+**Styles are read, never copied.** No spread, no per-node defaults merge; the
+defaults already exist in Rust.
+
+**Encoding is one pass** into a preallocated `Float64Array` grown by doubling,
+written with plain typed-array stores. `meo-skia-canvas`'s `drawlist.js`
+measured why that shape matters: a store into a `Float64Array` is one operation,
+and reading the value back out of V8 from Rust was 39ns of the 82ns a `lineTo`
+cost.
 
 ## Workspace
 

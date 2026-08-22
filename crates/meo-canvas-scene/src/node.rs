@@ -106,6 +106,26 @@ pub enum PathPaint {
     Gradient(Gradient),
 }
 
+wire_enum! {
+    /// Which [`NodeKind`] a record holds, as one number.
+    ///
+    /// The single definition both representations read. [`crate::codec`]
+    /// writes it as its kind tag byte and the addon's `f64` arena writes it as
+    /// its opcode, so the two are the same number by construction rather than
+    /// by two tables agreeing -- which is the failure the byte format's
+    /// hand-written discriminants exist to avoid in the first place.
+    pub enum NodeTag {
+        /// A container.
+        Box = 0,
+        /// A paragraph.
+        Text = 1,
+        /// A raster image.
+        Image = 2,
+        /// An SVG path.
+        Path = 3,
+    }
+}
+
 /// What a node draws, and the properties only that kind of drawing has.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeKind {
@@ -190,6 +210,19 @@ pub struct Node {
     pub children: Vec<NodeId>,
     /// A name carried through for diagnostics, which the renderer never reads.
     pub name: Option<String>,
+}
+
+impl NodeKind {
+    /// Which kind this is, as the number both representations write.
+    #[must_use]
+    pub const fn tag(&self) -> NodeTag {
+        match self {
+            Self::Box => NodeTag::Box,
+            Self::Text { .. } => NodeTag::Text,
+            Self::Image { .. } => NodeTag::Image,
+            Self::Path { .. } => NodeTag::Path,
+        }
+    }
 }
 
 impl Node {

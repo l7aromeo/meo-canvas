@@ -1,33 +1,77 @@
 //! Draw a picture by describing it, not by issuing commands.
 //!
-//! A caller builds a tree of nodes with sizes expressed the way CSS expresses
-//! them, hands it over, and gets image bytes back. Placement is solved by a
-//! real flexbox, grid and block implementation rather than by the caller doing
-//! arithmetic on measured extents.
-//!
-//! ```no_run
+//! ```
 //! use meo_canvas::{
-//!     Canvas, CanvasOptions, Format,
-//!     scene::{Color, Node, NodeId, PaintStyle, Size},
+//!     Column, Image, Row, Style, Text, all, hex_rgb, px, scene::ObjectFit,
 //! };
 //!
-//! let canvas = Canvas::new(CanvasOptions {
-//!     size: Size::new(800.0, 600.0),
-//!     scale: 2.0,
-//!     ..CanvasOptions::default()
-//! });
+//! let card = Row::new()
+//!     .style(
+//!         Style::new()
+//!             .gap(px(16.0))
+//!             .padding(all(px(24.0)))
+//!             .background(hex_rgb(0x10_10_14)),
+//!     )
+//!     .children([
+//!         Image::path("avatar.png").style(
+//!             Style::new().size(px(64.0), px(64.0)).fit(ObjectFit::Cover),
+//!         ),
+//!         Column::new().children([
+//!             Text::new("Ukasyah").style(Style::new().font_size(24.0).bold()),
+//!             Text::new("Bandung")
+//!                 .style(Style::new().color(hex_rgb(0x88_88_90))),
+//!         ]),
+//!     ]);
 //!
-//! let mut scene = canvas.scene();
-//! scene.push(
-//!     NodeId::ROOT,
-//!     Node::container().with_paint(PaintStyle {
-//!         background_color: Color::rgb(0x11, 0x22, 0x33),
-//!         ..PaintStyle::default()
-//!     }),
-//! )?;
+//! let scene = card.into_scene(360.0, 112.0)?;
+//! # Ok::<(), meo_canvas_scene::SceneError>(())
+//! ```
 //!
-//! let _bytes = canvas.render(&scene, Format::Png)?;
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! A node carries a constructor, a [`Style`], and its children. Three methods,
+//! and the set never grows: a new property is a new method on `Style`, not on
+//! nine node types. Each node's essential argument is a constructor parameter
+//! -- [`Text::new`] takes the content, [`Image::path`] the source, [`Path::d`]
+//! the data -- so it cannot be forgotten.
+//!
+//! # One flat style
+//!
+//! [`Style`] is one type, not four. Authoring is flat because CSS is flat: a
+//! reader never has to know which group `gap` lives in versus `background`. The
+//! scene keeps them grouped because the codec needs them grouped, and
+//! [`Style::into_parts`] splits at the moment the tree becomes a scene.
+//!
+//! The names and the behaviour are CSS's. [`Style::color`] is the inherited
+//! text colour and [`Style::background`] is the fill; the two sit adjacent and
+//! mean different things, which is CSS's trap and not one invented here.
+//! Keeping it is what lets a design be ported without translation.
+//!
+//! Setters are `const` wherever the property allows, so a reusable base is a
+//! `const`:
+//!
+//! ```
+//! use meo_canvas::{Row, Style, all, hex_rgb, px};
+//!
+//! const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
+//!
+//! let dark = Row::new().style(CARD.background(hex_rgb(0x10_10_14)));
+//! let light = Row::new().style(CARD.background(hex_rgb(0x1c_1c_22)));
+//! ```
+//!
+//! A `const` is substituted at each use, so every `CARD` is a fresh value a
+//! `self`-taking setter may consume. No clone and no lifetime. A property
+//! holding a `String` or a `Vec` cannot be `const`, because assigning one drops
+//! what it replaces; a function returning a `Style` serves the same purpose
+//! there.
+//!
+//! Every field is public, so a property with no setter is still reachable:
+//!
+//! ```
+//! use meo_canvas::{Style, px};
+//!
+//! let golden = Style {
+//!     aspect_ratio: Some(1.618),
+//!     ..Style::new().gap(px(8.0))
+//! };
 //! ```
 //!
 //! # The shape of the API
@@ -54,7 +98,18 @@
 //! here -- that API already exists, in `meo-skia-canvas`, and reproducing it
 //! would give the workspace two answers to the same question.
 
+pub mod element;
+pub mod style;
+pub mod unit;
+
+pub use element::{Box, Column, Element, Grid, Image, Path, Row, Text};
 pub use meo_canvas_core::{Error, ImageFormat as Format};
+pub use style::Style;
+pub use unit::{
+    DefaultZero, all, auto, bottom, corners, corners_all, fr, hex, hex_rgb,
+    hex_rgba, left, pct, px, rgb, rgba, right, sides, size_auto, top, track,
+    xy,
+};
 
 /// The scene vocabulary, re-exported so callers need one dependency rather than
 /// two.
@@ -62,9 +117,27 @@ pub mod scene {
     pub use meo_canvas_scene::{
         Corners, Dimension, Length, Node, NodeId, NodeKind, Point, Rect, Scene,
         SceneError, Sides, Size,
+        node::{ImageSource, LineCap, LineJoin, PathPaint},
         style::{
-            layout::{Display, LayoutStyle},
-            paint::{Color, PaintStyle},
+            PaintOrder,
+            effect::{
+                BoxShadow, Effects, FillRule, Mask, MaskShape, TextShadow,
+                Transform,
+            },
+            layout::{
+                Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
+                GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
+                PositionType, TrackSize,
+            },
+            paint::{
+                BackgroundRepeat, BlendMode, BorderStyle, Color, GradientKind,
+                ObjectFit, PaintStyle,
+            },
+            text::{
+                FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
+                TextAlign, TextDecoration, TextStroke, TextStyle,
+                VerticalAlign,
+            },
         },
     };
 }

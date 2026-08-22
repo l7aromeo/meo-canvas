@@ -13,7 +13,10 @@
 use super::{CodecError, Reader, Wire, Writer};
 use crate::{
     geometry::{Corners, Sides},
-    node::{ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, PathPaint},
+    node::{
+        ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
+        PathPaint,
+    },
     style::{
         Dimension, Length,
         effect::{
@@ -741,12 +744,12 @@ impl Wire for Effects {
 impl Wire for NodeKind {
     fn write(&self, out: &mut Writer<'_>) {
         match self {
-            Self::Box => out.u8(TAG_FIRST),
+            Self::Box => out.u8(NodeTag::Box.to_wire()),
             Self::Text {
                 segments,
                 paragraph,
             } => {
-                out.u8(1);
+                out.u8(NodeTag::Text.to_wire());
                 out.list(segments);
                 paragraph.max_lines.write(out);
                 paragraph.ellipsis.write(out);
@@ -757,7 +760,7 @@ impl Wire for NodeKind {
                 position,
                 frame,
             } => {
-                out.u8(2);
+                out.u8(NodeTag::Image.to_wire());
                 source.write(out);
                 fit.write(out);
                 position.0.write(out);
@@ -775,7 +778,7 @@ impl Wire for NodeKind {
                 line_dash,
                 line_dash_offset,
             } => {
-                out.u8(3);
+                out.u8(NodeTag::Path.to_wire());
                 out.str(data);
                 fill.write(out);
                 stroke.write(out);
@@ -791,22 +794,23 @@ impl Wire for NodeKind {
 
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         let offset = input.offset();
-        match input.u8()? {
-            TAG_FIRST => Ok(Self::Box),
-            1 => Ok(Self::Text {
+        let tag = input.u8()?;
+        match NodeTag::from_wire(tag) {
+            Some(NodeTag::Box) => Ok(Self::Box),
+            Some(NodeTag::Text) => Ok(Self::Text {
                 segments: input.list()?,
                 paragraph: ParagraphStyle {
                     max_lines: Option::read(input)?,
                     ellipsis: Option::read(input)?,
                 },
             }),
-            2 => Ok(Self::Image {
+            Some(NodeTag::Image) => Ok(Self::Image {
                 source: ImageSource::read(input)?,
                 fit: Wire::read(input)?,
                 position: (Length::read(input)?, Length::read(input)?),
                 frame: Option::read(input)?,
             }),
-            3 => Ok(Self::Path {
+            Some(NodeTag::Path) => Ok(Self::Path {
                 data: input.str()?,
                 fill: Option::read(input)?,
                 stroke: Option::read(input)?,
@@ -817,7 +821,7 @@ impl Wire for NodeKind {
                 line_dash: input.list()?,
                 line_dash_offset: input.f32()?,
             }),
-            tag => Err(CodecError::UnknownTag { offset, tag }),
+            None => Err(CodecError::UnknownTag { offset, tag }),
         }
     }
 }
