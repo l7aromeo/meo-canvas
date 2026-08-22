@@ -699,6 +699,45 @@ describe('a path node', () => {
       line_dash_offset: 0,
     })
   })
+
+  it('carries every part of its paint when the caller names one', () => {
+    expect(
+      page(
+        Path({
+          d: 'M0 0 L4 4',
+          fill: '#01020304',
+          stroke: '#05060708',
+          lineWidth: 2.5,
+          fillRule: 'evenodd',
+          lineCap: 'round',
+          lineJoin: 'bevel',
+          lineDash: [1, 2],
+          lineDashOffset: 0.5,
+        }),
+      ).payload,
+    ).toEqual({
+      data: 'M0 0 L4 4',
+      fill: { tag: 'solid', value: { r: 1, g: 2, b: 3, a: 4 } },
+      stroke: { tag: 'solid', value: { r: 5, g: 6, b: 7, a: 8 } },
+      line_width: 2.5,
+      fill_rule: 'EvenOdd',
+      line_cap: 'Round',
+      line_join: 'Bevel',
+      line_dash: [1, 2],
+      line_dash_offset: 0.5,
+    })
+  })
+
+  it("reads 'none' as no paint at all, not as a transparent one", () => {
+    // A transparent paint is a paint that draws nothing; absent is no paint.
+    // The scene distinguishes them and the encoder has to as well.
+    const payload = page(Path({ d: 'M0 0', fill: 'none', stroke: 'none' })).payload as Record<string, unknown>
+    expect(payload.fill).toBeNull()
+    expect(payload.stroke).toBeNull()
+
+    const transparent = page(Path({ d: 'M0 0', fill: 'transparent' })).payload as Record<string, unknown>
+    expect(transparent.fill).toEqual({ tag: 'solid', value: { r: 0, g: 0, b: 0, a: 0 } })
+  })
 })
 
 describe('the shorthands', () => {
@@ -851,22 +890,22 @@ describe('a half-written shorthand', () => {
 })
 
 describe('an offset with no position type', () => {
-  it('crosses as an inset that the scene will ignore, which is a trap', () => {
-    // `PositionType` defaults to `Static` in the scene -- CSS's initial value,
-    // which ignores `inset`. So this encodes the offsets faithfully and the
-    // renderer then does nothing with them.
+  it('crosses faithfully, and the layout is what ignores it', () => {
+    // `PositionType` defaults to `Static`, CSS's initial value, which ignores
+    // `inset`. So the offsets are encoded exactly as written and the layout
+    // does nothing with them — which is what Chrome does, measured across
+    // block, flex and grid.
     //
-    // v1 has no such trap: Yoga's default is `Relative`, so a v1 tree with
-    // `position` and no `positionType` moves. A ported tree stops moving, and
-    // nothing anywhere says so.
+    // Deliberate, and the division is the point: **round-trip fidelity is the
+    // codec's contract and dropping the offsets is the layout's.** Refusing the
+    // combination here, or quietly writing `positionType: 'relative'` beside
+    // it, would make the codec lie to compensate for the layout — and would
+    // cost the `inset` case its byte check, since this node would then carry
+    // two properties where the case carries one.
     //
-    // Asserted rather than fixed, because every fix costs something: refusing
-    // it, or defaulting `positionType` to `'relative'` beside it, both make
-    // this node carry two properties where the case fixture's `inset` case
-    // carries one -- so the byte-for-byte check against Rust for `inset` would
-    // no longer have a scene it could compare. That trade is not mine to take
-    // quietly. This test is here so the behaviour is written down and the
-    // decision is visible when it is made.
+    // v1 has no equivalent, because Yoga's default is `Relative`: a ported tree
+    // that positioned things stops positioning them. That is a porting note,
+    // not a defect in the codec.
     const decoded = page(Box({ position: { top: 4 } }))
 
     expect(decoded.groups.layout).toEqual({ inset: [{ tag: 'points', value: 4 }, null, null, null] })
@@ -940,11 +979,25 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     objectPosition: ['0.25%', 3],
     frame: 2,
   }),
+  // The markup form of a text node: `Text` sets the discriminant and the string
+  // crosses unparsed, because the parser lives in Rust so both surfaces get it.
+  __kind_text_markup: Text('one <b>two</b>'),
   __kind_image_bytes: Image({
     src: { bytes: new Uint8Array([1, 2, 3]) },
     objectFit: 'cover',
     objectPosition: ['0.25%', 3],
     frame: 2,
+  }),
+  __kind_path: Path({
+    d: 'M0 0 L4 4',
+    fill: '#01020304',
+    stroke: '#05060708',
+    lineWidth: 2.5,
+    fillRule: 'evenodd',
+    lineCap: 'round',
+    lineJoin: 'bevel',
+    lineDash: [1, 2],
+    lineDashOffset: 0.5,
   }),
 }
 
@@ -956,8 +1009,8 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
  * rather than being quietly untested from this side.
  */
 const UNSPELT_KINDS: Readonly<Record<string, string>> = {
-  __kind_path:
-    "a path's fill, stroke, dash, cap and join have no spelling on either surface — the Rust `Path::d` writes the same fixed black fill and no stroke that this does, so the case is unreachable from both and not from this one alone",
+  __kind_path_gradient:
+    'a path painted with a gradient. This surface has no spelling for a gradient anywhere — `gradient` and `backgroundImage` are absent from its style table for the same reason — so the arm is unreachable from here. Everything else about a path is probed by `__kind_path`, which is why the gradient is a case of its own rather than part of that one.',
 }
 
 describe('the node kinds', () => {
@@ -976,6 +1029,24 @@ describe('the node kinds', () => {
   })
 })
 
+/**
+ * What the arena actually carries for a case, out of what the case records.
+ *
+ * A markup case records two things: the string the arena holds, and what Rust
+ * parses it into. Only the first crosses — the parser runs on the far side,
+ * which is the whole reason the discriminant exists — so the round trip
+ * compares against the markup and the paragraph, and the `parses_to` segments
+ * are Rust documenting itself rather than something this side can check.
+ *
+ * Derived from the case rather than written out beside the probe, so a case
+ * whose parse changes does not need this file edited.
+ */
+function carried(value: unknown): unknown {
+  const payload = value as { markup?: string; parses_to?: { paragraph: unknown } }
+  if (payload.markup === undefined || payload.parses_to === undefined) return value
+  return { paragraph: payload.parses_to.paragraph, markup: payload.markup }
+}
+
 describe('a node kind crosses as itself', () => {
   for (const [name, probe] of Object.entries(KIND_PROBES)) {
     it(`carries the payload of ${name}`, () => {
@@ -986,7 +1057,7 @@ describe('a node kind crosses as itself', () => {
       const tag = Object.entries(NODE_TAG).find(([, value]) => value === expected.index)
 
       expect(decoded.kind, `${name} is not the tag the case names`).toBe(tag?.[0])
-      expect(decoded.payload).toEqual(expected.value)
+      expect(decoded.payload).toEqual(carried(expected.value))
       // A payload is not a style: a kind case that quietly set one would be
       // checking two things and reporting one.
       for (const group of GROUPS) expect(decoded.groups[group.key]).toEqual({})

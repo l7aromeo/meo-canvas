@@ -76,12 +76,38 @@ function examples(path, text) {
     if (open === -1) return
 
     const body = lines.slice(open + 1, index).map(inner => inner.replace(/^\s*\* ?/, ''))
-    found.push({ line: open + 1, body })
+    found.push({ anchor: anchorAfter(lines, index), body })
     open = -1
   })
 
   if (open !== -1) fail(path, `line ${open + 1}: a \`\`\`ts block is never closed`)
   return found
+}
+
+/** What a declaration looks like, close enough to take its name from. */
+const DECLARATION = /^export (?:async )?(?:function|const|class|interface|type|enum) (\w+)/
+
+/**
+ * The name of the item a block documents, found by reading forward from it.
+ *
+ * The artefact used to record the block's line number, which made it stale
+ * whenever anything above the comment moved — four times in one day, none of
+ * them a change to an example. A line number is where a thing is; the name is
+ * what it is, and only the second is what this gate checks.
+ *
+ * `undefined` for a block in a module-level comment, which documents no item.
+ */
+function anchorAfter(lines, closedAt) {
+  // The comment first: a block sits inside one, and the item is what follows
+  // its close. Reading on past that would walk through imports and other
+  // declarations and attach a module-level example to whatever came first,
+  // which is a name that says the wrong thing rather than no name.
+  let index = closedAt
+  while (index < lines.length && !lines[index].includes('*/')) index += 1
+  index += 1
+
+  while (index < lines.length && lines[index].trim() === '') index += 1
+  return DECLARATION.exec(lines[index] ?? '')?.[1]
 }
 
 /** Splits an example into its import lines and everything else. */
@@ -112,7 +138,7 @@ function mergeImports(collected) {
       const rewritten = line.replaceAll(`'${PACKAGE_SPECIFIER}'`, `'${LOCAL_SPECIFIER}'`)
       const parsed = /^import\s+(type\s+)?\{([^}]*)\}\s+from\s+'([^']+)'/.exec(rewritten)
       if (!parsed) {
-        fail(example.file, `line ${example.line}: this generator reads only \`import { .. } from '..'\`, not ${rewritten.trim()}`)
+        fail(example.file, `${example.anchor ?? 'a module-level comment'}: this generator reads only \`import { .. } from '..'\`, not ${rewritten.trim()}`)
       }
       const [, isType, names, source] = parsed
       const entry = bySource.get(source) ?? { value: new Set(), type: new Set() }
@@ -143,10 +169,19 @@ function emit(collected) {
 
   // `async`, so an example may `await`. A caller's example is written the way a
   // caller writes it, and half of this package's surface returns a Promise.
-  const bodies = collected.map((example, index) => {
-    const name = `example${index}`
+  // Named and labelled by the item each example documents rather than by
+  // position or line, so an edit elsewhere in the file does not move them. Two
+  // blocks on one item are numbered against each other, which is the only
+  // ordering left that a reader could be surprised by.
+  const seen = new Map()
+  const bodies = collected.map(example => {
+    const base = example.anchor ?? example.file.replace(/\.ts$/, '').replaceAll(/[^A-Za-z0-9]/g, '_')
+    const count = (seen.get(base) ?? 0) + 1
+    seen.set(base, count)
+    const name = `example_${base}${count > 1 ? `_${count}` : ''}`
+    const documents = example.anchor === undefined ? example.file : `${example.file}, ${example.anchor}`
     const indented = example.rest.map(line => (line === '' ? '' : `  ${line}`))
-    return [`/** \`${example.file}\`, line ${example.line}. */`, `export async function ${name}(): Promise<void> {`, ...indented, '}', ''].join('\n')
+    return [`/** \`${documents}\`. */`, `export async function ${name}(): Promise<void> {`, ...indented, '}', ''].join('\n')
   })
 
   return [
@@ -171,7 +206,7 @@ for (const path of await sources()) {
   const relative = path.slice(SOURCE_DIR.length + 1)
   for (const example of examples(path, text)) {
     const { imports, rest } = split(example.body)
-    collected.push({ file: relative, line: example.line, imports, rest })
+    collected.push({ file: relative, anchor: example.anchor, imports, rest })
   }
 }
 

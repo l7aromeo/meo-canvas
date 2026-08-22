@@ -26,7 +26,7 @@
  * @packageDocumentation
  */
 
-import type { Style } from './style.js'
+import type { Color, Style } from './style.js'
 
 /** What a node draws. */
 export type NodeKind = 'box' | 'text' | 'image' | 'path'
@@ -307,9 +307,35 @@ export function Image(props: ImageProps): SceneNode {
 }
 
 /** What a path node accepts: its data, and its style, flat. */
+/**
+ * How a path is painted.
+ *
+ * A CSS colour, or `'none'` for an unpainted fill or stroke. The scene also
+ * allows a gradient here; this surface has no spelling for one anywhere —
+ * `gradient` and `backgroundImage` are absent from its style table too — so the
+ * gap is the existing one rather than a new one.
+ */
+export type PathPaint = Color | 'none'
+
 export type PathProps = Style & {
   /** The SVG `d` attribute, in the node's own coordinates. */
   readonly d: string
+  /** How the interior is painted. Defaults to black, as SVG does. */
+  readonly fill?: PathPaint
+  /** How the outline is painted. Unset draws no stroke. */
+  readonly stroke?: PathPaint
+  /** How wide the stroke is drawn, in logical pixels. */
+  readonly lineWidth?: number
+  /** Which side of the winding counts as inside. */
+  readonly fillRule?: 'nonzero' | 'evenodd'
+  /** How the stroke's ends are drawn. */
+  readonly lineCap?: 'butt' | 'round' | 'square'
+  /** How the stroke's corners are drawn. */
+  readonly lineJoin?: 'bevel' | 'round' | 'miter'
+  /** Alternating dash and gap lengths. Empty or unset draws a solid line. */
+  readonly lineDash?: readonly number[]
+  /** How far into the dash pattern the stroke begins. */
+  readonly lineDashOffset?: number
   /** A name carried through for diagnostics. */
   readonly name?: string
 }

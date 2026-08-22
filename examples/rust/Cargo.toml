@@ -9,5 +9,14 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+# The GPU backend this example asks for, forwarded so `just example` can name
+# the platform's. Without it the Rust half rasterises on the CPU while the
+# JavaScript half uses the GPU, and the two draw the same picture a channel or
+# two apart -- which is what the byte comparison in `just example` now catches.
+[features]
+default = []
+metal = ["meo-canvas/metal"]
+vulkan = ["meo-canvas/vulkan"]
+
 [dependencies]
 meo-canvas = { path = "../../crates/meo-canvas" }

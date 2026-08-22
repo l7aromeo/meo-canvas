@@ -506,11 +506,11 @@ fn case_scene(apply: impl FnOnce(&mut Node)) -> Scene {
 /// fifty-four property cases are all styled Boxes, so a change to a payload's
 /// shape passed every gate in the project and was caught by running an example.
 ///
-/// One entry per [`NodeTag`], asserted in
-/// `every_node_kind_has_a_case`, plus one per [`ImageSource`] variant: the
-/// three write a string, a string and a byte buffer, so a writer that got the
-/// buffer wrong would pass on the strength of a path.
-fn kind_cases() -> Vec<(String, NodeTag, NodeKind)> {
+/// One entry per [`NodeTag`], asserted in `every_node_kind_has_a_case`, plus
+/// one per [`ImageSource`] variant -- the three write a string, a string and a
+/// byte buffer, so a writer that got the buffer wrong would pass on the
+/// strength of a path -- plus both arms of the text discriminant.
+fn kind_cases() -> Vec<KindCase> {
     let gradient = Gradient {
         kind: GradientKind::Linear,
         stops: vec![GradientStop {
@@ -531,8 +531,23 @@ fn kind_cases() -> Vec<(String, NodeTag, NodeKind)> {
     };
 
     vec![
-        (format!("{KIND_PREFIX}box"), NodeTag::Box, NodeKind::Box),
-        (
+        KindCase::built(
+            format!("{KIND_PREFIX}box"),
+            NodeTag::Box,
+            NodeKind::Box,
+        ),
+        // The markup arm of the text discriminant. The scene holds segments
+        // either way -- the discriminant is the arena's, not the codec's -- so
+        // what this pins is that a probe writing the string produces the runs
+        // Rust parses out of it. A string chosen to parse into something no
+        // other case encodes, since two cases with equal bytes mean one of
+        // them writes nothing.
+        KindCase::markup(
+            format!("{KIND_PREFIX}text_markup"),
+            "one <b>two</b>",
+            ParagraphStyle::default(),
+        ),
+        KindCase::built(
             format!("{KIND_PREFIX}text"),
             NodeTag::Text,
             NodeKind::Text {
@@ -560,31 +575,31 @@ fn kind_cases() -> Vec<(String, NodeTag, NodeKind)> {
                 },
             },
         ),
-        (
+        KindCase::built(
             format!("{KIND_PREFIX}image_path"),
             NodeTag::Image,
             image(ImageSource::Path(String::from("probe.png"))),
         ),
-        (
+        KindCase::built(
             format!("{KIND_PREFIX}image_url"),
             NodeTag::Image,
             image(ImageSource::Url(String::from("https://probe.invalid/a"))),
         ),
-        (
+        KindCase::built(
             format!("{KIND_PREFIX}image_bytes"),
             NodeTag::Image,
             image(ImageSource::Bytes(vec![1, 2, 3])),
         ),
-        (
+        // Two path cases, split along what a surface can say rather than along
+        // anything in the format. Everything here is solid paint, which both
+        // surfaces spell, so this one is probed from both sides.
+        KindCase::built(
             format!("{KIND_PREFIX}path"),
             NodeTag::Path,
             NodeKind::Path {
                 data: String::from("M0 0 L4 4"),
-                // One paint of each variant, both present: the pair is a
-                // two-armed tag inside an option, and a case with only a solid
-                // fill would leave the gradient arm unwritten.
                 fill: Some(PathPaint::Solid(Color::rgba(1, 2, 3, 4))),
-                stroke: Some(PathPaint::Gradient(gradient)),
+                stroke: Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))),
                 line_width: 2.5,
                 fill_rule: FillRule::EvenOdd,
                 line_cap: LineCap::Round,
@@ -593,7 +608,90 @@ fn kind_cases() -> Vec<(String, NodeTag, NodeKind)> {
                 line_dash_offset: 0.5,
             },
         ),
+        // The gradient arm of the paint tag, which is a two-armed tag inside
+        // an option: a case with only solid paint leaves half of it
+        // unwritten. Kept apart because a gradient has no spelling on
+        // the TypeScript surface at all -- `gradient` and
+        // `background_image` are absent from its paint table too -- so
+        // folding it into the case above would make the whole path
+        // payload unreachable from that side to cover one arm.
+        KindCase::built(
+            format!("{KIND_PREFIX}path_gradient"),
+            NodeTag::Path,
+            NodeKind::Path {
+                data: String::from("M0 0 L4 4"),
+                fill: None,
+                stroke: Some(PathPaint::Gradient(gradient)),
+                line_width: 1.0,
+                fill_rule: FillRule::NonZero,
+                line_cap: LineCap::Butt,
+                line_join: LineJoin::Miter,
+                line_dash: Vec::new(),
+                line_dash_offset: 0.0,
+            },
+        ),
     ]
+}
+
+/// One node kind's case: the scene to build, and how a probe writes it.
+struct KindCase {
+    /// The artefact key.
+    key: String,
+    /// The opcode the node's first slot carries.
+    tag: NodeTag,
+    /// The payload the scene ends up holding.
+    kind: NodeKind,
+    /// The markup a probe writes instead of building the payload.
+    ///
+    /// `Some` for the one case that exercises the arena's text discriminant.
+    /// The scene is the same either way -- [`meo_canvas_scene::Scene`] holds
+    /// segments however they arrived -- so a probe that wrote the runs
+    /// directly would produce these bytes without ever setting the
+    /// discriminant, and the case would pass while testing nothing.
+    markup: Option<String>,
+}
+
+impl KindCase {
+    /// A case whose payload the probe builds field by field.
+    fn built(key: String, tag: NodeTag, kind: NodeKind) -> Self {
+        Self {
+            key,
+            tag,
+            kind,
+            markup: None,
+        }
+    }
+
+    /// A case whose payload the probe writes as a markup string.
+    ///
+    /// The segments come from [`meo_canvas_core::markup::parse_paragraph`], the
+    /// same function the decoder calls, so the expectation is what the parser
+    /// actually produces rather than a second reading of the markup.
+    fn markup(key: String, source: &str, paragraph: ParagraphStyle) -> Self {
+        Self {
+            key,
+            tag: NodeTag::Text,
+            kind: NodeKind::Text {
+                segments: meo_canvas_core::markup::parse_paragraph(source),
+                paragraph,
+            },
+            markup: Some(source.to_owned()),
+        }
+    }
+
+    /// The case's `value`: the payload, and the markup where there is one.
+    fn value(&self) -> String {
+        let payload = kind_json(&self.kind);
+        self.markup.as_ref().map_or_else(
+            || payload.clone(),
+            |markup| {
+                format!(
+                    "{{\"markup\":{},\"parses_to\":{payload}}}",
+                    json_string(markup)
+                )
+            },
+        )
+    }
 }
 
 /// One node kind's payload as JSON.
@@ -728,17 +826,17 @@ fn cases() -> BTreeMap<String, Case> {
         );
     }
 
-    for (key, tag, kind) in kind_cases() {
-        let scene = case_scene(|root| root.kind = kind.clone());
+    for case in kind_cases() {
+        let scene = case_scene(|root| root.kind = case.kind.clone());
         cases.insert(
-            key,
+            case.key.clone(),
             Case {
                 group: "kind",
                 // The tag's own wire value, which is what the TypeScript writer
                 // puts in the node's first slot. A property case's index names
                 // a mask bit; a kind case's names the opcode.
-                index: u32::from(tag.to_wire()),
-                value: kind_json(&kind),
+                index: u32::from(case.tag.to_wire()),
+                value: case.value(),
                 bytes: case_bytes(&scene),
             },
         );
@@ -771,6 +869,7 @@ fn render(cases: &BTreeMap<String, Case>) -> String {
         "GENERATED by `just arena-cases`. Never edit this file.",
         "One case per property of the arena tables in crates/meo-canvas-node/src/arena.rs, plus __all setting every property at once.",
         "One case per node kind, keyed __kind_*, whose `index` is the NodeTag opcode rather than a mask bit and whose `value` describes the payload in wire order. The property cases are all styled Boxes, so these are the only ones that encode a payload at all.",
+        "Two text cases, because the arena's text payload carries a discriminant the codec does not: __kind_text_markup writes a string the renderer parses and carries `markup` beside the `parses_to` it must produce, and __kind_text writes runs the caller built. Both reach the same kind of scene, so a probe that built runs for the markup case would match its bytes without ever setting the discriminant.",
         "Keys are Rust field names. The TypeScript spelling is the public API and lives in the encoder, not here.",
         "`value` mirrors the Rust type; the adapters that turn it into what a caller writes live on the TypeScript side.",
         "`bytes` is base64 of meo_canvas_scene::codec::encode of a scene with that one property set.",
@@ -870,6 +969,30 @@ mod tests {
         assert!(cases.contains_key(ALL_KEY));
     }
 
+    /// The text discriminant has a case for each of its two arms.
+    ///
+    /// A markup case and a runs case reach the same `Scene` -- the discriminant
+    /// is the arena's and the codec never sees it -- so a probe that built the
+    /// runs directly would produce the markup case's bytes without ever setting
+    /// the discriminant. The two arms are the reason both cases exist; one of
+    /// them alone would pass while half the format went unwritten.
+    #[test]
+    fn both_arms_of_the_text_discriminant_have_a_case() {
+        let text: Vec<super::KindCase> = kind_cases()
+            .into_iter()
+            .filter(|case| case.tag == NodeTag::Text)
+            .collect();
+
+        assert!(
+            text.iter().any(|case| case.markup.is_some()),
+            "no case writes text as markup"
+        );
+        assert!(
+            text.iter().any(|case| case.markup.is_none()),
+            "no case writes text as runs the caller built"
+        );
+    }
+
     /// Every node kind has a case, so a payload cannot go untested.
     ///
     /// The partition rule the property cases follow, applied to the axis they
@@ -880,7 +1003,7 @@ mod tests {
     #[test]
     fn every_node_kind_has_a_case() {
         let covered: std::collections::HashSet<NodeTag> =
-            kind_cases().into_iter().map(|(_, tag, _)| tag).collect();
+            kind_cases().into_iter().map(|case| case.tag).collect();
         for tag in NodeTag::ALL {
             assert!(
                 covered.contains(tag),
@@ -897,7 +1020,7 @@ mod tests {
     #[test]
     fn every_image_source_variant_has_a_case() {
         let payloads: Vec<NodeKind> =
-            kind_cases().into_iter().map(|(_, _, kind)| kind).collect();
+            kind_cases().into_iter().map(|case| case.kind).collect();
         let sources: Vec<&ImageSource> = payloads
             .iter()
             .filter_map(|kind| match kind {
@@ -923,10 +1046,11 @@ mod tests {
     /// A kind case's key is prefixed, so it can never shadow a property.
     #[test]
     fn a_kind_case_cannot_collide_with_a_property_case() {
-        for (key, _, _) in kind_cases() {
+        for case in kind_cases() {
             assert!(
-                key.starts_with(super::KIND_PREFIX),
-                "{key} is not in the kind namespace"
+                case.key.starts_with(super::KIND_PREFIX),
+                "{} is not in the kind namespace",
+                case.key
             );
         }
     }

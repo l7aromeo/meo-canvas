@@ -11,6 +11,14 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+# The GPU backend, forwarded through `meo-canvas-core` rather than named
+# directly: `meo-skia-canvas` is deliberately absent from this crate's
+# dependencies, and a feature that reached past core would put it back.
+default = []
+metal = ["meo-canvas-core/metal"]
+vulkan = ["meo-canvas-core/vulkan"]
+
 [dependencies]
 meo-canvas-core = { workspace = true }
 meo-canvas-scene = { workspace = true }

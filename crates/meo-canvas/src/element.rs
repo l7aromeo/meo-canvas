@@ -534,6 +534,132 @@ impl Image {
 #[non_exhaustive]
 pub struct Path;
 
+/// Properties that belong to one node kind rather than to every node.
+///
+/// These sit on [`Element`] beside the flat style setters, but they are not
+/// style: `max_lines` describes a paragraph and `stroke` describes a path, and
+/// neither inherits or means anything on a node of another kind. The scene
+/// holds them in the node's [`NodeKind`] for that reason, and these write
+/// there.
+///
+/// **A setter for the wrong kind is ignored**, as CSS ignores a property an
+/// element does not define. A `max_lines` on a `Box` is a caller saying
+/// something about a paragraph that is not there, and the alternatives are
+/// worse: a panic makes a typo fatal, and a `Result` puts error handling on
+/// every line of a builder chain.
+impl Element {
+    /// How many lines a paragraph draws before it is truncated.
+    ///
+    /// ```
+    /// use meo_canvas::Text;
+    ///
+    /// let excerpt = Text::new("a long paragraph").max_lines(2).ellipsis("…");
+    /// ```
+    #[must_use]
+    pub const fn max_lines(mut self, lines: u32) -> Self {
+        if let NodeKind::Text { paragraph, .. } = &mut self.kind {
+            paragraph.max_lines = Some(lines);
+        }
+        self
+    }
+
+    /// What a truncated last line ends with.
+    ///
+    /// Only drawn when [`Element::max_lines`] truncates something. Unset
+    /// truncates without a marker.
+    #[must_use]
+    pub fn ellipsis(mut self, marker: impl Into<String>) -> Self {
+        if let NodeKind::Text { paragraph, .. } = &mut self.kind {
+            paragraph.ellipsis = Some(marker.into());
+        }
+        self
+    }
+
+    /// How a path's interior is painted. `None` leaves it unfilled.
+    ///
+    /// ```
+    /// use meo_canvas::{Path, hex_rgb, scene::PathPaint};
+    ///
+    /// let tick = Path::d("M2 8 L6 12 L14 3")
+    ///     .fill(None)
+    ///     .stroke(Some(PathPaint::Solid(hex_rgb(0x22_cc_66))))
+    ///     .line_width(2.0);
+    /// ```
+    #[must_use]
+    pub fn fill(mut self, paint: Option<PathPaint>) -> Self {
+        if let NodeKind::Path { fill, .. } = &mut self.kind {
+            *fill = paint;
+        }
+        self
+    }
+
+    /// How a path's outline is painted. `None` leaves it unstroked.
+    #[must_use]
+    pub fn stroke(mut self, paint: Option<PathPaint>) -> Self {
+        if let NodeKind::Path { stroke, .. } = &mut self.kind {
+            *stroke = paint;
+        }
+        self
+    }
+
+    /// How wide a path's stroke is drawn, in logical pixels.
+    #[must_use]
+    pub const fn line_width(mut self, width: f32) -> Self {
+        if let NodeKind::Path { line_width, .. } = &mut self.kind {
+            *line_width = width;
+        }
+        self
+    }
+
+    /// Which side of a path's winding counts as inside.
+    #[must_use]
+    pub const fn fill_rule(mut self, rule: FillRule) -> Self {
+        if let NodeKind::Path { fill_rule, .. } = &mut self.kind {
+            *fill_rule = rule;
+        }
+        self
+    }
+
+    /// How a path's stroke ends are drawn.
+    #[must_use]
+    pub const fn line_cap(mut self, cap: LineCap) -> Self {
+        if let NodeKind::Path { line_cap, .. } = &mut self.kind {
+            *line_cap = cap;
+        }
+        self
+    }
+
+    /// How a path's stroke corners are drawn.
+    #[must_use]
+    pub const fn line_join(mut self, join: LineJoin) -> Self {
+        if let NodeKind::Path { line_join, .. } = &mut self.kind {
+            *line_join = join;
+        }
+        self
+    }
+
+    /// Alternating dash and gap lengths. Empty draws a solid line.
+    #[must_use]
+    pub fn line_dash(mut self, pattern: impl IntoIterator<Item = f32>) -> Self {
+        if let NodeKind::Path { line_dash, .. } = &mut self.kind {
+            *line_dash = pattern.into_iter().collect();
+        }
+        self
+    }
+
+    /// How far into the dash pattern the stroke begins.
+    #[must_use]
+    pub const fn line_dash_offset(mut self, offset: f32) -> Self {
+        if let NodeKind::Path {
+            line_dash_offset, ..
+        } = &mut self.kind
+        {
+            *line_dash_offset = offset;
+        }
+        self
+    }
+}
+
 impl Path {
     /// A path from an SVG `d` attribute.
     ///
@@ -561,15 +687,80 @@ impl Path {
 #[cfg(test)]
 mod tests {
     use meo_canvas_scene::{
-        node::{ImageSource, NodeKind},
+        node::{ImageSource, LineCap, LineJoin, NodeKind, PathPaint},
         style::{
+            effect::FillRule,
             layout::{Display, FlexDirection},
-            paint::ObjectFit,
+            paint::{Color, ObjectFit},
+            text::ParagraphStyle,
         },
     };
 
     use super::{Box, Column, Element, Grid, Image, Path, Row, Text};
     use crate::{Style, hex_rgb, px};
+
+    #[test]
+    fn a_paragraph_setter_writes_the_node_and_not_the_style() {
+        let NodeKind::Text { paragraph, .. } =
+            Text::new("x").max_lines(2).ellipsis("…").kind
+        else {
+            unreachable!("Text::new builds a text node");
+        };
+        assert_eq!(paragraph.max_lines, Some(2));
+        assert_eq!(paragraph.ellipsis.as_deref(), Some("…"));
+    }
+
+    #[test]
+    fn a_path_setter_writes_every_part_of_the_payload() {
+        let NodeKind::Path {
+            fill,
+            stroke,
+            line_width,
+            fill_rule,
+            line_cap,
+            line_join,
+            line_dash,
+            line_dash_offset,
+            ..
+        } = Path::d("M0 0 L4 4")
+            .fill(None)
+            .stroke(Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))))
+            .line_width(2.5)
+            .fill_rule(FillRule::EvenOdd)
+            .line_cap(LineCap::Round)
+            .line_join(LineJoin::Bevel)
+            .line_dash([1.0, 2.0])
+            .line_dash_offset(0.5)
+            .kind
+        else {
+            unreachable!("Path::d builds a path node");
+        };
+        assert_eq!(fill, None);
+        assert_eq!(stroke, Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))));
+        assert!((line_width - 2.5).abs() < f32::EPSILON);
+        assert_eq!(fill_rule, FillRule::EvenOdd);
+        assert_eq!(line_cap, LineCap::Round);
+        assert_eq!(line_join, LineJoin::Bevel);
+        assert_eq!(line_dash, vec![1.0, 2.0]);
+        assert!((line_dash_offset - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_setter_for_the_wrong_kind_is_ignored() {
+        // As CSS ignores a property an element does not define. The
+        // alternatives are worse: a panic makes a typo fatal, and a `Result`
+        // puts error handling on every line of a builder chain.
+        let box_node = Box::new().max_lines(2).ellipsis("…").line_width(9.0);
+        assert_eq!(box_node.kind, NodeKind::Box);
+
+        // And a path setter on a text node leaves the paragraph alone.
+        let NodeKind::Text { paragraph, .. } =
+            Text::new("x").line_width(9.0).kind
+        else {
+            unreachable!("Text::new builds a text node");
+        };
+        assert_eq!(paragraph, ParagraphStyle::default());
+    }
 
     #[test]
     fn text_new_reads_its_string_as_markup() {

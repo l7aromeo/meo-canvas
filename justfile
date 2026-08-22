@@ -155,7 +155,8 @@ fmt-check: ensure-deps
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
 
-# The consumer projects: typecheck them against the built package, then run them.
+# The consumer projects: typecheck them against the built package, run them, and
+# compare what they drew.
 #
 # Both of them, deliberately. They draw the same picture from the two surfaces,
 # so a surface left behind fails this command rather than being noticed later.
@@ -164,11 +165,22 @@ build-js: ensure-deps
 # through a dependency rather than from inside the workspace -- so it catches
 # what the test suites cannot: an exports map, a `types` field, an entry point,
 # or a public item that a caller needs and the crate does not export.
+#
+# **The byte comparison is the point, not a flourish.** One input through two
+# surfaces is a check neither surface's own tests can perform, and it has
+# already earned its place: the two pictures differed in 5,872 bytes because the
+# addon named a GPU backend and no Rust caller could, so one rasterised on the
+# GPU and the other on the CPU while both reported `gpu: true` -- `Surface::gpu`
+# reports the request rather than the outcome. Hence `--features` here, and the
+# `metal`/`vulkan` forwarding in `meo-canvas` and `meo-canvas-core`.
 [doc("Typecheck and run both consumer examples.")]
 example: build-js
     ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
     cd examples/bun && bun run index.ts
-    cd examples/rust && cargo run --quiet
+    cd examples/rust && cargo run --quiet --features "{{ host_features }}"
+    @cmp -s examples/bun/out.png examples/rust/out.png \
+      || { echo "error: the two surfaces drew different pictures; examples/bun/out.png and examples/rust/out.png differ"; exit 1; }
+    @echo "both surfaces drew the same bytes"
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps

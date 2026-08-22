@@ -46,7 +46,7 @@ import {
 } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
 import type { TrackSize } from './index.js'
-import type { ImageSource, SceneNode, TextSegment } from './node.js'
+import type { ImageSource, PathPaint, PathProps, SceneNode, TextSegment } from './node.js'
 import type { Color, Corners, Dimension, FontWeight, GridPlacement, Length, Sides, Spacing, Style } from './style.js'
 
 /** A value the arena cannot carry itself, held beside it. */
@@ -910,24 +910,45 @@ function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | un
   out.optional(style?.frame, frame => out.integer(frame))
 }
 
-/** Writes the payload only a path node has. */
-function writePathPayload(out: ArenaWriter, d: string): void {
-  out.text(d)
+/**
+ * Writes one of a path's two paints.
+ *
+ * The scene's `PathPaint` is a two-armed tag — solid or gradient — inside an
+ * option. This surface writes only the solid arm, because it has no spelling
+ * for a gradient anywhere: `gradient` and `backgroundImage` are absent from its
+ * style table for the same reason. `'none'` is the absent option rather than a
+ * transparent colour, which would be a paint that draws nothing rather than no
+ * paint at all.
+ */
+function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback: number | undefined): void {
+  if (paint === 'none' || (paint === undefined && fallback === undefined)) {
+    out.absent()
+    return
+  }
 
-  // A path with no paint of its own is filled black and not stroked, which is
-  // what the Rust surface writes and what SVG does. Neither has a spelling on
-  // this surface yet; when they get one they replace these, not the format.
   out.present()
   out.enum(0)
-  out.integer(BLACK)
-  out.absent()
+  out.integer(paint === undefined ? (fallback as number) : packColor(paint))
+}
 
-  out.f32(1)
-  out.enum(FILL_RULE.NonZero)
-  out.enum(LINE_CAP.Butt)
-  out.enum(LINE_JOIN.Miter)
-  out.count(0)
-  out.f32(0)
+/** Writes the payload only a path node has. */
+function writePathPayload(out: ArenaWriter, props: PathProps): void {
+  out.text(props.d)
+
+  // Black and unstroked when the caller says nothing, which is SVG's default
+  // and what the Rust surface writes.
+  writePathPaint(out, props.fill, BLACK)
+  writePathPaint(out, props.stroke, undefined)
+
+  out.f32(props.lineWidth ?? 1)
+  out.enum(props.fillRule === 'evenodd' ? FILL_RULE.EvenOdd : FILL_RULE.NonZero)
+  out.enum(variant(LINE_CAP, props.lineCap ?? 'butt', 'lineCap'))
+  out.enum(variant(LINE_JOIN, props.lineJoin ?? 'miter', 'lineJoin'))
+
+  const dash = props.lineDash ?? []
+  out.count(dash.length)
+  for (const length of dash) out.f32(length)
+  out.f32(props.lineDashOffset ?? 0)
 }
 
 /** Writes one node, its payload, and its subtree. */
@@ -937,7 +958,7 @@ function writeNode(out: ArenaWriter, node: SceneNode): void {
 
   if (node.kind === 'text') writeTextPayload(out, node)
   else if (node.kind === 'image' && node.src !== undefined) writeImagePayload(out, node.src, node.style)
-  else if (node.kind === 'path') writePathPayload(out, node.d ?? '')
+  else if (node.kind === 'path') writePathPayload(out, (node.style ?? {}) as PathProps)
 
   out.optional(node.name, name => out.text(name))
 

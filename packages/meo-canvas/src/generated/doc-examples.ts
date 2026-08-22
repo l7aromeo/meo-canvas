@@ -9,8 +9,8 @@
 
 import { Image, Path, Root, Row, Text } from '../index.js'
 
-/** `node.ts`, line 10. */
-export async function example0(): Promise<void> {
+/** `node.ts`. */
+export async function example_node(): Promise<void> {
 
   const card = Row({
     gap: 16,
@@ -20,26 +20,26 @@ export async function example0(): Promise<void> {
   })
 }
 
-/** `node.ts`, line 262. */
-export async function example1(): Promise<void> {
+/** `node.ts, Text`. */
+export async function example_Text(): Promise<void> {
 
   const name = Text('Ukasyah', { fontSize: 24 })
 }
 
-/** `node.ts`, line 298. */
-export async function example2(): Promise<void> {
+/** `node.ts, Image`. */
+export async function example_Image(): Promise<void> {
 
   const avatar = Image({ src: 'avatar.png', width: 64, height: 64, objectFit: 'cover' })
 }
 
-/** `node.ts`, line 320. */
-export async function example3(): Promise<void> {
+/** `node.ts, Path`. */
+export async function example_Path(): Promise<void> {
 
   const tick = Path({ d: 'M2 8 L6 12 L14 3' })
 }
 
-/** `root.ts`, line 282. */
-export async function example4(): Promise<void> {
+/** `root.ts, Root`. */
+export async function example_Root(): Promise<void> {
 
   const canvas = await Root({
     width: 520,
