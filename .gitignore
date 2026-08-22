@@ -37,7 +37,7 @@
 
 # -- TypeScript surface -----------------------------------------------------
 !/packages/*/package.json
-!/packages/*/tsconfig.json
+!/packages/*/tsconfig*.json
 !/packages/*/README.md
 
 # The package manifest's `files` list names LICENSE, so the tarball npm

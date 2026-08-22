@@ -82,3 +82,24 @@ export type GridAutoFlow = 'row' | 'column' | 'row-dense' | 'column-dense'
  * once the fixed tracks are placed.
  */
 export type TrackSize = number | 'auto' | `${number}px` | `${number}%` | `${number}fr`
+
+export type {
+  BlendMode,
+  BorderStyle,
+  Color,
+  Corners,
+  Dimension,
+  FontStyle,
+  FontWeight,
+  GridPlacement,
+  Length,
+  Overflow as OverflowValue,
+  PaintOrder,
+  Sides,
+  Style,
+  TextDecoration,
+  VerticalAlign,
+} from './style.js'
+
+export { Box, Column, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
+export type { ContainerProps, ImageProps, ImageSource, NodeKind, PathProps, SceneNode, TextProps, TextSegment } from './node.js'

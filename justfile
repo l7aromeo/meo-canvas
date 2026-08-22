@@ -31,7 +31,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check typecheck arena-tables-check lint-check layout-check docs test coverage unused
+ci: fmt-check typecheck arena-tables-check lint-check layout-check docs test test-js coverage unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -150,6 +150,16 @@ fmt-check: ensure-deps
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json
+    ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.test.json
+
+# The JavaScript suite.
+#
+# vitest is invoked from `node_modules` rather than through an npm script, the
+# same way prettier and tsc are here: one place names the command, and it is
+# this file.
+[doc("Run the JavaScript tests.")]
+test-js: ensure-deps
+    ./node_modules/.bin/vitest run
 
 # Regenerates the TypeScript arena tables from the Rust that defines them.
 #

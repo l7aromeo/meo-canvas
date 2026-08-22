@@ -1,0 +1,14 @@
+{
+  // The tests, which the shipped surface's config deliberately cannot cover.
+  //
+  // `tsconfig.json` sets `types: []` and `lib: ["ES2023"]` so a library with no
+  // DOM does not get `window` in scope by accident. Vitest's own declarations
+  // name `AbortSignal`, `EventTarget` and the timer functions, which live in
+  // `DOM` -- so the tests get that lib and the shipped code still does not.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"]
+  },
+  "exclude": [],
+  "include": ["src"]
+}

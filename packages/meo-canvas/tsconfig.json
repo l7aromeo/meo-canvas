@@ -22,5 +22,6 @@
     "sourceMap": true,
     "noEmit": true
   },
+  "exclude": ["src/**/*.test.ts"],
   "include": ["src"]
 }

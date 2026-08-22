@@ -26,7 +26,15 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SOURCE = resolve(HERE, '../../../crates/meo-canvas-node/src/arena.rs')
-const TARGET = resolve(HERE, '../src/generated/arena-tables.ts')
+const CHECKED_IN = resolve(HERE, '../src/generated/arena-tables.ts')
+
+// An explicit destination lets the drift check emit somewhere disposable and
+// `diff` the result, rather than asking git what changed. git's answer depends
+// on whether a file is staged, committed or merely written, so a check built on
+// it refuses the very workflow it exists to support: edit the Rust, regenerate,
+// run the gate. A diff of two files is indifferent to all of that, which is
+// what a check wants when CI's tree is clean and a developer's is not.
+const TARGET = process.argv[2] ? resolve(process.argv[2]) : CHECKED_IN
 
 /** Bits a mask slot holds. A double is exact on integers only to 2^53. */
 const MASK_BITS = 53

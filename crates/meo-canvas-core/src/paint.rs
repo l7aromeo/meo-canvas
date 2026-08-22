@@ -28,7 +28,7 @@
 //! otherwise.
 
 use meo_canvas_scene::{
-    Rect, Size,
+    Rect, Sides, Size,
     node::{ImageSource, Node, NodeId, NodeKind, PathPaint},
     style::{
         Length,
@@ -654,6 +654,24 @@ fn clip_to_box(
 ///
 /// A single stroked rounded rectangle would be wrong wherever two edges have
 /// different widths or colours, which CSS allows and `Sides` carries.
+/// Fills the border ring, edge by edge where the edges differ.
+///
+/// CSS puts a border **inside** the border box: the outer edge of the stroke is
+/// the box itself and the border grows inward, so a border is the ring between
+/// the border box and the padding box rather than a line centred on the box
+/// edge. Both rings are rounded — the inner radii derive from the outer ones,
+/// each axis reduced by that side's width and floored at zero
+/// (CSS Backgrounds 3 §5.2) — which is what makes a rounded card's border
+/// follow its fill instead of squaring off around it.
+///
+/// The ring is one path: the outer rounded rectangle and the inner one, filled
+/// even-odd. Where the edges differ, each edge clips that same ring to its own
+/// share before filling. **The clip is the specification, not an
+/// approximation**: CSS Backgrounds 3 §4.4 divides a corner between its two
+/// edges along the straight line joining the outer corner point to the inner
+/// corner point, and a quadrilateral through those four points is exactly that
+/// line on both ends. Unequal widths move the inner corner, so the join angle
+/// follows the widths without being computed from them.
 fn draw_border(
     context: &mut Context2D,
     node: &Node,
@@ -669,13 +687,10 @@ fn draw_border(
         return Ok(());
     }
 
-    // The uniform case is the common one and is a single stroke, centred on
-    // the box edge the way a canvas stroke is.
-    //
     // Bit equality rather than an epsilon: these are four values a caller set,
     // not four results of arithmetic, and "the author wrote the same number on
     // every edge" is exactly the question. Two widths a hair apart are two
-    // widths, and stroking them as one would be the wrong picture.
+    // widths, and painting them as one would be the wrong picture.
     let uniform = widths.top.to_bits() == widths.right.to_bits()
         && widths.right.to_bits() == widths.bottom.to_bits()
         && widths.bottom.to_bits() == widths.left.to_bits();
@@ -689,53 +704,137 @@ fn draw_border(
     .iter()
     .all(Option::is_none);
 
+    let inner = inner_box(rect, widths);
+
+    // One ring, one fill, no clip. The same shape the edge-by-edge path
+    // produces, reached without four clips when nothing distinguishes the
+    // edges.
     if uniform && same_colour {
-        context.set_stroke_style(to_skia_color(paint.border_color_all));
-        context.set_line_width(widths.top);
-        box_path(context, paint, rect)?;
-        context.stroke();
+        context.set_fill_style(to_skia_color(paint.border_color_all));
+        ring_path(context, paint, rect, inner, widths)?;
+        context.fill(SkiaFillRule::EvenOdd);
         return Ok(());
     }
 
-    for (width, colour, from, to) in [
-        (
-            widths.top,
-            edge_colors.top,
-            (rect.origin.x, rect.origin.y),
-            (rect.right(), rect.origin.y),
-        ),
-        (
-            widths.right,
-            edge_colors.right,
-            (rect.right(), rect.origin.y),
-            (rect.right(), rect.bottom()),
-        ),
-        (
-            widths.bottom,
-            edge_colors.bottom,
-            (rect.right(), rect.bottom()),
-            (rect.origin.x, rect.bottom()),
-        ),
-        (
-            widths.left,
-            edge_colors.left,
-            (rect.origin.x, rect.bottom()),
-            (rect.origin.x, rect.origin.y),
-        ),
-    ] {
+    let outer_corners = [
+        (rect.origin.x, rect.origin.y),
+        (rect.right(), rect.origin.y),
+        (rect.right(), rect.bottom()),
+        (rect.origin.x, rect.bottom()),
+    ];
+    let inner_corners = [
+        (inner.origin.x, inner.origin.y),
+        (inner.right(), inner.origin.y),
+        (inner.right(), inner.bottom()),
+        (inner.origin.x, inner.bottom()),
+    ];
+
+    // Top, right, bottom, left: each edge owns the ring between its two outer
+    // corners and the two inner corners beneath them.
+    for (edge, (width, colour)) in [
+        (widths.top, edge_colors.top),
+        (widths.right, edge_colors.right),
+        (widths.bottom, edge_colors.bottom),
+        (widths.left, edge_colors.left),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         if width <= 0.0 {
             continue;
         }
-        context.set_stroke_style(to_skia_color(
+        let next = (edge + 1) % outer_corners.len();
+
+        context.save();
+        context.begin_path();
+        context.move_to(outer_corners[edge].0, outer_corners[edge].1);
+        context.line_to(outer_corners[next].0, outer_corners[next].1);
+        context.line_to(inner_corners[next].0, inner_corners[next].1);
+        context.line_to(inner_corners[edge].0, inner_corners[edge].1);
+        context.close_path();
+        context.clip(SkiaFillRule::NonZero);
+
+        context.set_fill_style(to_skia_color(
             colour.unwrap_or(paint.border_color_all),
         ));
-        context.set_line_width(width);
-        context.begin_path();
-        context.move_to(from.0, from.1);
-        context.line_to(to.0, to.1);
-        context.stroke();
+        let path = ring_path(context, paint, rect, inner, widths);
+        if path.is_ok() {
+            context.fill(SkiaFillRule::EvenOdd);
+        }
+        context.restore();
+        path?;
     }
     Ok(())
+}
+
+/// The padding box: the border box less each side's width.
+///
+/// Collapses to zero rather than going negative when the widths meet, which is
+/// a border thick enough to cover the box and is a picture rather than an
+/// error.
+fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
+    let width = (rect.size.width - widths.left - widths.right).max(0.0);
+    let height = (rect.size.height - widths.top - widths.bottom).max(0.0);
+    Rect::new(
+        meo_canvas_scene::Point::new(
+            rect.origin.x + widths.left,
+            rect.origin.y + widths.top,
+        ),
+        Size::new(width, height),
+    )
+}
+
+/// Builds the ring between the border box and the padding box as one path.
+///
+/// Two subpaths filled even-odd, which is what makes the inner one a hole. The
+/// inner corners are elliptical because each axis shrinks by a different side's
+/// width: a 20px corner inside a 2px top and an 8px right is 18px tall and 12px
+/// wide, and drawing it circular would leave the fill and the border
+/// disagreeing about where the curve is.
+fn ring_path(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    outer: Rect,
+    inner: Rect,
+    widths: Sides<f32>,
+) -> Result<(), Error> {
+    box_path(context, paint, outer)?;
+
+    if inner.size.width <= 0.0 || inner.size.height <= 0.0 {
+        // No hole: the border meets in the middle and the ring is the whole
+        // box.
+        return Ok(());
+    }
+
+    let radii = paint.border_radius;
+    let inner_radii = [
+        (
+            (radii.top_left - widths.left).max(0.0),
+            (radii.top_left - widths.top).max(0.0),
+        ),
+        (
+            (radii.top_right - widths.right).max(0.0),
+            (radii.top_right - widths.top).max(0.0),
+        ),
+        (
+            (radii.bottom_right - widths.right).max(0.0),
+            (radii.bottom_right - widths.bottom).max(0.0),
+        ),
+        (
+            (radii.bottom_left - widths.left).max(0.0),
+            (radii.bottom_left - widths.bottom).max(0.0),
+        ),
+    ];
+
+    context
+        .round_rect_elliptical(
+            inner.origin.x,
+            inner.origin.y,
+            inner.size.width,
+            inner.size.height,
+            inner_radii,
+        )
+        .map_err(|error| Error::Paint(error.to_string()))
 }
 
 /// Draws one box shadow.
