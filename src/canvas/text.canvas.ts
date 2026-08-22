@@ -689,9 +689,17 @@ export class TextNode extends BoxNode {
     }
 
     ctx.restore()
+    // Whole pixels, because Yoga rounds a measured box differently from the box around it. Setting a
+    // measure function makes this node `NodeType::Text`, whose edges Yoga *ceils* when they fall
+    // between pixels so the glyphs are never cut; a plain parent shrink-wrapping it rounds to the
+    // nearest instead. Three lines measuring 63.3 gave the text 64 and the box around it 63, and the
+    // text spilled a row past the parent painting its background -- or was clipped by it.
+    //
+    // Rounded here rather than left to Yoga so both get the same number. Ceiling matches what Yoga
+    // was going to do to the text anyway, so nothing shrinks: the box around it grows to fit.
     return {
-      width: Math.max(0, finalContentWidth),
-      height: Math.max(0, calculatedContentHeight),
+      width: Math.ceil(Math.max(0, finalContentWidth)),
+      height: Math.ceil(Math.max(0, calculatedContentHeight)),
     }
   }
 
