@@ -69,9 +69,7 @@ describe('overflow against an absolute child', () => {
   })
 
   it('clips one inside an absolute clipper', async () => {
-    expect(await reaches({ positionType: Style.PositionType.Absolute, position: { Top: 0, Left: 0 } }, ABSOLUTE)).toBe(
-      'clipped',
-    )
+    expect(await reaches({ positionType: Style.PositionType.Absolute, position: { Top: 0, Left: 0 } }, ABSOLUTE)).toBe('clipped')
   })
 })
 

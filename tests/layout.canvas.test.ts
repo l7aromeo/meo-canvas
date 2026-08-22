@@ -560,7 +560,7 @@ describe('BoxNode Layout Properties', () => {
         Right: 5,
         Bottom: 5,
       },
-          // A child, because the clip is applied around each child rather than once
+      // A child, because the clip is applied around each child rather than once
       // around them all -- a node with nothing inside it has nothing to clip.
       children: [new BoxNode({ width: 10, height: 10 })],
     })
@@ -622,7 +622,7 @@ describe('BoxNode Layout Properties', () => {
         Left: 10,
         Top: 10,
       }, // Make innerWidth/Height <= 0
-          // A child, because the clip is applied around each child rather than once
+      // A child, because the clip is applied around each child rather than once
       // around them all -- a node with nothing inside it has nothing to clip.
       children: [new BoxNode({ width: 10, height: 10 })],
     })
@@ -674,7 +674,7 @@ describe('BoxNode Layout Properties', () => {
       height: 100,
       overflow: Style.Overflow.Hidden,
       borderRadius: 10,
-          // A child, because the clip is applied around each child rather than once
+      // A child, because the clip is applied around each child rather than once
       // around them all -- a node with nothing inside it has nothing to clip.
       children: [new BoxNode({ width: 10, height: 10 })],
     })

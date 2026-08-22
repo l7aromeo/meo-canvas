@@ -16,6 +16,27 @@ const _HEX_ALPHA_RE = /^#([0-9a-fA-F]{8})$/
  * Base node class for rendering rectangular boxes with layout, styling, and children.
  * It uses the Yoga layout engine for positioning and sizing.
  */
+/** A clipping ancestor, remembered so a node lifted past it is still cut by it. */
+interface ClipFrame {
+  node: BoxNode
+  x: number
+  y: number
+  width: number
+  height: number
+  radii: { TopLeft: number; TopRight: number; BottomRight: number; BottomLeft: number }
+  containsAbsolutes: boolean
+}
+
+/** One node in a stacking order, with where to paint it and what still clips it. */
+interface StackingEntry {
+  node: BoxNode
+  zIndex: number
+  order: number
+  originX: number
+  originY: number
+  clips: ClipFrame[]
+}
+
 export class BoxNode {
   /** Original props passed to the constructor before any modifications. */
   initialProps: Partial<BoxProps>
@@ -301,9 +322,9 @@ export class BoxNode {
    * `dither` is held on the context around all of it, so the node's mask, background, content and
    * children are drawn with one answer and whatever draws next is left with its own.
    */
-  async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
+  async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0, suppressStacking: boolean = false) {
     const { dither } = this.props
-    if (dither === undefined) return this.renderMasked(ctx, offsetX, offsetY)
+    if (dither === undefined) return this.renderMasked(ctx, offsetX, offsetY, suppressStacking)
 
     // Put back by hand rather than through `save`/`restore`, which would clone the whole graphics
     // state to carry one boolean. Putting it back at all is what keeps the node that draws next
@@ -312,35 +333,41 @@ export class BoxNode {
     const inherited = ctx.dither
     ctx.dither = dither
     try {
-      return await this.renderMasked(ctx, offsetX, offsetY)
+      return await this.renderMasked(ctx, offsetX, offsetY, suppressStacking)
     } finally {
       ctx.dither = inherited
     }
   }
 
   /** {@link render} without the dither state around it: the mask, then the node itself. */
-  private async renderMasked(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
+  private async renderMasked(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number, suppressStacking: boolean = false) {
     const mask = this.props.mask
-    if (!mask) return this.renderNode(ctx, offsetX, offsetY)
+    if (!mask) return this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
 
     const layout = this.node.getComputedLayout()
     const box = { x: layout.left + offsetX, y: layout.top + offsetY, width: layout.width, height: layout.height }
     if (box.width <= 0 || box.height <= 0) return
 
     if (isGradientMask(mask)) {
-      const drawn = await drawWithGradientMask(ctx, mask.gradient, box, target => this.renderNode(target, offsetX, offsetY), `[BoxNode ${this.key}]`)
+      const drawn = await drawWithGradientMask(
+        ctx,
+        mask.gradient,
+        box,
+        target => this.renderNode(target, offsetX, offsetY, false, suppressStacking),
+        `[BoxNode ${this.key}]`,
+      )
       // A gradient that could not be built is not a reason to lose the node; it draws unmasked,
       // having already said why.
-      return drawn ? undefined : this.renderNode(ctx, offsetX, offsetY)
+      return drawn ? undefined : this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
     }
 
     const path = maskPath(mask, box)
-    if (!path) return this.renderNode(ctx, offsetX, offsetY)
+    if (!path) return this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
 
     ctx.save()
     try {
       ctx.clip(path, maskFillRule(mask))
-      await this.renderNode(ctx, offsetX, offsetY)
+      await this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
     } finally {
       ctx.restore()
     }
@@ -620,7 +647,116 @@ export class BoxNode {
    * applying a filter: opacity and the filter itself belong to the group as a whole and have
    * already been dealt with by the caller, so the inner pass draws the subtree plainly.
    */
-  private async renderNode(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0, groupEffectsApplied: boolean = false) {
+  /** A clipper a lifted node passed through on its way up, with where it was painted. */
+  protected clipFrame(originX: number, originY: number): ClipFrame | null {
+    if (this.props.overflow !== Style.Overflow.Hidden) return null
+    const layout = this.node.getComputedLayout()
+    if (!(layout.width > 0 || layout.height > 0)) return null
+    // The padding box, not the border box: CSS clips content inside the border, and the corner
+    // radius shrinks by the border it sits behind.
+    const borderLeft = this.node.getComputedBorder(Style.Edge.Left)
+    const borderTop = this.node.getComputedBorder(Style.Edge.Top)
+    const borderRight = this.node.getComputedBorder(Style.Edge.Right)
+    const borderBottom = this.node.getComputedBorder(Style.Edge.Bottom)
+    const outer = parseBorderRadius(this.props.borderRadius)
+    return {
+      node: this,
+      x: originX + borderLeft,
+      y: originY + borderTop,
+      width: Math.max(0, layout.width - borderLeft - borderRight),
+      height: Math.max(0, layout.height - borderTop - borderBottom),
+      radii: {
+        TopLeft: Math.max(0, outer.TopLeft - Math.max(borderLeft, borderTop)),
+        TopRight: Math.max(0, outer.TopRight - Math.max(borderRight, borderTop)),
+        BottomRight: Math.max(0, outer.BottomRight - Math.max(borderRight, borderBottom)),
+        BottomLeft: Math.max(0, outer.BottomLeft - Math.max(borderLeft, borderBottom)),
+      },
+      // An absolute node is cut by a clipper only where that clipper is its containing block.
+      containsAbsolutes: this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static,
+    }
+  }
+
+  /**
+   * Whether this node takes part in its parent's stacking order rather than painting in the flow.
+   *
+   * Naming a `zIndex` is enough on its own: every node here is a flex item, and CSS applies
+   * `z-index` to a flex item whatever its `position` says. Naming a `positionType` other than
+   * `Static` is the other way in, since a positioned box paints above in-flow content.
+   */
+  private stacksAmongSiblings(): boolean {
+    const positioned = this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static
+    return positioned || this.props.zIndex !== undefined
+  }
+
+  /**
+   * Whether this node forms a stacking context, which is what stops a descendant escaping it.
+   *
+   * CSS forms one for a non-auto `z-index`, and for anything that composites the subtree as a
+   * single picture -- opacity below 1, a transform, a filter, a blend mode, a mask. A positioned
+   * box whose `z-index` is `auto` forms none, which is why its positioned descendants compete in
+   * the nearest ancestor's context rather than being trapped inside it.
+   */
+  private createsStackingContext(): boolean {
+    if (this.props.zIndex !== undefined) return true
+    if ((this.props.opacity ?? 1) < 1) return true
+    if (this.props.transform) return true
+    if (this.props.filter || this.props.backdropFilter) return true
+    if (this.props.mixBlendMode) return true
+    if (this.props.mask) return true
+    return false
+  }
+
+  /**
+   * The nodes taking part in this node's stacking order, including any lifted out of a descendant.
+   *
+   * A child forming no stacking context does not contain its own positioned descendants: they
+   * belong to the nearest ancestor that does, which may be this node. Each entry carries the origin
+   * its own parent was painted at, so a lifted node still lands where its parent put it, and the
+   * `lifted` set tells that parent not to paint it a second time.
+   */
+  private collectStacking(
+    node: BoxNode,
+    originX: number,
+    originY: number,
+    into: StackingEntry[],
+    lifted: Set<BoxNode>,
+    depth = 0,
+    clips: ClipFrame[] = [],
+  ): void {
+    node.children.forEach((child, index) => {
+      if (child.stacksAmongSiblings()) {
+        into.push({
+          node: child,
+          // `z-index: auto` shares a layer with `0`, so an absent index sorts as 0 rather than as a
+          // tier of its own.
+          zIndex: child.props.zIndex ?? 0,
+          // Depth first, so a lifted node ties after the siblings it was lifted past.
+          order: depth * 1_000_000 + index,
+          originX,
+          originY,
+          // Escaping a stacking context does not escape a clip: the two are independent, and a
+          // node lifted out of its parent is still cut by whatever clipped it on the way up.
+          clips,
+        })
+        if (depth > 0) lifted.add(child)
+      }
+      if (!child.createsStackingContext()) {
+        const layout = child.node.getComputedLayout()
+        const childX = originX + layout.left
+        const childY = originY + layout.top
+        const nested = child.clipFrame(childX, childY)
+        this.collectStacking(child, childX, childY, into, lifted, depth + 1, nested ? [...clips, nested] : clips)
+      }
+    })
+  }
+
+  private async renderNode(
+    ctx: CanvasRenderingContext2D,
+    offsetX: number = 0,
+    offsetY: number = 0,
+    groupEffectsApplied: boolean = false,
+    suppressStacking: boolean = false,
+  ) {
     const layout = this.node.getComputedLayout()
     const x = layout.left + offsetX
     const y = layout.top + offsetY
@@ -718,52 +854,20 @@ export class BoxNode {
 
       // --- Step 2: Prepare Children for Stacking ---
       //
-      // CSS 2.1 Appendix E paints in three bands within one stacking context: negative z-index
-      // below, then in-flow content, then positioned descendants with `z-index: auto` or `0` above
-      // it. So an absolutely positioned child covers a later in-flow sibling whatever the order
-      // they were declared in, and a negative one goes under the flow entirely.
+      // A child forming no stacking context does not contain its own positioned descendants: CSS
+      // gives those to the nearest ancestor that does form one, so a `z-index` deep in the tree can
+      // beat a shallow sibling. They are gathered here with the origin their own parent was painted
+      // at, and the parent is told to leave them alone.
       //
-      // A child joins those bands when it names a `positionType` *or* a `zIndex`. Both count
-      // because every child here is a flex item -- Yoga has no block layout, and `Grid` is flex
-      // underneath -- and for a flex item CSS Flexbox 5.4 makes `z-index` apply whatever `position`
-      // says, while `relative` is positioned exactly as `absolute` is.
-      //
-      // Naming neither leaves the child in the flow, which is what an ordinary child is: Yoga's
-      // default position type is `Relative`, but a child that never asked for one is CSS `static`.
-      // That is why an absent `positionType` is read as static rather than as relative -- and why
-      // an explicit `Static`, which Yoga also offers, is read the same way and stays in the flow.
-      //
-      // `z-index: 0` is not `auto` here. For a positioned box the two share a layer, but for a flex
-      // item an explicit `0` creates a stacking context where `auto` does not -- so a static child
-      // naming `0` lifts above a later sibling and one naming nothing does not.
-      //
-      // Read off Chrome as rendered pixels rather than with `elementFromPoint`: hit-testing does
-      // not follow background paint order here -- Appendix E puts an in-flow background at layer 3
-      // and its inline content at layer 5 -- and a hit-test reading says the opposite of what the
-      // screen shows for the absolute-versus-later-sibling case.
-      const positionedChildren: { node: BoxNode; zIndex: number; originalIndex: number }[] = []
-      const inFlowChildren: BoxNode[] = []
+      // `suppressStacking` is that telling. An ancestor has already taken every stacking descendant
+      // reachable through nodes that form no context, so this node paints only what is left.
+      const stackingEntries: StackingEntry[] = []
+      const lifted = new Set<BoxNode>()
+      if (!suppressStacking) this.collectStacking(this, x, y, stackingEntries, lifted)
+      stackingEntries.sort((a, b) => a.zIndex - b.zIndex || a.order - b.order)
 
-      this.children.forEach((child, index) => {
-        const positioned = child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
-        const stacks = positioned || child.props.zIndex !== undefined
-        if (stacks) {
-          positionedChildren.push({
-            node: child,
-            // `z-index: auto` shares a layer with `0`, so an absolute child that named none sorts
-            // as 0 rather than falling back into the flow.
-            zIndex: child.props.zIndex ?? 0,
-            originalIndex: index, // Keep original order for tie-breaking
-          })
-        } else {
-          inFlowChildren.push(child)
-        }
-      })
-
-      // Sort positioned children by zIndex, then by original order
-      positionedChildren.sort((a, b) => {
-        return a.zIndex - b.zIndex || a.originalIndex - b.originalIndex
-      })
+      const inFlowChildren = this.children.filter(child => !child.stacksAmongSiblings())
+      void lifted
 
       // --- Step 3: Prepare Clipping ---
       //
@@ -776,66 +880,53 @@ export class BoxNode {
       // Applied per child rather than once around them all, so the two kinds can be interleaved
       // without disturbing the paint order worked out above.
       const clips = this.props.overflow === Style.Overflow.Hidden && (width > 0 || height > 0)
-      const isContainingBlock =
-        this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static
+      const isContainingBlock = this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static
 
-      const applyClip = () => {
-        const borderLeft = this.node.getComputedBorder(Style.Edge.Left)
-        const borderTop = this.node.getComputedBorder(Style.Edge.Top)
-        const borderRight = this.node.getComputedBorder(Style.Edge.Right)
-        const borderBottom = this.node.getComputedBorder(Style.Edge.Bottom)
-        const innerX = x + borderLeft
-        const innerY = y + borderTop
-        const innerWidth = Math.max(0, width - borderLeft - borderRight)
-        const innerHeight = Math.max(0, height - borderTop - borderBottom)
-        const outerRadii = parseBorderRadius(this.props.borderRadius)
-        const innerRadii = {
-          TopLeft: Math.max(0, outerRadii.TopLeft - Math.max(borderLeft, borderTop)),
-          TopRight: Math.max(0, outerRadii.TopRight - Math.max(borderRight, borderTop)),
-          BottomRight: Math.max(0, outerRadii.BottomRight - Math.max(borderRight, borderBottom)),
-          BottomLeft: Math.max(0, outerRadii.BottomLeft - Math.max(borderLeft, borderBottom)),
-        }
-        if (innerWidth > 0 && innerHeight > 0) {
-          drawRoundedRectPath(ctx, innerX, innerY, innerWidth, innerHeight, innerRadii)
+      /** Applies one remembered clipper's rectangle. */
+      const applyFrame = (frame: ClipFrame) => {
+        if (frame.width > 0 && frame.height > 0) {
+          drawRoundedRectPath(ctx, frame.x, frame.y, frame.width, frame.height, frame.radii)
           ctx.clip()
         } else {
           ctx.beginPath()
-          ctx.rect(innerX, innerY, 0, 0)
+          ctx.rect(frame.x, frame.y, 0, 0)
           ctx.clip()
         }
       }
 
-      /** Draws one child, inside this node's clip unless the clip does not reach it. */
-      const paintChild = async (child: BoxNode) => {
-        const escapes = child.props.positionType === Style.PositionType.Absolute && !isContainingBlock
-        if (clips && !escapes) {
-          ctx.save()
-          applyClip()
-        }
+      /** Draws one child under whatever clips still reach it. */
+      const paintChild = async (child: BoxNode, originX: number = x, originY: number = y, inherited: ClipFrame[] = []) => {
+        const absolute = child.props.positionType === Style.PositionType.Absolute
+        const own = clips && !(absolute && !isContainingBlock) ? this.clipFrame(x, y) : null
+        // A clipper only cuts an absolute node where it is that node's containing block.
+        const frames = [...inherited, ...(own ? [own] : [])].filter(frame => !absolute || frame.containsAbsolutes)
+
+        if (frames.length > 0) ctx.save()
         try {
-          // Pass parent's layout origin (x, y) as offset
-          await child.render(ctx, x, y)
+          for (const frame of frames) applyFrame(frame)
+          // A child forming no stacking context has had its own stacking descendants taken above,
+          // so it must not paint them again.
+          await child.render(ctx, originX, originY, !child.createsStackingContext())
         } finally {
-          if (clips && !escapes) ctx.restore()
+          if (frames.length > 0) ctx.restore()
         }
       }
-      // --- End Clipping Setup ---
 
       // --- Step 4: Render Children in Stacking Order ---
 
       // 4a: Anything with a negative zIndex, below the flow
-      for (const item of positionedChildren) {
-        if (item.zIndex < 0) await paintChild(item.node)
+      for (const entry of stackingEntries) {
+        if (entry.zIndex < 0) await paintChild(entry.node, entry.originX, entry.originY, entry.clips)
       }
 
-      // 4b: In-flow children that named no zIndex
+      // 4b: Direct children that stay in the flow
       for (const child of inFlowChildren) {
         await paintChild(child)
       }
 
-      // 4c: Positioned children, and in-flow children that named a zIndex of zero or more
-      for (const item of positionedChildren) {
-        if (item.zIndex >= 0) await paintChild(item.node)
+      // 4c: Everything else, ordered by zIndex then by how deep and how late it was found
+      for (const entry of stackingEntries) {
+        if (entry.zIndex >= 0) await paintChild(entry.node, entry.originX, entry.originY, entry.clips)
       }
       // --- End Child Rendering ---
 
