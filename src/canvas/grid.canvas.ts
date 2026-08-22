@@ -379,6 +379,9 @@ export class GridNode extends RowNode {
 
       if (childNode.getPositionType() !== Style.PositionType.Absolute) {
         childNode.setPositionType(Style.PositionType.Absolute)
+        // Recorded so the paint pass knows this is the grid's doing rather than the caller's: a
+        // grid item stays static in CSS, and an absolute descendant resolves past it.
+        ;(item.node as unknown as { placedByLayout: boolean }).placedByLayout = true
       }
 
       if (childNode.getPosition(Style.Edge.Left).value !== x) {

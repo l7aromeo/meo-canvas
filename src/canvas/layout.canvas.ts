@@ -41,6 +41,14 @@ interface StackingEntry {
 }
 
 export class BoxNode {
+  /**
+   * Set where a layout places this node absolutely for its own reasons rather than because the
+   * caller asked. `Grid` does it to put items on their tracks, and a node placed that way becomes a
+   * containing block Yoga resolves against though nothing named a `positionType` -- CSS keeps a
+   * grid item static, so the paint pass shifts its absolute descendants back out.
+   */
+  protected placedByLayout = false
+
   /** Original props passed to the constructor before any modifications. */
   initialProps: Partial<BoxProps>
 
@@ -783,6 +791,10 @@ export class BoxNode {
     clips: ClipFrame[] = [],
     positionedOrigin: { x: number; y: number } = { x: originX, y: originY },
     fixedOrigin: { x: number; y: number } = { x: originX, y: originY },
+    // Where Yoga actually resolved an absolute node from, which is not always the box CSS would
+    // use: `Grid` places its items by making them absolute in Yoga, and that makes each one a
+    // containing block Yoga will resolve against though nothing asked it to be one.
+    yogaOrigin: { x: number; y: number } = { x: originX, y: originY },
     // Nothing scrolls, so the scrollport a sticky node is held inside is the page. Taken from the
     // outermost node this walk starts at, which is that page.
     port: { x: number; y: number; width: number; height: number } = {
@@ -797,9 +809,13 @@ export class BoxNode {
         // A fixed node is laid out against the nearest positioned ancestor, because that is all
         // Yoga can do. Shifting the origin by the distance between that box and its real containing
         // block lands it where CSS puts it, without re-resolving its insets by hand.
+        // Both kinds are placed by shifting from where Yoga put them to where CSS wants them: an
+        // absolute node to its nearest positioned ancestor, a fixed one to the box that captures it.
         const fixed = child.props.positionType === Style.PositionType.Fixed
-        let shiftX = fixed ? fixedOrigin.x - positionedOrigin.x : 0
-        let shiftY = fixed ? fixedOrigin.y - positionedOrigin.y : 0
+        const absolute = child.props.positionType === Style.PositionType.Absolute
+        const target = fixed ? fixedOrigin : positionedOrigin
+        let shiftX = fixed || absolute ? target.x - yogaOrigin.x : 0
+        let shiftY = fixed || absolute ? target.y - yogaOrigin.y : 0
         if (child.props.positionType === Style.PositionType.Sticky) {
           const own = child.node.getComputedLayout()
           const held = child.stickyShift(originX + own.left, originY + own.top, port)
@@ -839,6 +855,7 @@ export class BoxNode {
           // part company at a transform or a filter, which captures `Fixed` and nothing else.
           childPositioned ? { x: childX, y: childY } : positionedOrigin,
           child.capturesFixed() ? { x: childX, y: childY } : fixedOrigin,
+          childPositioned || child.placedByLayout ? { x: childX, y: childY } : yogaOrigin,
           port,
         )
       }
