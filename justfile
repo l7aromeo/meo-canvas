@@ -134,6 +134,39 @@ fmt-check: ensure-deps
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json
 
+# Golden fixtures: a scene, and the picture it must produce.
+#
+# The only check here that looks at the image rather than at whether a line
+# ran. Comparison is byte for byte, with no tolerance: five renders of one
+# scene across two processes produced a single hash, and a build with the Metal
+# backend compiled produced the same bytes as one without, so a disagreement is
+# a regression until someone measures otherwise.
+#
+# The harness registers one font, from this repository, and refuses a fixture
+# naming any other family -- the platform's installed faces answer `has_family`
+# too, so a fixture asking for Helvetica would pass here and differ anywhere
+# else.
+#
+# A failure writes `actual.png` and `diff.png` under `target/fixtures/<name>/`
+# and reports the differing pixel count and the box containing them. "Differs"
+# on its own means reproducing locally before you can even look.
+# Not in the `ci` chain, and deliberately: the harness is an ordinary test, so
+# `test` already runs it and `coverage` already counts it. This recipe is the
+# focused runner for someone iterating on one image -- naming it in `ci` as well
+# would run the same comparison twice.
+[doc("Render every fixture and compare it against its committed image.")]
+fixtures:
+    cargo test -p meo-canvas-core --test fixtures
+
+# Rewrites one fixture's expected image.
+#
+# One name, and there is no bulk form on purpose: accepting every difference at
+# once is how a regression becomes a commit, and a legitimate mass change is
+# still worth looking at one image at a time.
+[doc("Accept one fixture's current render as its expected image.")]
+fixtures-accept name:
+    MEO_FIXTURE_ACCEPT={{ name }} cargo test -p meo-canvas-core --test fixtures
+
 # No legacy module layout: `foo.rs` beside a `foo/` directory, never a
 # `mod.rs`. No lint expresses this -- rustc, clippy and rustfmt all accept
 # either layout -- so a find is the gate.

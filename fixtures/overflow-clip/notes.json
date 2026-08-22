@@ -1,0 +1,5 @@
+{
+  "proves": "Overflow::Hidden clips a child to its parent box; Overflow::Visible does not",
+  "checkable": "exact boundary. The clipped child is absolutely placed at inset top 20 left 30 and sized 120x90 inside a 110x70 frame, so it must be cut at the frame edge and nowhere else. The visible frame shows the whole 120x90.",
+  "status": "pinnable to arithmetic"
+}

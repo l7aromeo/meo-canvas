@@ -1,0 +1,6 @@
+{
+  "proves": "uniform borders stroke as one rounded path; differing widths and colours stroke edge by edge",
+  "checkable": "box 2 requests border top 2, right 8, bottom 5, left 0 and radii tl 20, tr 0, br 10, bl 4. Its background IS rounded (measured: the top-left corner pixel is background-free).",
+  "known-limitation": "the per-edge path draws four straight lines, so its BORDER ignores the corner radii while its background honours them. A uniform border does not have this problem.",
+  "status": "correct except the named limitation, which is pinned deliberately"
+}

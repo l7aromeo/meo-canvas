@@ -1,0 +1,5 @@
+{
+  "proves": "descenders, line boxes and weights at three sizes render and do not wrap",
+  "checkable": "each run is ONE line: its ink height is under 1.6em of its font size",
+  "status": "believed correct"
+}

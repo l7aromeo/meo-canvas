@@ -1,0 +1,5 @@
+{
+  "proves": "linear, radial and conic gradients each render distinctly",
+  "checkable": "linear at 45deg runs corner to corner; radial is centred and isotropic; conic sweeps around the centre. The three must not be identical.",
+  "status": "eyeball plus non-identity; the exact stop interpolation is not pinned to a number"
+}

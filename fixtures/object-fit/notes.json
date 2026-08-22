@@ -1,0 +1,5 @@
+{
+  "proves": "the five object-fit rules against one 8x4 image in five 72x72 boxes",
+  "checkable": "exact rectangles. Fill 72x72. Contain 72x36 centred (offset y 18). Cover 144x72 at x -36, clipped. None 8x4 centred (offset 32,34). ScaleDown equals None here because the image is smaller than the box.",
+  "status": "pinnable to arithmetic; the numbers above are asserted in paint.rs unit tests independently of this image"
+}

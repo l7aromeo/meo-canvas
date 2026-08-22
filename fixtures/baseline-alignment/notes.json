@@ -1,0 +1,8 @@
+{
+  "proves": "NOTHING IS CORRECT IN ROW 0. This image pins a known defect.",
+  "defect": "row 0 sets align-items:baseline; the three runs align on their BOX BOTTOMS, not their baselines",
+  "cause": "taffy reads a measured leaf's missing baseline as its height (taffy-0.13.0/src/compute/flexbox.rs:1522), because compute_leaf_layout returns first_baselines: Point::NONE (leaf.rs:102)",
+  "measured": "H has no descender, so its ink bottom IS the baseline. Row 0 H-bottoms are 5px apart; row 1 (align-items:flex-start, the control) is expected to differ and does.",
+  "correct-looks-like": "all three H-bottoms in row 0 share one y. Row 1 is unaffected and must not change.",
+  "status": "PINNED DEFECT - re-accept this image when baseline alignment is fixed; a failure here after such a fix is the fix working"
+}

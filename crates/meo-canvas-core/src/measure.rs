@@ -303,14 +303,34 @@ impl<'resolved> SceneMeasurer<'resolved> {
         // `MinContent` is the exception that is not one: laying out at the
         // longest word is what min-content means, and wrapping at every space
         // is the correct answer rather than an artefact.
-        let width = match (known.0, available.0) {
+        let budget = match (known.0, available.0) {
             (Some(fixed), _) => fixed,
             (None, Available::Definite(budget)) => budget,
             (None, Available::MinContent) => paragraph.min_intrinsic_width(),
             (None, Available::MaxContent) => f32::INFINITY,
         };
 
-        paragraph.layout(width);
+        // Laid out unconstrained first, and only again if the budget is
+        // genuinely narrower than what the content occupies.
+        //
+        // Laying out at the budget directly loses the last word whenever the
+        // budget equals the content's own width: "Body text" at 16px occupies
+        // 55.010 and wraps to two lines when laid out at 55.010. That boundary
+        // is not a corner case -- flexbox settles an auto-sized item at
+        // precisely its max-content width and re-asks with that as a known
+        // dimension, so every text node that fits is asked exactly this
+        // question.
+        //
+        // The comparison is against `width()` -- the longest laid-out line --
+        // rather than `max_intrinsic_width()`, which reads slightly wider and
+        // so lets the boundary case slip through the guard. An unconstrained
+        // layout is the only width with no boundary to land on, and re-laying
+        // out is the cheap half: shaping already happened when the paragraph
+        // was built.
+        paragraph.layout(f32::INFINITY);
+        if budget < paragraph.width() {
+            paragraph.layout(budget);
+        }
 
         // `Paragraph::width` reports `longest_line` -- what the content
         // occupies, not the budget it was given -- so an unfixed axis takes it.
@@ -894,6 +914,28 @@ mod tests {
                 < f32::EPSILON,
             "a roomy budget wrapped: {} against unconstrained {}",
             roomy.size.height,
+            unconstrained.size.height
+        );
+
+        // The budget that actually breaks: exactly the content's own width.
+        // Flexbox settles an auto-sized item at precisely its max-content
+        // width and then re-asks with that as a known dimension, so this is
+        // the question every fitting text node gets rather than a corner case.
+        // A budget merely "roomy" never reaches the boundary, which is why the
+        // assertion above passed while the bug was live.
+        let exact = measurer.measure(
+            leaf,
+            (Some(unconstrained.size.width), None),
+            (
+                Available::Definite(unconstrained.size.width),
+                Available::MaxContent,
+            ),
+        );
+        assert!(
+            (exact.size.height - unconstrained.size.height).abs()
+                < f32::EPSILON,
+            "a budget of exactly the content width wrapped: {} against {}",
+            exact.size.height,
             unconstrained.size.height
         );
     }

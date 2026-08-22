@@ -132,16 +132,60 @@ pub enum Error {
 ///
 /// Separate from [`Scene`] because these outlive any one scene: a server
 /// rendering a thousand pictures registers its fonts once.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Renderer {
     fonts: Fonts,
+    gpu: bool,
+}
+
+impl Default for Renderer {
+    fn default() -> Self {
+        Self {
+            fonts: Fonts::new(),
+            gpu: Self::DEFAULT_GPU,
+        }
+    }
 }
 
 impl Renderer {
+    /// Whether a renderer asks for the GPU when nothing says otherwise.
+    ///
+    /// True, matching v1 -- its `RootProps` carries `gpu` and
+    /// `meo-skia-canvas` defaults it on, so a scene ported from v1 behaves the
+    /// same without the caller restating it.
+    ///
+    /// It is a request rather than an outcome. `Canvas::gpu`'s own
+    /// documentation calls it "the request, not the outcome": a build with no
+    /// GPU backend compiled rasterises on the CPU whatever this says. That is
+    /// why it is worth stating -- a project that never sets it is relying on
+    /// which features happened to be compiled, which is not a decision anyone
+    /// wrote down.
+    pub const DEFAULT_GPU: bool = true;
+
     /// Creates a renderer with no fonts registered beyond the platform's.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether renders from here ask for the GPU.
+    #[must_use]
+    pub const fn gpu(&self) -> bool {
+        self.gpu
+    }
+
+    /// Chooses whether renders from here ask for the GPU.
+    ///
+    /// A property of the renderer rather than of the scene or the encode: two
+    /// renders of one scene, one on the GPU and one on the CPU, are meant to
+    /// produce the same picture, so this describes the environment a render
+    /// happens in and not the picture it draws. A server picks once.
+    ///
+    /// The golden-fixture harness turns it off, which is what makes the gate
+    /// rest on a decision rather than on which backend a build happened to
+    /// compile.
+    pub const fn set_gpu(&mut self, gpu: bool) {
+        self.gpu = gpu;
     }
 
     /// Registers a font file under a family name of the caller's choosing.
@@ -199,7 +243,7 @@ impl Renderer {
 
         let resolved = Resolved::new(scene, &self.fonts)?;
         let mut measurer = SceneMeasurer::prepare(&resolved, &self.fonts)?;
-        let mut surface = Surface::new(scene.size, scene.scale)?;
+        let mut surface = Surface::new(scene.size, scene.scale, self.gpu)?;
 
         for (index, &page) in scene.pages.iter().enumerate() {
             // The first page is the one `Surface::new` created; beginning a
@@ -253,6 +297,9 @@ mod tests {
 
     fn renderer() -> Renderer {
         let mut renderer = Renderer::new();
+        // Off, matching the fixture harness: a gate that rests on which
+        // backend a build happened to compile rests on nothing written down.
+        renderer.set_gpu(false);
         renderer
             .register_font(TEST_FAMILY, TEST_FONT)
             .unwrap_or_else(|error| unreachable!("{error}"));
@@ -382,6 +429,37 @@ mod tests {
             "quality 1.0 produced {} bytes against {} at 0.1",
             fine.bytes.len(),
             coarse.bytes.len()
+        );
+    }
+
+    /// The GPU is the renderer's decision, defaulting to v1's.
+    #[test]
+    fn the_gpu_is_a_renderer_property_with_v1_s_default() {
+        let mut cpu_renderer = renderer();
+        cpu_renderer.set_gpu(true);
+        assert!(cpu_renderer.gpu(), "v1 defaults the GPU on");
+        assert_eq!(Renderer::new().gpu(), Renderer::DEFAULT_GPU);
+
+        cpu_renderer.set_gpu(false);
+        assert!(!cpu_renderer.gpu());
+
+        // Both settings render the same scene; the choice describes the
+        // environment, not the picture. Bit-exact rather than merely both
+        // succeeding, which is the property the fixture gate depends on.
+        let scene = paged_scene(1, Size::new(24.0, 16.0));
+        let cpu = cpu_renderer
+            .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let mut asking = renderer();
+        asking.set_gpu(true);
+        let requested = asking
+            .render(&scene, ImageFormat::Png, &EncodeOptions::default())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(
+            cpu.bytes, requested.bytes,
+            "asking for the GPU changed the picture"
         );
     }
 

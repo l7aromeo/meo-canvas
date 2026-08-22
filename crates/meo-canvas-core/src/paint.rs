@@ -40,9 +40,10 @@ use meo_canvas_scene::{
     },
 };
 use meo_skia_canvas::{
-    BlendMode as SkiaBlendMode, Canvas, Context2D, FillRule as SkiaFillRule,
-    GradientInterpolation, GradientStop as SkiaGradientStop, Path2D, Point,
-    RgbaLinear, Shader, StrokeCap, StrokeJoin,
+    BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
+    FillRule as SkiaFillRule, GradientInterpolation,
+    GradientStop as SkiaGradientStop, Path2D, Point, RgbaLinear, Shader,
+    StrokeCap, StrokeJoin,
 };
 
 use crate::{
@@ -60,6 +61,19 @@ use crate::{
 /// for no visible difference.
 const OPAQUE: f32 = 1.0;
 
+/// How much narrower than its content a text box may be before painting
+/// treats the shortfall as a caller's wrap rather than as rounding.
+///
+/// One pixel, which is exactly taffy's bound and not a tolerance chosen by
+/// eye: `round_layout` rounds each edge to a whole pixel and takes the
+/// difference, so a width can differ from the unrounded one by at most one --
+/// half a pixel at each edge, rounding opposite ways. An auto-sized text node
+/// is settled at precisely its content width, so its rounded box is routinely
+/// a fraction narrower than the text it was measured to hold. Re-wrapping on
+/// that shortfall would contradict the measurement layout was solved from and
+/// put a word on its own line in every such node.
+const ROUNDING_SLACK: f32 = 1.0;
+
 /// Degrees in a full turn, for converting a scene's rotation to radians.
 const DEGREES_PER_TURN: f32 = 360.0;
 
@@ -72,6 +86,7 @@ const DEGREES_PER_TURN: f32 = 360.0;
 pub struct Surface {
     canvas: Canvas,
     scale: f32,
+    gpu: bool,
 }
 
 impl core::fmt::Debug for Surface {
@@ -81,6 +96,7 @@ impl core::fmt::Debug for Surface {
         // whether the surface is the one the caller meant to build.
         f.debug_struct("Surface")
             .field("scale", &self.scale)
+            .field("gpu", &self.gpu)
             .field("pages", &self.canvas.page_count())
             .finish_non_exhaustive()
     }
@@ -93,16 +109,32 @@ impl Surface {
     /// fractional scale would otherwise lose the last row of pixels rather
     /// than half of one.
     ///
+    /// The canvas options are stated rather than inherited. `Canvas::new`
+    /// takes `CanvasOptions::default()`, which sets `gpu: true`
+    /// (`meo-skia-canvas-0.11.0/src/canvas.rs:217`), so every render would ask
+    /// for the GPU whether or not anyone decided it should. Naming the field
+    /// here is what makes `gpu` a decision the caller took rather than a
+    /// default nobody read.
+    ///
+    /// `gpu` is a request, not an outcome: `Canvas::gpu`'s own documentation
+    /// says "the request, not the outcome -- on a machine with no reachable
+    /// GPU backend this still reports what was asked". A build with no backend
+    /// compiled rasterises on the CPU regardless of what is asked for here.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Paint`] when the size is not something a surface can
-    /// be made from -- a non-finite or non-positive extent.
-    pub fn new(size: Size, scale: f32) -> Result<Self, Error> {
+    /// be made from -- a non-finite or non-positive extent -- or when the
+    /// backend refuses the options.
+    pub fn new(size: Size, scale: f32, gpu: bool) -> Result<Self, Error> {
         let pixels = pixel_size(size, scale)?;
-        Ok(Self {
-            canvas: Canvas::new(pixels.width, pixels.height),
-            scale,
-        })
+        let options = CanvasOptions {
+            gpu,
+            ..CanvasOptions::default()
+        };
+        let canvas = Canvas::with_options(pixels.width, pixels.height, options)
+            .map_err(|error| Error::Paint(error.to_string()))?;
+        Ok(Self { canvas, scale, gpu })
     }
 
     /// Appends a page and makes it current.
@@ -117,6 +149,15 @@ impl Surface {
         let pixels = pixel_size(size, self.scale)?;
         self.canvas.new_page_with(pixels.width, pixels.height);
         Ok(())
+    }
+
+    /// Whether this surface asked for the GPU.
+    ///
+    /// The request rather than the outcome, for the reason [`Surface::new`]
+    /// gives.
+    #[must_use]
+    pub const fn gpu(&self) -> bool {
+        self.gpu
     }
 
     /// The device-pixel multiplier every page is drawn at.
@@ -453,7 +494,16 @@ fn draw_text(
     // Laid out again at the width layout settled on: Skia paints a paragraph
     // at whatever width it last saw, and the measurer's last question was not
     // necessarily this one.
-    paragraph.layout(rect.size.width);
+    //
+    // Unconstrained first, then narrowed only if the box is genuinely narrower
+    // than the content, for the reason `measure_text` does the same: laying
+    // out at exactly the content's own width loses the last word to a float
+    // comparison, and an auto-sized text node's box *is* exactly its content
+    // width. Painting at the box width directly wrapped every such node.
+    paragraph.layout(f32::INFINITY);
+    if rect.size.width + ROUNDING_SLACK < paragraph.width() {
+        paragraph.layout(rect.size.width);
+    }
     let top = baseline - paragraph.alphabetic_baseline();
     context.draw_paragraph(paragraph, rect.origin.x, top);
 }
@@ -929,9 +979,28 @@ mod tests {
         }
     }
 
+    /// A surface states its GPU request rather than inheriting one.
+    ///
+    /// `Canvas::new` takes `CanvasOptions::default()`, which sets `gpu: true`
+    /// (`meo-skia-canvas-0.11.0/src/canvas.rs:217`). Before this was explicit
+    /// every render asked for the GPU and rasterised on the CPU only because
+    /// no backend was compiled — a property of the feature set rather than a
+    /// decision. This fails if the field stops being named.
+    #[test]
+    fn a_surface_asks_for_the_backend_it_was_told_to() {
+        let off = Surface::new(Size::new(8.0, 8.0), 1.0, false)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(!off.gpu());
+
+        let on = Surface::new(Size::new(8.0, 8.0), 1.0, true)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(on.gpu(), "the request is recorded even where no backend is");
+        assert!(format!("{on:?}").contains("gpu"));
+    }
+
     #[test]
     fn a_surface_begins_a_page_per_call_after_the_first() {
-        let mut surface = Surface::new(Size::new(20.0, 10.0), 2.0)
+        let mut surface = Surface::new(Size::new(20.0, 10.0), 2.0, false)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(surface.page_count(), 1, "new() creates the first page");
         assert!((surface.scale() - 2.0).abs() < f32::EPSILON);
@@ -1119,7 +1188,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0)
+        let mut surface = Surface::new(scene.size, 1.0, false)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         let empty = LayoutResult::default();
@@ -1196,7 +1265,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 2.0)
+        let mut surface = Surface::new(scene.size, 2.0, false)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         let page = scene.pages[0];
@@ -1312,7 +1381,7 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}"));
             let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
                 .unwrap_or_else(|error| unreachable!("{error}"));
-            let mut surface = Surface::new(scene.size, 1.0)
+            let mut surface = Surface::new(scene.size, 1.0, false)
                 .unwrap_or_else(|error| unreachable!("{error}"));
             let solved =
                 crate::layout::solve(&scene, scene.pages[0], &mut measurer)
@@ -1355,7 +1424,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0)
+        let mut surface = Surface::new(scene.size, 1.0, false)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let solved =
             crate::layout::solve(&scene, scene.pages[0], &mut measurer)
@@ -1394,7 +1463,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0)
+        let mut surface = Surface::new(scene.size, 1.0, false)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let solved =
             crate::layout::solve(&scene, scene.pages[0], &mut measurer)
@@ -1452,7 +1521,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0)
+        let mut surface = Surface::new(scene.size, 1.0, false)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let solved =
             crate::layout::solve(&scene, scene.pages[0], &mut measurer)

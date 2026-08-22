@@ -1,0 +1,5 @@
+{
+  "proves": "paint order is z-index first, document order within it",
+  "checkable": "determinate stacking. Four overlapping absolute boxes with z = [2,-1,0,0] and colours red, green, blue, yellow paint green, blue, yellow, red - so red covers everything and green is under everything.",
+  "status": "pinnable to arithmetic; z_ordered() is asserted directly in paint.rs"
+}

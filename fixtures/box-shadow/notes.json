@@ -1,0 +1,6 @@
+{
+  "proves": "outer box shadows with offset, blur and spread",
+  "checkable": "the shadow of the first box is a hard offset copy (blur 0), so its edge is exactly 6px down-right of the box edge",
+  "not-covered": "inset shadows are a documented no-op in paint.rs and deliberately have no fixture - one would pin the no-op as correct",
+  "status": "believed correct; the blurred cases are eyeball-only"
+}
