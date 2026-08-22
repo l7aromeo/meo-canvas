@@ -66,7 +66,9 @@ async function colourAt(children: CanvasElement[]) {
     workerMode: false,
     gpu: false,
     backgroundColor: '#ffffff',
-    children: [Box({ width: W, height: H * 2, children })],
+    // Relative, so it is the containing block for the absolute children below. An unpositioned
+    // box is static now, and an absolute child would resolve against the root instead.
+    children: [Box({ width: W, height: H * 2, positionType: Style.PositionType.Relative, children })],
   })
   const { data } = canvas.getContext('2d').getImageData(PROBE[0], PROBE[1], 1, 1)
   return `rgb(${data[0]},${data[1]},${data[2]})`
@@ -153,5 +155,73 @@ describe('stacking order — positioned against in-flow', () => {
 
   it('lets an in-flow child outrank a later absolute one by naming a higher zIndex', async () => {
     expect(await colourAt([flow('#dd1111', { zIndex: 1 }, true), absolute('#0066cc')])).toBe(RED)
+  })
+})
+
+/**
+ * The whole matrix, one assertion per cell.
+ *
+ * Each row is a child under test declared *first*, against a plain in-flow sibling declared after
+ * it. `RED` means the child under test paints on top, `BLUE` means the later plain sibling does.
+ * Every expectation is what Chrome rendered for the equivalent markup, read as pixels.
+ *
+ * Chrome was measured for `display: block`, `flex` and `grid`. Flex and grid agree on all twelve
+ * cells and are what this table encodes; block differs in one place -- it ignores `z-index` on a
+ * static child -- and is unreachable here, since Yoga has no block layout and `Grid` is flex
+ * underneath.
+ */
+describe('stacking order — every position against every zIndex', () => {
+  const cell = (position: 'static' | 'relative' | 'absolute', zIndex: number | undefined) => {
+    const props: Partial<BoxProps> = zIndex === undefined ? {} : { zIndex }
+    if (position === 'relative') props.positionType = Style.PositionType.Relative
+    if (position === 'static') props.positionType = Style.PositionType.Static
+    return position === 'absolute' ? absolute('#dd1111', props) : flow('#dd1111', props, true)
+  }
+
+  it.each([
+    ['static', undefined, BLUE],
+    ['static', -1, BLUE],
+    ['static', 0, RED],
+    ['static', 2, RED],
+    ['relative', undefined, RED],
+    ['relative', -1, BLUE],
+    ['relative', 0, RED],
+    ['relative', 2, RED],
+    ['absolute', undefined, RED],
+    ['absolute', -1, BLUE],
+    ['absolute', 0, RED],
+    ['absolute', 2, RED],
+  ] as const)('%s with zIndex %s against a later plain sibling', async (position, zIndex, expected) => {
+    const under = cell(position, zIndex)
+    const sibling = position === 'absolute' ? flow('#0066cc', {}, true) : flow('#0066cc')
+    expect(await colourAt([under, sibling])).toBe(expected)
+  })
+})
+
+/**
+ * The same cells with the plain sibling declared *first*, so declaration order cannot be what
+ * decides. A cell that reads RED above and RED here is winning on its own properties.
+ */
+describe('stacking order — every position against every zIndex, declared second', () => {
+  it.each([
+    // The one cell order changes: two plain in-flow boxes tie, and the later one wins.
+    ['static', undefined, RED],
+    ['static', -1, BLUE],
+    ['static', 0, RED],
+    ['static', 2, RED],
+    ['relative', undefined, RED],
+    ['relative', -1, BLUE],
+    ['relative', 0, RED],
+    ['relative', 2, RED],
+    ['absolute', undefined, RED],
+    ['absolute', -1, BLUE],
+    ['absolute', 0, RED],
+    ['absolute', 2, RED],
+  ] as const)('%s with zIndex %s declared after a plain sibling', async (position, zIndex, expected) => {
+    const props: Partial<BoxProps> = zIndex === undefined ? {} : { zIndex }
+    if (position === 'relative') props.positionType = Style.PositionType.Relative
+    if (position === 'static') props.positionType = Style.PositionType.Static
+    const under = position === 'absolute' ? absolute('#dd1111', props) : flow('#dd1111', props)
+    expect(await colourAt([flow('#0066cc', {}, true), under])).toBe(expected)
   })
 })

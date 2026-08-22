@@ -745,8 +745,7 @@ export class BoxNode {
       const inFlowChildren: BoxNode[] = []
 
       this.children.forEach((child, index) => {
-        const positioned =
-          child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
+        const positioned = child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
         const stacks = positioned || child.props.zIndex !== undefined
         if (stacks) {
           positionedChildren.push({
