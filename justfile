@@ -147,6 +147,14 @@ fmt-check: ensure-deps
 # Not `check`: the `-check` suffix on every other recipe here means "the variant
 # that reports instead of rewriting", and a bare `check` reads as the same idea
 # one word short.
+# Emit what the npm package publishes.
+#
+# `exports` names `dist`, so the package cannot be resolved by a consumer until
+# this has run -- which is what the example project exists to catch.
+[doc("Build the TypeScript package into dist.")]
+build-js: ensure-deps
+    ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
+
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json

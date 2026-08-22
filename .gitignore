@@ -71,6 +71,17 @@
 !/fixtures/**/*.json
 !/fixtures/**/*.png
 
+# -- Examples ---------------------------------------------------------------
+# A real consumer project, installed by link rather than from a registry, so it
+# exercises the package boundary — the exports map, the types field, the entry
+# point — rather than reaching into `src` the way the tests do. Its rendered
+# output is not tracked: it is something to look at, not something to check.
+!/examples/*/package.json
+!/examples/*/tsconfig*.json
+!/examples/**/*.ts
+!/examples/**/*.mjs
+!/examples/*/bun.lock
+
 # -- CI ---------------------------------------------------------------------
 !/.github/workflows/*.yml
 

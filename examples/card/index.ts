@@ -1,0 +1,40 @@
+// A consumer, not a test. It reaches meo-canvas the way anyone else would —
+// through the package's exports rather than into its source — so it fails if
+// the exports map, the types field or the entry point is wrong, none of which
+// the test suite touches.
+//
+// The output is something to look at. What the renderer draws correctly is
+// settled by the golden fixtures; this answers the different question of
+// whether a person can use the package to draw anything at all.
+
+import { Column, Image, Root, Row, Text } from 'meo-canvas'
+
+const canvas = await Root({
+  width: 520,
+  height: 180,
+  children: [
+    Row({
+      style: { gap: 20, padding: 24, backgroundColor: '#101014' },
+      children: [
+        Image({
+          src: new URL('./avatar.png', import.meta.url).pathname,
+          style: { width: 96, height: 96, borderRadius: 12, objectFit: 'cover' },
+        }),
+        Column({
+          style: { gap: 6, justifyContent: 'center' },
+          children: [
+            Text('Ukasyah Rahmatullah Zada', {
+              style: { fontSize: 26, fontWeight: 'bold', color: '#f4f4f6' },
+            }),
+            Text('meo-canvas — declarative scenes, rendered in Rust', {
+              style: { fontSize: 15, color: '#8a8a94' },
+            }),
+          ],
+        }),
+      ],
+    }),
+  ],
+})
+
+await Bun.write('out.png', await canvas.toBuffer('png'))
+console.log('wrote out.png')

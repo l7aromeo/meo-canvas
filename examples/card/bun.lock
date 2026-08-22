@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "meo-canvas-example-card",
+      "dependencies": {
+        "meo-canvas": "file:../../packages/meo-canvas",
+      },
+    },
+  },
+  "packages": {
+    "meo-canvas": ["meo-canvas@file:../../packages/meo-canvas", {}],
+  }
+}

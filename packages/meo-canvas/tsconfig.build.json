@@ -1,0 +1,16 @@
+{
+  // Emits what the package publishes. The base config sets `noEmit`, because
+  // the tests and the doc-example gate typecheck source and never build it;
+  // this one exists so `exports` points at something real.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/generated/doc-examples.ts"]
+}

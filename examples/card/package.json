@@ -1,0 +1,12 @@
+{
+  "name": "meo-canvas-example-card",
+  "private": true,
+  "type": "module",
+  "description": "A consumer project, installed by link, that renders a card to a PNG.",
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "meo-canvas": "file:../../packages/meo-canvas"
+  }
+}
