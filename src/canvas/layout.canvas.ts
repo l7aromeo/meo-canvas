@@ -765,11 +765,21 @@ export class BoxNode {
         return a.zIndex - b.zIndex || a.originalIndex - b.originalIndex
       })
 
-      // --- Step 3: Handle Clipping (Applies before drawing children) ---
-      let savedContextForClip = false
-      if (this.props.overflow === Style.Overflow.Hidden && (width > 0 || height > 0)) {
-        ctx.save()
-        savedContextForClip = true
+      // --- Step 3: Prepare Clipping ---
+      //
+      // `overflow: hidden` clips this node's content, but not every descendant is its content. An
+      // absolutely positioned node is laid out against its containing block, and a box it merely
+      // sits inside does not clip it -- CSS clips such a node only where the clipper is that
+      // containing block, or lies between it and one. So a static box clips its in-flow children
+      // and lets an absolute one through, which is what Chrome does.
+      //
+      // Applied per child rather than once around them all, so the two kinds can be interleaved
+      // without disturbing the paint order worked out above.
+      const clips = this.props.overflow === Style.Overflow.Hidden && (width > 0 || height > 0)
+      const isContainingBlock =
+        this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static
+
+      const applyClip = () => {
         const borderLeft = this.node.getComputedBorder(Style.Edge.Left)
         const borderTop = this.node.getComputedBorder(Style.Edge.Top)
         const borderRight = this.node.getComputedBorder(Style.Edge.Right)
@@ -794,38 +804,40 @@ export class BoxNode {
           ctx.clip()
         }
       }
+
+      /** Draws one child, inside this node's clip unless the clip does not reach it. */
+      const paintChild = async (child: BoxNode) => {
+        const escapes = child.props.positionType === Style.PositionType.Absolute && !isContainingBlock
+        if (clips && !escapes) {
+          ctx.save()
+          applyClip()
+        }
+        try {
+          // Pass parent's layout origin (x, y) as offset
+          await child.render(ctx, x, y)
+        } finally {
+          if (clips && !escapes) ctx.restore()
+        }
+      }
       // --- End Clipping Setup ---
 
       // --- Step 4: Render Children in Stacking Order ---
 
       // 4a: Anything with a negative zIndex, below the flow
       for (const item of positionedChildren) {
-        if (item.zIndex < 0) {
-          // Pass parent's layout origin (x, y) as offset
-          await item.node.render(ctx, x, y)
-        }
+        if (item.zIndex < 0) await paintChild(item.node)
       }
 
       // 4b: In-flow children that named no zIndex
       for (const child of inFlowChildren) {
-        // Pass parent's layout origin (x, y) as offset
-        await child.render(ctx, x, y)
+        await paintChild(child)
       }
 
       // 4c: Positioned children, and in-flow children that named a zIndex of zero or more
       for (const item of positionedChildren) {
-        if (item.zIndex >= 0) {
-          // Pass parent's layout origin (x, y) as offset
-          await item.node.render(ctx, x, y)
-        }
+        if (item.zIndex >= 0) await paintChild(item.node)
       }
       // --- End Child Rendering ---
-
-      // --- Step 5: Restore Clipping Context ---
-      if (savedContextForClip) {
-        ctx.restore()
-      }
-      // --- End Clipping Restoration ---
 
       // --- Step 6: Restore Transformation Context ---
       if (savedContextForTransform) {
