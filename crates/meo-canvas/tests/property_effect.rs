@@ -47,10 +47,10 @@ use meo_canvas::{
     Box as BoxNode, Element, Format, Renderer, Root, Styled, Text, hex_rgb, px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-        BoxShadow, Color, FillRule, Gradient, GradientGeometry, GradientStop,
-        ImageSource, Length, LinearDirection, Mask, MaskShape, PaintOrder,
-        TextAlign, TextDecoration, TextShadow, TextStroke, Transform,
-        VerticalAlign,
+        BoxShadow, Color, Dimension, FillRule, Gradient, GradientGeometry,
+        GradientStop, ImageSource, Length, LinearDirection, Mask, MaskShape,
+        PaintOrder, TextAlign, TextDecoration, TextShadow, TextStroke,
+        Transform, VerticalAlign,
     },
     sides,
 };
@@ -179,6 +179,11 @@ fn wide() -> Element {
 const STRIP: &[u8] = include_bytes!("assets/strip.png");
 
 /// A background image with the three fields that travel with it.
+/// A tile the subject's box does not divide, so `Repeat`, `Round` and `Space`
+/// are three pictures rather than one.
+const AWKWARD_TILE: BackgroundSize =
+    BackgroundSize::PerAxis(Dimension::Points(9.0), Dimension::Points(11.0));
+
 fn tile(
     repeat: BackgroundRepeat,
     size: BackgroundSize,
@@ -238,6 +243,7 @@ fn cases() -> Vec<Case> {
     let mut all = composite_cases();
     all.extend(shape_cases());
     all.extend(background_image_cases());
+    all.extend(background_tiling_cases());
     all.extend(mask_cases());
     all.extend(text_cases());
     all
@@ -338,12 +344,20 @@ const MASK_IMAGE: &[u8] = include_bytes!("assets/mask-half.png");
 /// The strip the background-image cases paint, and the fields that travel
 /// with it.
 ///
-/// Four rows rather than one: the source is a different question from the
+/// Seven rows rather than one: the source is a different question from the
 /// repeat, the size and the offset, and a source that draws while the three
 /// are ignored is exactly the shape this file exists to tell apart -- which is
-/// what it found. `paint.rs:842` draws the picture stretched to the box with
-/// `draw_image_sized` and says so in a comment: repetition wants a pattern
-/// shader. The source row draws; the three that travel with it do not.
+/// what it found. The painter drew the picture stretched to the box with
+/// `draw_image_sized` and said so in a comment: repetition wants a pattern
+/// shader.
+///
+/// It now tiles, the way v1 does -- by drawing the tiles rather than through a
+/// pattern, because `Space` shares the leftover out between whole tiles and
+/// `Round` scales them so a whole number fits, and a repeating fill can
+/// express neither. Those two have rows of their own for that reason: they are
+/// the pair a pattern-shader implementation would quietly collapse into
+/// `Repeat`, and on a box the tile divides evenly all three are the same
+/// picture -- so both rows use a tile the box does **not** divide.
 fn background_image_cases() -> Vec<Case> {
     vec![
         Case {
@@ -374,7 +388,7 @@ fn background_image_cases() -> Vec<Case> {
                     (px(0.0), px(0.0)),
                 ))
             },
-            effect: Effect::Nothing,
+            effect: Effect::Draws,
         },
         // The two axes against each other rather than against `Repeat`. This
         // is the failure a tiling implementation is most likely to ship: an
@@ -397,7 +411,7 @@ fn background_image_cases() -> Vec<Case> {
                     (px(0.0), px(0.0)),
                 ))
             },
-            effect: Effect::Nothing,
+            effect: Effect::Draws,
         },
         Case {
             property: "background_image size",
@@ -415,7 +429,7 @@ fn background_image_cases() -> Vec<Case> {
                     (px(0.0), px(0.0)),
                 ))
             },
-            effect: Effect::Nothing,
+            effect: Effect::Draws,
         },
         Case {
             property: "background_image position",
@@ -433,7 +447,60 @@ fn background_image_cases() -> Vec<Case> {
                     (px(0.0), px(0.0)),
                 ))
             },
-            effect: Effect::Nothing,
+            effect: Effect::Draws,
+        },
+    ]
+}
+
+/// `Round` and `Space` against `Repeat`, on a tile the box does not divide.
+///
+/// Their own function rather than two more rows above, because the tile has to
+/// be the awkward one: on a box the tile divides evenly all three modes draw
+/// the same picture, and a pair written with the ordinary tile would report
+/// two working keywords as dead.
+fn background_tiling_cases() -> Vec<Case> {
+    vec![
+        // A nine-wide tile in a box that is not a multiple of nine, so the
+        // three modes are three pictures: `Repeat` runs a partial tile off
+        // the far edge, `Round` scales the tile until a whole number fits,
+        // and `Space` keeps the tile and shares the remainder out as gaps.
+        // With a tile the box divides evenly all three agree, which is the
+        // control mistake this pair of rows is written to avoid.
+        Case {
+            property: "background_image round",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Round,
+                    AWKWARD_TILE,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            without: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Repeat,
+                    AWKWARD_TILE,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            effect: Effect::Draws,
+        },
+        Case {
+            property: "background_image space",
+            with: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Space,
+                    AWKWARD_TILE,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            without: || {
+                plain().background_image(tile(
+                    BackgroundRepeat::Round,
+                    AWKWARD_TILE,
+                    (px(0.0), px(0.0)),
+                ))
+            },
+            effect: Effect::Draws,
         },
     ]
 }

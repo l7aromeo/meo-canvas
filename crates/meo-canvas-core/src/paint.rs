@@ -33,12 +33,13 @@ use meo_canvas_scene::{
     ColorSpace, ColorType, Rect, Sides, Size,
     node::{Node, NodeId, NodeKind, PathPaint},
     style::{
-        Length,
+        Dimension, Length,
         effect::{BoxShadow, FillRule, Mask, MaskShape, Transform},
         layout::{Display, Overflow, PositionType},
         paint::{
-            BlendMode, Color, Gradient, GradientGeometry, LinearDirection,
-            ObjectFit, PaintStyle,
+            BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+            Color, Gradient, GradientGeometry, LinearDirection, ObjectFit,
+            PaintStyle,
         },
         text::{TextAlign, VerticalAlign},
     },
@@ -1154,6 +1155,259 @@ fn clip_to_box(
     box_path(context, paint, rect)?;
     context.clip(SkiaFillRule::NonZero);
     Ok(())
+}
+
+/// Paints a node's background picture across its box.
+///
+/// **Tiled by drawing the tiles, not by a pattern shader**, which is v1's own
+/// choice and its reason: `Space` distributes the leftover between whole tiles
+/// and `Round` stretches them so a whole number fits, and a repeating fill can
+/// express neither. Drawing them keeps the size, the origin and the step in
+/// one place for all six modes rather than two rules in two shapes.
+///
+/// Clipped to the box, corners included: a background stops where its node
+/// does, and a tile that overhangs the last row is cut rather than skipped.
+fn draw_background_image(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    background: &BackgroundImage,
+    image: &SkiaImage,
+    rect: Rect,
+) -> Result<(), Error> {
+    let intrinsic = Size::new(image.width() as f32, image.height() as f32);
+    let tile = background_tile(background.size, intrinsic, rect.size);
+    if tile.width <= 0.0
+        || tile.height <= 0.0
+        || rect.size.width <= 0.0
+        || rect.size.height <= 0.0
+    {
+        return Ok(());
+    }
+
+    // `Space` and `Round` tile on both axes; the two directional modes tile on
+    // one. CSS says so, and it is the only place the six modes are not one
+    // rule applied twice.
+    let across = matches!(
+        background.repeat,
+        BackgroundRepeat::Repeat
+            | BackgroundRepeat::RepeatX
+            | BackgroundRepeat::Space
+            | BackgroundRepeat::Round
+    );
+    let down = matches!(
+        background.repeat,
+        BackgroundRepeat::Repeat
+            | BackgroundRepeat::RepeatY
+            | BackgroundRepeat::Space
+            | BackgroundRepeat::Round
+    );
+
+    let columns = lay_tiles_out(
+        rect.size.width,
+        tile.width,
+        background.repeat,
+        across,
+        tile_origin(background.position.0, rect.size.width, tile.width),
+    );
+    let rows = lay_tiles_out(
+        rect.size.height,
+        tile.height,
+        background.repeat,
+        down,
+        tile_origin(background.position.1, rect.size.height, tile.height),
+    );
+
+    context.save();
+    let result = (|context: &mut Context2D| {
+        clip_to_box(context, paint, rect)?;
+        for left in &columns.offsets {
+            for top in &rows.offsets {
+                context.draw_image_sized(
+                    image,
+                    rect.origin.x + left,
+                    rect.origin.y + top,
+                    columns.extent,
+                    rows.extent,
+                );
+            }
+        }
+        Ok(())
+    })(context);
+    context.restore();
+    result
+}
+
+/// Where the tiles sit along one axis, and how long each one is.
+struct TileRun {
+    /// Each tile's offset from the box's own edge.
+    offsets: Vec<f32>,
+    /// The length one tile is drawn at, which `Round` changes.
+    extent: f32,
+}
+
+/// How big one tile is drawn.
+///
+/// A single length sets that axis and the other follows the picture's own
+/// proportions, which is CSS's rule for `background-size: 40px` and the reason
+/// [`Dimension::Auto`] has to survive as far as here. `Cover` and `Contain`
+/// scale to the box the way an image node's `object-fit` does.
+fn background_tile(
+    size: BackgroundSize,
+    intrinsic: Size,
+    box_size: Size,
+) -> Size {
+    if intrinsic.width <= 0.0 || intrinsic.height <= 0.0 {
+        return intrinsic;
+    }
+    let ratio = intrinsic.width / intrinsic.height;
+
+    match size {
+        BackgroundSize::Cover | BackgroundSize::Contain => {
+            if box_size.height <= 0.0 {
+                return intrinsic;
+            }
+            let box_ratio = box_size.width / box_size.height;
+            // Cover matches the width when the picture is the narrower of the
+            // two; contain matches it when the picture is the wider. The one
+            // comparison, read the two ways round.
+            let match_width = match size {
+                BackgroundSize::Cover => ratio < box_ratio,
+                _ => ratio > box_ratio,
+            };
+            if match_width {
+                Size::new(box_size.width, box_size.width / ratio)
+            } else {
+                Size::new(box_size.height * ratio, box_size.height)
+            }
+        }
+        BackgroundSize::PerAxis(width, height) => {
+            let width = resolve_dimension(width, box_size.width);
+            let height = resolve_dimension(height, box_size.height);
+            match (width, height) {
+                (Some(width), Some(height)) => Size::new(width, height),
+                (Some(width), None) => Size::new(width, width / ratio),
+                (None, Some(height)) => Size::new(height * ratio, height),
+                (None, None) => intrinsic,
+            }
+        }
+    }
+}
+
+/// A [`Dimension`] against the axis it lies along, or `None` for `Auto`.
+fn resolve_dimension(dimension: Dimension, reference: f32) -> Option<f32> {
+    match dimension {
+        Dimension::Auto => None,
+        Dimension::Points(points) => Some(points),
+        Dimension::Percent(fraction) => Some(fraction * reference),
+    }
+}
+
+/// Where the first tile's near edge sits.
+///
+/// **A percentage is a share of the slack, not a distance from the edge.** CSS
+/// lines the same fraction of the picture up with that fraction of the box, so
+/// `100%` puts the picture's far edge against the box's far edge rather than
+/// pushing it out by a whole width.
+///
+/// Truncated to a whole pixel, which is v1's behaviour: its `tileOrigin` ends
+/// in a `| 0`. That reads as incidental rather than intended -- a length in
+/// points is not truncated two lines above it -- but it is what v1 draws, and
+/// half a pixel of origin is a different row of anti-aliasing.
+fn tile_origin(position: Length, extent: f32, tile: f32) -> f32 {
+    match position {
+        Length::Points(points) => points,
+        Length::Percent(fraction) => (fraction * (extent - tile)).trunc(),
+    }
+}
+
+/// Every tile offset along one axis.
+///
+/// `Space` fits whole tiles and shares the remainder out as equal gaps,
+/// pinning the first and last to the edges -- so it ignores the origin, as CSS
+/// does. `Round` scales the tile instead, so a whole number fills the axis
+/// exactly. Every other mode leaves the tile at its own length and steps by
+/// it, from the origin, **both ways**: a positive origin still has to cover
+/// the near edge, which is the tile the naive loop leaves out.
+fn lay_tiles_out(
+    extent: f32,
+    tile: f32,
+    repeat: BackgroundRepeat,
+    repeats: bool,
+    origin: f32,
+) -> TileRun {
+    // A tile far below a pixel would otherwise ask for millions of draws, and
+    // a scene is caller data: the cap is a hang turned into a picture. v1 has
+    // no cap, and at these sizes neither picture is one anybody looks at.
+    const MOST_TILES: usize = 4096;
+
+    if !repeats {
+        return TileRun {
+            offsets: vec![origin],
+            extent: tile,
+        };
+    }
+
+    match repeat {
+        BackgroundRepeat::Round => {
+            #[expect(
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                reason = "the round is clamped to at least one and capped"
+            )]
+            let count =
+                ((extent / tile).round().max(1.0) as usize).min(MOST_TILES);
+            let rounded = extent / count as f32;
+            TileRun {
+                offsets: (0..count)
+                    .map(|index| index as f32 * rounded)
+                    .collect(),
+                extent: rounded,
+            }
+        }
+        BackgroundRepeat::Space => {
+            #[expect(
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                reason = "the floor of a positive ratio, capped"
+            )]
+            let count =
+                ((extent / tile).floor().max(0.0) as usize).min(MOST_TILES);
+            if count <= 1 {
+                return TileRun {
+                    offsets: vec![0.0],
+                    extent: tile,
+                };
+            }
+            let gap =
+                (count as f32).mul_add(-tile, extent) / (count as f32 - 1.0);
+            TileRun {
+                offsets: (0..count)
+                    .map(|index| index as f32 * (tile + gap))
+                    .collect(),
+                extent: tile,
+            }
+        }
+        BackgroundRepeat::Repeat
+        | BackgroundRepeat::RepeatX
+        | BackgroundRepeat::RepeatY
+        | BackgroundRepeat::NoRepeat => {
+            let mut offsets = Vec::new();
+            let mut position = origin % tile;
+            // One tile before the first, whenever the origin leaves a gap at
+            // the near edge.
+            if position > 0.0 {
+                position -= tile;
+            }
+            while position < extent && offsets.len() < MOST_TILES {
+                offsets.push(position);
+                position += tile;
+            }
+            TileRun {
+                offsets,
+                extent: tile,
+            }
+        }
+    }
 }
 
 /// Strokes the border, one edge at a time where the edges differ.

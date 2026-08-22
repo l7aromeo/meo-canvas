@@ -20,9 +20,10 @@ use meo_canvas::{
     Overflow, PositionType, Root, Styled, Text, corners, corners_all, hex_rgb,
     px,
     scene::{
-        BoxShadow, Color, Corners, FillRule, FontWeight, Gradient,
-        GradientGeometry, GradientStop, ImageSource, Length, LinearDirection,
-        Mask, MaskShape, Scene, Sides, VerticalAlign, codec,
+        BackgroundImage, BackgroundRepeat, BackgroundSize, BoxShadow, Color,
+        Corners, Dimension, FillRule, FontWeight, Gradient, GradientGeometry,
+        GradientStop, ImageSource, Length, LinearDirection, Mask, MaskShape,
+        Scene, Sides, VerticalAlign, codec,
     },
     sides,
 };
@@ -44,6 +45,7 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("mask-kinds", mask_kinds()),
         ("backdrop-filter", backdrop_filter()),
         ("vertical-align", vertical_align()),
+        ("background-tiling", background_tiling()),
         ("borders-square", borders_square()),
     ]
 }
@@ -697,6 +699,88 @@ fn vertical_align() -> Scene {
             cell(
                 "bottom - the paragraph against the bottom of the box",
                 VerticalAlign::Bottom,
+            ),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// The six ways a background picture tiles, beside the one that does not.
+///
+/// **Cells 4 and 5 use a tile the cell does not divide, and that is the whole
+/// point of them.** On a box that divides evenly, `Repeat`, `Space` and
+/// `Round` draw the same picture: there is no remainder to share out and
+/// nothing to round to. A fixture built that way pins three keywords with one
+/// picture and would pass with all three collapsed into `Repeat`, which is
+/// what a pattern-shader implementation does.
+///
+/// The tile is the same 8x4 asset the `object-fit` fixture uses, drawn at a
+/// size rather than at its own: at eight by four it is a smear a reader cannot
+/// check, and every cell would have to be sampled at the one row the tiles
+/// happen to occupy. Its colours are already known -- red and green on top,
+/// blue and yellow beneath -- so a quarter-cell tile reads as four quadrants.
+fn background_tiling() -> Scene {
+    let tile =
+        |repeat: BackgroundRepeat, size: BackgroundSize| BackgroundImage {
+            source: ImageSource::Bytes(STRIP.to_vec()),
+            repeat,
+            size,
+            position: (Length::ZERO, Length::ZERO),
+        };
+    let cell = |name: &str, background: BackgroundImage| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(56.0), px(40.0))
+            .background_color(hex_rgb(0xff_ff_ff))
+            .background_image(background)
+            .name(name)
+    };
+    // Twenty-eight by twenty: two tiles across and two down in a 56 by 40
+    // cell, so a single tile is a quarter of the cell and every mode is
+    // legible at a glance rather than at the pixel.
+    let plain = BackgroundSize::PerAxis(
+        Dimension::Points(28.0),
+        Dimension::Points(20.0),
+    );
+    // Fifteen by thirteen against the same cell: three across with eleven
+    // left over, and three down with one. That remainder is what separates
+    // `Space` from `Round` from `Repeat`.
+    let awkward = BackgroundSize::PerAxis(
+        Dimension::Points(15.0),
+        Dimension::Points(13.0),
+    );
+
+    Root::new(392.0, 56.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .align_items(Align::Center)
+        .gap_xy(px(0.0), px(8.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("cell 0 draws one tile and is the control. See notes.json.")
+        .children([
+            cell(
+                "no-repeat - CONTROL, one tile at the corner and white after it",
+                tile(BackgroundRepeat::NoRepeat, plain),
+            ),
+            cell(
+                "repeat - tiled on both axes",
+                tile(BackgroundRepeat::Repeat, plain),
+            ),
+            cell(
+                "repeat-x - one row of tiles, white beneath it",
+                tile(BackgroundRepeat::RepeatX, plain),
+            ),
+            cell(
+                "repeat-y - one column of tiles, white beside it",
+                tile(BackgroundRepeat::RepeatY, plain),
+            ),
+            cell(
+                "space - whole tiles with the remainder shared out as gaps",
+                tile(BackgroundRepeat::Space, awkward),
+            ),
+            cell(
+                "round - the tile scaled until a whole number fits",
+                tile(BackgroundRepeat::Round, awkward),
             ),
         ])
         .into_scene()
