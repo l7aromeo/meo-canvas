@@ -38,7 +38,7 @@ export async function example3(): Promise<void> {
   const tick = Path({ d: 'M2 8 L6 12 L14 3' })
 }
 
-/** `root.ts`, line 286. */
+/** `root.ts`, line 282. */
 export async function example4(): Promise<void> {
 
   const canvas = await Root({

@@ -149,8 +149,14 @@ export interface PaintOptions {
  * written down in one place.
  */
 export interface NativeRenderer {
-  /** Resolves, measures, lays out and paints. Once. */
-  paint(slots: Float64Array, values: readonly SideValue[], options: PaintOptions): Promise<NativeCanvas>
+  /**
+   * Resolves, measures, lays out and paints. Once.
+   *
+   * Synchronous, because the addon's is: the painted surface holds Skia types
+   * that are not `Send`, so the paint cannot leave the loop the way `render`'s
+   * does. `Root` is asynchronous anyway — a page builder may fetch.
+   */
+  paint(slots: Float64Array, values: readonly SideValue[], options: PaintOptions): NativeCanvas
 }
 
 /** How the filesystem is reached. Injected so a caller without `node:fs` can supply their own. */
@@ -171,21 +177,11 @@ export interface RootDependencies {
  * not need the native module present to import the package.
  */
 function installed(): RootDependencies {
-  const addon = load()
-  return {
-    renderer: {
-      paint: async (slots, values, options) => addon.paint(slots, values, options),
-    },
-    writeFile,
-    writeFileSync,
-  }
+  return { renderer: load(), writeFile, writeFileSync }
 }
 
 /** What `Root` calls into. */
-interface Addon {
-  /** Paints a scene and returns the surface, retained until it is released. */
-  paint(slots: Float64Array, values: readonly SideValue[], options: PaintOptions): Promise<NativeCanvas>
-}
+type Addon = NativeRenderer
 
 /** The built addon, or an error naming what is missing. */
 function load(): Addon {
@@ -300,7 +296,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   const scale = props.scale ?? DEFAULT_SCALE
   const arena = encodeScene(await pages(props), props.width, props.height, scale)
 
-  const native = await dependencies.renderer.paint(arena.slots, arena.values, {
+  const native = dependencies.renderer.paint(arena.slots, arena.values, {
     gpu: props.gpu ?? true,
     fonts: props.fonts ?? [],
   })

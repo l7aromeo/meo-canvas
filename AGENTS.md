@@ -362,18 +362,36 @@ that library's version.
 
 ### The retained canvas
 
-`Root` is async because resolve performs I/O, and it runs the render on a
-`cx.task` thread so a server's event loop is never blocked by a paint.
+`Root` returns a handle to a painted surface. `toBuffer` encodes that surface
+again at a different format; **it does not re-render.** Two formats of one
+picture cost one resolve, one measure, one layout, one paint, and two encodes.
 
-It returns a handle holding a `JsBox<RenderedCanvas>` — the painted `Surface`
-and its `Renderer`. `toBuffer` encodes that surface again at a different format;
-**it does not re-render.** Two formats of one picture cost one resolve, one
-measure, one layout, one paint, and two encodes.
+**A retained surface and an off-loop paint are mutually exclusive**, and the
+compiler settles it: `RenderedCanvas` holds a `SkPictureRecorder` and an
+`Rc<RefCell<Gradient>>`, so it is `!Send`, and `cx.task` requires a `Send`
+result. The paint therefore runs on the event loop and blocks it for its
+duration. `render`, which returns bytes, is unaffected and still runs off the
+loop — bytes are `Send` — so the one-shot path keeps the property the retained
+path cannot have.
 
-`JsBox` requires `Finalize`, so the Skia surface is freed when the handle is
-collected. No `FinalizationRegistry`: v1 needed one because its canvas lived in
-a worker, and this one does not. `toBufferSync` needs no `Atomics` bridge for
-the same reason. `release()` exists for a caller that will not wait for a
+A server that must not block has `render`; a caller wanting several formats of
+one picture has the retained canvas. Buying both means a thread owning the
+surface with encode requests marshalled to it over a channel: one OS thread per
+live canvas, `encode` blocking the loop on a round trip for no gain over
+encoding inline, and `release` having to join. That is the shape v1 had, and it
+had it because its canvas lived in a worker.
+
+`Root` is async because a page builder may fetch, not because the paint is off
+the loop.
+
+The surface is held by closures over an `Rc<RefCell<Option<RenderedCanvas>>>`
+rather than in a `JsBox`. A `JsBox` is reachable only through `this`, so
+`const { encode } = canvas` would break silently — and the TypeScript side keeps
+the native object in a private field, one refactor from doing exactly that. napi
+frees the captured data when the closures are collected, so the finalizer
+property is intact and `release` only makes the free sooner. No
+`FinalizationRegistry`, and `toBufferSync` needs no `Atomics` bridge: v1 needed
+both because its canvas lived in a worker. `release()` exists for a caller that will not wait for a
 collection.
 
 ### Where the overhead is

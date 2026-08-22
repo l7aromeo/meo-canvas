@@ -50,6 +50,7 @@
     reason = "contradicts the workspace's unreachable_pub"
 )]
 
+pub mod color;
 pub mod encode;
 pub mod layout;
 pub mod markup;
@@ -57,6 +58,7 @@ pub mod measure;
 pub mod paint;
 pub mod resolve;
 
+pub use color::parse_color;
 pub use encode::{EncodeOptions, EncodedImage, ImageFormat};
 pub use layout::LayoutResult;
 pub use measure::{Available, Measure, MeasuredLeaf};

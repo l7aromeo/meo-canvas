@@ -45,10 +45,11 @@
 //! without freezing the node's style into the scene at parse time, where a
 //! later change to the node would no longer reach the text.
 
-use meo_canvas_scene::style::{
-    paint::Color,
-    text::{FontStyle, FontWeight, TextSegment, TextStyle},
+use meo_canvas_scene::style::text::{
+    FontStyle, FontWeight, TextSegment, TextStyle,
 };
+
+use crate::color::parse_color;
 
 /// The spaces a `\t` becomes.
 ///
@@ -179,13 +180,6 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>) {
         // still carries it, and its closing tag still pops.
         _ => {}
     }
-}
-
-/// Parses a CSS colour.
-fn parse_color(value: &str) -> Option<Color> {
-    let parsed = csscolorparser::parse(value).ok()?;
-    let [r, g, b, a] = parsed.to_rgba8();
-    Some(Color::rgba(r, g, b, a))
 }
 
 /// Parses a weight keyword or number.

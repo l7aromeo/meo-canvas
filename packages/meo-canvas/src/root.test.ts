@@ -14,7 +14,7 @@ function fakeRenderer() {
   }
   const dependencies: RootDependencies = {
     renderer: {
-      paint: async (slots, values, options) => {
+      paint: (slots, values, options) => {
         painted.push({ slots, values, gpu: options.gpu, fonts: options.fonts })
         return native
       },
@@ -168,11 +168,30 @@ describe('a sequence that contradicts itself', () => {
 })
 
 describe('the renderer Root reaches for when told nothing', () => {
-  it('is the addon, and says what it is missing rather than what it found', async () => {
-    // `render` returns encoded bytes, so a canvas over it would repaint the
-    // scene per format and could not have a synchronous method at all. `Root`
-    // needs a surface that is retained until it is released, and until the
-    // addon exports one this is where that is said.
-    await expect(Root({ width: 10, height: 10 })).rejects.toThrow(/exports no `paint`/)
+  // Against the real addon, and not skipped when it is absent: a default that
+  // is never exercised is a default nobody has checked. Run `just addon`.
+  it('is the addon, and the canvas it returns encodes', async () => {
+    const canvas = await Root({ width: 8, height: 4, gpu: false, backgroundColor: '#101014' })
+
+    const png = await canvas.png
+    // The eight-byte PNG signature, which says the bytes came from an encoder
+    // rather than from a stub that returned something.
+    expect([...png.slice(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+    canvas.release()
+    expect(canvas.released).toBe(true)
+  })
+
+  it('paints once, however many formats are asked for', async () => {
+    // The claim the retained surface exists for. Two encodes, one paint — and
+    // the second returning different bytes for a different container is what
+    // says the surface was encoded twice rather than cached once.
+    const canvas = await Root({ width: 8, height: 4, gpu: false })
+
+    const [png, webp] = [canvas.toBufferSync('png'), canvas.toBufferSync('webp')]
+
+    expect([...png.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+    expect([...webp.slice(0, 4)]).toEqual([0x52, 0x49, 0x46, 0x46])
+    canvas.release()
   })
 })

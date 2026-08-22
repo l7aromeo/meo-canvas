@@ -808,6 +808,37 @@ describe('a half-written shorthand', () => {
   })
 })
 
+describe('an offset with no position type', () => {
+  it('crosses as an inset that the scene will ignore, which is a trap', () => {
+    // `PositionType` defaults to `Static` in the scene -- CSS's initial value,
+    // which ignores `inset`. So this encodes the offsets faithfully and the
+    // renderer then does nothing with them.
+    //
+    // v1 has no such trap: Yoga's default is `Relative`, so a v1 tree with
+    // `position` and no `positionType` moves. A ported tree stops moving, and
+    // nothing anywhere says so.
+    //
+    // Asserted rather than fixed, because every fix costs something: refusing
+    // it, or defaulting `positionType` to `'relative'` beside it, both make
+    // this node carry two properties where the case fixture's `inset` case
+    // carries one -- so the byte-for-byte check against Rust for `inset` would
+    // no longer have a scene it could compare. That trade is not mine to take
+    // quietly. This test is here so the behaviour is written down and the
+    // decision is visible when it is made.
+    const decoded = page(Box({ position: { top: 4 } }))
+
+    expect(decoded.groups.layout).toEqual({ inset: [{ tag: 'points', value: 4 }, null, null, null] })
+    expect(decoded.groups.layout?.position_type).toBeUndefined()
+  })
+
+  it('does what the caller meant once the type is named', () => {
+    expect(page(Box({ position: { top: 4 }, positionType: 'relative' })).groups.layout).toEqual({
+      inset: [{ tag: 'points', value: 4 }, null, null, null],
+      position_type: 'Relative',
+    })
+  })
+})
+
 describe('the one keyword CSS and the scene spell differently', () => {
   it('crosses as the variant the scene declares', () => {
     // CSS writes `nowrap` as a single word; the scene writes the concept

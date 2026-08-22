@@ -60,8 +60,12 @@
 
 pub mod arena;
 
+use std::{cell::RefCell, rc::Rc};
+
 use arena::{SideValue, Values};
-use meo_canvas_core::{EncodeOptions, Renderer, Surface};
+use meo_canvas_core::{
+    EncodeOptions, ImageFormat, RenderedCanvas, Renderer, Surface,
+};
 use neon::{prelude::*, types::buffer::TypedArray};
 
 /// Reads the arena and its side array out of the call's arguments.
@@ -126,7 +130,7 @@ fn render_off_thread(
 ) -> Result<Vec<u8>, String> {
     let scene =
         arena::decode(slots, values).map_err(|error| error.to_string())?;
-    let format = meo_canvas_core::ImageFormat::from_extension(format)
+    let format = ImageFormat::from_extension(format)
         .ok_or_else(|| format!("no image format is called {format:?}"))?;
     let renderer = Renderer::new();
     renderer
@@ -200,6 +204,212 @@ fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
     JsBuffer::from_slice(&mut cx, &bytes)
 }
 
+/// The painted surface, shared by the two methods that reach it.
+///
+/// `Rc` rather than `JsBox`: [`RenderedCanvas`] is `!Send` -- Skia's
+/// `SkPictureRecorder` is, and a `CanvasGradient` holds an `Rc<RefCell<_>>` --
+/// and a `JsBox` would need `this` to be bound at every call site, which a
+/// destructured `const { encode } = canvas` would silently break. Two closures
+/// each holding a clone give the JavaScript side the plain object its
+/// `NativeCanvas` interface declares, and napi frees the captured data when
+/// both are collected.
+///
+/// `RefCell` because [`RenderedCanvas::to_buffer`] takes `&mut self`, and
+/// `Option` so [`paint`]'s `release` can drop the surface early and leave a
+/// later `encode` something to refuse rather than a surface that is gone.
+type Painted = Rc<RefCell<Option<RenderedCanvas>>>;
+
+/// Reads the `{ gpu, fonts }` object `paint` is given.
+///
+/// Every V8 read happens here, before anything is drawn, for the reason
+/// [`arguments`] gives.
+fn paint_options(
+    cx: &mut FunctionContext<'_>,
+    index: usize,
+) -> NeonResult<Renderer> {
+    let mut renderer = Renderer::new();
+    let Some(options) = cx.argument_opt(index) else {
+        return Ok(renderer);
+    };
+    let Ok(options) = options.downcast::<JsObject, _>(cx) else {
+        return cx.throw_type_error("paint options must be an object");
+    };
+
+    if let Some(gpu) = options.get_opt::<JsBoolean, _, _>(cx, "gpu")? {
+        renderer.set_gpu(gpu.value(cx));
+    }
+
+    let Some(fonts) = options.get_opt::<JsArray, _, _>(cx, "fonts")? else {
+        return Ok(renderer);
+    };
+    for index in 0..fonts.len(cx) {
+        let entry: Handle<'_, JsObject> = fonts.get(cx, index)?;
+        let family = entry.get::<JsString, _, _>(cx, "family")?.value(cx);
+        let paths = entry.get::<JsArray, _, _>(cx, "paths")?;
+        for path in 0..paths.len(cx) {
+            let path = paths.get::<JsString, _, _>(cx, path)?.value(cx);
+            // Registration is I/O and can fail on a path that does not exist,
+            // which is an argument error rather than a render error: the call
+            // that named the file is still on the stack.
+            if let Err(error) = renderer.register_font(&family, &path) {
+                return cx.throw_error(error.to_string());
+            }
+        }
+    }
+    Ok(renderer)
+}
+
+/// The [`ImageFormat`] a JavaScript format tag names.
+///
+/// [`ImageFormat::from_extension`] answers everything but `raw`, which it
+/// refuses on purpose -- a `.bin` of pixel bytes is a file nothing reads back,
+/// so it is not a format a filename may imply. Across this boundary the tag is
+/// not a filename; the caller said `raw` by name, which is exactly the way that
+/// documentation says to ask for it.
+fn format_from_tag(tag: &str) -> Option<ImageFormat> {
+    if tag == "raw" {
+        return Some(ImageFormat::Raw);
+    }
+    ImageFormat::from_extension(tag)
+}
+
+/// Reads the encode options object, which may be absent or empty.
+fn encode_options(
+    cx: &mut FunctionContext<'_>,
+    index: usize,
+) -> NeonResult<EncodeOptions> {
+    let mut options = EncodeOptions::default();
+    let Some(given) = cx.argument_opt(index) else {
+        return Ok(options);
+    };
+    if given.is_a::<JsUndefined, _>(cx) || given.is_a::<JsNull, _>(cx) {
+        return Ok(options);
+    }
+    let Ok(given) = given.downcast::<JsObject, _>(cx) else {
+        return cx.throw_type_error("encode options must be an object");
+    };
+
+    if let Some(quality) = given.get_opt::<JsNumber, _, _>(cx, "quality")? {
+        options.quality = Some(quality.value(cx) as f32);
+    }
+    if let Some(lossless) = given.get_opt::<JsBoolean, _, _>(cx, "lossless")? {
+        options.lossless = Some(lossless.value(cx));
+    }
+    if let Some(matte) = given.get_opt::<JsString, _, _>(cx, "matte")? {
+        let css = matte.value(cx);
+        let Some(colour) = meo_canvas_core::parse_color(&css) else {
+            return cx.throw_type_error(format!(
+                "matte {css:?} is not a CSS colour"
+            ));
+        };
+        // Packed `0xRRGGBB`. The alpha is dropped rather than carried: a matte
+        // is what an opaque format flattens transparency *against*, so a
+        // translucent one describes nothing.
+        options.matte = Some(
+            (u32::from(colour.r) << 16)
+                | (u32::from(colour.g) << 8)
+                | u32::from(colour.b),
+        );
+    }
+    if let Some(page) = given.get_opt::<JsNumber, _, _>(cx, "page")? {
+        options.page = Some(page.value(cx) as usize);
+    }
+    if let Some(fps) = given.get_opt::<JsNumber, _, _>(cx, "fps")? {
+        options.fps = Some(fps.value(cx) as f32);
+    }
+    if let Some(delays) = given.get_opt::<JsArray, _, _>(cx, "frameDelays")? {
+        let length = delays.len(cx);
+        options.frame_delays = Vec::with_capacity(length as usize);
+        for index in 0..length {
+            let delay = delays.get::<JsNumber, _, _>(cx, index)?.value(cx);
+            options.frame_delays.push(delay as u32);
+        }
+    }
+    if let Some(loops) = given.get_opt::<JsNumber, _, _>(cx, "loop")? {
+        options.loops = Some(loops.value(cx) as u32);
+    }
+    Ok(options)
+}
+
+/// Paints a scene and hands back a surface that can be encoded more than once.
+///
+/// Takes the arena, the side values array and a `{ gpu, fonts }` object, and
+/// returns an object with `encode(format, options)` and `release()` -- the
+/// `NativeCanvas` interface the TypeScript surface declares.
+///
+/// # Why this is not [`render`], and does not replace it
+///
+/// `render` folds the encode in and returns bytes, so two formats of one
+/// picture cost two of everything. This is the retained form: one resolve, one
+/// measure, one layout, one paint, and an encode per format asked for. It is
+/// also the only shape in which `gpu` and `fonts` mean anything -- `render`
+/// builds a default [`Renderer`], because it has no object to read them from --
+/// and the only one that can offer a synchronous encode, which is what
+/// `toBufferSync` and its siblings are.
+///
+/// # Why the paint runs on the event loop, unlike [`render`]
+///
+/// Because it cannot run anywhere else. `cx.task` requires its result to be
+/// `Send`, and [`RenderedCanvas`] is not: it holds a Skia `PageRecorder` around
+/// an `SkPictureRecorder`, and a `CanvasGradient` behind an `Rc<RefCell<_>>`.
+/// Neither is a type this workspace defines, so the paint stays here and
+/// `render` remains the export that keeps a paint off the loop.
+///
+/// The encodes are synchronous on purpose rather than by that constraint:
+/// encoding is CPU work with no I/O in it, so a Promise per format would cost a
+/// tick and defer nothing.
+fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
+    let (slots, values) = arguments(&mut cx)?;
+    let renderer = paint_options(&mut cx, 2)?;
+
+    let scene = match arena::decode(&slots, &values) {
+        Ok(scene) => scene,
+        Err(error) => return cx.throw_error(error.to_string()),
+    };
+    let canvas = match renderer.render(&scene) {
+        Ok(canvas) => canvas,
+        Err(error) => return cx.throw_error(error.to_string()),
+    };
+
+    let painted: Painted = Rc::new(RefCell::new(Some(canvas)));
+    let surface = cx.empty_object();
+
+    let held = Rc::clone(&painted);
+    let encode = JsFunction::new(&mut cx, move |mut cx| {
+        let tag = cx.argument::<JsString>(0)?.value(&mut cx);
+        let Some(format) = format_from_tag(&tag) else {
+            return cx.throw_type_error(format!(
+                "no image format is called {tag:?}"
+            ));
+        };
+        let options = encode_options(&mut cx, 1)?;
+
+        let mut held = held.borrow_mut();
+        let Some(canvas) = held.as_mut() else {
+            return cx.throw_error(
+                "this canvas has been released; encode before calling release()",
+            );
+        };
+        match canvas.to_buffer(format, &options) {
+            Ok(bytes) => JsBuffer::from_slice(&mut cx, &bytes),
+            Err(error) => cx.throw_error(error.to_string()),
+        }
+    })?;
+    surface.set(&mut cx, "encode", encode)?;
+
+    let release = JsFunction::new(&mut cx, move |mut cx| {
+        // Dropping the surface, not marking it dropped: the point of `release`
+        // is that a caller who will not wait for a collection can free the
+        // Skia allocation now. Calling it twice takes `None` and does nothing,
+        // which is what the interface promises.
+        painted.borrow_mut().take();
+        Ok(cx.undefined())
+    })?;
+    surface.set(&mut cx, "release", release)?;
+
+    Ok(surface)
+}
+
 /// The module's single registration point.
 ///
 /// # Errors
@@ -208,17 +418,9 @@ fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
 /// failure to load the addon.
 #[neon::main]
 fn main(mut cx: ModuleContext<'_>) -> NeonResult<()> {
+    cx.export_function("paint", paint)?;
     cx.export_function("render", render)?;
     cx.export_function("backend", backend)?;
     cx.export_function("sceneBytes", scene_bytes)?;
     Ok(())
-}
-
-#[cfg(test)]
-mod send_probe {
-    const fn assert_send<T: Send>() {}
-    #[test]
-    fn probe() {
-        assert_send::<meo_canvas_core::RenderedCanvas>();
-    }
 }
