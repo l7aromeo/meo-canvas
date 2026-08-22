@@ -849,6 +849,17 @@ how `gpu` reached the scene while reaching no pixel. Guard on the precondition
 and assert the trivial case explicitly, so the run that cannot check the claim
 says so rather than passing.
 
+**A citation is a measurement, not a label.** A `grep -n` result is evidence that
+a string occurs, not evidence that the line quoted is the line that matters:
+taffy's baseline fallback sits at `flexbox.rs:1522` and `:1524` with the `} else
+{` between them, and it is spelled two ways -- `baseline.unwrap_or(height)`
+there and `first_baselines.y.unwrap_or(size.height)` at `:2037` and `:2047` --
+so grepping one spelling finds half the sites. Re-read each cited line in the
+file before the number leaves your hands, and re-read a claim against its own
+evidence before it does: a measurement printed and then generalised over is a
+different failure from a measurement never taken, and only the second is
+prevented by measuring.
+
 **A crate's own tests can name what the crate does not export.** Using the
 surface finds what testing it cannot: a gradient whose argument had no
 exportable name, `into_scene` documented "to write to disk" with nothing that
