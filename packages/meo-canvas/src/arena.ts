@@ -410,11 +410,25 @@ function packColor(color: Color): number {
   return channel(0) * 2 ** 24 + channel(1) * 2 ** 16 + channel(2) * 2 ** 8 + alpha
 }
 
-/** The number a `'…%'` string names, or `undefined` if it is not one. */
+/**
+ * The fraction a `'…%'` string names, or `undefined` if it is not one.
+ *
+ * **Divided by a hundred**, because the scene stores a percentage as a fraction
+ * where `1.0` is 100% — `Length::Percent`, `Dimension::Percent` and
+ * `TrackSize::Percent` all say so, and taffy's `percent()` takes the same. A
+ * caller writes `'50%'` and the scene holds `0.5`.
+ *
+ * The probes are `'100%'`, which is the spelling of `Percent(1.0)`. `'1%'` is
+ * the one value that cannot check this: written as `1` it equals
+ * `Percent(1.0)` whether or not the division happens, so a probe using it
+ * leaves the round trip and the byte comparison agreeing either way. The check
+ * that does not share the units is in `root.test.ts`, which counts rendered
+ * pixels.
+ */
 function percentage(value: string): number | undefined {
   if (!value.endsWith('%')) return undefined
   const number = Number(value.slice(0, -1))
-  return Number.isFinite(number) ? number : undefined
+  return Number.isFinite(number) ? number / 100 : undefined
 }
 
 /** The number a string ending in `unit` names, or `undefined`. */

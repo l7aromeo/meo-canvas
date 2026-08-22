@@ -423,7 +423,7 @@ const PROBES: Readonly<Record<string, Style>> = {
   font_size: { fontSize: 1 },
   font_style: { fontStyle: 'italic' },
   font_weight: { fontWeight: 1 },
-  gap: { gap: '1%' },
+  gap: { gap: '100%' },
   grid_auto_columns: { gridAutoColumns: 1 },
   grid_auto_flow: { gridAutoFlow: 'column' },
   grid_auto_rows: { gridAutoRows: 1 },
@@ -431,7 +431,7 @@ const PROBES: Readonly<Record<string, Style>> = {
   grid_row: { gridRow: { start: 1, span: 1 } },
   grid_template_columns: { gridTemplateColumns: [1] },
   grid_template_rows: { gridTemplateRows: [1] },
-  inset: { position: '1%' },
+  inset: { position: '100%' },
   justify_content: { justifyContent: 'flex-end' },
   letter_spacing: { letterSpacing: 1 },
   line_gap: { lineGap: 1 },
@@ -441,7 +441,7 @@ const PROBES: Readonly<Record<string, Style>> = {
   min_size: { minWidth: 1, minHeight: 1 },
   opacity: { opacity: 2 },
   overflow: { overflow: 'hidden' },
-  padding: { padding: '1%' },
+  padding: { padding: '100%' },
   paint_order: { paintOrder: 'stroke' },
   position_type: { positionType: 'absolute' },
   size: { width: 1, height: 1 },
@@ -451,7 +451,7 @@ const PROBES: Readonly<Record<string, Style>> = {
   word_spacing: { wordSpacing: 1 },
   z_index: { zIndex: 1 },
   transform: {
-    transform: { translateX: '1%', translateY: '1%', rotate: 1, scaleX: 1, scaleY: 1, originX: '1%', originY: '1%' },
+    transform: { translateX: '100%', translateY: '100%', rotate: 1, scaleX: 1, scaleY: 1, originX: '100%', originY: '100%' },
   },
   box_shadows: { boxShadow: { inset: true, offsetX: 1, offsetY: 1, blur: 1, spread: 1, color: '#00000001' } },
   text_shadows: { textShadow: { offsetX: 1, offsetY: 1, blur: 1, color: '#00000001' } },
@@ -693,8 +693,8 @@ describe('an image node', () => {
       source: { tag: 'path', value: 'avatar.png' },
       fit: 'Fill',
       position: [
-        { tag: 'percent', value: 50 },
-        { tag: 'percent', value: 50 },
+        { tag: 'percent', value: 0.5 },
+        { tag: 'percent', value: 0.5 },
       ],
       frame: null,
     })
@@ -707,8 +707,8 @@ describe('an image node', () => {
       source: { tag: 'url', value: 'https://example.invalid/a.png' },
       fit: 'Cover',
       position: [
-        { tag: 'percent', value: 50 },
-        { tag: 'percent', value: 50 },
+        { tag: 'percent', value: 0.5 },
+        { tag: 'percent', value: 0.5 },
       ],
       frame: 3,
     })
@@ -821,8 +821,8 @@ describe('the effects', () => {
         scale_x: 1,
         scale_y: 1,
         origin: [
-          { tag: 'percent', value: 50 },
-          { tag: 'percent', value: 50 },
+          { tag: 'percent', value: 0.5 },
+          { tag: 'percent', value: 0.5 },
         ],
       },
     })
@@ -895,16 +895,18 @@ describe('the shorthands', () => {
 
   it('read a size in either unit, and `auto` as neither', () => {
     expect(page(Box({ width: '50%', height: 'auto' })).groups.layout).toEqual({
-      size: [{ tag: 'percent', value: 50 }, { tag: 'auto' }],
+      size: [{ tag: 'percent', value: 0.5 }, { tag: 'auto' }],
     })
   })
 
   it('take a track list in each of its spellings', () => {
-    expect(page(Box({ gridTemplateColumns: [1, '2px', '30%', '4fr', 'auto'] })).groups.layout).toEqual({
+    expect(page(Box({ gridTemplateColumns: [1, '2px', '25%', '4fr', 'auto'] })).groups.layout).toEqual({
       grid_template_columns: [
         { tag: 'points', value: 1 },
         { tag: 'points', value: 2 },
-        { tag: 'percent', value: 30 },
+        // `25%`, not `30%`: a quarter is exact in an `f32` and three tenths is
+        // not, and this test is about spellings rather than about narrowing.
+        { tag: 'percent', value: 0.25 },
         { tag: 'fraction', value: 4 },
         { tag: 'auto' },
       ],
@@ -1079,11 +1081,11 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     ],
     { maxLines: 2, ellipsis: '...' },
   ),
-  __kind_image_path: Image({ src: 'probe.png', objectFit: 'cover', objectPosition: ['0.25%', 3], frame: 2 }),
+  __kind_image_path: Image({ src: 'probe.png', objectFit: 'cover', objectPosition: ['25%', 3], frame: 2 }),
   __kind_image_url: Image({
     src: { url: 'https://probe.invalid/a' },
     objectFit: 'cover',
-    objectPosition: ['0.25%', 3],
+    objectPosition: ['25%', 3],
     frame: 2,
   }),
   // The markup form of a text node: `Text` sets the discriminant and the string
@@ -1092,7 +1094,7 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
   __kind_image_bytes: Image({
     src: { bytes: new Uint8Array([1, 2, 3]) },
     objectFit: 'cover',
-    objectPosition: ['0.25%', 3],
+    objectPosition: ['25%', 3],
     frame: 2,
   }),
   __kind_path: Path({

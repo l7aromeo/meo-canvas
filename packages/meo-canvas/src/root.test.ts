@@ -216,6 +216,36 @@ describe('the renderer Root reaches for when told nothing', () => {
     expect(canvas.released).toBe(true)
   })
 
+  it('resolves a percentage against the box rather than against a hundred times it', async () => {
+    // Measured in pixels, on purpose. The scene stores a percentage as a
+    // fraction where `1.0` is 100%, and this surface wrote `'50%'` as `50` for
+    // a while — five thousand per cent — while **every** test agreed: the case
+    // fixture probes each percentage property with `1`, and `'1%'` written as
+    // `1` is exactly Rust's `Percent(1.0)`. The round trip and the byte
+    // comparison both passed against the one value where the bug is invisible.
+    //
+    // So this asserts a rendered width. A comparison against Rust's bytes
+    // cannot catch a units error that Rust's own probe shares.
+    const covered = async (width: number | `${number}%`): Promise<number> => {
+      const canvas = await Root({
+        width: 200,
+        height: 40,
+        gpu: false,
+        children: Box({ width, height: 40, backgroundColor: '#ffffff' }),
+      })
+      const raw = canvas.toBufferSync('raw')
+      canvas.release()
+
+      let lit = 0
+      for (let x = 0; x < 200; x += 1) if ((raw[x * 4 + 3] ?? 0) > 0) lit += 1
+      return lit
+    }
+
+    expect(await covered('50%')).toBe(100)
+    expect(await covered('10%')).toBe(20)
+    expect(await covered(100)).toBe(100)
+  })
+
   it('draws different pixels on the two rasterisers', async () => {
     // The check a fake renderer cannot satisfy, and the one that would have
     // caught this: `gpu` travelled in the paint options object, the addon
