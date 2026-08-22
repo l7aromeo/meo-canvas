@@ -82,6 +82,10 @@ test:
     cargo test --workspace
     cargo test -p meo-canvas-node --features "{{ host_features }}"
     cargo test -p meo-canvas --features "{{ host_features }}"
+    # The golden fixtures pin `gpu` to false, and a build with no backend
+    # compiled cannot tell whether the pin holds -- the two rasterisers differ on
+    # eight of the ten scenes. This is the run that reads the pin.
+    cargo test -p meo-canvas-core --features "{{ host_features }}"
 
 # Coverage floor is 90%. `--fail-under-*` exits non-zero, so this is the gate
 # rather than a report.

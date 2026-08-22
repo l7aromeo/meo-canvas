@@ -7,20 +7,45 @@
 //!
 //! Measured rather than assumed: one scene with text, descenders and digits,
 //! rendered five times -- twice in one process with separate renderers, three
-//! times through separate invocations of the CLI -- produced a single SHA-256,
-//! and a build with the Metal backend compiled produced the same bytes as one
-//! without. So there is no tolerance here and no threshold to justify. A
-//! disagreement is a regression until someone measures otherwise, and a
-//! tolerance argued from a measured disagreement is a different object from one
-//! argued from an anticipated one.
+//! times through separate invocations of the CLI -- produced a single SHA-256.
+//! So there is no tolerance here and no threshold to justify. A disagreement is
+//! a regression until someone measures otherwise, and a tolerance argued from a
+//! measured disagreement is a different object from one argued from an
+//! anticipated one.
 //!
 //! The evidence is one architecture and one Skia build. A second machine
 //! disagreeing is the moment to revisit this, with its diff in hand.
 //!
+//! ## The GPU is pinned off, and that is load-bearing
+//!
+//! This section used to claim that a build with the Metal backend compiled
+//! produced the same bytes as one without. **That is false**, and the
+//! measurement behind it was one scene of text -- which happens to be a case
+//! where the two rasterisers do agree.
+//!
+//! Run with `--features metal`, **eight of the ten fixtures differ**:
+//! `box-shadow` by 6129 pixels, `z-order` by 7560, `gradients` by 2705,
+//! and `baseline-alignment`, `borders-per-edge`, `object-fit`,
+//! `overflow-clip` and `text-descenders` besides. The two that agree are
+//! `block-stacking` and `block-stacking-relative`, which draw nothing but
+//! axis-aligned rectangles.
+//!
+//! The dividing line is anti-aliased edges: a curve has them at every size, and
+//! glyphs have them only at some -- text at 16, 20 and 22 is byte-identical
+//! between the two, 23 and 24 differ, and 28, 32 and 48 agree again. So a
+//! golden with no curve in it says nothing about the rasteriser, and one with a
+//! curve says the two disagree.
+//!
+//! Hence [`fixture_renderer`] sets `gpu` to false rather than taking
+//! `Renderer::new`'s default of true. Without it this suite passes or fails on
+//! a build flag, which is exactly the kind of thing the rest of this section is
+//! about not letting a host decide.
+//!
 //! # What the harness pins
 //!
 //! Everything a host could otherwise supply. The renderer registers exactly one
-//! font, from this repository; the scale is fixed here; and a fixture naming
+//! font, from this repository; the scale is fixed here; the rasteriser is the
+//! CPU whatever the build compiled; and a fixture naming
 //! any other family is an error rather than a resolution -- because
 //! [`meo_canvas_core::resolve::Fonts`] answers `has_family` from the platform's
 //! installed faces as well as the registered ones, so a fixture asking for
@@ -80,9 +105,14 @@ fn report_dir(name: &str) -> PathBuf {
     raw.canonicalize().unwrap_or(raw)
 }
 
-/// A renderer carrying the repository's font and nothing else.
+/// A renderer carrying the repository's font, on the CPU, and nothing else.
 fn fixture_renderer() -> Renderer {
     let mut renderer = Renderer::new();
+    // Pinned for the same reason the font and the scale are: it is something a
+    // host would otherwise supply. `Renderer::new` asks for the GPU, so without
+    // this the suite compares against whichever rasteriser the build happened
+    // to compile -- and the two do not agree. See the module documentation.
+    renderer.set_gpu(false);
     renderer
         .register_font(FIXTURE_FAMILY, font_path())
         .unwrap_or_else(|error| {
