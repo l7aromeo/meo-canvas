@@ -493,6 +493,12 @@ export interface BoxProps extends BaseProps {
    * every static box in between; Yoga always uses the parent, whether or not it is positioned. A
    * layout ported from the browser that relies on skipping an intermediate box will land somewhere
    * else — give the node's own parent the offsets instead.
+   * Naming either one makes the node *positioned*, and a positioned node paints above in-flow
+   * siblings whichever order they were declared in — CSS treats `relative` and `absolute` alike
+   * there, and so does this. Leaving it unset is CSS `static`: the node stays in the flow and
+   * paints in declaration order. Yoga's default position type is `RELATIVE`, but a node that never
+   * asked for one is static rather than relative, which is why the two are distinguished by
+   * whether the prop was given at all.
    * @see Style.PositionType (`RELATIVE`, `ABSOLUTE`)
    * @default Yoga default (`RELATIVE`)
    * @see https://yogalayout.dev/docs/styling/position
@@ -828,16 +834,19 @@ export interface BoxProps extends BaseProps {
   transform?: TransformProps
 
   /**
-   * Stack order among absolutely positioned siblings. A larger value paints over a smaller one, and
-   * equal values paint in the order they were declared.
+   * Stack order among siblings. A larger value paints over a smaller one, and equal values paint in
+   * the order they were declared.
    *
-   * Only absolutely positioned nodes take part. An in-flow child is painted in flow order and is
-   * never lifted by a `zIndex`.
+   * Naming one takes part whether or not the node is positioned. Every node here is a flex item —
+   * Yoga has no block layout, and `Grid` is flex underneath — and CSS applies `z-index` to a flex
+   * item whatever its `position` says.
    *
-   * Leaving it unset is CSS's `z-index: auto`, which shares a layer with `0` — so an absolutely
-   * positioned child still paints above in-flow siblings, whether it is declared before or after
-   * them. A negative value puts it below them instead, which is how a decoration is placed behind
-   * the content of its own parent.
+   * Leaving it unset is CSS's `z-index: auto`. For a *positioned* node that shares a layer with
+   * `0`, so an absolutely positioned child still paints above in-flow siblings whether declared
+   * before or after them. For an in-flow node it does not: an explicit `0` lifts the node above
+   * later siblings where `auto` leaves it in the flow, because for a flex item any value other
+   * than `auto` creates a stacking context. A negative value puts the node below the flow, which
+   * is how a decoration is placed behind the content of its own parent.
    * @example
    * ```ts
    * Box({

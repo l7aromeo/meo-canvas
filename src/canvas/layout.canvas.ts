@@ -711,21 +711,42 @@ export class BoxNode {
       await this._renderContent(ctx, x, y, width, height)
 
       // --- Step 2: Prepare Children for Stacking ---
+      //
+      // CSS 2.1 Appendix E paints in three bands within one stacking context: negative z-index
+      // below, then in-flow content, then positioned descendants with `z-index: auto` or `0` above
+      // it. So an absolutely positioned child covers a later in-flow sibling whatever the order
+      // they were declared in, and a negative one goes under the flow entirely.
+      //
+      // A child joins those bands when it names a `positionType` *or* a `zIndex`. Both count
+      // because every child here is a flex item -- Yoga has no block layout, and `Grid` is flex
+      // underneath -- and for a flex item CSS Flexbox 5.4 makes `z-index` apply whatever `position`
+      // says, while `relative` is positioned exactly as `absolute` is.
+      //
+      // Naming neither leaves the child in the flow, which is what an ordinary child is: Yoga's
+      // default position type is `Relative`, but a child that never asked for one is CSS `static`.
+      // That is why an absent `positionType` is read as static rather than as relative -- and why
+      // an explicit `Static`, which Yoga also offers, is read the same way and stays in the flow.
+      //
+      // `z-index: 0` is not `auto` here. For a positioned box the two share a layer, but for a flex
+      // item an explicit `0` creates a stacking context where `auto` does not -- so a static child
+      // naming `0` lifts above a later sibling and one naming nothing does not.
+      //
+      // Read off Chrome as rendered pixels rather than with `elementFromPoint`: hit-testing does
+      // not follow background paint order here -- Appendix E puts an in-flow background at layer 3
+      // and its inline content at layer 5 -- and a hit-test reading says the opposite of what the
+      // screen shows for the absolute-versus-later-sibling case.
       const positionedChildren: { node: BoxNode; zIndex: number; originalIndex: number }[] = []
       const inFlowChildren: BoxNode[] = []
 
       this.children.forEach((child, index) => {
-        // Every absolutely positioned child is a positioned descendant, whether or not it named a
-        // zIndex. CSS paints those above in-flow content, and `z-index: auto` shares a layer with
-        // `z-index: 0` — so an unindexed one defaults to 0 rather than falling back into the flow,
-        // where a later sibling would bury it.
-        //
-        // `Relative` stays in the flow. It is Yoga's default position type, so it is what every
-        // ordinary child already is — CSS `static` rather than CSS `relative` — and treating it as
-        // positioned would lift the whole tree into the positioned layer.
-        if (child.props.positionType === Style.PositionType.Absolute) {
+        const positioned =
+          child.props.positionType !== undefined && child.props.positionType !== Style.PositionType.Static
+        const stacks = positioned || child.props.zIndex !== undefined
+        if (stacks) {
           positionedChildren.push({
             node: child,
+            // `z-index: auto` shares a layer with `0`, so an absolute child that named none sorts
+            // as 0 rather than falling back into the flow.
             zIndex: child.props.zIndex ?? 0,
             originalIndex: index, // Keep original order for tie-breaking
           })
@@ -772,7 +793,7 @@ export class BoxNode {
 
       // --- Step 4: Render Children in Stacking Order ---
 
-      // 4a: Render positioned children with negative zIndex
+      // 4a: Anything with a negative zIndex, below the flow
       for (const item of positionedChildren) {
         if (item.zIndex < 0) {
           // Pass parent's layout origin (x, y) as offset
@@ -780,13 +801,13 @@ export class BoxNode {
         }
       }
 
-      // 4b: Render in-flow children (recursively)
+      // 4b: In-flow children that named no zIndex
       for (const child of inFlowChildren) {
         // Pass parent's layout origin (x, y) as offset
         await child.render(ctx, x, y)
       }
 
-      // 4c: Render positioned children with zero or positive zIndex
+      // 4c: Positioned children, and in-flow children that named a zIndex of zero or more
       for (const item of positionedChildren) {
         if (item.zIndex >= 0) {
           // Pass parent's layout origin (x, y) as offset
