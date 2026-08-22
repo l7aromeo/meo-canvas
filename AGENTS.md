@@ -71,6 +71,24 @@ re-entry into caller code mid-render.
 Fonts and decoded images are resolved once and shared across every page in a
 scene. The layout tree is built and dropped per page.
 
+### Where state lives
+
+`Renderer` owns everything a render needs that is not the scene: the registered
+fonts, and whatever caches the passes keep. It exists because those outlive any
+one scene — a server rendering a thousand pictures registers its fonts once —
+and because the alternative is process-wide statics, which is what v1 has five
+of.
+
+Nothing in this crate is global. Two `Renderer`s on two threads share no state
+and cannot contend. The one exception is outside our control: `meo-skia-canvas`
+keeps its own process-wide font registry, so registering a face is visible
+process-wide whether or not our `Renderer` is. What this crate controls is
+adding no second global, and it adds none.
+
+`Renderer::render` takes the scene, the format, and the encode options. The
+options belong there rather than on the renderer because two encodes of one
+scene at different quality settings are two calls, not two renderers.
+
 ### Pipeline
 
 One pass, no re-entry into caller code.
@@ -90,6 +108,21 @@ closure from their prepared paragraph. `AvailableSpace::MinContent` and
 `MaxContent` are answered by `min_intrinsic_width()` and `max_intrinsic_width()`
 without an additional layout — a `Paragraph` exists only post-layout, since
 `ParagraphBuilder::build` lays it out at construction.
+
+Baseline alignment on measured text is wrong today, and wrong in a way that
+looks nearly right. The measurer reports a baseline — `MeasuredLeaf` carries one
+— but taffy's high-level tree has nowhere to receive it: a measure-function leaf
+reports `first_baselines: Point::NONE` (`taffy-0.13.0/src/compute/leaf.rs:102`)
+and the flexbox solver reads a missing baseline as the node's own height
+(`src/compute/flexbox.rs:1522`). A row of text aligned `baseline` therefore
+lines up on the bottom edges of its runs, which differs from true baseline
+alignment by the descender depth, so two runs at different sizes sit subtly
+wrong rather than obviously so. In a column direction taffy does not attempt
+baseline alignment at all.
+
+Correcting it means either the low-level `LayoutPartialTree` API, where a caller
+constructs the `LayoutOutput` and its `Baselines` itself, or a post-pass that
+shifts baseline-aligned children using the baselines already measured.
 
 **paint** walks the solved tree in z-order and draws through
 `meo-skia-canvas`'s `Context2D`. No drawing call crosses a language boundary:
@@ -165,6 +198,22 @@ as part of `just ci`.
 Every file carries a `//!` module doc, because `missing_docs` is denied. Use
 `//!` inside the file, never `///` above the `mod` declaration; both compile,
 and a tree that mixes them reads as two conventions.
+
+## The behavioural target
+
+Chrome. Where a question has a CSS answer, the answer is what Chrome does.
+
+`../meo-canvas-old` is the reference implementation of that target. It was built
+to match Chrome, so where this renderer and that one disagree, that one is
+right — read it before inventing a rule. Its line boxes come from the face's own
+ascent and descent rather than a paragraph engine's default, and that is why its
+text measures like a browser's.
+
+The exception is where v1 itself diverges from Chrome. Its bare `Box` inherits
+Yoga's raw defaults, a column direction with `flex-shrink: 0`, where Chrome's
+`display: flex` is a row with `flex-shrink: 1`. Chrome wins there. A divergence
+of this kind is worth a comment naming both behaviours, because the next reader
+will otherwise assume the reference was not consulted.
 
 ## Conventions
 

@@ -47,4 +47,10 @@ workspace = true
 # skeleton has none yet. Each entry comes out the moment its pass is written;
 # an entry still here when the crate is finished is a dependency to delete.
 [package.metadata.cargo-machete]
-ignored = ["meo-canvas-scene", "ureq"]
+ignored = ["ureq"]
+
+[dev-dependencies]
+# Decodes what the binary wrote. A file that exists proves nothing -- a
+# zero-byte one exists too -- so the spawn tests read the output back and check
+# its dimensions.
+png = "0.18.1"

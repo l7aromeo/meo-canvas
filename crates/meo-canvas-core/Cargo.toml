@@ -26,9 +26,19 @@ thiserror = { workspace = true }
 [lints]
 workspace = true
 
-# Declared for the pass that owns them, which is a signature and an
-# `unimplemented!()` body at this stage -- `cargo-machete` reads imports, and a
-# skeleton has none yet. Each entry comes out the moment its pass is written;
-# an entry still here when the crate is finished is a dependency to delete.
+# `taffy` alone, and only until `layout` imports it. `meo-skia-canvas` came off
+# this list when `resolve` and `measure` began using it, which is the rule: an
+# entry here is a pass not yet written, and an entry still here when the crate
+# is finished is a dependency to delete.
 [package.metadata.cargo-machete]
-ignored = ["meo-skia-canvas", "taffy"]
+ignored = ["taffy"]
+
+[dev-dependencies]
+# Decoders, not encoders: an encode test that asserts on byte length proves
+# nothing -- a one-frame GIF and a three-frame GIF are both "some bytes". These
+# read the output back and count what is in it.
+#
+# `cargo-machete` reads this section too, so a decoder no test calls is reported
+# rather than left to accumulate.
+gif = "0.14.2"
+png = "0.18.1"

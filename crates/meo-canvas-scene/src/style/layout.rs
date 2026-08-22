@@ -76,8 +76,17 @@ wire_enum! {
 wire_enum! {
     /// Placement along the cross axis.
     ///
-    /// The same set serves `align-items`, `align-self` and `align-content`,
-    /// which is how CSS defines them and how `canvas.type.ts` types them.
+    /// One enum carrying the *union* of what `align-items`, `align-self` and
+    /// `align-content` accept, not their intersection. CSS does not give the
+    /// three the same set -- `align-items` has no `space-*` value at all, and
+    /// `align-content` has all four -- so each variant below names the
+    /// properties that cannot use it. One enum rather than three because the
+    /// overlap is most of the list and a caller reading a scene should not have
+    /// to learn which of three near-identical types a field takes.
+    ///
+    /// A property handed a value it has no meaning for is not an error here.
+    /// The solver resolves it the way CSS does, which for `align-items` given a
+    /// `space-*` value is to behave as [`Align::FlexStart`].
     pub enum Align {
         /// At the start of the cross axis.
         FlexStart = 0,
@@ -89,15 +98,36 @@ wire_enum! {
         Stretch = 3,
         /// Aligned so the children's first baselines coincide.
         ///
-        /// taffy computes a baseline from a child's own layout. A leaf measured
-        /// by `meo-canvas-core` cannot report one, because taffy's measure
-        /// closure returns a size and nothing else, so a row of measured text
-        /// aligned this way falls back to [`Align::FlexStart`].
+        /// A measurer reports a baseline -- `meo-canvas-core`'s
+        /// `MeasuredLeaf::first_baseline` carries one -- but taffy's
+        /// high-level tree has nowhere to receive it: `compute_leaf_layout`
+        /// returns `first_baselines: Point::NONE`
+        /// (`taffy-0.13.0/src/compute/leaf.rs:102`) for every node sized by a
+        /// measure function, and only the low-level `LayoutPartialTree` API
+        /// lets a caller build the `LayoutOutput` that would carry it.
+        ///
+        /// What a measured leaf therefore aligns on is its bottom edge, not its
+        /// text baseline: taffy reads a missing baseline as
+        /// `baseline.unwrap_or(height)`
+        /// (`taffy-0.13.0/src/compute/flexbox.rs:1524`). In a column direction
+        /// it is treated as [`Align::FlexStart`] instead, because taffy
+        /// supports baseline alignment only across a row.
         Baseline = 4,
         /// Free space divided between the lines.
+        ///
+        /// `align-content` only; `align-items` and `align-self` align one item
+        /// and have no free space to divide.
         SpaceBetween = 5,
-        /// Free space divided around each line.
+        /// Free space divided around each line, so the edge gaps are half the
+        /// inner ones.
+        ///
+        /// `align-content` only.
         SpaceAround = 6,
+        /// Free space divided evenly, so every gap including the edges is
+        /// equal.
+        ///
+        /// `align-content` only.
+        SpaceEvenly = 7,
     }
 }
 
@@ -368,7 +398,7 @@ mod tests {
         assert_eq!(FlexDirection::ALL.len(), 4);
         assert_eq!(FlexWrap::ALL.len(), 3);
         assert_eq!(Justify::ALL.len(), 6);
-        assert_eq!(Align::ALL.len(), 7);
+        assert_eq!(Align::ALL.len(), 8);
         assert_eq!(PositionType::ALL.len(), 2);
         assert_eq!(Overflow::ALL.len(), 3);
         assert_eq!(BoxSizing::ALL.len(), 2);
