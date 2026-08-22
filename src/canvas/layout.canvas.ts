@@ -1043,7 +1043,7 @@ export class BoxNode {
       height: node.node.getComputedLayout().height,
     },
   ): void {
-    node.children.forEach((child, index) => {
+    node.children.forEach(child => {
       if (child.stacksAmongSiblings()) {
         // Where the node is painted is where the layout put it. An absolute or a fixed node whose
         // containing block Yoga could not give it has already been placed against the right one --
@@ -1063,8 +1063,15 @@ export class BoxNode {
           // `z-index: auto` shares a layer with `0`, so an absent index sorts as 0 rather than as a
           // tier of its own.
           zIndex: child.props.zIndex ?? 0,
-          // Depth first, so a lifted node ties after the siblings it was lifted past.
-          order: depth * 1_000_000 + index,
+          // Tree order, which is how CSS breaks a tie: a node lifted out of an ancestor that forms
+          // no stacking context keeps the place in the document its own subtree gives it, rather
+          // than being pushed behind every shallower sibling. This walk is depth first and pushes
+          // before it descends, so how many entries are already here is that place.
+          //
+          // Sorting by depth instead put a lifted node last, and it painted over a later sibling
+          // that CSS paints over it: a card's badge vanished under a positioned box one level down
+          // in the child declared before it.
+          order: into.length,
           originX: originX + shiftX,
           originY: originY + shiftY,
           // Escaping a stacking context does not escape a clip: the two are independent, and a
