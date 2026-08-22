@@ -56,7 +56,7 @@ use meo_skia_canvas::{
 
 use crate::{
     Error,
-    layout::LayoutResult,
+    layout::{LayoutResult, is_containing_block},
     lines::{Line, Metrics, Run, RunStyle, line_width},
     measure::SceneMeasurer,
     resolve::{DecodedImage, Resolved, ResolvedText},
@@ -693,23 +693,32 @@ fn participants(
 /// against it: a 50-wide absolute child in a 20-wide clipper is clipped when
 /// the clipper is `relative` and not when the clipper names no position.
 ///
-/// A [`PositionType::Fixed`] node escapes **every** clipper reached this way.
-/// Its containing block is not any positioned ancestor — it is the transform or
-/// filter that captures it, or nothing at all — so neither a static nor a
-/// relative box cuts one where either would cut an absolute node. A capturing
-/// ancestor does still cut it, and needs no case here: a transform or a filter
-/// establishes a stacking context, so such a node is never an intermediate and
-/// its clip is applied around everything its context gathers.
+/// A [`PositionType::Fixed`] node escapes every clipper **but the one that
+/// captures it**. Its containing block is not any positioned ancestor — it is
+/// the transform that captures it, or nothing at all — so neither a static nor
+/// a relative box cuts one where either would cut an absolute node.
 ///
 /// Ported from v1's `4f542d8`. Measured before: a 50-wide fixed child in a
 /// 20-wide clipper painted 20 columns under a static clipper and 20 under a
 /// relative one, where both should be 50.
+///
+/// # Capture and clip are one rule
+///
+/// Both arms ask [`is_containing_block`], which is the same predicate
+/// [`crate::layout`] attaches an out-of-flow box with — deliberately, because
+/// a box is clipped by its containing block's `overflow` and by nothing it was
+/// merely written inside. They were two rules for an hour and Chrome found it
+/// in ten rows: a transformed clipper with `overflow: hidden` placed an
+/// out-of-flow child exactly where the browser does and then **drew it whole**,
+/// because layout knew the transform had captured it and paint still thought
+/// every fixed box escapes everything.
 const fn escapes_clip(clipper: &Node, child: &Node) -> bool {
     match child.layout.position_type {
-        PositionType::Fixed => true,
-        PositionType::Absolute => {
-            matches!(clipper.layout.position_type, PositionType::Static)
-        }
+        // Only a transform captures a fixed box, so only a transform clips
+        // one. A positioned clipper is not its containing block and does not
+        // cut it.
+        PositionType::Fixed => clipper.effects.transform.is_none(),
+        PositionType::Absolute => !is_containing_block(clipper),
         PositionType::Static
         | PositionType::Relative
         | PositionType::Sticky => false,

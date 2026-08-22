@@ -134,17 +134,19 @@ where
     // to the parent they sit under in the scene. See `build`. Anything still
     // unclaimed at the top belongs to the page, which is the initial containing
     // block and the last chance to be one.
-    let mut fixed = Vec::new();
     let mut orphans = Vec::new();
+    // Fixed boxes no transform captured. They belong to the page, which is the
+    // viewport they resolve against.
+    let mut viewport = Vec::new();
     let root = build(
         scene,
         page,
         &mut tree,
         &mut to_scene,
-        &mut fixed,
         &mut orphans,
+        &mut viewport,
     )?;
-    for node in fixed.into_iter().chain(orphans) {
+    for node in viewport.into_iter().chain(orphans) {
         tree.add_child(root, node)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
@@ -276,13 +278,39 @@ fn pin_page_root(
 /// No sibling moves as a result. An out-of-flow child contributes nothing to
 /// its parent's flow, so removing it from that parent's children changes
 /// nothing the solver would have done with it.
+/// Whether a node is a containing block for the **absolute** boxes beneath it.
+///
+/// Crate-internal rather than private because the painter needs the same
+/// answer: a box is clipped by its containing block's `overflow`, so capture
+/// and clip have to be one rule. Measured in Chrome as ten rows where they were
+/// two -- a transformed clipper placed an out-of-flow child exactly right and
+/// then drew it whole, because layout knew the transform captured it and paint
+/// did not.
+///
+/// Positioned, or transformed. CSS Transforms 1 §3 makes any element with a
+/// transform the containing block for its absolute and fixed descendants,
+/// positioned or not -- measured in Chrome, where a static clipper carrying
+/// `translateZ(0)` captures an absolute child at 50,20 that the same clipper
+/// without it lets through to the outer box at 30,20.
+///
+/// **A fixed box is not decided by this**, and that is deliberate: it passes
+/// every positioned ancestor and stops only at a transformed one, which is
+/// what makes it fixed rather than absolute. The caller tests the transform on
+/// its own for that list.
+pub(crate) const fn is_containing_block(
+    node: &meo_canvas_scene::node::Node,
+) -> bool {
+    !matches!(node.layout.position_type, PositionType::Static)
+        || node.effects.transform.is_some()
+}
+
 fn build(
     scene: &Scene,
     node: NodeId,
     tree: &mut taffy::TaffyTree<NodeId>,
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
-    fixed: &mut Vec<taffy::NodeId>,
     orphans: &mut Vec<taffy::NodeId>,
+    captive: &mut Vec<taffy::NodeId>,
 ) -> Result<taffy::NodeId, Error> {
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
@@ -295,6 +323,11 @@ fn build(
     // containing block. They become this node's children if it is one, and are
     // handed further up if it is not.
     let mut unclaimed: Vec<taffy::NodeId> = Vec::new();
+    // Fixed descendants from beneath here, which only a transform captures.
+    // They pass every positioned ancestor untouched -- a fixed box resolves
+    // against the viewport, not against the nearest positioned box -- and stop
+    // at the first transformed one.
+    let mut captured: Vec<taffy::NodeId> = Vec::new();
 
     for child in &source.children {
         let Some(child_source) = scene.get(*child) else {
@@ -305,8 +338,8 @@ fn build(
                 *child,
                 tree,
                 to_scene,
-                fixed,
                 &mut unclaimed,
+                &mut captured,
             )?);
             continue;
         };
@@ -314,10 +347,16 @@ fn build(
             continue;
         }
 
-        let built =
-            build(scene, *child, tree, to_scene, fixed, &mut unclaimed)?;
+        let built = build(
+            scene,
+            *child,
+            tree,
+            to_scene,
+            &mut unclaimed,
+            &mut captured,
+        )?;
         match child_source.layout.position_type {
-            PositionType::Fixed => fixed.push(built),
+            PositionType::Fixed => captured.push(built),
             PositionType::Absolute => unclaimed.push(built),
             PositionType::Static
             | PositionType::Relative
@@ -325,12 +364,26 @@ fn build(
         }
     }
 
-    // A positioned box is a containing block; a static one is not. Anything
-    // this node does not claim goes to whichever ancestor does.
-    if matches!(source.layout.position_type, PositionType::Static) {
-        orphans.append(&mut unclaimed);
-    } else {
+    // A positioned box is a containing block, and **so is a transformed one**:
+    // CSS Transforms 1 §3 makes any element with a transform the containing
+    // block for its absolute *and* fixed descendants, positioned or not.
+    // Measured in Chrome, where a static clipper carrying `translateZ(0)`
+    // captures an absolute child that the same clipper without it lets through
+    // to the outer box -- 50,20 against 30,20.
+    //
+    // Anything this node does not claim goes to whichever ancestor does.
+    if is_containing_block(source) {
         children.append(&mut unclaimed);
+    } else {
+        orphans.append(&mut unclaimed);
+    }
+    // A fixed box passes a merely positioned ancestor untouched -- that is
+    // what makes it fixed rather than absolute -- and stops only at a
+    // transformed one.
+    if source.effects.transform.is_some() {
+        children.append(&mut captured);
+    } else {
+        captive.append(&mut captured);
     }
 
     // A childless node is given the measurer's context whatever it draws.

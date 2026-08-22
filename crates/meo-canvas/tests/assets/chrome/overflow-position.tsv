@@ -1,0 +1,134 @@
+# Chrome 2026-08-23. overflow x clipper position x child position x transform.
+# Scene exactly as MC Agent Zero specified: outer 200x120 position:relative;
+# clipper 60x40 overflow:<O> position:<P>, placed by margin 20,20 when in flow
+# and by left/top 20,20 when out of it; child 50x40 position:<C>, placed by
+# margin 20,30 when in flow and by left/top 20,30 when out of it. `scroll` rows
+# carry scrollbar-width:none.
+#
+# key   O: v=visible h=hidden s=scroll
+#       P: S=static R=relative A=absolute K=sticky F=fixed
+#       C: S=static R=relative A=absolute F=fixed
+#       T: n=none t=transform:translateZ(0) on the clipper
+# rect  the child's box minus outer's, x,y,w,h
+# abc   elementFromPoint at (60,45), (88,50), (60,68) relative to outer:
+#       c=child l=clipper o=outer b=body
+vSSn 50,0,50,40 ooo
+vSSt 50,0,50,40 ooo
+vSRn 50,0,50,40 ooo
+vSRt 50,0,50,40 ooo
+vSAn 30,20,50,40 coo
+vSAt 50,20,50,40 cco
+vSFn -10,-40,50,40 ooo
+vSFt 50,20,50,40 cco
+vRSn 50,0,50,40 ooo
+vRSt 50,0,50,40 ooo
+vRRn 50,0,50,40 ooo
+vRRt 50,0,50,40 ooo
+vRAn 50,20,50,40 cco
+vRAt 50,20,50,40 cco
+vRFn -10,-40,50,40 ooo
+vRFt 50,20,50,40 cco
+vASn 50,40,50,40 ccc
+vASt 50,40,50,40 ccc
+vARn 50,40,50,40 ccc
+vARt 50,40,50,40 ccc
+vAAn 50,40,50,40 ccc
+vAAt 50,40,50,40 ccc
+vAFn -10,-20,50,40 loo
+vAFt 50,40,50,40 ccc
+vKSn 50,0,50,40 ooo
+vKSt 50,0,50,40 ooo
+vKRn 50,0,50,40 ooo
+vKRt 50,0,50,40 ooo
+vKAn 50,20,50,40 cco
+vKAt 50,20,50,40 cco
+vKFn -10,-40,50,40 ooo
+vKFt 50,20,50,40 cco
+vFSn 10,0,50,40 ooo
+vFSt 10,0,50,40 ooo
+vFRn 10,0,50,40 ooo
+vFRt 10,0,50,40 ooo
+vFAn 10,0,50,40 ooo
+vFAt 10,0,50,40 ooo
+vFFn -10,-20,50,40 ooo
+vFFt 10,0,50,40 ooo
+hSSn 50,20,50,40 ooo
+hSSt 50,20,50,40 ooo
+hSRn 50,20,50,40 ooo
+hSRt 50,20,50,40 ooo
+hSAn 30,20,50,40 coo
+hSAt 50,20,50,40 ooo
+hSFn -10,-40,50,40 ooo
+hSFt 50,20,50,40 ooo
+hRSn 50,20,50,40 ooo
+hRSt 50,20,50,40 ooo
+hRRn 50,20,50,40 ooo
+hRRt 50,20,50,40 ooo
+hRAn 50,20,50,40 ooo
+hRAt 50,20,50,40 ooo
+hRFn -10,-40,50,40 ooo
+hRFt 50,20,50,40 ooo
+hASn 50,40,50,40 coo
+hASt 50,40,50,40 coo
+hARn 50,40,50,40 coo
+hARt 50,40,50,40 coo
+hAAn 50,40,50,40 coo
+hAAt 50,40,50,40 coo
+hAFn -10,-20,50,40 loo
+hAFt 50,40,50,40 coo
+hKSn 50,20,50,40 ooo
+hKSt 50,20,50,40 ooo
+hKRn 50,20,50,40 ooo
+hKRt 50,20,50,40 ooo
+hKAn 50,20,50,40 ooo
+hKAt 50,20,50,40 ooo
+hKFn -10,-40,50,40 ooo
+hKFt 50,20,50,40 ooo
+hFSn 10,0,50,40 ooo
+hFSt 10,0,50,40 ooo
+hFRn 10,0,50,40 ooo
+hFRt 10,0,50,40 ooo
+hFAn 10,0,50,40 ooo
+hFAt 10,0,50,40 ooo
+hFFn -10,-20,50,40 ooo
+hFFt 10,0,50,40 ooo
+sSSn 50,20,50,40 ooo
+sSSt 50,20,50,40 ooo
+sSRn 50,20,50,40 ooo
+sSRt 50,20,50,40 ooo
+sSAn 30,20,50,40 coo
+sSAt 50,20,50,40 ooo
+sSFn -10,-40,50,40 ooo
+sSFt 50,20,50,40 ooo
+sRSn 50,20,50,40 ooo
+sRSt 50,20,50,40 ooo
+sRRn 50,20,50,40 ooo
+sRRt 50,20,50,40 ooo
+sRAn 50,20,50,40 ooo
+sRAt 50,20,50,40 ooo
+sRFn -10,-40,50,40 ooo
+sRFt 50,20,50,40 ooo
+sASn 50,40,50,40 coo
+sASt 50,40,50,40 coo
+sARn 50,40,50,40 coo
+sARt 50,40,50,40 coo
+sAAn 50,40,50,40 coo
+sAAt 50,40,50,40 coo
+sAFn -10,-20,50,40 loo
+sAFt 50,40,50,40 coo
+sKSn 50,20,50,40 ooo
+sKSt 50,20,50,40 ooo
+sKRn 50,20,50,40 ooo
+sKRt 50,20,50,40 ooo
+sKAn 50,20,50,40 ooo
+sKAt 50,20,50,40 ooo
+sKFn -10,-40,50,40 ooo
+sKFt 50,20,50,40 ooo
+sFSn 10,0,50,40 ooo
+sFSt 10,0,50,40 ooo
+sFRn 10,0,50,40 ooo
+sFRt 10,0,50,40 ooo
+sFAn 10,0,50,40 ooo
+sFAt 10,0,50,40 ooo
+sFFn -10,-20,50,40 ooo
+sFFt 10,0,50,40 ooo

@@ -852,7 +852,22 @@ which has no leftover space to move the paragraph within; `Round` and `Space` on
 a tile the box divides evenly, where there is no remainder to share and nothing
 to round to, so both collapse onto `Repeat`; and `MaskShape::Ellipse` in a
 square cell, which is the largest circle that fits -- the two keywords drew one
-picture, and a fixture of square cells passes with the arms swapped. Their siblings failed
+picture, and a fixture of square cells passes with the arms swapped.
+
+**A scene built for the harness's convenience can change the property under
+test.** The sixth instance of the rule above and the first at the level of the
+whole scene rather than a value in it: a walker comparing 120 overflow cases
+against Chrome placed its outermost box with absolute insets, because that is
+the natural way to put a box at a known point -- and an absolutely positioned
+box **establishes a block formatting context**, which is one of the four things
+that stop margin collapsing. Chrome's box was `position: relative`, so margins
+escaped there and could not escape here, and fifty-one rows came back exactly
+twenty pixels apart. It read as fifty-one renderer defects and as a missing
+layout feature, and taffy had implemented that feature in full. The same walker
+then forced `overflow` to `Visible` in order to measure the box it clips, which
+removed the same formatting context a second time. Placement, sizing and
+visibility are not neutral: before trusting a harness, ask which properties it
+had to set to build the scene and whether any of them is in the answer. Their siblings failed
 the same way from the other side: `backdrop_filter` under an _opaque_ square,
 where the filtered backdrop is covered by the node that asked for it, reported
 as broken by three separate readers. Before writing the pair, ask what the
@@ -891,6 +906,25 @@ that turned out to have the very defect it was being called the control for.
 Each reading was of real pixels, and each answered a question nobody had asked.
 Work out where the feature is at the row or column being sampled, and sample
 there.
+
+**Two numbers off one picture are not the same measurement until you say what
+each one is.** The rule above is about _where_ a sample was taken; this is
+about _what the number is_, and it is the same failure one level up. Two
+readings of a text row were compared as though they were one: the ink bottom of
+the whole word `Hxgp`, which is the descender of the `p`, against the ink bottom
+of its leftmost glyph, which is the baseline. Both were real, both were
+correctly measured, and the comparison was meaningless. The calibration was
+already in hand and unused — the control row's full-word bottoms sat one pixel
+from the browser's, where no glyph-only reading lands within ten. Name the
+quantity beside the number, and where two readings of one picture are in play,
+check that the pair agrees somewhere it must before trusting it where it must
+not.
+
+An ink span carries a second name: **the threshold, and whether the background
+is near it**. Reading `text-descenders` at a channel below 200 puts the browser
+one row longer at every foot; at 240 the `#eee` cell background counts as ink
+and three cells become one span. A span without its threshold is not a
+measurement, and a threshold near the background is not one either.
 
 **A citation is a measurement, not a label.** A `grep -n` result is evidence that
 a string occurs, not evidence that the line quoted is the line that matters:

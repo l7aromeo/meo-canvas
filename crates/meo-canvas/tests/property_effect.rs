@@ -17,8 +17,8 @@
 //!
 //! # Why one test rather than one per property
 //!
-//! A fix usually repairs a family -- `text_stroke` and `paint_order` are one
-//! defect, and the five `mask` arms are another -- so the useful report names
+//! A fix usually repairs a family -- `text_stroke` and `paint_order` were one
+//! defect, and the five `mask` arms another -- so the useful report names
 //! every property whose answer moved, not the first one. The whole table runs
 //! and the failure lists them together.
 //!
@@ -44,7 +44,8 @@
 //! looked like.
 
 use meo_canvas::{
-    Box as BoxNode, Element, Format, Renderer, Root, Styled, Text, hex_rgb, px,
+    Box as BoxNode, Element, Format, Renderer, Root, Style, Styled, Text,
+    hex_rgb, px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
         BoxShadow, Color, Dimension, FillRule, Gradient, GradientGeometry,
@@ -246,6 +247,7 @@ fn cases() -> Vec<Case> {
     all.extend(background_tiling_cases());
     all.extend(mask_cases());
     all.extend(text_cases());
+    all.extend(glyph_cases());
     all
 }
 
@@ -575,6 +577,37 @@ fn text_cases() -> Vec<Case> {
             without: || wide().text_align(TextAlign::Left),
             effect: Effect::Draws,
         },
+        // One word split across two runs must draw the same width as one run
+        // carrying it whole: runs are styles, not words, and a painter that
+        // puts an inter-word gap between every pair draws a space the text
+        // does not contain. `Nothing` here means the two agree, which is the
+        // one row in this file where agreement is the correct answer -- so it
+        // is written as a pair whose *difference* would be the defect.
+        Case {
+            property: "runs are not words",
+            with: || {
+                Text::rich([
+                    ("Hx".to_owned(), Style::new()),
+                    ("gp".to_owned(), Style::new()),
+                ])
+                .font_family(FONT.0)
+                .font_size(14.0)
+                .color(hex_rgb(0x14_14_1e))
+            },
+            without: || {
+                Text::new("Hxgp")
+                    .font_family(FONT.0)
+                    .font_size(14.0)
+                    .color(hex_rgb(0x14_14_1e))
+            },
+            effect: Effect::Nothing,
+        },
+    ]
+}
+
+/// What a paint property does to glyphs, and what the glyphs are made of.
+fn glyph_cases() -> Vec<Case> {
+    vec![
         Case {
             property: "text_shadow",
             with: || {
@@ -601,10 +634,13 @@ fn text_cases() -> Vec<Case> {
                 })
             },
             without: line,
-            effect: Effect::Nothing,
+            effect: Effect::Draws,
         },
-        // Reordering a stroke that is not drawn cannot show, so this one is
-        // expected to come back with `text_stroke` rather than on its own.
+        // Reordering a stroke that is not drawn cannot show, so this one came
+        // back with `text_stroke` rather than on its own -- both landed with
+        // the text port, and neither needed anything from the binding that
+        // was not already public. `stroke_text` is what v1 calls, and moving
+        // off the paragraph is what made it reachable.
         Case {
             property: "paint_order",
             with: || {
@@ -621,7 +657,7 @@ fn text_cases() -> Vec<Case> {
                     color: hex_rgb(0xdc_28_28),
                 })
             },
-            effect: Effect::Nothing,
+            effect: Effect::Draws,
         },
         // Two things this control has to carry. The same `line_height`, so
         // that what is compared is where the text sits and not how tall the
@@ -641,7 +677,65 @@ fn text_cases() -> Vec<Case> {
             without: || line().line_height(2.0).height(px(60.0)),
             effect: Effect::Draws,
         },
+        // Space **between** line boxes, so the subject needs two lines: on one
+        // line there is no gap to add and the pair measures nothing. The text
+        // carries its own newline rather than relying on a wrap, so the two
+        // sides cannot differ in how they broke.
+        //
+        // Resolved, inherited, and read by nothing -- the same shape
+        // `vertical_align` had. Pinned before the text port rather than after
+        // it, so the port has to make it draw instead of being credited with
+        // it afterwards.
+        Case {
+            property: "line_gap",
+            with: || pair().line_gap(12.0),
+            without: pair,
+            effect: Effect::Draws,
+        },
+        // A fixed box on both sides, so what moves is where the text sits
+        // inside it and not how big it is. Text is drawn from the border box
+        // today: neither the padding nor the border is taken off before the
+        // first glyph, so a padded text node's ink starts at the same pixel as
+        // an unpadded one's. v1 lays text out inside border and padding, so
+        // the text port closes this by construction.
+        // The border half of the same question, with the same fixed box on
+        // both sides. The border is transparent on purpose: a painted one
+        // would move pixels by drawing itself, and the row would pass while
+        // the text stayed exactly where it was.
+        Case {
+            property: "text inside its border",
+            with: || {
+                line()
+                    .size(px(64.0), px(48.0))
+                    .border(sides(8.0, 8.0, 8.0, 8.0))
+                    .border_color(Color::rgba(0, 0, 0, 0))
+            },
+            without: || line().size(px(64.0), px(48.0)),
+            effect: Effect::Draws,
+        },
+        Case {
+            property: "text inside its padding",
+            with: || {
+                line().size(px(64.0), px(48.0)).padding(sides(
+                    px(12.0),
+                    px(0.0),
+                    px(0.0),
+                    px(12.0),
+                ))
+            },
+            without: || line().size(px(64.0), px(48.0)),
+            effect: Effect::Draws,
+        },
     ]
+}
+
+/// Two lines, written as two lines, for the cases that need a gap between
+/// them.
+fn pair() -> Element {
+    Text::new("Hxgp\nquick")
+        .font_family(FONT.0)
+        .font_size(14.0)
+        .color(hex_rgb(0x14_14_1e))
 }
 
 /// Renders one subject and returns its pixels.
