@@ -1489,8 +1489,10 @@ fn draw_border(
         (inner.origin.x, inner.bottom()),
     ];
 
-    // Top, right, bottom, left: each edge owns the ring between its two outer
-    // corners and the two inner corners beneath them.
+    let divisions = divisions_at(outer_corners, inner_corners);
+
+    // Top, right, bottom, left: each edge owns the part of the ring between
+    // the division lines at its two corners.
     for (edge, (width, colour)) in [
         (widths.top, edge_colors.top),
         (widths.right, edge_colors.right),
@@ -1504,13 +1506,42 @@ fn draw_border(
             continue;
         }
         let next = (edge + 1) % outer_corners.len();
+        // Far enough along each division line to clear the ring at that
+        // corner -- the ring never reaches further from a corner than its
+        // radius plus the thickest edge -- and never past where the two lines
+        // meet, because beyond their meeting point the wedge folds over
+        // itself and a bow-tie is not the shape either fill rule reads.
+        let radii = radii_at(paint);
+        let clearance = radii[edge].max(radii[next])
+            + widths
+                .top
+                .max(widths.right)
+                .max(widths.bottom)
+                .max(widths.left)
+            + 1.0;
+        let limit = meeting_point(
+            outer_corners[edge],
+            divisions[edge],
+            outer_corners[next],
+            divisions[next],
+        )
+        .unwrap_or(clearance)
+        .min(clearance);
+        let far = |corner: (f32, f32), direction: (f32, f32)| {
+            (
+                direction.0.mul_add(limit, corner.0),
+                direction.1.mul_add(limit, corner.1),
+            )
+        };
+        let far_edge = far(outer_corners[edge], divisions[edge]);
+        let far_next = far(outer_corners[next], divisions[next]);
 
         context.save();
         context.begin_path();
         context.move_to(outer_corners[edge].0, outer_corners[edge].1);
         context.line_to(outer_corners[next].0, outer_corners[next].1);
-        context.line_to(inner_corners[next].0, inner_corners[next].1);
-        context.line_to(inner_corners[edge].0, inner_corners[edge].1);
+        context.line_to(far_next.0, far_next.1);
+        context.line_to(far_edge.0, far_edge.1);
         context.close_path();
         context.clip(SkiaFillRule::NonZero);
 
@@ -1542,6 +1573,95 @@ fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
         ),
         Size::new(width, height),
     )
+}
+
+/// The direction every corner's division line runs in.
+///
+/// The fallback is the 45-degree mitre, reached only when a corner's two
+/// points coincide -- both its widths are zero, and there is no ring there to
+/// divide.
+fn divisions_at(
+    outer: [(f32, f32); 4],
+    inner: [(f32, f32); 4],
+) -> [(f32, f32); 4] {
+    const MITRE: f32 = core::f32::consts::FRAC_1_SQRT_2;
+    let fallbacks = [
+        (MITRE, MITRE),
+        (-MITRE, MITRE),
+        (-MITRE, -MITRE),
+        (MITRE, -MITRE),
+    ];
+    core::array::from_fn(|corner| {
+        division(outer[corner], inner[corner], fallbacks[corner])
+    })
+}
+
+/// The direction a corner's division line runs in.
+///
+/// CSS Backgrounds 3 §4.4 divides a corner between its two edges along the
+/// line **from the corner's outer point to its inner point**. With equal
+/// widths that is the 45-degree mitre everyone pictures; with unequal ones it
+/// leans towards the thinner edge; and **when one width is zero the inner
+/// point lies on that side, the line degenerates to the box edge, and the
+/// whole arc falls to the other edge**.
+///
+/// That last case is what this function exists for. Each edge used to be
+/// clipped to a quadrilateral running outer corner, outer corner, inner
+/// corner, inner corner -- which is the right region only where the corner is
+/// square. Where it is rounded, the ring sweeps *past* the inner box's own
+/// edge, into a part of the corner that quadrilateral does not contain: with
+/// `border-left: 0` and a 20px radius, the top edge painted its two pixels and
+/// the arc below them was handed to an edge with no width to paint it, leaving
+/// a gap the fill showed straight through.
+///
+/// `fallback` is used only when the two points coincide, which means both
+/// widths at that corner are zero and there is no ring there to divide.
+fn division(
+    outer: (f32, f32),
+    inner: (f32, f32),
+    fallback: (f32, f32),
+) -> (f32, f32) {
+    let (dx, dy) = (inner.0 - outer.0, inner.1 - outer.1);
+    let length = dx.hypot(dy);
+    if length > 0.0 {
+        (dx / length, dy / length)
+    } else {
+        fallback
+    }
+}
+
+/// How far along its own division line one corner is from where that line
+/// meets the next corner's.
+///
+/// `None` when the two are parallel, which two opposite mitres of equal widths
+/// are not but two vertical ones can be. The caller falls back to its own
+/// clearance then.
+fn meeting_point(
+    from: (f32, f32),
+    along: (f32, f32),
+    other: (f32, f32),
+    other_along: (f32, f32),
+) -> Option<f32> {
+    let determinant =
+        other_along.0.mul_add(along.1, -(along.0 * other_along.1));
+    if determinant.abs() < f32::EPSILON {
+        return None;
+    }
+    let (dx, dy) = (other.0 - from.0, other.1 - from.1);
+    let distance =
+        other_along.0.mul_add(dy, -(dx * other_along.1)) / determinant;
+    (distance > 0.0).then_some(distance)
+}
+
+/// The four corner radii, in the same order as the corners.
+const fn radii_at(paint: &PaintStyle) -> [f32; 4] {
+    let radii = paint.border_radius;
+    [
+        radii.top_left,
+        radii.top_right,
+        radii.bottom_right,
+        radii.bottom_left,
+    ]
 }
 
 /// Draws a shadow that falls **inside** the box.
@@ -2356,10 +2476,11 @@ mod tests {
 
     use super::{
         Affine, ColorSpace, ColorType, Display, GradientGeometry,
-        LinearDirection, Overflow, PositionType, Surface, SurfaceOptions,
-        device_bounds, draw, filter_spill, fit_image, gradient_line,
-        page_scale, participants, pixel_size, resolve_length,
-        scale_filter_lengths, to_skia_blend,
+        LinearDirection, Overflow, PositionType, SkiaFillRule, Surface,
+        SurfaceOptions, device_bounds, draw, fill_box, filter_spill, fit_image,
+        gradient_line, inner_box, page_scale, participants, pixel_size,
+        resolve_length, ring_path, scale_filter_lengths, to_skia_blend,
+        to_skia_color,
     };
     use crate::{
         layout::LayoutResult,
@@ -2984,6 +3105,184 @@ mod tests {
     /// assert what was drawn: executing a fill proves the call was made, not
     /// that the pixels are right. Everything visual here is covered by golden
     /// fixtures or not at all — see the module documentation.
+    /// Renders one bordered box and returns its pixels, eight bits per
+    /// channel.
+    fn bordered_corner(top: f32, left: f32, radius: f32) -> Vec<u8> {
+        use meo_canvas_scene::style::paint::Color;
+
+        let mut scene = Scene::new(Size::new(60.0, 60.0));
+        if let Some(root) = scene.get_mut(NodeId::ROOT) {
+            root.paint = PaintStyle {
+                // White, so "the page" and "the box" are told apart by the
+                // box's own fill rather than by position.
+                background_color: Color::rgb(255, 255, 255),
+                ..PaintStyle::default()
+            };
+        }
+        let box_id = scene
+            .push(NodeId::ROOT, Node::new(NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(box_id) {
+            node.layout.size = (
+                meo_canvas_scene::style::Dimension::Points(60.0),
+                meo_canvas_scene::style::Dimension::Points(60.0),
+            );
+            node.layout.border = meo_canvas_scene::Sides {
+                top,
+                right: 6.0,
+                bottom: 6.0,
+                left,
+            };
+            node.paint = PaintStyle {
+                background_color: FILL,
+                border_radius: meo_canvas_scene::Corners::all(radius),
+                border_color_all: BORDER,
+                border_color: meo_canvas_scene::Sides {
+                    top: Some(BORDER),
+                    right: Some(BORDER),
+                    bottom: Some(BORDER),
+                    left: Some(BORDER),
+                },
+                ..PaintStyle::default()
+            };
+        }
+
+        let fonts = test_fonts();
+        let resolved = Resolved::new(&scene, &fonts)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut surface = Surface::new(scene.size, 1.0, on_the_cpu())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let page = scene.pages[0];
+        let solved = crate::layout::solve(&scene, page, &mut measurer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        draw(&mut surface, &resolved, &solved, &mut measurer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        surface
+            .context()
+            .get_image_data(0.0, 0.0, 60.0, 60.0)
+            .unwrap_or_else(|error| unreachable!("{error}"))
+            .into_pixels()
+    }
+
+    /// The box's own background, which is what shows through a gap in a ring.
+    const FILL: meo_canvas_scene::style::paint::Color =
+        meo_canvas_scene::style::paint::Color::rgb(0, 160, 0);
+
+    /// The border colour, one for every edge: the question here is whether
+    /// the ring is *covered*, and four colours would only make the reading
+    /// harder.
+    const BORDER: meo_canvas_scene::style::paint::Color =
+        meo_canvas_scene::style::paint::Color::rgb(200, 40, 40);
+
+    /// The ring the border *should* cover, drawn as one fill.
+    ///
+    /// The oracle the per-edge path is checked against. `ring_path` is what
+    /// the uniform path already uses and what the per-edge path fills through
+    /// its clips, so with one colour on every edge the two must agree: the
+    /// division decides which colour a part of the ring takes, and where
+    /// every part takes the same colour it must not be visible at all.
+    fn reference_ring(top: f32, left: f32, radius: f32) -> Vec<u8> {
+        use meo_canvas_scene::{Point, style::paint::Color};
+
+        let rect = Rect::new(Point::new(0.0, 0.0), Size::new(60.0, 60.0));
+        let widths = meo_canvas_scene::Sides {
+            top,
+            right: 6.0,
+            bottom: 6.0,
+            left,
+        };
+        let paint = PaintStyle {
+            background_color: FILL,
+            border_radius: meo_canvas_scene::Corners::all(radius),
+            border_color_all: BORDER,
+            ..PaintStyle::default()
+        };
+
+        let mut surface =
+            Surface::new(Size::new(60.0, 60.0), 1.0, on_the_cpu())
+                .unwrap_or_else(|error| unreachable!("{error}"));
+        let context = surface.context();
+        context.set_fill_style(to_skia_color(Color::rgb(255, 255, 255)));
+        context.fill_rect(0.0, 0.0, 60.0, 60.0);
+        context.set_fill_style(to_skia_color(FILL));
+        fill_box(context, &paint, rect)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        context.set_fill_style(to_skia_color(BORDER));
+        let ring = ring_path(&paint, rect, inner_box(rect, widths), widths)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        context.fill_path(&ring, SkiaFillRule::EvenOdd);
+
+        context
+            .get_image_data(0.0, 0.0, 60.0, 60.0)
+            .unwrap_or_else(|error| unreachable!("{error}"))
+            .into_pixels()
+    }
+
+    /// Whether a pixel is unmistakably the border rather than the fill.
+    fn is_border(pixels: &[u8], at: usize) -> bool {
+        i16::from(pixels[at]) - i16::from(pixels[at + 1]) > 40
+    }
+
+    /// Whether a pixel is unmistakably the fill rather than the border.
+    fn is_fill(pixels: &[u8], at: usize) -> bool {
+        i16::from(pixels[at + 1]) - i16::from(pixels[at]) > 40
+    }
+
+    /// A corner between two edges of different widths leaves no gap in the
+    /// ring.
+    ///
+    /// # What the oracle is
+    ///
+    /// Not the picture we drew last time, and not a row of pixels read by
+    /// eye: **the ring drawn as a single fill**, which is the same
+    /// [`ring_path`] the per-edge pass fills through its clips. Every edge is
+    /// given the same colour, so the division between them must leave no
+    /// trace -- and where the reference says "border", a gap in the division
+    /// shows as the box's own fill.
+    ///
+    /// The comparison is one-sided and deliberately loose: seams between two
+    /// clipped fills antialias differently from one unclipped fill, and that
+    /// difference is not the question. Only "the reference has border here and
+    /// we have fill" is.
+    ///
+    /// # Why these five pairs
+    ///
+    /// A rule that special-cased zero would pass `0` against `2` and fail at
+    /// `1` against `20`, where the division should sit almost entirely on the
+    /// thick side. Both orders, because the division is **not** symmetric: it
+    /// runs from the outer corner point to the inner one, so swapping the two
+    /// widths reflects it. Equal widths are the control -- the 45-degree
+    /// mitre every bordered fixture already draws, which must not move.
+    #[test]
+    fn a_corner_between_unequal_edges_leaves_no_gap() {
+        const RADIUS: f32 = 20.0;
+        for (top, left) in
+            [(2.0, 0.0), (0.0, 2.0), (1.0, 20.0), (20.0, 1.0), (6.0, 6.0)]
+        {
+            let drawn = bordered_corner(top, left, RADIUS);
+            let reference = reference_ring(top, left, RADIUS);
+            let mut gaps = Vec::new();
+            for y in 0..60_usize {
+                for x in 0..60_usize {
+                    let at = (y * 60 + x) * 4;
+                    if is_border(&reference, at) && is_fill(&drawn, at) {
+                        gaps.push((x, y));
+                    }
+                }
+            }
+            assert!(
+                gaps.is_empty(),
+                "top {top}, left {left}: {} pixels of ring are painted as \
+                 fill, the first at {:?}",
+                gaps.len(),
+                gaps.first()
+            );
+        }
+    }
+
     #[test]
     fn a_scene_of_every_kind_draws_without_error() {
         let mut scene = Scene::new(Size::new(200.0, 120.0));

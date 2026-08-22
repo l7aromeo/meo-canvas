@@ -844,13 +844,15 @@ slot is taken as written.
 **A control pair needs an input the property can act on.** A pair renders the
 same scene with a property and without it and asks only whether the two differ,
 which a property that reaches the painter and is dropped there cannot satisfy --
-but neither can a working property given nothing to change. Four instances in
+but neither can a working property given nothing to change. Five instances in
 one day, each reported as a dead property that was not one: a mask image whose
 every pixel was opaque, so the alpha it is read for had no shape; `dither` on a
 ramp too steep to band; `vertical_align` on a text node sized to its own text,
-which has no leftover space to move the paragraph within; and `Round` and
-`Space` on a tile the box divides evenly, where there is no remainder to share
-and nothing to round to, so both collapse onto `Repeat`. Their siblings failed
+which has no leftover space to move the paragraph within; `Round` and `Space` on
+a tile the box divides evenly, where there is no remainder to share and nothing
+to round to, so both collapse onto `Repeat`; and `MaskShape::Ellipse` in a
+square cell, which is the largest circle that fits -- the two keywords drew one
+picture, and a fixture of square cells passes with the arms swapped. Their siblings failed
 the same way from the other side: `backdrop_filter` under an _opaque_ square,
 where the filtered backdrop is covered by the node that asked for it, reported
 as broken by three separate readers. Before writing the pair, ask what the
@@ -877,6 +879,18 @@ one had the same fault -- the two answers coincided: an absolute child whose
 containing block and parent both sat at x=0, a content-box probe sampled on the
 row where the top and bottom borders mitre, a grid whose track origin and page
 origin agreed. Each would have reported "we match" and been wrong.
+
+**A sample point has to be on the feature, and on a curve the feature
+moves.** Three readings of one border fixture were taken at a location chosen
+for convenience rather than for where the thing being measured was: a border's
+bottom edge read at the vertical middle, which crosses the left and right edges
+and never the bottom; a corner's arc read down the `x = 0` column, where the
+outer boundary sits at x≈2.7 at the row in question and the column is not on
+the arc until the arc has nearly finished; and a cell cropped and eyeballed
+that turned out to have the very defect it was being called the control for.
+Each reading was of real pixels, and each answered a question nobody had asked.
+Work out where the feature is at the row or column being sampled, and sample
+there.
 
 **A citation is a measurement, not a label.** A `grep -n` result is evidence that
 a string occurs, not evidence that the line quoted is the line that matters:
