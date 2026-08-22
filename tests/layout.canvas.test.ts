@@ -560,6 +560,9 @@ describe('BoxNode Layout Properties', () => {
         Right: 5,
         Bottom: 5,
       },
+      // A child, because the clip is applied around each child rather than once
+      // around them all -- a node with nothing inside it has nothing to clip.
+      children: [new BoxNode({ width: 10, height: 10 })],
     })
     const mockFill = vi.fn()
     const mockClip = vi.fn()
@@ -577,6 +580,7 @@ describe('BoxNode Layout Properties', () => {
       setLineDash: vi.fn(),
       stroke: vi.fn(),
     }
+    node.processInitialChildren()
     const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
@@ -618,6 +622,9 @@ describe('BoxNode Layout Properties', () => {
         Left: 10,
         Top: 10,
       }, // Make innerWidth/Height <= 0
+      // A child, because the clip is applied around each child rather than once
+      // around them all -- a node with nothing inside it has nothing to clip.
+      children: [new BoxNode({ width: 10, height: 10 })],
     })
     const mockClip = vi.fn()
     const mockContext = {
@@ -634,6 +641,7 @@ describe('BoxNode Layout Properties', () => {
       setLineDash: vi.fn(),
       stroke: vi.fn(),
     }
+    node.processInitialChildren()
     const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')
@@ -666,6 +674,9 @@ describe('BoxNode Layout Properties', () => {
       height: 100,
       overflow: Style.Overflow.Hidden,
       borderRadius: 10,
+      // A child, because the clip is applied around each child rather than once
+      // around them all -- a node with nothing inside it has nothing to clip.
+      children: [new BoxNode({ width: 10, height: 10 })],
     })
     const mockFill = vi.fn()
     const mockContext = {
@@ -680,6 +691,7 @@ describe('BoxNode Layout Properties', () => {
       closePath: vi.fn(),
       arc: vi.fn(),
     }
+    node.processInitialChildren()
     const getContextSpy = vi.spyOn(Canvas.prototype, 'getContext').mockReturnValue(mockContext as any)
 
     const ctx = new Canvas().getContext('2d')

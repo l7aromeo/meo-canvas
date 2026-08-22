@@ -643,12 +643,27 @@ export class RootNode extends ColumnNode {
       })
     }
 
-    this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+    // The page's own direction, not always left to right. Yoga takes the owner's direction here,
+    // and the root has no owner -- passing `LTR` regardless made `direction: RTL` do nothing at
+    // all: a row did not reverse, and `Start` and `End` stayed on the left and the right.
+    const rootDirection = this.props.direction ?? Style.Direction.LTR
+    this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
 
     // Allow nodes to finalize their layout, recalculating if any of them changed size.
     const needRecalculate = this.finalizeLayout()
     if (needRecalculate) {
-      this.node.calculateLayout(this.targetWidth, undefined, Style.Direction.LTR)
+      this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
+    }
+
+    // Place the nodes whose containing block Yoga cannot give them -- a `Fixed` node, and anything
+    // absolute under a box a layout placed rather than the caller. Each pass writes the resolved
+    // rectangle back as plain pixels, so the layout that follows moves the boxes those nodes were
+    // measured against; a second pass settles them against where they ended up. Two rounds is
+    // enough for every arrangement here, and the loop stops as soon as a pass writes nothing.
+    for (let round = 0; round < 2; round++) {
+      const page = { x: 0, y: 0, width: this.node.getComputedWidth(), height: this.node.getComputedHeight() }
+      if (!this.resolveContainingBlocks(0, 0, page, page, page)) break
+      this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
     }
 
     return this.node.getComputedHeight()

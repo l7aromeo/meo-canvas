@@ -166,7 +166,37 @@ export enum TextDecoration {
  * pass either `Style.BlendMode.Multiply` or `'multiply'`, and a value can be handed to a canvas
  * context without a lookup table in between. {@link Border} predates that and is numeric.
  */
-export const Style: typeof All & {
+
+/**
+ * Position types, Yoga's plus the one it has no notion of.
+ *
+ * `Fixed` resolves against the page rather than against the nearest positioned ancestor. There is
+ * no scrolling viewport to hold still against, so what it buys over `Absolute` is reaching past
+ * every positioned ancestor in one step — and being captured by a transform or a filter, as CSS
+ * has it.
+ *
+ * `Sticky` stays in the flow and treats its insets as constraints rather than offsets: the node
+ * moves only where its flow position would put it nearer an edge than the inset allows. Nothing
+ * scrolls here, so what remains of it is that clamp, which Chrome applies whether or not anything
+ * scrolls.
+ *
+ * Both are numbered past Yoga's three so neither can be mistaken for one.
+ */
+const PositionType = {
+  ...All.PositionType,
+  Fixed: 3,
+  Sticky: 4,
+} as const
+
+/** The value of {@link Style.PositionType.Fixed}, which Yoga's own enum does not carry. */
+export type FixedPositionType = (typeof PositionType)['Fixed']
+
+/** The value of {@link Style.PositionType.Sticky}, which Yoga's own enum does not carry. */
+export type StickyPositionType = (typeof PositionType)['Sticky']
+
+export const Style: Omit<typeof All, 'PositionType'> & {
+  /** Yoga's position types plus `Fixed`, which it does not define. */
+  PositionType: typeof PositionType
   /** Border styles, which Yoga has no notion of — it lays out a border's width, not its look. */
   Border: typeof Border
   /** Whether a glyph's stroke is painted over its fill. */
@@ -189,6 +219,7 @@ export const Style: typeof All & {
   TextDecoration: typeof TextDecoration
 } = {
   ...All,
+  PositionType,
   Border,
   PaintOrder,
   BlendMode,

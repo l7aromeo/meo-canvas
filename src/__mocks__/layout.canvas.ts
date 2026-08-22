@@ -20,6 +20,7 @@ export const BoxNode = vi.fn(function (this: any, props: any) {
   this.applyDefaults = vi.fn()
   this.appendChild = vi.fn()
   this.finalizeLayout = vi.fn(() => false)
+  this.resolveContainingBlocks = vi.fn(() => false)
   this.updateLayoutBasedOnComputedSize = vi.fn()
   this.setLayout = vi.fn()
   this._renderContent = vi.fn()

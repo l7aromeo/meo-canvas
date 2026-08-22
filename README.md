@@ -32,6 +32,8 @@ and rendering to a canvas.
   - [Box, Row, and Column](#box-row-and-column)
     - [Effects](#effects-filter-backdropfilter-and-mixblendmode)
     - [Background pictures](#background-pictures-backgroundimage)
+    - [Positioning and stacking](#positioning-and-stacking)
+    - [Transforms](#transforms)
   - [Text](#text)
   - [Image](#image)
   - [Path](#path)
@@ -53,6 +55,8 @@ and rendering to a canvas.
 - **Chart Support:** Render bar, line, pie, and doughnut charts with customizable data and options.
 - **Styling:** Style your components with properties that mimic CSS, including borders, padding, margins, and more.
 - **Grid Layout:** A `Grid` component is provided for easy grid-based layouts.
+- **CSS Positioning:** `Static`, `Relative`, `Absolute`, `Fixed` and `Sticky`, with CSS's containing blocks, painting
+  order and stacking contexts — not Yoga's.
 - **Arbitrary Shapes:** A `Path` component draws SVG path data — the escape hatch for what the components cannot
   describe.
 - **Masking:** Cut any node to a shape, a path, or a gradient's alpha.
@@ -1088,33 +1092,33 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 
 #### Layout Props
 
-| Prop                    | Type                               | Description                                                                                           |
-| ----------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `width`, `height`       | `number \| string`                 | Sets the size of the node in pixels or percentage.                                                    |
-| `minWidth`, `minHeight` | `number \| string`                 | Sets the minimum size of the node.                                                                    |
-| `maxWidth`, `maxHeight` | `number \| string`                 | Sets the maximum size of the node.                                                                    |
-| `flexDirection`         | `Style.FlexDirection`              | Defines the direction of the main axis (`Row`, `Column`, etc.).                                       |
-| `justifyContent`        | `Style.Justify`                    | Defines how items are distributed along the main axis.                                                |
-| `alignItems`            | `Style.Align`                      | Defines how items are aligned along the cross axis.                                                   |
-| `alignSelf`             | `Style.Align`                      | Overrides the parent's`alignItems` for a specific item.                                               |
-| `alignContent`          | `Style.Align`                      | Defines how lines are distributed when content wraps.                                                 |
-| `flexGrow`              | `number`                           | Defines the ability of an item to grow.                                                               |
-| `flexShrink`            | `number`                           | Defines the ability of an item to shrink.                                                             |
-| `flexBasis`             | `number \| 'auto' \| string`       | Defines the default size of an item along the main axis.                                              |
-| `flexWrap`              | `Style.Wrap`                       | Controls whether flex items wrap to multiple lines.                                                   |
-| `positionType`          | `Style.PositionType`               | Sets the positioning method (`Relative` or `Absolute`).                                               |
-| `position`              | `object \| number \| string`       | Sets the offset for a positioned element.                                                             |
-| `margin`                | `object \| number \| string`       | Sets the margin space on the outside of the node.                                                     |
-| `padding`               | `object \| number \| string`       | Sets the padding space on the inside of the node.                                                     |
-| `border`                | `object \| number`                 | Sets the width of the node's border.                                                                  |
-| `aspectRatio`           | `number`                           | Locks the aspect ratio (width / height) of the node.                                                  |
-| `overflow`              | `Style.Overflow`                   | Defines how content that overflows is handled (`Visible`, `Hidden`).                                  |
-| `display`               | `Style.Display`                    | Controls if the node is included in layout (`Flex`, `None`).                                          |
-| `direction`             | `Style.Direction`                  | Sets the primary layout direction (`LTR`, `RTL`).                                                     |
-| `gap`                   | `object \| number \| string`       | Defines the space between flex items.                                                                 |
-| `boxSizing`             | `Style.BoxSizing`                  | Defines how`width` and `height` are interpreted (`ContentBox`, `BorderBox`).                          |
-| `zIndex`                | `number`                           | Stack order among absolutely positioned siblings; unset paints above in-flow content, negative below. |
-| `children`              | `CanvasElement \| CanvasElement[]` | Child nodes to render inside this node.                                                               |
+| Prop                    | Type                               | Description                                                                                                                        |
+| ----------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `width`, `height`       | `number \| string`                 | Sets the size of the node in pixels or percentage.                                                                                 |
+| `minWidth`, `minHeight` | `number \| string`                 | Sets the minimum size of the node.                                                                                                 |
+| `maxWidth`, `maxHeight` | `number \| string`                 | Sets the maximum size of the node.                                                                                                 |
+| `flexDirection`         | `Style.FlexDirection`              | Defines the direction of the main axis (`Row`, `Column`, etc.).                                                                    |
+| `justifyContent`        | `Style.Justify`                    | Defines how items are distributed along the main axis.                                                                             |
+| `alignItems`            | `Style.Align`                      | Defines how items are aligned along the cross axis.                                                                                |
+| `alignSelf`             | `Style.Align`                      | Overrides the parent's`alignItems` for a specific item.                                                                            |
+| `alignContent`          | `Style.Align`                      | Defines how lines are distributed when content wraps.                                                                              |
+| `flexGrow`              | `number`                           | Defines the ability of an item to grow.                                                                                            |
+| `flexShrink`            | `number`                           | Defines the ability of an item to shrink.                                                                                          |
+| `flexBasis`             | `number \| 'auto' \| string`       | Defines the default size of an item along the main axis.                                                                           |
+| `flexWrap`              | `Style.Wrap`                       | Controls whether flex items wrap to multiple lines.                                                                                |
+| `positionType`          | `Style.PositionType`               | CSS `position` — `Static`, `Relative`, `Absolute`, `Fixed` or `Sticky`. See [Positioning and stacking](#positioning-and-stacking). |
+| `position`              | `object \| number \| string`       | Sets the offset for a positioned element.                                                                                          |
+| `margin`                | `object \| number \| string`       | Sets the margin space on the outside of the node.                                                                                  |
+| `padding`               | `object \| number \| string`       | Sets the padding space on the inside of the node.                                                                                  |
+| `border`                | `object \| number`                 | Sets the width of the node's border.                                                                                               |
+| `aspectRatio`           | `number`                           | Locks the aspect ratio (width / height) of the node.                                                                               |
+| `overflow`              | `Style.Overflow`                   | Defines how content that overflows is handled (`Visible`, `Hidden`).                                                               |
+| `display`               | `Style.Display`                    | Controls if the node is included in layout (`Flex`, `None`).                                                                       |
+| `direction`             | `Style.Direction`                  | Sets the primary layout direction (`LTR`, `RTL`).                                                                                  |
+| `gap`                   | `object \| number \| string`       | Defines the space between flex items.                                                                                              |
+| `boxSizing`             | `Style.BoxSizing`                  | How`width` and `height` are interpreted. Defaults to `BorderBox`, where CSS defaults to content-box.                               |
+| `zIndex`                | `number`                           | Stack order among siblings, positioned or not. Naming any value creates a stacking context.                                        |
+| `children`              | `CanvasElement \| CanvasElement[]` | Child nodes to render inside this node.                                                                                            |
 
 #### Styling Props
 
@@ -1133,7 +1137,7 @@ These are the fundamental layout components. `Row` and `Column` are wrappers aro
 | `dither`          | `boolean`                            | Breaks up gradient banding — see [Smoothing gradients](#smoothing-gradients-dither). Inherited by descendants.                     |
 | `mask`            | `Mask`                               | Limits what of the node is drawn — see below.                                                                                      |
 | `boxShadow`       | `BoxShadowProps \| BoxShadowProps[]` | Applies one or more box-shadow effects.                                                                                            |
-| `transform`       | `TransformProps`                     | Applies 2D transformations (translate, rotate, scale).                                                                             |
+| `transform`       | `TransformProps`                     | 2D transform, composed as the CSS list `scale() rotate() translate()` — see [Transforms](#transforms).                             |
 
 ##### Shadows
 
@@ -1195,6 +1199,62 @@ Two limits worth knowing before you design around them:
 - A gradient that cannot be built — no colours, an unknown direction — drops the **mask**, not the node, and warns.
   Losing what was drawn would be a worse answer than losing how it was cut.
 
+#### Positioning and stacking
+
+`positionType` is CSS `position`, and the containing block rules are CSS's rather than Yoga's.
+
+| Value      | Where it is laid out                                                                                                                                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Static`   | In the flow, painting in declaration order. This is what leaving the prop unset means.                                                                                                                                                                                      |
+| `Relative` | In the flow, then offset from where the flow put it. The space it would have taken stays reserved.                                                                                                                                                                          |
+| `Absolute` | Out of the flow, offset from the nearest **positioned** ancestor. Static boxes in between are skipped, as CSS skips them.                                                                                                                                                   |
+| `Fixed`    | Offset from the page, whatever it is nested in — unless an ancestor carries a `transform`, a `filter` or a `backdropFilter`, which captures it exactly as those capture it in CSS.                                                                                          |
+| `Sticky`   | In the flow like a relative node, then held inside the page by its insets — each inset is a limit the node may not pass, not an offset applied to it. It is held inside its containing block too, so it stops at the foot of its own parent rather than following the page. |
+
+```javascript
+Box({
+  positionType: Style.PositionType.Relative, // the containing block
+  children: [
+    Box({ positionType: Style.PositionType.Absolute, position: { Top: 8, Right: 8 } }),
+    Box({ positionType: Style.PositionType.Fixed, position: { Bottom: 0, Left: 0 } }), // against the page
+  ],
+})
+```
+
+**Painting order** follows CSS: negative `zIndex` first, then in-flow content, then positioned nodes
+and anything with a `zIndex` of `0` or more, ordered by that value and then by tree order — of two
+nodes on the same layer the one written later paints over the one written earlier, wherever in the
+subtree each of them sits.
+
+`zIndex` applies to any child, positioned or not — every node here is a flex item, and CSS gives a
+flex item a working `z-index` whatever its `position` says. Naming any value creates a stacking
+context, so `zIndex: 0` is not the same as leaving it unset: descendants of a node that forms one
+are sorted inside it and cannot be interleaved with anything outside it. `opacity` below 1, a
+`transform`, a `filter`, a `backdropFilter`, a `mixBlendMode`, a `mask` and `position: Sticky` each
+form one too, again as in CSS.
+
+**`overflow: Hidden` does not clip everything inside it.** A positioned node is cut only where the
+clipping box is its containing block, or lies between it and one. So a plain `overflow: Hidden` box
+lets an absolute descendant of a box above it through, and never cuts a fixed node.
+
+#### Transforms
+
+`transform` composes as the CSS transform list `scale() rotate() translate()`, in that order, about
+`originX` and `originY` (`'50%'` each by default). Each part is written in the coordinate system the
+ones before it left behind, so a translation carries the scale and the rotation with it:
+
+```javascript
+Box({ transform: { scale: 2, translateY: 30 } }) // moves 60 pixels down, not 30
+Box({ transform: { rotate: 90, translateX: 30 } }) // moves 30 pixels down, not across
+Box({ transform: { scale: 2, originY: 0 } }) // grows downward from its top edge
+```
+
+Lengths resolve against the untransformed border box, as they do in CSS: `translateY: '60%'` of a
+50-tall node is 30 before any scale reaches it.
+
+A transform paints the node and its children without moving the layout — siblings are laid out as
+though it were untransformed — and it makes the node the containing block for any `Fixed` descendant.
+
 #### Font & Text Props (Inheritable)
 
 These props, when set on a `Box`, `Row`, or `Column`, are inherited by any descendant `Text` nodes.
@@ -1234,11 +1294,6 @@ Two consequences worth knowing:
   face's ascent plus descent.
 
 `lineGap` is extra space between lines on top of all that, with no CSS equivalent.
-
-**Absolute positioning resolves against the immediate parent.** CSS resolves it against the nearest
-_positioned_ ancestor, skipping static boxes in between; Yoga always uses the parent. A layout ported
-from the browser that relies on that skipping will land somewhere else — put the offsets on the
-node's own parent instead.
 
 **Bidirectional text is not laid out.** `direction` is Yoga's layout direction — it flips the flex
 axes — and does not reorder text. A right-to-left script renders in the order its characters were

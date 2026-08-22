@@ -383,6 +383,12 @@ describe('drawBorders', () => {
     })
   })
 
+  /**
+   * `boxSizing` decides how `width` and `height` are resolved into a box, not where the border is
+   * painted once that box exists. Both models paint it inside, as CSS paints a border inside the
+   * border box under either. Offsetting outward for `ContentBox` put the ring beyond the node's own
+   * box, so the background covered its inner edge and the node drew a border width oversized.
+   */
   describe('ContentBox Borders', () => {
     beforeEach(() => {
       mockNode = createMockYogaNode({ [YogaTypes.Edge.All]: 5 }, Style.BoxSizing.ContentBox)
@@ -405,21 +411,21 @@ describe('drawBorders', () => {
       expect(mockCtx.lineWidth).toBe(5)
       expect(mockCtx.setLineDash).toHaveBeenCalledWith([])
 
-      // Top line (x + rTL, y - halfBt, x + width - rTR, y - halfBt)
-      expect(mockCtx.moveTo).toHaveBeenCalledWith(10, 7.5)
-      expect(mockCtx.lineTo).toHaveBeenCalledWith(110, 7.5)
+      // Top line (x + rTL, y + halfBt, x + width - rTR, y + halfBt) -- inside the box, not above it
+      expect(mockCtx.moveTo).toHaveBeenCalledWith(10, 12.5)
+      expect(mockCtx.lineTo).toHaveBeenCalledWith(110, 12.5)
 
-      // Right line (x + width + halfBr, y + rTR, x + width + halfBr, y + height - rBR)
-      expect(mockCtx.moveTo).toHaveBeenCalledWith(112.5, 10)
-      expect(mockCtx.lineTo).toHaveBeenCalledWith(112.5, 110)
+      // Right line (x + width - halfBr, y + rTR, x + width - halfBr, y + height - rBR)
+      expect(mockCtx.moveTo).toHaveBeenCalledWith(107.5, 10)
+      expect(mockCtx.lineTo).toHaveBeenCalledWith(107.5, 110)
 
-      // Bottom line (x + width - rBR, y + height + halfBb, x + rBL, y + height + halfBb)
-      expect(mockCtx.moveTo).toHaveBeenCalledWith(110, 112.5)
-      expect(mockCtx.lineTo).toHaveBeenCalledWith(10, 112.5)
+      // Bottom line (x + width - rBR, y + height - halfBb, x + rBL, y + height - halfBb)
+      expect(mockCtx.moveTo).toHaveBeenCalledWith(110, 107.5)
+      expect(mockCtx.lineTo).toHaveBeenCalledWith(10, 107.5)
 
-      // Left line (x - halfBl, y + height - rBL, x - halfBl, y + rTL)
-      expect(mockCtx.moveTo).toHaveBeenCalledWith(7.5, 110)
-      expect(mockCtx.lineTo).toHaveBeenCalledWith(7.5, 10)
+      // Left line (x + halfBl, y + height - rBL, x + halfBl, y + rTL)
+      expect(mockCtx.moveTo).toHaveBeenCalledWith(12.5, 110)
+      expect(mockCtx.lineTo).toHaveBeenCalledWith(12.5, 10)
 
       expect(mockCtx.stroke).toHaveBeenCalledTimes(4)
     })
@@ -446,14 +452,14 @@ describe('drawBorders', () => {
       expect(mockCtx.arc).toHaveBeenCalledTimes(4)
 
       // Top-Left arc (cx, cy, radius, startAngle, endAngle, border1, border2)
-      // For content-box, centerlineArcRadius = radius + cornerWidth / 2
-      expect(mockCtx.arc).toHaveBeenCalledWith(10, 10, 12.5, Math.PI, 1.5 * Math.PI)
+      // The centreline is half a border width inside the visual radius, as for border-box
+      expect(mockCtx.arc).toHaveBeenCalledWith(10, 10, 7.5, Math.PI, 1.5 * Math.PI)
       // Top-Right arc
-      expect(mockCtx.arc).toHaveBeenCalledWith(90, 10, 12.5, 1.5 * Math.PI, 2 * Math.PI)
+      expect(mockCtx.arc).toHaveBeenCalledWith(90, 10, 7.5, 1.5 * Math.PI, 2 * Math.PI)
       // Bottom-Right arc
-      expect(mockCtx.arc).toHaveBeenCalledWith(90, 90, 12.5, 0, 0.5 * Math.PI)
+      expect(mockCtx.arc).toHaveBeenCalledWith(90, 90, 7.5, 0, 0.5 * Math.PI)
       // Bottom-Left arc
-      expect(mockCtx.arc).toHaveBeenCalledWith(10, 90, 12.5, 0.5 * Math.PI, Math.PI)
+      expect(mockCtx.arc).toHaveBeenCalledWith(10, 90, 7.5, 0.5 * Math.PI, Math.PI)
     })
 
     it('should draw a cap for border-box when border is thicker than radius allows for centerline arc', () => {

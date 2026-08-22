@@ -120,21 +120,29 @@ export interface FontRegistrationInfo {
 }
 
 /**
- * Defines the 2D transformation properties for a BoxNode.
- * Transformations are applied relative to the specified origin.
+ * A 2D transform applied to a node and everything inside it, after the layout has placed it.
+ *
+ * The parts compose as the CSS transform list `scale() rotate() translate()`, in that order and
+ * about {@link TransformProps.originX} and {@link TransformProps.originY}. Each is written in the
+ * coordinate system the ones before it left behind, so a translation carries the scale and the
+ * rotation with it: `{ scale: 2, translateY: 30 }` moves the node 60 pixels down the page, and
+ * `{ rotate: 90, translateX: 30 }` moves it 30 pixels *down* rather than across.
+ *
+ * Lengths are resolved against the node's untransformed border box, which is what CSS resolves them
+ * against too: `translateY: '60%'` of a 50-tall node is 30 before any scale reaches it.
  */
 export interface TransformProps {
   /**
-   * Horizontal translation (movement along the X-axis).
-   * Applied after positioning via layout.
+   * Horizontal translation (movement along the X-axis), applied last in the chain and so carrying
+   * whatever `scale` and `rotate` did before it.
    * @unit Pixels if it's number, percentage of the node's width if it's string (e.g., '10%').
    * @default undefined (no translation)
    */
   translateX?: number | `${number}%`
 
   /**
-   * Vertical translation (movement along the Y-axis).
-   * Applied after positioning via layout.
+   * Vertical translation (movement along the Y-axis), applied last in the chain and so carrying
+   * whatever `scale` and `rotate` did before it.
    * @unit Pixels if it's number, percentage of the node's height if it's string (e.g., '10%').
    * @default undefined (no translation)
    */
@@ -484,20 +492,36 @@ export interface BoxProps extends BaseProps {
   flexBasis?: number | 'auto' | `${number}%`
 
   /**
-   * Specifies the positioning method used for the node.
-   * `RELATIVE`: Positioned according to the normal flow, then offset relative to that position.
-   * `ABSOLUTE`: Taken out of the flow and positioned against its **immediate parent**.
+   * Specifies the positioning method used for the node, as CSS `position` does.
    *
-   * That last part is where this differs from CSS, and the difference is Yoga's rather than this
-   * library's. CSS resolves an absolute node against the nearest *positioned* ancestor, skipping
-   * every static box in between; Yoga always uses the parent, whether or not it is positioned. A
-   * layout ported from the browser that relies on skipping an intermediate box will land somewhere
-   * else — give the node's own parent the offsets instead.
-   * @see Style.PositionType (`RELATIVE`, `ABSOLUTE`)
-   * @default Yoga default (`RELATIVE`)
-   * @see https://yogalayout.dev/docs/styling/position
+   * `STATIC`: the node stays in the flow and paints in declaration order. This is what leaving the
+   * prop unset means — Yoga's own default is `RELATIVE`, but a node that never asked for a position
+   * type is static, which is why the two are told apart by whether the prop was given at all.
+   * `RELATIVE`: laid out in the flow, then offset from where the flow put it. The space it would
+   * have taken stays reserved.
+   * `ABSOLUTE`: taken out of the flow and offset from its containing block, which is the nearest
+   * positioned* ancestor — every static box in between is skipped, exactly as CSS skips them.
+   * `FIXED`: offset from the page, whatever it is nested in. A `transform`, a `filter` or a
+   * `backdropFilter` on an ancestor captures it and becomes its containing block instead, which is
+   * the one thing that stops a fixed node reaching the page in CSS too.
+   * `STICKY`: laid out in the flow like a relative node, then held inside the page by its insets —
+   * each one is a limit the node may not pass rather than an offset applied to it. It is held
+   * inside its containing block as well, which is its parent's content box, so it stops at the foot
+   * of its own section rather than following the page down. Nothing scrolls here, so that is the
+   * whole of it, and it is what Chrome paints with no scrolling ancestor. A sticky node always
+   * forms a stacking context.
+   *
+   * Naming anything but `STATIC` makes the node *positioned*, and a positioned node paints above
+   * in-flow siblings whichever order they were declared in.
+   *
+   * `overflow: Hidden` on an ancestor cuts a positioned node only where that ancestor is its
+   * containing block or lies between it and one, so a plain `overflow: Hidden` box lets an absolute
+   * descendant of a box above it through, and never cuts a fixed one.
+   * @see Style.PositionType (`STATIC`, `RELATIVE`, `ABSOLUTE`, `FIXED`, `STICKY`)
+   * @default `STATIC`
+   * @see https://developer.mozilla.org/en-US/docs/Web/CSS/position
    */
-  positionType?: Style.PositionType
+  positionType?: Style.PositionType | Style.FixedPositionType | Style.StickyPositionType
 
   /**
    * Specifies the offset distances for positioned elements (`positionType: 'ABSOLUTE'` or `RELATIVE`).
@@ -828,16 +852,19 @@ export interface BoxProps extends BaseProps {
   transform?: TransformProps
 
   /**
-   * Stack order among absolutely positioned siblings. A larger value paints over a smaller one, and
-   * equal values paint in the order they were declared.
+   * Stack order among siblings. A larger value paints over a smaller one, and equal values paint in
+   * the order they were declared.
    *
-   * Only absolutely positioned nodes take part. An in-flow child is painted in flow order and is
-   * never lifted by a `zIndex`.
+   * Naming one takes part whether or not the node is positioned. Every node here is a flex item —
+   * Yoga has no block layout, and `Grid` is flex underneath — and CSS applies `z-index` to a flex
+   * item whatever its `position` says.
    *
-   * Leaving it unset is CSS's `z-index: auto`, which shares a layer with `0` — so an absolutely
-   * positioned child still paints above in-flow siblings, whether it is declared before or after
-   * them. A negative value puts it below them instead, which is how a decoration is placed behind
-   * the content of its own parent.
+   * Leaving it unset is CSS's `z-index: auto`. For a *positioned* node that shares a layer with
+   * `0`, so an absolutely positioned child still paints above in-flow siblings whether declared
+   * before or after them. For an in-flow node it does not: an explicit `0` lifts the node above
+   * later siblings where `auto` leaves it in the flow, because for a flex item any value other
+   * than `auto` creates a stacking context. A negative value puts the node below the flow, which
+   * is how a decoration is placed behind the content of its own parent.
    * @example
    * ```ts
    * Box({

@@ -16,7 +16,48 @@ const _HEX_ALPHA_RE = /^#([0-9a-fA-F]{8})$/
  * Base node class for rendering rectangular boxes with layout, styling, and children.
  * It uses the Yoga layout engine for positioning and sizing.
  */
+/** A clipping ancestor, remembered so a node lifted past it is still cut by it. */
+interface ClipFrame {
+  node: BoxNode
+  x: number
+  y: number
+  width: number
+  height: number
+  radii: { TopLeft: number; TopRight: number; BottomRight: number; BottomLeft: number }
+  /** Whether this clipper is the containing block an `Absolute` node resolves against. */
+  containsAbsolutes: boolean
+  /** Whether it is the one a `Fixed` node resolves against, which only a transform or filter is. */
+  containsFixed: boolean
+}
+
+/** A box in page coordinates. */
+interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** One node in a stacking order, with where to paint it and what still clips it. */
+interface StackingEntry {
+  node: BoxNode
+  zIndex: number
+  order: number
+  originX: number
+  originY: number
+  clips: ClipFrame[]
+}
+
 export class BoxNode {
+  /**
+   * Set where a layout places this node absolutely for its own reasons rather than because the
+   * caller asked. `Grid` does it to put items on their tracks, and a node placed that way becomes a
+   * containing block Yoga resolves against though nothing named a `positionType` -- CSS keeps a
+   * grid and its items static, so `resolveContainingBlocks` places an absolute descendant against
+   * the box above it that CSS does name instead.
+   */
+  protected placedByLayout = false
+
   /** Original props passed to the constructor before any modifications. */
   initialProps: Partial<BoxProps>
 
@@ -201,7 +242,9 @@ export class BoxNode {
       overflow,
       display,
       boxSizing = Style.BoxSizing.BorderBox,
-      direction = Style.Direction.LTR,
+      // Inherited rather than defaulted to `LTR`: defaulting meant every node was given an
+      // explicit direction, so a page set to `RTL` never reached its children and nothing reversed.
+      direction = Style.Direction.Inherit,
       flexWrap,
     } = props
 
@@ -218,11 +261,29 @@ export class BoxNode {
     if (alignContent !== undefined) this.node.setAlignContent(alignContent)
     if (flexGrow !== undefined) this.node.setFlexGrow(flexGrow)
     if (flexShrink !== undefined) this.node.setFlexShrink(flexShrink)
-    if (positionType !== undefined) this.node.setPositionType(positionType)
+    // Defaulted to `Static` rather than left at Yoga's own default of `Relative`, because the two
+    // disagree about containing blocks and CSS is on `Static`'s side: an absolutely positioned node
+    // resolves against its nearest *positioned* ancestor, skipping every static box between. Yoga
+    // offers `Static` for exactly that, and leaving the default in place made every ancestor a
+    // containing block -- so an absolute node landed against its immediate parent wherever CSS
+    // would have gone further up.
+    // Yoga has no `Fixed`, so it is laid out as `Absolute` and moved to its own containing block
+    // when it is painted -- see `collectStacking`.
+    // A sticky node stays in the flow, so Yoga lays it out as `Relative`; its insets are a
+    // constraint on where it may sit rather than an offset, and are applied when it is painted.
+    const sticky = positionType === Style.PositionType.Sticky
+    type YogaPosition = Parameters<typeof this.node.setPositionType>[0]
+    const yogaPosition =
+      positionType === Style.PositionType.Fixed
+        ? Style.PositionType.Absolute
+        : sticky
+          ? Style.PositionType.Relative
+          : (positionType ?? Style.PositionType.Static)
+    this.node.setPositionType(yogaPosition as YogaPosition)
     if (flexBasis !== undefined) this.node.setFlexBasis(flexBasis)
     // `position: 0` is falsy and meaningful: an absolute node inset by nothing on all four sides
     // fills its parent.
-    if (position !== undefined) {
+    if (position !== undefined && !sticky) {
       if (typeof position === 'number') {
         this.node.setPosition(Style.Edge.All, position)
       } else if (typeof position === 'string' && position.endsWith('%')) {
@@ -295,9 +356,9 @@ export class BoxNode {
    * `dither` is held on the context around all of it, so the node's mask, background, content and
    * children are drawn with one answer and whatever draws next is left with its own.
    */
-  async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0) {
+  async render(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0, suppressStacking: boolean = false) {
     const { dither } = this.props
-    if (dither === undefined) return this.renderMasked(ctx, offsetX, offsetY)
+    if (dither === undefined) return this.renderMasked(ctx, offsetX, offsetY, suppressStacking)
 
     // Put back by hand rather than through `save`/`restore`, which would clone the whole graphics
     // state to carry one boolean. Putting it back at all is what keeps the node that draws next
@@ -306,35 +367,41 @@ export class BoxNode {
     const inherited = ctx.dither
     ctx.dither = dither
     try {
-      return await this.renderMasked(ctx, offsetX, offsetY)
+      return await this.renderMasked(ctx, offsetX, offsetY, suppressStacking)
     } finally {
       ctx.dither = inherited
     }
   }
 
   /** {@link render} without the dither state around it: the mask, then the node itself. */
-  private async renderMasked(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
+  private async renderMasked(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number, suppressStacking: boolean = false) {
     const mask = this.props.mask
-    if (!mask) return this.renderNode(ctx, offsetX, offsetY)
+    if (!mask) return this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
 
     const layout = this.node.getComputedLayout()
     const box = { x: layout.left + offsetX, y: layout.top + offsetY, width: layout.width, height: layout.height }
     if (box.width <= 0 || box.height <= 0) return
 
     if (isGradientMask(mask)) {
-      const drawn = await drawWithGradientMask(ctx, mask.gradient, box, target => this.renderNode(target, offsetX, offsetY), `[BoxNode ${this.key}]`)
+      const drawn = await drawWithGradientMask(
+        ctx,
+        mask.gradient,
+        box,
+        target => this.renderNode(target, offsetX, offsetY, false, suppressStacking),
+        `[BoxNode ${this.key}]`,
+      )
       // A gradient that could not be built is not a reason to lose the node; it draws unmasked,
       // having already said why.
-      return drawn ? undefined : this.renderNode(ctx, offsetX, offsetY)
+      return drawn ? undefined : this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
     }
 
     const path = maskPath(mask, box)
-    if (!path) return this.renderNode(ctx, offsetX, offsetY)
+    if (!path) return this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
 
     ctx.save()
     try {
       ctx.clip(path, maskFillRule(mask))
-      await this.renderNode(ctx, offsetX, offsetY)
+      await this.renderNode(ctx, offsetX, offsetY, false, suppressStacking)
     } finally {
       ctx.restore()
     }
@@ -522,12 +589,25 @@ export class BoxNode {
           halfHeight = diagonal
         }
 
-        const translateX = typeof transform.translateX === 'number' ? transform.translateX : 0
-        const translateY = typeof transform.translateY === 'number' ? transform.translateY : 0
-        left = centreX - halfWidth + translateX
-        right = centreX + halfWidth + translateX
-        top = centreY - halfHeight + translateY
-        bottom = centreY + halfHeight + translateY
+        // The translation is written inside the scale and the rotation, so it carries their
+        // magnitude: 30 under `scale: 2` reaches 60. A rotation turns it any way at all, so its
+        // whole length is allowed for in both axes rather than being resolved along one.
+        const translateX = (typeof transform.translateX === 'number' ? transform.translateX : 0) * scaleX
+        const translateY = (typeof transform.translateY === 'number' ? transform.translateY : 0) * scaleY
+        if (transform.rotate) {
+          const span = Math.hypot(translateX, translateY)
+          halfWidth += span
+          halfHeight += span
+          left = centreX - halfWidth
+          right = centreX + halfWidth
+          top = centreY - halfHeight
+          bottom = centreY + halfHeight
+        } else {
+          left = centreX - halfWidth + translateX
+          right = centreX + halfWidth + translateX
+          top = centreY - halfHeight + translateY
+          bottom = centreY + halfHeight + translateY
+        }
       }
 
       const spill = shadowSpill(node.props.boxShadow) + filterSpill(node.filterChain()) + node.inkOverflow()
@@ -614,7 +694,409 @@ export class BoxNode {
    * applying a filter: opacity and the filter itself belong to the group as a whole and have
    * already been dealt with by the caller, so the inner pass draws the subtree plainly.
    */
-  private async renderNode(ctx: CanvasRenderingContext2D, offsetX: number = 0, offsetY: number = 0, groupEffectsApplied: boolean = false) {
+  /** A clipper a lifted node passed through on its way up, with where it was painted. */
+
+  /**
+   * This node's padding box, which is the box a positioned descendant resolves against.
+   *
+   * Yoga measures an absolute node's insets from the same edge, so this is both what CSS names as
+   * the containing block and what Yoga actually used — the two are told apart by *which* ancestor
+   * each picks, never by where that ancestor's box lies.
+   */
+  private containingRect(originX: number, originY: number): Rect {
+    const layout = this.node.getComputedLayout()
+    const left = this.node.getComputedBorder(Style.Edge.Left)
+    const top = this.node.getComputedBorder(Style.Edge.Top)
+    const right = this.node.getComputedBorder(Style.Edge.Right)
+    const bottom = this.node.getComputedBorder(Style.Edge.Bottom)
+    return {
+      x: originX + left,
+      y: originY + top,
+      width: Math.max(0, layout.width - left - right),
+      height: Math.max(0, layout.height - top - bottom),
+    }
+  }
+
+  /**
+   * This node's content box, which is the containing block of the in-flow children inside it.
+   *
+   * The padding box less the padding. A sticky child is held inside this rather than inside the
+   * padding box, so a sticky header stops where its section's content stops rather than sliding
+   * over the padding beneath it.
+   */
+  private contentRect(originX: number, originY: number): Rect {
+    const padding = this.containingRect(originX, originY)
+    const left = this.node.getComputedPadding(Style.Edge.Left)
+    const top = this.node.getComputedPadding(Style.Edge.Top)
+    const right = this.node.getComputedPadding(Style.Edge.Right)
+    const bottom = this.node.getComputedPadding(Style.Edge.Bottom)
+    return {
+      x: padding.x + left,
+      y: padding.y + top,
+      width: Math.max(0, padding.width - left - right),
+      height: Math.max(0, padding.height - top - bottom),
+    }
+  }
+
+  /** One inset as pixels, resolving a percentage against the extent it is written against. */
+  private static inset(value: unknown, extent: number): number | undefined {
+    if (typeof value === 'number') return value
+    if (typeof value === 'string' && value.endsWith('%')) return (parseFloat(value) / 100) * extent
+    return undefined
+  }
+
+  /**
+   * This node's four insets in pixels, resolved against `cb`, with `Start` and `End` turned into
+   * the physical edges the direction puts them on.
+   */
+  private insetsAgainst(cb: Rect) {
+    const position = this.props.position
+    const all = typeof position === 'number' || typeof position === 'string' ? position : undefined
+    const named = typeof position === 'object' && position !== null ? (position as Record<string, unknown>) : {}
+    const rightToLeft = this.resolvedDirection() === Style.Direction.RTL
+    const start = named.Start
+    const end = named.End
+    return {
+      left: BoxNode.inset(named.Left ?? (rightToLeft ? end : start) ?? named.Horizontal ?? all, cb.width),
+      right: BoxNode.inset(named.Right ?? (rightToLeft ? start : end) ?? named.Horizontal ?? all, cb.width),
+      top: BoxNode.inset(named.Top ?? named.Vertical ?? all, cb.height),
+      bottom: BoxNode.inset(named.Bottom ?? named.Vertical ?? all, cb.height),
+    }
+  }
+
+  /**
+   * Places this node against the containing block CSS gives it rather than the one Yoga used.
+   *
+   * Yoga resolves an absolute node against the nearest ancestor it was told is not `Static`, which
+   * is the right box nearly always — CSS skips static ancestors and so does Yoga. The two part
+   * company in exactly two places: a `Fixed` node, whose containing block is the page or whatever
+   * ancestor captured it rather than any ancestor Yoga knows about; and a node under a box a layout
+   * placed for its own reasons, such as a `Grid` and its items, which CSS keeps static.
+   *
+   * Shifting the painted origin by the distance between the two boxes is not enough, because they
+   * differ in *extent* as well as in place: `Right` and `Bottom` are measured from the far edge, a
+   * percentage is a fraction of the width or the height, and `Left` with `Right` stretches across
+   * whatever lies between. All of those come out against the wrong box. So the node is placed here
+   * instead — the resolved rectangle is written back as plain pixels in the terms Yoga does
+   * understand, and Yoga then lays it out where CSS wanted it all along.
+   *
+   * An axis with no inset is left alone: CSS puts such a node at its static position, which is
+   * where the flow would have put it, and Yoga already does that from the node's own parent.
+   * @returns whether anything changed, so the caller knows to lay out again.
+   */
+  private placeAgainst(cb: Rect, yogaCb: Rect): boolean {
+    const layout = this.node.getComputedLayout()
+    const insets = this.insetsAgainst(cb)
+
+    /** The extent along one axis, which the insets decide only where nothing else did. */
+    const extent = (declared: BoxProps['width'], laidOut: number, near?: number, far?: number, span?: number) => {
+      if (typeof declared === 'string' && declared.endsWith('%')) return (parseFloat(declared) / 100) * (span as number)
+      if (declared === undefined && near !== undefined && far !== undefined) return Math.max(0, (span as number) - near - far)
+      return laidOut
+    }
+
+    const width = extent(this.props.width, layout.width, insets.left, insets.right, cb.width)
+    const height = extent(this.props.height, layout.height, insets.top, insets.bottom, cb.height)
+
+    const place = (near: number | undefined, far: number | undefined, cbNear: number, cbExtent: number, size: number) => {
+      if (near !== undefined) return cbNear + near
+      if (far !== undefined) return cbNear + cbExtent - far - size
+      return undefined
+    }
+
+    const x = place(insets.left, insets.right, cb.x, cb.width, width)
+    const y = place(insets.top, insets.bottom, cb.y, cb.height, height)
+
+    let changed = false
+
+    /** Writes one edge, reporting whether it had to change. */
+    const setEdge = (edge: (typeof Style.Edge)[keyof typeof Style.Edge], value: number | undefined) => {
+      const current = this.node.getPosition(edge)
+      const already = value === undefined ? current.unit === Style.Unit.Undefined : current.unit === Style.Unit.Point && Math.abs(current.value - value) < 0.01
+      if (already) return
+      this.node.setPosition(edge, value)
+      changed = true
+    }
+
+    // Every edge is rewritten, not only the ones being given a value: `position` may have been
+    // written as one number for all four, or against `Start` and `End`, and an edge left behind
+    // would go on competing with the one resolved here.
+    for (const edge of [Style.Edge.All, Style.Edge.Horizontal, Style.Edge.Vertical, Style.Edge.Start, Style.Edge.End, Style.Edge.Right, Style.Edge.Bottom]) {
+      setEdge(edge, undefined)
+    }
+    setEdge(Style.Edge.Left, x === undefined ? undefined : x - yogaCb.x)
+    setEdge(Style.Edge.Top, y === undefined ? undefined : y - yogaCb.y)
+
+    /** Writes an extent, but only one this pass worked out rather than one Yoga is free to size. */
+    const setExtent = (resolved: number, laidOut: number, current: ReturnType<typeof this.node.getWidth>, apply: (value: number) => void) => {
+      if (Math.abs(resolved - laidOut) < 0.01 && current.unit !== Style.Unit.Percent) return
+      if (current.unit === Style.Unit.Point && Math.abs(current.value - resolved) < 0.01) return
+      apply(resolved)
+      changed = true
+    }
+    setExtent(width, layout.width, this.node.getWidth(), value => this.node.setWidth(value))
+    setExtent(height, layout.height, this.node.getHeight(), value => this.node.setHeight(value))
+
+    return changed
+  }
+
+  /**
+   * Walks the tree placing every node whose containing block is not the one Yoga gave it.
+   *
+   * Three boxes are carried down, because three questions have different answers: which ancestor
+   * CSS resolves an absolute node against, which one it resolves a fixed node against, and which
+   * one Yoga used. They agree for most trees, and where they agree nothing is written.
+   * @returns whether anything changed, so the caller knows to lay out again.
+   */
+  protected resolveContainingBlocks(originX: number, originY: number, positioned: Rect, fixedCb: Rect, yogaCb: Rect): boolean {
+    let changed = false
+
+    for (const child of this.children) {
+      const layout = child.node.getComputedLayout()
+      const childX = originX + layout.left
+      const childY = originY + layout.top
+
+      const type = child.props.positionType
+      if (type === Style.PositionType.Fixed || type === Style.PositionType.Absolute) {
+        const target = type === Style.PositionType.Fixed ? fixedCb : positioned
+        const same =
+          Math.abs(target.x - yogaCb.x) < 0.01 &&
+          Math.abs(target.y - yogaCb.y) < 0.01 &&
+          Math.abs(target.width - yogaCb.width) < 0.01 &&
+          Math.abs(target.height - yogaCb.height) < 0.01
+        if (!same && child.placeAgainst(target, yogaCb)) changed = true
+      }
+
+      const box = child.containingRect(childX, childY)
+      // A node the caller positioned is a containing block for CSS and for Yoga alike. One a layout
+      // placed is only ever one for Yoga -- CSS keeps a grid and its items static.
+      const cssPositioned = type !== undefined && type !== Style.PositionType.Static
+      if (
+        child.resolveContainingBlocks(
+          childX,
+          childY,
+          cssPositioned ? box : positioned,
+          child.capturesFixed() ? box : fixedCb,
+          cssPositioned || child.placedByLayout ? box : yogaCb,
+        )
+      ) {
+        changed = true
+      }
+    }
+
+    return changed
+  }
+
+  protected clipFrame(originX: number, originY: number): ClipFrame | null {
+    if (this.props.overflow !== Style.Overflow.Hidden) return null
+    const layout = this.node.getComputedLayout()
+    if (!(layout.width > 0 || layout.height > 0)) return null
+    // The padding box, not the border box: CSS clips content inside the border, and the corner
+    // radius shrinks by the border it sits behind.
+    const borderLeft = this.node.getComputedBorder(Style.Edge.Left)
+    const borderTop = this.node.getComputedBorder(Style.Edge.Top)
+    const borderRight = this.node.getComputedBorder(Style.Edge.Right)
+    const borderBottom = this.node.getComputedBorder(Style.Edge.Bottom)
+    const outer = parseBorderRadius(this.props.borderRadius)
+    return {
+      node: this,
+      x: originX + borderLeft,
+      y: originY + borderTop,
+      width: Math.max(0, layout.width - borderLeft - borderRight),
+      height: Math.max(0, layout.height - borderTop - borderBottom),
+      radii: {
+        TopLeft: Math.max(0, outer.TopLeft - Math.max(borderLeft, borderTop)),
+        TopRight: Math.max(0, outer.TopRight - Math.max(borderRight, borderTop)),
+        BottomRight: Math.max(0, outer.BottomRight - Math.max(borderRight, borderBottom)),
+        BottomLeft: Math.max(0, outer.BottomLeft - Math.max(borderLeft, borderBottom)),
+      },
+      // An absolute node is cut by a clipper only where that clipper is its containing block.
+      containsAbsolutes: this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static,
+      containsFixed: this.capturesFixed(),
+    }
+  }
+
+  /**
+   * The direction this node ends up laid out in.
+   *
+   * Yoga resolves `Inherit` while it lays out but keeps no record of the answer: `getDirection`
+   * hands back what was set, and there is no computed counterpart. So the chain is walked to the
+   * first ancestor that named one, which is what Yoga itself would have found.
+   */
+  protected resolvedDirection(): ReturnType<typeof this.node.getDirection> {
+    let node: ReturnType<typeof this.node.getParent> | typeof this.node = this.node
+    while (node) {
+      const own = node.getDirection()
+      if (own !== Style.Direction.Inherit) return own
+      node = node.getParent()
+    }
+    return Style.Direction.LTR
+  }
+
+  /**
+   * Whether this node takes part in its parent's stacking order rather than painting in the flow.
+   *
+   * Naming a `zIndex` is enough on its own: every node here is a flex item, and CSS applies
+   * `z-index` to a flex item whatever its `position` says. Naming a `positionType` other than
+   * `Static` is the other way in, since a positioned box paints above in-flow content.
+   */
+  private stacksAmongSiblings(): boolean {
+    const positioned = this.props.positionType !== undefined && this.props.positionType !== Style.PositionType.Static
+    return positioned || this.props.zIndex !== undefined
+  }
+
+  /**
+   * How far a sticky node is pushed off its flow position by its own insets.
+   *
+   * The insets are a constraint rather than an offset: the node moves only where the flow would put
+   * it nearer an edge of the scrollport than the inset allows. Nothing scrolls here, so the
+   * scrollport is the page, and this is the whole of what sticky does -- it is also what Chrome
+   * does with no scrolling ancestor.
+   *
+   * The node is then held inside `containingBlock`, which is its parent's content box. That is the
+   * second limit CSS puts on a sticky box, and the one that makes a heading stop at the foot of its
+   * own section rather than following the page down. Without it the page was the only limit, and a
+   * node in content running past the page was dragged out of the section it belongs to. The near
+   * edge wins where the two disagree, which is the case for a node larger than the box holding it.
+   */
+  protected stickyShift(flowX: number, flowY: number, port: Rect, containingBlock: Rect) {
+    const layout = this.node.getComputedLayout()
+    const edge = (value: unknown, extent: number): number | undefined => {
+      if (typeof value === 'number') return value
+      if (typeof value === 'string' && value.endsWith('%')) return (parseFloat(value) / 100) * extent
+      return undefined
+    }
+    const position = this.props.position
+    const named = typeof position === 'object' && position !== null ? (position as Record<string, unknown>) : {}
+    const all = typeof position === 'number' || typeof position === 'string' ? position : undefined
+
+    let x = flowX
+    let y = flowY
+    const left = edge(named.Left ?? all, port.width)
+    const top = edge(named.Top ?? all, port.height)
+    const right = edge(named.Right ?? all, port.width)
+    const bottom = edge(named.Bottom ?? all, port.height)
+    if (left !== undefined) x = Math.max(x, port.x + left)
+    if (top !== undefined) y = Math.max(y, port.y + top)
+    if (right !== undefined) x = Math.min(x, port.x + port.width - right - layout.width)
+    if (bottom !== undefined) y = Math.min(y, port.y + port.height - bottom - layout.height)
+
+    // Then held inside the containing block, which is the second limit CSS puts on a sticky box and
+    // the one that makes a heading stop at the foot of its own section. `Math.max` last, so the
+    // near edge wins for a node with nowhere to go -- a node taller than the box holding it.
+    x = Math.max(containingBlock.x, Math.min(x, containingBlock.x + containingBlock.width - layout.width))
+    y = Math.max(containingBlock.y, Math.min(y, containingBlock.y + containingBlock.height - layout.height))
+
+    return { x: x - flowX, y: y - flowY }
+  }
+
+  /**
+   * Whether this node is the box a `Fixed` descendant resolves against. CSS: a transform or a
+   * filter captures one, and nothing else between it and the page does.
+   */
+  private capturesFixed(): boolean {
+    return Boolean(this.props.transform || this.props.filter || this.props.backdropFilter)
+  }
+
+  /**
+   * Whether this node forms a stacking context, which is what stops a descendant escaping it.
+   *
+   * CSS forms one for a non-auto `z-index`, and for anything that composites the subtree as a
+   * single picture -- opacity below 1, a transform, a filter, a blend mode, a mask. A positioned
+   * box whose `z-index` is `auto` forms none, which is why its positioned descendants compete in
+   * the nearest ancestor's context rather than being trapped inside it.
+   */
+  private createsStackingContext(): boolean {
+    if (this.props.zIndex !== undefined) return true
+    // CSS forms one for sticky whatever its z-index says, unlike relative and absolute.
+    if (this.props.positionType === Style.PositionType.Sticky) return true
+    if ((this.props.opacity ?? 1) < 1) return true
+    if (this.props.transform) return true
+    if (this.props.filter || this.props.backdropFilter) return true
+    if (this.props.mixBlendMode) return true
+    if (this.props.mask) return true
+    return false
+  }
+
+  /**
+   * The nodes taking part in this node's stacking order, including any lifted out of a descendant.
+   *
+   * A child forming no stacking context does not contain its own positioned descendants: they
+   * belong to the nearest ancestor that does, which may be this node. Each entry carries the origin
+   * its own parent was painted at, so a lifted node still lands where its parent put it, and the
+   * `lifted` set tells that parent not to paint it a second time.
+   */
+  private collectStacking(
+    node: BoxNode,
+    originX: number,
+    originY: number,
+    into: StackingEntry[],
+    lifted: Set<BoxNode>,
+    depth = 0,
+    clips: ClipFrame[] = [],
+    // Nothing scrolls, so the scrollport a sticky node is held inside is the page. Taken from the
+    // outermost node this walk starts at, which is that page.
+    port: Rect = {
+      x: originX,
+      y: originY,
+      width: node.node.getComputedLayout().width,
+      height: node.node.getComputedLayout().height,
+    },
+  ): void {
+    node.children.forEach(child => {
+      if (child.stacksAmongSiblings()) {
+        // Where the node is painted is where the layout put it. An absolute or a fixed node whose
+        // containing block Yoga could not give it has already been placed against the right one --
+        // see `resolveContainingBlocks` -- so nothing is shifted here. A sticky node is the
+        // exception, because being held inside the page is not a layout question at all: the node
+        // keeps the size and the place the flow gave it, and only the painting moves.
+        let shiftX = 0
+        let shiftY = 0
+        if (child.props.positionType === Style.PositionType.Sticky) {
+          const own = child.node.getComputedLayout()
+          const held = child.stickyShift(originX + own.left, originY + own.top, port, node.contentRect(originX, originY))
+          shiftX = held.x
+          shiftY = held.y
+        }
+        into.push({
+          node: child,
+          // `z-index: auto` shares a layer with `0`, so an absent index sorts as 0 rather than as a
+          // tier of its own.
+          zIndex: child.props.zIndex ?? 0,
+          // Tree order, which is how CSS breaks a tie: a node lifted out of an ancestor that forms
+          // no stacking context keeps the place in the document its own subtree gives it, rather
+          // than being pushed behind every shallower sibling. This walk is depth first and pushes
+          // before it descends, so how many entries are already here is that place.
+          //
+          // Sorting by depth instead put a lifted node last, and it painted over a later sibling
+          // that CSS paints over it: a card's badge vanished under a positioned box one level down
+          // in the child declared before it.
+          order: into.length,
+          originX: originX + shiftX,
+          originY: originY + shiftY,
+          // Escaping a stacking context does not escape a clip: the two are independent, and a
+          // node lifted out of its parent is still cut by whatever clipped it on the way up.
+          clips,
+        })
+        if (depth > 0) lifted.add(child)
+      }
+      if (!child.createsStackingContext()) {
+        const layout = child.node.getComputedLayout()
+        const childX = originX + layout.left
+        const childY = originY + layout.top
+        const nested = child.clipFrame(childX, childY)
+        this.collectStacking(child, childX, childY, into, lifted, depth + 1, nested ? [...clips, nested] : clips, port)
+      }
+    })
+  }
+
+  private async renderNode(
+    ctx: CanvasRenderingContext2D,
+    offsetX: number = 0,
+    offsetY: number = 0,
+    groupEffectsApplied: boolean = false,
+    suppressStacking: boolean = false,
+  ) {
     const layout = this.node.getComputedLayout()
     const x = layout.left + offsetX
     const y = layout.top + offsetY
@@ -681,18 +1163,26 @@ export class BoxNode {
         const originAbsX = x + originOffsetX
         const originAbsY = y + originOffsetY
         ctx.translate(originAbsX, originAbsY)
-        if (transform.translateX || transform.translateY) {
-          const tx = parsePercentage(transform.translateX, width)
-          const ty = parsePercentage(transform.translateY, height)
-          if (tx !== 0 || ty !== 0) ctx.translate(tx, ty)
-        }
-        if (transform.rotate) {
-          ctx.rotate((transform.rotate * Math.PI) / 180)
-        }
+        // The chain reads `scale() rotate() translate()`, applied in that order about the origin.
+        // Each function is written in the coordinate system the ones before it left behind, so the
+        // translation moves the box by scaled, rotated distance -- `scale: 2, translateY: 30` moves
+        // it 60 device pixels down, which is what Chrome does with `transform: scale(2)
+        // translateY(30px)`. Translating first instead would move it 30 whatever the scale said.
+        //
+        // Lengths are still resolved against the untransformed border box, as CSS resolves them:
+        // `translateY: '60%'` of a 50-tall box is 30 before the scale reaches it, not after.
         if (transform.scale || transform.scaleX || transform.scaleY) {
           const scaleX = transform.scaleX ?? transform.scale ?? 1
           const scaleY = transform.scaleY ?? transform.scale ?? 1
           if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY)
+        }
+        if (transform.rotate) {
+          ctx.rotate((transform.rotate * Math.PI) / 180)
+        }
+        if (transform.translateX || transform.translateY) {
+          const tx = parsePercentage(transform.translateX, width)
+          const ty = parsePercentage(transform.translateY, height)
+          if (tx !== 0 || ty !== 0) ctx.translate(tx, ty)
         }
         ctx.translate(-originAbsX, -originAbsY)
       }
@@ -711,95 +1201,86 @@ export class BoxNode {
       await this._renderContent(ctx, x, y, width, height)
 
       // --- Step 2: Prepare Children for Stacking ---
-      const positionedChildren: { node: BoxNode; zIndex: number; originalIndex: number }[] = []
-      const inFlowChildren: BoxNode[] = []
+      //
+      // A child forming no stacking context does not contain its own positioned descendants: CSS
+      // gives those to the nearest ancestor that does form one, so a `z-index` deep in the tree can
+      // beat a shallow sibling. They are gathered here with the origin their own parent was painted
+      // at, and the parent is told to leave them alone.
+      //
+      // `suppressStacking` is that telling. An ancestor has already taken every stacking descendant
+      // reachable through nodes that form no context, so this node paints only what is left.
+      const stackingEntries: StackingEntry[] = []
+      const lifted = new Set<BoxNode>()
+      if (!suppressStacking) this.collectStacking(this, x, y, stackingEntries, lifted)
+      stackingEntries.sort((a, b) => a.zIndex - b.zIndex || a.order - b.order)
 
-      this.children.forEach((child, index) => {
-        // Every absolutely positioned child is a positioned descendant, whether or not it named a
-        // zIndex. CSS paints those above in-flow content, and `z-index: auto` shares a layer with
-        // `z-index: 0` — so an unindexed one defaults to 0 rather than falling back into the flow,
-        // where a later sibling would bury it.
-        //
-        // `Relative` stays in the flow. It is Yoga's default position type, so it is what every
-        // ordinary child already is — CSS `static` rather than CSS `relative` — and treating it as
-        // positioned would lift the whole tree into the positioned layer.
-        if (child.props.positionType === Style.PositionType.Absolute) {
-          positionedChildren.push({
-            node: child,
-            zIndex: child.props.zIndex ?? 0,
-            originalIndex: index, // Keep original order for tie-breaking
-          })
-        } else {
-          inFlowChildren.push(child)
-        }
-      })
+      const inFlowChildren = this.children.filter(child => !child.stacksAmongSiblings())
+      void lifted
 
-      // Sort positioned children by zIndex, then by original order
-      positionedChildren.sort((a, b) => {
-        return a.zIndex - b.zIndex || a.originalIndex - b.originalIndex
-      })
+      // --- Step 3: Prepare Clipping ---
+      //
+      // `overflow: hidden` clips this node's content, but not every descendant is its content. An
+      // absolutely positioned node is laid out against its containing block, and a box it merely
+      // sits inside does not clip it -- CSS clips such a node only where the clipper is that
+      // containing block, or lies between it and one. So a static box clips its in-flow children
+      // and lets an absolute one through, which is what Chrome does.
+      //
+      // Applied per child rather than once around them all, so the two kinds can be interleaved
+      // without disturbing the paint order worked out above.
+      const clips = this.props.overflow === Style.Overflow.Hidden && (width > 0 || height > 0)
 
-      // --- Step 3: Handle Clipping (Applies before drawing children) ---
-      let savedContextForClip = false
-      if (this.props.overflow === Style.Overflow.Hidden && (width > 0 || height > 0)) {
-        ctx.save()
-        savedContextForClip = true
-        const borderLeft = this.node.getComputedBorder(Style.Edge.Left)
-        const borderTop = this.node.getComputedBorder(Style.Edge.Top)
-        const borderRight = this.node.getComputedBorder(Style.Edge.Right)
-        const borderBottom = this.node.getComputedBorder(Style.Edge.Bottom)
-        const innerX = x + borderLeft
-        const innerY = y + borderTop
-        const innerWidth = Math.max(0, width - borderLeft - borderRight)
-        const innerHeight = Math.max(0, height - borderTop - borderBottom)
-        const outerRadii = parseBorderRadius(this.props.borderRadius)
-        const innerRadii = {
-          TopLeft: Math.max(0, outerRadii.TopLeft - Math.max(borderLeft, borderTop)),
-          TopRight: Math.max(0, outerRadii.TopRight - Math.max(borderRight, borderTop)),
-          BottomRight: Math.max(0, outerRadii.BottomRight - Math.max(borderRight, borderBottom)),
-          BottomLeft: Math.max(0, outerRadii.BottomLeft - Math.max(borderLeft, borderBottom)),
-        }
-        if (innerWidth > 0 && innerHeight > 0) {
-          drawRoundedRectPath(ctx, innerX, innerY, innerWidth, innerHeight, innerRadii)
+      /** Applies one remembered clipper's rectangle. */
+      const applyFrame = (frame: ClipFrame) => {
+        if (frame.width > 0 && frame.height > 0) {
+          drawRoundedRectPath(ctx, frame.x, frame.y, frame.width, frame.height, frame.radii)
           ctx.clip()
         } else {
           ctx.beginPath()
-          ctx.rect(innerX, innerY, 0, 0)
+          ctx.rect(frame.x, frame.y, 0, 0)
           ctx.clip()
         }
       }
-      // --- End Clipping Setup ---
+
+      /** Draws one child under whatever clips still reach it. */
+      const paintChild = async (child: BoxNode, originX: number = x, originY: number = y, inherited: ClipFrame[] = []) => {
+        const absolute = child.props.positionType === Style.PositionType.Absolute
+        const fixed = child.props.positionType === Style.PositionType.Fixed
+        // Whether a clipper reaches this child at all. A positioned node is cut only where the
+        // clipper is its containing block, and the two kinds do not share one: an absolute node's
+        // is any positioned ancestor, a fixed node's is only a transform or a filter -- so a plain
+        // `overflow: hidden` never cuts a fixed node however it is positioned.
+        const reaches = (frame: ClipFrame) => (fixed ? frame.containsFixed : absolute ? frame.containsAbsolutes : true)
+        const own = clips ? this.clipFrame(x, y) : null
+        const frames = [...inherited, ...(own ? [own] : [])].filter(reaches)
+
+        if (frames.length > 0) ctx.save()
+        try {
+          for (const frame of frames) applyFrame(frame)
+          // A child forming no stacking context has had its own stacking descendants taken above,
+          // so it must not paint them again.
+          await child.render(ctx, originX, originY, !child.createsStackingContext())
+        } finally {
+          if (frames.length > 0) ctx.restore()
+        }
+      }
 
       // --- Step 4: Render Children in Stacking Order ---
 
-      // 4a: Render positioned children with negative zIndex
-      for (const item of positionedChildren) {
-        if (item.zIndex < 0) {
-          // Pass parent's layout origin (x, y) as offset
-          await item.node.render(ctx, x, y)
-        }
+      // 4a: Anything with a negative zIndex, below the flow
+      for (const entry of stackingEntries) {
+        if (entry.zIndex < 0) await paintChild(entry.node, entry.originX, entry.originY, entry.clips)
       }
 
-      // 4b: Render in-flow children (recursively)
+      // 4b: Direct children that stay in the flow
       for (const child of inFlowChildren) {
-        // Pass parent's layout origin (x, y) as offset
-        await child.render(ctx, x, y)
+        await paintChild(child)
       }
 
-      // 4c: Render positioned children with zero or positive zIndex
-      for (const item of positionedChildren) {
-        if (item.zIndex >= 0) {
-          // Pass parent's layout origin (x, y) as offset
-          await item.node.render(ctx, x, y)
-        }
+      // 4c: Everything else, ordered by zIndex then by how deep and how late it was found
+      for (const entry of stackingEntries) {
+        if (entry.zIndex >= 0) await paintChild(entry.node, entry.originX, entry.originY, entry.clips)
       }
       // --- End Child Rendering ---
-
-      // --- Step 5: Restore Clipping Context ---
-      if (savedContextForClip) {
-        ctx.restore()
-      }
-      // --- End Clipping Restoration ---
 
       // --- Step 6: Restore Transformation Context ---
       if (savedContextForTransform) {

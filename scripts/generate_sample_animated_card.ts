@@ -151,6 +151,11 @@ void (async () => {
         return Column({
           width: '100%',
           gap: 22,
+          // The sheen below is absolutely positioned and fills its containing block. Naming a
+          // position type here makes this column that block, so the band sweeps the card rather
+          // than the whole page — an absolute node resolves past a static ancestor, as it does in
+          // CSS, and the page is what it would find instead.
+          positionType: Style.PositionType.Relative,
           children: [
             Row({
               width: '100%',
