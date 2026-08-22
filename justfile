@@ -403,6 +403,21 @@ percentage-fixture:
     @cargo test -q -p meo-canvas --test percentage_fixture -- --ignored --exact emit_percentage_scene > /dev/null
     @echo "wrote fixtures/percentages/scene.mcs; run \`just fixtures-accept percentages\` if the picture should move"
 
+# Rewrites every golden's scene from the Rust that describes it.
+#
+# The scenes are authored in `crates/meo-canvas/tests/fixture_scenes.rs`, and an
+# ordinary test there asserts that each one encodes to exactly the bytes
+# committed beside its picture -- so the source and the artefact cannot drift,
+# and a codec change is a re-run rather than decoding old bytes with old code.
+#
+# Byte equality rather than picture equality: if the bytes match the picture
+# cannot have moved, where comparing pictures would let a scene change that
+# happens to render the same slip through.
+[doc("Rewrite every golden fixture's scene from its source.")]
+fixture-scenes:
+    @cargo test -q -p meo-canvas --test fixture_scenes -- --ignored --exact emit_fixture_scenes > /dev/null
+    @echo "rewrote every fixtures/*/scene.mcs from source"
+
 # No legacy module layout: `foo.rs` beside a `foo/` directory, never a
 # `mod.rs`. No lint expresses this -- rustc, clippy and rustfmt all accept
 # either layout -- so a find is the gate.

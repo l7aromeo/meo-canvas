@@ -63,6 +63,14 @@ export interface NativeCanvas {
   encode(format: Format, options: EncodeOptions): Uint8Array
   /** Frees the Skia surface. Calling it twice is not an error. */
   release(): void
+  /** Whether the GPU was asked for. */
+  readonly gpu: boolean
+  /** Which rasteriser drew the pages: `'gpu'` or `'cpu'`. */
+  readonly engine: string
+  /** How many pages were painted. */
+  readonly pageCount: number
+  /** The device-pixel multiplier the pages were drawn at. */
+  readonly scale: number
 }
 
 /** Writes bytes to a path. Supplied by the caller of {@link Canvas}. */
@@ -257,6 +265,58 @@ export class Canvas {
   /** Whether the surface is still there. */
   get released(): boolean {
     return this.#released
+  }
+
+  // -- What the paint settled on --------------------------------------
+  //
+  // Four readings rather than four methods, and readable after
+  // {@link Canvas.release}: each is a fact about a paint that has already
+  // happened, so none can change and none can fail. A caller holding bytes it
+  // has released should still be able to say which rasteriser drew them.
+
+  /**
+   * Whether the GPU was asked for.
+   *
+   * **Asking is not getting** — compare {@link Canvas.engine}. This is what
+   * `Root` was told, and it is `true` when nothing was said, because that is
+   * the renderer's own default.
+   */
+  get gpu(): boolean {
+    return this.#native.gpu
+  }
+
+  /**
+   * Which rasteriser drew the pages: `'gpu'` or `'cpu'`.
+   *
+   * The outcome rather than the request, and they disagree: a build with no GPU
+   * backend compiled, a driver that declines, and a float `colorType` all
+   * rasterise on the CPU whatever `gpu` says. v1 reports both for this reason,
+   * and without it a caller who asks for the GPU and gets the CPU has no way to
+   * find out — the same shape of invisibility that hid a missing build feature
+   * from this project for a session.
+   */
+  get engine(): string {
+    return this.#native.engine
+  }
+
+  /**
+   * How many pages were painted.
+   *
+   * What a page means is the format's answer: a frame for GIF and APNG, a sheet
+   * for PDF and TIFF, one size of the same icon for ICO.
+   */
+  get pageCount(): number {
+    return this.#native.pageCount
+  }
+
+  /**
+   * The device-pixel multiplier the pages were drawn at.
+   *
+   * Layout always solves at one, so this is resolution rather than anything
+   * about where things sit.
+   */
+  get scale(): number {
+    return this.#native.scale
   }
 
   /** Refuses a call on a surface that has been freed. */

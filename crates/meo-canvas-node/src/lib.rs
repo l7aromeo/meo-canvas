@@ -344,8 +344,23 @@ fn encode_options(
 /// Paints a scene and hands back a surface that can be encoded more than once.
 ///
 /// Takes the arena, the side values array and a `{ fonts }` object, and returns
-/// an object with `encode(format, options)` and `release()` -- the
-/// `NativeCanvas` interface the TypeScript surface declares. `gpu` is not among
+/// an object with `encode(format, options)`, `release()`, and four readings of
+/// the paint that already happened: `gpu`, `engine`, `pageCount` and `scale`.
+///
+/// # Why the readings are properties and not methods
+///
+/// None of them can change, none can fail, and all four describe a paint that
+/// is already over. A caller reading `engine` after `release` should still
+/// learn which rasteriser drew the bytes it is holding, and a method would
+/// have to answer from a surface that is gone.
+///
+/// `gpu` and `engine` are both reported because **they disagree**: `gpu` is
+/// what was asked for and `engine` is what asking got. A build with no GPU
+/// backend compiled, a driver that declines, and a float `colorType` all
+/// rasterise on the CPU whatever the request said. v1's canvas reports the pair
+/// for that reason (`canvas.type.ts:1190`), and until now v2 reported neither
+/// per canvas -- `backend()` answers for the build, which is a different
+/// question. `gpu` is not among
 /// them: it rides in the arena's header, beside the size and the scale a caller
 /// writes it next to.
 ///
@@ -385,8 +400,27 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
         Err(error) => return cx.throw_error(error.to_string()),
     };
 
-    let painted: Painted = Rc::new(RefCell::new(Some(canvas)));
     let surface = cx.empty_object();
+
+    // Read off the canvas before it is boxed, and set as plain properties
+    // rather than as methods. All four are facts about a paint that has already
+    // happened: none can change, none can fail, and a caller reading `engine`
+    // after `release` should still learn which rasteriser drew the bytes it is
+    // holding. A method would go stale the moment the surface was freed.
+    let gpu = cx.boolean(canvas.gpu());
+    surface.set(&mut cx, "gpu", gpu)?;
+    // `gpu` is the request and `engine` is the outcome, and they disagree
+    // whenever a build has no GPU backend, a driver declines, or a float
+    // `colorType` forces the CPU. Reporting only the request is what left a
+    // caller unable to find out which they got.
+    let engine = cx.string(canvas.engine());
+    surface.set(&mut cx, "engine", engine)?;
+    let pages = cx.number(canvas.page_count() as f64);
+    surface.set(&mut cx, "pageCount", pages)?;
+    let scale = cx.number(f64::from(canvas.scale()));
+    surface.set(&mut cx, "scale", scale)?;
+
+    let painted: Painted = Rc::new(RefCell::new(Some(canvas)));
 
     let held = Rc::clone(&painted);
     let encode = JsFunction::new(&mut cx, move |mut cx| {

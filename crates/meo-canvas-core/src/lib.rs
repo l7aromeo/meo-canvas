@@ -352,6 +352,27 @@ impl RenderedCanvas {
     pub const fn scale(&self) -> f32 {
         self.surface.scale()
     }
+
+    /// Whether this canvas asked for the GPU.
+    ///
+    /// The request, not the outcome — see [`RenderedCanvas::engine`], which is
+    /// the other one. Both are reported because they can disagree and a caller
+    /// otherwise has no way to find out: a build with no GPU backend compiled,
+    /// a driver that declines and a float `color_type` all rasterise on the CPU
+    /// whatever was asked for, and v1's canvas reports the pair for exactly
+    /// that reason (`canvas.type.ts:1190`).
+    #[must_use]
+    pub const fn gpu(&self) -> bool {
+        self.surface.gpu()
+    }
+
+    /// Which rasteriser this canvas actually got: `"gpu"` or `"cpu"`.
+    ///
+    /// The outcome, not the request. See [`RenderedCanvas::gpu`].
+    #[must_use]
+    pub fn engine(&self) -> &'static str {
+        self.surface.engine()
+    }
 }
 
 #[cfg(test)]
@@ -399,6 +420,63 @@ mod tests {
             .register_font(TEST_FAMILY, TEST_FONT)
             .unwrap_or_else(|error| unreachable!("{error}"));
         renderer
+    }
+
+    #[test]
+    fn a_float_layout_reports_the_cpu_however_the_gpu_was_asked_for() {
+        // The one oracle the `ColorType` aliases have. v1 documents that a
+        // float `colorType` falls back to the CPU (`canvas.type.ts:1190`), so
+        // an alias that names a float layout must report `"cpu"` even with the
+        // GPU requested -- which pins `RGBAF32` to a float variant rather than
+        // to some eight-bit one.
+        //
+        // **It pins the alias to a float, and nothing further.** `F16` against
+        // `F32` is indistinguishable here: both report `"cpu"`, so swapping the
+        // two would pass this and every other check we have.
+        let renderer = Renderer::new();
+        let mut scene = Scene::new(Size::new(4.0, 2.0));
+        scene.gpu = Some(true);
+
+        let engine_for = |color_type| {
+            let mut scene = scene.clone();
+            scene.color_type = Some(color_type);
+            renderer
+                .render(&scene)
+                .unwrap_or_else(|error| unreachable!("{error}"))
+                .engine()
+        };
+
+        // Vacuous unless this build can reach a GPU at all: with no backend
+        // compiled every layout reports `"cpu"` and the assertion below would
+        // hold for a reason that has nothing to do with the colour type.
+        if engine_for(ColorType::Uint8) != "gpu" {
+            return;
+        }
+
+        for float in [ColorType::F16, ColorType::F32, ColorType::F16Norm] {
+            assert_eq!(
+                engine_for(float),
+                "cpu",
+                "{float:?} is a float layout and must fall back"
+            );
+        }
+    }
+
+    #[test]
+    fn a_canvas_reports_the_request_and_the_outcome_separately() {
+        // The pair exists because they disagree, and a caller who asks for the
+        // GPU and silently gets the CPU otherwise has no way to find out.
+        let mut renderer = Renderer::new();
+        renderer.set_gpu(false);
+        let scene = Scene::new(Size::new(4.0, 2.0));
+
+        let canvas = renderer
+            .render(&scene)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(!canvas.gpu(), "the request is what the renderer was set to");
+        assert_eq!(canvas.engine(), "cpu");
+        assert_eq!(canvas.page_count(), 1);
+        assert!((canvas.scale() - Scene::DEFAULT_SCALE).abs() < f32::EPSILON);
     }
 
     #[test]

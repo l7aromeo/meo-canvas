@@ -444,6 +444,15 @@ const SCALE = cases.$scale as number
  *
  * Raising one back to `1` reopens the blind spot for that property alone, and
  * nothing in this file would fail.
+ *
+ * The general form, which is why the quarter is worth the churn it cost: **a
+ * fixture with one value per type checks the shape of a read and not its
+ * kind.** Moving off `1` immediately surfaced a latent one — `Option`'s
+ * presence flag was read through the raw slot path rather than the integer
+ * one, which is the same read at `1` and a different read at `0.25`. No
+ * reviewer would have caught it, because the read matched its type in every
+ * case the suite contained; only a value the suite did not contain separates
+ * them.
  */
 const PROBES: Readonly<Record<string, Style>> = {
   align_content: { alignContent: 'flex-end' },

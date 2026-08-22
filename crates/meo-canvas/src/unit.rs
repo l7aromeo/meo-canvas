@@ -351,6 +351,40 @@ impl IntoSides<Self> for Dimension {
     }
 }
 
+/// A length is a dimension, so a length reaches a property that takes one.
+///
+/// `margin` is the property this exists for: it takes a [`Dimension`] because
+/// `auto` is CSS's free-space-absorbing margin, and without this a caller with
+/// a `px` in hand cannot write one at all — [`px`] answers a [`Length`] and
+/// there is no widening spelling of it.
+impl IntoSides<Dimension> for Length {
+    fn into_sides(self) -> Sides<Dimension> {
+        Sides::all(widen(self))
+    }
+}
+
+impl IntoSides<Dimension> for Sides<Length> {
+    fn into_sides(self) -> Sides<Dimension> {
+        Sides {
+            top: widen(self.top),
+            right: widen(self.right),
+            bottom: widen(self.bottom),
+            left: widen(self.left),
+        }
+    }
+}
+
+/// A [`Length`] as the [`Dimension`] a sizing property takes.
+///
+/// Sizes admit `auto` and lengths do not, so every length is a dimension and
+/// the widening is total.
+const fn widen(length: Length) -> Dimension {
+    match length {
+        Length::Points(points) => Dimension::Points(points),
+        Length::Percent(fraction) => Dimension::Percent(fraction),
+    }
+}
+
 impl IntoSides<Self> for f32 {
     fn into_sides(self) -> Sides<Self> {
         Sides::all(self)

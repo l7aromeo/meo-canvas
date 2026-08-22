@@ -14,6 +14,10 @@ function fake(bytes = new Uint8Array([1, 2, 3])) {
     release() {
       released += 1
     },
+    gpu: true,
+    engine: 'cpu',
+    pageCount: 1,
+    scale: 2,
   }
   return { native, calls, released: () => released }
 }
@@ -170,6 +174,31 @@ describe('release', () => {
 
     expect(surface.released()).toBe(0)
     expect(canvas.released).toBe(false)
+  })
+})
+
+describe('what the paint settled on', () => {
+  it('reports the request and the outcome apart', () => {
+    // v1 reports both because they disagree, and the disagreement is the
+    // useful reading: a build with no GPU backend, a driver that declines and
+    // a float `colorType` all rasterise on the CPU whatever was asked for.
+    const { canvas } = canvasOver(fake().native)
+
+    expect(canvas.gpu).toBe(true)
+    expect(canvas.engine).toBe('cpu')
+  })
+
+  it('is still readable after the surface is freed', () => {
+    // Each of the four is a fact about a paint that has already happened, so a
+    // caller holding bytes it has released can still say which rasteriser drew
+    // them. A method would have to answer from a surface that is gone.
+    const { canvas } = canvasOver(fake().native)
+    canvas.release()
+
+    expect(canvas.released).toBe(true)
+    expect(canvas.engine).toBe('cpu')
+    expect(canvas.pageCount).toBe(1)
+    expect(canvas.scale).toBe(2)
   })
 })
 

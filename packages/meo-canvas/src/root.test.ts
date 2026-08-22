@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { SideValue } from './arena.js'
 import type { NativeCanvas } from './canvas.js'
 import { Box, Text } from './node.js'
+import type { ColorType } from './index.js'
 import { Root, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
 /**
@@ -23,6 +24,10 @@ function fakeRenderer() {
   const native: NativeCanvas = {
     encode: () => new Uint8Array([1]),
     release: () => undefined,
+    gpu: true,
+    engine: 'cpu',
+    pageCount: 1,
+    scale: 1,
   }
   const dependencies: RootDependencies = {
     renderer: {
@@ -245,6 +250,32 @@ describe('the renderer Root reaches for when told nothing', () => {
     expect(await covered('50%')).toBe(100)
     expect(await covered('10%')).toBe(20)
     expect(await covered(100)).toBe(100)
+  })
+
+  it('reports the CPU when a float layout forces it, whatever was asked', async () => {
+    // v1 documents that a float `colorType` falls back to the CPU because no
+    // GPU composites float, and this is the only check that says the alias
+    // reaches a float variant at all: comparing buffers cannot, since a float
+    // layout changes compositing depth whether or not the engine fell back.
+    //
+    // **It claims only that.** `RGBAF16` and `RGBAF32` both report `cpu`, so
+    // swapping the two in the alias table would pass this. What it pins is that
+    // each names *a* float layout rather than an integer one.
+    const engine = async (colorType?: ColorType): Promise<string> => {
+      const canvas = await Root({ width: 8, height: 8, gpu: true, ...(colorType === undefined ? {} : { colorType }) })
+      const settled = canvas.engine
+      canvas.release()
+      return settled
+    }
+
+    // Vacuous without a GPU backend compiled: everything reports `cpu` and the
+    // assertion holds for a reason that has nothing to do with colour type.
+    if ((await engine()) !== 'gpu') return
+
+    expect(await engine('RGBAF32')).toBe('cpu')
+    expect(await engine('RGBAF16')).toBe('cpu')
+    expect(await engine('RGBAF16Norm')).toBe('cpu')
+    expect(await engine('rgba')).toBe('gpu')
   })
 
   it('draws different pixels on the two rasterisers', async () => {
