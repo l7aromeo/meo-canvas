@@ -506,6 +506,12 @@ will otherwise assume the reference was not consulted.
 6. **Present tense, indicative.** "Rejects a radius below zero, as a browser
    does." Not "will reject", not "should reject".
 
+A reason written in two places gets corrected in one. The recipe and the tool
+it runs, the emitter and the file it emits, the test and the type it pins —
+where the same explanation appears twice, one copy drifts and the other is the
+one somebody reads. Write the reason once, at the place a reader lands, and
+point at it from the other.
+
 ### Constants
 
 Every value that is a judgement gets a named `const` whose doc comment justifies
