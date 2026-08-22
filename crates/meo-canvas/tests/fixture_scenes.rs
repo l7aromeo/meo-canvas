@@ -146,10 +146,17 @@ fn borders_per_edge() -> Scene {
         .unwrap_or_else(|error| unreachable!("{error}"))
 }
 
-/// Three shadows: an offset one, a blurred one, and a spread one.
+/// Four shadows: an offset one, a blurred one, a spread one, and an inset one.
 ///
 /// Each isolates one term of the shorthand, so a shadow drawn with the wrong
-/// term shows as one card differing rather than three.
+/// term shows as one card differing rather than four.
+///
+/// **The fourth exists because the first three could not see the defect that
+/// lived here.** `inset` returned early and drew nothing, and once written it
+/// drew *before* the background it falls on and was covered by it — two
+/// separate faults, and every cell of a three-outer-shadow fixture passed
+/// through both. An inset shadow is the one term whose ink lands inside the
+/// card rather than beside it, so no outer cell can stand in for it.
 fn box_shadow() -> Scene {
     let card = |shadow: BoxShadow| {
         BoxNode::new()
@@ -161,7 +168,7 @@ fn box_shadow() -> Scene {
     };
     let ink = Color::rgba(20, 20, 40, 110);
 
-    Root::new(320.0, 140.0)
+    Root::new(410.0, 140.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .justify_content(Justify::SpaceEvenly)
@@ -191,6 +198,18 @@ fn box_shadow() -> Scene {
                 offset_y: 0.0,
                 blur: 6.0,
                 spread: 6.0,
+                color: ink,
+            }),
+            // Offset as well as blurred, so the ink is heavier along the top
+            // and left edges than the bottom and right ones: an inset shadow
+            // drawn without its offset is symmetric, and a symmetric ring is
+            // one a reader cannot tell from a border.
+            card(BoxShadow {
+                inset: true,
+                offset_x: 5.0,
+                offset_y: 5.0,
+                blur: 8.0,
+                spread: 0.0,
                 color: ink,
             }),
         ])
@@ -266,6 +285,23 @@ fn overflow_clip() -> Scene {
 /// Eight by four, so it is wider than it is tall and every fit resolves to a
 /// visibly different rectangle in a square box. Beside this file rather than in
 /// the fixture directory: it is source for the scene, not an artefact of it.
+///
+/// **Asymmetric on purpose, and it replaced a symmetric picture that could not
+/// do this job.** The first version was four solid quadrants, which reads the
+/// same stretched as it does cropped: `Fill` and `Cover` differed by an
+/// interpolation artefact and by which column the red-green boundary landed
+/// in, 37 against 38. A fit is *where the picture is cut*, so the picture has
+/// to have something at the edges to lose. The magenta column at x=0 and the
+/// cyan column at x=7 are that something: `Cover` on a square box shows the
+/// middle half and drops both, `Fill` squeezes the whole picture in and keeps
+/// them.
+const FIT_MARKS: &[u8] = include_bytes!("assets/fit-marks.png");
+
+/// The picture the other image cases draw.
+///
+/// Four quadrants of alternating pixels: fine for a mask's alpha or a tile's
+/// pattern, where what matters is that the picture is recognisable and not
+/// where its edges are.
 const STRIP: &[u8] = include_bytes!("assets/strip.png");
 
 /// One clipped box per `ObjectFit`, all showing the same picture.
@@ -281,7 +317,7 @@ fn object_fit() -> Scene {
             .overflow(Overflow::Hidden)
             .background_color(hex_rgb(0xf0_f0_f0))
             .children(
-                Image::bytes(STRIP)
+                Image::bytes(FIT_MARKS)
                     .position_type(PositionType::Relative)
                     .size(px(72.0), px(72.0))
                     .object_fit(fit),

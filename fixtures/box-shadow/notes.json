@@ -1,6 +1,7 @@
 {
-  "proves": "outer box shadows with offset, blur and spread",
-  "checkable": "the shadow of the first box is a hard offset copy (blur 0), so its edge is exactly 6px down-right of the box edge",
-  "not-covered": "inset shadows are a documented no-op in paint.rs and deliberately have no fixture - one would pin the no-op as correct",
-  "status": "believed correct; the blurred cases are eyeball-only"
+  "proves": "box shadows: offset, blur, spread, and one drawn inside the box",
+  "checkable": "410x140 on #fafafc, four 72x72 white cards with a 10 radius, spanning y=34..105, at x=24, 121, 217 and 314. Card 0 is a hard offset copy, blur 0, so its shadow edge is exactly 6 down and 6 right of the box edge. Card 3 is the inset one: read inside its own box, the top band at y+2 reads 129,129,139 across x+6..+66 and the left column at x+2 reads 130,130,140 down to y+66, while the bottom-right corner at x+66,y+66 is 255,255,255. Ink along two edges and none along the other two is what a 5,5 offset means; a symmetric ring is a shadow that lost its offset.",
+  "why_a_fourth_card": "this fixture had three cards and all three were outer, which is how the inset defect lived here undisturbed. It failed twice over: the inset branch returned early and drew nothing, and once written it drew before the background it falls on and was covered by it. Every cell of a three-outer-shadow fixture passed through both faults. An inset shadow is the one term whose ink lands *inside* the card, so no outer cell can stand in for it - and `property_effect.rs` saying 'something changed' is weaker than a picture saying what.",
+  "what_is_eyeball_only": "the blurred cards. Skia's blur and Chrome's are different implementations of an approximate thing, so the exact ramp is not a number to pin across engines. Card 0's hard edge is, and card 3's two-edge asymmetry is - both are geometry rather than filtering.",
+  "status": "measured from the committed image. The hard-shadow geometry is worth a Chrome number and the blurred ramps are not; see the provenance audit."
 }

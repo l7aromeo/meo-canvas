@@ -1,5 +1,7 @@
 {
   "proves": "descenders, line boxes and weights at three sizes render and do not wrap",
-  "checkable": "each run is ONE line: its ink height is under 1.6em of its font size",
-  "status": "believed correct"
+  "checkable": "320x140 on white, three runs of `gjpqy Hxg 0123` in the Fixture family at 14, 22 and 34 point, the third at weight 700, stacked in a column with 6 between them inside 10 of padding. Measured ink, not a bound: run 0 spans y=16..29 and x=10..88, run 1 y=44..67 and x=10..133, run 2 y=89..123 and x=10..201. Every run starts at x=10, which is the padding and nothing else - a run that starts anywhere else has taken the padding into the text or dropped it. Each band is one line: three bands, and a fourth would be a wrap.",
+  "why_numbers_and_not_a_bound": "this file said `each run is ONE line: its ink height is under 1.6em of its font size`, which every plausible line box satisfies and which no change to line height, leading or baseline placement could ever fail. The text pipeline is being ported to compute its own line boxes, and this fixture is one of the three that will judge it: a bound cannot say whether a line moved by two pixels, and two pixels is what a leading model gets wrong. The spans above are what the picture actually is today.",
+  "what_the_port_should_move": "the ink heights are the font's own and should not change: the glyphs and the sizes are the same. What may legitimately move is where each band starts, since the leading a line box adds above the first line is exactly the thing being reimplemented. A band whose ink height changes is a different question from a band that moved, and worth separating before re-accepting.",
+  "status": "measured from the committed image, pre-port. Believed correct; the numbers are the record to compare against."
 }
