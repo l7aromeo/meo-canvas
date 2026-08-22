@@ -184,6 +184,77 @@ export class Canvas {
     return this.toURLSync(format, quality === undefined ? {} : { quality })
   }
 
+  // -- Async convenience getters --------------------------------------
+  //
+  // One per format, each `toBuffer(format)` with the name said once instead of
+  // twice. v1 has all twelve and none of them is deprecated, so they are live
+  // API a ported script may be written against.
+  //
+  // Getters rather than methods because that is v1's spelling. The cost is not
+  // what it looks like: a getter on the prototype is not invoked by a spread,
+  // and Node's inspector prints `[Getter]` rather than calling it, so `console
+  // .log(canvas)` does not start twelve encodes.
+
+  /** `toBuffer('png')`. Lossless, and the format to reach for without a reason not to. */
+  get png(): Promise<Uint8Array> {
+    return this.toBuffer('png')
+  }
+
+  /** `toBuffer('jpg')`. Lossy and opaque — no alpha channel. */
+  get jpg(): Promise<Uint8Array> {
+    return this.toBuffer('jpg')
+  }
+
+  /** `toBuffer('webp')`. Smaller than PNG at the same quality, and takes every page as an animation. */
+  get webp(): Promise<Uint8Array> {
+    return this.toBuffer('webp')
+  }
+
+  /** `toBuffer('avif')`. Smaller again, and slower to encode. */
+  get avif(): Promise<Uint8Array> {
+    return this.toBuffer('avif')
+  }
+
+  /** `toBuffer('bmp')`. Uncompressed, and rarely what is wanted. */
+  get bmp(): Promise<Uint8Array> {
+    return this.toBuffer('bmp')
+  }
+
+  /** `toBuffer('ico')`. The Windows icon container. */
+  get ico(): Promise<Uint8Array> {
+    return this.toBuffer('ico')
+  }
+
+  /** `toBuffer('tiff')`. Lossless, and what a print pipeline usually asks for. */
+  get tiff(): Promise<Uint8Array> {
+    return this.toBuffer('tiff')
+  }
+
+  /** `toBuffer('gif')`. Every page as a frame, at 256 colours. */
+  get gif(): Promise<Uint8Array> {
+    return this.toBuffer('gif')
+  }
+
+  /** `toBuffer('apng')`. Every page as a frame, with PNG's colour and alpha. */
+  get apng(): Promise<Uint8Array> {
+    return this.toBuffer('apng')
+  }
+
+  /** `toBuffer('svg')`. Vector, so text stays text. */
+  get svg(): Promise<Uint8Array> {
+    return this.toBuffer('svg')
+  }
+
+  /** `toBuffer('pdf')`. Vector, and every page a page. */
+  get pdf(): Promise<Uint8Array> {
+    return this.toBuffer('pdf')
+  }
+
+  /** `toBuffer('raw')`. The pixels, unencoded. */
+  get raw(): Promise<Uint8Array> {
+    return this.toBuffer('raw')
+  }
+
   /**
    * Frees the Skia surface now rather than at the next collection.
    *

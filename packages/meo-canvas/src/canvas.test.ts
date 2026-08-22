@@ -182,6 +182,28 @@ describe('the surface v1 had', () => {
     expect('saveAsSync' in canvas).toBe(false)
   })
 
+  it('carries a getter per format, each the buffer of that format', async () => {
+    const formats = ['png', 'jpg', 'webp', 'avif', 'bmp', 'ico', 'tiff', 'gif', 'apng', 'svg', 'pdf', 'raw'] as const
+    const surface = fake()
+    const { canvas } = canvasOver(surface.native)
+
+    for (const format of formats) {
+      await expect(canvas[format]).resolves.toEqual(new Uint8Array([1, 2, 3]))
+    }
+    expect(surface.calls.map(call => call.format)).toEqual([...formats])
+  })
+
+  it('does not encode when the canvas is merely inspected', () => {
+    // A getter on the prototype is what makes that true: a spread copies own
+    // enumerable properties and finds none of these, so logging a canvas does
+    // not start twelve encodes.
+    const surface = fake()
+    const { canvas } = canvasOver(surface.native)
+
+    expect({ ...canvas }).toEqual({})
+    expect(surface.calls).toEqual([])
+  })
+
   it('carries every method a ported script writes a file with', () => {
     const { canvas } = canvasOver(fake().native)
 

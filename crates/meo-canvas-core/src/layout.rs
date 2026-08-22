@@ -328,12 +328,7 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
         },
         position: to_position(layout.position_type),
 
-        inset: taffy::Rect {
-            left: to_inset(layout.inset.left),
-            right: to_inset(layout.inset.right),
-            top: to_inset(layout.inset.top),
-            bottom: to_inset(layout.inset.bottom),
-        },
+        inset: to_taffy_inset(layout),
         size: taffy::Size {
             width: to_dimension(layout.size.0),
             height: to_dimension(layout.size.1),
@@ -459,9 +454,44 @@ const fn to_overflow(overflow: Overflow) -> taffy::Overflow {
     }
 }
 
+/// The `inset` taffy is given, which is not always the one the node carries.
+///
+/// CSS's offset properties do not apply to a `position: static` element, and
+/// taffy has no `Static`: its `Relative` honours an inset. So a static node's
+/// inset is dropped here, and dropping it here rather than at the surface is
+/// what makes it dropped for every surface at once.
+///
+/// Measured in Chrome rather than read off the specification, because the
+/// specification's wording is about used values and the question is what a
+/// browser draws: a static child given `top: 30px; left: 30px` sits at its flow
+/// position in a block, a flex and a grid container alike -- the container's
+/// layout mode does not enter into it, which is why this reads only the child.
+const fn to_taffy_inset(
+    layout: &LayoutStyle,
+) -> taffy::Rect<taffy::LengthPercentageAuto> {
+    if matches!(layout.position_type, PositionType::Static) {
+        return taffy::Rect::auto();
+    }
+    taffy::Rect {
+        left: to_inset(layout.inset.left),
+        right: to_inset(layout.inset.right),
+        top: to_inset(layout.inset.top),
+        bottom: to_inset(layout.inset.bottom),
+    }
+}
+
+/// taffy has two positions where CSS has three.
+///
+/// `Static` and `Relative` both become taffy's `Relative`: both are placed by
+/// the flow, and the two ways they differ -- whether `inset` moves the node and
+/// whether `z_index` places it in its parent's stack -- are both settled on
+/// this side. See [`to_taffy_inset`] and `stacks_by_z_index` in
+/// [`crate::paint`].
 const fn to_position(position: PositionType) -> taffy::Position {
     match position {
-        PositionType::Relative => taffy::Position::Relative,
+        PositionType::Static | PositionType::Relative => {
+            taffy::Position::Relative
+        }
         PositionType::Absolute => taffy::Position::Absolute,
     }
 }
@@ -919,11 +949,102 @@ mod tests {
         maps_injectively(FlexDirection::ALL, super::to_flex_direction);
         maps_injectively(FlexWrap::ALL, super::to_flex_wrap);
         maps_injectively(Overflow::ALL, super::to_overflow);
-        maps_injectively(PositionType::ALL, super::to_position);
         maps_injectively(BoxSizing::ALL, super::to_box_sizing);
         maps_injectively(Direction::ALL, super::to_direction);
         maps_injectively(GridAutoFlow::ALL, super::to_grid_auto_flow);
         maps_injectively(Justify::ALL, super::to_justify);
+    }
+
+    #[test]
+    fn static_and_relative_are_one_position_to_taffy() {
+        // Not injective, and deliberately: taffy has two positions where CSS
+        // has three, and both in-flow ones are in flow. What separates them --
+        // whether `inset` moves the node, and whether `z_index` stacks it --
+        // is settled on our side, so collapsing them here loses nothing.
+        assert_eq!(
+            super::to_position(PositionType::Static),
+            taffy::Position::Relative
+        );
+        assert_eq!(
+            super::to_position(PositionType::Relative),
+            taffy::Position::Relative
+        );
+        assert_eq!(
+            super::to_position(PositionType::Absolute),
+            taffy::Position::Absolute
+        );
+    }
+
+    #[test]
+    fn a_static_node_does_not_reach_taffy_with_an_inset() {
+        // CSS's offset properties do not apply to a static element, and taffy
+        // would honour them, so they are dropped on the way in.
+        let mut style = LayoutStyle {
+            inset: Sides::all(Some(Length::Points(30.0))),
+            position_type: PositionType::Static,
+            ..LayoutStyle::default()
+        };
+
+        assert_eq!(
+            super::to_taffy_style(&style).inset,
+            taffy::Rect::auto(),
+            "a static inset is dropped"
+        );
+
+        style.position_type = PositionType::Relative;
+        assert_eq!(
+            super::to_taffy_style(&style).inset.top,
+            taffy::LengthPercentageAuto::length(30.0),
+            "a relative inset is not"
+        );
+    }
+
+    #[test]
+    fn an_inset_moves_a_relative_child_and_not_a_static_one() {
+        // The measurement this reproduces: in Chrome a static child given
+        // `top: 30px; left: 30px` sits at its flow position, and the same child
+        // made relative moves 30 on both axes while its sibling does not move
+        // at all.
+        let placed = |position| {
+            let (mut scene, page) = scene_with_page(200.0, 200.0);
+            if let Some(root) = scene.get_mut(page) {
+                root.layout.display = Display::Block;
+            }
+            let mut child = Node::container();
+            child.layout.position_type = position;
+            child.layout.inset = Sides::all(Some(Length::Points(30.0)));
+            child.layout.size =
+                (Dimension::Points(50.0), Dimension::Points(20.0));
+            let child = scene
+                .push(page, child)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let sibling = scene
+                .push(page, Node::container())
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let result = solved(&scene, page);
+            (
+                result
+                    .get(child)
+                    .unwrap_or_else(|| unreachable!("the child is laid out"))
+                    .origin,
+                result
+                    .get(sibling)
+                    .unwrap_or_else(|| unreachable!("the sibling is laid out"))
+                    .origin,
+            )
+        };
+
+        let (static_child, static_sibling) = placed(PositionType::Static);
+        assert_eq!(static_child, Point { x: 0.0, y: 0.0 });
+
+        let (relative_child, relative_sibling) = placed(PositionType::Relative);
+        assert_eq!(relative_child, Point { x: 30.0, y: 30.0 });
+
+        // And the shift is visual: the sibling lands in the same place either
+        // way, which is what makes `relative` a shift rather than a placement.
+        assert_eq!(static_sibling, relative_sibling);
     }
 
     #[test]

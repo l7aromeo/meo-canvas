@@ -485,17 +485,36 @@ v1 documents `z-index` as applying only to absolutely positioned nodes, which is
 narrower than CSS. This renderer follows CSS, under the rule that where v1
 diverges from the reference the reference wins.
 
-**"Positioned" can only mean absolute here, and that is a limit of the model
-rather than a reading of the spec.** `PositionType` carries `Relative` and
-`Absolute` because taffy does, and taffy's `Relative` is the in-flow default —
-CSS's `static` and `relative` are one value in this renderer. So a
-`position: relative` child of a block container stacks in a browser and does not
-here.
+**The rule was measured in Chrome, not assembled from the three
+specifications.** A rule read out of three documents is a rule nobody has seen
+run, so all five combinations were sampled with `elementFromPoint` over the
+overlap of two boxes, the first carrying `z-index: 5`:
 
-The collapse is chosen rather than accidental: making every in-flow block child
-stack is an error that fires constantly, and this one fires only for
-relative-in-block. Separating them means a third `PositionType` variant, which
-is a change to the wire format.
+| container | child    | `z-index`   |
+| --------- | -------- | ----------- |
+| block     | static   | ignored     |
+| block     | relative | **applied** |
+| flex      | static   | applied     |
+| flex      | relative | applied     |
+| grid      | static   | applied     |
+
+`PositionType` therefore carries three variants where taffy carries two.
+`Static` is appended as discriminant `2` rather than given the `0` it would take
+if the enum were written today — the discriminants are published in both wire
+formats — and it is the `Default`, because CSS's initial value is `static`.
+
+Two things follow from `Static` existing, and both are settled on our side
+because taffy cannot express them:
+
+- **Stacking**, as above: `Static` is the only variant that does not stack.
+- **`inset`**, which CSS does not apply to a static element and taffy's
+  `Relative` would honour. `to_taffy_inset` drops it. Measured too: a static
+  child given `top: 30px; left: 30px` sits at its flow position in a block, a
+  flex and a grid container alike, so the drop reads only the child.
+
+`fixtures/block-stacking` and `fixtures/block-stacking-relative` are the same
+scene differing only in that variant, and their images differ only in the
+overlap.
 
 ### Layout defaults
 

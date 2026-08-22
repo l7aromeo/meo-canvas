@@ -37,8 +37,14 @@ export type Justify = 'flex-start' | 'flex-end' | 'center' | 'space-between' | '
  */
 export type Align = 'flex-start' | 'flex-end' | 'center' | 'stretch' | 'baseline' | 'space-between' | 'space-around' | 'space-evenly'
 
-/** Whether a node is placed by the flow or by its own offsets. */
-export type PositionType = 'relative' | 'absolute'
+/**
+ * Whether a node is placed by the flow, by its own offsets, or not at all.
+ *
+ * `'static'` is CSS's default and takes no offsets — a node with `position`
+ * edges set under it ignores them. The scene distinguishes it from
+ * `'relative'`, which is laid out the same way and does read them.
+ */
+export type PositionType = 'static' | 'relative' | 'absolute'
 
 /**
  * What happens to content larger than its box.
@@ -104,6 +110,9 @@ export type {
 
 export { Box, Column, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
 export type { Child, Children, ContainerProps, ImageProps, ImageSource, NodeKind, PathProps, SceneNode, TextProps, TextSegment } from './node.js'
+
+export { Root } from './root.js'
+export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOptions, RootDependencies, RootProps } from './root.js'
 
 export { Canvas } from './canvas.js'
 export type { EncodeOptions, Format, NativeCanvas, WriteFile, WriteFileSync } from './canvas.js'

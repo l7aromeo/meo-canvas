@@ -1,0 +1,178 @@
+import { describe, expect, it } from 'vitest'
+
+import type { SideValue } from './arena.js'
+import type { NativeCanvas } from './canvas.js'
+import { Text } from './node.js'
+import { Root, type PageInfo, type RootDependencies, type RootProps } from './root.js'
+
+/** A renderer that records what it was handed and paints nothing. */
+function fakeRenderer() {
+  const painted: { slots: Float64Array; values: readonly SideValue[]; gpu: boolean; fonts: unknown }[] = []
+  const native: NativeCanvas = {
+    encode: () => new Uint8Array([1]),
+    release: () => undefined,
+  }
+  const dependencies: RootDependencies = {
+    renderer: {
+      paint: async (slots, values, options) => {
+        painted.push({ slots, values, gpu: options.gpu, fonts: options.fonts })
+        return native
+      },
+    },
+    writeFile: async () => undefined,
+    writeFileSync: () => undefined,
+  }
+  return { dependencies, painted }
+}
+
+/** The arena `Root` handed across for `props`. */
+async function arenaFor(props: RootProps): Promise<{ slots: Float64Array; values: readonly SideValue[] }> {
+  const { dependencies, painted } = fakeRenderer()
+  await Root(props, dependencies)
+
+  const only = painted[0]
+  if (only === undefined) throw new Error('Root painted nothing')
+  return only
+}
+
+describe('the canvas Root describes', () => {
+  it('carries the size and the scale it was given', async () => {
+    const { slots } = await arenaFor({ width: 520, height: 180, scale: 2 })
+
+    // Magic, version, width, height, scale, page count.
+    expect([...slots.slice(2, 6)]).toEqual([520, 180, 2, 1])
+  })
+
+  it('defaults the scale to one', async () => {
+    const { slots } = await arenaFor({ width: 10, height: 10 })
+
+    expect(slots[4]).toBe(1)
+  })
+
+  it('asks for the GPU unless told not to', async () => {
+    const { dependencies, painted } = fakeRenderer()
+
+    await Root({ width: 10, height: 10 }, dependencies)
+    await Root({ width: 10, height: 10, gpu: false }, dependencies)
+
+    expect(painted.map(each => each.gpu)).toEqual([true, false])
+  })
+
+  it('passes the families through to be registered', async () => {
+    const fonts = [{ family: 'Fixture', paths: ['a.ttf'] }]
+    const { dependencies, painted } = fakeRenderer()
+
+    await Root({ width: 10, height: 10, fonts }, dependencies)
+
+    expect(painted[0]?.fonts).toBe(fonts)
+  })
+})
+
+describe('a sequence', () => {
+  it('is one page when nothing says otherwise', async () => {
+    const { slots } = await arenaFor({ width: 10, height: 10, children: Text('x') })
+
+    expect(slots[5]).toBe(1)
+  })
+
+  it('takes its length as a page count', async () => {
+    const { slots } = await arenaFor({ width: 10, height: 10, pages: 3, children: () => Text('x') })
+
+    expect(slots[5]).toBe(3)
+  })
+
+  it('derives the page count from a duration and a rate', async () => {
+    // `ceil(duration * fps)`, as v1 derives it: a second at thirty is thirty
+    // pages, and a fraction of a page is still a page that has to be drawn.
+    const { slots } = await arenaFor({ width: 10, height: 10, duration: 1, children: () => Text('x') })
+    const rounded = await arenaFor({ width: 10, height: 10, duration: 0.1, fps: 24, children: () => Text('x') })
+
+    expect(slots[5]).toBe(30)
+    expect(rounded.slots[5]).toBe(3)
+  })
+
+  it('tells each page where it sits', async () => {
+    const seen: PageInfo[] = []
+    const { dependencies } = fakeRenderer()
+
+    await Root(
+      {
+        width: 10,
+        height: 10,
+        pages: 4,
+        fps: 10,
+        children: page => {
+          seen.push(page)
+          return Text('x')
+        },
+      },
+      dependencies,
+    )
+
+    expect(seen.map(page => page.index)).toEqual([0, 1, 2, 3])
+    expect(seen.map(page => page.count)).toEqual([4, 4, 4, 4])
+    // `progress` reaches one on the last page; `cycle` never does, because the
+    // page after the last is the next loop's first.
+    expect(seen.map(page => page.progress)).toEqual([0, 1 / 3, 2 / 3, 1])
+    expect(seen.map(page => page.cycle)).toEqual([0, 0.25, 0.5, 0.75])
+    expect(seen.map(page => page.time)).toEqual([0, 0.1, 0.2, 0.3])
+  })
+
+  it('reports both curves as zero for a page that is the whole render', async () => {
+    const seen: PageInfo[] = []
+    const { dependencies } = fakeRenderer()
+
+    await Root({ width: 10, height: 10, pages: 1, children: page => (seen.push(page), Text('x')) }, dependencies)
+
+    expect(seen[0]).toEqual({ index: 0, count: 1, progress: 0, cycle: 0, time: 0 })
+  })
+
+  it('builds a page at a time rather than all at once', async () => {
+    // A builder may fetch, and a thousand-page render firing a thousand
+    // requests at once is a denial of service the caller did not ask for.
+    const order: string[] = []
+    const { dependencies } = fakeRenderer()
+
+    await Root(
+      {
+        width: 10,
+        height: 10,
+        pages: 3,
+        children: async page => {
+          order.push(`start ${page.index}`)
+          await Promise.resolve()
+          order.push(`end ${page.index}`)
+          return Text('x')
+        },
+      },
+      dependencies,
+    )
+
+    expect(order).toEqual(['start 0', 'end 0', 'start 1', 'end 1', 'start 2', 'end 2'])
+  })
+})
+
+describe('a sequence that contradicts itself', () => {
+  it('is refused rather than resolved by precedence', async () => {
+    const { dependencies } = fakeRenderer()
+    const builder = (): ReturnType<typeof Text> => Text('x')
+
+    await expect(Root({ width: 10, height: 10, pages: 2, duration: 1, children: builder }, dependencies)).rejects.toThrow(/`pages` or `duration`, not both/)
+    await expect(Root({ width: 10, height: 10, children: builder }, dependencies)).rejects.toThrow(/page builder needs `pages` or `duration`/)
+    await expect(Root({ width: 10, height: 10, pages: 2, children: Text('x') }, dependencies)).rejects.toThrow(
+      /`children` has to be a function that builds one/,
+    )
+    await expect(Root({ width: 10, height: 10, pages: 0, children: builder }, dependencies)).rejects.toThrow(/at least one page/)
+    await expect(Root({ width: 10, height: 10, pages: 1.5, children: builder }, dependencies)).rejects.toThrow(/is not a count/)
+  })
+})
+
+describe('the renderer Root reaches for when told nothing', () => {
+  it('is the addon, and says what it is missing rather than what it found', async () => {
+    // `render` returns encoded bytes, so a canvas over it would repaint the
+    // scene per format and could not have a synchronous method at all. `Root`
+    // needs a surface that is retained until it is released, and until the
+    // addon exports one this is where that is said.
+    await expect(Root({ width: 10, height: 10 })).rejects.toThrow(/exports no `paint`/)
+  })
+})

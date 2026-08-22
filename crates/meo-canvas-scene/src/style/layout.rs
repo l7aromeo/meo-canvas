@@ -133,11 +133,32 @@ wire_enum! {
 
 wire_enum! {
     /// Whether a node is placed by the flow or by its own offsets.
+    ///
+    /// CSS's three positioning schemes that matter to a renderer with no
+    /// scrolling viewport. `static` and `relative` differ in two observable
+    /// ways -- whether `inset` moves the node, and whether `z_index` gives it a
+    /// place in its parent's stack -- and both were measured in Chrome rather
+    /// than read off the specification; see [`LayoutStyle::inset`] and
+    /// `stacks_by_z_index` in `meo-canvas-core`.
+    #[derive(Default)]
     pub enum PositionType {
         /// Placed by the flow, with `inset` shifting it from where it landed.
         Relative = 0,
         /// Taken out of the flow and placed by `inset` against its container.
         Absolute = 1,
+        /// Placed by the flow, and `inset` does not apply.
+        ///
+        /// CSS's initial value, so this is the variant a node that says nothing
+        /// about its position gets.
+        ///
+        /// Appended rather than given the zero it would have if the enum were
+        /// written today:
+        /// the discriminants are a published part of both wire formats, and
+        /// renumbering `Relative` and `Absolute` to put `static` first would
+        /// change what every already-encoded byte means to buy an ordering
+        /// nothing reads.
+        #[default]
+        Static = 2,
     }
 }
 
@@ -237,8 +258,19 @@ pub struct LayoutStyle {
     pub display: Display,
     /// Whether the node is placed by the flow or by `inset`.
     pub position_type: PositionType,
-    /// Offsets from the container's edges, honoured for
-    /// [`PositionType::Absolute`] and as a shift otherwise.
+    /// Offsets from the container's edges.
+    ///
+    /// Read as a position for [`PositionType::Absolute`], as a shift that
+    /// moves the node without moving its siblings for
+    /// [`PositionType::Relative`], and **not at all** for
+    /// [`PositionType::Static`] -- which is the default, so an inset on a
+    /// node that was never positioned does nothing.
+    ///
+    /// Measured in Chrome, not assumed: a static child given
+    /// `top: 30px; left: 30px` sits at its flow position in a block, a flex
+    /// and a grid container alike, while the same child made relative
+    /// moves by 30 on both axes and leaves its sibling exactly where it
+    /// was.
     pub inset: Sides<Option<Length>>,
     /// Requested width and height.
     pub size: (Dimension, Dimension),
@@ -302,7 +334,7 @@ impl Default for LayoutStyle {
     fn default() -> Self {
         Self {
             display: Display::Flex,
-            position_type: PositionType::Relative,
+            position_type: PositionType::Static,
             inset: Sides::all(None),
             size: (Dimension::Auto, Dimension::Auto),
             min_size: (Dimension::Auto, Dimension::Auto),
@@ -373,7 +405,11 @@ mod tests {
         assert_eq!(style.flex_basis, Dimension::Auto);
         assert_eq!(style.gap, (Length::ZERO, Length::ZERO));
         assert_eq!(style.overflow, (Overflow::Visible, Overflow::Visible));
-        assert_eq!(style.position_type, PositionType::Relative);
+        // CSS's initial value, which is `static` and not `relative`: an
+        // `inset` on a node nobody positioned has to do nothing, and a
+        // `z_index` on one in a block container has to name nothing.
+        assert_eq!(style.position_type, PositionType::Static);
+        assert_eq!(PositionType::default(), PositionType::Static);
         assert_eq!(style.grid_auto_flow, GridAutoFlow::Row);
         assert_eq!(style.grid_column, GridPlacement::AUTO);
         assert!(style.grid_template_rows.is_empty());
@@ -399,7 +435,7 @@ mod tests {
         assert_eq!(FlexWrap::ALL.len(), 3);
         assert_eq!(Justify::ALL.len(), 6);
         assert_eq!(Align::ALL.len(), 8);
-        assert_eq!(PositionType::ALL.len(), 2);
+        assert_eq!(PositionType::ALL.len(), 3);
         assert_eq!(Overflow::ALL.len(), 3);
         assert_eq!(BoxSizing::ALL.len(), 2);
         assert_eq!(Direction::ALL.len(), 2);

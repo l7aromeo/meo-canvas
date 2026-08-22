@@ -146,7 +146,7 @@ function emit(collected) {
   const bodies = collected.map((example, index) => {
     const name = `example${index}`
     const indented = example.rest.map(line => (line === '' ? '' : `  ${line}`))
-    return [`/** \`${example.file}\`, line ${example.line}. */`, `export function ${name}(): void {`, ...indented, '}', ''].join('\n')
+    return [`/** \`${example.file}\`, line ${example.line}. */`, `export async function ${name}(): Promise<void> {`, ...indented, '}', ''].join('\n')
   })
 
   return [

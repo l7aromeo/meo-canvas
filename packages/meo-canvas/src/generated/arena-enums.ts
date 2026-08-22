@@ -231,6 +231,7 @@ export const PAINT_ORDER = {
 export const POSITION_TYPE = {
   Relative: 0,
   Absolute: 1,
+  Static: 2,
 } as const
 
 /** `meo_canvas_scene::style::text::TextAlign`. */

@@ -1,5 +1,6 @@
 {
-  "proves": "z_index gives a place in the stack only where CSS does",
-  "checkable": "two 80x40 boxes in a block container. The first is red at x 0..80, y 0..40 and carries z_index 5; the second is blue at x 20..100, y 20..60, pulled up over it by a -20 top margin, and carries 0. Neither is positioned and the parent is block, so CSS 2.1 §9.9.1 gives the 5 nothing to name and document order decides: the overlap at x 20..80, y 20..40 is blue. Under the renderer's previous rule -- every sibling ordered by z_index -- red would paint last and that band would be red instead, which is what makes this image a discriminator rather than a picture of two rectangles.",
-  "status": "pinnable to arithmetic; stacks_by_z_index() is asserted directly in paint.rs"
+  "proves": "a static child of a block container has no z_index",
+  "checkable": "two 80x40 boxes in a block container, both position: static. The first is red at x 0..80, y 0..40 and carries z_index 5; the second is blue at x 20..100, y 20..60, pulled over it by a -20 top margin, and carries 0. CSS 2.1 §9.9.1 gives z-index to positioned elements, and static is not one, so the 5 names nothing and document order decides: the overlap at x 20..80, y 20..40 is blue.",
+  "status": "pinnable to arithmetic; stacks_by_z_index() is asserted directly in paint.rs",
+  "pairs-with": "block-stacking-relative, which is this scene with both children made position: relative and nothing else changed. Its overlap is red. The pair is what shows the rule turns on the child's own position and not on the container, and the two images differ in exactly the 60x20 overlap and nowhere else."
 }

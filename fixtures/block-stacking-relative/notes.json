@@ -1,0 +1,6 @@
+{
+  "proves": "a relative child of a block container does have a z_index",
+  "checkable": "block-stacking with both children made position: relative and nothing else touched. relative is positioned, so red's z_index 5 now applies and the overlap at x 20..80, y 20..40 is red rather than blue. Sampled: (30, 25) is (220, 40, 40) here and (40, 80, 220) there, and no other pixel differs between the two images.",
+  "status": "pinnable to arithmetic; stacks_by_z_index() is asserted directly in paint.rs",
+  "why-it-exists": "This is the one combination of five where Chrome and this renderer disagreed before PositionType gained Static -- block container, relative child. It was measured in Chrome rather than derived: block+static ignores the index, block+relative applies it, and flex and grid apply it either way. Without this image the codebase has the rule written down three times and drawn nowhere."
+}

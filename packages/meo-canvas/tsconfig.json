@@ -8,7 +8,10 @@
 
     "target": "ES2022",
     "lib": ["ES2023"],
-    "types": [],
+    // Node's, and only Node's. The package loads a native addon and writes
+    // files, so it names `node:module` and `node:fs`; it deliberately does not
+    // get `DOM`, so a library with no document cannot reach for `window`.
+    "types": ["node"],
 
     "module": "NodeNext",
     "moduleResolution": "nodenext",

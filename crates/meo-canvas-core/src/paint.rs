@@ -353,20 +353,26 @@ fn z_ordered(scene: &meo_canvas_scene::Scene, node: &Node) -> Vec<NodeId> {
 /// CSS 2.1 §9.9.1 gives `z-index` to positioned elements only. Flexbox §5.4 and
 /// Grid §6.2 each extend it to their items whatever their position, because
 /// being an item of that container is itself what earns the place. So: the
-/// child is positioned, or its parent lays out as flex or grid.
+/// child is positioned -- anything but [`PositionType::Static`] -- or its
+/// parent lays out as flex or grid.
 ///
-/// This is neither v1's rule -- absolutely positioned only, which is narrower
-/// than CSS -- nor "every sibling", which was this renderer's until now and is
-/// wrong for a block container.
+/// This is neither v1's rule, which is absolutely positioned only, nor "every
+/// sibling", which was this renderer's first answer and is wrong for a block
+/// container.
 ///
-/// [`PositionType`] has no `Static`: taffy's `Relative` is the in-flow default,
-/// so "positioned" here can only mean [`PositionType::Absolute`]. A CSS
-/// `position: relative` child of a block container would stack and this one
-/// does not. The two are one value in this model, and of the two ways to
-/// collapse them, treating every in-flow block child as stacking is the error
-/// that affects the common case.
+/// Measured in Chrome across all five combinations rather than derived from the
+/// three specifications, because a rule assembled from three documents is a
+/// rule nobody has seen run:
+///
+/// | container | child | `z_index` |
+/// |---|---|---|
+/// | block | static | ignored |
+/// | block | relative | applied |
+/// | flex | static | applied |
+/// | flex | relative | applied |
+/// | grid | static | applied |
 const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
-    matches!(child.layout.position_type, PositionType::Absolute)
+    !matches!(child.layout.position_type, PositionType::Static)
         || matches!(parent.layout.display, Display::Flex | Display::Grid)
 }
 
@@ -1328,6 +1334,9 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(id) {
                 node.paint.z_index = z;
+                // Explicit rather than left to the default, so the test still
+                // means what it says if the default ever moves.
+                node.layout.position_type = PositionType::Static;
             }
             ids.push(id);
         }
@@ -1336,6 +1345,33 @@ mod tests {
             .unwrap_or_else(|| unreachable!("a new scene has a root"));
 
         assert_eq!(z_ordered(&scene, root), ids);
+    }
+
+    #[test]
+    fn a_relative_child_of_a_block_container_takes_its_z_index() {
+        // Measured in Chrome: the one combination of five where a block
+        // container's child stacks. `relative` is positioned, and positioned is
+        // what CSS 2.1 asks for.
+        let mut scene = Scene::new(Size::new(10.0, 10.0));
+        if let Some(root) = scene.get_mut(NodeId::ROOT) {
+            root.layout.display = Display::Block;
+        }
+        let mut ids = Vec::new();
+        for z in [0_i32, -1] {
+            let id = scene
+                .push(NodeId::ROOT, Node::container())
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.paint.z_index = z;
+                node.layout.position_type = PositionType::Relative;
+            }
+            ids.push(id);
+        }
+        let root = scene
+            .get(NodeId::ROOT)
+            .unwrap_or_else(|| unreachable!("a new scene has a root"));
+
+        assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
     }
 
     #[test]

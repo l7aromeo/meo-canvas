@@ -213,3 +213,12 @@ fn main(mut cx: ModuleContext<'_>) -> NeonResult<()> {
     cx.export_function("sceneBytes", scene_bytes)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod send_probe {
+    const fn assert_send<T: Send>() {}
+    #[test]
+    fn probe() {
+        assert_send::<meo_canvas_core::RenderedCanvas>();
+    }
+}

@@ -907,3 +907,79 @@ describe('the bytes Rust writes for the same scene', () => {
     })
   }
 })
+
+/**
+ * Every keyword union on the surface, against the enum it crosses as.
+ *
+ * The one copy of a list this file keeps, and it is checked in both directions:
+ * a keyword with no variant behind it fails, and a variant with no keyword in
+ * front of it fails. The second direction is the one that rots silently — a
+ * variant added upstream is a value the scene can carry and this surface cannot
+ * name, and nothing else here would notice. It has already happened once:
+ * `PositionType::Static` arrived while this was being written.
+ *
+ * The unions themselves are types, so they are gone at runtime and cannot be
+ * read. This is that list written down where it can be checked.
+ */
+const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
+  ['Align', ['flex-start', 'flex-end', 'center', 'stretch', 'baseline', 'space-between', 'space-around', 'space-evenly']],
+  [
+    'BlendMode',
+    [
+      'normal',
+      'multiply',
+      'screen',
+      'overlay',
+      'darken',
+      'lighten',
+      'color-dodge',
+      'color-burn',
+      'hard-light',
+      'soft-light',
+      'difference',
+      'exclusion',
+      'hue',
+      'saturation',
+      'color',
+      'luminosity',
+    ],
+  ],
+  ['BorderStyle', ['solid', 'dashed', 'dotted']],
+  ['BoxSizing', ['border-box', 'content-box']],
+  ['Direction', ['ltr', 'rtl']],
+  ['Display', ['flex', 'grid', 'block', 'none']],
+  ['FlexDirection', ['row', 'row-reverse', 'column', 'column-reverse']],
+  ['FlexWrap', ['nowrap', 'wrap', 'wrap-reverse']],
+  ['FontStyle', ['normal', 'italic']],
+  ['GridAutoFlow', ['row', 'column', 'row-dense', 'column-dense']],
+  ['Justify', ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly']],
+  ['ObjectFit', ['fill', 'contain', 'cover', 'none', 'scale-down']],
+  ['Overflow', ['visible', 'hidden', 'scroll']],
+  ['PaintOrder', ['fill', 'stroke']],
+  ['PositionType', ['static', 'relative', 'absolute']],
+  ['TextAlign', ['start', 'end', 'left', 'center', 'right', 'justify']],
+  ['TextDecoration', ['none', 'underline', 'overline', 'line-through']],
+  ['VerticalAlign', ['top', 'middle', 'bottom']],
+]
+
+describe('the keywords this surface offers', () => {
+  it('name one variant each, and every variant the scene has', () => {
+    for (const [name, keywords] of KEYWORDS) {
+      const declared = ENUMS[name]
+      expect(declared, `${name} is not a wire enum any more`).toBeDefined()
+
+      const variants = Object.keys(declared?.variants ?? {})
+      const named = keywords.map(keyword =>
+        keyword
+          .split('-')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(''),
+      )
+      // `nowrap` is the one keyword CSS spells as a single word where the scene
+      // spells the concept `NoWrap`, so the derivation cannot reach it.
+      const derived = named.map(variant => (variant === 'Nowrap' ? 'NoWrap' : variant))
+
+      expect(derived.slice().sort(), `${name}`).toEqual(variants.slice().sort())
+    }
+  })
+})
