@@ -11,6 +11,13 @@ fmt_toolchain := "nightly-2026-08-10"
 # no features at all.
 host_features := if os() == "macos" { "metal" } else { "vulkan" }
 
+# What a cdylib is called on this platform, and what Node wants it called.
+#
+# Node loads a native addon only under `.node`, and cargo names a cdylib by the
+# platform's own convention. The copy is the whole difference.
+lib_name := if os() == "macos" { "libmeo_canvas_node.dylib" } else if os() == "windows" { "meo_canvas_node.dll" } else { "libmeo_canvas_node.so" }
+addon_path := "packages/meo-canvas/meo-canvas.node"
+
 # Default: show available recipes.
 default:
     @just --list
@@ -54,6 +61,16 @@ setup:
 build:
     cargo build --workspace
     cargo build -p meo-canvas-node --features "{{ host_features }}"
+
+# Build the addon and put it where the TypeScript surface loads it from.
+#
+# The `.node` is a build artefact and stays untracked: deny-by-default already
+# refuses it, so there is nothing to keep out of a commit by hand.
+[doc("Build the native addon into packages/meo-canvas.")]
+addon:
+    cargo build -p meo-canvas-node --features "{{ host_features }}"
+    @cp target/debug/{{ lib_name }} {{ addon_path }}
+    @echo "built {{ addon_path }}"
 
 # Run the test suite.
 test:
@@ -152,18 +169,22 @@ arena-tables:
 
 # Fails when the checked-in tables no longer match the Rust.
 #
-# Regenerates and asks git whether anything moved. Drift fails a build rather
-# than a round trip, which is the point of generating them: a writer reading a
-# stale index writes the right number of slots into the wrong field, and no
-# length check catches that.
+# Regenerates to a disposable path and diffs. Drift fails a build rather than a
+# round trip, which is the point of generating them: a writer reading a stale
+# index writes the right number of slots into the wrong field, and no length
+# check catches that.
 #
-# `status --porcelain` rather than `diff --quiet`: a diff sees a tracked file
-# that changed and says nothing about one that is untracked, so a generated file
-# nobody had committed would pass a diff-based check while guarding nothing.
+# A diff of two files rather than a question to git. `git status` reports a file
+# as changed whether it is untracked, written or staged, so a check built on it
+# refuses the workflow it exists to support -- edit the Rust, regenerate, run
+# the gate -- and passes only after a commit. `diff` also fails when the
+# checked-in file is absent, which is the other case worth catching.
 [doc("Fail if the checked-in arena tables have drifted from the Rust.")]
-arena-tables-check: arena-tables
-    @test -z "$(git status --porcelain -- packages/meo-canvas/src/generated)" || \
-      { echo "error: the arena tables are stale or untracked; run \`just arena-tables\` and commit the result"; exit 1; }
+arena-tables-check:
+    @mkdir -p target
+    @node packages/meo-canvas/tools/generate-arena-tables.mjs target/arena-tables.check.ts
+    @diff -u packages/meo-canvas/src/generated/arena-tables.ts target/arena-tables.check.ts \
+      || { echo "error: the arena tables are stale; run \`just arena-tables\` and commit the result"; exit 1; }
 
 # Golden fixtures: a scene, and the picture it must produce.
 #
