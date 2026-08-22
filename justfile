@@ -31,7 +31,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check lint-check layout-check docs test test-js coverage unused
+ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check lint-check layout-check docs test addon test-js coverage coverage-js unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -133,12 +133,12 @@ lint-check:
 [doc("Format Rust, JavaScript, TypeScript and Markdown (rewrites the tree).")]
 fmt: ensure-deps
     cargo +{{ fmt_toolchain }} fmt --all
-    ./node_modules/.bin/prettier --write "**/*.{js,mjs,ts,md}"
+    ./node_modules/.bin/prettier --write "**/*.{js,mjs,ts,mts,md}"
 
 # Verify formatting without writing.
 fmt-check: ensure-deps
     cargo +{{ fmt_toolchain }} fmt --all -- --check
-    ./node_modules/.bin/prettier --check "**/*.{js,mjs,ts,md}"
+    ./node_modules/.bin/prettier --check "**/*.{js,mjs,ts,mts,md}"
 
 # The TypeScript surface is what the npm package publishes as its types, and
 # nothing else reads it: prettier parses the file without checking it, and no
@@ -162,10 +162,11 @@ build-js: ensure-deps
 # the package does not export yet, so it is the acceptance target for the
 # JavaScript surface rather than a check of it. It joins `ci` in the change
 # that makes it pass.
-[doc("Typecheck and run the consumer example (fails until the JS API exists).")]
+[doc("Typecheck and run both consumer examples (fails until the APIs exist).")]
 example: build-js
-    ./node_modules/.bin/tsc --noEmit -p examples/card/tsconfig.json
-    cd examples/card && bun run index.ts
+    ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
+    cd examples/bun && bun run index.ts
+    cd examples/rust && cargo run --quiet
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
@@ -207,6 +208,19 @@ doc-examples-check:
 [doc("Run the JavaScript tests.")]
 test-js: ensure-deps
     ./node_modules/.bin/vitest run
+
+# The JavaScript suite again, with the same 90% floor the Rust half has.
+#
+# A separate recipe rather than a flag on `test-js`, mirroring `test` and
+# `coverage`: what to run while writing a test is not what gates a build, and
+# instrumenting every local run to find out whether one test passes is a cost
+# for no answer.
+#
+# The floor and the exclusions live in `vitest.config.mts`, next to the reason
+# for each. Only generated files are excluded, one path at a time.
+[doc("Measure JavaScript coverage and fail below the 90% floor.")]
+coverage-js: ensure-deps
+    ./node_modules/.bin/vitest run --coverage
 
 # Regenerates the TypeScript arena tables from the Rust that defines them.
 #

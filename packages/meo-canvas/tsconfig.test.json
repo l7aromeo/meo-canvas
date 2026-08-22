@@ -6,9 +6,21 @@
   // name `AbortSignal`, `EventTarget` and the timer functions, which live in
   // `DOM` -- so the tests get that lib and the shipped code still does not.
   "extends": "./tsconfig.json",
+  //
+  // The case fixture is imported rather than read: reading it would need
+  // `node:fs`, which needs `@types/node`, which is a dependency the shipped
+  // surface has no use for. `rootDir` moves up so a file outside `src` is
+  // allowed at all -- nothing is emitted from this config, so it only decides
+  // what may be named.
   "compilerOptions": {
-    "lib": ["ES2023", "DOM"]
+    "lib": ["ES2023", "DOM"],
+    // The boundary suite loads `meo-canvas.node`, which needs `createRequire`
+    // from `node:module`. The shipped config keeps `types: []`, so the package
+    // still cannot name a Node built-in.
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "rootDir": "../.."
   },
   "exclude": [],
-  "include": ["src"]
+  "include": ["src", "../../fixtures/arena-cases.json"]
 }

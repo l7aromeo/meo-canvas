@@ -228,10 +228,13 @@ function toBase64(bytes: Uint8Array): string {
     const triple = (a << 16) | (b << 8) | c
     const remaining = bytes.length - index
 
-    out += ALPHABET[(triple >> 18) & 63] ?? ''
-    out += ALPHABET[(triple >> 12) & 63] ?? ''
-    out += remaining > 1 ? (ALPHABET[(triple >> 6) & 63] ?? '') : '='
-    out += remaining > 2 ? (ALPHABET[triple & 63] ?? '') : '='
+    // `charAt` rather than an index: an index into a string may be `undefined`
+    // as far as the type system knows, and a `?? ''` beside it would be a
+    // fallback for something six bits masked to sixty-four cannot do.
+    out += ALPHABET.charAt((triple >> 18) & 63)
+    out += ALPHABET.charAt((triple >> 12) & 63)
+    out += remaining > 1 ? ALPHABET.charAt((triple >> 6) & 63) : '='
+    out += remaining > 2 ? ALPHABET.charAt(triple & 63) : '='
   }
   return out
 }

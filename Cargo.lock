@@ -1342,6 +1342,7 @@ name = "meo-canvas-core"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "csscolorparser",
  "gif",
  "meo-canvas-scene",
  "meo-skia-canvas",

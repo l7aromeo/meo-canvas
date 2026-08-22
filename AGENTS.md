@@ -221,15 +221,13 @@ translating syntax, not a design.
 
 ```rust
 let mut canvas = Root::new(520.0, 180.0)
-    .gpu(false)
-    .children([Row::new()
-        .gap(px(20.0))
-        .padding(all(px(24.0)))
-        .background_color(hex("#101014"))
-        .children([Text::new("Ukasyah").font_size(26.0).bold()])])
+    .background_color(hex("#101014"))
+    .children(Row::new().gap(px(20.0)).padding(px(24.0)).children(
+        Text::new("Ukasyah").font_size(26.0).bold(),
+    ))
     .render(&renderer)?;
 
-canvas.to_file("out.png", &SaveOptions::default())?;
+canvas.to_file("out.png", Format::Png)?;
 ```
 
 Setters are flat and chained. They are written once, on a trait every node

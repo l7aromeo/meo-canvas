@@ -2,6 +2,7 @@
   "name": "meo-canvas-workspace",
   "private": true,
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.11",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2",

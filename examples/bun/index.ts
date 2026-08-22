@@ -12,24 +12,26 @@ import { Column, Root, Row, Text } from 'meo-canvas'
 const canvas = await Root({
   width: 520,
   height: 180,
-  children: [
-    Row({
-      style: { gap: 20, padding: 24, backgroundColor: '#101014' },
+  backgroundColor: '#101014',
+  children: Row({
+    gap: 20,
+    padding: 24,
+    children: Column({
+      gap: 6,
+      justifyContent: 'center',
       children: [
-        Column({
-          style: { gap: 6, justifyContent: 'center' },
-          children: [
-            Text('Ukasyah Rahmatullah Zada', {
-              style: { fontSize: 26, fontWeight: 'bold', color: '#f4f4f6' },
-            }),
-            Text('meo-canvas — declarative scenes, rendered in Rust', {
-              style: { fontSize: 15, color: '#8a8a94' },
-            }),
-          ],
+        Text('Ukasyah Rahmatullah Zada', {
+          fontSize: 26,
+          fontWeight: 'bold',
+          color: '#f4f4f6',
+        }),
+        Text('meo-canvas — <b>declarative</b> scenes, rendered in Rust', {
+          fontSize: 15,
+          color: '#8a8a94',
         }),
       ],
     }),
-  ],
+  }),
 })
 
 await canvas.toFile('out.png')

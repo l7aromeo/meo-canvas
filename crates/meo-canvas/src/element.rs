@@ -313,30 +313,52 @@ impl Text {
     /// be forgotten — a `Text` with no text is not a thing worth being able to
     /// write.
     ///
+    /// The string is markup, not a literal: escape sequences and the five
+    /// styling tags are resolved by [`meo_canvas_core::markup::parse`], which
+    /// is the same parser the JavaScript surface's `Text()` has always run.
+    /// A Rust caller gets rich text for the same string that gives a
+    /// JavaScript caller rich text, which is the whole reason that parser
+    /// is in Rust.
+    ///
     /// ```
     /// use meo_canvas::{Style, Text};
     ///
     /// let name = Text::new("Ukasyah").style(Style::new().font_size(24.0));
+    /// let mixed = Text::new("plain <b>bold</b>");
     /// ```
+    ///
+    /// Use [`Text::rich`] for content that must not be interpreted, or that
+    /// carries styles the five tags cannot name.
     #[must_use]
     #[expect(
         clippy::new_ret_no_self,
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new(content: impl Into<String>) -> Element {
-        Element::new(NodeKind::Text {
-            segments: vec![TextSegment {
-                text: content.into(),
+        let content = content.into();
+        let mut segments = meo_canvas_core::markup::parse(&content);
+        if segments.is_empty() {
+            // The parser reports what the markup said, and a string of nothing
+            // but tags says nothing. A `Text` is still a paragraph, so the
+            // empty one is supplied here rather than left for every consumer to
+            // handle a kind with no runs in it.
+            segments.push(TextSegment {
+                text: String::new(),
                 style: TextStyle::default(),
-            }],
+            });
+        }
+        Element::new(NodeKind::Text {
+            segments,
             paragraph: ParagraphStyle::default(),
         })
     }
 
-    /// Text made of runs that differ in style.
+    /// Text made of runs that differ in style, given directly.
     ///
-    /// The one case a single string cannot express: a sentence with one word
-    /// bold. Each segment's own style overrides the node's for that run.
+    /// Each segment's own style overrides the node's for that run. Nothing here
+    /// is parsed, which is what makes this the way to write content containing
+    /// a literal `<` — [`Text::new`] would read it as markup — and the way to
+    /// give a run a style the five markup tags cannot name.
     #[must_use]
     pub fn rich(
         segments: impl IntoIterator<Item = (String, Style)>,
@@ -447,6 +469,45 @@ mod tests {
 
     use super::{Box, Column, Element, Grid, Image, Path, Row, Text};
     use crate::{Style, hex_rgb, px};
+
+    #[test]
+    fn text_new_reads_its_string_as_markup() {
+        // The defect this closed: a Rust caller used to get the angle brackets
+        // literally while a JavaScript caller got a bold run, because the
+        // parser lived in TypeScript.
+        let NodeKind::Text { segments, .. } =
+            Text::new("plain <b>bold</b>").kind
+        else {
+            unreachable!("Text::new builds a text node");
+        };
+        let texts: Vec<&str> =
+            segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, vec!["plain ", "bold"]);
+        assert!(segments[1].style.font_weight.is_some());
+        assert!(segments[0].style.font_weight.is_none());
+    }
+
+    #[test]
+    fn text_rich_reads_nothing_so_a_literal_angle_bracket_survives() {
+        let NodeKind::Text { segments, .. } =
+            Text::rich([("a <b> b".to_owned(), Style::new())]).kind
+        else {
+            unreachable!("Text::rich builds a text node");
+        };
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "a <b> b");
+    }
+
+    #[test]
+    fn text_that_says_nothing_is_still_a_paragraph() {
+        // A string of nothing but tags parses to no runs. The node still has
+        // to be a paragraph, so one empty run stands in for it.
+        let NodeKind::Text { segments, .. } = Text::new("<b></b>").kind else {
+            unreachable!("Text::new builds a text node");
+        };
+        assert_eq!(segments.len(), 1);
+        assert!(segments[0].text.is_empty());
+    }
 
     #[test]
     fn the_root_element_styles_the_page_rather_than_becoming_a_child_of_it() {

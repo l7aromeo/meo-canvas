@@ -12,6 +12,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+csscolorparser = { workspace = true }
 meo-canvas-scene = { workspace = true }
 meo-skia-canvas = { workspace = true }
 taffy = { workspace = true }

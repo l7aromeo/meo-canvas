@@ -52,6 +52,7 @@
 
 pub mod encode;
 pub mod layout;
+pub mod markup;
 pub mod measure;
 pub mod paint;
 pub mod resolve;

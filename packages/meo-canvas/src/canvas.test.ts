@@ -95,6 +95,14 @@ describe('data urls', () => {
     expect(canvas.toURLSync('png')).toBe('data:image/png;base64,ABCD')
   })
 
+  it('resolves with the same url as the blocking form', async () => {
+    // The awaited form exists because v1's did. There is no I/O in an encode,
+    // so it is the same call without the `await` and this says so.
+    const { canvas } = canvasOver(fake(new Uint8Array([0, 16, 131])).native)
+
+    await expect(canvas.toURL()).resolves.toBe(canvas.toURLSync('png'))
+  })
+
   it('pads a length that is not a multiple of three', () => {
     const one = canvasOver(fake(new Uint8Array([77])).native).canvas
     const two = canvasOver(fake(new Uint8Array([77, 97])).native).canvas

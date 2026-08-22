@@ -47,6 +47,13 @@ taffy = { version = "0.13", default-features = false, features = [
     "content_size",
 ] }
 
+# CSS colour parsing. The same crate `meo-skia-canvas` parses its own colour
+# strings with (`meo-skia-canvas-0.11.0/Cargo.toml:148`), so a colour this
+# workspace resolves and one the backend resolves agree by construction rather
+# than by two implementations tracking CSS Color 4 in parallel. It is already in
+# the graph through that dependency; naming it here adds no crate, only an edge.
+csscolorparser = "0.8"
+
 neon = "1.1"
 clap = { version = "4.6", features = ["derive"] }
 # The one HTTP client that does not decide the consumer's runtime for them:
