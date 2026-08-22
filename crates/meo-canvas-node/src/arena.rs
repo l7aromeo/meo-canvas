@@ -21,7 +21,9 @@
 //! where an integer is expected is an error, not a rounding.
 //!
 //! ```text
-//! arena  := MAGIC VERSION f32(width) f32(height) f32(scale) list<node>(pages)
+//! arena  := MAGIC VERSION f32(width) f32(height) f32(scale) surface
+//!           list<node>(pages)
+//! surface := opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
 //! node   := enum(kind)
 //!           mask(layout) mask(paint) mask(text) mask(effects)
 //!           layout-values paint-values text-values effect-values
@@ -137,6 +139,7 @@ use meo_canvas_scene::{
         paint::ObjectFit,
         text::{ParagraphStyle, TextSegment},
     },
+    surface::{ColorSpace, ColorType},
 };
 use value::ArenaValue;
 
@@ -148,7 +151,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 1.0;
+pub const VERSION: f64 = 2.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -686,11 +689,20 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
     let width = f32::read(&mut input)?;
     let height = f32::read(&mut input)?;
     let scale = f32::read(&mut input)?;
+    // The surface's own description, between the geometry and the pages. Slots
+    // inserted rather than appended, which is why `VERSION` moved to 2: an
+    // older reader would take `gpu`'s discriminant for the page count.
+    let gpu = Option::<bool>::read(&mut input)?;
+    let color_type = Option::<ColorType>::read(&mut input)?;
+    let color_space = Option::<ColorSpace>::read(&mut input)?;
 
     let page_count = input.count()?;
     let mut scene = Scene {
         size: Size::new(width, height),
         scale,
+        gpu,
+        color_type,
+        color_space,
         nodes: Vec::new(),
         pages: Vec::with_capacity(page_count),
     };
@@ -836,8 +848,8 @@ mod tests {
     };
 
     use super::{
-        ArenaError, MAGIC, MAX_NODES, SideValue, VERSION, Values, decode,
-        effects,
+        ArenaError, ColorSpace, ColorType, MAGIC, MAX_NODES, SideValue,
+        VERSION, Values, decode, effects,
         group::{BITS_PER_SLOT, Mask},
         layout, paint, text,
     };
@@ -855,15 +867,29 @@ mod tests {
     }
 
     impl Writer {
-        fn header(mut self, size: Size, scale: f32, pages: usize) -> Self {
+        /// A header whose surface block says nothing, which is every test
+        /// here but the one about the surface block.
+        fn header(self, size: Size, scale: f32, pages: usize) -> Self {
+            self.header_with(size, scale, &[0.0, 0.0, 0.0], pages)
+        }
+
+        /// A header with the surface block written out.
+        fn header_with(
+            mut self,
+            size: Size,
+            scale: f32,
+            surface: &[f64],
+            pages: usize,
+        ) -> Self {
             self.slots.extend_from_slice(&[
                 MAGIC,
                 VERSION,
                 f64::from(size.width),
                 f64::from(size.height),
                 f64::from(scale),
-                pages as f64,
             ]);
+            self.slots.extend_from_slice(surface);
+            self.slots.push(pages as f64);
             self
         }
 
@@ -901,6 +927,15 @@ mod tests {
 
     /// The simplest complete arena: one page, one empty container, no name,
     /// no children.
+    /// Slot index of the page count in a header whose surface says nothing:
+    /// magic, version, three geometry floats and three absent surface
+    /// discriminants. Named rather than written as a number at each use, so a
+    /// header change moves one line instead of three.
+    const PAGE_COUNT_SLOT: usize = 2 + 3 + 3;
+
+    /// Slot index of the first node's tag, one past the page count.
+    const FIRST_TAG_SLOT: usize = PAGE_COUNT_SLOT + 1;
+
     fn minimal() -> (Vec<f64>, Values) {
         Writer::default()
             .header(Size::new(40.0, 20.0), 2.0, 1)
@@ -922,6 +957,43 @@ mod tests {
         assert_eq!(scene.len(), 1);
         assert_eq!(scene.nodes[0].kind, NodeKind::Box);
         assert!(scene.validate().is_ok());
+    }
+
+    #[test]
+    fn the_header_carries_a_surface_the_scene_states_and_omits_one_it_does_not()
+    {
+        // Absent and stated are different scenes, and the header is where the
+        // difference lives: `None` is the caller leaving it to the renderer.
+        let (slots, values) = minimal();
+        let scene = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(scene.gpu, None);
+        assert_eq!(scene.color_type, None);
+        assert_eq!(scene.color_space, None);
+
+        let (slots, values) = Writer::default()
+            .header_with(
+                Size::new(40.0, 20.0),
+                2.0,
+                &[
+                    1.0,
+                    0.0, // gpu: present, false
+                    1.0,
+                    f64::from(ColorType::F16.to_wire()),
+                    1.0,
+                    f64::from(ColorSpace::DisplayP3.to_wire()),
+                ],
+                1,
+            )
+            .bare_node(NodeTag::Box)
+            .slot(0.0)
+            .slot(0.0)
+            .finish();
+        let scene = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(scene.gpu, Some(false));
+        assert_eq!(scene.color_type, Some(ColorType::F16));
+        assert_eq!(scene.color_space, Some(ColorSpace::DisplayP3));
     }
 
     #[test]
@@ -1016,9 +1088,9 @@ mod tests {
             Err(ArenaError::Truncated { .. })
         ));
         assert!(matches!(
-            decode(&[MAGIC, 2.0], &Values::default()),
+            decode(&[MAGIC, 99.0], &Values::default()),
             Err(ArenaError::UnsupportedVersion { found, expected })
-                if (found - 2.0).abs() < f64::EPSILON
+                if (found - 99.0).abs() < f64::EPSILON
                     && (expected - VERSION).abs() < f64::EPSILON
         ));
     }
@@ -1048,7 +1120,7 @@ mod tests {
     fn a_fractional_slot_where_an_integer_belongs_is_refused() {
         let (mut slots, values) = minimal();
         // The page count, which must be a whole number of pages.
-        slots[5] = 1.5;
+        slots[PAGE_COUNT_SLOT] = 1.5;
         assert!(matches!(
             decode(&slots, &values),
             Err(ArenaError::NotAnInteger { .. })
@@ -1058,7 +1130,7 @@ mod tests {
     #[test]
     fn a_kind_that_names_nothing_is_refused() {
         let (mut slots, values) = minimal();
-        slots[6] = 99.0;
+        slots[FIRST_TAG_SLOT] = 99.0;
         assert!(matches!(
             decode(&slots, &values),
             Err(ArenaError::UnknownTag {
@@ -1718,7 +1790,7 @@ mod tests {
                 .is_err_and(|message| message.contains("nonsense"))
         );
 
-        let broken = [MAGIC, 99.0];
+        let broken = [MAGIC, 98.0];
         assert!(crate::render_off_thread(&broken, &values, "png").is_err());
     }
     /// A mask reads every slot its group declares, and a bit past them is
@@ -1772,7 +1844,7 @@ mod tests {
     #[test]
     fn re_encoding_a_broken_arena_fails_rather_than_truncating() {
         let (mut slots, values) = minimal();
-        slots[6] = 99.0;
+        slots[FIRST_TAG_SLOT] = 99.0;
         assert!(decode(&slots, &values).is_err());
     }
     /// Every property has a probe value distinguishable from its default.

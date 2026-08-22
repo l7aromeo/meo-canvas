@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import cases from '../../../fixtures/arena-cases.json' with { type: 'json' }
 
-import { ArenaWriter, PROPERTY_TABLES, encodeScene, type SideValue } from './arena.js'
+import { ArenaWriter, PROPERTY_TABLES, encodeScene, variant, type SideValue } from './arena.js'
 import { ENUMS, NODE_TAG } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION, type ArenaProperty } from './generated/arena-tables.js'
 import { Box, Image, Path, RichText, Text, type SceneNode } from './node.js'
@@ -294,6 +294,8 @@ interface DecodedArena {
   readonly size: readonly [number, number]
   /** The device pixel ratio. */
   readonly scale: number
+  /** What the scene asked of the surface, where it asked anything. */
+  readonly surface: { gpu: unknown; colorType: unknown; colorSpace: unknown }
   /** The pages. */
   readonly pages: readonly DecodedNode[]
 }
@@ -307,13 +309,24 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
 
   const size: [number, number] = [f32(input), f32(input)]
   const scale = f32(input)
+
+  // The surface block, between the geometry and the pages. Three optionals,
+  // each absent unless the scene stated one — which is why the arena's version
+  // moved to 2: a reader of the old revision takes `gpu`'s presence flag for
+  // the page count.
+  const surface = {
+    gpu: read(input, 'Option<bool>'),
+    colorType: read(input, 'Option<ColorType>'),
+    colorSpace: read(input, 'Option<ColorSpace>'),
+  }
+
   const count = slot(input)
   const pages = Array.from({ length: count }, () => readNode(input))
 
   // The check that turns a writer emitting the wrong number of slots from a
   // comparison failure into a structural one.
   expect(input.at, 'the arena has slots past the end of the scene').toBe(slots.length)
-  return { size, scale, pages }
+  return { size, scale, surface, pages }
 }
 
 /** One case of the fixture: where the property sits, and what Rust wrote for it. */
@@ -1142,6 +1155,28 @@ describe('the bytes Rust writes for the same scene', () => {
     })
   }
 
+  it('are the same for markup and for the runs it parses into', () => {
+    // What the markup discriminant is *for*, stated as a check rather than
+    // trusted. The two arenas differ — one carries a string, the other carries
+    // built runs — and the scenes the addon decodes them into are identical, so
+    // the byte codec writes the same thing for both.
+    //
+    // **The arena carries the markup unparsed**, because the parser lives on
+    // the far side so that both surfaces get it. **The byte comparison is where
+    // parsing is checked**, here and in the `__kind_text_markup` case: that
+    // case's `bytes` are the *parsed* scene, and the string `one <b>two</b>`
+    // appears nowhere in them, so the comparison passes only if the addon
+    // produced exactly these runs.
+    const markup = Text('one <b>two</b>')
+    const runs = RichText([
+      { text: 'one ', style: {} },
+      { text: 'two', style: { fontWeight: 'bold' } },
+    ])
+
+    expect(encodeScene([markup], SIZE[0], SIZE[1], SCALE).slots).not.toEqual(encodeScene([runs], SIZE[0], SIZE[1], SCALE).slots)
+    expect(bytesOf(markup)).toBe(bytesOf(runs))
+  })
+
   for (const [name, probe] of Object.entries(KIND_PROBES)) {
     it(`agree on ${name}`, () => {
       // The payload half, and the one that was missing when an arena text
@@ -1191,6 +1226,61 @@ const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
     ],
   ],
   ['BorderStyle', ['solid', 'dashed', 'dotted']],
+  // The two whose keywords are upstream's rather than this package's, and which
+  // upstream spells differently from each other: a pixel layout has no CSS
+  // vocabulary to borrow, a colour space does. Both carry aliases, so these two
+  // are the only entries here that are not one-to-one with their variants.
+  [
+    'ColorType',
+    [
+      'Alpha8',
+      'Gray8',
+      'R8UNorm',
+      'A16Float',
+      'A16UNorm',
+      'ARGB4444',
+      'R8G8UNorm',
+      'RGB565',
+      'rgb',
+      'RGB888x',
+      'rgba',
+      'RGBA8888',
+      'bgra',
+      'BGRA8888',
+      'BGR101010x',
+      'BGRA1010102',
+      'R16G16Float',
+      'R16G16UNorm',
+      'RGB101010x',
+      'RGBA1010102',
+      'SRGBA8888',
+      'N32',
+      'R16G16B16A16UNorm',
+      'RGBAF16',
+      'RGBAF16Norm',
+      'RGBAF32',
+    ],
+  ],
+  [
+    'ColorSpace',
+    [
+      'srgb',
+      'srgb-linear',
+      'linear',
+      'display-p3',
+      'p3',
+      'display-p3-linear',
+      'p3-linear',
+      'rec2020',
+      'bt2020',
+      'rec2020-linear',
+      'bt2020-linear',
+      'rec2020-pq',
+      'hdr10',
+      'rec2020-hlg',
+      'hlg',
+    ],
+  ],
   ['BoxSizing', ['border-box', 'content-box']],
   ['Direction', ['ltr', 'rtl']],
   ['Display', ['flex', 'grid', 'block', 'none']],
@@ -1215,17 +1305,20 @@ describe('the keywords this surface offers', () => {
       expect(declared, `${name} is not a wire enum any more`).toBeDefined()
 
       const variants = Object.keys(declared?.variants ?? {})
-      const named = keywords.map(keyword =>
-        keyword
-          .split('-')
-          .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(''),
-      )
-      // `nowrap` is the one keyword CSS spells as a single word where the scene
-      // spells the concept `NoWrap`, so the derivation cannot reach it.
-      const derived = named.map(variant => (variant === 'Nowrap' ? 'NoWrap' : variant))
+      // Resolved through the encoder's own function rather than through a copy
+      // of its rules, so the check and the thing checked cannot drift. A
+      // keyword the encoder cannot resolve throws here rather than comparing
+      // unequal.
+      const table = declared?.variants ?? {}
+      const reached = keywords.map(keyword => {
+        const discriminant = variant(table, keyword, name)
+        return Object.entries(table).find(([, value]) => value === discriminant)?.[0]
+      })
 
-      expect(derived.slice().sort(), `${name}`).toEqual(variants.slice().sort())
+      // Every variant reachable from at least one keyword, and every keyword
+      // reaching one. Not one-to-one: `ColorType` and `ColorSpace` carry
+      // upstream's aliases, so `'rgba'` and `'RGBA8888'` are both `Uint8`.
+      expect([...new Set(reached)].sort(), `${name}`).toEqual(variants.slice().sort())
     }
   })
 })

@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+
 import { describe, expect, it } from 'vitest'
 
 import type { SideValue } from './arena.js'
@@ -5,9 +7,19 @@ import type { NativeCanvas } from './canvas.js'
 import { Text } from './node.js'
 import { Root, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
+/**
+ * Slot index of the page count: magic, version, three geometry floats, and the
+ * three discriminants of the surface block.
+ *
+ * Named rather than written at each use. The header has changed twice and each
+ * time the failure was five assertions reading one slot too early, which reads
+ * as five bugs rather than as one moved field.
+ */
+const PAGE_COUNT = 2 + 3 + 3
+
 /** A renderer that records what it was handed and paints nothing. */
 function fakeRenderer() {
-  const painted: { slots: Float64Array; values: readonly SideValue[]; gpu: boolean; fonts: unknown }[] = []
+  const painted: { slots: Float64Array; values: readonly SideValue[]; fonts: unknown }[] = []
   const native: NativeCanvas = {
     encode: () => new Uint8Array([1]),
     release: () => undefined,
@@ -15,7 +27,7 @@ function fakeRenderer() {
   const dependencies: RootDependencies = {
     renderer: {
       paint: (slots, values, options) => {
-        painted.push({ slots, values, gpu: options.gpu, fonts: options.fonts })
+        painted.push({ slots, values, fonts: options.fonts })
         return native
       },
     },
@@ -39,8 +51,11 @@ describe('the canvas Root describes', () => {
   it('carries the size and the scale it was given', async () => {
     const { slots } = await arenaFor({ width: 520, height: 180, scale: 2 })
 
-    // Magic, version, width, height, scale, page count.
-    expect([...slots.slice(2, 6)]).toEqual([520, 180, 2, 1])
+    // Magic, version, width, height, scale, then the three surface
+    // discriminants, then the page count. `PAGE_COUNT` names the last of those
+    // so a header change moves one constant rather than every index here.
+    expect([...slots.slice(2, 5)]).toEqual([520, 180, 2])
+    expect(slots[PAGE_COUNT]).toBe(1)
   })
 
   it('defaults the scale to one', async () => {
@@ -49,13 +64,32 @@ describe('the canvas Root describes', () => {
     expect(slots[4]).toBe(1)
   })
 
-  it('asks for the GPU unless told not to', async () => {
-    const { dependencies, painted } = fakeRenderer()
+  it('says nothing about the surface unless the caller does', async () => {
+    // Three absent flags, then the page count. "The caller said nothing" is a
+    // distinct thing from "the caller said true": the renderer decides when
+    // nothing was said, and a default written here would take that decision
+    // away from it silently.
+    const { slots } = await arenaFor({ width: 10, height: 10 })
 
-    await Root({ width: 10, height: 10 }, dependencies)
-    await Root({ width: 10, height: 10, gpu: false }, dependencies)
+    expect([...slots.slice(5, 8)]).toEqual([0, 0, 0])
+    expect(slots[PAGE_COUNT]).toBe(1)
+  })
 
-    expect(painted.map(each => each.gpu)).toEqual([true, false])
+  it('carries the surface options in the arena, not beside it', async () => {
+    // Where this has to be asserted, and why: `gpu` used to travel in the
+    // paint options object and the addon stopped reading it there. A test
+    // against the fake renderer stayed green while the flag reached nothing.
+    const { slots } = await arenaFor({
+      width: 10,
+      height: 10,
+      gpu: false,
+      colorType: 'RGBAF32',
+      colorSpace: 'display-p3',
+    })
+
+    // Present flag, value, three times over — `gpu` false, `'RGBAF32'` which is
+    // the scene's `F32` at 2, and `'display-p3'` which is `DisplayP3`, also 2.
+    expect([...slots.slice(5, 11)]).toEqual([1, 0, 1, 2, 1, 2])
   })
 
   it('passes the families through to be registered', async () => {
@@ -72,13 +106,13 @@ describe('a sequence', () => {
   it('is one page when nothing says otherwise', async () => {
     const { slots } = await arenaFor({ width: 10, height: 10, children: Text('x') })
 
-    expect(slots[5]).toBe(1)
+    expect(slots[PAGE_COUNT]).toBe(1)
   })
 
   it('takes its length as a page count', async () => {
     const { slots } = await arenaFor({ width: 10, height: 10, pages: 3, children: () => Text('x') })
 
-    expect(slots[5]).toBe(3)
+    expect(slots[PAGE_COUNT]).toBe(3)
   })
 
   it('derives the page count from a duration and a rate', async () => {
@@ -87,8 +121,8 @@ describe('a sequence', () => {
     const { slots } = await arenaFor({ width: 10, height: 10, duration: 1, children: () => Text('x') })
     const rounded = await arenaFor({ width: 10, height: 10, duration: 0.1, fps: 24, children: () => Text('x') })
 
-    expect(slots[5]).toBe(30)
-    expect(rounded.slots[5]).toBe(3)
+    expect(slots[PAGE_COUNT]).toBe(30)
+    expect(rounded.slots[PAGE_COUNT]).toBe(3)
   })
 
   it('tells each page where it sits', async () => {
@@ -180,6 +214,34 @@ describe('the renderer Root reaches for when told nothing', () => {
 
     canvas.release()
     expect(canvas.released).toBe(true)
+  })
+
+  it('draws different pixels on the two rasterisers', async () => {
+    // The check a fake renderer cannot satisfy, and the one that would have
+    // caught this: `gpu` travelled in the paint options object, the addon
+    // stopped reading it there, and the unit test asserting the flag had been
+    // copied from one object to another stayed green while it reached nothing.
+    //
+    // Two real renders that must differ cannot pass by copying a field. When no
+    // GPU backend is compiled in they are both the CPU and this says so rather
+    // than passing for the wrong reason.
+    const of = async (gpu: boolean): Promise<Uint8Array> => {
+      const canvas = await Root({
+        width: 64,
+        height: 32,
+        gpu,
+        children: Text('parity', { fontSize: 24, color: '#ffffff' }),
+      })
+      const bytes = canvas.toBufferSync('png')
+      canvas.release()
+      return bytes
+    }
+
+    const [on, off] = [await of(true), await of(false)]
+    const native = createRequire(import.meta.url)('../meo-canvas.node') as { backend(): { active: string } }
+
+    if (native.backend().active === 'cpu') expect(on).toEqual(off)
+    else expect(on).not.toEqual(off)
   })
 
   it('paints once, however many formats are asked for', async () => {

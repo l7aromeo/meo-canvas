@@ -129,13 +129,6 @@ pub use element::{
 pub use meo_canvas_core::{
     EncodeOptions, Error, ImageFormat as Format, RenderedCanvas, Renderer,
 };
-/// The style keywords, at the crate root.
-///
-/// `Justify::Center` and its siblings are authoring vocabulary — a caller
-/// names one every time they write a container — so they sit beside the
-/// node constructors rather than under [`scene`]. The scene module keeps
-/// them too, along with everything a caller assembling a `Scene` by hand
-/// would need.
 pub use meo_canvas_scene::style::{
     PaintOrder,
     effect::FillRule,
@@ -153,6 +146,14 @@ pub use meo_canvas_scene::style::{
         VerticalAlign,
     },
 };
+/// The style keywords, at the crate root.
+///
+/// `Justify::Center` and its siblings are authoring vocabulary — a caller
+/// names one every time they write a container — so they sit beside the
+/// node constructors rather than under [`scene`]. The scene module keeps
+/// them too, along with everything a caller assembling a `Scene` by hand
+/// would need.
+pub use meo_canvas_scene::surface::{ColorSpace, ColorType};
 pub use root::{BuildError, Canvas, PageInfo, Root, SequenceError};
 pub use style::{Style, Styled};
 pub use unit::{

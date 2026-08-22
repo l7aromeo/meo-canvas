@@ -80,6 +80,7 @@ pub mod codec;
 pub mod geometry;
 pub mod node;
 pub mod style;
+pub mod surface;
 
 mod wire;
 
@@ -87,6 +88,7 @@ pub use codec::CodecError;
 pub use geometry::{Corners, Point, Rect, Sides, Size};
 pub use node::{Node, NodeId, NodeKind};
 pub use style::{Dimension, Length};
+pub use surface::{ColorSpace, ColorType};
 
 /// A complete drawing: the surface to draw onto, and the pages to draw on it.
 ///
@@ -128,6 +130,17 @@ pub struct Scene {
     /// scene rendered at two scales lays out once and the two outputs differ
     /// only in resolution.
     pub scale: f32,
+    /// Whether to rasterise on the GPU. `None` leaves it to the renderer.
+    ///
+    /// A request rather than an outcome: a build with no GPU backend compiled
+    /// rasterises on the CPU whatever this says.
+    pub gpu: Option<bool>,
+    /// The pixel layout the surface composites in. `None` leaves it to the
+    /// renderer.
+    pub color_type: Option<ColorType>,
+    /// The colour space the surface composites in. `None` leaves it to the
+    /// renderer.
+    pub color_space: Option<ColorSpace>,
     /// Every node of every page. Index by [`NodeId::get`].
     pub nodes: Vec<Node>,
     /// The root of each page, in the order the pages are drawn.
@@ -148,6 +161,12 @@ impl Scene {
         Self {
             size,
             scale: Self::DEFAULT_SCALE,
+            // Absent rather than defaulted: a scene that says nothing about the
+            // surface is a scene that lets the renderer decide, which is not
+            // the same thing as one asking for the renderer's current default.
+            gpu: None,
+            color_type: None,
+            color_space: None,
             nodes: vec![Node::container()],
             pages: vec![NodeId::ROOT],
         }

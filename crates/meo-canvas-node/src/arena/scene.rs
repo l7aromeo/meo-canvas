@@ -22,6 +22,7 @@ use meo_canvas_scene::{
             TextDecoration, TextStroke, VerticalAlign,
         },
     },
+    surface::{ColorSpace, ColorType},
 };
 
 use super::{ArenaError, Reader, value::ArenaValue};
@@ -55,6 +56,8 @@ arena_enum!(
     BlendMode,
     BorderStyle,
     BoxSizing,
+    ColorSpace,
+    ColorType,
     Direction,
     Display,
     FillRule,

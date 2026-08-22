@@ -63,7 +63,7 @@ pub use encode::{EncodeOptions, EncodedImage, ImageFormat};
 pub use layout::LayoutResult;
 pub use measure::{Available, Measure, MeasuredLeaf};
 use meo_canvas_scene::{Scene, node::NodeId};
-pub use paint::Surface;
+pub use paint::{Surface, SurfaceOptions};
 pub use resolve::{Fonts, Resolved};
 
 use crate::measure::SceneMeasurer;
@@ -216,6 +216,27 @@ impl Renderer {
         &self.fonts
     }
 
+    /// The surface a scene asks for, falling back to this renderer.
+    ///
+    /// The scene's fields are `Option` so that absent and stated-default are
+    /// different things: absent means the caller does not care and this
+    /// renderer decides, which is the only reading under which "the renderer's
+    /// value is the default" is true. A bare `bool` defaulting to `true` would
+    /// silently override a renderer someone set to the CPU on purpose.
+    ///
+    /// Only `gpu` has a renderer-side value to fall back to. `color_type` and
+    /// `color_space` fall back to their own defaults, which are the renderer's
+    /// too -- `Uint8` and `Srgb` are what `CanvasOptions` uses when nothing
+    /// says otherwise, and adding two more `Renderer` fields nobody sets would
+    /// be a second place to look for one answer.
+    fn surface_for(&self, scene: &Scene) -> SurfaceOptions {
+        SurfaceOptions {
+            gpu: scene.gpu.unwrap_or(self.gpu),
+            color_type: scene.color_type.unwrap_or_default(),
+            color_space: scene.color_space.unwrap_or_default(),
+        }
+    }
+
     /// Runs every pass over every page and hands back the painted surface.
     ///
     /// Stops short of encoding, because encoding is not part of drawing. Two
@@ -245,7 +266,8 @@ impl Renderer {
 
         let resolved = Resolved::new(scene, &self.fonts)?;
         let mut measurer = SceneMeasurer::prepare(&resolved, &self.fonts)?;
-        let mut surface = Surface::new(scene.size, scene.scale, self.gpu)?;
+        let mut surface =
+            Surface::new(scene.size, scene.scale, self.surface_for(scene))?;
 
         for (index, &page) in scene.pages.iter().enumerate() {
             // The first page is the one `Surface::new` created; beginning a
@@ -335,7 +357,7 @@ impl RenderedCanvas {
 #[cfg(test)]
 mod tests {
     use meo_canvas_scene::{
-        Scene, Size,
+        ColorSpace, ColorType, Scene, Size,
         node::{Node, NodeId},
     };
 
@@ -377,6 +399,33 @@ mod tests {
             .register_font(TEST_FAMILY, TEST_FONT)
             .unwrap_or_else(|error| unreachable!("{error}"));
         renderer
+    }
+
+    #[test]
+    fn a_scene_that_states_a_surface_overrides_the_renderer() {
+        // And one that states nothing does not. The `Option` is the whole
+        // point: absent means the renderer decides, which is a different thing
+        // from asking for what the renderer happens to default to.
+        let mut renderer = Renderer::new();
+        renderer.set_gpu(false);
+
+        let mut scene = Scene::new(Size::new(4.0, 2.0));
+        assert!(
+            !renderer.surface_for(&scene).gpu,
+            "an absent gpu takes the renderer's"
+        );
+
+        scene.gpu = Some(true);
+        assert!(
+            renderer.surface_for(&scene).gpu,
+            "a stated gpu overrides the renderer's"
+        );
+
+        scene.color_type = Some(ColorType::F16);
+        scene.color_space = Some(ColorSpace::DisplayP3);
+        let surface = renderer.surface_for(&scene);
+        assert_eq!(surface.color_type, ColorType::F16);
+        assert_eq!(surface.color_space, ColorSpace::DisplayP3);
     }
 
     #[test]

@@ -45,7 +45,8 @@ import {
   VERTICAL_ALIGN,
 } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
-import type { TrackSize } from './index.js'
+import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
+import type { ColorSpace, ColorType, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode, TextSegment } from './node.js'
 import type { Color, Corners, Dimension, FontWeight, GridPlacement, Length, Sides, Spacing, Style } from './style.js'
 
@@ -214,13 +215,37 @@ export class ArenaWriter {
   }
 }
 
-/** Writes the five slots every arena opens with, and the page count. */
-function writeHeader(out: ArenaWriter, width: number, height: number, scale: number, pages: number): void {
+/**
+ * What a scene says about the surface it is drawn on, beyond its size.
+ *
+ * Every field optional, and absent is not the same as the renderer's default:
+ * absent leaves the choice to the renderer, which is what makes *the
+ * renderer's value is the default* true rather than a comment.
+ */
+export interface SurfaceOptions {
+  /** Whether to rasterise on the GPU. */
+  readonly gpu?: boolean
+  /** The pixel layout the surface composites in. */
+  readonly colorType?: ColorType
+  /** The colour space the surface composites in. */
+  readonly colorSpace?: ColorSpace
+}
+
+/** Writes the header every arena opens with, and the page count. */
+function writeHeader(out: ArenaWriter, width: number, height: number, scale: number, surface: SurfaceOptions, pages: number): void {
   out.slot(MAGIC)
   out.slot(VERSION)
   out.f32(width)
   out.f32(height)
   out.f32(scale)
+
+  // The surface block, between the geometry and the pages. Slots inserted
+  // rather than appended, which is why the arena's VERSION moved to 2: a reader
+  // of the old revision would take `gpu`'s discriminant for the page count.
+  out.optional(surface.gpu, gpu => out.slot(gpu ? 1 : 0))
+  out.optional(surface.colorType, type => out.enum(variant(COLOR_TYPE, type, 'colorType')))
+  out.optional(surface.colorSpace, space => out.enum(variant(COLOR_SPACE, space, 'colorSpace')))
+
   out.count(pages)
 }
 
@@ -239,8 +264,59 @@ function writeHeader(out: ArenaWriter, width: number, height: number, scale: num
  */
 const SPELLINGS: Readonly<Record<string, string>> = { nowrap: 'NoWrap' }
 
-/** The Rust variant name a keyword means. */
-function variantName(keyword: string): string {
+/**
+ * Upstream's own alternate spellings for the two surface enums.
+ *
+ * `ColorType` and `ColorSpace` take upstream's names rather than this package's
+ * house style, because a v1 caller already has those strings written down — see
+ * the unions in `index.ts`. Upstream offers several of them under more than one
+ * name, and both names have to work.
+ *
+ * A table rather than a derivation, and it is the only one here: there is no
+ * rule that turns `'RGBA8888'` into `Uint8` or `'hdr10'` into `Rec2020Pq`. What
+ * keeps it honest is the keyword test, which walks every member of both unions
+ * and every variant of both enums, so a name in neither place fails.
+ */
+const ALIASES: Readonly<Record<string, string>> = {
+  // ColorType: upstream's channel-order names against the scene's layout names.
+  ARGB4444: 'Argb4444',
+  RGB565: 'Rgb565',
+  rgb: 'Rgb888x',
+  RGB888x: 'Rgb888x',
+  rgba: 'Uint8',
+  RGBA8888: 'Uint8',
+  bgra: 'Bgra8888',
+  BGRA8888: 'Bgra8888',
+  BGR101010x: 'Bgr101010x',
+  BGRA1010102: 'Bgra1010102',
+  RGB101010x: 'Rgb101010x',
+  RGBA1010102: 'Rgba1010102',
+  SRGBA8888: 'Srgba8888',
+  RGBAF16: 'F16',
+  RGBAF16Norm: 'F16Norm',
+  RGBAF32: 'F32',
+  // ColorSpace: the short forms, which are aliases of the long ones.
+  linear: 'SrgbLinear',
+  p3: 'DisplayP3',
+  'p3-linear': 'DisplayP3Linear',
+  bt2020: 'Rec2020',
+  'bt2020-linear': 'Rec2020Linear',
+  hdr10: 'Rec2020Pq',
+  hlg: 'Rec2020Hlg',
+}
+
+/**
+ * The Rust variant name a keyword means.
+ *
+ * A keyword that is already a variant name is taken as written. Two of these
+ * enums are not CSS vocabulary at all — a pixel layout is `R8G8UNorm`, and
+ * kebab-casing it produces something nobody would type — so those surfaces
+ * spell the variant, as v1 does for the same list.
+ */
+function variantName(keyword: string, table: Readonly<Record<string, number>>): string {
+  if (table[keyword] !== undefined) return keyword
+  const alias = ALIASES[keyword]
+  if (alias !== undefined) return alias
   const exception = SPELLINGS[keyword]
   if (exception !== undefined) return exception
   return keyword
@@ -249,11 +325,28 @@ function variantName(keyword: string): string {
     .join('')
 }
 
-/** The keyword a Rust variant name is written as, for an error message. */
-function keywordFor(name: string): string {
+/**
+ * The keyword a Rust variant name is written as, for an error message.
+ *
+ * Names what the **encoder** accepts, which for `ColorType` and `ColorSpace` is
+ * a little wider than the union: a variant name resolves as written, so
+ * `'Alpha8'` and `'alpha8'` both work where the union lists only the first.
+ * Erring wide is right for a message whose job is to unstick a caller.
+ */
+function keywordFor(name: string, table: Readonly<Record<string, number>>): string {
   const spelt = Object.entries(SPELLINGS).find(([, variant]) => variant === name)
   if (spelt !== undefined) return spelt[0]
-  return name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+
+  // An alias first, because where one exists it is the spelling the surface
+  // offers: `Uint8` is written `'rgba'`, not `'uint8'`. Then the kebab form,
+  // where it is one this surface takes — it is not for the rest of
+  // `ColorType`, whose variants are spelt as upstream spells them, so
+  // `R8UNorm` is offered as itself rather than as `r8-unorm`.
+  const alias = Object.entries(ALIASES).find(([, variant]) => variant === name)
+  if (alias !== undefined) return alias[0]
+
+  const kebab = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+  return variantName(kebab, table) === name ? kebab : name
 }
 
 /**
@@ -263,10 +356,12 @@ function keywordFor(name: string): string {
  * property this package accepts and cannot carry, and quietly writing the
  * zeroth variant would make it arrive as a different value.
  */
-function variant(table: Readonly<Record<string, number>>, keyword: string, what: string): number {
-  const found = table[variantName(keyword)]
+export function variant(table: Readonly<Record<string, number>>, keyword: string, what: string): number {
+  const found = table[variantName(keyword, table)]
   if (found === undefined) {
-    const taken = Object.keys(table).map(keywordFor).join(', ')
+    const taken = Object.keys(table)
+      .map(name => keywordFor(name, table))
+      .join(', ')
     throw new TypeError(`${what} has no value ${JSON.stringify(keyword)}; it takes ${taken}`)
   }
   return found
@@ -976,9 +1071,9 @@ function writeNode(out: ArenaWriter, node: SceneNode): void {
  * evaluates arguments inside out and writing opcodes as each factory ran would
  * land them post-order where the arena is pre-order.
  */
-export function encodeScene(pages: readonly SceneNode[], width: number, height: number, scale: number): Arena {
+export function encodeScene(pages: readonly SceneNode[], width: number, height: number, scale: number, surface: SurfaceOptions = {}): Arena {
   const out = new ArenaWriter()
-  writeHeader(out, width, height, scale, pages.length)
+  writeHeader(out, width, height, scale, surface, pages.length)
   for (const page of pages) writeNode(out, page)
   return out.finish()
 }

@@ -30,7 +30,10 @@ use meo_canvas_core::{
 };
 use meo_canvas_scene::{Scene, SceneError, Size};
 
-use crate::{Element, IntoElements, Style, Styled, element::write_page};
+use crate::{
+    ColorSpace, ColorType, Element, IntoElements, Style, Styled,
+    element::write_page,
+};
 
 /// Collects anything acceptable as children.
 fn collect(children: impl IntoElements) -> Vec<Element> {
@@ -199,6 +202,14 @@ pub struct Root {
     scale: f32,
     /// The page root's own style.
     style: Style,
+    /// A name carried through for diagnostics.
+    name: Option<String>,
+    /// Whether to rasterise on the GPU, where the caller said.
+    gpu: Option<bool>,
+    /// The pixel layout to composite in, where the caller said.
+    color_type: Option<ColorType>,
+    /// The colour space to composite in, where the caller said.
+    color_space: Option<ColorSpace>,
     /// What to draw.
     content: Content,
     /// How many pages, when a builder describes them.
@@ -237,6 +248,10 @@ impl Root {
             height,
             scale: Self::DEFAULT_SCALE,
             style: Style::new(),
+            name: None,
+            gpu: None,
+            color_type: None,
+            color_space: None,
             content: Content::Fixed(Vec::new()),
             pages: None,
             duration: None,
@@ -251,6 +266,55 @@ impl Root {
     #[must_use]
     pub const fn scale(mut self, scale: f32) -> Self {
         self.scale = scale;
+        self
+    }
+
+    /// A name carried through for diagnostics.
+    ///
+    /// Every page gets it, because every page is this root. The renderer never
+    /// reads it.
+    #[must_use]
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Rasterise on the GPU when there is one. `false` forces the CPU.
+    ///
+    /// A property of the scene rather than of the [`Renderer`], because the
+    /// canvas is the thing being rasterised — `scale` lives there for the same
+    /// reason. Saying nothing leaves it to the renderer, which is a different
+    /// thing from saying `true`: a renderer someone set to CPU stays there.
+    ///
+    /// Asking is not getting. A build without GPU support, or a driver that
+    /// declines, falls back — and a float [`ColorType`] forces the CPU whatever
+    /// this says, since no GPU composites float. Set it `false` for output that
+    /// must be identical between machines: the two rasterisers resolve
+    /// anti-aliased edges a level or two apart, which a pixel comparison sees.
+    #[must_use]
+    pub const fn gpu(mut self, gpu: bool) -> Self {
+        self.gpu = Some(gpu);
+        self
+    }
+
+    /// The pixel layout to composite in.
+    ///
+    /// Governs the precision everything is drawn at and the depth the encoded
+    /// formats that carry one write. Saying nothing leaves it to the renderer.
+    #[must_use]
+    pub const fn color_type(mut self, color_type: ColorType) -> Self {
+        self.color_type = Some(color_type);
+        self
+    }
+
+    /// The colour space to composite in.
+    ///
+    /// Fixed for the whole render rather than chosen per export: colours are
+    /// interpreted in it, and one outside its gamut is clipped as it is drawn.
+    /// Saying nothing leaves it to the renderer.
+    #[must_use]
+    pub const fn color_space(mut self, color_space: ColorSpace) -> Self {
+        self.color_space = Some(color_space);
         self
     }
 
@@ -351,11 +415,18 @@ impl Root {
 
         let mut scene = Scene::new(Size::new(self.width, self.height));
         scene.scale = self.scale;
+        scene.gpu = self.gpu;
+        scene.color_type = self.color_type;
+        scene.color_space = self.color_space;
 
         let page_root = |children: Vec<Element>| {
-            Element::new(meo_canvas_scene::node::NodeKind::Box)
+            let root = Element::new(meo_canvas_scene::node::NodeKind::Box)
                 .with_style(self.style.clone())
-                .children(children)
+                .children(children);
+            match &self.name {
+                Some(name) => root.name(name.clone()),
+                None => root,
+            }
         };
 
         // `Scene::new` already made one page, so the first tree styles it and
@@ -583,7 +654,10 @@ mod tests {
     use meo_canvas_scene::node::NodeKind;
 
     use super::{BuildError, PageInfo, Root, SequenceError};
-    use crate::{Column, Format, Renderer, Row, Styled, Text, hex_rgb, px};
+    use crate::{
+        ColorSpace, ColorType, Column, Format, Renderer, Row, Styled, Text,
+        hex_rgb, px,
+    };
 
     /// The scene `root` describes, or the failure it reports.
     fn scene_of(root: Root) -> meo_canvas_scene::Scene {
@@ -671,6 +745,103 @@ mod tests {
             child.layout.padding.top,
             meo_canvas_scene::Length::Points(8.0)
         );
+    }
+
+    #[test]
+    fn a_name_reaches_the_node_it_was_written_on() {
+        // Not a style property: the scene keeps it on the node beside the kind
+        // and nothing inherits it, so it does not go through `properties!`.
+        let scene = scene_of(
+            Root::new(10.0, 10.0)
+                .name("page")
+                .children(Row::new().name("card")),
+        );
+        let root = scene
+            .get(scene.pages[0])
+            .unwrap_or_else(|| unreachable!("the scene has no root"));
+        let child = scene
+            .get(root.children[0])
+            .unwrap_or_else(|| unreachable!("the root has no child"));
+
+        assert_eq!(root.name.as_deref(), Some("page"));
+        assert_eq!(child.name.as_deref(), Some("card"));
+    }
+
+    #[test]
+    fn a_name_is_absent_when_none_was_given() {
+        let scene = scene_of(Root::new(10.0, 10.0).children(Row::new()));
+        let root = scene
+            .get(scene.pages[0])
+            .unwrap_or_else(|| unreachable!("the scene has no root"));
+
+        assert_eq!(root.name, None);
+    }
+
+    #[test]
+    fn the_surface_options_reach_the_scene_and_stay_absent_otherwise() {
+        // Absent is not `false`: the renderer decides when the caller said
+        // nothing, and a default written here would take that decision away
+        // from a renderer someone deliberately set to CPU.
+        let silent = scene_of(Root::new(10.0, 10.0));
+        let stated = scene_of(
+            Root::new(10.0, 10.0)
+                .gpu(false)
+                .color_type(ColorType::F32)
+                .color_space(ColorSpace::DisplayP3),
+        );
+
+        assert_eq!(silent.gpu, None);
+        assert_eq!(silent.color_type, None);
+        assert_eq!(silent.color_space, None);
+        assert_eq!(stated.gpu, Some(false));
+        assert_eq!(stated.color_type, Some(ColorType::F32));
+        assert_eq!(stated.color_space, Some(ColorSpace::DisplayP3));
+    }
+
+    #[test]
+    fn the_two_rasterisers_do_not_draw_the_same_pixels() {
+        // The check a fake cannot satisfy. `gpu` reached the addon through a
+        // paint-options object once, the addon stopped reading it there, and
+        // every test asserting the flag had been copied stayed green while it
+        // reached nothing. Two real renders that must differ cannot pass that
+        // way -- and if this build has no GPU compiled in, both are the CPU and
+        // the test says so rather than passing vacuously.
+        let renderer = Renderer::new();
+        let text = || {
+            Text::new("parity")
+                .font_size(24.0)
+                .color(hex_rgb(0xff_ff_ff))
+        };
+
+        let mut on = Root::new(64.0, 32.0)
+            .gpu(true)
+            .children(text())
+            .render(&renderer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut off = Root::new(64.0, 32.0)
+            .gpu(false)
+            .children(text())
+            .render(&renderer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let with = on
+            .to_buffer(Format::Png)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let without = off
+            .to_buffer(Format::Png)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        if cfg!(any(feature = "metal", feature = "vulkan")) {
+            assert_ne!(
+                with, without,
+                "a GPU backend is compiled in, so the two rasterisers should not agree to the byte"
+            );
+        } else {
+            assert_eq!(
+                with, without,
+                "no GPU backend is compiled in, so both renders are the CPU's"
+            );
+        }
     }
 
     #[test]

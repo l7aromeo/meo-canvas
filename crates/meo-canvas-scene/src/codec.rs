@@ -45,7 +45,9 @@
 //! ## Composites
 //!
 //! ```text
-//! scene    := "MCSC" u16(version) f32 f32 f32 list<u32>(pages) list<node>
+//! scene    := "MCSC" u16(version) f32 f32 f32
+//!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
+//!             list<u32>(pages) list<node>
 //!             ^magic         ^1   ^w  ^h  ^scale
 //!
 //! node     := kind layout paint text effects list<u32>(children) opt<str>(name)
@@ -139,7 +141,11 @@ mod writer;
 pub(crate) use reader::Reader;
 pub(crate) use writer::Writer;
 
-use crate::{Scene, node::NodeId};
+use crate::{
+    Scene,
+    node::NodeId,
+    surface::{ColorSpace, ColorType},
+};
 
 /// The four bytes every encoded scene starts with.
 ///
@@ -152,7 +158,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -300,6 +306,12 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     writer.f32(scene.size.width);
     writer.f32(scene.size.height);
     writer.f32(scene.scale);
+    // The surface's own description, after the geometry and before the pages.
+    // Optional to the byte, because a scene that says nothing about the
+    // rasteriser is a different thing from one asking for the current default.
+    writer.opt(scene.gpu.as_ref());
+    writer.opt(scene.color_type.as_ref());
+    writer.opt(scene.color_space.as_ref());
     writer.list(&scene.pages);
     writer.list(&scene.nodes);
 }
@@ -332,6 +344,9 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let width = input.f32()?;
     let height = input.f32()?;
     let scale = input.f32()?;
+    let gpu: Option<bool> = input.opt()?;
+    let color_type: Option<ColorType> = input.opt()?;
+    let color_space: Option<ColorSpace> = input.opt()?;
     let pages: Vec<NodeId> = input.list()?;
 
     let count = input.peek_u32()?;
@@ -351,6 +366,9 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let scene = Scene {
         size: crate::Size::new(width, height),
         scale,
+        gpu,
+        color_type,
+        color_space,
         nodes,
         pages,
     };
@@ -392,12 +410,24 @@ mod tests {
                 VerticalAlign,
             },
         },
+        surface::{ColorSpace, ColorType},
     };
 
-    /// Byte offset of the node count in a one-page scene: magic, version, two
-    /// size floats, the scale, then a page list of one `u32` behind its own
-    /// `u32` count. Every test that reaches for it encodes a one-page scene.
-    const NODE_COUNT_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 4 + (4 + 4);
+    /// Byte offset of the surface block, which follows magic, version and the
+    /// three geometry floats.
+    const SURFACE_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 4;
+
+    /// Bytes the surface block occupies when all three fields are absent: one
+    /// discriminant each, and no payload behind any of them.
+    const ABSENT_SURFACE: usize = 3;
+
+    /// Byte offset of the page list in a scene whose surface says nothing.
+    const PAGES_OFFSET: usize = SURFACE_OFFSET + ABSENT_SURFACE;
+
+    /// Byte offset of the node count in a one-page scene whose surface says
+    /// nothing: the page list is one `u32` behind its own `u32` count. Every
+    /// test that reaches for it encodes such a scene.
+    const NODE_COUNT_OFFSET: usize = PAGES_OFFSET + (4 + 4);
 
     fn round_trip<T: Wire + PartialEq + core::fmt::Debug>(value: &T) {
         let mut bytes = Vec::new();
@@ -708,13 +738,39 @@ mod tests {
     }
 
     #[test]
+    fn the_surface_fields_survive_the_wire_and_absent_is_not_default() {
+        // Absent and present-with-the-default are different scenes and must
+        // stay different bytes: the first lets the renderer decide, the second
+        // overrides it with a value that happens to match today.
+        let bare = Scene::new(Size::new(4.0, 2.0));
+        assert_eq!(decode(&encode(&bare)), Ok(bare.clone()));
+
+        let mut stated = Scene::new(Size::new(4.0, 2.0));
+        stated.gpu = Some(false);
+        stated.color_type = Some(ColorType::F16);
+        stated.color_space = Some(ColorSpace::DisplayP3);
+        assert_eq!(decode(&encode(&stated)), Ok(stated.clone()));
+
+        let mut defaulted = Scene::new(Size::new(4.0, 2.0));
+        defaulted.color_type = Some(ColorType::default());
+        assert_ne!(
+            encode(&defaulted),
+            encode(&bare),
+            "a stated default must not encode as absence"
+        );
+    }
+
+    #[test]
     fn another_revision_is_refused_by_number() {
         let mut bytes = encode(&Scene::new(Size::ZERO));
-        bytes[MAGIC.len()] = 2;
+        // The version is a `u16`, so its low byte is the one to move; picking a
+        // number rather than `VERSION + 1` keeps the test from following the
+        // format forward and asserting nothing.
+        bytes[MAGIC.len()] = 99;
         assert_eq!(
             decode(&bytes),
             Err(CodecError::UnsupportedVersion {
-                found: 2,
+                found: 99,
                 expected: VERSION,
             })
         );
@@ -1062,7 +1118,7 @@ mod tests {
         let mut bytes = encode(&scene);
         // The page list sits immediately after the scale: replace its one entry
         // with an empty list, which shortens the buffer by one `u32`.
-        let pages_at = MAGIC.len() + 2 + 4 + 4 + 4;
+        let pages_at = PAGES_OFFSET;
         let mut rebuilt = bytes[..pages_at].to_vec();
         rebuilt.extend_from_slice(&0_u32.to_le_bytes());
         rebuilt.extend_from_slice(&bytes[pages_at + 8..]);

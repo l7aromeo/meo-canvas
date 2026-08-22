@@ -65,6 +65,7 @@ use std::{cell::RefCell, rc::Rc};
 use arena::{SideValue, Values};
 use meo_canvas_core::{
     EncodeOptions, ImageFormat, RenderedCanvas, Renderer, Surface,
+    SurfaceOptions,
 };
 use neon::{prelude::*, types::buffer::TypedArray};
 
@@ -156,8 +157,15 @@ fn render_off_thread(
 /// JavaScript caller as a property rather than as a schema change.
 fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     let requested = Renderer::new().gpu();
-    let probe = Surface::new(PROBE_SIZE, PROBE_SCALE, requested)
-        .or_else(|error| cx.throw_error(error.to_string()))?;
+    let probe = Surface::new(
+        PROBE_SIZE,
+        PROBE_SCALE,
+        SurfaceOptions {
+            gpu: requested,
+            ..SurfaceOptions::default()
+        },
+    )
+    .or_else(|error| cx.throw_error(error.to_string()))?;
 
     let object = cx.empty_object();
     let active = cx.string(probe.engine());
@@ -219,10 +227,16 @@ fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
 /// later `encode` something to refuse rather than a surface that is gone.
 type Painted = Rc<RefCell<Option<RenderedCanvas>>>;
 
-/// Reads the `{ gpu, fonts }` object `paint` is given.
+/// Reads the `{ fonts }` object `paint` is given.
 ///
 /// Every V8 read happens here, before anything is drawn, for the reason
 /// [`arguments`] gives.
+///
+/// **`gpu` is not read here, and that is the change rather than an omission.**
+/// It rides in the arena's header beside `scale`, because a caller writes it on
+/// `Root` next to the size and the scale and there is no reason two of the four
+/// should reach the renderer by a different road. A `gpu` on this object would
+/// be a second place to say it, and the two could disagree.
 fn paint_options(
     cx: &mut FunctionContext<'_>,
     index: usize,
@@ -234,10 +248,6 @@ fn paint_options(
     let Ok(options) = options.downcast::<JsObject, _>(cx) else {
         return cx.throw_type_error("paint options must be an object");
     };
-
-    if let Some(gpu) = options.get_opt::<JsBoolean, _, _>(cx, "gpu")? {
-        renderer.set_gpu(gpu.value(cx));
-    }
 
     let Some(fonts) = options.get_opt::<JsArray, _, _>(cx, "fonts")? else {
         return Ok(renderer);
@@ -333,9 +343,11 @@ fn encode_options(
 
 /// Paints a scene and hands back a surface that can be encoded more than once.
 ///
-/// Takes the arena, the side values array and a `{ gpu, fonts }` object, and
-/// returns an object with `encode(format, options)` and `release()` -- the
-/// `NativeCanvas` interface the TypeScript surface declares.
+/// Takes the arena, the side values array and a `{ fonts }` object, and returns
+/// an object with `encode(format, options)` and `release()` -- the
+/// `NativeCanvas` interface the TypeScript surface declares. `gpu` is not among
+/// them: it rides in the arena's header, beside the size and the scale a caller
+/// writes it next to.
 ///
 /// # Why this is not [`render`], and does not replace it
 ///
@@ -345,7 +357,9 @@ fn encode_options(
 /// also the only shape in which `gpu` and `fonts` mean anything -- `render`
 /// builds a default [`Renderer`], because it has no object to read them from --
 /// and the only one that can offer a synchronous encode, which is what
-/// `toBufferSync` and its siblings are.
+/// `toBufferSync` and its siblings are. `render` still builds a default
+/// [`Renderer`], but a scene reaching it now carries its own `gpu`, so the one
+/// that mattered is no longer dropped.
 ///
 /// # Why the paint runs on the event loop, unlike [`render`]
 ///

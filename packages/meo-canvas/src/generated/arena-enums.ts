@@ -72,6 +72,45 @@ export const BOX_SIZING = {
   ContentBox: 1,
 } as const
 
+/** `meo_canvas_scene::surface::ColorSpace`. */
+export const COLOR_SPACE = {
+  Srgb: 0,
+  SrgbLinear: 1,
+  DisplayP3: 2,
+  DisplayP3Linear: 3,
+  Rec2020: 4,
+  Rec2020Linear: 5,
+  Rec2020Pq: 6,
+  Rec2020Hlg: 7,
+} as const
+
+/** `meo_canvas_scene::surface::ColorType`. */
+export const COLOR_TYPE = {
+  Uint8: 0,
+  F16: 1,
+  F32: 2,
+  Alpha8: 3,
+  Gray8: 4,
+  R8UNorm: 5,
+  R8G8UNorm: 6,
+  A16Float: 7,
+  A16UNorm: 8,
+  Argb4444: 9,
+  Rgb565: 10,
+  Rgb888x: 11,
+  Bgra8888: 12,
+  Srgba8888: 13,
+  N32: 14,
+  Rgba1010102: 15,
+  Bgra1010102: 16,
+  Rgb101010x: 17,
+  Bgr101010x: 18,
+  R16G16Float: 19,
+  R16G16UNorm: 20,
+  R16G16B16A16UNorm: 21,
+  F16Norm: 22,
+} as const
+
 /** `meo_canvas_scene::style::layout::Direction`. */
 export const DIRECTION = {
   Ltr: 0,
@@ -266,6 +305,8 @@ export const ENUMS: Readonly<Record<string, ArenaEnum>> = {
   BlendMode: { path: 'meo_canvas_scene::style::paint', variants: BLEND_MODE },
   BorderStyle: { path: 'meo_canvas_scene::style::paint', variants: BORDER_STYLE },
   BoxSizing: { path: 'meo_canvas_scene::style::layout', variants: BOX_SIZING },
+  ColorSpace: { path: 'meo_canvas_scene::surface', variants: COLOR_SPACE },
+  ColorType: { path: 'meo_canvas_scene::surface', variants: COLOR_TYPE },
   Direction: { path: 'meo_canvas_scene::style::layout', variants: DIRECTION },
   Display: { path: 'meo_canvas_scene::style::layout', variants: DISPLAY },
   FillRule: { path: 'meo_canvas_scene::style::effect', variants: FILL_RULE },

@@ -49,6 +49,8 @@ pub struct Element {
     pub style: Style,
     /// Its children, in paint order before `z_index` applies.
     pub children: Vec<Self>,
+    /// A name carried through for diagnostics, which the renderer never reads.
+    pub name: Option<String>,
 }
 
 impl Element {
@@ -59,6 +61,7 @@ impl Element {
             kind,
             style: Style::new(),
             children: Vec::new(),
+            name: None,
         }
     }
 
@@ -87,10 +90,28 @@ impl Element {
         self
     }
 
+    /// A name carried through for diagnostics.
+    ///
+    /// Not a style property and not on [`crate::Styled`]: the scene
+    /// keeps it on the node beside the kind rather than in a style group, and
+    /// nothing inherits it. The renderer never reads it — it is there so a
+    /// tree dumped to `.mcs` and looked at later says which node is which.
+    ///
+    /// ```
+    /// use meo_canvas::Row;
+    ///
+    /// let card = Row::new().name("card");
+    /// ```
+    #[must_use]
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
     /// Replaces this node's children.
     ///
-    /// Takes anything iterable, so an array literal, a `Vec` and a `map` over
-    /// data all work without the caller collecting first.
+    /// Takes one element, an array, a `Vec`, an `Option` that contributes
+    /// nothing when it is `None`, or [`each`] over anything iterable.
     #[must_use]
     pub fn children(mut self, children: impl IntoElements) -> Self {
         let mut collected = Vec::new();
@@ -263,6 +284,7 @@ pub(crate) fn write_page(
         node.paint = paint;
         node.text = text;
         node.effects = effects;
+        node.name = element.name;
     }
 
     for child in element.children {
@@ -316,6 +338,7 @@ fn push(
     node.paint = paint;
     node.text = text;
     node.effects = effects;
+    node.name = element.name;
 
     let id = scene.push(parent, node)?;
     for child in element.children {

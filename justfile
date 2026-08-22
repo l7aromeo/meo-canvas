@@ -73,9 +73,15 @@ addon:
     @echo "built {{ addon_path }}"
 
 # Run the test suite.
+#
+# Twice for the two crates that name a GPU backend, because a build without one
+# rasterises on the CPU and a test asserting that the two rasterisers differ
+# would pass vacuously. That is not hypothetical: `gpu` reached nothing for a
+# while and every test that asserted the flag had been copied stayed green.
 test:
     cargo test --workspace
     cargo test -p meo-canvas-node --features "{{ host_features }}"
+    cargo test -p meo-canvas --features "{{ host_features }}"
 
 # Coverage floor is 90%. `--fail-under-*` exits non-zero, so this is the gate
 # rather than a report.

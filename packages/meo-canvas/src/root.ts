@@ -16,9 +16,10 @@ import { writeFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 
-import { encodeScene, type SideValue } from './arena.js'
+import { encodeScene, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
 import { Box, type Children, type SceneNode } from './node.js'
+import type { ColorSpace, ColorType } from './index.js'
 import type { Style } from './style.js'
 
 /** A font family, and the files that make it up. */
@@ -129,14 +130,39 @@ export type RootProps = Style & {
    * two apart, which a pixel comparison sees.
    */
   readonly gpu?: boolean
+  /**
+   * The pixel layout the canvas composites in.
+   *
+   * Governs the precision everything is drawn at and the depth the encoded
+   * formats that carry one write. `'F32'` keeps colour outside sRGB rather than
+   * clipping it as it is drawn, at the cost of the GPU — no GPU composites
+   * float. Absent leaves it to the renderer.
+   */
+  readonly colorType?: ColorType
+  /**
+   * The colour space the canvas composites in.
+   *
+   * Fixed for the whole render rather than chosen per export: colours are
+   * interpreted in it, and one outside its gamut is clipped as it is drawn.
+   * Absent leaves it to the renderer.
+   */
+  readonly colorSpace?: ColorSpace
   /** A name carried through for diagnostics. */
   readonly name?: string
 }
 
-/** What the addon has to give back: a painted surface, ready to encode. */
+/**
+ * What the addon needs beyond the scene.
+ *
+ * Only the fonts. `gpu`, `colorType` and `colorSpace` are the **scene's** —
+ * they cross in the arena header beside the scale, because the canvas is the
+ * sized, coloured thing and the scene is what describes it. Saying any of them
+ * here as well would be two places that can disagree.
+ *
+ * Fonts stay here because a renderer outlives any one scene: a server registers
+ * its families once and draws a thousand pictures with them.
+ */
 export interface PaintOptions {
-  /** Whether to rasterise on the GPU. */
-  readonly gpu: boolean
   /** The families to register before laying anything out. */
   readonly fonts: readonly FontRegistration[]
 }
@@ -294,10 +320,17 @@ async function pages(props: RootProps): Promise<readonly SceneNode[]> {
  */
 export async function Root(props: RootProps, dependencies: RootDependencies = installed()): Promise<Canvas> {
   const scale = props.scale ?? DEFAULT_SCALE
-  const arena = encodeScene(await pages(props), props.width, props.height, scale)
+  // Absent rather than defaulted: the arena carries "the caller said nothing"
+  // as a distinct thing from "the caller said true", and it is the renderer
+  // that decides when nothing was said.
+  const surface: SurfaceOptions = {
+    ...(props.gpu === undefined ? {} : { gpu: props.gpu }),
+    ...(props.colorType === undefined ? {} : { colorType: props.colorType }),
+    ...(props.colorSpace === undefined ? {} : { colorSpace: props.colorSpace }),
+  }
+  const arena = encodeScene(await pages(props), props.width, props.height, scale, surface)
 
   const native = dependencies.renderer.paint(arena.slots, arena.values, {
-    gpu: props.gpu ?? true,
     fonts: props.fonts ?? [],
   })
 

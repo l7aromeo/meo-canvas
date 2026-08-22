@@ -28,7 +28,7 @@
 //! otherwise.
 
 use meo_canvas_scene::{
-    Rect, Sides, Size,
+    ColorSpace, ColorType, Rect, Sides, Size,
     node::{ImageSource, Node, NodeId, NodeKind, PathPaint},
     style::{
         Length,
@@ -76,6 +76,76 @@ const ROUNDING_SLACK: f32 = 1.0;
 
 /// Degrees in a full turn, for converting a scene's rotation to radians.
 const DEGREES_PER_TURN: f32 = 360.0;
+
+/// Everything about a surface that is not its size.
+///
+/// Resolved values, not the scene's `Option`s: deciding between what a scene
+/// asks for and what a renderer offers happens once, in
+/// [`Renderer::render`](crate::Renderer::render), and by the time a surface is
+/// made there is one answer. A struct rather than three more parameters,
+/// because three `bool`-ish arguments in a row is a call nobody can read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SurfaceOptions {
+    /// Whether to ask for the GPU.
+    pub gpu: bool,
+    /// The pixel layout to composite in.
+    pub color_type: ColorType,
+    /// The colour space to composite in.
+    pub color_space: ColorSpace,
+}
+
+/// This crate's [`ColorType`] as the renderer's.
+///
+/// Exhaustive over ours, so a variant added here fails the build. The other
+/// direction is [`from_skia_color_type`], which is test-only and exists for
+/// exactly the direction this match cannot see.
+const fn to_skia_color_type(
+    color_type: ColorType,
+) -> meo_skia_canvas::PixelDepth {
+    use meo_skia_canvas::PixelDepth as Skia;
+    match color_type {
+        ColorType::Uint8 => Skia::Uint8,
+        ColorType::F16 => Skia::F16,
+        ColorType::F32 => Skia::F32,
+        ColorType::Alpha8 => Skia::Alpha8,
+        ColorType::Gray8 => Skia::Gray8,
+        ColorType::R8UNorm => Skia::R8UNorm,
+        ColorType::R8G8UNorm => Skia::R8G8UNorm,
+        ColorType::A16Float => Skia::A16Float,
+        ColorType::A16UNorm => Skia::A16UNorm,
+        ColorType::Argb4444 => Skia::Argb4444,
+        ColorType::Rgb565 => Skia::Rgb565,
+        ColorType::Rgb888x => Skia::Rgb888x,
+        ColorType::Bgra8888 => Skia::Bgra8888,
+        ColorType::Srgba8888 => Skia::Srgba8888,
+        ColorType::N32 => Skia::N32,
+        ColorType::Rgba1010102 => Skia::Rgba1010102,
+        ColorType::Bgra1010102 => Skia::Bgra1010102,
+        ColorType::Rgb101010x => Skia::Rgb101010x,
+        ColorType::Bgr101010x => Skia::Bgr101010x,
+        ColorType::R16G16Float => Skia::R16G16Float,
+        ColorType::R16G16UNorm => Skia::R16G16UNorm,
+        ColorType::R16G16B16A16UNorm => Skia::R16G16B16A16UNorm,
+        ColorType::F16Norm => Skia::F16Norm,
+    }
+}
+
+/// This crate's [`ColorSpace`] as the renderer's.
+const fn to_skia_color_space(
+    color_space: ColorSpace,
+) -> meo_skia_canvas::PixelColorSpace {
+    use meo_skia_canvas::PixelColorSpace as Skia;
+    match color_space {
+        ColorSpace::Srgb => Skia::Srgb,
+        ColorSpace::SrgbLinear => Skia::SrgbLinear,
+        ColorSpace::DisplayP3 => Skia::DisplayP3,
+        ColorSpace::DisplayP3Linear => Skia::DisplayP3Linear,
+        ColorSpace::Rec2020 => Skia::Rec2020,
+        ColorSpace::Rec2020Linear => Skia::Rec2020Linear,
+        ColorSpace::Rec2020Pq => Skia::Rec2020Pq,
+        ColorSpace::Rec2020Hlg => Skia::Rec2020Hlg,
+    }
+}
 
 /// A drawable surface and the pages drawn onto it.
 ///
@@ -126,15 +196,25 @@ impl Surface {
     /// Returns [`Error::Paint`] when the size is not something a surface can
     /// be made from -- a non-finite or non-positive extent -- or when the
     /// backend refuses the options.
-    pub fn new(size: Size, scale: f32, gpu: bool) -> Result<Self, Error> {
+    pub fn new(
+        size: Size,
+        scale: f32,
+        surface: SurfaceOptions,
+    ) -> Result<Self, Error> {
         let pixels = pixel_size(size, scale)?;
         let options = CanvasOptions {
-            gpu,
+            gpu: surface.gpu,
+            color_type: to_skia_color_type(surface.color_type),
+            color_space: to_skia_color_space(surface.color_space),
             ..CanvasOptions::default()
         };
         let canvas = Canvas::with_options(pixels.width, pixels.height, options)
             .map_err(|error| Error::Paint(error.to_string()))?;
-        Ok(Self { canvas, scale, gpu })
+        Ok(Self {
+            canvas,
+            scale,
+            gpu: surface.gpu,
+        })
     }
 
     /// Appends a page and makes it current.
@@ -1090,8 +1170,9 @@ mod tests {
     };
 
     use super::{
-        Display, PositionType, Surface, draw, fit_image, gradient_line,
-        pixel_size, resolve_length, to_skia_blend, z_ordered,
+        ColorSpace, ColorType, Display, PositionType, Surface, SurfaceOptions,
+        draw, fit_image, gradient_line, pixel_size, resolve_length,
+        to_skia_blend, z_ordered,
     };
     use crate::{
         layout::LayoutResult,
@@ -1101,6 +1182,27 @@ mod tests {
             tests::{RED_PNG, TEST_FAMILY, test_fonts},
         },
     };
+
+    /// A surface that rasterises on the CPU, which is what a test wants.
+    ///
+    /// Named rather than written out at each of the dozen call sites: a
+    /// three-field literal repeated that many times is a change to
+    /// [`SurfaceOptions`] rippling through a file that does not care about it.
+    const fn on_the_cpu() -> SurfaceOptions {
+        SurfaceOptions {
+            gpu: false,
+            color_type: ColorType::Uint8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    /// The same, asking for the GPU. Used only where the request is the point.
+    const fn on_the_gpu() -> SurfaceOptions {
+        SurfaceOptions {
+            gpu: true,
+            ..on_the_cpu()
+        }
+    }
 
     fn box_rect(width: f32, height: f32) -> Rect {
         Rect::new(Point::new(0.0, 0.0), Size::new(width, height))
@@ -1140,11 +1242,11 @@ mod tests {
     /// decision. This fails if the field stops being named.
     #[test]
     fn a_surface_asks_for_the_backend_it_was_told_to() {
-        let off = Surface::new(Size::new(8.0, 8.0), 1.0, false)
+        let off = Surface::new(Size::new(8.0, 8.0), 1.0, on_the_cpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert!(!off.gpu());
 
-        let on = Surface::new(Size::new(8.0, 8.0), 1.0, true)
+        let on = Surface::new(Size::new(8.0, 8.0), 1.0, on_the_gpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert!(on.gpu(), "the request is recorded even where no backend is");
         assert!(format!("{on:?}").contains("gpu"));
@@ -1152,8 +1254,9 @@ mod tests {
 
     #[test]
     fn a_surface_begins_a_page_per_call_after_the_first() {
-        let mut surface = Surface::new(Size::new(20.0, 10.0), 2.0, false)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut surface =
+            Surface::new(Size::new(20.0, 10.0), 2.0, on_the_cpu())
+                .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(surface.page_count(), 1, "new() creates the first page");
         assert!((surface.scale() - 2.0).abs() < f32::EPSILON);
 
@@ -1426,6 +1529,82 @@ mod tests {
         assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
     }
 
+    /// The renderer's [`meo_skia_canvas::PixelDepth`] as ours.
+    ///
+    /// Test-only, and it exists for its exhaustiveness rather than for anything
+    /// it computes: `to_skia_color_type` is exhaustive over our enum, so it
+    /// catches a variant we add, and this is exhaustive over theirs, so it
+    /// catches a variant they add. Upstream's own `all()` is `pub(crate)`
+    /// (`meo-skia-canvas-0.11.0/src/pixels.rs:493`) and cannot be walked from
+    /// here, so a compile error is the only guard available -- and it is a
+    /// stronger one than a runtime conformance test, which would fail after a
+    /// build rather than instead of one.
+    const fn from_skia_color_type(
+        color_type: meo_skia_canvas::PixelDepth,
+    ) -> ColorType {
+        use meo_skia_canvas::PixelDepth as Skia;
+        match color_type {
+            Skia::Uint8 => ColorType::Uint8,
+            Skia::F16 => ColorType::F16,
+            Skia::F32 => ColorType::F32,
+            Skia::Alpha8 => ColorType::Alpha8,
+            Skia::Gray8 => ColorType::Gray8,
+            Skia::R8UNorm => ColorType::R8UNorm,
+            Skia::R8G8UNorm => ColorType::R8G8UNorm,
+            Skia::A16Float => ColorType::A16Float,
+            Skia::A16UNorm => ColorType::A16UNorm,
+            Skia::Argb4444 => ColorType::Argb4444,
+            Skia::Rgb565 => ColorType::Rgb565,
+            Skia::Rgb888x => ColorType::Rgb888x,
+            Skia::Bgra8888 => ColorType::Bgra8888,
+            Skia::Srgba8888 => ColorType::Srgba8888,
+            Skia::N32 => ColorType::N32,
+            Skia::Rgba1010102 => ColorType::Rgba1010102,
+            Skia::Bgra1010102 => ColorType::Bgra1010102,
+            Skia::Rgb101010x => ColorType::Rgb101010x,
+            Skia::Bgr101010x => ColorType::Bgr101010x,
+            Skia::R16G16Float => ColorType::R16G16Float,
+            Skia::R16G16UNorm => ColorType::R16G16UNorm,
+            Skia::R16G16B16A16UNorm => ColorType::R16G16B16A16UNorm,
+            Skia::F16Norm => ColorType::F16Norm,
+        }
+    }
+
+    /// The renderer's [`meo_skia_canvas::PixelColorSpace`] as ours.
+    const fn from_skia_color_space(
+        color_space: meo_skia_canvas::PixelColorSpace,
+    ) -> ColorSpace {
+        use meo_skia_canvas::PixelColorSpace as Skia;
+        match color_space {
+            Skia::Srgb => ColorSpace::Srgb,
+            Skia::SrgbLinear => ColorSpace::SrgbLinear,
+            Skia::DisplayP3 => ColorSpace::DisplayP3,
+            Skia::DisplayP3Linear => ColorSpace::DisplayP3Linear,
+            Skia::Rec2020 => ColorSpace::Rec2020,
+            Skia::Rec2020Linear => ColorSpace::Rec2020Linear,
+            Skia::Rec2020Pq => ColorSpace::Rec2020Pq,
+            Skia::Rec2020Hlg => ColorSpace::Rec2020Hlg,
+        }
+    }
+
+    #[test]
+    fn the_pixel_enums_are_a_bijection_with_the_renderers() {
+        // The two exhaustive matches are the real guard; this walks ours to
+        // check the pair actually composes, which neither compiler check does.
+        for color_type in ColorType::ALL {
+            assert_eq!(
+                from_skia_color_type(super::to_skia_color_type(*color_type)),
+                *color_type
+            );
+        }
+        for color_space in ColorSpace::ALL {
+            assert_eq!(
+                from_skia_color_space(super::to_skia_color_space(*color_space)),
+                *color_space
+            );
+        }
+    }
+
     #[test]
     fn every_blend_mode_maps_to_one_of_skia_s() {
         // A mode that mapped to the wrong constant would compose wrongly and
@@ -1448,7 +1627,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0, false)
+        let mut surface = Surface::new(scene.size, 1.0, on_the_cpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         let empty = LayoutResult::default();
@@ -1525,7 +1704,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 2.0, false)
+        let mut surface = Surface::new(scene.size, 2.0, on_the_cpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         let page = scene.pages[0];
@@ -1641,7 +1820,7 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}"));
             let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
                 .unwrap_or_else(|error| unreachable!("{error}"));
-            let mut surface = Surface::new(scene.size, 1.0, false)
+            let mut surface = Surface::new(scene.size, 1.0, on_the_cpu())
                 .unwrap_or_else(|error| unreachable!("{error}"));
             let solved =
                 crate::layout::solve(&scene, scene.pages[0], &mut measurer)
@@ -1684,7 +1863,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0, false)
+        let mut surface = Surface::new(scene.size, 1.0, on_the_cpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
         let solved =
             crate::layout::solve(&scene, scene.pages[0], &mut measurer)
@@ -1723,7 +1902,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0, false)
+        let mut surface = Surface::new(scene.size, 1.0, on_the_cpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
         let solved =
             crate::layout::solve(&scene, scene.pages[0], &mut measurer)
@@ -1781,7 +1960,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut surface = Surface::new(scene.size, 1.0, false)
+        let mut surface = Surface::new(scene.size, 1.0, on_the_cpu())
             .unwrap_or_else(|error| unreachable!("{error}"));
         let solved =
             crate::layout::solve(&scene, scene.pages[0], &mut measurer)
