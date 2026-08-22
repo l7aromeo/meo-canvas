@@ -18,10 +18,9 @@
 //!
 //! ## The GPU is pinned off, and that is load-bearing
 //!
-//! This section used to claim that a build with the Metal backend compiled
-//! produced the same bytes as one without. **That is false**, and the
-//! measurement behind it was one scene of text -- which happens to be a case
-//! where the two rasterisers do agree.
+//! A build with the Metal backend compiled does **not** produce the same bytes
+//! as one without, and a single scene of text is the measurement that cannot
+//! show it: text is the case where the two rasterisers agree.
 //!
 //! Run with `--features metal`, **eight of the ten fixtures differ**:
 //! `box-shadow` by 6129 pixels, `z-order` by 7560, `gradients` by 2705,
