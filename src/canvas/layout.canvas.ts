@@ -580,12 +580,25 @@ export class BoxNode {
           halfHeight = diagonal
         }
 
-        const translateX = typeof transform.translateX === 'number' ? transform.translateX : 0
-        const translateY = typeof transform.translateY === 'number' ? transform.translateY : 0
-        left = centreX - halfWidth + translateX
-        right = centreX + halfWidth + translateX
-        top = centreY - halfHeight + translateY
-        bottom = centreY + halfHeight + translateY
+        // The translation is written inside the scale and the rotation, so it carries their
+        // magnitude: 30 under `scale: 2` reaches 60. A rotation turns it any way at all, so its
+        // whole length is allowed for in both axes rather than being resolved along one.
+        const translateX = (typeof transform.translateX === 'number' ? transform.translateX : 0) * scaleX
+        const translateY = (typeof transform.translateY === 'number' ? transform.translateY : 0) * scaleY
+        if (transform.rotate) {
+          const span = Math.hypot(translateX, translateY)
+          halfWidth += span
+          halfHeight += span
+          left = centreX - halfWidth
+          right = centreX + halfWidth
+          top = centreY - halfHeight
+          bottom = centreY + halfHeight
+        } else {
+          left = centreX - halfWidth + translateX
+          right = centreX + halfWidth + translateX
+          top = centreY - halfHeight + translateY
+          bottom = centreY + halfHeight + translateY
+        }
       }
 
       const spill = shadowSpill(node.props.boxShadow) + filterSpill(node.filterChain()) + node.inkOverflow()
@@ -954,18 +967,26 @@ export class BoxNode {
         const originAbsX = x + originOffsetX
         const originAbsY = y + originOffsetY
         ctx.translate(originAbsX, originAbsY)
-        if (transform.translateX || transform.translateY) {
-          const tx = parsePercentage(transform.translateX, width)
-          const ty = parsePercentage(transform.translateY, height)
-          if (tx !== 0 || ty !== 0) ctx.translate(tx, ty)
-        }
-        if (transform.rotate) {
-          ctx.rotate((transform.rotate * Math.PI) / 180)
-        }
+        // The chain reads `scale() rotate() translate()`, applied in that order about the origin.
+        // Each function is written in the coordinate system the ones before it left behind, so the
+        // translation moves the box by scaled, rotated distance -- `scale: 2, translateY: 30` moves
+        // it 60 device pixels down, which is what Chrome does with `transform: scale(2)
+        // translateY(30px)`. Translating first instead would move it 30 whatever the scale said.
+        //
+        // Lengths are still resolved against the untransformed border box, as CSS resolves them:
+        // `translateY: '60%'` of a 50-tall box is 30 before the scale reaches it, not after.
         if (transform.scale || transform.scaleX || transform.scaleY) {
           const scaleX = transform.scaleX ?? transform.scale ?? 1
           const scaleY = transform.scaleY ?? transform.scale ?? 1
           if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY)
+        }
+        if (transform.rotate) {
+          ctx.rotate((transform.rotate * Math.PI) / 180)
+        }
+        if (transform.translateX || transform.translateY) {
+          const tx = parsePercentage(transform.translateX, width)
+          const ty = parsePercentage(transform.translateY, height)
+          if (tx !== 0 || ty !== 0) ctx.translate(tx, ty)
         }
         ctx.translate(-originAbsX, -originAbsY)
       }
