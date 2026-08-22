@@ -1222,7 +1222,9 @@ Box({
 ```
 
 **Painting order** follows CSS: negative `zIndex` first, then in-flow content, then positioned nodes
-and anything with a `zIndex` of `0` or more, ordered by that value and then by declaration.
+and anything with a `zIndex` of `0` or more, ordered by that value and then by tree order — of two
+nodes on the same layer the one written later paints over the one written earlier, wherever in the
+subtree each of them sits.
 
 `zIndex` applies to any child, positioned or not — every node here is a flex item, and CSS gives a
 flex item a working `z-index` whatever its `position` says. Naming any value creates a stacking
