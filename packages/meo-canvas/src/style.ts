@@ -303,6 +303,14 @@ export interface Style {
    * and is inert on everything else.
    */
   readonly objectFit?: ObjectFit
+  /**
+   * Where the image sits in its box when it does not fill it.
+   *
+   * CSS's `object-position`, as a horizontal and a vertical offset. Absent
+   * centres it, which is CSS's own initial value and what the Rust surface
+   * writes. Read only by an image.
+   */
+  readonly objectPosition?: readonly [Length, Length]
   /** Which frame of an animated source to draw. Read only by an image. */
   readonly frame?: number
 }

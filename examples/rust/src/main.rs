@@ -9,7 +9,9 @@
 //! round. The two surfaces are meant to differ in syntax and not in shape, and
 //! a reader comparing these two files is the check on that.
 
-use meo_canvas::{Column, Format, Justify, Renderer, Root, Row, Text, hex, px};
+use meo_canvas::{
+    Column, Format, Justify, Renderer, Root, Row, Styled, Text, hex, px,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let renderer = Renderer::new();

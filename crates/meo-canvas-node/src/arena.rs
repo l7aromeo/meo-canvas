@@ -76,7 +76,8 @@
 //!
 //! ```text
 //! payload(Box)   := (nothing)
-//! payload(Text)  := opt<u32>(max_lines) opt<str>(ellipsis) list<segment>
+//! payload(Text)  := opt<u32>(max_lines) opt<str>(ellipsis) text-content
+//! text-content   := 1 str(markup) | 0 list<segment>
 //! segment        := str(text) mask(text) text-values
 //! payload(Image) := source enum(fit) length length opt<u32>(frame)
 //! payload(Path)  := str(d) opt<paint> opt<paint> f32(line_width)
@@ -86,6 +87,29 @@
 //! source := 0 str | 1 str | 2 bytes        -- Path | Url | Bytes
 //! paint  := 0 color | 1 gradient
 //! ```
+//!
+//! ### Why a text node says which of the two it carries
+//!
+//! A paragraph reaches the arena in one of two states, and they are not
+//! distinguishable once written. `Text("a <b>b</b>")` is a string the caller
+//! expects to be *parsed*; `RichText([...])` is runs the caller built and
+//! expects left alone -- and rich text of one run is byte-identical to plain
+//! text of one run. Without a discriminant the decoder has to guess, and either
+//! guess loses something: parse everything and `RichText` can no longer carry a
+//! literal `<`, parse nothing and a JavaScript caller has no rich text at all,
+//! which is what v1 gave them and what v2 took away.
+//!
+//! So the payload says which. It is spelled as the `opt<str>` the format
+//! already has rather than as a new tag: present means "parse this", absent
+//! means "the segments follow", and that is one slot either way. A tag would be
+//! the same slot **plus** a keyword both sides must agree on, and a keyword
+//! hand-carried into TypeScript is a disagreement nothing reports.
+//!
+//! The parse happens here, on the way in, through
+//! [`meo_canvas_core::markup::parse_paragraph`] -- the same function the Rust
+//! facade's `Text::new` calls, so `Text("")` cannot mean two things.
+//! [`meo_canvas_scene::Scene`] holds segments either way, so the byte format is
+//! untouched and both representations still decode to one scene.
 //!
 //! ## What a version bump is for
 //!
@@ -737,6 +761,23 @@ fn read_node(
     Ok(id)
 }
 
+/// Reads runs the caller built, which the decoder does not interpret.
+fn read_segments(
+    input: &mut Reader<'_>,
+) -> Result<Vec<TextSegment>, ArenaError> {
+    let count = input.count()?;
+    let mut segments = Vec::with_capacity(count);
+    for _ in 0..count {
+        let content = String::read(input)?;
+        let mask = Mask::read(input, text::SLOTS)?;
+        segments.push(TextSegment {
+            text: content,
+            style: text::read(&mask, input)?,
+        });
+    }
+    Ok(segments)
+}
+
 fn read_kind(
     input: &mut Reader<'_>,
     tag: NodeTag,
@@ -748,16 +789,15 @@ fn read_kind(
                 max_lines: Option::<u32>::read(input)?,
                 ellipsis: Option::<String>::read(input)?,
             };
-            let count = input.count()?;
-            let mut segments = Vec::with_capacity(count);
-            for _ in 0..count {
-                let content = String::read(input)?;
-                let mask = Mask::read(input, text::SLOTS)?;
-                segments.push(TextSegment {
-                    text: content,
-                    style: text::read(&mask, input)?,
-                });
-            }
+            // Present means the caller wrote a string and expects it parsed;
+            // absent means they built the runs and expect them left alone. See
+            // "Why a text node says which of the two it carries".
+            let segments = match Option::<String>::read(input)? {
+                Some(markup) => {
+                    meo_canvas_core::markup::parse_paragraph(&markup)
+                }
+                None => read_segments(input)?,
+            };
             Ok(NodeKind::Text {
                 segments,
                 paragraph,
@@ -1036,8 +1076,8 @@ mod tests {
             .header(Size::new(10.0, 10.0), 1.0, 1)
             .slot(f64::from(NodeTag::Text.to_wire()))
             .slots(&[0.0; 4])
-            // paragraph: no max_lines, no ellipsis; one segment
-            .slots(&[0.0, 0.0, 1.0])
+            // paragraph: no max_lines, no ellipsis; not markup; one segment
+            .slots(&[0.0, 0.0, 0.0, 1.0])
             .slot(content)
             // the segment's own text mask: bit 0 is font_family
             .slot(1.0)
@@ -1067,12 +1107,86 @@ mod tests {
     }
 
     #[test]
+    fn a_text_node_carrying_markup_is_parsed_and_one_carrying_runs_is_not() {
+        // The distinction the discriminant exists for. The same string reaches
+        // the decoder twice: once as markup, where `<b>` opens a bold run, and
+        // once as a run the caller built, where it is three characters of text.
+        let source = "a <b>b</b>";
+
+        let (writer, content) = Writer::default().text_value(source);
+        let (slots, values) = writer
+            .header(Size::new(10.0, 10.0), 1.0, 1)
+            .slot(f64::from(NodeTag::Text.to_wire()))
+            .slots(&[0.0; 4])
+            // no max_lines, no ellipsis, and markup present
+            .slots(&[0.0, 0.0, 1.0])
+            .slot(content)
+            .slot(0.0) // name
+            .slot(0.0) // children
+            .finish();
+        let scene = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let NodeKind::Text { segments, .. } = &scene.nodes[0].kind else {
+            unreachable!("expected text");
+        };
+        assert_eq!(segments.len(), 2, "the markup was parsed");
+        assert_eq!(segments[0].text, "a ");
+        assert_eq!(segments[1].text, "b");
+        assert!(segments[1].style.font_weight.is_some());
+
+        let (writer, content) = Writer::default().text_value(source);
+        let (slots, values) = writer
+            .header(Size::new(10.0, 10.0), 1.0, 1)
+            .slot(f64::from(NodeTag::Text.to_wire()))
+            .slots(&[0.0; 4])
+            // no max_lines, no ellipsis, not markup, one segment
+            .slots(&[0.0, 0.0, 0.0, 1.0])
+            .slot(content)
+            .slot(0.0) // the segment's own text mask: nothing set
+            .slot(0.0) // name
+            .slot(0.0) // children
+            .finish();
+        let scene = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let NodeKind::Text { segments, .. } = &scene.nodes[0].kind else {
+            unreachable!("expected text");
+        };
+        assert_eq!(segments.len(), 1, "the runs were left alone");
+        assert_eq!(segments[0].text, source);
+    }
+
+    #[test]
+    fn markup_that_says_nothing_still_decodes_to_a_paragraph() {
+        // `Text("")` is a node with a run in it, not a node with none. The
+        // guarantee lives in `parse_paragraph`, so this side and the Rust
+        // facade cannot answer it differently.
+        let (writer, content) = Writer::default().text_value("");
+        let (slots, values) = writer
+            .header(Size::new(10.0, 10.0), 1.0, 1)
+            .slot(f64::from(NodeTag::Text.to_wire()))
+            .slots(&[0.0; 4])
+            .slots(&[0.0, 0.0, 1.0])
+            .slot(content)
+            .slot(0.0)
+            .slot(0.0)
+            .finish();
+
+        let scene = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let NodeKind::Text { segments, .. } = &scene.nodes[0].kind else {
+            unreachable!("expected text");
+        };
+        assert_eq!(segments.len(), 1);
+        assert!(segments[0].text.is_empty());
+    }
+
+    #[test]
     fn an_index_naming_nothing_in_the_side_array_is_refused() {
         let (slots, values) = Writer::default()
             .header(Size::new(10.0, 10.0), 1.0, 1)
             .slot(f64::from(NodeTag::Text.to_wire()))
             .slots(&[0.0; 4])
-            .slots(&[0.0, 0.0, 1.0])
+            .slots(&[0.0, 0.0, 0.0, 1.0])
             .slot(7.0) // no such side value
             .slot(0.0)
             .slot(0.0)
@@ -1096,7 +1210,7 @@ mod tests {
             .header(Size::new(10.0, 10.0), 1.0, 1)
             .slot(f64::from(NodeTag::Text.to_wire()))
             .slots(&[0.0; 4])
-            .slots(&[0.0, 0.0, 1.0])
+            .slots(&[0.0, 0.0, 0.0, 1.0])
             .slot(index) // a buffer where the format wants a string
             .slot(0.0)
             .slot(0.0)

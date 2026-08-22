@@ -109,7 +109,19 @@ export type {
 } from './style.js'
 
 export { Box, Column, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
-export type { Child, Children, ContainerProps, ImageProps, ImageSource, NodeKind, PathProps, SceneNode, TextProps, TextSegment } from './node.js'
+export type {
+  Child,
+  Children,
+  ContainerProps,
+  ImageProps,
+  ImageSource,
+  NodeKind,
+  ParagraphOptions,
+  PathProps,
+  SceneNode,
+  TextProps,
+  TextSegment,
+} from './node.js'
 
 export { Root } from './root.js'
 export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOptions, RootDependencies, RootProps } from './root.js'

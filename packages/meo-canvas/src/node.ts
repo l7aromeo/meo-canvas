@@ -69,7 +69,25 @@ export interface SceneNode {
   readonly children: readonly SceneNode[] | undefined
   /** A name carried through for diagnostics, which the renderer never reads. */
   readonly name: string | undefined
-  /** The runs of a text node. */
+  /**
+   * A text node's paragraph properties, which are not style and do not inherit.
+   *
+   * Separate from {@link SceneNode.style} because the scene keeps them
+   * separate: `maxLines` and `ellipsis` describe the block, not the glyphs, and
+   * nothing inherits them from a parent.
+   */
+  readonly paragraph: ParagraphOptions | undefined
+  /**
+   * A text node's content as markup, to be parsed by the renderer.
+   *
+   * Set by {@link Text} and left `undefined` by {@link RichText}, which is how
+   * the two are told apart on the wire: rich text of one run is otherwise
+   * byte-identical to plain text of one run, and the decoder would have to
+   * guess. Parse everything and `RichText` can no longer carry a literal `<`;
+   * parse nothing and a caller gets no rich text at all.
+   */
+  readonly markup: string | undefined
+  /** The runs of a text node, built by the caller and not interpreted. */
   readonly segments: readonly TextSegment[] | undefined
   /** Where an image node's bytes come from. */
   readonly src: ImageSource | undefined
@@ -89,11 +107,13 @@ function node(
   style: Style | undefined,
   children: readonly SceneNode[] | undefined,
   name: string | undefined,
+  paragraph: ParagraphOptions | undefined,
+  markup: string | undefined,
   segments: readonly TextSegment[] | undefined,
   src: ImageSource | undefined,
   d: string | undefined,
 ): SceneNode {
-  return { kind, style, children, name, segments, src, d }
+  return { kind, style, children, name, paragraph, markup, segments, src, d }
 }
 
 /**
@@ -161,23 +181,23 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
  * Yoga's column.
  */
 export function Box(props: ContainerProps = {}): SceneNode {
-  return node('box', props, toChildren(props.children), props.name, undefined, undefined, undefined)
+  return node('box', props, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children run horizontally. */
 export function Row(props: ContainerProps = {}): SceneNode {
-  return node('box', withDirection(props, 'row'), toChildren(props.children), props.name, undefined, undefined, undefined)
+  return node('box', withDirection(props, 'row'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children run vertically. */
 export function Column(props: ContainerProps = {}): SceneNode {
-  return node('box', withDirection(props, 'column'), toChildren(props.children), props.name, undefined, undefined, undefined)
+  return node('box', withDirection(props, 'column'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children are placed on a grid. */
 export function Grid(props: ContainerProps = {}): SceneNode {
   const style: Style = { display: 'grid', ...props }
-  return node('box', style, toChildren(props.children), props.name, undefined, undefined, undefined)
+  return node('box', style, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /**
@@ -192,10 +212,45 @@ function withDirection(props: ContainerProps, flexDirection: 'row' | 'column'): 
   return { flexDirection, ...props }
 }
 
+/**
+ * Properties of a paragraph as a whole, which do not inherit.
+ *
+ * Held apart from {@link Style} because the scene holds them apart: these
+ * describe the block of text, and a child cannot inherit them from a parent the
+ * way it inherits a font size.
+ */
+export interface ParagraphOptions {
+  /** How many lines to draw before the text is truncated. Unset draws them all. */
+  readonly maxLines?: number
+  /**
+   * What a truncated last line ends with.
+   *
+   * Only read when {@link ParagraphOptions.maxLines} truncates something. Unset
+   * truncates without a marker.
+   */
+  readonly ellipsis?: string
+}
+
 /** What a text node accepts beyond its content: its style, flat. */
-export type TextProps = Style & {
-  /** A name carried through for diagnostics. */
-  readonly name?: string
+export type TextProps = Style &
+  ParagraphOptions & {
+    /** A name carried through for diagnostics. */
+    readonly name?: string
+  }
+
+/**
+ * The paragraph properties of `props`, or `undefined` when it sets neither.
+ *
+ * Each key is added only when it has a value, rather than written as
+ * `undefined`: `exactOptionalPropertyTypes` is on, and an explicit `undefined`
+ * is a different thing from an absent key to every reader here.
+ */
+function paragraphOf(props: TextProps): ParagraphOptions | undefined {
+  if (props.maxLines === undefined && props.ellipsis === undefined) return undefined
+  const paragraph: { maxLines?: number; ellipsis?: string } = {}
+  if (props.maxLines !== undefined) paragraph.maxLines = props.maxLines
+  if (props.ellipsis !== undefined) paragraph.ellipsis = props.ellipsis
+  return paragraph
 }
 
 /**
@@ -211,7 +266,7 @@ export type TextProps = Style & {
  * ```
  */
 export function Text(content: string, props: TextProps = {}): SceneNode {
-  return node('text', props, undefined, props.name, [{ text: content, style: undefined }], undefined, undefined)
+  return node('text', props, undefined, props.name, paragraphOf(props), content, undefined, undefined, undefined)
 }
 
 /**
@@ -221,7 +276,7 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * Each segment's own style overrides the node's for that run.
  */
 export function RichText(segments: readonly TextSegment[], props: TextProps = {}): SceneNode {
-  return node('text', props, undefined, props.name, segments, undefined, undefined)
+  return node('text', props, undefined, props.name, paragraphOf(props), undefined, segments, undefined, undefined)
 }
 
 /** What an image node accepts: its source, and its style, flat. */
@@ -248,7 +303,7 @@ export type ImageProps = Style & {
  */
 export function Image(props: ImageProps): SceneNode {
   const src = typeof props.src === 'string' ? { path: props.src } : props.src
-  return node('image', props, undefined, props.name, undefined, src, undefined)
+  return node('image', props, undefined, props.name, undefined, undefined, undefined, src, undefined)
 }
 
 /** What a path node accepts: its data, and its style, flat. */
@@ -269,7 +324,7 @@ export type PathProps = Style & {
  * ```
  */
 export function Path(props: PathProps): SceneNode {
-  return node('path', props, undefined, props.name, undefined, undefined, props.d)
+  return node('path', props, undefined, props.name, undefined, undefined, undefined, undefined, props.d)
 }
 
 /**
@@ -278,4 +333,4 @@ export function Path(props: PathProps): SceneNode {
  * Exported so a test can assert the shape rather than trusting it, since the
  * cost of a second hidden class is invisible until something is profiled.
  */
-export const NODE_KEYS: readonly string[] = ['kind', 'style', 'children', 'name', 'segments', 'src', 'd']
+export const NODE_KEYS: readonly string[] = ['kind', 'style', 'children', 'name', 'paragraph', 'markup', 'segments', 'src', 'd']

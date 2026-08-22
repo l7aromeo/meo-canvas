@@ -6,20 +6,23 @@
 //! };
 //!
 //! let card = Row::new()
-//!     .style(
+//!     .with_style(
 //!         Style::new()
 //!             .gap(px(16.0))
 //!             .padding(all(px(24.0)))
-//!             .background(hex_rgb(0x10_10_14)),
+//!             .background_color(hex_rgb(0x10_10_14)),
 //!     )
 //!     .children([
-//!         Image::path("avatar.png").style(
-//!             Style::new().size(px(64.0), px(64.0)).fit(ObjectFit::Cover),
+//!         Image::path("avatar.png").with_style(
+//!             Style::new()
+//!                 .size(px(64.0), px(64.0))
+//!                 .object_fit(ObjectFit::Cover),
 //!         ),
 //!         Column::new().children([
-//!             Text::new("Ukasyah").style(Style::new().font_size(24.0).bold()),
+//!             Text::new("Ukasyah")
+//!                 .with_style(Style::new().font_size(24.0).bold()),
 //!             Text::new("Bandung")
-//!                 .style(Style::new().color(hex_rgb(0x88_88_90))),
+//!                 .with_style(Style::new().color(hex_rgb(0x88_88_90))),
 //!         ]),
 //!     ]);
 //!
@@ -36,14 +39,15 @@
 //! # One flat style
 //!
 //! [`Style`] is one type, not four. Authoring is flat because CSS is flat: a
-//! reader never has to know which group `gap` lives in versus `background`. The
-//! scene keeps them grouped because the codec needs them grouped, and
-//! [`Style::into_parts`] splits at the moment the tree becomes a scene.
+//! reader never has to know which group `gap` lives in versus
+//! `background_color`. The scene keeps them grouped because the codec needs
+//! them grouped, and [`Style::into_parts`] splits at the moment the tree
+//! becomes a scene.
 //!
 //! The names and the behaviour are CSS's. [`Style::color`] is the inherited
-//! text colour and [`Style::background`] is the fill; the two sit adjacent and
-//! mean different things, which is CSS's trap and not one invented here.
-//! Keeping it is what lets a design be ported without translation.
+//! text colour and [`Style::background_color`] is the fill; the two sit
+//! adjacent and mean different things, which is CSS's trap and not one invented
+//! here. Keeping it is what lets a design be ported without translation.
 //!
 //! Setters are `const` wherever the property allows, so a reusable base is a
 //! `const`:
@@ -53,8 +57,10 @@
 //!
 //! const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
 //!
-//! let dark = Row::new().style(CARD.background(hex_rgb(0x10_10_14)));
-//! let light = Row::new().style(CARD.background(hex_rgb(0x1c_1c_22)));
+//! let dark =
+//!     Row::new().with_style(CARD.background_color(hex_rgb(0x10_10_14)));
+//! let light =
+//!     Row::new().with_style(CARD.background_color(hex_rgb(0x1c_1c_22)));
 //! ```
 //!
 //! A `const` is substituted at each use, so every `CARD` is a fresh value a
@@ -112,18 +118,47 @@
 //! would give the workspace two answers to the same question.
 
 pub mod element;
+pub mod root;
 pub mod style;
 pub mod unit;
 
-pub use element::{Box, Column, Element, Grid, Image, Path, Row, Text};
+pub use element::{
+    Box, Column, Each, Element, Grid, Image, IntoElements, Path, Row, Text,
+    each,
+};
 pub use meo_canvas_core::{
     EncodeOptions, Error, ImageFormat as Format, RenderedCanvas, Renderer,
 };
-pub use style::Style;
+/// The style keywords, at the crate root.
+///
+/// `Justify::Center` and its siblings are authoring vocabulary — a caller
+/// names one every time they write a container — so they sit beside the
+/// node constructors rather than under [`scene`]. The scene module keeps
+/// them too, along with everything a caller assembling a `Scene` by hand
+/// would need.
+pub use meo_canvas_scene::style::{
+    PaintOrder,
+    effect::FillRule,
+    layout::{
+        Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
+        GridAutoFlow, GridPlacement, Justify, Overflow, PositionType,
+        TrackSize,
+    },
+    paint::{
+        BackgroundRepeat, BlendMode, BorderStyle, Color, GradientKind,
+        ObjectFit,
+    },
+    text::{
+        FontStyle, FontVariant, FontWeight, TextAlign, TextDecoration,
+        VerticalAlign,
+    },
+};
+pub use root::{BuildError, Canvas, PageInfo, Root, SequenceError};
+pub use style::{Style, Styled};
 pub use unit::{
-    DefaultZero, all, auto, bottom, corners, corners_all, fr, hex, hex_rgb,
-    hex_rgba, left, pct, px, rgb, rgba, right, sides, size_auto, top, track,
-    xy,
+    DefaultZero, IntoCorners, IntoSides, all, auto, bottom, corners,
+    corners_all, fr, hex, hex_rgb, hex_rgba, left, pct, px, rgb, rgba, right,
+    sides, size_auto, top, track, xy,
 };
 
 /// The scene vocabulary, re-exported so callers need one dependency rather than
@@ -155,307 +190,4 @@ pub mod scene {
             },
         },
     };
-}
-
-use meo_canvas_scene::{Scene, SceneError, Size};
-
-use crate::element::write_page;
-
-/// The surface a tree is drawn onto, and the way in.
-///
-/// A canvas carries its size, its scale, and the pages to draw. Handing it a
-/// [`Renderer`] paints them and gives back a [`RenderedCanvas`], which is what
-/// encodes:
-///
-/// ```
-/// use meo_canvas::{Canvas, EncodeOptions, Format, Renderer, Row};
-///
-/// let renderer = Renderer::new();
-/// let mut canvas =
-///     Canvas::new(64.0, 32.0).page(Row::new()).render(&renderer)?;
-///
-/// let png = canvas.to_buffer(Format::Png, &EncodeOptions::default())?;
-/// let jpg = canvas.to_buffer(Format::Jpeg, &EncodeOptions::default())?;
-/// # Ok::<(), meo_canvas_core::Error>(())
-/// ```
-///
-/// Two formats, one paint. That split is why [`Canvas::render`] and
-/// `to_buffer` are separate calls: resolving, measuring, laying out and
-/// painting happen once, and each encode is only an encode.
-///
-/// The binding is `mut` because encoding takes `&mut self` — every encode
-/// entry point in the renderer beneath does, since writing a format prepares
-/// the page sequence first. A signature hiding that behind interior mutability
-/// would let two encodes read as independent when they are not.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Canvas {
-    /// Width in logical pixels.
-    width: f32,
-    /// Height in logical pixels.
-    height: f32,
-    /// Device-pixel multiplier applied at paint time.
-    scale: f32,
-    /// One page per element, drawn in order.
-    pages: Vec<Element>,
-}
-
-impl Canvas {
-    /// The scale a canvas has when nothing sets one.
-    ///
-    /// One device pixel per logical pixel. Not a judgement about quality: a
-    /// caller rendering for a display multiplies it, and a default above one
-    /// would quadruple the memory of every render that never asked.
-    pub const DEFAULT_SCALE: f32 = 1.0;
-
-    /// A canvas of the given size in logical pixels.
-    ///
-    /// Bare pixels rather than a [`Length`](scene::Length), and deliberately: a
-    /// canvas size is device-independent pixels, and a percentage of nothing
-    /// has no meaning. The same reason [`Element::into_scene`] takes them.
-    #[must_use]
-    pub const fn new(width: f32, height: f32) -> Self {
-        Self {
-            width,
-            height,
-            scale: Self::DEFAULT_SCALE,
-            pages: Vec::new(),
-        }
-    }
-
-    /// The device-pixel multiplier.
-    ///
-    /// Layout always solves at scale one, so this changes resolution and
-    /// nothing else about where things sit.
-    #[must_use]
-    pub const fn scale(mut self, scale: f32) -> Self {
-        self.scale = scale;
-        self
-    }
-
-    /// The single page to draw, **replacing** any pages already set.
-    ///
-    /// Replaces rather than appends, matching [`Element::children`]. A chained
-    /// singular that appended beside a chained plural that replaced would be
-    /// two rules where a reader expects one: `.page(a).page(b)` yielding two
-    /// pages while `.children([a]).children([b])` yields one is a trap nobody
-    /// could infer. Use [`pages`](Self::pages) for more than one.
-    #[must_use]
-    pub fn page(mut self, page: Element) -> Self {
-        self.pages = vec![page];
-        self
-    }
-
-    /// Every page to draw, in order, **replacing** any already set.
-    ///
-    /// What a page means is the format's answer: a frame for GIF and APNG, a
-    /// sheet for PDF and TIFF, one size of the same icon for ICO. Every other
-    /// format writes one page and `EncodeOptions::page` chooses which.
-    ///
-    /// ```
-    /// use meo_canvas::{Canvas, Column, Row};
-    ///
-    /// let frames = Canvas::new(64.0, 64.0).pages([Row::new(), Column::new()]);
-    /// ```
-    #[must_use]
-    pub fn pages(mut self, pages: impl IntoIterator<Item = Element>) -> Self {
-        self.pages = pages.into_iter().collect();
-        self
-    }
-
-    /// Flattens the pages into a scene.
-    ///
-    /// What [`render`](Self::render) hands to the renderer, and public for a
-    /// caller who wants the scene itself — to write to disk, to send over the
-    /// wire, or to render more than once. [`Element::into_scene`] is the
-    /// shortcut for the single-page case that needs no canvas.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`SceneError::NoPages`] when no page was set, and
-    /// [`SceneError::TooManyNodes`] when the pages together hold more nodes
-    /// than the codec can address.
-    pub fn into_scene(self) -> Result<Scene, SceneError> {
-        let mut written = self.pages.into_iter();
-        let first = written.next().ok_or(SceneError::NoPages)?;
-
-        let mut scene = Scene::new(Size::new(self.width, self.height));
-        scene.scale = self.scale;
-
-        // `Scene::new` already made one page, so the first element styles it
-        // and every later one adds its own root.
-        let root = scene.root().ok_or(SceneError::NoPages)?;
-        write_page(&mut scene, root, first)?;
-
-        for page in written {
-            let root = scene.push_page()?;
-            write_page(&mut scene, root, page)?;
-        }
-        Ok(scene)
-    }
-
-    /// Paints every page and returns the canvas to encode from.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Scene`] when the pages do not form a scene, and
-    /// whatever pass fails first otherwise — a font the renderer does not hold,
-    /// an image it cannot read, a URL it does not fetch.
-    pub fn render(self, renderer: &Renderer) -> Result<RenderedCanvas, Error> {
-        let scene = self.into_scene().map_err(Error::Scene)?;
-        renderer.render(&scene)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use meo_canvas_scene::SceneError;
-
-    use super::{
-        Canvas, Column, EncodeOptions, Error, Format, Renderer, Row, Style,
-        hex_rgb,
-    };
-
-    #[test]
-    fn a_new_canvas_takes_its_size_and_defaults_the_scale() {
-        let scene = Canvas::new(120.0, 60.0)
-            .page(Row::new())
-            .into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        assert_eq!(scene.size.width.to_bits(), 120.0_f32.to_bits());
-        assert_eq!(scene.size.height.to_bits(), 60.0_f32.to_bits());
-        assert_eq!(scene.scale.to_bits(), Canvas::DEFAULT_SCALE.to_bits());
-    }
-
-    #[test]
-    fn the_scale_reaches_the_scene_without_moving_the_layout() {
-        // Layout always solves at one, so this changes resolution and nothing
-        // about where things sit.
-        let scene = Canvas::new(10.0, 10.0)
-            .scale(3.0)
-            .page(Row::new())
-            .into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        assert_eq!(scene.scale.to_bits(), 3.0_f32.to_bits());
-    }
-
-    #[test]
-    fn page_and_pages_both_replace() {
-        // One rule, matching `Element::children`. A chained singular that
-        // appended beside a chained plural that replaced would be a trap
-        // nobody could infer.
-        let one = Canvas::new(10.0, 10.0)
-            .page(Row::new())
-            .page(Column::new())
-            .into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"));
-        assert_eq!(one.pages.len(), 1);
-
-        let two = Canvas::new(10.0, 10.0)
-            .pages([Row::new(), Column::new()])
-            .pages([Row::new()])
-            .into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"));
-        assert_eq!(two.pages.len(), 1);
-    }
-
-    #[test]
-    fn every_page_becomes_a_root_of_its_own() {
-        let scene = Canvas::new(10.0, 10.0)
-            .pages([
-                Row::new().style(Style::new().background(hex_rgb(0x11_11_11))),
-                Row::new().style(Style::new().background(hex_rgb(0x22_22_22))),
-                Row::new().style(Style::new().background(hex_rgb(0x33_33_33))),
-            ])
-            .into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        assert_eq!(scene.pages.len(), 3);
-        assert!(scene.validate().is_ok(), "the pages form a valid scene");
-
-        // The first page styles the root `Scene::new` already made; the rest
-        // add their own. Each must carry its own style rather than the first.
-        for (index, expected) in
-            [0x11_11_11, 0x22_22_22, 0x33_33_33].into_iter().enumerate()
-        {
-            let root = scene
-                .get(scene.pages[index])
-                .unwrap_or_else(|| unreachable!("page {index} has a root"));
-            assert_eq!(root.paint.background_color, hex_rgb(expected));
-        }
-    }
-
-    #[test]
-    fn a_canvas_with_no_page_draws_nothing_and_is_refused() {
-        // A scene with no pages is an error for the same reason a scene with no
-        // nodes is: the caller meant something they did not say.
-        let empty = Canvas::new(10.0, 10.0).into_scene();
-        assert!(matches!(empty, Err(SceneError::NoPages)));
-
-        let emptied = Canvas::new(10.0, 10.0)
-            .page(Row::new())
-            .pages([])
-            .into_scene();
-        assert!(matches!(emptied, Err(SceneError::NoPages)));
-    }
-
-    #[test]
-    fn a_canvas_renders_and_then_encodes_twice_from_one_paint() {
-        // The whole point of `render` and `to_buffer` being separate calls:
-        // resolving, measuring, laying out and painting happen once, and each
-        // encode is only an encode.
-        let renderer = Renderer::new();
-        let mut canvas = Canvas::new(8.0, 4.0)
-            .page(
-                Row::new().style(Style::new().background(hex_rgb(0x10_10_14))),
-            )
-            .render(&renderer)
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        assert_eq!(canvas.page_count(), 1);
-
-        let png = canvas
-            .to_buffer(Format::Png, &EncodeOptions::default())
-            .unwrap_or_else(|error| unreachable!("{error}"));
-        let jpg = canvas
-            .to_buffer(Format::Jpeg, &EncodeOptions::default())
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        // Container magic rather than a length: a JPEG written under a PNG's
-        // name would pass a length check.
-        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-        assert_eq!(&jpg[..2], b"\xff\xd8");
-    }
-
-    #[test]
-    fn a_multi_page_canvas_paints_every_page() {
-        let renderer = Renderer::new();
-        let canvas = Canvas::new(4.0, 4.0)
-            .pages([Row::new(), Row::new(), Row::new()])
-            .render(&renderer)
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        assert_eq!(canvas.page_count(), 3);
-    }
-
-    #[test]
-    fn rendering_a_canvas_with_no_page_reports_the_scene_error() {
-        let renderer = Renderer::new();
-        let refused = Canvas::new(4.0, 4.0).render(&renderer);
-
-        assert!(matches!(refused, Err(Error::Scene(SceneError::NoPages))));
-    }
-
-    #[test]
-    fn a_pages_children_are_flattened_under_its_own_root() {
-        let scene = Canvas::new(10.0, 10.0)
-            .pages([Row::new().children([Column::new(), Column::new()])])
-            .into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"));
-
-        // One root plus its two children.
-        assert_eq!(scene.nodes.len(), 3);
-        assert_eq!(scene.pages.len(), 1);
-    }
 }

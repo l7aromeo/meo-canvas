@@ -21,8 +21,9 @@
  * @packageDocumentation
  */
 
-/** The containers a canvas encodes to. */
-export type Format = 'png' | 'jpg' | 'webp' | 'avif' | 'bmp' | 'ico' | 'tiff' | 'gif' | 'apng' | 'svg' | 'pdf' | 'raw'
+import { MEDIA_TYPES, type Format } from './generated/media-types.js'
+
+export type { Format }
 
 /**
  * Quality and container settings that only some formats read.
@@ -69,22 +70,6 @@ export type WriteFile = (path: string, bytes: Uint8Array) => Promise<void>
 
 /** Writes bytes to a path, blocking. */
 export type WriteFileSync = (path: string, bytes: Uint8Array) => void
-
-/** The media type each format is served as in a `data:` URL. */
-const MEDIA_TYPES: Readonly<Record<Format, string>> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  webp: 'image/webp',
-  avif: 'image/avif',
-  bmp: 'image/bmp',
-  ico: 'image/x-icon',
-  tiff: 'image/tiff',
-  gif: 'image/gif',
-  apng: 'image/apng',
-  svg: 'image/svg+xml',
-  pdf: 'application/pdf',
-  raw: 'application/octet-stream',
-}
 
 /**
  * The format a filename's extension names.

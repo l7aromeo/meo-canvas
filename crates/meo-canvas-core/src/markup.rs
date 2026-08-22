@@ -143,6 +143,36 @@ pub fn parse(input: &str) -> Vec<TextSegment> {
     segments
 }
 
+/// Parses markup into the segments of a paragraph, which is never empty.
+///
+/// [`parse`] reports what the markup said, and a string of nothing but tags --
+/// or nothing at all -- says nothing. A `Text` node is still a paragraph
+/// though, so every surface that turns a string into one needs the same empty
+/// run to stand in for it. That is this function rather than each surface's
+/// own `if`: the addon's arena decoder and the Rust facade's `Text::new` both
+/// call it, and neither can disagree with the other about what `Text("")` is.
+///
+/// # Examples
+///
+/// ```
+/// use meo_canvas_core::markup;
+///
+/// assert!(markup::parse("").is_empty());
+/// assert_eq!(markup::parse_paragraph("").len(), 1);
+/// assert_eq!(markup::parse_paragraph("")[0].text, "");
+/// ```
+#[must_use]
+pub fn parse_paragraph(input: &str) -> Vec<TextSegment> {
+    let mut segments = parse(input);
+    if segments.is_empty() {
+        segments.push(TextSegment {
+            text: String::new(),
+            style: TextStyle::default(),
+        });
+    }
+    segments
+}
+
 /// Records a run of text under the style in force, unless the run is empty.
 fn push_run(segments: &mut Vec<TextSegment>, text: &str, style: &TextStyle) {
     if text.is_empty() {
@@ -336,7 +366,7 @@ mod tests {
         text::{FontStyle, FontWeight},
     };
 
-    use super::{TAB, parse, unescape};
+    use super::{TAB, parse, parse_paragraph, unescape};
 
     #[test]
     fn text_with_no_markup_is_one_unstyled_segment() {
@@ -344,6 +374,19 @@ mod tests {
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].text, "hello");
         assert_eq!(segments[0].style, super::TextStyle::default());
+    }
+
+    #[test]
+    fn a_paragraph_is_never_empty_even_when_the_markup_says_nothing() {
+        for input in ["", "<b></b>"] {
+            let segments = parse_paragraph(input);
+            assert_eq!(segments.len(), 1, "{input}");
+            assert!(segments[0].text.is_empty(), "{input}");
+            assert_eq!(segments[0].style, super::TextStyle::default());
+        }
+        // And it does not add a run where there already is one.
+        assert_eq!(parse_paragraph("hello").len(), 1);
+        assert_eq!(parse_paragraph("a<b>b</b>").len(), 2);
     }
 
     #[test]

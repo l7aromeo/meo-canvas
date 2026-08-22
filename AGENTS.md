@@ -210,9 +210,42 @@ filtering (`layout.canvas.ts:43`). So `children: Row(...)` and
 does not render writes `false` rather than an empty node.
 
 Rust reaches the same place through a trait rather than a union: `.children`
-accepts a single element, an array, or an iterator, and an `Option<Element>`
-that is `None` is skipped. The syntax differs because the languages do; what a
+accepts a single element, an array, a `Vec`, and an `Option<Element>` that is
+`None` is skipped. An iterator goes through `each(..)` rather than directly: a
+blanket `impl IntoElements for I: IntoIterator` overlaps `Vec`, `[T; N]` and
+`Option`, and rustc refuses the narrowed form because a future std release could
+make `Option` an iterator. The syntax differs because the languages do; what a
 caller can express does not.
+
+**Neither surface ships a capability the other lacks, and neither is finished
+first.** A change to one is not done until the other has it. The two examples
+are the check: `examples/bun` and `examples/rust` draw the same picture, and
+`just example` runs both, so a surface left behind fails the command rather than
+being noticed later.
+
+`just example` compares more than exit status. Both halves render the same scene
+at the same size, so their PNGs are compared byte for byte — a difference that
+survives identical input is a difference between the surfaces, and the pixels
+say so where a passing test does not. That check found the GPU feature gap
+recorded under **Rasteriser parity**.
+
+### Rasteriser parity
+
+The GPU backend is a Cargo feature, named for the platform that has one: `metal`
+on Apple targets, `vulkan` elsewhere. Neither is default, because a build with no
+backend named renders on the CPU, which is what a portable `cargo check` needs.
+
+Every crate a caller can depend on forwards that feature. `meo-canvas-node` is
+not the only entry point — a Rust caller reaches Skia through `meo-canvas` and
+`meo-canvas-core`, and a feature declared only on the addon leaves that caller
+on the CPU with no way to ask otherwise.
+
+`gpu` is a request rather than an outcome, and `Canvas::gpu` reports the request,
+so a test asserting `renderer.gpu()` passes on a CPU-only build. The check that
+does not is the byte comparison in `just example`: the two surfaces render the
+same scene, and CPU and GPU rasterisation of the same scene differ by one or two
+levels across the antialiased edges. `Surface::engine` reports what the surface
+actually got, and is the thing to read when the images disagree.
 
 **The two surfaces read the same way.** `Root` is the entry point on both, style
 properties sit directly on the node rather than inside a nested object, and the
@@ -257,11 +290,6 @@ a property with no setter is still reachable by literal.
 
 ## The JavaScript surface
 
-**This section is the design, not a description.** `packages/meo-canvas/src`
-holds the type vocabulary and nothing else — the encoder, the node factories and
-`Root` are unwritten. Read it as the specification to build against, and treat
-any sentence here as false about the tree until that lands.
-
 Object literals, not builders. The two surfaces are siblings, so each is
 idiomatic in its own language rather than one imitating the other — and this is
 the shape v1 already has.
@@ -270,25 +298,26 @@ the shape v1 already has.
 const canvas = await Root({
   width: 800,
   height: 400,
-  children: [
-    Row({
-      style: { gap: 16, padding: 24, background: '#101014' },
-      children: [
-        Image({ src: 'avatar.png', style: { width: 64, height: 64, fit: 'cover' } }),
-        Text('Ukasyah', { style: { fontSize: 24, fontWeight: 'bold' } }),
-      ],
-    }),
-  ],
+  backgroundColor: '#101014',
+  children: Row({
+    gap: 16,
+    padding: 24,
+    children: [Image({ src: 'avatar.png', width: 64, height: 64, objectFit: 'cover' }), Text('Ukasyah', { fontSize: 24, fontWeight: 'bold' })],
+  }),
 })
 
 const png = await canvas.toBuffer('png')
 const jpg = canvas.toBufferSync('jpg')
 ```
 
-Same `style` key as the Rust surface, same CSS names, same values — `'row'`
-where Rust has `Row`, `16` where Rust has `px(16.0)`. The string-literal unions in
-`packages/meo-canvas/src/index.ts` are what make `'cover'` complete and `'covr'`
-a compile error.
+Style properties sit directly on the props object, as they do on the Rust
+setters — there is no `style` key on either surface. `RootProps` is
+`Style & {...}` and `TextProps` is `Style & ParagraphOptions & {...}`, so a
+property a node accepts is a property a caller writes flat.
+
+Same CSS names, same values — `'row'` where Rust has `Row`, `16` where Rust has
+`px(16.0)`. The string-literal unions in `packages/meo-canvas/src/index.ts` are
+what make `'cover'` complete and `'covr'` a compile error.
 
 `width` and `height` belong on `Root` because the canvas is the sized thing and
 the tree is drawn into it. A retained canvas has a size.
@@ -503,18 +532,50 @@ v1 documents `z-index` as applying only to absolutely positioned nodes, which is
 narrower than CSS. This renderer follows CSS, under the rule that where v1
 diverges from the reference the reference wins.
 
-**The rule was measured in Chrome, not assembled from the three
+**The rule is measured in Chrome, not assembled from the three
 specifications.** A rule read out of three documents is a rule nobody has seen
-run, so all five combinations were sampled with `elementFromPoint` over the
-overlap of two boxes, the first carrying `z-index: 5`:
+run. 281 cases are sampled with `elementFromPoint` at the true intersection of
+two overlapping boxes: every pair drawn from `static`, `relative`, `absolute`,
+`sticky` and `fixed`, under each of `block`, `flex`, `grid`, `inline-block` and
+`table-cell`; then every `z-index` pair drawn from `auto`, `-1`, `0`, `1` and
+`2`, with the children positioned and again with them static. Hit testing walks
+the painting order, so the topmost element at a point is the paint answer.
 
-| container | child    | `z-index`   |
-| --------- | -------- | ----------- |
-| block     | static   | ignored     |
-| block     | relative | **applied** |
-| flex      | static   | applied     |
-| flex      | relative | applied     |
-| grid      | static   | applied     |
+Each case is measured with every other case hidden. With the whole grid visible
+a `position: fixed` box leaves its parent for the viewport and can land on a
+neighbouring case, which answers for the wrong pair — four cases did — and
+isolating each one also keeps it inside the viewport, which `elementFromPoint`
+requires. A case whose two boxes do not actually overlap reports `NO-OVERLAP`
+rather than a winner, because a row-direction flex container separates its
+children and would otherwise report the later sibling as "on top" of a box it
+never covers.
+
+Four results carry the design:
+
+**Display does not change paint order.** All 25 position pairs give the same
+answer under all five displays. The painter therefore reads position and
+`z-index`, never the parent's `display`.
+
+**A positioned child paints above a static sibling regardless of document
+order** — `relative`, `absolute`, `sticky` and `fixed` alike, in all five
+displays. These are the only pairs with no `z-index` anywhere in which the
+_earlier_ sibling wins.
+
+**For positioned children the `z-index` matrix is identical under block, flex
+and grid**, and `auto` ties with `0`: both paint in CSS 2.1 Appendix E step 8,
+so tree order decides.
+
+**For static children, block ignores `z-index` and flex and grid honour it** —
+and the flex and grid matrix differs from the positioned one in exactly one
+cell. A static item at `z-index: 0` beats a later sibling at `auto`, where two
+positioned children in the same configuration tie. A static flex or grid item
+with any `z-index` creates a stacking context (Flexbox §5.4, Grid §6.2) and
+paints in step 8; one at `auto` is not a context and paints as an inline-block,
+in step 7. It is one cell out of 25, and it is the cell an implementation that
+treats "flex items honour z-index" as "flex items are positioned" gets wrong.
+
+The full table is regenerated by the probe rather than transcribed; the four
+statements above are what the painter is written against.
 
 `PositionType` therefore carries three variants where taffy carries two.
 `Static` is appended as discriminant `2` rather than given the `0` it would take
@@ -533,6 +594,54 @@ because taffy cannot express them:
 `fixtures/block-stacking` and `fixtures/block-stacking-relative` are the same
 scene differing only in that variant, and their images differ only in the
 overlap.
+
+`Fixed` and `Sticky` stack as positioned variants: each beats a static sibling
+in all five displays, and each sits in the same cell of the matrix as
+`Relative`. They differ from `Relative` in where they resolve, not in when they
+paint.
+
+### Stacking contexts
+
+A child at `z-index: -1` sinks behind its parent's background unless the parent
+establishes a stacking context, so hit testing at the child's centre names the
+parent when the trigger made no context and the child when it did. That is the
+probe; 27 triggers were run through it.
+
+Creates one:
+
+| trigger                                      | note                         |
+| -------------------------------------------- | ---------------------------- |
+| `position` + a numeric `z-index`             | `relative`, `absolute` alike |
+| `position: fixed`                            | with no `z-index` at all     |
+| `position: sticky`                           | with no `z-index` at all     |
+| `opacity` below 1                            | `0.99` is enough             |
+| `transform` other than `none`                | `translateZ(0)` measured     |
+| `filter`, `backdrop-filter`                  | `blur(0px)` is enough        |
+| `clip-path`, `mask-image`                    |                              |
+| `isolation: isolate`                         |                              |
+| `mix-blend-mode` other than `normal`         |                              |
+| `will-change: transform`                     | and `will-change: opacity`   |
+| `contain: paint`                             | and `contain: layout`        |
+| `perspective`                                |                              |
+| a flex or grid item with a numeric `z-index` | position irrelevant          |
+
+Does not:
+
+| trigger                                 | note                                                           |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `overflow: hidden`                      | clips, and stacks nothing                                      |
+| `position: relative` at `z-index: auto` | positioned is not enough                                       |
+| `opacity: 1`                            | the property is not the trigger, the value is                  |
+| `transform: none`                       | likewise                                                       |
+| `display: flex` or `grid`               | the container is not a context; its items with a `z-index` are |
+| a flex item at `z-index: auto`          |                                                                |
+
+`overflow: hidden` is the one to hold on to. It is the trigger most often
+assumed, it clips its children, and it leaves them in the parent's stacking
+context — a negative child still paints behind the parent's background.
+`will-change: opacity` creating a context while `opacity: 1` does not is the
+mirror of it: the declaration is a promise about the future value, and Chrome
+honours the promise.
 
 ### Layout defaults
 

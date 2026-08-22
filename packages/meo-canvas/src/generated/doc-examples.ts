@@ -20,19 +20,19 @@ export async function example0(): Promise<void> {
   })
 }
 
-/** `node.ts`, line 207. */
+/** `node.ts`, line 262. */
 export async function example1(): Promise<void> {
 
   const name = Text('Ukasyah', { fontSize: 24 })
 }
 
-/** `node.ts`, line 243. */
+/** `node.ts`, line 298. */
 export async function example2(): Promise<void> {
 
   const avatar = Image({ src: 'avatar.png', width: 64, height: 64, objectFit: 'cover' })
 }
 
-/** `node.ts`, line 265. */
+/** `node.ts`, line 320. */
 export async function example3(): Promise<void> {
 
   const tick = Path({ d: 'M2 8 L6 12 L14 3' })

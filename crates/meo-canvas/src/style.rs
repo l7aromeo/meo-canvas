@@ -2,9 +2,9 @@
 //!
 //! The scene keeps layout, paint, text and effects in four structs because the
 //! codec needs them separated. Authoring does not: a caller writing `gap`
-//! beside `background` should never have to know which group either lives in,
-//! and v1's `BoxProps` already mixed all four. [`Style::into_parts`] does the
-//! splitting at the moment the tree becomes a scene.
+//! beside `background_color` should never have to know which group either lives
+//! in, and v1's `BoxProps` already mixed all four. [`Style::into_parts`] does
+//! the splitting at the moment the tree becomes a scene.
 //!
 //! ```
 //! use meo_canvas::{Style, all, hex_rgb, px};
@@ -12,10 +12,10 @@
 //! const CARD: Style = Style::new()
 //!     .padding(all(px(24.0)))
 //!     .gap(px(16.0))
-//!     .radius(12.0);
+//!     .border_radius(12.0);
 //!
-//! let dark = CARD.background(hex_rgb(0x10_10_14));
-//! let light = CARD.background(hex_rgb(0xf4_f4_f6));
+//! let dark = CARD.background_color(hex_rgb(0x10_10_14));
+//! let light = CARD.background_color(hex_rgb(0xf4_f4_f6));
 //! ```
 //!
 //! Setters take `self` and are `const` wherever the property allows, which is
@@ -83,9 +83,9 @@ pub struct Style {
     /// How this node's children are arranged.
     pub display: Option<Display>,
     /// Whether the node is placed by the flow or by its own offsets.
-    pub position: Option<PositionType>,
+    pub position_type: Option<PositionType>,
     /// Offsets from the container's edges.
-    pub inset: Option<Sides<Option<Length>>>,
+    pub position: Option<Sides<Option<Length>>>,
     /// Requested width.
     pub width: Option<Dimension>,
     /// Requested height.
@@ -105,7 +105,7 @@ pub struct Style {
     /// Space inside the border.
     pub padding: Option<Sides<Length>>,
     /// Border thickness, which occupies space whether or not it is painted.
-    pub border_width: Option<Sides<f32>>,
+    pub border: Option<Sides<f32>>,
     /// The axis children run along.
     pub flex_direction: Option<FlexDirection>,
     /// Whether children overflow onto further lines.
@@ -133,9 +133,9 @@ pub struct Style {
     /// Inline direction, which decides which edge is the start.
     pub direction: Option<Direction>,
     /// Column tracks of a grid.
-    pub grid_columns: Option<Vec<TrackSize>>,
+    pub grid_template_columns: Option<Vec<TrackSize>>,
     /// Row tracks of a grid.
-    pub grid_rows: Option<Vec<TrackSize>>,
+    pub grid_template_rows: Option<Vec<TrackSize>>,
     /// Size given to rows the template does not name.
     pub grid_auto_rows: Option<TrackSize>,
     /// Size given to columns the template does not name.
@@ -148,8 +148,8 @@ pub struct Style {
     pub grid_row: Option<GridPlacement>,
 
     // -- Paint ----------------------------------------------------------
-    /// The box's fill. CSS's `background-color`.
-    pub background: Option<Color>,
+    /// The box's fill. CSS's `background_color-color`.
+    pub background_color: Option<Color>,
     /// A gradient painted over the fill.
     pub gradient: Option<Gradient>,
     /// Border colour, per edge.
@@ -159,11 +159,11 @@ pub struct Style {
     /// Whether the border is solid, dashed or dotted.
     pub border_style: Option<BorderStyle>,
     /// Corner radii.
-    pub radius: Option<Corners<f32>>,
+    pub border_radius: Option<Corners<f32>>,
     /// Opacity of this node and its subtree, from `0.0` to `1.0`.
     pub opacity: Option<f32>,
     /// How this node composites onto what is beneath it.
-    pub blend_mode: Option<BlendMode>,
+    pub mix_blend_mode: Option<BlendMode>,
     /// Whether gradients are dithered.
     pub dither: Option<bool>,
     /// Paint order among positioned siblings.
@@ -221,13 +221,79 @@ pub struct Style {
     pub backdrop_filter: Option<String>,
 }
 
-/// Writes `$field` and returns the style, as a `const fn`.
+/// The property table: every flat setter, written once.
 ///
-/// The setters are near-identical and the docs are not, so the macro takes the
-/// documentation as an argument rather than generating it. Written out by hand
-/// each time, sixty setters is sixty chances to assign the wrong field.
-macro_rules! setter {
-    ($(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
+/// One list produces two things — the setters on [`Style`], and the same
+/// setters on [`Styled`], which every node implements. Writing them twice is
+/// what the sixty-five-methods-per-node objection was actually about, and a
+/// second list is a second place for a property to be forgotten: a node would
+/// simply lack a setter, with nothing failing to compile.
+///
+/// `plain` is a `const fn`, `owned` is not. The line between them is whether
+/// the field needs dropping — assigning over an owning field in a `const fn` is
+/// E0493, which `gradient` and `mask` hit despite carrying no `String` of their
+/// own. An `owned` setter takes `impl Into<_>` as well, since a heap value is
+/// the kind a caller usually has in another form.
+macro_rules! properties {
+    (
+        fields {
+            $(
+                $(#[$doc:meta])*
+                $kind:ident $name:ident: $field:ident, $type:ty;
+            )+
+        }
+        via {
+            $( $via:ident($($arg:ident: $arg_type:ty),*); )*
+        }
+    ) => {
+        impl Style {
+            $( properties!(@style $kind $(#[$doc])* $name: $field, $type); )+
+        }
+
+        /// The setters every node carries, written flat.
+        ///
+        /// A node is styled by naming properties on it directly —
+        /// `Row::new().gap(px(16.0))` — rather than by handing it a style
+        /// object. The methods are here, once, and a node type implements this
+        /// by pointing at the [`Style`] it holds: one line per node type
+        /// against sixty-nine methods.
+        ///
+        /// ```
+        /// use meo_canvas::{Row, Styled, hex, px};
+        ///
+        /// let card = Row::new().gap(px(16.0)).background_color(hex("#101014"));
+        /// ```
+        ///
+        /// [`Style`] keeps the same setters as `const fn`s, because a reusable
+        /// `const CARD: Style` is worth having and a trait method cannot be
+        /// one. The two lists cannot drift: they are one list.
+        pub trait Styled: Sized {
+            /// The style this node carries.
+            ///
+            /// The one method a node type writes. Everything else here is
+            /// provided.
+            fn style_mut(&mut self) -> &mut Style;
+
+            $( properties!(@node $kind $name, $type); )+
+
+            $(
+                #[doc = concat!(
+                    "Sets [`", stringify!($via), "`](Style::", stringify!($via), ") on this node."
+                )]
+                #[must_use]
+                fn $via(mut self, $($arg: $arg_type),*) -> Self {
+                    let style = ::core::mem::replace(
+                        <Self as Styled>::style_mut(&mut self),
+                        Style::new(),
+                    );
+                    *<Self as Styled>::style_mut(&mut self) = style.$via($($arg),*);
+                    self
+                }
+            )*
+        }
+    };
+
+    (@style plain $(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
         $(#[$doc])*
         #[must_use]
         pub const fn $name(mut self, value: $type) -> Self {
@@ -235,14 +301,60 @@ macro_rules! setter {
             self
         }
     };
-}
 
-/// A setter for a property whose value owns a heap allocation.
-///
-/// Not `const`: assigning over an `Option<String>` or `Option<Vec<_>>` drops
-/// what was there, and a `const fn` cannot drop.
-macro_rules! owned_setter {
-    ($(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
+    (@style sides $(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
+        $(#[$doc])*
+        #[must_use]
+        pub const fn $name(mut self, value: Sides<$type>) -> Self {
+            self.$field = Some(value);
+            self
+        }
+    };
+
+    (@style corners $(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
+        $(#[$doc])*
+        #[must_use]
+        pub const fn $name(mut self, value: Corners<$type>) -> Self {
+            self.$field = Some(value);
+            self
+        }
+    };
+
+    (@node sides $name:ident, $type:ty) => {
+        #[doc = concat!(
+            "Sets [`", stringify!($name), "`](Style::", stringify!($name), ") on this node."
+        )]
+        #[doc = ""]
+        #[doc = "One value for every edge, or the four named."]
+        #[must_use]
+        fn $name(mut self, value: impl crate::unit::IntoSides<$type>) -> Self {
+            let style = ::core::mem::replace(
+                <Self as Styled>::style_mut(&mut self),
+                Style::new(),
+            );
+            *<Self as Styled>::style_mut(&mut self) = style.$name(value.into_sides());
+            self
+        }
+    };
+
+    (@node corners $name:ident, $type:ty) => {
+        #[doc = concat!(
+            "Sets [`", stringify!($name), "`](Style::", stringify!($name), ") on this node."
+        )]
+        #[doc = ""]
+        #[doc = "One radius for every corner, or the four named."]
+        #[must_use]
+        fn $name(mut self, value: impl crate::unit::IntoCorners<$type>) -> Self {
+            let style = ::core::mem::replace(
+                <Self as Styled>::style_mut(&mut self),
+                Style::new(),
+            );
+            *<Self as Styled>::style_mut(&mut self) = style.$name(value.into_corners());
+            self
+        }
+    };
+
+    (@style owned $(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
         $(#[$doc])*
         #[must_use]
         pub fn $name(mut self, value: impl Into<$type>) -> Self {
@@ -250,12 +362,37 @@ macro_rules! owned_setter {
             self
         }
     };
+
+    (@node plain $name:ident, $type:ty) => {
+        #[doc = concat!(
+            "Sets [`", stringify!($name), "`](Style::", stringify!($name), ") on this node."
+        )]
+        #[must_use]
+        fn $name(mut self, value: $type) -> Self {
+            let style = ::core::mem::replace(
+                <Self as Styled>::style_mut(&mut self),
+                Style::new(),
+            );
+            *<Self as Styled>::style_mut(&mut self) = style.$name(value);
+            self
+        }
+    };
+
+    (@node owned $name:ident, $type:ty) => {
+        #[doc = concat!(
+            "Sets [`", stringify!($name), "`](Style::", stringify!($name), ") on this node."
+        )]
+        #[must_use]
+        fn $name(mut self, value: impl Into<$type>) -> Self {
+            let style = ::core::mem::replace(self.style_mut(), Style::new());
+            *self.style_mut() = style.$name(value);
+            self
+        }
+    };
 }
 
-impl Style {
-    // -- Layout ---------------------------------------------------------
-
-    setter! {
+properties! {
+    fields {
         /// How this node's children are arranged.
         ///
         /// ```
@@ -263,30 +400,20 @@ impl Style {
         ///
         /// const SHEET: Style = Style::new().display(Display::Grid);
         /// ```
-        display: display, Display
-    }
+    plain display: display, Display;
 
-    setter! {
-        /// Whether the node is placed by the flow or by its own `inset`.
-        position: position, PositionType
-    }
+        /// Whether the node is placed by the flow or by its own `position`.
+    plain position_type: position_type, PositionType;
 
-    setter! {
         /// Offsets from the container's edges.
-        inset: inset, Sides<Option<Length>>
-    }
+    sides position: position, Option<Length>;
 
-    setter! {
         /// Width divided by height, honoured when one axis is automatic.
-        aspect_ratio: aspect_ratio, f32
-    }
+    plain aspect_ratio: aspect_ratio, f32;
 
-    setter! {
         /// Space outside the border.
-        margin: margin, Sides<Dimension>
-    }
+    sides margin: margin, Dimension;
 
-    setter! {
         /// Space inside the border.
         ///
         /// ```
@@ -295,40 +422,26 @@ impl Style {
         /// const EVEN: Style = Style::new().padding(all(px(24.0)));
         /// const TIGHT: Style = Style::new().padding(xy(px(8.0), px(16.0)));
         /// ```
-        padding: padding, Sides<Length>
-    }
+    sides padding: padding, Length;
 
-    setter! {
         /// Border thickness, which occupies space whether or not it is painted.
-        border_width: border_width, Sides<f32>
-    }
+    sides border: border, f32;
 
-    setter! {
         /// The axis children run along.
-        flex_direction: flex_direction, FlexDirection
-    }
+    plain flex_direction: flex_direction, FlexDirection;
 
-    setter! {
         /// Whether children overflow onto further lines.
-        flex_wrap: flex_wrap, FlexWrap
-    }
+    plain flex_wrap: flex_wrap, FlexWrap;
 
-    setter! {
         /// Share of free space this node absorbs.
-        flex_grow: flex_grow, f32
-    }
+    plain flex_grow: flex_grow, f32;
 
-    setter! {
         /// Share of overflow this node gives up.
-        flex_shrink: flex_shrink, f32
-    }
+    plain flex_shrink: flex_shrink, f32;
 
-    setter! {
         /// Size along the main axis before growing or shrinking.
-        flex_basis: flex_basis, Dimension
-    }
+    plain flex_basis: flex_basis, Dimension;
 
-    setter! {
         /// Main-axis distribution of children.
         ///
         /// ```
@@ -336,35 +449,23 @@ impl Style {
         ///
         /// const SPREAD: Style = Style::new().justify_content(Justify::SpaceBetween);
         /// ```
-        justify_content: justify_content, Justify
-    }
+    plain justify_content: justify_content, Justify;
 
-    setter! {
         /// Cross-axis placement of children.
-        align_items: align_items, Align
-    }
+    plain align_items: align_items, Align;
 
-    setter! {
         /// This node's own cross-axis placement, overriding its parent's.
-        align_self: align_self, Align
-    }
+    plain align_self: align_self, Align;
 
-    setter! {
         /// Cross-axis distribution of wrapped lines.
-        align_content: align_content, Align
-    }
+    plain align_content: align_content, Align;
 
-    setter! {
         /// Whether `width` and `height` include padding and border.
-        box_sizing: box_sizing, BoxSizing
-    }
+    plain box_sizing: box_sizing, BoxSizing;
 
-    setter! {
         /// Inline direction, which decides which edge is the start.
-        direction: direction, Direction
-    }
+    plain direction: direction, Direction;
 
-    owned_setter! {
         /// The grid's column tracks.
         ///
         /// ```
@@ -372,47 +473,31 @@ impl Style {
         ///
         /// let sidebar = Style::new()
         ///     .display(Display::Grid)
-        ///     .grid_columns([track(px(240.0)), fr(1.0)]);
+        ///     .grid_template_columns([track(px(240.0)), fr(1.0)]);
         /// ```
-        grid_columns: grid_columns, Vec<TrackSize>
-    }
+    owned grid_template_columns: grid_template_columns, Vec<TrackSize>;
 
-    owned_setter! {
         /// The grid's row tracks.
-        grid_rows: grid_rows, Vec<TrackSize>
-    }
+    owned grid_template_rows: grid_template_rows, Vec<TrackSize>;
 
-    setter! {
         /// Size given to rows the template does not name.
-        grid_auto_rows: grid_auto_rows, TrackSize
-    }
+    plain grid_auto_rows: grid_auto_rows, TrackSize;
 
-    setter! {
         /// Size given to columns the template does not name.
-        grid_auto_columns: grid_auto_columns, TrackSize
-    }
+    plain grid_auto_columns: grid_auto_columns, TrackSize;
 
-    setter! {
         /// The order auto-placement fills tracks in.
-        grid_auto_flow: grid_auto_flow, GridAutoFlow
-    }
+    plain grid_auto_flow: grid_auto_flow, GridAutoFlow;
 
-    setter! {
         /// Where this item sits on the column axis.
-        grid_column: grid_column, GridPlacement
-    }
+    plain grid_column: grid_column, GridPlacement;
 
-    setter! {
         /// Where this item sits on the row axis.
-        grid_row: grid_row, GridPlacement
-    }
+    plain grid_row: grid_row, GridPlacement;
 
-    // -- Paint ----------------------------------------------------------
-
-    setter! {
         /// The box's fill.
         ///
-        /// CSS's `background-color`, and distinct from [`color`](Self::color),
+        /// CSS's `background_color-color`, and distinct from [`color`](Self::color),
         /// which is the text colour. The two sit adjacent and mean different
         /// things; that is CSS's trap and keeping its names is what lets a
         /// design be ported without translation.
@@ -420,192 +505,157 @@ impl Style {
         /// ```
         /// use meo_canvas::{Style, hex_rgb};
         ///
-        /// const PANEL: Style = Style::new().background(hex_rgb(0x10_10_14));
+        /// const PANEL: Style = Style::new().background_color(hex_rgb(0x10_10_14));
         /// ```
-        background: background, Color
-    }
+    plain background_color: background_color, Color;
 
-    owned_setter! {
         /// A gradient painted over the fill.
         ///
         /// Not `const`: a gradient owns its stops, and assigning over one drops
         /// the vector it replaces.
-        gradient: gradient, Gradient
-    }
+    owned gradient: gradient, Gradient;
 
-    setter! {
         /// One border colour on every edge.
-        border_color: border_color_all, Color
-    }
+    plain border_color: border_color_all, Color;
 
-    setter! {
         /// Border colour per edge, for a box whose edges differ.
-        border_color_sides: border_color, Sides<Option<Color>>
-    }
+    sides border_color_sides: border_color, Option<Color>;
 
-    setter! {
         /// Whether the border is solid, dashed or dotted.
-        border_style: border_style, BorderStyle
-    }
+    plain border_style: border_style, BorderStyle;
 
-    setter! {
         /// Corner radii, each named.
-        radius_corners: radius, Corners<f32>
-    }
+    corners border_radius_corners: border_radius, f32;
 
-    setter! {
         /// Opacity of this node and its subtree, from `0.0` to `1.0`.
-        opacity: opacity, f32
-    }
+    plain opacity: opacity, f32;
 
-    setter! {
         /// How this node composites onto what is beneath it.
-        blend_mode: blend_mode, BlendMode
-    }
+    plain mix_blend_mode: mix_blend_mode, BlendMode;
 
-    setter! {
         /// Whether gradients are dithered.
-        dither: dither, bool
+    plain dither: dither, bool;
+
+        /// Paint order among positioned siblings.
+    plain z_index: z_index, i32;
+
+        /// How an image fills its box.
+        ///
+        /// ```
+        /// use meo_canvas::{Image, Styled, px, scene::ObjectFit};
+        ///
+        /// let avatar = Image::path("a.png")
+        ///     .size(px(64.0), px(64.0))
+        ///     .object_fit(ObjectFit::Cover);
+        /// ```
+    plain object_fit: object_fit, ObjectFit;
+
+        /// Where an image sits in its box when it does not fill it.
+    plain object_position: object_position, (Length, Length);
+
+        /// Which frame of an animated source to draw.
+    plain frame: frame, u32;
+
+        /// The colour glyphs are drawn in.
+        ///
+        /// CSS's `color`: it inherits, so setting it on a container reaches
+        /// every descendant. See [`background_color`](Self::background_color) for the fill.
+    plain color: color, Color;
+
+        /// The family name text is drawn in.
+        ///
+        /// Not `const`, because the name is a `String`. A base style needing one
+        /// is a function returning a [`Style`] rather than a `const`.
+    owned font_family: font_family, String;
+
+        /// Em size in logical pixels.
+    plain font_size: font_size, f32;
+
+        /// Weight from 1 to 1000.
+    plain font_weight: font_weight, FontWeight;
+
+        /// Upright or italic, named.
+    plain font_style: font_style, FontStyle;
+
+        /// Horizontal alignment within the box.
+    plain text_align: text_align, TextAlign;
+
+        /// A line through, over or under the text.
+    plain text_decoration: text_decoration, TextDecoration;
+
+        /// Where a line sits within its box.
+    plain vertical_align: vertical_align, VerticalAlign;
+
+        /// Which of a glyph's fill and stroke is painted on top.
+    plain paint_order: paint_order, PaintOrder;
+
+        /// Line box height as a multiple of the em size.
+    plain line_height: line_height, f32;
+
+        /// Extra space between lines, in pixels.
+    plain line_gap: line_gap, f32;
+
+        /// An outline drawn on the glyphs.
+    plain text_stroke: text_stroke, TextStroke;
+
+        /// A transform applied to this node and its subtree.
+    plain transform: transform, Transform;
+
+        /// Shadows cast by the box, painted in the order given.
+    owned box_shadow: box_shadows, Vec<BoxShadow>;
+
+        /// Shadows cast by the glyphs.
+    owned text_shadow: text_shadows, Vec<TextShadow>;
+
+        /// A shape or gradient the subtree is clipped to.
+        ///
+        /// Not `const`, for the same reason [`gradient`](Self::gradient) is not:
+        /// a path mask owns its data and a gradient mask owns its stops.
+    owned mask: mask, Mask;
+
+        /// A CSS filter applied to this node's own drawing.
+    owned filter: filter, String;
+
+        /// A CSS filter applied to what shows through this node.
+    owned backdrop_filter: backdrop_filter, String;
     }
 
-    setter! {
-        /// Paint order among positioned siblings.
-        z_index: z_index, i32
+    via {
+        width(width: Length);
+        height(height: Length);
+        size(width: Length, height: Length);
+        min_width(width: Length);
+        min_height(height: Length);
+        max_width(width: Length);
+        max_height(height: Length);
+        gap(gap: Length);
+        gap_xy(row: Length, column: Length);
+        overflow(overflow: Overflow);
+        border_radius(border_radius: f32);
+        bold();
+        italic();
+        letter_spacing(spacing: Length);
+        word_spacing(spacing: Length);
     }
+}
+
+impl Style {
+    // -- Layout ---------------------------------------------------------
+
+    // -- Paint ----------------------------------------------------------
 
     // -- Image ----------------------------------------------------------
     //
     // Three properties that belong to an image rather than to a box. They live
     // on `Style` because the surface is one flat style and a caller writing
-    // `.style(Style::new().size(..).fit(Cover))` should not have to know that
-    // two of those three words are read by different halves of the scene. A
-    // node that is not an image ignores them, which is what CSS does with a
-    // property a element does not define.
-
-    setter! {
-        /// How an image fills its box.
-        ///
-        /// ```
-        /// use meo_canvas::{Image, Style, px, scene::ObjectFit};
-        ///
-        /// let avatar = Image::path("a.png")
-        ///     .style(Style::new().size(px(64.0), px(64.0)).fit(ObjectFit::Cover));
-        /// ```
-        fit: object_fit, ObjectFit
-    }
-
-    setter! {
-        /// Where an image sits in its box when it does not fill it.
-        object_position: object_position, (Length, Length)
-    }
-
-    setter! {
-        /// Which frame of an animated source to draw.
-        frame: frame, u32
-    }
+    // `.style(Style::new().size(..).object_fit(Cover))` should not have to know
+    // that two of those three words are read by different halves of the
+    // scene. A node that is not an image ignores them, which is what CSS
+    // does with a property a element does not define.
 
     // -- Text -----------------------------------------------------------
 
-    setter! {
-        /// The colour glyphs are drawn in.
-        ///
-        /// CSS's `color`: it inherits, so setting it on a container reaches
-        /// every descendant. See [`background`](Self::background) for the fill.
-        color: color, Color
-    }
-
-    owned_setter! {
-        /// The family name text is drawn in.
-        ///
-        /// Not `const`, because the name is a `String`. A base style needing one
-        /// is a function returning a [`Style`] rather than a `const`.
-        font_family: font_family, String
-    }
-
-    setter! {
-        /// Em size in logical pixels.
-        font_size: font_size, f32
-    }
-
-    setter! {
-        /// Weight from 1 to 1000.
-        font_weight: font_weight, FontWeight
-    }
-
-    setter! {
-        /// Upright or italic, named.
-        font_style: font_style, FontStyle
-    }
-
-    setter! {
-        /// Horizontal alignment within the box.
-        text_align: text_align, TextAlign
-    }
-
-    setter! {
-        /// A line through, over or under the text.
-        text_decoration: text_decoration, TextDecoration
-    }
-
-    setter! {
-        /// Where a line sits within its box.
-        vertical_align: vertical_align, VerticalAlign
-    }
-
-    setter! {
-        /// Which of a glyph's fill and stroke is painted on top.
-        paint_order: paint_order, PaintOrder
-    }
-
-    setter! {
-        /// Line box height as a multiple of the em size.
-        line_height: line_height, f32
-    }
-
-    setter! {
-        /// Extra space between lines, in pixels.
-        line_gap: line_gap, f32
-    }
-
-    setter! {
-        /// An outline drawn on the glyphs.
-        text_stroke: text_stroke, TextStroke
-    }
-
     // -- Effects --------------------------------------------------------
-
-    setter! {
-        /// A transform applied to this node and its subtree.
-        transform: transform, Transform
-    }
-
-    owned_setter! {
-        /// Shadows cast by the box, painted in the order given.
-        box_shadow: box_shadows, Vec<BoxShadow>
-    }
-
-    owned_setter! {
-        /// Shadows cast by the glyphs.
-        text_shadow: text_shadows, Vec<TextShadow>
-    }
-
-    owned_setter! {
-        /// A shape or gradient the subtree is clipped to.
-        ///
-        /// Not `const`, for the same reason [`gradient`](Self::gradient) is not:
-        /// a path mask owns its data and a gradient mask owns its stops.
-        mask: mask, Mask
-    }
-
-    owned_setter! {
-        /// A CSS filter applied to this node's own drawing.
-        filter: filter, String
-    }
-
-    owned_setter! {
-        /// A CSS filter applied to what shows through this node.
-        backdrop_filter: backdrop_filter, String
-    }
 
     /// A style that sets nothing.
     ///
@@ -615,8 +665,8 @@ impl Style {
     pub const fn new() -> Self {
         Self {
             display: None,
+            position_type: None,
             position: None,
-            inset: None,
             width: None,
             height: None,
             min_width: None,
@@ -626,7 +676,7 @@ impl Style {
             aspect_ratio: None,
             margin: None,
             padding: None,
-            border_width: None,
+            border: None,
             flex_direction: None,
             flex_wrap: None,
             flex_grow: None,
@@ -640,21 +690,21 @@ impl Style {
             overflow: None,
             box_sizing: None,
             direction: None,
-            grid_columns: None,
-            grid_rows: None,
+            grid_template_columns: None,
+            grid_template_rows: None,
             grid_auto_rows: None,
             grid_auto_columns: None,
             grid_auto_flow: None,
             grid_column: None,
             grid_row: None,
-            background: None,
+            background_color: None,
             gradient: None,
             border_color: None,
             border_color_all: None,
             border_style: None,
-            radius: None,
+            border_radius: None,
             opacity: None,
-            blend_mode: None,
+            mix_blend_mode: None,
             dither: None,
             z_index: None,
             object_fit: None,
@@ -771,20 +821,20 @@ impl Style {
         self
     }
 
-    /// One corner radius on every corner.
+    /// One `border_radius` on every corner.
     ///
     /// ```
     /// use meo_canvas::Style;
     ///
-    /// const ROUNDED: Style = Style::new().radius(12.0);
+    /// const ROUNDED: Style = Style::new().border_radius(12.0);
     /// ```
     #[must_use]
-    pub const fn radius(mut self, radius: f32) -> Self {
-        self.radius = Some(Corners {
-            top_left: radius,
-            top_right: radius,
-            bottom_right: radius,
-            bottom_left: radius,
+    pub const fn border_radius(mut self, border_radius: f32) -> Self {
+        self.border_radius = Some(Corners {
+            top_left: border_radius,
+            top_right: border_radius,
+            bottom_right: border_radius,
+            bottom_left: border_radius,
         });
         self
     }
@@ -848,10 +898,10 @@ impl Style {
         if let Some(value) = self.display {
             layout.display = value;
         }
-        if let Some(value) = self.position {
+        if let Some(value) = self.position_type {
             layout.position_type = value;
         }
-        if let Some(value) = self.inset {
+        if let Some(value) = self.position {
             layout.inset = value;
         }
         if let Some(value) = self.width {
@@ -879,7 +929,7 @@ impl Style {
         if let Some(value) = self.padding {
             layout.padding = value;
         }
-        if let Some(value) = self.border_width {
+        if let Some(value) = self.border {
             layout.border = value;
         }
         if let Some(value) = self.flex_direction {
@@ -913,10 +963,10 @@ impl Style {
         if let Some(value) = self.direction {
             layout.direction = value;
         }
-        if let Some(value) = self.grid_columns {
+        if let Some(value) = self.grid_template_columns {
             layout.grid_template_columns = value;
         }
-        if let Some(value) = self.grid_rows {
+        if let Some(value) = self.grid_template_rows {
             layout.grid_template_rows = value;
         }
         layout.grid_auto_rows = self.grid_auto_rows;
@@ -931,7 +981,7 @@ impl Style {
             layout.grid_row = value;
         }
 
-        if let Some(value) = self.background {
+        if let Some(value) = self.background_color {
             paint.background_color = value;
         }
         paint.gradient = self.gradient;
@@ -944,13 +994,13 @@ impl Style {
         if let Some(value) = self.border_style {
             paint.border_style = value;
         }
-        if let Some(value) = self.radius {
+        if let Some(value) = self.border_radius {
             paint.border_radius = value;
         }
         if let Some(value) = self.opacity {
             paint.opacity = value;
         }
-        if let Some(value) = self.blend_mode {
+        if let Some(value) = self.mix_blend_mode {
             paint.blend_mode = value;
         }
         if let Some(value) = self.dither {
@@ -1030,7 +1080,7 @@ mod tests {
         // overrides only what it names.
         let style = Style::new();
         assert!(style.width.is_none());
-        assert!(style.background.is_none());
+        assert!(style.background_color.is_none());
         assert!(style.font_size.is_none());
         assert_eq!(style, Style::default());
     }
@@ -1041,11 +1091,11 @@ mod tests {
         // mention is a fresh value a `self`-taking setter may consume.
         const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
 
-        let dark = CARD.background(hex_rgb(0x10_10_14));
-        let light = CARD.background(hex_rgb(0x1c_1c_22));
+        let dark = CARD.background_color(hex_rgb(0x10_10_14));
+        let light = CARD.background_color(hex_rgb(0x1c_1c_22));
 
         assert_eq!(dark.padding, light.padding);
-        assert_ne!(dark.background, light.background);
+        assert_ne!(dark.background_color, light.background_color);
     }
 
     #[test]
@@ -1071,11 +1121,11 @@ mod tests {
             .max_height(px(400.0))
             .padding(xy(px(8.0), px(16.0)))
             .margin(all(Dimension::Points(4.0)))
-            .border_width(top(2.0))
+            .border(top(2.0))
             .flex_grow(1.0)
             .flex_shrink(0.0)
             .aspect_ratio(1.618)
-            .grid_columns([track(px(240.0))])
+            .grid_template_columns([track(px(240.0))])
             .into_parts();
 
         assert_eq!(layout.display, Display::Grid);
@@ -1108,8 +1158,8 @@ mod tests {
     #[test]
     fn paint_properties_reach_the_paint_half() {
         let (_, paint, ..) = Style::new()
-            .background(hex_rgb(0x10_10_14))
-            .radius(12.0)
+            .background_color(hex_rgb(0x10_10_14))
+            .border_radius(12.0)
             .opacity(0.5)
             .z_index(3)
             .dither(true)
@@ -1132,7 +1182,7 @@ mod tests {
         // ported without translation.
         let (_, paint, text, _) = Style::new()
             .color(hex_rgb(0xff_ff_ff))
-            .background(hex_rgb(0x00_00_00))
+            .background_color(hex_rgb(0x00_00_00))
             .into_parts();
 
         assert_eq!(text.color, Some(hex_rgb(0xff_ff_ff)));

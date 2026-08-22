@@ -140,6 +140,22 @@ impl ImageFormat {
         }
     }
 
+    /// The IANA media type this format is served as.
+    ///
+    /// Delegated to the renderer rather than matched here, for the reason
+    /// [`ImageFormat::from_extension`] is: upstream's `mime_type` reads the
+    /// same trait table its `extension` and `is_animated` read
+    /// (`meo-skia-canvas-0.11.0/src/export.rs:576`), so a format whose type
+    /// changes there changes here, and there is one table rather than a second
+    /// one restating it.
+    ///
+    /// [`Raw`](ImageFormat::Raw) has no registered type and reports
+    /// `application/octet-stream`.
+    #[must_use]
+    pub fn media_type(self) -> &'static str {
+        to_skia_format(self).mime_type()
+    }
+
     /// The format a filename extension names, if any.
     ///
     /// Delegates to the renderer rather than matching here, so the aliases it
@@ -421,11 +437,20 @@ mod tests {
     use crate::Error;
 
     #[test]
-    fn every_format_names_an_extension_and_a_name() {
+    fn every_format_names_an_extension_a_name_and_a_media_type() {
         for format in ImageFormat::ALL {
             assert!(!format.extension().is_empty());
             assert!(!format.name().is_empty());
+            assert!(
+                format.media_type().contains('/'),
+                "{format} has no media type"
+            );
         }
+        // The one a caller is most likely to read, spelled out rather than
+        // only asserted structurally.
+        assert_eq!(ImageFormat::Png.media_type(), "image/png");
+        assert_eq!(ImageFormat::Jpeg.media_type(), "image/jpeg");
+        assert_eq!(ImageFormat::Raw.media_type(), "application/octet-stream");
     }
 
     #[test]
@@ -548,6 +573,9 @@ mod tests {
                 }
                 if ours.is_vector() != upstream.is_vector() {
                     wrong.push("is_vector");
+                }
+                if ours.media_type() != upstream.mime_type() {
+                    wrong.push("media_type");
                 }
                 (!wrong.is_empty()).then(|| {
                     format!("{ours} disagrees on {}", wrong.join(", "))

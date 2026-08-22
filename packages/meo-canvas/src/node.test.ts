@@ -157,10 +157,34 @@ describe('containers', () => {
 })
 
 describe('text', () => {
-  it('takes its content as the first argument', () => {
+  it('takes its content as the first argument, as markup', () => {
     // A `Text` with no text is not a thing worth being able to write, so the
     // content is a parameter rather than a key that could be forgotten.
-    expect(Text('Ukasyah').segments).toEqual([{ text: 'Ukasyah', style: undefined }])
+    //
+    // It lands in `markup` rather than in a segment, and that is the whole
+    // distinction from `RichText`: the renderer parses this string, so
+    // `Text('a <b>b</b>')` is two runs by the time it is drawn. Building a
+    // segment here would make the two indistinguishable on the wire and cost
+    // every caller the rich text v1 gave them.
+    expect(Text('Ukasyah').markup).toBe('Ukasyah')
+    expect(Text('Ukasyah').segments).toBeUndefined()
+  })
+
+  it('leaves markup unset for runs the caller built', () => {
+    // The other half of the discriminant. `RichText` is the only way to write
+    // a literal `<`, which it can only be if nothing parses it.
+    const node = RichText([{ text: 'a <b> b', style: undefined }])
+    expect(node.markup).toBeUndefined()
+    expect(node.segments).toEqual([{ text: 'a <b> b', style: undefined }])
+  })
+
+  it('carries paragraph properties apart from style', () => {
+    // `maxLines` and `ellipsis` describe the block, not the glyphs, and nothing
+    // inherits them — which is why the scene keeps them in their own struct and
+    // so does this.
+    const node = Text('x', { maxLines: 2, ellipsis: '...', fontSize: 12 })
+    expect(node.paragraph).toEqual({ maxLines: 2, ellipsis: '...' })
+    expect(Text('x').paragraph).toBeUndefined()
   })
 
   it('carries one segment per run when the runs differ', () => {

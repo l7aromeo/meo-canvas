@@ -855,13 +855,28 @@ const BLACK = 0xff
  */
 const CENTRED: readonly [Length, Length] = ['50%', '50%']
 
-/** Writes the payload only a text node has. */
-function writeTextPayload(out: ArenaWriter, segments: readonly TextSegment[]): void {
-  // `maxLines` and `ellipsis` have no spelling on this surface yet, so both are
-  // absent rather than guessed. They are one property each when they arrive.
-  out.absent()
-  out.absent()
+/**
+ * Writes the payload only a text node has.
+ *
+ * The content is one of two things and the payload says which: `markup` is a
+ * string the renderer parses, `segments` are runs the caller built and the
+ * renderer leaves alone. Without that discriminant the two are indistinguishable
+ * — `RichText` of one run writes the same bytes as `Text` — and the decoder
+ * would have to guess, losing either `RichText`'s literal `<` or every
+ * caller's rich text.
+ */
+function writeTextPayload(out: ArenaWriter, node: SceneNode): void {
+  out.optional(node.paragraph?.maxLines, lines => out.integer(lines))
+  out.optional(node.paragraph?.ellipsis, ellipsis => out.text(ellipsis))
 
+  if (node.markup !== undefined) {
+    out.present()
+    out.text(node.markup)
+    return
+  }
+
+  out.absent()
+  const segments = node.segments ?? []
   out.count(segments.length)
   for (const segment of segments) {
     out.text(segment.text)
@@ -889,8 +904,9 @@ function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | un
   // should not have to know that `objectFit` is payload and `opacity` is a mask
   // bit. This is the seam, and it belongs here rather than in the surface.
   out.enum(variant(OBJECT_FIT, style?.objectFit ?? 'fill', 'objectFit'))
-  writeLength(out, CENTRED[0])
-  writeLength(out, CENTRED[1])
+  const position = style?.objectPosition ?? CENTRED
+  writeLength(out, position[0])
+  writeLength(out, position[1])
   out.optional(style?.frame, frame => out.integer(frame))
 }
 
@@ -919,7 +935,7 @@ function writeNode(out: ArenaWriter, node: SceneNode): void {
   out.enum(variant(NODE_TAG, node.kind, 'kind'))
   writeStyle(out, node.style)
 
-  if (node.kind === 'text') writeTextPayload(out, node.segments ?? [])
+  if (node.kind === 'text') writeTextPayload(out, node)
   else if (node.kind === 'image' && node.src !== undefined) writeImagePayload(out, node.src, node.style)
   else if (node.kind === 'path') writePathPayload(out, node.d ?? '')
 

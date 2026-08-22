@@ -31,7 +31,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check lint-check layout-check docs test addon test-js coverage coverage-js unused
+ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -155,14 +155,16 @@ fmt-check: ensure-deps
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
 
-# The consumer project: typecheck it against the built package, then run it.
+# The consumer projects: typecheck them against the built package, then run them.
 #
-# Not in `ci`, and the reason is the same one that kept `fixtures` out of it
-# until the first fixture landed: this fails today, on purpose. It calls an API
-# the package does not export yet, so it is the acceptance target for the
-# JavaScript surface rather than a check of it. It joins `ci` in the change
-# that makes it pass.
-[doc("Typecheck and run both consumer examples (fails until the APIs exist).")]
+# Both of them, deliberately. They draw the same picture from the two surfaces,
+# so a surface left behind fails this command rather than being noticed later.
+# Each reaches `meo-canvas` the way anyone else would -- the JavaScript one
+# through the package's exports rather than into its source, the Rust one
+# through a dependency rather than from inside the workspace -- so it catches
+# what the test suites cannot: an exports map, a `types` field, an entry point,
+# or a public item that a caller needs and the crate does not export.
+[doc("Typecheck and run both consumer examples.")]
 example: build-js
     ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
     cd examples/bun && bun run index.ts
@@ -307,6 +309,28 @@ arena-enums-check:
     @node packages/meo-canvas/tools/generate-arena-enums.mjs "$PWD/target/arena-enums.check.ts"
     @diff -u packages/meo-canvas/src/generated/arena-enums.ts target/arena-enums.check.ts \
       || { echo "error: the wire-enum tables are stale; run \`just arena-enums\` and commit the result"; exit 1; }
+
+# The TypeScript format table, emitted from the Rust one rather than kept in
+# step by hand. Browsers accept both `image/x-icon` and the renderer's
+# `image/vnd.microsoft.icon` for `ico`, so a transcribed table can disagree with
+# the renderer and still serve, render and pass every test.
+#
+# A Rust test rather than a source parser, for the reason `arena-cases` is one:
+# the values come from upstream's trait table at runtime and are not in any
+# source text this side could read.
+[doc("Emit the TypeScript format table from the Rust one.")]
+media-types:
+    @MEO_MEDIA_TYPES="$PWD/packages/meo-canvas/src/generated/media-types.ts" cargo test -q \
+      -p meo-canvas --test media_types -- --ignored --exact emit_media_types > /dev/null
+
+# Fails when the checked-in format table no longer matches the Rust.
+[doc("Fail if the checked-in format table has drifted from the Rust.")]
+media-types-check:
+    @mkdir -p target
+    @MEO_MEDIA_TYPES="$PWD/target/media-types.check.ts" cargo test -q \
+      -p meo-canvas --test media_types -- --ignored --exact emit_media_types > /dev/null
+    @diff -u packages/meo-canvas/src/generated/media-types.ts target/media-types.check.ts \
+      || { echo "error: the format table is stale; run \`just media-types\` and commit the result"; exit 1; }
 
 # Golden fixtures: a scene, and the picture it must produce.
 #

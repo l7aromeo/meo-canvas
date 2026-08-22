@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import cases from '../../../fixtures/arena-cases.json' with { type: 'json' }
 
 import { ArenaWriter, PROPERTY_TABLES, encodeScene, type SideValue } from './arena.js'
-import { ENUMS } from './generated/arena-enums.js'
+import { ENUMS, NODE_TAG } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION, type ArenaProperty } from './generated/arena-tables.js'
 import { Box, Image, Path, RichText, Text, type SceneNode } from './node.js'
 import type { Style } from './style.js'
@@ -223,20 +223,38 @@ function readNode(input: Cursor): DecodedNode {
   return { kind, groups, payload, name, children }
 }
 
+/** A side value in the shape the case fixture writes it. */
+function sourceValue(value: SideValue): string | number[] {
+  return typeof value === 'string' ? value : [...value]
+}
+
 /** Reads the payload the node's kind carries. */
 function readPayload(input: Cursor, kind: string): unknown {
-  if (kind === 'Box') return null
+  // The shape is the case fixture's, field for field, so a decoded payload can
+  // be compared against what Rust wrote without an adapter in between. An
+  // adapter here would be a third description of the format, written by the
+  // same hand as the other two.
+  if (kind === 'Box') return {}
 
   if (kind === 'Text') {
-    const maxLines = read(input, 'Option<u32>')
-    const ellipsis = read(input, 'Option<String>')
+    const paragraph = {
+      max_lines: read(input, 'Option<u32>'),
+      ellipsis: read(input, 'Option<String>'),
+    }
+    // The discriminant: markup present means the renderer parses the string,
+    // absent means the runs follow and it leaves them alone. Reading the count
+    // unconditionally here would desynchronise the whole rest of the stream,
+    // which is why the writer and this reader move together.
+    const markup = read(input, 'Option<String>')
+    if (markup !== null) return { paragraph, markup }
+
     const count = slot(input)
     const segments = Array.from({ length: count }, () => {
       const text = side(input)
       const mask = Array.from({ length: slotsFor(TEXT.length) }, () => slot(input))
       return { text, style: readGroup(input, TEXT, mask) }
     })
-    return { maxLines, ellipsis, segments }
+    return { paragraph, segments }
   }
 
   if (kind === 'Image') {
@@ -247,7 +265,10 @@ function readPayload(input: Cursor, kind: string): unknown {
     const tag = tags[slot(input)]
     if (tag === undefined) throw new RangeError('ImageSource has no such tag')
     return {
-      source: { tag, value: side(input) },
+      // Bytes come back as a plain array, which is how the case fixture writes
+      // a buffer. A `Uint8Array` here would compare unequal to Rust's own
+      // answer for a difference that is about JavaScript rather than the format.
+      source: { tag, value: sourceValue(side(input)) },
       fit: read(input, 'ObjectFit'),
       position: [read(input, 'Length'), read(input, 'Length')],
       frame: read(input, 'Option<u32>'),
@@ -258,12 +279,12 @@ function readPayload(input: Cursor, kind: string): unknown {
     data: side(input),
     fill: read(input, 'Option<PathPaint>'),
     stroke: read(input, 'Option<PathPaint>'),
-    lineWidth: f32(input),
-    fillRule: read(input, 'FillRule'),
-    lineCap: read(input, 'LineCap'),
-    lineJoin: read(input, 'LineJoin'),
-    lineDash: read(input, 'Vec<f32>'),
-    lineDashOffset: f32(input),
+    line_width: f32(input),
+    fill_rule: read(input, 'FillRule'),
+    line_cap: read(input, 'LineCap'),
+    line_join: read(input, 'LineJoin'),
+    line_dash: read(input, 'Vec<f32>'),
+    line_dash_offset: f32(input),
   }
 }
 
@@ -557,14 +578,36 @@ function page(node: SceneNode): DecodedNode {
 }
 
 describe('a text node', () => {
-  it('carries one segment for a plain string', () => {
+  it('carries a plain string as markup, for the renderer to parse', () => {
+    // Not as a segment. `Text` and `RichText` of one run would otherwise write
+    // identical bytes, and the decoder would have to guess which to parse —
+    // losing either `RichText`'s literal `<` or every caller's rich text.
     const decoded = page(Text('Ukasyah'))
 
     expect(decoded.kind).toBe('Text')
     expect(decoded.payload).toEqual({
-      maxLines: null,
-      ellipsis: null,
-      segments: [{ text: 'Ukasyah', style: {} }],
+      paragraph: { max_lines: null, ellipsis: null },
+      markup: 'Ukasyah',
+    })
+  })
+
+  it('carries paragraph properties, which are not style', () => {
+    const decoded = page(Text('Ukasyah', { maxLines: 2, ellipsis: '...' }))
+
+    expect(decoded.payload).toEqual({
+      paragraph: { max_lines: 2, ellipsis: '...' },
+      markup: 'Ukasyah',
+    })
+  })
+
+  it('writes no markup slot content for runs the caller built', () => {
+    // The absent discriminant is what tells the decoder the count follows. A
+    // writer that skipped it would leave every later slot read one out.
+    const decoded = page(RichText([{ text: 'a <b> b', style: undefined }]))
+
+    expect(decoded.payload).toEqual({
+      paragraph: { max_lines: null, ellipsis: null },
+      segments: [{ text: 'a <b> b', style: {} }],
     })
   })
 
@@ -581,8 +624,7 @@ describe('a text node', () => {
 
     expect(decoded.groups.text).toEqual({ font_size: 1 })
     expect(decoded.payload).toEqual({
-      maxLines: null,
-      ellipsis: null,
+      paragraph: { max_lines: null, ellipsis: null },
       segments: [
         { text: 'plain ', style: {} },
         { text: 'bold', style: { font_weight: 700 } },
@@ -628,7 +670,7 @@ describe('an image node', () => {
     const arena = encodeScene([Image({ src: { bytes } })], SIZE[0], SIZE[1], SCALE)
 
     expect(arena.values).toEqual([bytes])
-    expect(decode(arena.slots, arena.values).pages[0]?.payload).toMatchObject({ source: { tag: 'bytes', value: bytes } })
+    expect(decode(arena.slots, arena.values).pages[0]?.payload).toMatchObject({ source: { tag: 'bytes', value: [1, 2, 3] } })
   })
 
   it('keeps `objectFit` and `frame` out of the style groups', () => {
@@ -649,12 +691,12 @@ describe('a path node', () => {
       data: 'M2 8 L6 12 L14 3',
       fill: { tag: 'solid', value: { r: 0, g: 0, b: 0, a: 255 } },
       stroke: null,
-      lineWidth: 1,
-      fillRule: 'NonZero',
-      lineCap: 'Butt',
-      lineJoin: 'Miter',
-      lineDash: [],
-      lineDashOffset: 0,
+      line_width: 1,
+      fill_rule: 'NonZero',
+      line_cap: 'Butt',
+      line_join: 'Miter',
+      line_dash: [],
+      line_dash_offset: 0,
     })
   })
 })
@@ -867,6 +909,92 @@ describe('a number that is not one', () => {
 })
 
 /**
+ * One probe per node kind the surface can express, keyed by the case's name.
+ *
+ * The kind cases pin the **payload**, which the property cases cannot: every
+ * one of those is a styled `Box`, so a change to how a text, image or path node
+ * is written passed every gate here. It did, once — an arena text payload
+ * changed, the whole suite stayed green, and the example died with
+ * `slot 76 holds 15`.
+ *
+ * The probes are hand-written for the reason {@link PROBES} are: deriving them
+ * from the fixture's `value` would mean writing the Rust-to-TypeScript adapter
+ * here and checking the encoder's against it.
+ */
+const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
+  __kind_box: Box(),
+  // From `RichText`, not `Text`: the case pins built runs, and `Text` now sets
+  // the markup discriminant instead. The second run styles nothing on purpose —
+  // an empty style still writes its mask, and that is the slot a writer skips.
+  __kind_text: RichText(
+    [
+      { text: 'a', style: { fontWeight: 'bold' } },
+      { text: 'b', style: {} },
+    ],
+    { maxLines: 2, ellipsis: '...' },
+  ),
+  __kind_image_path: Image({ src: 'probe.png', objectFit: 'cover', objectPosition: ['0.25%', 3], frame: 2 }),
+  __kind_image_url: Image({
+    src: { url: 'https://probe.invalid/a' },
+    objectFit: 'cover',
+    objectPosition: ['0.25%', 3],
+    frame: 2,
+  }),
+  __kind_image_bytes: Image({
+    src: { bytes: new Uint8Array([1, 2, 3]) },
+    objectFit: 'cover',
+    objectPosition: ['0.25%', 3],
+    frame: 2,
+  }),
+}
+
+/**
+ * The kinds this surface cannot describe yet, and why.
+ *
+ * The same partition the style properties have. A kind case with neither a
+ * probe nor a line here fails, so a payload added upstream forces a decision
+ * rather than being quietly untested from this side.
+ */
+const UNSPELT_KINDS: Readonly<Record<string, string>> = {
+  __kind_path:
+    "a path's fill, stroke, dash, cap and join have no spelling on either surface — the Rust `Path::d` writes the same fixed black fill and no stroke that this does, so the case is unreachable from both and not from this one alone",
+}
+
+describe('the node kinds', () => {
+  it('partition every kind case the fixture carries', () => {
+    const cases = Object.keys(CASES).filter(name => name.startsWith('__kind_'))
+
+    for (const name of cases) {
+      const probed = KIND_PROBES[name] !== undefined
+      const named = UNSPELT_KINDS[name] !== undefined
+      expect(probed || named, `${name} has neither a probe nor a reason`).toBe(true)
+      expect(probed && named, `${name} has both a probe and a reason`).toBe(false)
+    }
+    for (const name of [...Object.keys(KIND_PROBES), ...Object.keys(UNSPELT_KINDS)]) {
+      expect(cases, `${name} is not a case any more`).toContain(name)
+    }
+  })
+})
+
+describe('a node kind crosses as itself', () => {
+  for (const [name, probe] of Object.entries(KIND_PROBES)) {
+    it(`carries the payload of ${name}`, () => {
+      const expected = CASES[name]
+      if (expected === undefined) throw new Error(`the fixture has no case for ${name}`)
+
+      const decoded = page(probe)
+      const tag = Object.entries(NODE_TAG).find(([, value]) => value === expected.index)
+
+      expect(decoded.kind, `${name} is not the tag the case names`).toBe(tag?.[0])
+      expect(decoded.payload).toEqual(expected.value)
+      // A payload is not a style: a kind case that quietly set one would be
+      // checking two things and reporting one.
+      for (const group of GROUPS) expect(decoded.groups[group.key]).toEqual({})
+    })
+  }
+})
+
+/**
  * The half of the round trip that can disagree with Rust.
  *
  * Everything above proves this package's writer and a reader built from the
@@ -915,10 +1043,15 @@ function sideValue(value: SideValue): string | Buffer {
   return typeof value === 'string' ? value : Buffer.from(value)
 }
 
+/** The bytes the addon writes for a scene whose one page is `node`. */
+function bytesOf(node: SceneNode): string {
+  const arena = encodeScene([node], SIZE[0], SIZE[1], SCALE)
+  return addon().sceneBytes(arena.slots, arena.values.map(sideValue)).toString('base64')
+}
+
 /** The bytes the addon writes for a scene carrying `style`. */
 function throughTheAddon(style: Style): string {
-  const arena = encodeScene([Box(style)], SIZE[0], SIZE[1], SCALE)
-  return addon().sceneBytes(arena.slots, arena.values.map(sideValue)).toString('base64')
+  return bytesOf(Box(style))
 }
 
 describe('the bytes Rust writes for the same scene', () => {
@@ -935,6 +1068,17 @@ describe('the bytes Rust writes for the same scene', () => {
       if (expected === undefined) throw new Error(`the fixture has no case for ${rust}`)
 
       expect(throughTheAddon(probe)).toBe(expected.bytes)
+    })
+  }
+
+  for (const [name, probe] of Object.entries(KIND_PROBES)) {
+    it(`agree on ${name}`, () => {
+      // The payload half, and the one that was missing when an arena text
+      // payload changed under a green suite.
+      const expected = CASES[name]
+      if (expected === undefined) throw new Error(`the fixture has no case for ${name}`)
+
+      expect(bytesOf(probe)).toBe(expected.bytes)
     })
   }
 })

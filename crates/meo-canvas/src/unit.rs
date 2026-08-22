@@ -174,12 +174,12 @@ impl DefaultZero for Dimension {
 
 /// The same value on every corner.
 #[must_use]
-pub const fn corners_all(radius: f32) -> Corners<f32> {
+pub const fn corners_all(border_radius: f32) -> Corners<f32> {
     Corners {
-        top_left: radius,
-        top_right: radius,
-        bottom_right: radius,
-        bottom_left: radius,
+        top_left: border_radius,
+        top_right: border_radius,
+        bottom_right: border_radius,
+        bottom_left: border_radius,
     }
 }
 
@@ -207,7 +207,7 @@ pub const fn corners(
 /// ```
 /// use meo_canvas::{Style, hex_rgb};
 ///
-/// const PANEL: Style = Style::new().background(hex_rgb(0x10_10_14));
+/// const PANEL: Style = Style::new().background_color(hex_rgb(0x10_10_14));
 /// ```
 #[must_use]
 pub const fn hex_rgb(packed: u32) -> Color {
@@ -305,6 +305,75 @@ pub const fn rgb(red: u8, green: u8, blue: u8) -> Color {
 #[must_use]
 pub const fn size_auto() -> Dimension {
     Dimension::Auto
+}
+
+/// What a per-edge setter accepts: one value, or the four named.
+///
+/// CSS's shorthand, as a trait. `padding(px(24.0))` is every edge and
+/// `padding(sides(...))` is each of them, which is the same choice CSS gives
+/// and the same one the JavaScript surface gives through a union type.
+///
+/// The node setters take this; [`Style`](crate::Style)'s take a
+/// [`Sides`] directly, because they are `const fn` and a trait method cannot
+/// be. So `const CARD: Style = Style::new().padding(all(px(24.0)))` spells the
+/// shorthand out, and a node written in a chain does not have to.
+pub trait IntoSides<T> {
+    /// The four edges this names.
+    fn into_sides(self) -> Sides<T>;
+}
+
+impl<T: Copy> IntoSides<T> for Sides<T> {
+    fn into_sides(self) -> Self {
+        self
+    }
+}
+
+impl IntoSides<Self> for Length {
+    fn into_sides(self) -> Sides<Self> {
+        Sides::all(self)
+    }
+}
+
+impl IntoSides<Self> for Dimension {
+    fn into_sides(self) -> Sides<Self> {
+        Sides::all(self)
+    }
+}
+
+impl IntoSides<Self> for f32 {
+    fn into_sides(self) -> Sides<Self> {
+        Sides::all(self)
+    }
+}
+
+impl IntoSides<Option<Self>> for Length {
+    fn into_sides(self) -> Sides<Option<Self>> {
+        Sides::all(Some(self))
+    }
+}
+
+impl IntoSides<Option<Self>> for Color {
+    fn into_sides(self) -> Sides<Option<Self>> {
+        Sides::all(Some(self))
+    }
+}
+
+/// What a per-corner setter accepts: one radius, or the four named.
+pub trait IntoCorners<T> {
+    /// The four corners this names.
+    fn into_corners(self) -> Corners<T>;
+}
+
+impl<T: Copy> IntoCorners<T> for Corners<T> {
+    fn into_corners(self) -> Self {
+        self
+    }
+}
+
+impl IntoCorners<Self> for f32 {
+    fn into_corners(self) -> Corners<Self> {
+        Corners::all(self)
+    }
 }
 
 #[cfg(test)]

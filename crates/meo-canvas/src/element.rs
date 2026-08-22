@@ -8,10 +8,12 @@
 //! use meo_canvas::{Column, Style, Text, all, hex_rgb, px};
 //!
 //! let card = Column::new()
-//!     .style(Style::new().padding(all(px(24.0))).gap(px(8.0)))
+//!     .with_style(Style::new().padding(all(px(24.0))).gap(px(8.0)))
 //!     .children([
-//!         Text::new("Ukasyah").style(Style::new().font_size(24.0).bold()),
-//!         Text::new("Bandung").style(Style::new().color(hex_rgb(0x88_88_90))),
+//!         Text::new("Ukasyah")
+//!             .with_style(Style::new().font_size(24.0).bold()),
+//!         Text::new("Bandung")
+//!             .with_style(Style::new().color(hex_rgb(0x88_88_90))),
 //!     ]);
 //!
 //! let scene = card.into_scene(320.0, 180.0)?;
@@ -29,11 +31,11 @@ use meo_canvas_scene::{
     style::{
         effect::FillRule,
         paint::{Color, ObjectFit},
-        text::{ParagraphStyle, TextSegment, TextStyle},
+        text::{ParagraphStyle, TextSegment},
     },
 };
 
-use crate::Style;
+use crate::{Style, Styled};
 
 /// One node of the tree, with its style and its children.
 ///
@@ -60,13 +62,27 @@ impl Element {
         }
     }
 
-    /// Replaces this node's style.
+    /// Replaces this node's style with a whole one.
     ///
-    /// Replaces rather than merges, because a caller who wants to layer styles
-    /// composes them before calling this — and a merge would make the order of
-    /// two `.style()` calls significant in a way the chain does not suggest.
+    /// For the reusable base — `const CARD: Style = …` — with the flat setters
+    /// of [`Styled`] layered on top of it:
+    ///
+    /// ```
+    /// use meo_canvas::{Row, Style, Styled, all, px};
+    ///
+    /// const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
+    ///
+    /// let tight = Row::new().with_style(CARD).gap(px(8.0));
+    /// ```
+    ///
+    /// Not called `style`, so it cannot read as a nested style object —
+    /// properties sit directly on the node on both surfaces. Replaces rather
+    /// than merges, because a caller who
+    /// wants to layer styles composes them before calling this — and a merge
+    /// would make the order of two calls significant in a way the chain does
+    /// not suggest.
     #[must_use]
-    pub fn style(mut self, style: Style) -> Self {
+    pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
@@ -76,11 +92,10 @@ impl Element {
     /// Takes anything iterable, so an array literal, a `Vec` and a `map` over
     /// data all work without the caller collecting first.
     #[must_use]
-    pub fn children(
-        mut self,
-        children: impl IntoIterator<Item = Self>,
-    ) -> Self {
-        self.children = children.into_iter().collect();
+    pub fn children(mut self, children: impl IntoElements) -> Self {
+        let mut collected = Vec::new();
+        children.write_elements(&mut collected);
+        self.children = collected;
         self
     }
 
@@ -124,12 +139,113 @@ impl Element {
     }
 }
 
+impl Styled for Element {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.style
+    }
+}
+
+/// What a `children` call accepts: one element, many, or none.
+///
+/// v1's props type is `Children | Children[]` where `Children` includes
+/// `false`, so a conditional that does not render writes nothing rather than an
+/// empty node. Rust reaches the same place through a trait: a single element,
+/// an array, a `Vec`, and an `Option<Element>` that is `None` and contributes
+/// nothing. The syntax differs because the languages do; what a caller can
+/// express does not.
+///
+/// ```
+/// use meo_canvas::{Row, Styled, Text, px};
+///
+/// let show_subtitle = false;
+/// let card = Row::new().gap(px(8.0)).children([
+///     Some(Text::new("Ukasyah")),
+///     show_subtitle.then(|| Text::new("subtitle")),
+/// ]);
+/// ```
+pub trait IntoElements {
+    /// Appends what this contributes onto `out`.
+    ///
+    /// Appends rather than returning a `Vec`, so nesting one of these inside
+    /// another costs no intermediate allocation.
+    fn write_elements(self, out: &mut Vec<Element>);
+}
+
+impl IntoElements for Element {
+    fn write_elements(self, out: &mut Vec<Element>) {
+        out.push(self);
+    }
+}
+
+impl IntoElements for Option<Element> {
+    fn write_elements(self, out: &mut Vec<Element>) {
+        if let Some(inner) = self {
+            out.push(inner);
+        }
+    }
+}
+
+impl<T: IntoElements> IntoElements for Vec<T> {
+    fn write_elements(self, out: &mut Vec<Element>) {
+        for item in self {
+            item.write_elements(out);
+        }
+    }
+}
+
+impl<T: IntoElements, const N: usize> IntoElements for [T; N] {
+    fn write_elements(self, out: &mut Vec<Element>) {
+        for item in self {
+            item.write_elements(out);
+        }
+    }
+}
+
+/// Children from anything iterable, without collecting first.
+///
+/// ```
+/// use meo_canvas::{Column, Text, each};
+///
+/// let names = ["Ada", "Grace", "Katherine"];
+/// let list =
+///     Column::new().children(each(names.iter().map(|name| Text::new(*name))));
+/// ```
+///
+/// A wrapper rather than a blanket `impl IntoElements for I: IntoIterator`,
+/// which cannot exist: `Vec`, `[T; N]` and `Option` are all `IntoIterator`, so
+/// it would overlap every impl above and rustc refuses it — `Option<Element>`
+/// conflicts even when narrowed, because a future std release could make it an
+/// iterator and coherence has to assume one might.
+pub const fn each<I>(items: I) -> Each<I>
+where
+    I: IntoIterator,
+    I::Item: IntoElements,
+{
+    Each(items)
+}
+
+/// What [`each`] returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Each<I>(I);
+
+impl<I> IntoElements for Each<I>
+where
+    I: IntoIterator,
+    I::Item: IntoElements,
+{
+    fn write_elements(self, out: &mut Vec<Element>) {
+        for item in self.0 {
+            item.write_elements(out);
+        }
+    }
+}
+
 /// Writes `element` onto an existing page root and adds its subtree.
 ///
 /// The page root already exists, so the element styles it rather than becoming
 /// a child of it -- otherwise every tree would gain an unstyled wrapper nobody
-/// asked for, and a caller's `background` would paint a box inside the canvas
-/// instead of the canvas.
+/// asked for, and a caller's `background_color` would paint a box inside the
+/// canvas instead of the canvas.
 ///
 /// Shared by [`Element::into_scene`] and [`crate::Canvas`], so a page means the
 /// same thing whether one was built or several.
@@ -157,11 +273,11 @@ pub(crate) fn write_page(
 
 /// Writes the image properties a flat style carries onto an image node.
 ///
-/// `fit`, `object_position` and `frame` live on [`Style`] because the authoring
-/// surface is one flat style, and they live in [`NodeKind::Image`] because that
-/// is where the scene keeps them. This is where the two meet. A node that is
-/// not an image ignores them, as CSS ignores a property an element does not
-/// define.
+/// `object_fit`, `object_position` and `frame` live on [`Style`] because the
+/// authoring surface is one flat style, and they live in [`NodeKind::Image`]
+/// because that is where the scene keeps them. This is where the two meet. A
+/// node that is not an image ignores them, as CSS ignores a property an element
+/// does not define.
 const fn apply_image_style(kind: &mut NodeKind, style: &Style) {
     if let NodeKind::Image {
         fit,
@@ -216,7 +332,7 @@ fn push(
 /// ```
 /// use meo_canvas::{Box, Style, px};
 ///
-/// let spacer = Box::new().style(Style::new().size(px(8.0), px(8.0)));
+/// let spacer = Box::new().with_style(Style::new().size(px(8.0), px(8.0)));
 /// ```
 #[derive(Debug)]
 #[non_exhaustive]
@@ -239,7 +355,7 @@ impl Box {
 /// ```
 /// use meo_canvas::{Row, Style, px};
 ///
-/// let bar = Row::new().style(Style::new().gap(px(12.0)));
+/// let bar = Row::new().with_style(Style::new().gap(px(12.0)));
 /// ```
 #[derive(Debug)]
 #[non_exhaustive]
@@ -256,9 +372,8 @@ impl Row {
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new() -> Element {
-        Element::new(NodeKind::Box).style(Style::new().flex_direction(
-            meo_canvas_scene::style::layout::FlexDirection::Row,
-        ))
+        Element::new(NodeKind::Box)
+            .flex_direction(meo_canvas_scene::style::layout::FlexDirection::Row)
     }
 }
 
@@ -275,9 +390,9 @@ impl Column {
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new() -> Element {
-        Element::new(NodeKind::Box).style(Style::new().flex_direction(
+        Element::new(NodeKind::Box).flex_direction(
             meo_canvas_scene::style::layout::FlexDirection::Column,
-        ))
+        )
     }
 }
 
@@ -294,10 +409,8 @@ impl Grid {
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new() -> Element {
-        Element::new(NodeKind::Box).style(
-            Style::new()
-                .display(meo_canvas_scene::style::layout::Display::Grid),
-        )
+        Element::new(NodeKind::Box)
+            .display(meo_canvas_scene::style::layout::Display::Grid)
     }
 }
 
@@ -323,7 +436,7 @@ impl Text {
     /// ```
     /// use meo_canvas::{Style, Text};
     ///
-    /// let name = Text::new("Ukasyah").style(Style::new().font_size(24.0));
+    /// let name = Text::new("Ukasyah").with_style(Style::new().font_size(24.0));
     /// let mixed = Text::new("plain <b>bold</b>");
     /// ```
     ///
@@ -335,20 +448,8 @@ impl Text {
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new(content: impl Into<String>) -> Element {
-        let content = content.into();
-        let mut segments = meo_canvas_core::markup::parse(&content);
-        if segments.is_empty() {
-            // The parser reports what the markup said, and a string of nothing
-            // but tags says nothing. A `Text` is still a paragraph, so the
-            // empty one is supplied here rather than left for every consumer to
-            // handle a kind with no runs in it.
-            segments.push(TextSegment {
-                text: String::new(),
-                style: TextStyle::default(),
-            });
-        }
         Element::new(NodeKind::Text {
-            segments,
+            segments: meo_canvas_core::markup::parse_paragraph(&content.into()),
             paragraph: ParagraphStyle::default(),
         })
     }
@@ -391,8 +492,8 @@ impl Image {
     /// ```
     /// use meo_canvas::{Image, Style, px};
     ///
-    /// let avatar =
-    ///     Image::path("avatar.png").style(Style::new().size(px(64.0), px(64.0)));
+    /// let avatar = Image::path("avatar.png")
+    ///     .with_style(Style::new().size(px(64.0), px(64.0)));
     /// ```
     #[must_use]
     pub fn path(path: impl Into<String>) -> Element {
@@ -512,9 +613,10 @@ mod tests {
     #[test]
     fn the_root_element_styles_the_page_rather_than_becoming_a_child_of_it() {
         // Otherwise every tree gains a wrapper nobody asked for, and a caller's
-        // `background` paints a box inside the canvas instead of the canvas.
+        // `background_color` paints a box inside the canvas instead of the
+        // canvas.
         let scene = Box::new()
-            .style(Style::new().background(hex_rgb(0x10_10_14)))
+            .with_style(Style::new().background_color(hex_rgb(0x10_10_14)))
             .into_scene(100.0, 50.0)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
@@ -556,11 +658,11 @@ mod tests {
 
     #[test]
     fn a_style_replaces_rather_than_merges() {
-        // A merge would make the order of two `.style()` calls significant in a
-        // way the chain does not suggest.
+        // A merge would make the order of two `.with_style()` calls significant
+        // in a way the chain does not suggest.
         let element = Box::new()
-            .style(Style::new().gap(px(4.0)))
-            .style(Style::new().opacity(0.5));
+            .with_style(Style::new().gap(px(4.0)))
+            .with_style(Style::new().opacity(0.5));
 
         assert!(element.style.gap.is_none());
         assert_eq!(element.style.opacity, Some(0.5));
@@ -568,7 +670,8 @@ mod tests {
 
     #[test]
     fn children_takes_anything_iterable() {
-        let from_map = Row::new().children((0..3).map(|_| Text::new("x")));
+        let from_map =
+            Row::new().children(super::each((0..3).map(|_| Text::new("x"))));
         assert_eq!(from_map.children.len(), 3);
 
         let from_vec = Row::new().children(vec![Text::new("x")]);
@@ -577,9 +680,9 @@ mod tests {
 
     #[test]
     fn the_image_properties_reach_the_image_node_and_nothing_else() {
-        let styled = Style::new().fit(ObjectFit::Cover).frame(3);
+        let styled = Style::new().object_fit(ObjectFit::Cover).frame(3);
 
-        let image = Image::path("a.png").style(styled.clone());
+        let image = Image::path("a.png").with_style(styled.clone());
         let scene = image
             .into_scene(10.0, 10.0)
             .unwrap_or_else(|error| unreachable!("{error}"));
@@ -597,7 +700,7 @@ mod tests {
 
         // A node that is not an image ignores them, as CSS ignores a property
         // an element does not define.
-        let boxed = Box::new().style(styled);
+        let boxed = Box::new().with_style(styled);
         let scene = boxed
             .into_scene(10.0, 10.0)
             .unwrap_or_else(|error| unreachable!("{error}"));

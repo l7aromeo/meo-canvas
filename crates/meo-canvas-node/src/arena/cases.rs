@@ -5,6 +5,13 @@
 //! property at once. Each case is a scene with that property set to its probe
 //! value, and the bytes [`meo_canvas_scene::codec`] writes for it.
 //!
+//! Beside them, **one case per node kind**, keyed `__kind_*`. The property
+//! cases cover the four style groups, which is an axis every node shares; the
+//! kind payload is the axis they do not. Until these existed nothing in any
+//! suite encoded a `Text`, an `Image` or a `Path` -- every property case is a
+//! styled `Box` -- so a change to a payload's shape passed every gate in the
+//! project, and an example caught it instead.
+//!
 //! # What the artefact is for
 //!
 //! The TypeScript encoder builds the same one-property scene, hands its arena
@@ -46,7 +53,10 @@ use std::{collections::BTreeMap, fmt::Write as _};
 use meo_canvas_scene::{
     Scene, Size,
     geometry::{Corners, Sides},
-    node::{ImageSource, LineCap, LineJoin, Node, NodeId, PathPaint},
+    node::{
+        ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
+        PathPaint,
+    },
     style::{
         Dimension, Length, PaintOrder,
         effect::{BoxShadow, FillRule, Mask, MaskShape, TextShadow, Transform},
@@ -60,8 +70,9 @@ use meo_canvas_scene::{
             Gradient, GradientKind, GradientStop, ObjectFit,
         },
         text::{
-            FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
-            TextDecoration, TextStroke, VerticalAlign,
+            FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
+            TextAlign, TextDecoration, TextSegment, TextStroke, TextStyle,
+            VerticalAlign,
         },
     },
 };
@@ -73,6 +84,13 @@ use super::{effects, layout, paint, text};
 /// Leading underscores so it sorts before every field name and cannot collide
 /// with one: a Rust field never starts with two.
 const ALL_KEY: &str = "__all";
+
+/// The prefix a node-kind case's key carries.
+///
+/// The same two underscores [`ALL_KEY`] uses, and for the same reason: a Rust
+/// field never begins with them, so a kind case can never collide with a
+/// property case however the tables grow.
+const KIND_PREFIX: &str = "__kind_";
 
 /// The surface every case's scene is drawn on.
 ///
@@ -355,6 +373,33 @@ json_tagged!(ImageSource {
     Self::Url(v) => "url", v;
     Self::Bytes(v) => "bytes", v;
 });
+json_struct!(ParagraphStyle {
+    max_lines,
+    ellipsis
+});
+json_struct!(TextSegment { text, style });
+
+/// A segment's style, as the properties it actually sets.
+///
+/// Walked from the [`text`] table rather than written out field by field, so a
+/// property added there appears here on the next regeneration. A field the
+/// style leaves unset renders as `null` and is omitted: the artefact describes
+/// what the case *says*, and a paragraph of fifteen nulls describes nothing.
+impl ToJson for TextStyle {
+    fn to_json(&self) -> String {
+        let parts: Vec<String> = text::INDICES
+            .iter()
+            .zip(text::NAMES)
+            .filter_map(|(index, name)| {
+                let value = text::field_json(self, *index)?;
+                (value != "null")
+                    .then(|| format!("{}:{value}", json_string(name)))
+            })
+            .collect();
+        format!("{{{}}}", parts.join(","))
+    }
+}
+
 json_tagged!(PathPaint {
     Self::Solid(v) => "solid", v;
     Self::Gradient(v) => "gradient", v;
@@ -452,6 +497,160 @@ fn case_scene(apply: impl FnOnce(&mut Node)) -> Scene {
     scene
 }
 
+/// The node kinds a case is built for, each with a payload that sets every
+/// field the format writes for it.
+///
+/// A property case covers the four style groups, which is an axis every node
+/// shares. **The kind payload is the axis they do not**, and until these
+/// existed nothing encoded a `Text`, an `Image` or a `Path` at all -- the
+/// fifty-four property cases are all styled Boxes, so a change to a payload's
+/// shape passed every gate in the project and was caught by running an example.
+///
+/// One entry per [`NodeTag`], asserted in
+/// `every_node_kind_has_a_case`, plus one per [`ImageSource`] variant: the
+/// three write a string, a string and a byte buffer, so a writer that got the
+/// buffer wrong would pass on the strength of a path.
+fn kind_cases() -> Vec<(String, NodeTag, NodeKind)> {
+    let gradient = Gradient {
+        kind: GradientKind::Linear,
+        stops: vec![GradientStop {
+            offset: 0.5,
+            color: Color::rgba(9, 8, 7, 6),
+        }],
+        angle_degrees: 45.0,
+        center: (Length::Percent(0.25), Length::Points(3.0)),
+    };
+    let image = |source| NodeKind::Image {
+        source,
+        // Every field away from its default, so a payload that stopped writing
+        // one shows as a byte difference rather than as a value that happened
+        // to match.
+        fit: ObjectFit::Cover,
+        position: (Length::Percent(0.25), Length::Points(3.0)),
+        frame: Some(2),
+    };
+
+    vec![
+        (format!("{KIND_PREFIX}box"), NodeTag::Box, NodeKind::Box),
+        (
+            format!("{KIND_PREFIX}text"),
+            NodeTag::Text,
+            NodeKind::Text {
+                segments: vec![
+                    // One segment carrying a mask bit and one carrying none:
+                    // the empty style still writes its mask, which is the slot
+                    // a writer is most likely to skip.
+                    TextSegment {
+                        text: String::from("a"),
+                        style: TextStyle {
+                            font_weight: Some(FontWeight::BOLD),
+                            ..TextStyle::default()
+                        },
+                    },
+                    TextSegment {
+                        text: String::from("b"),
+                        style: TextStyle::default(),
+                    },
+                ],
+                // Two segments rather than one, so a count written as a
+                // constant fails here instead of passing.
+                paragraph: ParagraphStyle {
+                    max_lines: Some(2),
+                    ellipsis: Some(String::from("...")),
+                },
+            },
+        ),
+        (
+            format!("{KIND_PREFIX}image_path"),
+            NodeTag::Image,
+            image(ImageSource::Path(String::from("probe.png"))),
+        ),
+        (
+            format!("{KIND_PREFIX}image_url"),
+            NodeTag::Image,
+            image(ImageSource::Url(String::from("https://probe.invalid/a"))),
+        ),
+        (
+            format!("{KIND_PREFIX}image_bytes"),
+            NodeTag::Image,
+            image(ImageSource::Bytes(vec![1, 2, 3])),
+        ),
+        (
+            format!("{KIND_PREFIX}path"),
+            NodeTag::Path,
+            NodeKind::Path {
+                data: String::from("M0 0 L4 4"),
+                // One paint of each variant, both present: the pair is a
+                // two-armed tag inside an option, and a case with only a solid
+                // fill would leave the gradient arm unwritten.
+                fill: Some(PathPaint::Solid(Color::rgba(1, 2, 3, 4))),
+                stroke: Some(PathPaint::Gradient(gradient)),
+                line_width: 2.5,
+                fill_rule: FillRule::EvenOdd,
+                line_cap: LineCap::Round,
+                line_join: LineJoin::Bevel,
+                line_dash: vec![1.0, 2.0],
+                line_dash_offset: 0.5,
+            },
+        ),
+    ]
+}
+
+/// One node kind's payload as JSON.
+///
+/// Hand-written rather than emitted by [`json_tagged`], which carries one bound
+/// value per variant and these carry up to nine. The fields are named in wire
+/// order, which is the order the grammar in [`crate::arena`] lists them.
+fn kind_json(kind: &NodeKind) -> String {
+    match kind {
+        NodeKind::Box => String::from("{}"),
+        NodeKind::Text {
+            segments,
+            paragraph,
+        } => format!(
+            "{{\"paragraph\":{},\"segments\":{}}}",
+            paragraph.to_json(),
+            segments.to_json()
+        ),
+        NodeKind::Image {
+            source,
+            fit,
+            position,
+            frame,
+        } => format!(
+            "{{\"source\":{},\"fit\":{},\"position\":{},\"frame\":{}}}",
+            source.to_json(),
+            fit.to_json(),
+            position.to_json(),
+            frame.to_json()
+        ),
+        NodeKind::Path {
+            data,
+            fill,
+            stroke,
+            line_width,
+            fill_rule,
+            line_cap,
+            line_join,
+            line_dash,
+            line_dash_offset,
+        } => format!(
+            "{{\"data\":{},\"fill\":{},\"stroke\":{},\"line_width\":{},\
+             \"fill_rule\":{},\"line_cap\":{},\"line_join\":{},\
+             \"line_dash\":{},\"line_dash_offset\":{}}}",
+            data.to_json(),
+            fill.to_json(),
+            stroke.to_json(),
+            line_width.to_json(),
+            fill_rule.to_json(),
+            line_cap.to_json(),
+            line_join.to_json(),
+            line_dash.to_json(),
+            line_dash_offset.to_json()
+        ),
+    }
+}
+
 fn case_bytes(scene: &Scene) -> String {
     base64(&meo_canvas_scene::codec::encode(scene))
 }
@@ -529,6 +728,22 @@ fn cases() -> BTreeMap<String, Case> {
         );
     }
 
+    for (key, tag, kind) in kind_cases() {
+        let scene = case_scene(|root| root.kind = kind.clone());
+        cases.insert(
+            key,
+            Case {
+                group: "kind",
+                // The tag's own wire value, which is what the TypeScript writer
+                // puts in the node's first slot. A property case's index names
+                // a mask bit; a kind case's names the opcode.
+                index: u32::from(tag.to_wire()),
+                value: kind_json(&kind),
+                bytes: case_bytes(&scene),
+            },
+        );
+    }
+
     let whole = case_scene(|root| {
         root.layout = layout::probe_all();
         root.paint = paint::probe_all();
@@ -555,6 +770,7 @@ fn render(cases: &BTreeMap<String, Case>) -> String {
     for line in [
         "GENERATED by `just arena-cases`. Never edit this file.",
         "One case per property of the arena tables in crates/meo-canvas-node/src/arena.rs, plus __all setting every property at once.",
+        "One case per node kind, keyed __kind_*, whose `index` is the NodeTag opcode rather than a mask bit and whose `value` describes the payload in wire order. The property cases are all styled Boxes, so these are the only ones that encode a payload at all.",
         "Keys are Rust field names. The TypeScript spelling is the public API and lives in the encoder, not here.",
         "`value` mirrors the Rust type; the adapters that turn it into what a caller writes live on the TypeScript side.",
         "`bytes` is base64 of meo_canvas_scene::codec::encode of a scene with that one property set.",
@@ -603,7 +819,9 @@ fn render(cases: &BTreeMap<String, Case>) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{ALL_KEY, cases, render};
+    use meo_canvas_scene::node::{ImageSource, NodeKind, NodeTag};
+
+    use super::{ALL_KEY, cases, kind_cases, render};
 
     /// Where the artefact is written unless `MEO_ARENA_CASES` names elsewhere.
     fn output_path() -> PathBuf {
@@ -646,10 +864,71 @@ mod tests {
             + super::effects::COUNT;
         assert_eq!(
             cases.len(),
-            expected + 1,
-            "one case per property plus the whole-scene one"
+            expected + 1 + kind_cases().len(),
+            "one case per property, one per node kind, plus the whole-scene one"
         );
         assert!(cases.contains_key(ALL_KEY));
+    }
+
+    /// Every node kind has a case, so a payload cannot go untested.
+    ///
+    /// The partition rule the property cases follow, applied to the axis they
+    /// do not cover. A kind added to [`NodeTag`] fails here rather than
+    /// shipping with a payload nothing encodes -- which is what happened: the
+    /// arena's text payload was changed, every gate passed, and an example
+    /// caught it.
+    #[test]
+    fn every_node_kind_has_a_case() {
+        let covered: std::collections::HashSet<NodeTag> =
+            kind_cases().into_iter().map(|(_, tag, _)| tag).collect();
+        for tag in NodeTag::ALL {
+            assert!(
+                covered.contains(tag),
+                "{tag:?} has no round-trip case, so nothing encodes its payload"
+            );
+        }
+    }
+
+    /// Every `ImageSource` variant has a case.
+    ///
+    /// Separate from the kind rule because the three are one node kind and
+    /// three wire shapes -- two strings and a byte buffer. A writer that got
+    /// the buffer wrong would pass on the strength of the path case.
+    #[test]
+    fn every_image_source_variant_has_a_case() {
+        let payloads: Vec<NodeKind> =
+            kind_cases().into_iter().map(|(_, _, kind)| kind).collect();
+        let sources: Vec<&ImageSource> = payloads
+            .iter()
+            .filter_map(|kind| match kind {
+                NodeKind::Image { source, .. } => Some(source),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            sources.iter().any(|s| matches!(s, ImageSource::Path(_))),
+            "no case carries a path source"
+        );
+        assert!(
+            sources.iter().any(|s| matches!(s, ImageSource::Url(_))),
+            "no case carries a url source"
+        );
+        assert!(
+            sources.iter().any(|s| matches!(s, ImageSource::Bytes(_))),
+            "no case carries a bytes source"
+        );
+    }
+
+    /// A kind case's key is prefixed, so it can never shadow a property.
+    #[test]
+    fn a_kind_case_cannot_collide_with_a_property_case() {
+        for (key, _, _) in kind_cases() {
+            assert!(
+                key.starts_with(super::KIND_PREFIX),
+                "{key} is not in the kind namespace"
+            );
+        }
     }
 
     /// No two cases carry the same bytes.
