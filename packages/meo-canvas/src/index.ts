@@ -96,10 +96,14 @@ export type {
   Overflow as OverflowValue,
   PaintOrder,
   Sides,
+  Spacing,
   Style,
   TextDecoration,
   VerticalAlign,
 } from './style.js'
 
 export { Box, Column, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
-export type { ContainerProps, ImageProps, ImageSource, NodeKind, PathProps, SceneNode, TextProps, TextSegment } from './node.js'
+export type { Child, Children, ContainerProps, ImageProps, ImageSource, NodeKind, PathProps, SceneNode, TextProps, TextSegment } from './node.js'
+
+export { Canvas } from './canvas.js'
+export type { EncodeOptions, Format, NativeCanvas, WriteFile, WriteFileSync } from './canvas.js'

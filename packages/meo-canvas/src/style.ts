@@ -1,10 +1,14 @@
 /**
  * The style object a node carries.
  *
- * The same `style` key as the Rust surface, the same CSS names, and the values
- * each language writes naturally: `'row'` where Rust has `FlexDirection::Row`,
- * `16` where Rust has `px(16.0)`. A number is logical pixels; a `` `${number}%` ``
- * string is a percentage, which is how CSS spells both.
+ * The same CSS names as the Rust surface, with the values each language writes
+ * naturally: `'row'` where Rust has `FlexDirection::Row`, `16` where Rust has
+ * `px(16.0)`. A number is logical pixels; a `` `${number}%` `` string is a
+ * percentage, which is how CSS spells both.
+ *
+ * These properties sit directly in a factory's props rather than under a `style`
+ * key, as v1 spells them — `Row({ gap: 16 })`, not `Row({ style: { gap: 16 } })`.
+ * The type exists so one list of properties serves every factory.
  *
  * Every property is optional and nothing is defaulted here. The defaults live in
  * Rust, and a style is **read, never copied** — no spread, no per-node merge —
@@ -34,6 +38,16 @@ export type Length = number | `${number}%`
 /** A length that may also be `'auto'`. */
 export type Dimension = Length | 'auto'
 
+/**
+ * Space added between characters or words.
+ *
+ * v1's spelling exactly: a bare number and `'…px'` are logical pixels, `'…em'`
+ * is a multiple of the em size, and `'normal'` is the font's own. Not
+ * {@link Length}, because a percentage means nothing here and an em does — the
+ * scene's `Spacing` has the same three forms for the same reason.
+ */
+export type Spacing = number | `${number}px` | `${number}em` | 'normal'
+
 /** One value on every edge, or each edge named. */
 export type Sides<T> =
   | T
@@ -60,14 +74,25 @@ export type Color = string
 /** Weight from 1 to 1000, or the two keywords CSS names. */
 export type FontWeight = number | 'normal' | 'bold'
 
-/** Upright or slanted glyphs. */
-export type FontStyle = 'normal' | 'italic' | 'oblique'
+/**
+ * Upright or slanted glyphs.
+ *
+ * No `'oblique'`. v1 offers `'normal' | 'italic'` and the scene's `FontStyle`
+ * has the same two variants, so a third would be a keyword this package accepts
+ * and cannot carry.
+ */
+export type FontStyle = 'normal' | 'italic'
 
 /** A line through, over or under the text. */
 export type TextDecoration = 'none' | 'underline' | 'overline' | 'line-through'
 
-/** Where a line sits within its box. */
-export type VerticalAlign = 'top' | 'middle' | 'bottom' | 'baseline'
+/**
+ * Where a line sits within its box.
+ *
+ * No `'baseline'`, for the reason {@link FontStyle} has no `'oblique'`: v1's
+ * `VerticalAlign` is these three and so is the scene's.
+ */
+export type VerticalAlign = 'top' | 'middle' | 'bottom'
 
 /** Which of a glyph's fill and stroke is painted on top. */
 export type PaintOrder = 'fill' | 'stroke'
@@ -260,9 +285,9 @@ export interface Style {
   /** Extra space between lines, in pixels. Inherits. */
   readonly lineGap?: number
   /** Space added between characters. Inherits. */
-  readonly letterSpacing?: Length
+  readonly letterSpacing?: Spacing
   /** Space added between words. Inherits. */
-  readonly wordSpacing?: Length
+  readonly wordSpacing?: Spacing
 
   // -- Effects --------------------------------------------------------
   /** A CSS filter applied to this node's own drawing. */

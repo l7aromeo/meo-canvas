@@ -141,6 +141,8 @@ function mergeImports(collected) {
 function emit(collected) {
   const imports = mergeImports(collected)
 
+  // `async`, so an example may `await`. A caller's example is written the way a
+  // caller writes it, and half of this package's surface returns a Promise.
   const bodies = collected.map((example, index) => {
     const name = `example${index}`
     const indented = example.rest.map(line => (line === '' ? '' : `  ${line}`))

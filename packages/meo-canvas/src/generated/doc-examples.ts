@@ -7,30 +7,32 @@
 // compiles nothing inside a comment, so without this an example may name a
 // property that no longer exists and every check stays green.
 
-import { Column, Image, Path, Row, Text } from '../index.js'
+import { Image, Path, Row, Text } from '../index.js'
 
 /** `node.ts`, line 10. */
 export function example0(): void {
 
   const card = Row({
-    style: { gap: 16, padding: 24, backgroundColor: '#101014' },
-    children: [Text('Ukasyah', { style: { fontSize: 24, fontWeight: 'bold' } })],
+    gap: 16,
+    padding: 24,
+    backgroundColor: '#101014',
+    children: [Text('Ukasyah', { fontSize: 24, fontWeight: 'bold' })],
   })
 }
 
-/** `node.ts`, line 154. */
+/** `node.ts`, line 207. */
 export function example1(): void {
 
-  const name = Text('Ukasyah', { style: { fontSize: 24 } })
+  const name = Text('Ukasyah', { fontSize: 24 })
 }
 
-/** `node.ts`, line 192. */
+/** `node.ts`, line 243. */
 export function example2(): void {
 
-  const avatar = Image({ src: 'avatar.png', style: { width: 64, height: 64, objectFit: 'cover' } })
+  const avatar = Image({ src: 'avatar.png', width: 64, height: 64, objectFit: 'cover' })
 }
 
-/** `node.ts`, line 216. */
+/** `node.ts`, line 265. */
 export function example3(): void {
 
   const tick = Path({ d: 'M2 8 L6 12 L14 3' })

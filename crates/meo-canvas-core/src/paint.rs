@@ -33,7 +33,7 @@ use meo_canvas_scene::{
     style::{
         Length,
         effect::{BoxShadow, Effects, FillRule, Mask, MaskShape, Transform},
-        layout::Overflow,
+        layout::{Display, Overflow, PositionType},
         paint::{
             BlendMode, Color, Gradient, GradientKind, ObjectFit, PaintStyle,
         },
@@ -329,12 +329,45 @@ fn walk(
 ///
 /// `z_index` first, document order within it. The sort is stable, which is
 /// what makes "document order within a z-index" true rather than incidental.
+///
+/// A child's `z_index` counts only where CSS says it does -- see
+/// [`stacks_by_z_index`]. A child it does not apply to sorts as though it
+/// carried zero, which leaves it in document order among its siblings instead
+/// of jumping the ones the index does apply to.
 fn z_ordered(scene: &meo_canvas_scene::Scene, node: &Node) -> Vec<NodeId> {
     let mut children = node.children.clone();
     children.sort_by_key(|child| {
-        scene.get(*child).map_or(0, |child| child.paint.z_index)
+        scene.get(*child).map_or(0, |child| {
+            if stacks_by_z_index(node, child) {
+                child.paint.z_index
+            } else {
+                0
+            }
+        })
     });
     children
+}
+
+/// Whether `child`'s `z_index` gives it a place in `parent`'s stack.
+///
+/// CSS 2.1 §9.9.1 gives `z-index` to positioned elements only. Flexbox §5.4 and
+/// Grid §6.2 each extend it to their items whatever their position, because
+/// being an item of that container is itself what earns the place. So: the
+/// child is positioned, or its parent lays out as flex or grid.
+///
+/// This is neither v1's rule -- absolutely positioned only, which is narrower
+/// than CSS -- nor "every sibling", which was this renderer's until now and is
+/// wrong for a block container.
+///
+/// [`PositionType`] has no `Static`: taffy's `Relative` is the in-flow default,
+/// so "positioned" here can only mean [`PositionType::Absolute`]. A CSS
+/// `position: relative` child of a block container would stack and this one
+/// does not. The two are one value in this model, and of the two ways to
+/// collapse them, treating every in-flow block child as stacking is the error
+/// that affects the common case.
+const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
+    matches!(child.layout.position_type, PositionType::Absolute)
+        || matches!(parent.layout.display, Display::Flex | Display::Grid)
 }
 
 /// Applies the transform and opens whatever isolation layers the node needs.
@@ -1051,8 +1084,8 @@ mod tests {
     };
 
     use super::{
-        Surface, draw, fit_image, gradient_line, pixel_size, resolve_length,
-        to_skia_blend, z_ordered,
+        Display, PositionType, Surface, draw, fit_image, gradient_line,
+        pixel_size, resolve_length, to_skia_blend, z_ordered,
     };
     use crate::{
         layout::LayoutResult,
@@ -1277,6 +1310,84 @@ mod tests {
 
         // -1 first, then the two zeroes in the order they were added, then 2.
         assert_eq!(ordered, vec![ids[1], ids[2], ids[3], ids[0]]);
+    }
+
+    #[test]
+    fn a_static_child_of_a_block_container_ignores_its_z_index() {
+        // CSS 2.1 §9.9.1: `z-index` applies to positioned elements. A block
+        // container's in-flow children are not positioned, so an index on one
+        // of them names nothing and the children stay in document order.
+        let mut scene = Scene::new(Size::new(10.0, 10.0));
+        if let Some(root) = scene.get_mut(NodeId::ROOT) {
+            root.layout.display = Display::Block;
+        }
+        let mut ids = Vec::new();
+        for z in [5_i32, -5, 0] {
+            let id = scene
+                .push(NodeId::ROOT, Node::container())
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.paint.z_index = z;
+            }
+            ids.push(id);
+        }
+        let root = scene
+            .get(NodeId::ROOT)
+            .unwrap_or_else(|| unreachable!("a new scene has a root"));
+
+        assert_eq!(z_ordered(&scene, root), ids);
+    }
+
+    #[test]
+    fn an_absolute_child_of_a_block_container_takes_its_z_index() {
+        // The other half of the same rule: the child is positioned, so the
+        // index applies whatever its parent lays out as.
+        let mut scene = Scene::new(Size::new(10.0, 10.0));
+        if let Some(root) = scene.get_mut(NodeId::ROOT) {
+            root.layout.display = Display::Block;
+        }
+        let mut ids = Vec::new();
+        for z in [0_i32, -1] {
+            let id = scene
+                .push(NodeId::ROOT, Node::container())
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.paint.z_index = z;
+                node.layout.position_type = PositionType::Absolute;
+            }
+            ids.push(id);
+        }
+        let root = scene
+            .get(NodeId::ROOT)
+            .unwrap_or_else(|| unreachable!("a new scene has a root"));
+
+        // Second-added draws first: it is positioned, so its -1 counts.
+        assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
+    }
+
+    #[test]
+    fn a_grid_item_takes_its_z_index_without_being_positioned() {
+        // Grid §6.2, the counterpart to Flexbox §5.4 the first test covers
+        // through the default `Display::Flex` root.
+        let mut scene = Scene::new(Size::new(10.0, 10.0));
+        if let Some(root) = scene.get_mut(NodeId::ROOT) {
+            root.layout.display = Display::Grid;
+        }
+        let mut ids = Vec::new();
+        for z in [3_i32, 1] {
+            let id = scene
+                .push(NodeId::ROOT, Node::container())
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.paint.z_index = z;
+            }
+            ids.push(id);
+        }
+        let root = scene
+            .get(NodeId::ROOT)
+            .unwrap_or_else(|| unreachable!("a new scene has a root"));
+
+        assert_eq!(z_ordered(&scene, root), vec![ids[1], ids[0]]);
     }
 
     #[test]

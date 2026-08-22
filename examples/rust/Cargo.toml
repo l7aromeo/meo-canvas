@@ -1,0 +1,13 @@
+# Standalone, not a workspace member: a consumer reaches meo-canvas through a
+# dependency rather than from inside the tree that builds it. The empty
+# `[workspace]` is what keeps cargo from adopting it into the one above.
+[workspace]
+
+[package]
+name = "meo-canvas-example-card"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+meo-canvas = { path = "../../crates/meo-canvas" }

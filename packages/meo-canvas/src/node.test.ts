@@ -49,35 +49,67 @@ describe('the node shape', () => {
 })
 
 describe('styles', () => {
+  it('are written flat, in the props', () => {
+    // The property a caller writes is the property, not a key inside a `style`
+    // object. v1 spells it this way and a ported tree should not have to move.
+    expect(Box({ gap: 16 }).style).toEqual({ gap: 16 })
+    expect(Text('x', { fontSize: 24 }).style).toEqual({ fontSize: 24 })
+  })
+
   it('are read rather than copied', () => {
     // No spread and no per-node merge: both cost per node on a path that has to
     // stay cheap, and the defaults already exist in Rust. The factories that
-    // name no direction of their own hand the caller's object straight through.
-    const style: Style = { gap: 16 }
+    // name no direction of their own store the caller's own object.
+    const props = { gap: 16 }
 
-    expect(Box({ style }).style).toBe(style)
-    expect(Text('x', { style }).style).toBe(style)
-    expect(Image({ src: 'a.png', style }).style).toBe(style)
-    expect(Path({ d: 'M0 0', style }).style).toBe(style)
+    expect(Box(props).style).toBe(props)
+    expect(Text('x', props).style).toBe(props)
+
+    const image = { src: 'a.png', gap: 16 }
+    const path = { d: 'M0 0', gap: 16 }
+
+    expect(Image(image).style).toBe(image)
+    expect(Path(path).style).toBe(path)
+  })
+
+  it('carry the props that are not style properties, which nothing reads', () => {
+    // The consequence of storing the props object itself. `children` and `name`
+    // are not style property names, and the encoder looks up only the names in
+    // its own table, so the extra keys cost a read that never happens — which is
+    // what buys the absent copy above.
+    const child = Text('x')
+
+    expect(Box({ children: [child], name: 'card' }).style).toEqual({
+      children: [child],
+      name: 'card',
+    })
   })
 
   it('are copied once by the factories that name a direction, and the caller wins', () => {
     // `Row` and `Column` mean a direction, so they write one. Spreading the
-    // caller's style after the default is what keeps an explicit value.
+    // caller's props after the default is what keeps an explicit value.
     expect(Row().style).toEqual({ flexDirection: 'row' })
     expect(Column().style).toEqual({ flexDirection: 'column' })
     expect(Grid().style).toEqual({ display: 'grid' })
 
-    expect(Row({ style: { flexDirection: 'column' } }).style).toEqual({
-      flexDirection: 'column',
-    })
-    expect(Grid({ style: { display: 'flex' } }).style).toEqual({ display: 'flex' })
+    expect(Row({ flexDirection: 'column' }).style).toEqual({ flexDirection: 'column' })
+    expect(Grid({ display: 'flex' }).style).toEqual({ display: 'flex' })
   })
 
   it('keep the caller’s other properties when a direction is added', () => {
-    expect(Row({ style: { gap: 8 } }).style).toEqual({
-      flexDirection: 'row',
-      gap: 8,
+    expect(Row({ gap: 8 }).style).toEqual({ flexDirection: 'row', gap: 8 })
+  })
+
+  it('take a style object spread into the props', () => {
+    // A caller who keeps a shared style in a variable spreads it, as CSS-in-JS
+    // callers do. Nothing in the surface stops that; it is only worth stating
+    // because the nested form used to be the way to do it.
+    const theme: Style = { backgroundColor: '#101014', padding: 24 }
+
+    expect(Box({ ...theme, gap: 16 }).style).toEqual({
+      backgroundColor: '#101014',
+      padding: 24,
+      gap: 16,
     })
   })
 })
@@ -88,6 +120,30 @@ describe('containers', () => {
     const second = Text('b')
 
     expect(Row({ children: [first, second] }).children).toEqual([first, second])
+  })
+
+  it('take a single child without an array around it', () => {
+    const only = Text('a')
+
+    expect(Box({ children: only }).children).toEqual([only])
+  })
+
+  it('drop a conditional that did not render', () => {
+    // `condition && Text('…')` is how a v1 caller writes a conditional, and the
+    // `false` it leaves behind has to disappear rather than become a node.
+    const shown = Text('a')
+    const hidden = false
+
+    expect(Box({ children: [shown, hidden, undefined] }).children).toEqual([shown])
+    expect(Box({ children: false }).children).toEqual([])
+  })
+
+  it('hand a clean array through without copying it', () => {
+    // The filter runs only when there is something to filter out, so the common
+    // case allocates nothing — the same reason the style is not copied.
+    const children = [Text('a'), Text('b')]
+
+    expect(Box({ children }).children).toBe(children)
   })
 
   it('leave children undefined when none are given', () => {

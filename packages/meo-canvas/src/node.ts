@@ -8,13 +8,20 @@
  * pre-order.
  *
  * ```ts
- * import { Column, Row, Text } from 'meo-canvas'
+ * import { Row, Text } from 'meo-canvas'
  *
  * const card = Row({
- *   style: { gap: 16, padding: 24, backgroundColor: '#101014' },
- *   children: [Text('Ukasyah', { style: { fontSize: 24, fontWeight: 'bold' } })],
+ *   gap: 16,
+ *   padding: 24,
+ *   backgroundColor: '#101014',
+ *   children: [Text('Ukasyah', { fontSize: 24, fontWeight: 'bold' })],
  * })
  * ```
+ *
+ * The style properties sit directly in the props, as v1's `BoxProps` carries
+ * them, rather than under a `style` key. The **stored** node keeps them in one
+ * object because that shape is about hidden classes rather than about how a
+ * caller writes it — two different questions.
  *
  * @packageDocumentation
  */
@@ -89,14 +96,62 @@ function node(
   return { kind, style, children, name, segments, src, d }
 }
 
-/** What every container factory accepts. */
-export interface ContainerProps {
-  /** How the container is styled. */
-  readonly style?: Style
-  /** Its children, drawn in order. */
-  readonly children?: readonly SceneNode[]
+/**
+ * Anything that can sit inside a container.
+ *
+ * `false` and `undefined` are members so `condition && Text('…')` reads the way
+ * it does in JSX and renders nothing when the condition fails. v1 allows both
+ * for that reason, and a conditional written that way is how its users write
+ * one — dropping it would break the idiom rather than tidy it.
+ */
+export type Child = SceneNode | false | undefined
+
+/** One child, or many. */
+export type Children = Child | readonly Child[]
+
+/**
+ * What every container factory accepts: its style, flat, plus its children.
+ *
+ * The style properties are the props, as v1 spells them. `children` and `name`
+ * are not style properties and no style property is called either, so the
+ * encoder — which looks up only the names in its own table — never reads them
+ * and the props object is stored as the style without a copy.
+ */
+export type ContainerProps = Style & {
+  /** Its children, drawn in order. A single child need not be wrapped. */
+  readonly children?: Children
   /** A name carried through for diagnostics. */
   readonly name?: string
+}
+
+/**
+ * The array every container with no surviving child shares.
+ *
+ * One frozen array rather than a fresh `[]` each time: a conditional subtree
+ * that renders nothing is common, and none of them can tell the difference.
+ */
+const NO_CHILDREN: readonly SceneNode[] = Object.freeze([])
+
+/**
+ * The children a container actually has: one or many, with the falsy ones gone.
+ *
+ * Absent stays absent — a container that named no children has `undefined`,
+ * not an empty array — and anything else becomes an array, because the node
+ * field is one shape and the encoder should not have to ask which.
+ *
+ * The array a caller passed is handed straight through when every entry is a
+ * node, so the common case allocates nothing. A filter runs only when there is
+ * something to filter out.
+ */
+function toChildren(children: Children | undefined): readonly SceneNode[] | undefined {
+  if (children === undefined) return undefined
+  if (children === false) return NO_CHILDREN
+  if (!Array.isArray(children)) return [children as SceneNode]
+
+  const many = children as readonly Child[]
+  const kept = many.every(child => child !== false && child !== undefined)
+  if (kept) return many as readonly SceneNode[]
+  return many.filter((child): child is SceneNode => child !== false && child !== undefined)
 }
 
 /**
@@ -106,41 +161,39 @@ export interface ContainerProps {
  * Yoga's column.
  */
 export function Box(props: ContainerProps = {}): SceneNode {
-  return node('box', props.style, props.children, props.name, undefined, undefined, undefined)
+  return node('box', props, toChildren(props.children), props.name, undefined, undefined, undefined)
 }
 
 /** A container whose children run horizontally. */
 export function Row(props: ContainerProps = {}): SceneNode {
-  return node('box', withDirection(props.style, 'row'), props.children, props.name, undefined, undefined, undefined)
+  return node('box', withDirection(props, 'row'), toChildren(props.children), props.name, undefined, undefined, undefined)
 }
 
 /** A container whose children run vertically. */
 export function Column(props: ContainerProps = {}): SceneNode {
-  return node('box', withDirection(props.style, 'column'), props.children, props.name, undefined, undefined, undefined)
+  return node('box', withDirection(props, 'column'), toChildren(props.children), props.name, undefined, undefined, undefined)
 }
 
 /** A container whose children are placed on a grid. */
 export function Grid(props: ContainerProps = {}): SceneNode {
-  const style: Style = props.style === undefined ? { display: 'grid' } : { display: 'grid', ...props.style }
-  return node('box', style, props.children, props.name, undefined, undefined, undefined)
+  const style: Style = { display: 'grid', ...props }
+  return node('box', style, toChildren(props.children), props.name, undefined, undefined, undefined)
 }
 
 /**
- * The caller's style with a flex direction the factory names.
+ * The caller's props with a flex direction the factory names.
  *
- * The one place this package copies a style, and it copies at most once per
- * container rather than per property: `Row` and `Column` mean a direction, and
- * a caller who states one in `style` keeps it — spreading after the default is
+ * The one place this package copies a style, and it copies once per container
+ * rather than once per property: `Row` and `Column` mean a direction, and a
+ * caller who states one keeps it — spreading the props after the default is
  * what makes the caller's value win.
  */
-function withDirection(style: Style | undefined, flexDirection: 'row' | 'column'): Style {
-  return style === undefined ? { flexDirection } : { flexDirection, ...style }
+function withDirection(props: ContainerProps, flexDirection: 'row' | 'column'): Style {
+  return { flexDirection, ...props }
 }
 
-/** What a text node accepts beyond its content. */
-export interface TextProps {
-  /** How the text is styled. */
-  readonly style?: Style
+/** What a text node accepts beyond its content: its style, flat. */
+export type TextProps = Style & {
   /** A name carried through for diagnostics. */
   readonly name?: string
 }
@@ -154,11 +207,11 @@ export interface TextProps {
  * ```ts
  * import { Text } from 'meo-canvas'
  *
- * const name = Text('Ukasyah', { style: { fontSize: 24 } })
+ * const name = Text('Ukasyah', { fontSize: 24 })
  * ```
  */
 export function Text(content: string, props: TextProps = {}): SceneNode {
-  return node('text', props.style, undefined, props.name, [{ text: content, style: undefined }], undefined, undefined)
+  return node('text', props, undefined, props.name, [{ text: content, style: undefined }], undefined, undefined)
 }
 
 /**
@@ -168,11 +221,11 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * Each segment's own style overrides the node's for that run.
  */
 export function RichText(segments: readonly TextSegment[], props: TextProps = {}): SceneNode {
-  return node('text', props.style, undefined, props.name, segments, undefined, undefined)
+  return node('text', props, undefined, props.name, segments, undefined, undefined)
 }
 
-/** What an image node accepts. */
-export interface ImageProps {
+/** What an image node accepts: its source, and its style, flat. */
+export type ImageProps = Style & {
   /**
    * Where the bytes come from.
    *
@@ -180,8 +233,6 @@ export interface ImageProps {
    * accepted it, never by the renderer.
    */
   readonly src: string | ImageSource
-  /** How the image is styled. `objectFit` and `frame` are read here and nowhere else. */
-  readonly style?: Style
   /** A name carried through for diagnostics. */
   readonly name?: string
 }
@@ -192,20 +243,18 @@ export interface ImageProps {
  * ```ts
  * import { Image } from 'meo-canvas'
  *
- * const avatar = Image({ src: 'avatar.png', style: { width: 64, height: 64, objectFit: 'cover' } })
+ * const avatar = Image({ src: 'avatar.png', width: 64, height: 64, objectFit: 'cover' })
  * ```
  */
 export function Image(props: ImageProps): SceneNode {
   const src = typeof props.src === 'string' ? { path: props.src } : props.src
-  return node('image', props.style, undefined, props.name, undefined, src, undefined)
+  return node('image', props, undefined, props.name, undefined, src, undefined)
 }
 
-/** What a path node accepts. */
-export interface PathProps {
+/** What a path node accepts: its data, and its style, flat. */
+export type PathProps = Style & {
   /** The SVG `d` attribute, in the node's own coordinates. */
   readonly d: string
-  /** How the path is styled. */
-  readonly style?: Style
   /** A name carried through for diagnostics. */
   readonly name?: string
 }
@@ -220,7 +269,7 @@ export interface PathProps {
  * ```
  */
 export function Path(props: PathProps): SceneNode {
-  return node('path', props.style, undefined, props.name, undefined, undefined, props.d)
+  return node('path', props, undefined, props.name, undefined, undefined, props.d)
 }
 
 /**

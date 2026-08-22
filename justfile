@@ -31,7 +31,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check doc-examples-check typecheck arena-tables-check lint-check layout-check docs test test-js coverage unused
+ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check lint-check layout-check docs test test-js coverage unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -224,6 +224,30 @@ test-js: ensure-deps
 arena-tables:
     node packages/meo-canvas/tools/generate-arena-tables.mjs
 
+# Regenerates the round trip's expected bytes.
+#
+# One case per arena property plus one setting every property at once, each a
+# scene with that property set and the bytes the byte format writes for it.
+# Keyed by Rust field name; the TypeScript spelling is the public API and lives
+# in the encoder.
+arena-cases:
+    cargo test -p meo-canvas-node --lib -- --ignored --exact \
+      arena::cases::tests::emit_arena_cases
+
+# Fails when the checked-in cases no longer match the Rust.
+#
+# Regenerates to a disposable path and diffs, for the same reason
+# `arena-tables-check` does: `git status` reports a file as changed whether it
+# is untracked, written or staged, so a check built on it refuses the workflow
+# it exists to support.
+arena-cases-check:
+    @mkdir -p target
+    @MEO_ARENA_CASES="$PWD/target/arena-cases.check.json" cargo test -q \
+      -p meo-canvas-node --lib -- --ignored --exact \
+      arena::cases::tests::emit_arena_cases > /dev/null
+    @diff -u fixtures/arena-cases.json target/arena-cases.check.json \
+      || { echo "error: the arena cases are stale; run \`just arena-cases\` and commit the result"; exit 1; }
+
 # Fails when the checked-in tables no longer match the Rust.
 #
 # Regenerates to a disposable path and diffs. Drift fails a build rather than a
@@ -242,6 +266,33 @@ arena-tables-check:
     @node packages/meo-canvas/tools/generate-arena-tables.mjs target/arena-tables.check.ts
     @diff -u packages/meo-canvas/src/generated/arena-tables.ts target/arena-tables.check.ts \
       || { echo "error: the arena tables are stale; run \`just arena-tables\` and commit the result"; exit 1; }
+
+# Regenerates the TypeScript wire-enum tables from the Rust that declares them.
+#
+# The arena writes an enum as one number: the same discriminant the byte codec
+# writes, because both sides read `from_wire`. Those numbers are declared
+# explicitly in 26 `wire_enum!` blocks in `crates/meo-canvas-scene/src` -- the
+# macro's own comment says why explicitly, and it is the same reason this is
+# generated. Hand-copying them would be a fourth copy of each list, and the
+# drift is silent in the worst available way: a variant inserted upstream does
+# not fail to decode, it decodes as a *different variant*.
+[doc("Emit the TypeScript wire-enum tables from the Rust declarations.")]
+arena-enums:
+    node packages/meo-canvas/tools/generate-arena-enums.mjs
+
+# Fails when the checked-in enum tables no longer match the Rust.
+#
+# Regenerates to a disposable path and diffs, for the reason
+# `arena-tables-check` does. `$PWD` rather than a bare relative path: a
+# relative destination resolves against wherever the recipe's shell started,
+# and a temp file written somewhere nothing compares is a check that passes
+# without checking.
+[doc("Fail if the checked-in wire-enum tables have drifted from the Rust.")]
+arena-enums-check:
+    @mkdir -p target
+    @node packages/meo-canvas/tools/generate-arena-enums.mjs "$PWD/target/arena-enums.check.ts"
+    @diff -u packages/meo-canvas/src/generated/arena-enums.ts target/arena-enums.check.ts \
+      || { echo "error: the wire-enum tables are stale; run \`just arena-enums\` and commit the result"; exit 1; }
 
 # Golden fixtures: a scene, and the picture it must produce.
 #

@@ -81,6 +81,8 @@
 !/examples/**/*.ts
 !/examples/**/*.mjs
 !/examples/*/bun.lock
+!/examples/*/Cargo.toml
+!/examples/**/*.rs
 
 # -- CI ---------------------------------------------------------------------
 !/.github/workflows/*.yml

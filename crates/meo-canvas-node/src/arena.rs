@@ -94,6 +94,8 @@
 //! slot layout widened. Appending a property to a table is not such a change —
 //! its bit is simply never set by an older writer.
 
+#[cfg(test)]
+pub(crate) mod cases;
 pub(crate) mod group;
 pub(crate) mod scene;
 pub(crate) mod value;

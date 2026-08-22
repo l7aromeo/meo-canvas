@@ -202,66 +202,60 @@ beneath it. Two addons would mean two copies of Skia resident in one process.
 arena — a flat `Vec<Node>` indexed by `NodeId`, which a codec can round-trip and
 a person cannot comfortably write.
 
-A node carries a constructor, a style, and its children. Three methods, and the
-set never grows: a new property is a new method on `Style`, not on nine node
-types.
+**Children take one or many, and a falsy child is skipped.** v1's props type is
+`Children | Children[]` where `Children` includes `false` and `undefined`
+(`canvas.type.ts:29`, `:1016`), and its constructor wraps a bare child before
+filtering (`layout.canvas.ts:43`). So `children: Row(...)` and
+`children: [Row(...), cond && Text(...)]` are both valid, and a conditional that
+does not render writes `false` rather than an empty node.
+
+Rust reaches the same place through a trait rather than a union: `.children`
+accepts a single element, an array, or an iterator, and an `Option<Element>`
+that is `None` is skipped. The syntax differs because the languages do; what a
+caller can express does not.
+
+**The two surfaces read the same way.** `Root` is the entry point on both, style
+properties sit directly on the node rather than inside a nested object, and the
+output methods are the same set. A person moving between them should be
+translating syntax, not a design.
 
 ```rust
-Row::new()
-    .style(Style::new().gap(px(16.0)).padding(all(px(24.0))).background(hex("#101014")))
-    .children([
-        Image::path("avatar.png").style(Style::new().size(px(64.0), px(64.0)).fit(Cover)),
-        Text::new("Ukasyah").style(Style::new().font_size(24.0).bold()),
-    ])
+let mut canvas = Root::new(520.0, 180.0)
+    .gpu(false)
+    .children([Row::new()
+        .gap(px(20.0))
+        .padding(all(px(24.0)))
+        .background_color(hex("#101014"))
+        .children([Text::new("Ukasyah").font_size(26.0).bold()])])
+    .render(&renderer)?;
+
+canvas.to_file("out.png", &SaveOptions::default())?;
 ```
 
-`Style` is one flat type, not four. Authoring is flat because CSS is flat and
-because v1's `BoxProps` mixes layout, paint, text and effect into one object —
-so a reader never has to know which group `gap` lives in versus `background`.
-The scene keeps them grouped, because the codec needs them grouped;
-`Style::into_parts` splits at `into_scene` time.
+Setters are flat and chained. They are written once, on a trait every node
+implements through a single accessor, rather than once per node type — the
+alternative is the same sixty-five methods repeated nine times, which is what
+made a nested style object look attractive before the shape was seen in use.
 
-**The names and the behaviour are CSS's.** `color` is the inherited text colour,
-`background` is the fill, and a `color` set on a container reaches every
-descendant. Chrome is the reference, so someone porting a design does not
-translate. Where a CSS name is a known trap — `color` and `background` sitting
-adjacent and meaning different things — it is CSS's trap and not one invented
-here.
-
-Setters are `const fn` wherever the property allows, which makes a reusable base
-a `const`:
+`Style` remains a public type because the scene carries it and because a
+reusable base is worth having:
 
 ```rust
 const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
-
-Row::new().style(CARD.background(hex("#101014")))
-Row::new().style(CARD.background(hex("#1c1c22")))
 ```
 
-A `const` is substituted at each use, so every `CARD` is a fresh value and a
-`self`-taking setter can consume it. No clone, no lifetime.
+A `const` is substituted at each use, so every `CARD` is a fresh value a
+`self`-taking setter can consume. That is why those setters are `const fn`
+wherever the field allows. The line a setter cannot cross is whether the field
+needs dropping — assigning over an owning field in a `const fn` is E0493, which
+`gradient` and `mask` hit despite carrying no `String` of their own.
 
-The line a setter cannot cross is **whether the field's type needs dropping**,
-not whether it holds a `String` or a `Vec` — assigning over an owning field in a
-`const fn` is E0493, and `gradient` and `mask` hit it despite carrying no
-`String` of their own. Eight setters are therefore not `const`:
-`font_family`, `grid_columns`, `grid_rows`, `box_shadow`, `text_shadow`,
-`filter`, `backdrop_filter`, `gradient`, `mask`. A function returning a `Style`
-serves the same purpose there, and each one says so in its own doc.
+`px` takes an `f32`, so `px(16.0)` and not `px(16)`: Rust does not coerce an
+integer literal, `impl Into<f32>` cannot be `const`, and an `i32` parameter would
+lose `px(0.5)`.
 
-`px` takes an `f32`, so `px(16.0)` and not `px(16)` — Rust does not coerce an
-integer literal, `impl Into<f32>` cannot be `const`, and an `i32` parameter
-would lose `px(0.5)`.
-
-`Style` is deliberately not `#[non_exhaustive]`: the rest pattern above is the
-documented escape hatch for a property with no setter, and `non_exhaustive`
-forbids exactly that.
-
-Every field stays public, so a property with no setter is still reachable:
-
-```rust
-.style(Style { aspect_ratio: Some(1.618), ..Style::new().gap(px(8.0)) })
-```
+Every field stays public and `Style` is deliberately not `#[non_exhaustive]`, so
+a property with no setter is still reachable by literal.
 
 ## The JavaScript surface
 
@@ -342,14 +336,13 @@ the right reason and be repaired the wrong way.
 v1's output surface, because v1 is the reference and a ported script should not
 have to change how it writes a file:
 
-|                                                |                         |
-| ---------------------------------------------- | ----------------------- |
-| `toBuffer(format, options)`                    | bytes, as a Promise     |
-| `toBufferSync(format, options)`                | bytes                   |
-| `toFile(path, options)` / `toFileSync`         | write it                |
-| `saveAs(path, options)` / `saveAsSync`         | v1's alias for `toFile` |
-| `toURL(format, options)` / `toURLSync`         | a data URL              |
-| `toDataURL(format, quality)` / `toDataURLSync` | v1 spells both          |
+|                                                |                     |
+| ---------------------------------------------- | ------------------- |
+| `toBuffer(format, options)`                    | bytes, as a Promise |
+| `toBufferSync(format, options)`                | bytes               |
+| `toFile(path, options)` / `toFileSync`         | write it            |
+| `toURL(format, options)` / `toURLSync`         | a data URL          |
+| `toDataURL(format, quality)` / `toDataURLSync` | v1 spells both      |
 
 The sync variants are ordinary functions here. v1 needed `Atomics.wait` on a
 `SharedArrayBuffer` for them because its canvas lived in a worker; this one does
@@ -360,6 +353,10 @@ of that name released a canvas from _worker_ memory, which is bookkeeping this
 version does not have — here `JsBox`'s `Finalize` frees it on collection and
 `release` only makes it sooner. A server rendering thousands of images wants it;
 a script does not need it.
+
+`saveAs` and `saveAsSync` are not carried over. They are v1's deprecated alias
+for `toFile`, and a deprecated name reintroduced in a rewrite is one nobody gets
+to remove later.
 
 `toSharp` is deliberately absent until someone asks for it: it exists in v1 to
 hand pixels to another library, and reintroducing it means taking a position on
@@ -474,6 +471,33 @@ No clippy lint checks this. `clippy::magic_numbers` and its plausible spellings
 do not exist, and `unreadable_literal` only demands `100_000` over `100000`.
 The rule is enforced at review. `missing_docs` catches an undocumented public
 constant, which is half the job.
+
+### Stacking
+
+`z_index` follows CSS, which is neither v1's rule nor "every sibling".
+
+CSS 2.1 applies `z-index` to **positioned** elements. Flexbox §5.4 and Grid §6.2
+extend it: a flex or grid item takes its `z-index` regardless of position,
+because being an item of that container is what gives it a place in the stack.
+
+So a child is stacked by `z_index` when it is positioned, or when its parent
+lays out as flex or grid. In a block container a static child ignores it.
+
+v1 documents `z-index` as applying only to absolutely positioned nodes, which is
+narrower than CSS. This renderer follows CSS, under the rule that where v1
+diverges from the reference the reference wins.
+
+**"Positioned" can only mean absolute here, and that is a limit of the model
+rather than a reading of the spec.** `PositionType` carries `Relative` and
+`Absolute` because taffy does, and taffy's `Relative` is the in-flow default —
+CSS's `static` and `relative` are one value in this renderer. So a
+`position: relative` child of a block container stacks in a browser and does not
+here.
+
+The collapse is chosen rather than accidental: making every in-flow block child
+stack is an error that fires constantly, and this one fires only for
+relative-in-block. Separating them means a third `PositionType` variant, which
+is a change to the wire format.
 
 ### Layout defaults
 

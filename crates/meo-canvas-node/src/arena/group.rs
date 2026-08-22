@@ -218,6 +218,42 @@ macro_rules! arena_group {
                 found.then_some(value)
             }
 
+            /// A group with every property set to its probe value.
+            ///
+            /// The whole-scene case: one record exercising every write path at
+            /// once, which catches a writer that gets each property right in
+            /// isolation and their order or slot widths wrong together.
+            #[cfg(test)]
+            pub(crate) fn probe_all() -> $target {
+                let mut value = <$target>::default();
+                $(
+                    if let Some(one) = probe($index) {
+                        value.$field = one.$field;
+                    }
+                )+
+                value
+            }
+
+            /// One property's value as JSON, by index.
+            ///
+            /// The artefact needs the value beside the bytes, and only the
+            /// table knows which field an index names. Emitting it here rather
+            /// than matching on names in the generator keeps that knowledge in
+            /// the one place that has it.
+            #[cfg(test)]
+            pub(crate) fn field_json(
+                value: &$target,
+                index: u32,
+            ) -> Option<String> {
+                use crate::arena::cases::ToJson;
+                $(
+                    if index == $index {
+                        return Some(value.$field.to_json());
+                    }
+                )+
+                None
+            }
+
             /// Reads the properties this record carries onto a default.
             pub(crate) fn read(
                 mask: &Mask,
