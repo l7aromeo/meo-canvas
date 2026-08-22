@@ -116,6 +116,68 @@ wire_enum! {
     }
 }
 
+/// The names v1 accepts that are not variant names.
+///
+/// `meo-skia-canvas`'s TypeScript accepts fifteen spellings for eight spaces
+/// (`meo-skia-canvas/lib/index.d.ts:240`): `'hdr10'` and `'rec2020-pq'` are one
+/// space, and so are `'p3'` and `'display-p3'`. A v1 caller has one of those
+/// fifteen written down, and seven of them name nothing here.
+///
+/// **Associated constants rather than variants**, so the wire enum stays
+/// honest: [`ALL`](ColorSpace::ALL) is still eight, `to_wire` and `from_wire`
+/// stay total, and the generator still emits eight keywords rather than
+/// fifteen. An alias is a second name for a space, not a second space, and only
+/// a constant says that.
+///
+/// [`ColorType`] carries the same aliases for the same reason.
+impl ColorSpace {
+    /// `'bt2020'`, which is [`Rec2020`](ColorSpace::Rec2020).
+    pub const BT2020: Self = Self::Rec2020;
+    /// `'bt2020-linear'`, which is
+    /// [`Rec2020Linear`](ColorSpace::Rec2020Linear).
+    pub const BT2020_LINEAR: Self = Self::Rec2020Linear;
+    /// `'hdr10'`, which is [`Rec2020Pq`](ColorSpace::Rec2020Pq).
+    pub const HDR10: Self = Self::Rec2020Pq;
+    /// `'hlg'`, which is [`Rec2020Hlg`](ColorSpace::Rec2020Hlg).
+    pub const HLG: Self = Self::Rec2020Hlg;
+    /// `'linear'`, which is [`SrgbLinear`](ColorSpace::SrgbLinear).
+    pub const LINEAR: Self = Self::SrgbLinear;
+    /// `'p3'`, which is [`DisplayP3`](ColorSpace::DisplayP3).
+    pub const P3: Self = Self::DisplayP3;
+    /// `'p3-linear'`, which is
+    /// [`DisplayP3Linear`](ColorSpace::DisplayP3Linear).
+    pub const P3_LINEAR: Self = Self::DisplayP3Linear;
+}
+
+/// The names v1 accepts that are not variant names.
+///
+/// The same problem [`ColorSpace`]'s aliases solve, in the enum where a v1
+/// caller is most likely to hit it: `'rgba'` is the spelling in
+/// `RootProps.colorType`'s own default (`canvas.type.ts:1202`), and it names
+/// nothing here -- the layout is [`Uint8`](ColorType::Uint8).
+///
+/// Only the spellings that differ by more than case. `'ARGB4444'` and
+/// `'BGRA8888'` are [`Argb4444`] and [`Bgra8888`] to any reader, and a constant
+/// per casing would be sixteen names for the sake of six.
+///
+/// [`Argb4444`]: ColorType::Argb4444
+/// [`Bgra8888`]: ColorType::Bgra8888
+impl ColorType {
+    /// `'bgra'`, which is [`Bgra8888`](ColorType::Bgra8888).
+    pub const BGRA: Self = Self::Bgra8888;
+    /// `'rgb'`, which is [`Rgb888x`](ColorType::Rgb888x) -- eight bits a
+    /// channel with a padding byte, since there is no three-byte layout.
+    pub const RGB: Self = Self::Rgb888x;
+    /// `'rgba'`, which is [`Uint8`](ColorType::Uint8). v1's default.
+    pub const RGBA: Self = Self::Uint8;
+    /// `'RGBAF16'`, which is [`F16`](ColorType::F16).
+    pub const RGBAF16: Self = Self::F16;
+    /// `'RGBAF16Norm'`, which is [`F16Norm`](ColorType::F16Norm).
+    pub const RGBAF16_NORM: Self = Self::F16Norm;
+    /// `'RGBAF32'`, which is [`F32`](ColorType::F32).
+    pub const RGBAF32: Self = Self::F32;
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ColorSpace, ColorType};
@@ -126,6 +188,54 @@ mod tests {
         // `'srgb'` (`canvas.type.ts:1202`, `:1211`), which are these.
         assert_eq!(ColorType::default(), ColorType::Uint8);
         assert_eq!(ColorSpace::default(), ColorSpace::Srgb);
+    }
+
+    #[test]
+    fn each_alias_names_the_space_v1_spells_it() {
+        // Asserted one by one rather than derived, because there is nothing to
+        // derive it from: which space `'hdr10'` means is a fact about v1's
+        // vocabulary, not about either enum. A constant pointing at the wrong
+        // variant resolves happily and composites in the wrong space, and on
+        // this side that is one `assert_eq!` away from being caught -- which is
+        // more than the TypeScript alias table can say for itself.
+        assert_eq!(ColorSpace::LINEAR, ColorSpace::SrgbLinear);
+        assert_eq!(ColorSpace::P3, ColorSpace::DisplayP3);
+        assert_eq!(ColorSpace::P3_LINEAR, ColorSpace::DisplayP3Linear);
+        assert_eq!(ColorSpace::BT2020, ColorSpace::Rec2020);
+        assert_eq!(ColorSpace::BT2020_LINEAR, ColorSpace::Rec2020Linear);
+        assert_eq!(ColorSpace::HDR10, ColorSpace::Rec2020Pq);
+        assert_eq!(ColorSpace::HLG, ColorSpace::Rec2020Hlg);
+    }
+
+    #[test]
+    fn each_layout_alias_names_the_layout_v1_spells_it() {
+        assert_eq!(ColorType::RGBA, ColorType::Uint8);
+        assert_eq!(ColorType::RGB, ColorType::Rgb888x);
+        assert_eq!(ColorType::BGRA, ColorType::Bgra8888);
+        assert_eq!(ColorType::RGBAF16, ColorType::F16);
+        assert_eq!(ColorType::RGBAF16_NORM, ColorType::F16Norm);
+        assert_eq!(ColorType::RGBAF32, ColorType::F32);
+
+        // The one that matters most: v1's default spelling.
+        assert_eq!(ColorType::RGBA, ColorType::default());
+    }
+
+    #[test]
+    fn an_alias_is_a_second_name_and_not_a_second_space() {
+        // The property the constants exist to preserve. Were they variants,
+        // `ALL` would be fifteen, `from_wire` would have to pick one of two
+        // names for a byte, and the generator would emit fifteen keywords for
+        // eight spaces.
+        assert_eq!(ColorSpace::ALL.len(), 8);
+        assert_eq!(ColorType::ALL.len(), 23);
+        assert_eq!(
+            ColorSpace::HDR10.to_wire(),
+            ColorSpace::Rec2020Pq.to_wire()
+        );
+        assert_eq!(
+            ColorSpace::from_wire(ColorSpace::HDR10.to_wire()),
+            Some(ColorSpace::Rec2020Pq)
+        );
     }
 
     #[test]

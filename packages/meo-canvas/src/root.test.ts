@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { SideValue } from './arena.js'
 import type { NativeCanvas } from './canvas.js'
-import { Text } from './node.js'
+import { Box, Text } from './node.js'
 import { Root, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
 /**
@@ -225,12 +225,27 @@ describe('the renderer Root reaches for when told nothing', () => {
     // Two real renders that must differ cannot pass by copying a field. When no
     // GPU backend is compiled in they are both the CPU and this says so rather
     // than passing for the wrong reason.
+    //
+    // **A rounded box, and the curve is the whole point.** The two rasterisers
+    // resolve anti-aliased edges a level or two apart and agree exactly on a
+    // picture that has none, so the scene has to contain a curve for this to
+    // mean anything. A curve always does; text does not reliably.
+    //
+    // Measured, on this scene at 200×80: text differs at `fontSize: 23` and
+    // `24` and is **byte-identical at 16, 20, 22, 28, 32 and 48** — a narrow
+    // window rather than a threshold, which is why text is the wrong choice
+    // however large it is made. A rounded box differs at every radius from 8 to
+    // 30 and at every width tried. A square box agrees, as it should.
+    //
+    // A scene without a curve makes this fail rather than pass quietly, which
+    // is the right way round — but it fails for a reason that has nothing to do
+    // with the GPU, so change the scene knowing that.
     const of = async (gpu: boolean): Promise<Uint8Array> => {
       const canvas = await Root({
-        width: 64,
-        height: 32,
+        width: 200,
+        height: 80,
         gpu,
-        children: Text('parity', { fontSize: 24, color: '#ffffff' }),
+        children: Box({ width: 120, height: 60, borderRadius: 24, backgroundColor: '#ffffff' }),
       })
       const bytes = canvas.toBufferSync('png')
       canvas.release()

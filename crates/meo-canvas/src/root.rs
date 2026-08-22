@@ -655,8 +655,8 @@ mod tests {
 
     use super::{BuildError, PageInfo, Root, SequenceError};
     use crate::{
-        ColorSpace, ColorType, Column, Format, Renderer, Row, Styled, Text,
-        hex_rgb, px,
+        Box as BoxNode, ColorSpace, ColorType, Column, Format, Renderer, Row,
+        Styled, Text, hex_rgb, px,
     };
 
     /// The scene `root` describes, or the failure it reports.
@@ -806,21 +806,28 @@ mod tests {
         // reached nothing. Two real renders that must differ cannot pass that
         // way -- and if this build has no GPU compiled in, both are the CPU and
         // the test says so rather than passing vacuously.
+        //
+        // The content is load-bearing: the two rasterisers differ on
+        // anti-aliased edges and agree exactly on a picture without any, so
+        // text is what makes them disagree. A plain filled box here would fail
+        // this rather than pass it quietly, which is the right way round, but
+        // worth knowing before changing the scene.
         let renderer = Renderer::new();
-        let text = || {
-            Text::new("parity")
-                .font_size(24.0)
-                .color(hex_rgb(0xff_ff_ff))
+        let rounded = || {
+            BoxNode::new()
+                .size(px(120.0), px(60.0))
+                .border_radius(24.0)
+                .background_color(hex_rgb(0xff_ff_ff))
         };
 
-        let mut on = Root::new(64.0, 32.0)
+        let mut on = Root::new(200.0, 80.0)
             .gpu(true)
-            .children(text())
+            .children(rounded())
             .render(&renderer)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut off = Root::new(64.0, 32.0)
+        let mut off = Root::new(200.0, 80.0)
             .gpu(false)
-            .children(text())
+            .children(rounded())
             .render(&renderer)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
