@@ -516,6 +516,15 @@ where the same explanation appears twice, one copy drifts and the other is the
 one somebody reads. Write the reason once, at the place a reader lands, and
 point at it from the other.
 
+A default that means something different from the same value stated explicitly
+cannot be a default. It has to be absent. CSS spells `z-index: auto` and
+`z-index: 0` differently -- the first establishes no stacking context and the
+second does -- so `z_index` is an `Option<i32>` where `None` is auto, and an
+`i32` defaulting to zero would say every positioned node establishes a context.
+The same reasoning puts `gpu` at `Option<bool>`, where `None` is the renderer's
+choice and `Some(true)` is a caller insisting, and leaves an unnamed inset edge
+`None` rather than zero: not pinned is not the same as pinned to zero.
+
 ### Constants
 
 Every value that is a judgement gets a named `const` whose doc comment justifies
