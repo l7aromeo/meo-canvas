@@ -1,0 +1,7 @@
+{
+  "proves": "a percentage is a fraction of the reference extent, not a hundred times one",
+  "checkable": "the canvas is 200 x 120 and every measurement in it is 25%. Row one is 25% wide: white runs x=0..49, fifty pixels. Row two is 40 px wide with a 25% left inset: white runs x=50..89. Row three's gradient reaches white 25% across: it is 253 at x=49 and 255 from x=50. All three are whole numbers of pixels, so a disagreement is never a rounding argument.",
+  "status": "measured from the committed image, not eyeballed",
+  "why": "no comparison of bytes can catch a units error: a probe and the bytes it is compared against are written from the same number, and a fixture that shares the error compares equal too. Rendered pixels are the only currency here that is not downstream of this project's own arithmetic.",
+  "source": "crates/meo-canvas/tests/percentage_fixture.rs, run by `just percentage-fixture`"
+}

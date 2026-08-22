@@ -165,6 +165,15 @@ pub use unit::{
 /// The scene vocabulary, re-exported so callers need one dependency rather than
 /// two.
 pub mod scene {
+    /// Reading and writing a scene as bytes.
+    ///
+    /// [`Root::into_scene`](crate::Root::into_scene) is documented as
+    /// being for a caller who wants the scene itself — to write to
+    /// disk, to send over the wire, or to render more than once — and
+    /// this is what turns one into bytes and back. Without it that
+    /// sentence names something a caller cannot do without a second
+    /// dependency.
+    pub use meo_canvas_scene::codec;
     pub use meo_canvas_scene::{
         Corners, Dimension, Length, Node, NodeId, NodeKind, Point, Rect, Scene,
         SceneError, Sides, Size,
@@ -181,8 +190,9 @@ pub mod scene {
                 PositionType, TrackSize,
             },
             paint::{
-                BackgroundRepeat, BlendMode, BorderStyle, Color, GradientKind,
-                ObjectFit, PaintStyle,
+                BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
+                BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
+                GradientStop, LinearDirection, ObjectFit, PaintStyle,
             },
             text::{
                 FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,

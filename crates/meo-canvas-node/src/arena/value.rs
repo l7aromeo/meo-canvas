@@ -96,7 +96,7 @@ impl ArenaValue for i32 {
 impl<T: ArenaValue> ArenaValue for Option<T> {
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let slot = input.offset();
-        match input.slot()? {
+        match input.flag()? {
             tag if (tag - ABSENT).abs() < f64::EPSILON => Ok(None),
             tag if (tag - PRESENT).abs() < f64::EPSILON => {
                 T::read(input).map(Some)

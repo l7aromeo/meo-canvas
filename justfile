@@ -387,6 +387,22 @@ fixtures:
 fixtures-accept name:
     MEO_FIXTURE_ACCEPT={{ name }} cargo test -p meo-canvas-core --test fixtures
 
+# Rewrites the percentage fixture's scene from the Rust that describes it.
+#
+# The one golden whose scene is authored rather than committed as bytes alone.
+# A `.mcs` is opaque and a codec change makes every one of them unreadable with
+# no source to rebuild from -- which is a cost already paid once, by hand, for
+# the gradient fixture.
+#
+# Its picture is the only check in the project that pins what a percentage
+# *means*. Nothing that compares bytes can: a probe and the bytes it is compared
+# against are written from the same number, so they agree whether or not the
+# arithmetic is right.
+[doc("Rewrite the percentage fixture's scene from its source.")]
+percentage-fixture:
+    @cargo test -q -p meo-canvas --test percentage_fixture -- --ignored --exact emit_percentage_scene > /dev/null
+    @echo "wrote fixtures/percentages/scene.mcs; run \`just fixtures-accept percentages\` if the picture should move"
+
 # No legacy module layout: `foo.rs` beside a `foo/` directory, never a
 # `mod.rs`. No lint expresses this -- rustc, clippy and rustfmt all accept
 # either layout -- so a find is the gate.

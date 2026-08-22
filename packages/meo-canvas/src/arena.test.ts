@@ -431,19 +431,32 @@ const SCALE = cases.$scale as number
  * Every value is the fixture's probe, which is chosen to differ from the
  * property's default. A probe equal to the default proves nothing: the property
  * would compare equal whether it was written or dropped.
+ *
+ * **Every fractional value is a quarter, and that is load-bearing rather than
+ * arbitrary.** These were all `1` — `'100%'` for the percentages — until a
+ * hundredfold units bug shipped: `'50%'` covered a whole two-hundred-pixel
+ * canvas, and every check here passed. `Length::Percent` is a fraction where
+ * `1.0` is 100%, so `'1%'` written without the division is `Percent(1.0)`
+ * too — the one value where forgetting to divide encodes identically to
+ * remembering. `0` is the other, being a fixed point of any scaling. A quarter
+ * is neither, and is exact in an `f32` so no expectation here carries a
+ * rounding argument.
+ *
+ * Raising one back to `1` reopens the blind spot for that property alone, and
+ * nothing in this file would fail.
  */
 const PROBES: Readonly<Record<string, Style>> = {
   align_content: { alignContent: 'flex-end' },
   align_items: { alignItems: 'flex-end' },
   align_self: { alignSelf: 'flex-end' },
-  aspect_ratio: { aspectRatio: 1 },
+  aspect_ratio: { aspectRatio: 0.25 },
   backdrop_filter: { backdropFilter: 'probe' },
   background_color: { backgroundColor: '#00000001' },
   blend_mode: { mixBlendMode: 'multiply' },
-  border: { border: 1 },
+  border: { border: 0.25 },
   border_color: { borderColor: { top: '#00000001', right: '#00000001', bottom: '#00000001', left: '#00000001' } },
   border_color_all: { borderColor: '#00000001' },
-  border_radius: { borderRadius: 1 },
+  border_radius: { borderRadius: 0.25 },
   border_style: { borderStyle: 'dashed' },
   box_sizing: { boxSizing: 'content-box' },
   color: { color: '#00000001' },
@@ -451,41 +464,41 @@ const PROBES: Readonly<Record<string, Style>> = {
   display: { display: 'grid' },
   dither: { dither: true },
   filter: { filter: 'probe' },
-  flex_basis: { flexBasis: 1 },
+  flex_basis: { flexBasis: 0.25 },
   flex_direction: { flexDirection: 'row-reverse' },
-  flex_grow: { flexGrow: 1 },
-  flex_shrink: { flexShrink: 2 },
+  flex_grow: { flexGrow: 0.25 },
+  flex_shrink: { flexShrink: 0.25 },
   flex_wrap: { flexWrap: 'wrap' },
   font_family: { fontFamily: 'probe' },
-  font_size: { fontSize: 1 },
+  font_size: { fontSize: 0.25 },
   font_style: { fontStyle: 'italic' },
   font_weight: { fontWeight: 1 },
-  gap: { gap: '100%' },
-  grid_auto_columns: { gridAutoColumns: 1 },
+  gap: { gap: '25%' },
+  grid_auto_columns: { gridAutoColumns: 0.25 },
   grid_auto_flow: { gridAutoFlow: 'column' },
-  grid_auto_rows: { gridAutoRows: 1 },
+  grid_auto_rows: { gridAutoRows: 0.25 },
   grid_column: { gridColumn: { start: 1, span: 1 } },
   grid_row: { gridRow: { start: 1, span: 1 } },
-  grid_template_columns: { gridTemplateColumns: [1] },
-  grid_template_rows: { gridTemplateRows: [1] },
-  inset: { position: '100%' },
+  grid_template_columns: { gridTemplateColumns: [0.25] },
+  grid_template_rows: { gridTemplateRows: [0.25] },
+  inset: { position: '25%' },
   justify_content: { justifyContent: 'flex-end' },
-  letter_spacing: { letterSpacing: 1 },
-  line_gap: { lineGap: 1 },
-  line_height: { lineHeight: 1 },
-  margin: { margin: 1 },
-  max_size: { maxWidth: 1, maxHeight: 1 },
-  min_size: { minWidth: 1, minHeight: 1 },
-  opacity: { opacity: 2 },
+  letter_spacing: { letterSpacing: 0.25 },
+  line_gap: { lineGap: 0.25 },
+  line_height: { lineHeight: 0.25 },
+  margin: { margin: 0.25 },
+  max_size: { maxWidth: 0.25, maxHeight: 0.25 },
+  min_size: { minWidth: 0.25, minHeight: 0.25 },
+  opacity: { opacity: 0.25 },
   overflow: { overflow: 'hidden' },
-  padding: { padding: '100%' },
+  padding: { padding: '25%' },
   paint_order: { paintOrder: 'stroke' },
   position_type: { positionType: 'absolute' },
-  size: { width: 1, height: 1 },
+  size: { width: 0.25, height: 0.25 },
   text_align: { textAlign: 'end' },
   text_decoration: { textDecoration: 'underline' },
   vertical_align: { verticalAlign: 'middle' },
-  word_spacing: { wordSpacing: 1 },
+  word_spacing: { wordSpacing: 0.25 },
   z_index: { zIndex: 1 },
   // `'100%'`, not the `'25%'` the kind cases use: this case's percentages come
   // from `PROBE_FILL`, which is `1.0` for every property, so the probe has to
@@ -493,23 +506,23 @@ const PROBES: Readonly<Record<string, Style>> = {
   // invisible at exactly this value — and the probe cannot step out of it
   // alone, because the bytes it is compared against are written from the fill.
   gradient: {
-    gradient: { type: 'radial', at: { x: '100%', y: '100%' }, stops: [{ offset: 1, color: '#00000001' }] },
+    gradient: { type: 'radial', at: { x: '25%', y: '25%' }, stops: [{ offset: 0.25, color: '#00000001' }] },
   },
   background_image: {
     backgroundImage: {
       src: { url: 'probe' },
       repeat: 'repeat-x',
       size: 'cover',
-      position: { x: '100%', y: '100%' },
+      position: { x: '25%', y: '25%' },
     },
   },
   transform: {
-    transform: { translateX: '100%', translateY: '100%', rotate: 1, scaleX: 1, scaleY: 1, originX: '100%', originY: '100%' },
+    transform: { translateX: '25%', translateY: '25%', rotate: 0.25, scaleX: 0.25, scaleY: 0.25, originX: '25%', originY: '25%' },
   },
-  box_shadows: { boxShadow: { inset: true, offsetX: 1, offsetY: 1, blur: 1, spread: 1, color: '#00000001' } },
-  text_shadows: { textShadow: { offsetX: 1, offsetY: 1, blur: 1, color: '#00000001' } },
+  box_shadows: { boxShadow: { inset: true, offsetX: 0.25, offsetY: 0.25, blur: 0.25, spread: 0.25, color: '#00000001' } },
+  text_shadows: { textShadow: { offsetX: 0.25, offsetY: 0.25, blur: 0.25, color: '#00000001' } },
   mask: { mask: { shape: 'ellipse' } },
-  text_stroke: { textStroke: { width: 1, color: '#00000001' } },
+  text_stroke: { textStroke: { width: 0.25, color: '#00000001' } },
 }
 
 /**

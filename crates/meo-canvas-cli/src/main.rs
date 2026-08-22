@@ -454,11 +454,23 @@ mod tests {
         assert_eq!(options.quality, None);
     }
 
+    /// A temporary path this process alone writes to.
+    ///
+    /// The process id is in it because these tests write a fixed name into a
+    /// shared temporary directory, and cargo runs a crate's test binaries
+    /// concurrently -- the unit tests here and the integration tests beside
+    /// them are separate processes. Two of them sharing a path is a write, a
+    /// delete and a read racing, which fails as a missing file in whichever
+    /// one read last.
+    fn scratch(name: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join(format!("meo-canvas-cli-{}-{name}", std::process::id()))
+    }
+
     #[test]
     fn a_named_output_receives_the_bytes_and_an_unwritable_path_is_an_io_failure()
      {
-        let mut path = std::env::temp_dir();
-        path.push("meo-canvas-cli-write-output.bin");
+        let path = scratch("write-output.bin");
 
         super::write_output(b"pixels", Some(&path))
             .unwrap_or_else(|failure| unreachable!("{}", failure.message));
@@ -480,8 +492,7 @@ mod tests {
 
     #[test]
     fn bytes_that_are_not_a_scene_are_a_distinct_failure_from_a_missing_file() {
-        let mut path = std::env::temp_dir();
-        path.push("meo-canvas-cli-not-a-scene.mcs");
+        let path = scratch("not-a-scene.mcs");
         std::fs::write(&path, b"not a scene at all")
             .unwrap_or_else(|source| unreachable!("{source}"));
 

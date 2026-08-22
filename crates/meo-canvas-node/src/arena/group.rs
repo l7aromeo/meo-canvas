@@ -197,11 +197,10 @@ macro_rules! arena_group {
                 $(
                     if index == $index {
                         let base = <$target>::default();
-                        for fill in crate::arena::probe_fills() {
-                            let (slots, values) =
-                                crate::arena::probe_slots(fill);
+                        for fills in crate::arena::probe_fills() {
+                            let (slots, values) = crate::arena::probe_slots();
                             let mut input =
-                                Reader::new_for_probe(&slots, &values);
+                                Reader::new_for_probe(&slots, &values, fills);
                             if let Ok(read) = ArenaValue::read(&mut input) {
                                 value.$field = read;
                                 found = true;

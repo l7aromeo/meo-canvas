@@ -363,6 +363,36 @@ pub(crate) struct Reader<'a> {
     slots: &'a [f64],
     values: &'a Values,
     offset: usize,
+    /// The values a probe stream hands back, if this reader is one.
+    ///
+    /// `None` for every reader outside a probe, which is every reader the
+    /// addon builds.
+    #[cfg(test)]
+    probe: Option<ProbeFills>,
+}
+
+/// What a probe hands back, by what the read asks for.
+///
+/// A probe stream cannot be one number. `bounded_integer` refuses a fractional
+/// slot, so a tag, a count, an enum index and a side index all have to be whole
+/// — and a fill that satisfies them is `1.0`, which is the one value at which a
+/// hundredfold units error between the two surfaces encodes identically.
+/// `Length::Percent(1.0)` is `'100%'`, and `'1%'` written without the division
+/// is the same number, so a probe of it agrees with a writer that never
+/// divides. That blind spot has already shipped a user-visible bug: `'50%'`
+/// rendered at five thousand per cent, and every check in this project passed.
+///
+/// So the probe answers by what the reader wants rather than by one constant:
+/// whole where a whole number is required, fractional where the slot is taken
+/// as it is. The fractional half is where a percentage, an offset, a radius and
+/// a scale factor all land.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProbeFills {
+    /// Handed to a read that demands a whole number.
+    integer: f64,
+    /// Handed to a read that takes the slot as written.
+    fraction: f64,
 }
 
 /// How many ones a probe stream carries.
@@ -384,26 +414,50 @@ const PROBE_SLOTS: usize = 32;
 #[cfg(test)]
 const PROBE_FILL: f64 = 1.0;
 
-/// The fill used where [`PROBE_FILL`] lands on the property's own default.
+/// The value handed to a read that takes its slot as written.
 ///
-/// Two properties default to `1.0` -- `flex_shrink` and `opacity` -- so a
-/// ones-probe of either sets it to what it already was, and a case built from
-/// it would exercise no write path at all. Two is the next fill that is still a
-/// valid reading of every tagged type: `Dimension` reads `2` as a percentage,
-/// and a type with only two tags is never reached by these two properties,
-/// which are both plain numbers.
+/// A quarter, and the two properties of it that matter are that it is exact in
+/// an `f32` — so no case's expectation carries a rounding argument — and that
+/// it is neither of the two numbers at which a hundredfold units error is
+/// invisible. `1.0` is `'100%'` and is also what `'1%'` becomes if the division
+/// is forgotten; `0.0` is a fixed point of any scaling at all.
 #[cfg(test)]
-const PROBE_FILL_ALTERNATE: f64 = 2.0;
+const PROBE_FRACTION: f64 = 0.25;
 
-/// The fills a probe tries, in order.
+/// The second pair, tried where the first lands on a property's own default.
+///
+/// Nothing needs it today: the only two properties that defaulted to the first
+/// fill were `flex_shrink` and `opacity` at `1.0`, and both are read through
+/// the fractional half, which is now a quarter. It is kept because the escape
+/// hatch is the mechanism rather than the constant — a property added with a
+/// default of `0.25` would have no probe at all, and
+/// `every_property_has_a_probe_that_differs_from_its_default` would say so
+/// rather than a case quietly exercising no write path.
+///
+/// Both halves differ from the first pair, since either could be the one that
+/// collides. `2` is still a valid reading of every tagged type, and `0.5` is
+/// still exact in an `f32`.
+#[cfg(test)]
+const PROBE_FILL_ALTERNATE: ProbeFills = ProbeFills {
+    integer: 2.0,
+    fraction: 0.5,
+};
+
+/// The pairs a probe tries, in order.
 ///
 /// Trying rather than listing which property needs which: a list would be a
 /// second table to keep in step, and
 /// `every_property_has_a_probe_that_differs_from_its_default` fails if neither
-/// fill produces a distinguishable value.
+/// pair produces a distinguishable value.
 #[cfg(test)]
-pub(crate) const fn probe_fills() -> [f64; 2] {
-    [PROBE_FILL, PROBE_FILL_ALTERNATE]
+pub(crate) const fn probe_fills() -> [ProbeFills; 2] {
+    [
+        ProbeFills {
+            integer: PROBE_FILL,
+            fraction: PROBE_FRACTION,
+        },
+        PROBE_FILL_ALTERNATE,
+    ]
 }
 
 /// The slot stream and side array a probe value is read out of.
@@ -414,12 +468,16 @@ pub(crate) const fn probe_fills() -> [f64; 2] {
 /// and a tagged value takes that tag. Two side values so a string index of one
 /// resolves.
 ///
-/// The fill is [`PROBE_FILL`] for every property but the two whose default is
-/// already `1.0`; those take [`PROBE_FILL_ALTERNATE`]. See [`probe_fills`].
+/// What each read actually receives is decided by [`ProbeFills`], not by these
+/// slots. See [`probe_fills`].
 #[cfg(test)]
-pub(crate) fn probe_slots(fill: f64) -> ([f64; PROBE_SLOTS], Values) {
+pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
     (
-        [fill; PROBE_SLOTS],
+        // The contents no longer decide the values a probe reads -- the reader
+        // substitutes by what each read asks for -- but the length still does:
+        // a stream shorter than a property is a truncation, which is the check
+        // that a probe reaching no value is caught.
+        [PROBE_FILL; PROBE_SLOTS],
         Values::new(vec![
             SideValue::Text("probe".to_owned()),
             SideValue::Text("probe".to_owned()),
@@ -433,6 +491,8 @@ impl<'a> Reader<'a> {
             slots,
             values,
             offset: 0,
+            #[cfg(test)]
+            probe: None,
         }
     }
 
@@ -444,8 +504,14 @@ impl<'a> Reader<'a> {
     pub(crate) const fn new_for_probe(
         slots: &'a [f64],
         values: &'a Values,
+        fills: ProbeFills,
     ) -> Self {
-        Self::new(slots, values)
+        Self {
+            slots,
+            values,
+            offset: 0,
+            probe: Some(fills),
+        }
     }
 
     /// The slot the next read starts at.
@@ -460,6 +526,21 @@ impl<'a> Reader<'a> {
 
     /// Takes one slot.
     pub(crate) fn slot(&mut self) -> Result<f64, ArenaError> {
+        let value = self.raw_slot()?;
+        #[cfg(test)]
+        if let Some(fills) = self.probe {
+            return Ok(fills.fraction);
+        }
+        Ok(value)
+    }
+
+    /// Takes the next slot exactly as the stream holds it.
+    ///
+    /// The bounds check and the offset advance, with no probe substitution.
+    /// Every read goes through here so a truncated stream is still an error
+    /// during a probe — the length is what
+    /// `every_property_has_a_probe_that_differs_from_its_default` rests on.
+    fn raw_slot(&mut self) -> Result<f64, ArenaError> {
         let value = self.slots.get(self.offset).copied().ok_or(
             ArenaError::Truncated {
                 slot: self.offset,
@@ -470,10 +551,30 @@ impl<'a> Reader<'a> {
         Ok(value)
     }
 
+    /// Takes a presence flag, which is a whole number.
+    ///
+    /// Separate from [`Reader::slot`] so a probe can tell the two apart: the
+    /// fractional fill is for slots read as written, and a presence flag is not
+    /// one of those. The value is returned unvalidated so the caller still
+    /// reports [`ArenaError::NotAPresenceFlag`] for anything that is neither
+    /// present nor absent, which names the mistake better than "not an
+    /// integer" would.
+    pub(crate) fn flag(&mut self) -> Result<f64, ArenaError> {
+        let value = self.raw_slot()?;
+        #[cfg(test)]
+        let value = self.probe.map_or(value, |fills| fills.integer);
+        Ok(value)
+    }
+
     /// Takes a slot that must hold an exact integer.
     pub(crate) fn integer(&mut self) -> Result<f64, ArenaError> {
         let slot = self.offset;
-        let value = self.slot()?;
+        let value = self.raw_slot()?;
+        // A probe answers a demand for a whole number with one, whatever the
+        // stream holds: the fractional fill exists for the slots that are read
+        // as written, and a tag read as `0.25` is a stream nobody writes.
+        #[cfg(test)]
+        let value = self.probe.map_or(value, |fills| fills.integer);
         if !value.is_finite() || value.fract() != 0.0 {
             return Err(ArenaError::NotAnInteger { slot, found: value });
         }

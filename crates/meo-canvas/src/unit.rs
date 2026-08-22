@@ -172,6 +172,17 @@ impl DefaultZero for Dimension {
     const ZERO: Self = Self::Points(0.0);
 }
 
+/// An edge nobody named is not pinned at all, rather than pinned to zero.
+///
+/// `inset` is the one per-edge property whose edges are optional, and the
+/// difference matters: an offset of zero pins that edge to the container's,
+/// where absence leaves it to the flow. Without this, [`left`] and its siblings
+/// cannot express an inset at all — which is the property they are most often
+/// reached for.
+impl<T: Copy> DefaultZero for Option<T> {
+    const ZERO: Self = None;
+}
+
 /// The same value on every corner.
 #[must_use]
 pub const fn corners_all(border_radius: f32) -> Corners<f32> {
