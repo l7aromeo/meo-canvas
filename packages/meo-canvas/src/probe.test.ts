@@ -204,6 +204,75 @@ describe('we match', () => {
 
     expect(await row(scene, 80, 20, 10)).toBe(`0-59:${WHITE} 60-79:${BLUE}`)
   })
+
+  it('9e4f173 does not make a grid item a containing block it never asked to be', async () => {
+    // The grid item names no `positionType`, so it is static and is not a
+    // containing block: the absolute grandchild resolves against the relative
+    // outer box at x=0 rather than against the item at x=40.
+    //
+    // One defect with `d6bfe23` rather than two, which is why it is measured
+    // here rather than fixed separately -- both are an absolute node
+    // resolving against its nearest positioned ancestor, and the grid item is
+    // only the parent that happens to be in front of it.
+    const scene: ContainerProps = {
+      width: 100,
+      height: 20,
+      positionType: 'relative',
+      backgroundColor: '#ffffff',
+      children: Box({
+        margin: { left: 40 },
+        width: 60,
+        height: 20,
+        display: 'grid',
+        gridTemplateColumns: [60],
+        children: Box({
+          height: 20,
+          backgroundColor: '#dcdcdc',
+          children: Box({
+            positionType: 'absolute',
+            position: { top: 0, left: 0 },
+            width: 20,
+            height: 20,
+            backgroundColor: '#2850dc',
+          }),
+        }),
+      }),
+    }
+
+    expect(await row(scene, 100, 20, 10)).toBe(`0-19:${BLUE} 20-39:${WHITE} 40-99:220,220,220`)
+  })
+
+  it('d6bfe23 resolves an absolute node against its containing block, not its parent', async () => {
+    // The middle box names no `positionType`, so it is static and is not a
+    // containing block: the absolute child's `left: 0` resolves against the
+    // relative grandparent, putting it at x=0.
+    //
+    // The middle is offset by a margin rather than an inset, because a static
+    // box ignores its inset and the two answers would otherwise coincide at
+    // x=0 — a probe that cannot tell them apart.
+    const scene: ContainerProps = {
+      width: 100,
+      height: 20,
+      positionType: 'relative',
+      backgroundColor: '#ffffff',
+      children: Box({
+        margin: { left: 30 },
+        width: 40,
+        height: 20,
+        backgroundColor: '#dcdcdc',
+        children: Box({
+          positionType: 'absolute',
+          position: { top: 0, left: 0 },
+          width: 20,
+          height: 20,
+          backgroundColor: '#2850dc',
+        }),
+      }),
+    }
+    const correct = `0-19:${BLUE} 20-29:${WHITE} 30-69:220,220,220 70-99:${WHITE}`
+
+    expect(await row(scene, 100, 20, 10)).toBe(correct)
+  })
 })
 
 describe('we differ', () => {
@@ -261,79 +330,5 @@ describe('we differ', () => {
     // Change this to the commented form when the tracks follow the direction.
     expect(await row(scene, 100, 20, 10)).toBe(`0-39:${WHITE} 40-69:${RED} 70-99:${BLUE}`)
     // expect(await row(scene, 100, 20, 10)).toBe(`0-39:${WHITE} 40-69:${BLUE} 70-99:${RED}`)
-  })
-
-  it('9e4f173 makes a grid item a containing block it never asked to be', async () => {
-    // **PINNED DEFECT.** The grid item names no `positionType`, so it is static
-    // and is not a containing block. The absolute grandchild must resolve
-    // against the relative outer box at x=0; it resolves against the item at
-    // x=40.
-    //
-    // Almost certainly one defect with `d6bfe23` rather than two: both are an
-    // absolute node resolving against its parent instead of its nearest
-    // positioned ancestor, and the grid item is only the parent that happens
-    // to be in front of it here.
-    const scene: ContainerProps = {
-      width: 100,
-      height: 20,
-      positionType: 'relative',
-      backgroundColor: '#ffffff',
-      children: Box({
-        margin: { left: 40 },
-        width: 60,
-        height: 20,
-        display: 'grid',
-        gridTemplateColumns: [60],
-        children: Box({
-          height: 20,
-          backgroundColor: '#dcdcdc',
-          children: Box({
-            positionType: 'absolute',
-            position: { top: 0, left: 0 },
-            width: 20,
-            height: 20,
-            backgroundColor: '#2850dc',
-          }),
-        }),
-      }),
-    }
-
-    // Change this to `0-19:${BLUE} …` when it resolves against the containing
-    // block.
-    expect(await row(scene, 100, 20, 10)).toBe(`0-39:${WHITE} 40-59:${BLUE} 60-99:220,220,220`)
-  })
-
-  it('d6bfe23 resolves an absolute node against its parent, not its containing block', async () => {
-    // **PINNED DEFECT.** The middle box names no `positionType`, so it is
-    // static and is not a containing block. The absolute child's `left: 0`
-    // must resolve against the relative grandparent, putting it at x=0.
-    //
-    // The middle is offset by a margin rather than an inset, because a static
-    // box ignores its inset and the two answers would otherwise coincide at
-    // x=0 — a probe that cannot tell them apart.
-    const scene: ContainerProps = {
-      width: 100,
-      height: 20,
-      positionType: 'relative',
-      backgroundColor: '#ffffff',
-      children: Box({
-        margin: { left: 30 },
-        width: 40,
-        height: 20,
-        backgroundColor: '#dcdcdc',
-        children: Box({
-          positionType: 'absolute',
-          position: { top: 0, left: 0 },
-          width: 20,
-          height: 20,
-          backgroundColor: '#2850dc',
-        }),
-      }),
-    }
-    const correct = `0-19:${BLUE} 20-29:${WHITE} 30-69:220,220,220 70-99:${WHITE}`
-
-    // Change this to `toBe(correct)` when it resolves against the containing
-    // block. Today the blue lands at 30-49, inside the static parent.
-    expect(await row(scene, 100, 20, 10)).not.toBe(correct)
   })
 })

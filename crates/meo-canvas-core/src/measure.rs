@@ -29,10 +29,14 @@ use std::collections::HashMap;
 use meo_canvas_scene::{
     Size,
     node::{NodeId, NodeKind},
-    style::text::{FontStyle, ParagraphStyle, Spacing, TextAlign, TextSegment},
+    style::text::{
+        FontStyle, ParagraphStyle, Spacing, TextAlign, TextDecoration,
+        TextSegment,
+    },
 };
 use meo_skia_canvas::{
-    Paragraph, RgbaLinear, TextAlign as SkiaTextAlign, TextEngine, TextSlant,
+    Paragraph, RgbaLinear, TextAlign as SkiaTextAlign,
+    TextDecoration as SkiaTextDecoration, TextEngine, TextSlant,
     TextStyle as SkiaTextStyle,
 };
 
@@ -476,6 +480,17 @@ fn skia_style(
             TextAlign::Center => SkiaTextAlign::Center,
             TextAlign::Right => SkiaTextAlign::Right,
             TextAlign::Justify => SkiaTextAlign::Justify,
+        },
+        // The decoration was resolved and then dropped: `ResolvedText` has
+        // carried it since the resolve pass and nothing passed it on, so
+        // `underline` and `line-through` painted a paragraph identical to the
+        // pixel with `none`. The property crossed both wire formats correctly
+        // and was lost here, which is why a byte comparison could not see it.
+        decoration: match style.decoration {
+            TextDecoration::None => SkiaTextDecoration::default(),
+            TextDecoration::Underline => SkiaTextDecoration::underline(),
+            TextDecoration::Overline => SkiaTextDecoration::overline(),
+            TextDecoration::LineThrough => SkiaTextDecoration::line_through(),
         },
         line_height_multiplier: style.line_height,
         letter_spacing: spacing_pixels(style.letter_spacing, style.size),

@@ -130,12 +130,21 @@ where
     // after the build asks which taffy node a scene node became.
     let mut to_scene: HashMap<taffy::NodeId, NodeId> = HashMap::new();
 
-    // `Fixed` nodes are collected on the way down and attached to the page
-    // root here rather than to the parents they sit under in the scene. See
-    // `build`.
+    // Out-of-flow nodes are attached to the box that contains them rather than
+    // to the parent they sit under in the scene. See `build`. Anything still
+    // unclaimed at the top belongs to the page, which is the initial containing
+    // block and the last chance to be one.
     let mut fixed = Vec::new();
-    let root = build(scene, page, &mut tree, &mut to_scene, &mut fixed)?;
-    for node in fixed {
+    let mut orphans = Vec::new();
+    let root = build(
+        scene,
+        page,
+        &mut tree,
+        &mut to_scene,
+        &mut fixed,
+        &mut orphans,
+    )?;
+    for node in fixed.into_iter().chain(orphans) {
         tree.add_child(root, node)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
@@ -244,6 +253,26 @@ fn pin_page_root(
 /// which is what the painter walks: out of flow for layout, in place for paint
 /// order and for style inheritance.
 ///
+/// # And why an `Absolute` node is not one either
+///
+/// The same mechanism, stopping one rung lower. CSS resolves an absolute node
+/// against its **nearest positioned ancestor**, skipping every static box in
+/// between; taffy resolves it against its parent whatever that parent is. So an
+/// absolute node is handed up too, and claimed by the first ancestor that is
+/// positioned — the page root claiming whatever reaches the top, as the initial
+/// containing block.
+///
+/// Measured before the change: a relative grandparent at `(20, 20)`, a static
+/// parent at `(50, 50)`, and an absolute grandchild at inset zero landed at
+/// `(50, 50)` where CSS puts it at `(20, 20)`.
+///
+/// v1 fixed the same defect in `d6bfe23` by giving a node that names no
+/// position type Yoga's real `Static`, which stops it being a containing block.
+/// taffy has no such value — its `Relative` is the in-flow default and every
+/// node is a containing block for its absolute children — so the distinction
+/// has to be made by where a node is attached rather than by what its style
+/// says.
+///
 /// No sibling moves as a result. An out-of-flow child contributes nothing to
 /// its parent's flow, so removing it from that parent's children changes
 /// nothing the solver would have done with it.
@@ -253,6 +282,7 @@ fn build(
     tree: &mut taffy::TaffyTree<NodeId>,
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
     fixed: &mut Vec<taffy::NodeId>,
+    orphans: &mut Vec<taffy::NodeId>,
 ) -> Result<taffy::NodeId, Error> {
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
@@ -261,23 +291,46 @@ fn build(
     let style = to_taffy_style(&source.layout);
 
     let mut children: Vec<taffy::NodeId> = Vec::new();
+    // Absolute descendants from anywhere beneath here that have not yet met a
+    // containing block. They become this node's children if it is one, and are
+    // handed further up if it is not.
+    let mut unclaimed: Vec<taffy::NodeId> = Vec::new();
+
     for child in &source.children {
-        let Some(source) = scene.get(*child) else {
+        let Some(child_source) = scene.get(*child) else {
             // A dangling id is caught by `Scene::validate`; building it as a
             // leaf here would report the wrong error from the wrong pass.
-            children.push(build(scene, *child, tree, to_scene, fixed)?);
+            children.push(build(
+                scene,
+                *child,
+                tree,
+                to_scene,
+                fixed,
+                &mut unclaimed,
+            )?);
             continue;
         };
-        if source.layout.display == Display::None {
+        if child_source.layout.display == Display::None {
             continue;
         }
 
-        let built = build(scene, *child, tree, to_scene, fixed)?;
-        if source.layout.position_type == PositionType::Fixed {
-            fixed.push(built);
-        } else {
-            children.push(built);
+        let built =
+            build(scene, *child, tree, to_scene, fixed, &mut unclaimed)?;
+        match child_source.layout.position_type {
+            PositionType::Fixed => fixed.push(built),
+            PositionType::Absolute => unclaimed.push(built),
+            PositionType::Static
+            | PositionType::Relative
+            | PositionType::Sticky => children.push(built),
         }
+    }
+
+    // A positioned box is a containing block; a static one is not. Anything
+    // this node does not claim goes to whichever ancestor does.
+    if matches!(source.layout.position_type, PositionType::Static) {
+        orphans.append(&mut unclaimed);
+    } else {
+        children.append(&mut unclaimed);
     }
 
     // A childless node is given the measurer's context whatever it draws.
@@ -1054,6 +1107,9 @@ mod tests {
         let placed = |position| {
             let (mut scene, page) = scene_with_page(200.0, 200.0);
             let mut parent = Node::container();
+            // Positioned, so it is a containing block. A static parent is not
+            // one, which is what the test below covers.
+            parent.layout.position_type = PositionType::Relative;
             parent.layout.margin = Sides::all(Dimension::Points(40.0));
             parent.layout.padding = Sides::all(Length::Points(10.0));
             parent.layout.size =
@@ -1089,6 +1145,67 @@ mod tests {
         assert_eq!(placed(PositionType::Absolute), Point { x: 45.0, y: 45.0 });
         // Against the page, which is what makes it fixed rather than absolute.
         assert_eq!(placed(PositionType::Fixed), Point { x: 5.0, y: 5.0 });
+    }
+
+    #[test]
+    fn an_absolute_node_skips_a_static_parent_for_the_nearest_positioned_one() {
+        // CSS resolves an absolute node against its nearest *positioned*
+        // ancestor, skipping every static box between. taffy resolves it
+        // against its parent whatever that is, so this is settled by where the
+        // node is attached rather than by its style.
+        //
+        // Measured before the fix: the grandchild landed at (50, 50), the
+        // static parent's own origin.
+        let (mut scene, page) = scene_with_page(200.0, 200.0);
+
+        let mut grandparent = Node::container();
+        grandparent.layout.position_type = PositionType::Relative;
+        grandparent.layout.margin = Sides::all(Dimension::Points(20.0));
+        grandparent.layout.size =
+            (Dimension::Points(150.0), Dimension::Points(150.0));
+        let grandparent = scene
+            .push(page, grandparent)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        // Static, and offset, so resolving against it is visibly different
+        // from resolving against the grandparent.
+        let mut parent = Node::container();
+        parent.layout.margin = Sides::all(Dimension::Points(30.0));
+        parent.layout.size = (Dimension::Points(80.0), Dimension::Points(80.0));
+        let parent = scene
+            .push(grandparent, parent)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let mut child = Node::container();
+        child.layout.position_type = PositionType::Absolute;
+        child.layout.inset = Sides {
+            top: Some(Length::ZERO),
+            left: Some(Length::ZERO),
+            right: None,
+            bottom: None,
+        };
+        child.layout.size = (Dimension::Points(10.0), Dimension::Points(10.0));
+        let child = scene
+            .push(parent, child)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let solved = solved(&scene, page);
+        assert_eq!(
+            solved
+                .get(parent)
+                .unwrap_or_else(|| unreachable!("the parent is laid out"))
+                .origin,
+            Point { x: 50.0, y: 50.0 },
+            "the static parent is where it always was"
+        );
+        assert_eq!(
+            solved
+                .get(child)
+                .unwrap_or_else(|| unreachable!("the child is laid out"))
+                .origin,
+            Point { x: 20.0, y: 20.0 },
+            "the child resolves against the grandparent, not the parent"
+        );
     }
 
     #[test]

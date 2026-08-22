@@ -38,6 +38,7 @@ use meo_canvas_scene::{
             BlendMode, Color, Gradient, GradientGeometry, LinearDirection,
             ObjectFit, PaintStyle,
         },
+        text::TextAlign,
     },
 };
 use meo_skia_canvas::{
@@ -417,8 +418,7 @@ fn walk(
                 }
 
                 let layers = enter_node(context, node, rect)?;
-                paint_box(context, resolved, id, node, rect)?;
-                paint_kind(
+                paint_own_content(
                     context, resolved, layout, measurer, id, node, rect,
                 )?;
 
@@ -446,8 +446,7 @@ fn walk(
 
                 context.save();
                 let layers = enter_node(context, node, rect)?;
-                paint_box(context, resolved, id, node, rect)?;
-                paint_kind(
+                paint_own_content(
                     context, resolved, layout, measurer, id, node, rect,
                 )?;
 
@@ -501,10 +500,6 @@ fn participants(
     struct Ranked {
         id: NodeId,
         z: i32,
-        /// Whether the index applied. CSS paints the descendants it does not
-        /// apply to before the positioned ones at the same depth, so this
-        /// breaks a tie at zero in the direction the specification does.
-        indexed: bool,
         /// Clipping ancestors between this node and the context root,
         /// outermost first. See [`Step::EnterClipped`].
         clips: Vec<NodeId>,
@@ -515,11 +510,26 @@ fn participants(
     // deeper than the thread's stack would abort rather than return an error.
     // A pre-order walk, so `found` is in document order before it is sorted and
     // the sort's stability is what decides ties.
+    // The context's own clip is owed by its participants just as any
+    // intermediate's is — it is not applied around them, so that a node
+    // entitled to escape it can.
+    let root_clips = clips_its_children(node);
     let mut pending: Vec<(NodeId, NodeId, Vec<NodeId>)> = node
         .children
         .iter()
         .rev()
-        .map(|child| (*child, root, Vec::new()))
+        .map(|child| {
+            let owed = if root_clips
+                && scene
+                    .get(*child)
+                    .is_none_or(|child| !escapes_clip(node, child))
+            {
+                vec![root]
+            } else {
+                Vec::new()
+            };
+            (*child, root, owed)
+        })
         .collect();
 
     while let Some((id, parent_id, clips)) = pending.pop() {
@@ -529,15 +539,13 @@ fn participants(
             continue;
         };
 
-        let indexed = stacks_by_z_index(parent, source);
         found.push(Ranked {
             id,
-            z: if indexed {
+            z: if stacks_by_z_index(parent, source) {
                 source.paint.z_index.unwrap_or(0)
             } else {
                 0
             },
-            indexed,
             clips: clips.clone(),
         });
 
@@ -562,7 +570,19 @@ fn participants(
         }
     }
 
-    found.sort_by_key(|ranked| (ranked.z, ranked.indexed));
+    // By `z` alone, and the sort is stable, so everything else keeps tree
+    // order — which is what puts an ancestor before its own descendant.
+    //
+    // A second key almost went in here: CSS paints in-flow descendants before
+    // positioned ones at the same level, so ranking by "did the index apply"
+    // looked like a free improvement. It is not. Applied across depths it sorts
+    // a static grandchild *before* its own parent, and the parent's background
+    // then covers it — `display: block` below the page root painted no children
+    // at all, because a block container's static child is not indexed while the
+    // container itself is. Getting that nicety right needs grouping by ancestor
+    // rather than a flat key, and a flat key breaks the invariant that a
+    // descendant paints after the box it sits in.
+    found.sort_by_key(|ranked| ranked.z);
     found
         .into_iter()
         .map(|ranked| Step::EnterClipped {
@@ -584,13 +604,27 @@ fn participants(
 /// against it: a 50-wide absolute child in a 20-wide clipper is clipped when
 /// the clipper is `relative` and not when the clipper names no position.
 ///
-/// **`Fixed` is not covered here.** Its containing block is the page, so it
-/// should escape every ancestor clip; it currently escapes none. That is the
-/// same gap as its carrying an ancestor's transform, and it is recorded with
-/// it rather than half-closed here.
+/// A [`PositionType::Fixed`] node escapes **every** clipper reached this way.
+/// Its containing block is not any positioned ancestor — it is the transform or
+/// filter that captures it, or nothing at all — so neither a static nor a
+/// relative box cuts one where either would cut an absolute node. A capturing
+/// ancestor does still cut it, and needs no case here: a transform or a filter
+/// establishes a stacking context, so such a node is never an intermediate and
+/// its clip is applied around everything its context gathers.
+///
+/// Ported from v1's `4f542d8`. Measured before: a 50-wide fixed child in a
+/// 20-wide clipper painted 20 columns under a static clipper and 20 under a
+/// relative one, where both should be 50.
 const fn escapes_clip(clipper: &Node, child: &Node) -> bool {
-    matches!(child.layout.position_type, PositionType::Absolute)
-        && matches!(clipper.layout.position_type, PositionType::Static)
+    match child.layout.position_type {
+        PositionType::Fixed => true,
+        PositionType::Absolute => {
+            matches!(clipper.layout.position_type, PositionType::Static)
+        }
+        PositionType::Static
+        | PositionType::Relative
+        | PositionType::Sticky => false,
+    }
 }
 
 /// Whether this node's `overflow` clips what is inside it.
@@ -665,6 +699,32 @@ const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
         || matches!(parent.layout.display, Display::Flex | Display::Grid)
 }
 
+/// Paints a node's own box and kind, under its own `overflow`.
+///
+/// In a save of its own, because a node's `overflow` clips **its** content and
+/// not what a descendant painted elsewhere in the order: the clip has to be
+/// gone by the time this context's participants are painted, so that one
+/// entitled to escape it can. See [`escapes_clip`].
+fn paint_own_content(
+    context: &mut Context2D,
+    resolved: &Resolved<'_>,
+    layout: &LayoutResult,
+    measurer: &mut SceneMeasurer<'_>,
+    id: NodeId,
+    node: &Node,
+    rect: Rect,
+) -> Result<(), Error> {
+    context.save();
+    if clips_its_children(node) {
+        clip_to_box(context, &node.paint, rect)?;
+    }
+    let result = paint_box(context, resolved, id, node, rect).and_then(|()| {
+        paint_kind(context, resolved, layout, measurer, id, node, rect)
+    });
+    context.restore();
+    result
+}
+
 /// Applies the transform and opens whatever isolation layers the node needs.
 ///
 /// Returns how many layers were opened, so the matching `Leave` closes exactly
@@ -676,11 +736,16 @@ fn enter_node(
 ) -> Result<u8, Error> {
     apply_transform(context, node.effects.transform.as_ref(), rect);
 
-    if node.layout.overflow.0 != Overflow::Visible
-        || node.layout.overflow.1 != Overflow::Visible
-    {
-        clip_to_box(context, &node.paint, rect)?;
-    }
+    // The node's own `overflow` is **not** applied here. It clips descendants,
+    // and a descendant reaches this painter as a participant of whichever
+    // context gathers it rather than nested inside this call — so the clip
+    // travels with the participant, in the list `Step::EnterClipped` carries,
+    // where a node entitled to escape it can. Applied here it would wrap
+    // everything this node gathers with no way out, which is how an absolute
+    // child of a clipper that was *also* a stacking context stayed clipped
+    // after `escapes_clip` was taught to let it through.
+    //
+    // The node's own content is clipped by the caller, in a save of its own.
 
     let mut layers = 0_u8;
     let alpha = node.paint.opacity.clamp(0.0, OPAQUE);
@@ -830,6 +895,12 @@ fn draw_text(
     };
     let baseline = rect.origin.y + baseline_from_top;
 
+    // Read before the paragraph is borrowed mutably.
+    let needs_a_finite_width =
+        measurer.resolved().text(id).is_some_and(|text| {
+            !matches!(text.align, TextAlign::Start | TextAlign::Left)
+        });
+
     let Some(paragraph) = measurer.paragraph_mut(id) else {
         return;
     };
@@ -845,6 +916,18 @@ fn draw_text(
     paragraph.layout(f32::INFINITY);
     if rect.size.width + ROUNDING_SLACK < paragraph.width() {
         paragraph.layout(rect.size.width);
+    } else if needs_a_finite_width {
+        // **Skia aligns within the width it last saw**, so a paragraph left at
+        // `INFINITY` centres about infinity and paints nothing at all:
+        // `text_align: center` and `right` drew zero ink where `left` was
+        // correct, because only they depend on the width.
+        //
+        // Only for those alignments, and never below the natural width. Doing
+        // it for every paragraph moved `baseline-alignment` — a word vanished
+        // and the ink ran 50 pixels lower — because the height and baseline
+        // Skia reports depend on the width it was laid out at, and every
+        // left-aligned node had been measured against the unconstrained one.
+        paragraph.layout(rect.size.width.max(paragraph.width()));
     }
     let top = baseline - paragraph.alphabetic_baseline();
     context.draw_paragraph(paragraph, rect.origin.x, top);
@@ -1697,6 +1780,29 @@ mod tests {
             ids.push(id);
         }
         assert_eq!(ordered_ids(&scene, NodeId::ROOT), ids);
+    }
+
+    #[test]
+    fn a_descendant_paints_after_the_box_it_sits_in() {
+        // The invariant a second sort key broke: a static child of a `Block`
+        // container is not indexed while the container is, so ranking by that
+        // put the child first and the container's background covered it.
+        // `display: block` below the page root painted no children at all.
+        let mut scene = Scene::new(Size::new(60.0, 40.0));
+        let mut panel = Node::container();
+        panel.layout.display = Display::Block;
+        let panel = scene
+            .push(NodeId::ROOT, panel)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let child = scene
+            .push(panel, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(
+            ordered_ids(&scene, NodeId::ROOT),
+            vec![panel, child],
+            "the panel must paint before the child inside it"
+        );
     }
 
     #[test]
