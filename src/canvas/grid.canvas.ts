@@ -308,13 +308,13 @@ export class GridNode extends RowNode {
       const targetWidth = Math.max(0, colOffsetsValues[ce] - colOffsetsValues[cs] - colGap)
 
       child.node.setWidth(targetWidth)
-      child.node.calculateLayout(targetWidth, Number.NaN, Style.Direction.LTR)
+      child.node.calculateLayout(targetWidth, Number.NaN, this.resolvedDirection())
 
       // Recursively finalize nested children (e.g. inner Grids) so their
       // computed heights are accurate before we measure row sizes.
       child.finalizeLayout()
       if (child.node.isDirty()) {
-        child.node.calculateLayout(targetWidth, Number.NaN, Style.Direction.LTR)
+        child.node.calculateLayout(targetWidth, Number.NaN, this.resolvedDirection())
       }
 
       items.push({ node: child, rowStart: rowStart!, rowEnd: rowEnd!, colStart: itemColStart, colEnd: itemColEnd })
@@ -358,8 +358,17 @@ export class GridNode extends RowNode {
     }
 
     // 7. Apply Positions
+    //
+    // Tracks run from the inline start, which is the right under RTL. Mirrored here rather than
+    // left to Yoga: an item is placed absolutely at a computed offset, and an absolute node's
+    // offset is a physical left whatever the direction says.
+    const rightToLeft = this.resolvedDirection() === Style.Direction.RTL
+    const trackSpan = colOffsets[colOffsets.length - 1] - colGap
+
     for (const item of items) {
-      const x = colOffsets[item.colStart] + paddingLeft
+      const x = rightToLeft
+        ? paddingLeft + trackSpan - colOffsets[item.colStart] - (colOffsets[item.colEnd] - colOffsets[item.colStart] - colGap)
+        : colOffsets[item.colStart] + paddingLeft
 
       while (colOffsets.length <= item.colEnd) {
         colOffsets.push(colOffsets[colOffsets.length - 1] + 0 + colGap)

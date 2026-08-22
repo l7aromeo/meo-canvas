@@ -703,6 +703,23 @@ export class BoxNode {
   }
 
   /**
+   * The direction this node ends up laid out in.
+   *
+   * Yoga resolves `Inherit` while it lays out but keeps no record of the answer: `getDirection`
+   * hands back what was set, and there is no computed counterpart. So the chain is walked to the
+   * first ancestor that named one, which is what Yoga itself would have found.
+   */
+  protected resolvedDirection(): ReturnType<typeof this.node.getDirection> {
+    let node: ReturnType<typeof this.node.getParent> | typeof this.node = this.node
+    while (node) {
+      const own = node.getDirection()
+      if (own !== Style.Direction.Inherit) return own
+      node = node.getParent()
+    }
+    return Style.Direction.LTR
+  }
+
+  /**
    * Whether this node takes part in its parent's stacking order rather than painting in the flow.
    *
    * Naming a `zIndex` is enough on its own: every node here is a flex item, and CSS applies
