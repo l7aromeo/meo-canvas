@@ -1,11 +1,19 @@
 //! The Node.js addon: one `.node` binary, one module entry point.
 //!
-//! JavaScript builds a scene, encodes it with the same wire format
-//! [`meo_canvas_scene::codec`] defines, and passes one buffer across. This
-//! crate decodes it, runs [`meo_canvas_core`], and hands back the encoded
-//! image. One buffer per render rather than a property read per field: walking
-//! a `JsObject` tree costs a V8 lookup for every field of every node, and a
-//! scene has thousands.
+//! JavaScript builds a scene into an `f64` arena and passes it across with a
+//! side array holding the strings and buffers a `Float64Array` cannot carry.
+//! This crate decodes that arena, runs [`meo_canvas_core`], and hands back the
+//! encoded image. One typed array per render rather than a property read per
+//! field: walking a `JsObject` tree costs a V8 lookup for every field of every
+//! node, and a scene has thousands.
+//!
+//! **The arena is not the byte format.** [`meo_canvas_scene::codec`] is the
+//! persistence format -- self-contained, with its strings inside it, which is
+//! what a file on disk needs. The arena is the boundary format, shaped for a
+//! side that stores into a `Float64Array` in one operation and would write
+//! varint bytes in several. Both decode to the same `Scene`, so a scene
+//! captured here and written to disk round-trips without loss, and neither is
+//! a version of the other. [`arena`] carries the specification.
 //!
 //! # Why this crate holds the entry point
 //!
@@ -15,6 +23,18 @@
 //! declares the only [`neon::main`] here. Two crates in one binary both
 //! registering a module is a link error at best and the wrong module at worst.
 //!
+//! # Renders do not run on the event loop
+//!
+//! The `render` export returns a Promise and the work runs on Node's worker
+//! pool. A
+//! scene is CPU-bound from resolve through encode, so running it inline
+//! would stall every other request in the process for the whole render.
+//!
+//! Every V8 read happens once, up front, before the task starts: the arena is
+//! copied out of its typed array and the side array is walked before the
+//! task is spawned. Nothing touches V8 on the worker, which is what makes the
+//! pool safe to use at all.
+//!
 //! # What this crate deliberately excludes
 //!
 //! No rendering logic. Every function here converts, calls into
@@ -22,9 +42,12 @@
 //! the CLI and the Rust surface could not reach and the test suite could not
 //! run without building a `.node` file.
 //!
-//! No panics across the boundary. A panic unwinding into Node takes the process
-//! down, so every entry point turns a [`meo_canvas_core::Error`] into a thrown
-//! JavaScript exception rather than letting it escape.
+//! No panics across the boundary. A panic unwinding into Node takes the
+//! process down. A failure before the task starts -- an argument of the wrong
+//! type -- throws synchronously; a failure inside the render **rejects the
+//! Promise** instead, because by then there is no call left to throw from.
+//! Those are different things to a JavaScript caller, and only a test in that
+//! language can tell them apart.
 
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is
 // its opposite: one asks for `pub(crate)` on an item a private module exports,

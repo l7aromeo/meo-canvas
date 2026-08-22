@@ -56,6 +56,12 @@ clap = { version = "4.6", features = ["derive"] }
 # its `blocking` feature is asked for.
 ureq = "3.4"
 thiserror = "2.0"
+# Benchmarking. Not in the `ci` chain: a bench is an instrument, not a gate --
+# it answers "what is this worth" rather than "is this correct", and a number
+# that varies with the machine cannot fail a build honestly.
+criterion = { version = "0.8", default-features = false, features = [
+    "cargo_bench_support",
+] }
 
 [workspace.lints.rust]
 missing_docs = "deny"

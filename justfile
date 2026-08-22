@@ -184,6 +184,15 @@ docs:
 unused:
     cargo machete
 
+# Measure what a render costs. Not part of `ci`.
+#
+# A bench is an instrument, not a gate: it answers "what is this worth" rather
+# than "is this correct", and a number that varies with the machine cannot fail
+# a build honestly. The golden fixtures are what say a change moved no pixels.
+[doc("Measure render timings against the release profile.")]
+bench:
+    cargo bench -p meo-canvas-core
+
 # Remove all build output.
 clean:
     cargo clean

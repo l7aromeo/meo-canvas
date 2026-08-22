@@ -1014,7 +1014,9 @@ const fn to_spacing(length: Length) -> Spacing {
 mod tests {
     use meo_canvas_scene::style::{
         Dimension, Length,
-        layout::{Align, Display, FlexDirection, Justify, LayoutStyle},
+        layout::{
+            Align, Display, FlexDirection, Justify, LayoutStyle, Overflow,
+        },
         paint::PaintStyle,
         text::{FontStyle, FontWeight, Spacing, TextStyle},
     };
@@ -1157,6 +1159,20 @@ mod tests {
         assert_eq!(text.letter_spacing, Some(Spacing::Points(-0.5)));
         // A percentage of the font size is what CSS's `em` means here.
         assert_eq!(text.word_spacing, Some(Spacing::Em(0.1)));
+    }
+
+    #[test]
+    fn the_bounds_and_overflow_setters_reach_their_fields() {
+        let (layout, ..) = Style::new()
+            .min_height(px(4.0))
+            .max_width(px(8.0))
+            .overflow(Overflow::Hidden)
+            .into_parts();
+
+        assert_eq!(layout.min_size.1, Dimension::Points(4.0));
+        assert_eq!(layout.max_size.0, Dimension::Points(8.0));
+        // One value sets both axes, as CSS's one-value `overflow` does.
+        assert_eq!(layout.overflow, (Overflow::Hidden, Overflow::Hidden));
     }
 
     #[test]

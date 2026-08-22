@@ -20,7 +20,7 @@ format is one no other language can target from the documentation alone.
 Every door into the renderer produces one:
 
 ```
-meo-canvas          Scene { .. }            ── Rust callers build it directly
+meo-canvas          Element tree            ── Rust callers build it directly
 meo-canvas-node     decode(arena, values)   ── JavaScript callers encode into it
 meo-canvas-cli      read from disk          ── files and pipes
                              │
@@ -110,12 +110,15 @@ format in already knows it.
 
 One pass, no re-entry into caller code.
 
-**resolve** registers fonts, fetches images, and inherits text styles down the
-tree. This is the only stage that performs I/O.
+**resolve** registers fonts, decodes images, and inherits text styles down the
+tree. This is the only stage that performs I/O, and the I/O is local: an
+`ImageSource::Url` is refused with `Error::UnresolvedSource`, because the core
+performs no network access. Resolving a URL to bytes is the job of whichever
+surface has a fetcher.
 
 **measure** builds one Skia `Paragraph` per text node, which the next stage
 re-lays-out at different widths. Re-layout reuses run parsing, font resolution
-and glyph shaping — see `meo-skia-canvas/src/text.rs:1387-1396` — so the work a
+and glyph shaping — see `meo-skia-canvas/src/text.rs:1409-1419` — so the work a
 rebuild would repeat happens once per text node. How much that saves against
 rebuilding is unmeasured; a criterion bench belongs here before the claim
 becomes a number.
@@ -148,9 +151,10 @@ the whole stage is Rust calling Rust.
 **encode** produces png, jpg, webp, avif, tiff, bmp, ico, svg, pdf, gif, apng,
 or raw bytes.
 
-Only `resolve` is asynchronous work. Everything after it is CPU-bound, which is
-why parallelism lives at the scene level — many scenes across a thread pool —
-rather than inside a single render.
+`resolve` is the only stage that waits on anything, and it waits synchronously:
+nothing in the core is async and it needs no runtime. Everything after it is
+CPU-bound, which is why parallelism lives at the scene level — many scenes
+across a thread pool — rather than inside a single render.
 
 ### The JavaScript boundary
 
@@ -175,9 +179,11 @@ crossing: a `lineTo` in `meo-skia-canvas` costs 82 nanoseconds, of which 17 is
 the crossing itself and 39 is reading two floats out of the arguments. Decoding
 from a `&[f64]` skips V8 entirely.
 
-The opcode table is generated from the `Scene` definition in Rust. The writer's
-opcode and the decoder's opcode are the same number by construction rather than
-by two lists agreeing.
+`NodeTag` lives in `meo-canvas-scene` as a `wire_enum!`, so the byte codec's
+kind tag and the arena's opcode are the same number by construction rather than
+by two tables agreeing. Nothing generates code from the `Scene` definition; the
+macros produce Rust from one declaration, and the JavaScript writer that has to
+agree with them does not exist yet.
 
 ### Node addon
 
@@ -259,6 +265,11 @@ Every field stays public, so a property with no setter is still reachable:
 
 ## The JavaScript surface
 
+**This section is the design, not a description.** `packages/meo-canvas/src`
+holds the type vocabulary and nothing else — the encoder, the node factories and
+`Root` are unwritten. Read it as the specification to build against, and treat
+any sentence here as false about the tree until that lands.
+
 Object literals, not builders. The two surfaces are siblings, so each is
 idiomatic in its own language rather than one imitating the other — and this is
 the shape v1 already has.
@@ -283,7 +294,7 @@ const jpg = canvas.toBufferSync('jpg')
 ```
 
 Same `style` key as the Rust surface, same CSS names, same values — `'row'`
-where Rust has `Row`, `16` where Rust has `px(16)`. The string-literal unions in
+where Rust has `Row`, `16` where Rust has `px(16.0)`. The string-literal unions in
 `packages/meo-canvas/src/index.ts` are what make `'cover'` complete and `'covr'`
 a compile error.
 
@@ -349,7 +360,7 @@ cost.
 ```
 crates/meo-canvas-scene    Scene types and the binary codec. No Skia, no taffy, no neon.
 crates/meo-canvas-core     resolve, measure, layout, paint, encode.
-crates/meo-canvas          The crates.io surface. Struct literals over core.
+crates/meo-canvas          The crates.io surface. Nodes, one flat `Style`, units.
 crates/meo-canvas-node     The cdylib. The only #[neon::main].
 crates/meo-canvas-cli      The binary.
 packages/meo-canvas        The npm surface. TypeScript, and the arena encoder.
@@ -443,6 +454,29 @@ the invariant that makes it unreachable.
 
 ### Performance and memory
 
+Measured on a 111-node page, GPU off, by `just bench`:
+
+|                             |          |
+| --------------------------- | -------- |
+| full pipeline               | 22.95 ms |
+| draw, without encode        | 9.86 ms  |
+| re-encode a painted surface | 9.00 ms  |
+| `resolve`, 551 nodes        | 43.71 µs |
+| `z_ordered` over 551 nodes  | 1.92 µs  |
+
+**Encoding is more than half the pipeline.** Nothing in resolve, layout or paint
+is where the time goes at this size, which is why separating rendering from
+encoding is worth more than any allocation fix: a second format costs 39% of a
+fresh render rather than 100%.
+
+Two allocations look wasteful and are not worth removing, measured rather than
+argued. `resolve` clones a `ResolvedText` per node and again per child, which is
+some fraction of 43.71 µs against a 22.95 ms pipeline. `z_ordered` clones and
+sorts every container's children, which is 1.92 µs across a 551-node tree. Both
+are real observations about the code and false as performance problems; a `Cow`
+in that signature would make the hot path read worse to save nothing. Do not
+change either without a number that says otherwise.
+
 Allocation in the paint stage is on the critical path for every frame of an
 animated render. Prefer reusing a buffer over allocating per node, and say in a
 comment what the reuse is worth when it is not obvious.
@@ -467,6 +501,8 @@ just fmt-check        rustfmt and prettier without writing.
 just layout-check     Fail if a mod.rs exists.
 just docs             Fail on any rustdoc warning.
 just unused           Dependencies declared but never imported.
+just fixtures         Render every fixture and compare it to its committed image.
+just fixtures-accept  Accept one fixture's current render as its expected image.
 just clean            Remove all build output.
 ```
 
@@ -527,14 +563,21 @@ Three layers.
 **Unit tests** cover `meo-canvas-scene`, the codec, and each core stage. These
 are pure logic and carry most of the coverage.
 
-**Golden fixtures** in `fixtures/` are scenes rendered through the CLI and
-compared against committed images. This is how the paint stage is covered:
+**Golden fixtures** in `fixtures/` are scenes rendered by a `Renderer` inside
+`crates/meo-canvas-core/tests/fixtures.rs` and compared against committed
+images byte for byte. This is how the paint stage is covered:
 executing a fill proves the line ran, not that the pixels are right, so paint is
 verified by comparison rather than assertion. The fixture runner is part of the
 coverage harness, not outside it.
 
 **Doctests** run every example in the crate documentation. Examples compile
 against the real public API, so they cannot rot.
+
+A fixture is portable because the harness makes it so, and a contributor adding
+one needs to know how: it registers exactly one font from this repository under
+the family `Fixture` and refuses a scene naming any other, pins the scale, and
+turns `gpu` off. The platform's installed faces answer `has_family` too, so a
+fixture asking for Helvetica would pass here and differ on any other machine.
 
 Coverage is measured with `cargo-llvm-cov` on the pinned nightly, because
 `--branch` needs `-Z coverage-options=branch` and stable rustc refuses it. That
@@ -557,7 +600,7 @@ a diff. Code this project implements stays in the denominator.
 
 ## Before publishing
 
-The three README files describe the design. Some of what they say is true of
+This document and the three README files describe the design. Some of what they say is true of
 the architecture and not yet of any code, which is fine while nothing is
 published and false the moment something is.
 
@@ -566,6 +609,10 @@ does not hold. The sentences that need checking are the ones asserting where
 work happens, what formats encode, and what a surface accepts — "layout, text
 shaping, painting and encoding all happen in Rust" is the shape of the problem.
 
+AGENTS.md is the likeliest of them to be ahead of the code, because being ahead
+is what it is for: a section describing something unbuilt says so at its top,
+and that marker comes off in the change that builds it.
+
 The same applies to `repository` in the workspace manifest, which names a remote
 that has to exist before `cargo publish` will accept it.
 
@@ -573,14 +620,15 @@ that has to exist before `cargo publish` will accept it.
 
 Every dependency is on its latest stable release.
 
-|                   |      |                                                           |
-| ----------------- | ---- | --------------------------------------------------------- |
-| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`. |
-| `taffy`           | 0.13 | Flexbox, CSS grid, block layout. Without `calc`.          |
-| `neon`            | 1.1  | Node addon.                                               |
-| `clap`            | 4.6  | CLI.                                                      |
-| `thiserror`       | 2.0  | Error types.                                              |
-| `ureq`            | 3.4  | Remote images, behind the CLI's optional `net` feature.   |
+|                   |      |                                                             |
+| ----------------- | ---- | ----------------------------------------------------------- |
+| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`.   |
+| `taffy`           | 0.13 | Flexbox, CSS grid, block layout. Without `calc`.            |
+| `neon`            | 1.1  | Node addon.                                                 |
+| `clap`            | 4.6  | CLI.                                                        |
+| `thiserror`       | 2.0  | Error types.                                                |
+| `ureq`            | 3.4  | Remote images, behind the CLI's optional `net` feature.     |
+| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing. |
 
 The core performs no network I/O and requires no async runtime. It accepts bytes
 or a reader, so a Rust caller with no runtime and the CLI are served by the same

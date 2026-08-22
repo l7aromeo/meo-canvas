@@ -406,18 +406,25 @@ fn check_family(fonts: &Fonts, family: &str) -> Result<(), Error> {
 }
 
 fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
-    let bytes = match source {
-        ImageSource::Bytes(bytes) => bytes.clone(),
+    // The `Path` arm owns what it read and the `Bytes` arm borrows what the
+    // caller already holds, so only the one that has to allocate does. Making
+    // both arms `Vec<u8>` reads more evenly and copies the whole file: a 5 MB
+    // PNG already in the scene was copied 5 MB per image node and then dropped
+    // unread, because `Image::from_encoded` takes a slice either way.
+    let read;
+    let bytes: &[u8] = match source {
+        ImageSource::Bytes(bytes) => bytes,
         ImageSource::Path(path) => {
-            std::fs::read(path).map_err(|source| Error::ImageRead {
+            read = std::fs::read(path).map_err(|source| Error::ImageRead {
                 path: path.clone(),
                 source,
-            })?
+            })?;
+            &read
         }
         ImageSource::Url(_) => return Err(Error::UnresolvedSource(node)),
     };
 
-    meo_skia_canvas::Image::from_encoded(&bytes)
+    meo_skia_canvas::Image::from_encoded(bytes)
         .map(|image| DecodedImage { image })
         .map_err(|_| Error::UndecodableImage(node))
 }

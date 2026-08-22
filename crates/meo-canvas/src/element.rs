@@ -117,30 +117,42 @@ impl Element {
         width: f32,
         height: f32,
     ) -> Result<Scene, SceneError> {
-        let size = Size::new(width, height);
-        let mut scene = Scene::new(size);
+        let mut scene = Scene::new(Size::new(width, height));
         let root = scene.root().ok_or(SceneError::NoPages)?;
-
-        // The page root already exists, so this element styles it rather than
-        // becoming a child of it -- otherwise every tree would gain an unstyled
-        // wrapper nobody asked for, and a caller's `background` would paint a
-        // box inside the canvas instead of the canvas.
-        let mut kind = self.kind;
-        apply_image_style(&mut kind, &self.style);
-        let (layout, paint, text, effects) = self.style.into_parts();
-        if let Some(node) = scene.get_mut(root) {
-            node.kind = kind;
-            node.layout = layout;
-            node.paint = paint;
-            node.text = text;
-            node.effects = effects;
-        }
-
-        for child in self.children {
-            push(&mut scene, root, child)?;
-        }
+        write_page(&mut scene, root, self)?;
         Ok(scene)
     }
+}
+
+/// Writes `element` onto an existing page root and adds its subtree.
+///
+/// The page root already exists, so the element styles it rather than becoming
+/// a child of it -- otherwise every tree would gain an unstyled wrapper nobody
+/// asked for, and a caller's `background` would paint a box inside the canvas
+/// instead of the canvas.
+///
+/// Shared by [`Element::into_scene`] and [`crate::Canvas`], so a page means the
+/// same thing whether one was built or several.
+pub(crate) fn write_page(
+    scene: &mut Scene,
+    root: NodeId,
+    element: Element,
+) -> Result<(), SceneError> {
+    let mut kind = element.kind;
+    apply_image_style(&mut kind, &element.style);
+    let (layout, paint, text, effects) = element.style.into_parts();
+    if let Some(node) = scene.get_mut(root) {
+        node.kind = kind;
+        node.layout = layout;
+        node.paint = paint;
+        node.text = text;
+        node.effects = effects;
+    }
+
+    for child in element.children {
+        push(scene, root, child)?;
+    }
+    Ok(())
 }
 
 /// Writes the image properties a flat style carries onto an image node.

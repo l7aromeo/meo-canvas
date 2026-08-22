@@ -23,6 +23,10 @@ thiserror = { workspace = true }
 # runtime in this crate would be a runtime in every Rust consumer of the public
 # `meo-canvas` crate, including those already inside one.
 
+[[bench]]
+name = "render"
+harness = false
+
 [lints]
 workspace = true
 
@@ -41,4 +45,7 @@ ignored = ["taffy"]
 # `cargo-machete` reads this section too, so a decoder no test calls is reported
 # rather than left to accumulate.
 gif = "0.14.2"
+# The bench's harness. A dev-dependency because a bench is not shipped, and
+# `harness = false` above because criterion supplies its own.
+criterion = { workspace = true }
 png = "0.18.1"
