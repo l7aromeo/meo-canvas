@@ -36,7 +36,6 @@ export const drawBorders = ({
   const borderLeft = Math.max(0, node.getBorder(YogaTypes.Edge.Left) || borderAll)
 
   const hasBorder = borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0
-  const boxSizing = node.getBoxSizing()
 
   if (hasBorder && borderColor) {
     // One colour or four. An edge left out of the object form falls back to black, which is what a
@@ -106,25 +105,20 @@ export const drawBorders = ({
       const cornerWidth = Math.max(border1, border2)
       if (cornerWidth <= 0) return
 
-      let centerlineArcRadius: number
+      // The border is drawn inside the box whatever `boxSizing` says, so the stroke's centreline is
+      // half a border width in from the visual radius. `boxSizing` decides how `width` and `height`
+      // were resolved, and the box Yoga hands back already includes the border either way.
+      const centerlineArcRadius = Math.max(0, radius - cornerWidth / 2)
 
-      if (boxSizing === Style.BoxSizing.ContentBox) {
-        // For content-box, the border is outside the box, so the centerline radius is the visual radius plus half the border width.
-        centerlineArcRadius = radius + cornerWidth / 2
-      } else {
-        // For border-box, the border is inside the box, so the centerline radius is the visual radius minus half the border width.
-        // Ensure the centerline radius is not negative.
-        centerlineArcRadius = Math.max(0, radius - cornerWidth / 2)
-
-        if (centerlineArcRadius <= 0 && radius > 0) {
-          // Draw cap for border-box when border is thicker than radius allows for centerline arc
-          ctx.fillStyle = ctx.strokeStyle as string // whichever edge colour this arc is being drawn in
-          ctx.beginPath()
-          // Cap is centered on the visual corner center with the visual radius
-          ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
-          ctx.fill()
-          return // Cap drawn, skip arc stroke
-        }
+      if (centerlineArcRadius <= 0 && radius > 0) {
+        // The border is thicker than the radius leaves room for, so there is no centreline to
+        // stroke — the corner is filled instead.
+        ctx.fillStyle = ctx.strokeStyle as string // whichever edge colour this arc is being drawn in
+        ctx.beginPath()
+        // Cap is centered on the visual corner center with the visual radius
+        ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
+        ctx.fill()
+        return // Cap drawn, skip arc stroke
       }
       // Draw the normal arc stroke using the calculated centerline radius
       ctx.beginPath()
@@ -167,24 +161,15 @@ export const drawBorders = ({
     const rBR = Math.max(0, Math.min(radii.BottomRight, maxRadiusX, maxRadiusY))
     const rBL = Math.max(0, Math.min(radii.BottomLeft, maxRadiusX, maxRadiusY))
 
-    // --- Draw border segments based on boxSizing ---
-    // For content-box, coordinates are offset *outwards* from x, y, width, height
-    if (boxSizing === Style.BoxSizing.ContentBox) {
-      // Top line segment
-      void drawLine(x + rTL, y - halfBt, x + width - rTR, y - halfBt, borderTop, edge.Top)
-      // Right line segment
-      void drawLine(x + width + halfBr, y + rTR, x + width + halfBr, y + height - rBR, borderRight, edge.Right)
-      // Bottom line segment
-      void drawLine(x + width - rBR, y + height + halfBb, x + rBL, y + height + halfBb, borderBottom, edge.Bottom)
-      // Left line segment
-      void drawLine(x - halfBl, y + height - rBL, x - halfBl, y + rTL, borderLeft, edge.Left)
-
-      void drawCornerArc(x + rTL, y + rTL, rTL, Math.PI, 1.5 * Math.PI, borderLeft, borderTop, edge.Left, edge.Top)
-      void drawCornerArc(x + width - rTR, y + rTR, rTR, 1.5 * Math.PI, 2 * Math.PI, borderTop, borderRight, edge.Top, edge.Right)
-      void drawCornerArc(x + width - rBR, y + height - rBR, rBR, 0, 0.5 * Math.PI, borderRight, borderBottom, edge.Right, edge.Bottom)
-      void drawCornerArc(x + rBL, y + height - rBL, rBL, 0.5 * Math.PI, Math.PI, borderBottom, borderLeft, edge.Bottom, edge.Left)
-    } else {
-      // For border-box, coordinates are offset *inwards* from x, y, width, height
+    // --- Draw border segments ---
+    //
+    // Always inside the box Yoga handed back. `boxSizing` decides how `width` and `height` were
+    // resolved into that box -- `ContentBox` grows it by the padding and the border, `BorderBox`
+    // does not -- but by the time the box exists the border is part of it either way, exactly as
+    // CSS paints a border inside the border box under both. Offsetting outward for `ContentBox`
+    // put the ring beyond the node's own box: the background covered the inner edge and the node
+    // drew a border width wider and taller than it had been laid out.
+    {
       // Top line segment
       void drawLine(x + rTL, y + halfBt, x + width - rTR, y + halfBt, borderTop, edge.Top)
       // Right line segment
