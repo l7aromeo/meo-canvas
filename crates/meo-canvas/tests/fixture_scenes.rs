@@ -40,6 +40,7 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("text-descenders", text_descenders()),
         ("baseline-alignment", baseline_alignment()),
         ("stacking-hoist", stacking_hoist()),
+        ("borders-square", borders_square()),
     ]
 }
 
@@ -473,6 +474,52 @@ fn stacking_hoist() -> Scene {
             // still red to a reader.
             cell("opacity: 0.99 - CONTROL, a real context keeps its child")
                 .opacity(0.99),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// A bordered box with square corners, beside two that are not square.
+///
+/// `box_path` builds a square box and a rounded one by different mechanisms,
+/// and `ring_path` fills an outer contour against an inner one with the
+/// even-odd rule. When the two contours were built differently they joined into
+/// one self-intersecting path, and the fill left a diagonal wedge across half
+/// the box rather than a border around it.
+///
+/// **Three cells because the failure was one branch of a two-branch function.**
+/// A fixture with only the square cell would pass if the rounded branch broke
+/// instead, and neither cell exercises the per-edge path, which is a third
+/// branch: `borders-per-edge` covers that one only with a radius, so the square
+/// per-edge case is here.
+///
+/// Every bordered golden in the suite before this one sets a radius, which is
+/// why none of them took the broken branch.
+fn borders_square() -> Scene {
+    let cell = |radius: Corners<f32>, border: Sides<f32>| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(56.0), px(56.0))
+            .border(border)
+            .border_radius_corners(radius)
+            .border_color(hex_rgb(0x28_50_dc))
+            .background_color(hex_rgb(0xdc_28_28))
+    };
+
+    Root::new(200.0, 72.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .align_items(Align::Center)
+        .gap_xy(px(0.0), px(8.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .children([
+            cell(corners_all(0.0), sides(6.0, 6.0, 6.0, 6.0)).name(
+                "square corners - the branch that mixed two contour mechanisms",
+            ),
+            cell(corners_all(12.0), sides(6.0, 6.0, 6.0, 6.0))
+                .name("rounded - CONTROL, the branch that was always right"),
+            cell(corners_all(0.0), sides(2.0, 10.0, 6.0, 14.0))
+                .name("square, per-edge widths - the third branch"),
         ])
         .into_scene()
         .unwrap_or_else(|error| unreachable!("{error}"))

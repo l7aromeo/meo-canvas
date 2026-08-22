@@ -952,14 +952,30 @@ fn box_path(
         radii.bottom_right,
         radii.bottom_left,
     ];
+    // A square box is a rounded one with every radius at zero, **not**
+    // `Context2D::rect`. The two add contours by different mechanisms —
+    // `rect` calls Skia's `add_rect`, and `round_rect_elliptical` calls
+    // `add_path_with_transform` with `AddPathMode::Extend`
+    // (`meo-skia-canvas-0.11.0/src/context2d.rs:1837` against `:2354`) — and
+    // mixing them in one path joins the two contours instead of leaving them
+    // separate.
+    //
+    // That matters here because `ring_path` fills an outer contour and an inner
+    // one with the even-odd rule to leave a border. Joined, they become one
+    // self-intersecting contour, and a 40x40 box with a 4px border painted
+    // **a blue triangle over half of it** rather than a border. Any radius at
+    // all, even one, took the other branch and was correct — which is why every
+    // bordered golden, all of them rounded, missed it.
     if corners.iter().all(|radius| *radius <= 0.0) {
-        context.rect(
-            rect.origin.x,
-            rect.origin.y,
-            rect.size.width,
-            rect.size.height,
-        );
-        return Ok(());
+        return context
+            .round_rect_elliptical(
+                rect.origin.x,
+                rect.origin.y,
+                rect.size.width,
+                rect.size.height,
+                [(0.0, 0.0); 4],
+            )
+            .map_err(|error| Error::Paint(error.to_string()));
     }
     context
         .round_rect(

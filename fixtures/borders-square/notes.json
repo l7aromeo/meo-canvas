@@ -1,0 +1,8 @@
+{
+  "proves": "a border with square corners paints as a border, and so do the rounded and per-edge cases beside it",
+  "checkable": "200x72, three 56x56 cells at y=8..63 with a blue border on red. Sample row 35. Cell 0, square with a 6 border: blue 8-13, red 14-57, blue 58-63. Cell 1, radius 12 with a 6 border: blue 72-77, red 78-121, blue 122-127. Cell 2, square with per-edge widths 2/10/6/14: blue 136-149 (the 14 left), red 150-181, blue 182-191 (the 10 right).",
+  "regression": "cell 0 rendered a diagonal wedge across half the box. box_path built a square box with Skia's add_rect and a rounded one by extending a path, while ring_path's inner contour always took the second; mixed, the two contours joined into one self-intersecting path and the even-odd fill left the wedge. A square box is now a rounded one with every radius at zero.",
+  "why-three": "the failure was one branch of a two-branch function, so a fixture with only the square cell would pass if the rounded branch broke instead. The third cell takes the per-edge path, which is a branch neither of the other two exercises - borders-per-edge covers it only with a radius.",
+  "why-nothing-caught-it": "every bordered golden in the suite before this one sets a corner radius, so none of them took the broken branch.",
+  "status": "measured from the committed image; correct behaviour, not a pinned defect"
+}

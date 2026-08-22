@@ -136,6 +136,19 @@ export type Children = Child | readonly Child[]
  * are not style properties and no style property is called either, so the
  * encoder — which looks up only the names in its own table — never reads them
  * and the props object is stored as the style without a copy.
+ *
+ * **A misspelt property is caught in a literal and not in a spread.** TypeScript
+ * checks for excess properties only on a fresh object literal, so
+ * `Box({ marginLeft: 4 })` is refused while `Box({ ...held })` and
+ * `Box(held)` are not. And because the props object **is** the style, and the
+ * encoder reads only the names in its own table, a key that reaches it is
+ * **dropped rather than refused** — which renders as a plausible wrong picture
+ * instead of an error.
+ *
+ * That is TypeScript's rule rather than this surface's, and the mitigation is
+ * knowing it: name the type where a spread is unavoidable —
+ * `const base: ContainerProps = { … }` is checked where `const base = { … }`
+ * is not.
  */
 export type ContainerProps = Style & {
   /** Its children, drawn in order. A single child need not be wrapped. */
