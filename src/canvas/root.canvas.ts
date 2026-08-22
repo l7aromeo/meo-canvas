@@ -655,6 +655,17 @@ export class RootNode extends ColumnNode {
       this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
     }
 
+    // Place the nodes whose containing block Yoga cannot give them -- a `Fixed` node, and anything
+    // absolute under a box a layout placed rather than the caller. Each pass writes the resolved
+    // rectangle back as plain pixels, so the layout that follows moves the boxes those nodes were
+    // measured against; a second pass settles them against where they ended up. Two rounds is
+    // enough for every arrangement here, and the loop stops as soon as a pass writes nothing.
+    for (let round = 0; round < 2; round++) {
+      const page = { x: 0, y: 0, width: this.node.getComputedWidth(), height: this.node.getComputedHeight() }
+      if (!this.resolveContainingBlocks(0, 0, page, page, page)) break
+      this.node.calculateLayout(this.targetWidth, undefined, rootDirection)
+    }
+
     return this.node.getComputedHeight()
   }
 
