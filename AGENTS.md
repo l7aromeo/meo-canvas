@@ -926,6 +926,15 @@ one row longer at every foot; at 240 the `#eee` cell background counts as ink
 and three cells become one span. A span without its threshold is not a
 measurement, and a threshold near the background is not one either.
 
+**The size of a disagreement says where to look.** Ninety-nine rows of a
+hundred and twenty failing is not one defect, it is a premise -- a harness that
+suppressed the behaviour it measured, a scene built wrong, an assumption about
+a dependency nobody opened. A handful of rows failing is a defect. Doubt the
+instrument in proportion to how much of it is failing, and run the reference
+cases through the code before changing the code: the margin-collapsing gap that
+prompted a task and two dispatches did not exist, and seven of fifteen cases
+already matched the browser exactly.
+
 **A citation is a measurement, not a label.** A `grep -n` result is evidence that
 a string occurs, not evidence that the line quoted is the line that matters:
 taffy's baseline fallback sits at `flexbox.rs:1522` and `:1524` with the `} else

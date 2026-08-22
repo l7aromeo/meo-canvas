@@ -664,30 +664,26 @@ const fn read_space(bytes: &[u8], from: usize) -> usize {
 
 /// The overflow rows this renderer answers differently from Chrome today.
 ///
-/// Ten, all of one shape: `overflow: hidden` or `scroll` on a clipper that
-/// carries a **transform**, with an out-of-flow child -- eight fixed and two
-/// absolute. The transform captures the child for positioning, and every one
-/// of these rows places it exactly where Chrome does; the **clip** then does
-/// not follow. CSS says a box captured by a transformed ancestor is clipped by
-/// that ancestor's overflow like any other descendant, and we draw it whole.
+/// **Empty: all 120 rows agree.** Kept with its history rather than deleted,
+/// because an empty list with no history is a list nobody knows the shape of.
 ///
-/// Capture and clip travel together in CSS and separately here, which is why
-/// the rows that place the child correctly are the same rows that paint it
-/// wrongly.
+/// It has held two sets. The first was fifty-one rows and **every one of them
+/// was this walker's own scene**: `outer` was placed by absolute insets, which
+/// is the natural way to put a box at a known point and which establishes a
+/// block formatting context, so nothing could collapse out of it while
+/// everything collapses out of Chrome's `position: relative` one. It read as
+/// fifty-one renderer defects and as a missing layout feature, and taffy had
+/// implemented that feature in full. `outer` is now an in-flow box behind a
+/// padded wrapper, and it is **found by its colour** rather than assumed to be
+/// anywhere, because an escaping margin moves it.
 ///
-/// **This list held fifty-one rows an hour ago and every one of them was the
-/// walker's own scene.** `outer` was placed by absolute insets, which is the
-/// natural way to put a box at a known point and which establishes a block
-/// formatting context -- so nothing could collapse out of it, while everything
-/// collapses out of Chrome's `position: relative` one. The harness suppressed
-/// the behaviour it was measuring, and the result read as fifty-one renderer
-/// defects. `outer` is now an in-flow box behind a padded wrapper, and it is
-/// **found by its colour** rather than assumed to be anywhere, because an
-/// escaping margin moves it.
-const KNOWN_OVERFLOW: &[&str] = &[
-    "hAFt", "hKFt", "hRFt", "hSAt", "hSFt", "sAFt", "sKFt", "sRFt", "sSAt",
-    "sSFt",
-];
+/// The second was ten real rows: `hidden` or `scroll` on a clipper carrying a
+/// transform, with an out-of-flow child. The transform captured the child for
+/// positioning and the **clip** did not follow, because `escapes_clip` decided
+/// by position type where the layout pass decides by
+/// `layout::is_containing_block`. One predicate now answers both, and these
+/// ten rows are what said so.
+const KNOWN_OVERFLOW: &[&str] = &[];
 
 /// The page the overflow cases are drawn on, and where `outer` sits on it.
 ///
@@ -920,6 +916,14 @@ fn overflow_rows(text: &str) -> Vec<Overflow<'_>> {
         .collect()
 }
 
+/// What a row that has started agreeing with Chrome should say.
+fn stale(code: &str) -> String {
+    format!(
+        "{code}: now agrees with Chrome. That is a fix -- delete the row from \
+         KNOWN_OVERFLOW"
+    )
+}
+
 #[test]
 fn overflow_against_position_matches_chrome() {
     let text = include_str!("assets/chrome/overflow-position.tsv");
@@ -959,11 +963,15 @@ fn overflow_against_position_matches_chrome() {
                 .iter()
                 .zip(row.rect.iter())
                 .any(|(ours, theirs)| (ours - theirs).abs() > 0.5);
-            if apart && !KNOWN_OVERFLOW.contains(&row.code) {
+            let known = KNOWN_OVERFLOW.contains(&row.code);
+            if apart && !known {
                 geometry.push(format!(
                     "{}: we place the child at {ours:?}, Chrome at {:?}",
                     row.code, row.rect
                 ));
+            }
+            if !apart && known {
+                geometry.push(stale(row.code));
             }
             if apart {
                 uncomparable += 1;
@@ -974,11 +982,20 @@ fn overflow_against_position_matches_chrome() {
         }
 
         let Some(seen) = probes_of(row) else { continue };
-        if seen != row.probes && !KNOWN_OVERFLOW.contains(&row.code) {
+        let known = KNOWN_OVERFLOW.contains(&row.code);
+        if seen != row.probes && !known {
             painted.push(format!(
                 "{}: our probes read {seen}, Chrome's {}",
                 row.code, row.probes
             ));
+        }
+        // A pinned row that has started agreeing says so, which is the half
+        // this walker was missing: `KNOWN_OVERFLOW` suppressed a failure and
+        // could not report a fix, so ten rows were silently correct for an
+        // hour and only a hand-emptied list found out. A pinned list that
+        // cannot tell you it is stale is a list that only grows.
+        if seen == row.probes && known {
+            painted.push(stale(row.code));
         }
     }
 
