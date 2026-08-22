@@ -8,5 +8,8 @@
   },
   "dependencies": {
     "meo-canvas": "file:../../packages/meo-canvas"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0"
   }
 }

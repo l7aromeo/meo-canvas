@@ -155,6 +155,18 @@ fmt-check: ensure-deps
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
 
+# The consumer project: typecheck it against the built package, then run it.
+#
+# Not in `ci`, and the reason is the same one that kept `fixtures` out of it
+# until the first fixture landed: this fails today, on purpose. It calls an API
+# the package does not export yet, so it is the acceptance target for the
+# JavaScript surface rather than a check of it. It joins `ci` in the change
+# that makes it pass.
+[doc("Typecheck and run the consumer example (fails until the JS API exists).")]
+example: build-js
+    ./node_modules/.bin/tsc --noEmit -p examples/card/tsconfig.json
+    cd examples/card && bun run index.ts
+
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json

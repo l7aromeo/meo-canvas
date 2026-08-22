@@ -7,7 +7,7 @@
 // settled by the golden fixtures; this answers the different question of
 // whether a person can use the package to draw anything at all.
 
-import { Column, Image, Root, Row, Text } from 'meo-canvas'
+import { Column, Root, Row, Text } from 'meo-canvas'
 
 const canvas = await Root({
   width: 520,
@@ -16,10 +16,6 @@ const canvas = await Root({
     Row({
       style: { gap: 20, padding: 24, backgroundColor: '#101014' },
       children: [
-        Image({
-          src: new URL('./avatar.png', import.meta.url).pathname,
-          style: { width: 96, height: 96, borderRadius: 12, objectFit: 'cover' },
-        }),
         Column({
           style: { gap: 6, justifyContent: 'center' },
           children: [
@@ -36,5 +32,5 @@ const canvas = await Root({
   ],
 })
 
-await Bun.write('out.png', await canvas.toBuffer('png'))
+await canvas.toFile('out.png')
 console.log('wrote out.png')

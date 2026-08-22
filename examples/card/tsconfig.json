@@ -1,0 +1,19 @@
+{
+  // A consumer's config, not the library's. It resolves `meo-canvas` through
+  // node_modules the way any project would, so `just typecheck` proves the
+  // package's `types` field points at something real -- which the runtime
+  // failure does not test, since a wrong `types` field still runs.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "types": ["bun"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["*.ts"]
+}

@@ -337,6 +337,34 @@ await expect(render(malformedArena)).rejects.toThrow()
 A test asserting that either one always happens is wrong, and it would fail for
 the right reason and be repaired the wrong way.
 
+### What the canvas exposes
+
+v1's output surface, because v1 is the reference and a ported script should not
+have to change how it writes a file:
+
+|                                                |                         |
+| ---------------------------------------------- | ----------------------- |
+| `toBuffer(format, options)`                    | bytes, as a Promise     |
+| `toBufferSync(format, options)`                | bytes                   |
+| `toFile(path, options)` / `toFileSync`         | write it                |
+| `saveAs(path, options)` / `saveAsSync`         | v1's alias for `toFile` |
+| `toURL(format, options)` / `toURLSync`         | a data URL              |
+| `toDataURL(format, quality)` / `toDataURLSync` | v1 spells both          |
+
+The sync variants are ordinary functions here. v1 needed `Atomics.wait` on a
+`SharedArrayBuffer` for them because its canvas lived in a worker; this one does
+not, so `toBufferSync` is the same call without the `await`.
+
+`release()` frees the Skia surface without waiting for a collection. v1's method
+of that name released a canvas from _worker_ memory, which is bookkeeping this
+version does not have — here `JsBox`'s `Finalize` frees it on collection and
+`release` only makes it sooner. A server rendering thousands of images wants it;
+a script does not need it.
+
+`toSharp` is deliberately absent until someone asks for it: it exists in v1 to
+hand pixels to another library, and reintroducing it means taking a position on
+that library's version.
+
 ### The retained canvas
 
 `Root` is async because resolve performs I/O, and it runs the render on a
