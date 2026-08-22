@@ -48,6 +48,10 @@ interface StackingEntry {
   clips: ClipFrame[]
 }
 
+/**
+ * Base node class for rendering rectangular boxes with layout, styling, and children.
+ * It uses the Yoga layout engine for positioning and sizing.
+ */
 export class BoxNode {
   /**
    * Set where a layout places this node absolutely for its own reasons rather than because the
@@ -694,7 +698,6 @@ export class BoxNode {
    * applying a filter: opacity and the filter itself belong to the group as a whole and have
    * already been dealt with by the caller, so the inner pass draws the subtree plainly.
    */
-  /** A clipper a lifted node passed through on its way up, with where it was painted. */
 
   /**
    * This node's padding box, which is the box a positioned descendant resolves against.
@@ -847,6 +850,7 @@ export class BoxNode {
    * CSS resolves an absolute node against, which one it resolves a fixed node against, and which
    * one Yoga used. They agree for most trees, and where they agree nothing is written.
    * @returns whether anything changed, so the caller knows to lay out again.
+   * @internal
    */
   protected resolveContainingBlocks(originX: number, originY: number, positioned: Rect, fixedCb: Rect, yogaCb: Rect): boolean {
     let changed = false
@@ -887,6 +891,10 @@ export class BoxNode {
     return changed
   }
 
+  /**
+   * The rectangle this node clips its content to, or `null` where it clips nothing.
+   * @internal
+   */
   protected clipFrame(originX: number, originY: number): ClipFrame | null {
     if (this.props.overflow !== Style.Overflow.Hidden) return null
     const layout = this.node.getComputedLayout()
@@ -958,6 +966,7 @@ export class BoxNode {
    * own section rather than following the page down. Without it the page was the only limit, and a
    * node in content running past the page was dragged out of the section it belongs to. The near
    * edge wins where the two disagree, which is the case for a node larger than the box holding it.
+   * @internal
    */
   protected stickyShift(flowX: number, flowY: number, port: Rect, containingBlock: Rect) {
     const layout = this.node.getComputedLayout()

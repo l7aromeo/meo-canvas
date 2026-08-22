@@ -40,6 +40,29 @@ jobs:
         run: bun install --frozen-lockfile
       - run: bun run lint
 
+  # The API reference is built with `treatWarningsAsErrors`, and it is published from the release
+  # workflow *after* semantic-release has already put the package on npm. Nothing here used to build
+  # it, so a doc comment that TypeDoc rejects passed review green and surfaced only once the version
+  # was live and unpublishable. It is a gate now, on the same footing as the lint.
+  docs:
+    name: API reference builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: bun install --frozen-lockfile
+      - run: bun run docs
+
   # 22 is the `engines.node` floor, and the floor is the version most likely to
   # break without anyone noticing: nothing else here runs it. The others are the
   # Node releases a consumer is plausibly on today, so a change that only works

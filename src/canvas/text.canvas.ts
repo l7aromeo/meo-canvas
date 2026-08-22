@@ -21,6 +21,12 @@ const NO_BREAK_SPACES = '\u00a0\u202f\u2007\ufeff'
 const COLLAPSIBLE_RUN = new RegExp(`^[^\\S${NO_BREAK_SPACES}]+$`)
 const COLLAPSIBLE_SPLIT = new RegExp(`([^\\S${NO_BREAK_SPACES}]+)`)
 
+/**
+ * A run of text, laid out and painted by this library rather than by the canvas.
+ *
+ * Wrapping, alignment, the line box, rich-text markup, decorations and ellipsis are all resolved
+ * here, against the font's own metrics — see {@link Text} for the props that drive them.
+ */
 export class TextNode extends BoxNode {
   private readonly segments: TextSegment[] = []
   private lines: TextSegment[][] = []

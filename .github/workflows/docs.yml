@@ -71,12 +71,21 @@ jobs:
           echo "latest=$(echo $versions | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "Documenting: $versions"
 
+      # A tag that will not build is skipped rather than taken as a reason to publish nothing. A
+      # released tag cannot be repaired -- the version is out and the tag is what it is -- so
+      # aborting here would hold the whole site, every other release included, at whatever it last
+      # deployed. 9.0.0 was such a tag: its API reference did not build, and because the loop stopped
+      # at the first failure, 8.1.6's docs stopped being republished too. The skipped tags are
+      # listed as warnings so this cannot pass unnoticed.
       - name: Build each release into its own directory
+        id: build
         env:
           HUSKY: 0
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p site
+          built=""
+          skipped=""
           for tag in ${{ steps.choose.outputs.versions }}; do
             echo "::group::$tag"
             git checkout --force "$tag"
@@ -85,20 +94,33 @@ jobs:
             # tag's package.json still carries the 1.0.0 placeholder. TypeDoc's `includeVersion`
             # reads the title from there, which titled every release's docs v1.0.0 until this line.
             npm pkg set version="${tag#v}"
-            bun run docs
-            mv docs-site "site/$tag"
+            if bun run docs; then
+              mv docs-site "site/$tag"
+              built="$built $tag"
+            else
+              skipped="$skipped $tag"
+              echo "::warning title=API reference skipped::$tag does not build its API reference and is not on the site."
+            fi
             echo "::endgroup::"
           done
+          built=$(echo $built | xargs)
+          if [ -z "$built" ]; then
+            echo "No tag built its API reference — nothing to publish." >&2
+            exit 1
+          fi
+          echo "latest=$(echo $built | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "versions=$built" >> "$GITHUB_OUTPUT"
+          [ -n "$skipped" ] && echo "Skipped:$skipped"
 
-      # `latest` is a copy of the newest release, not of whatever main happens to be, so a link to
-      # it never points at unreleased work.
+      # `latest` is a copy of the newest release that built, not of whatever main happens to be, so
+      # a link to it never points at unreleased work — nor at a release with no reference to show.
       - name: Point latest at the newest release
-        run: cp -r "site/${{ steps.choose.outputs.latest }}" site/latest
+        run: cp -r "site/${{ steps.build.outputs.latest }}" site/latest
 
       - name: Write the version index
         env:
-          VERSIONS: ${{ steps.choose.outputs.versions }}
-          LATEST: ${{ steps.choose.outputs.latest }}
+          VERSIONS: ${{ steps.build.outputs.versions }}
+          LATEST: ${{ steps.build.outputs.latest }}
         run: |
           {
             echo '<!doctype html><meta charset="utf-8"><title>meo-canvas API reference</title>'
