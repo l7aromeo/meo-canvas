@@ -26,7 +26,7 @@
  * @packageDocumentation
  */
 
-import type { Color, Style } from './style.js'
+import type { Color, Gradient, Style } from './style.js'
 
 /** What a node draws. */
 export type NodeKind = 'box' | 'text' | 'image' | 'path'
@@ -323,12 +323,17 @@ export function Image(props: ImageProps): SceneNode {
 /**
  * How a path is painted.
  *
- * A CSS colour, or `'none'` for an unpainted fill or stroke. The scene also
- * allows a gradient here; this surface has no spelling for one anywhere —
- * `gradient` and `backgroundImage` are absent from its style table too — so the
- * gap is the existing one rather than a new one.
+ * A CSS colour, a {@link Gradient}, or `'none'` for an unpainted fill or
+ * stroke. The three are told apart by shape rather than by a tag the caller
+ * writes: a colour is a string, a gradient is an object, and `'none'` is the
+ * one string that is neither.
+ *
+ * `'none'` is the *absent* paint rather than a transparent colour. A
+ * transparent fill is a paint that draws nothing, which is a different thing
+ * from a path that is not filled at all — only the second leaves the stroke to
+ * decide the shape's edge.
  */
-export type PathPaint = Color | 'none'
+export type PathPaint = Color | 'none' | Gradient
 
 export type PathProps = Style & {
   /** The SVG `d` attribute, in the node's own coordinates. */

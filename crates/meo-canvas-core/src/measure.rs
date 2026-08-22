@@ -29,15 +29,18 @@ use std::collections::HashMap;
 use meo_canvas_scene::{
     Size,
     node::{NodeId, NodeKind},
-    style::text::{
-        FontStyle, ParagraphStyle, Spacing, TextAlign, TextDecoration,
-        TextSegment,
+    style::{
+        effect::TextShadow,
+        text::{
+            FontStyle, ParagraphStyle, Spacing, TextAlign, TextDecoration,
+            TextSegment,
+        },
     },
 };
 use meo_skia_canvas::{
     Paragraph, RgbaLinear, TextAlign as SkiaTextAlign,
-    TextDecoration as SkiaTextDecoration, TextEngine, TextSlant,
-    TextStyle as SkiaTextStyle,
+    TextDecoration as SkiaTextDecoration, TextEngine,
+    TextShadow as SkiaTextShadow, TextSlant, TextStyle as SkiaTextStyle,
 };
 
 use crate::resolve::{Fonts, Resolved, ResolvedText};
@@ -260,7 +263,13 @@ impl<'resolved> SceneMeasurer<'resolved> {
             };
             paragraphs.insert(
                 id,
-                build_paragraph(&engine, style, segments, paragraph),
+                build_paragraph(
+                    &engine,
+                    style,
+                    segments,
+                    paragraph,
+                    &node.effects.text_shadows,
+                ),
             );
         }
 
@@ -436,12 +445,13 @@ fn build_paragraph(
     style: &ResolvedText,
     segments: &[TextSegment],
     paragraph: &ParagraphStyle,
+    shadows: &[TextShadow],
 ) -> Paragraph {
-    let base = skia_style(style, paragraph);
+    let base = skia_style(style, paragraph, shadows);
     let mut builder = engine.paragraph_builder(&base);
     for segment in segments {
         let run = style.inherit(&segment.style);
-        builder.push_style(&skia_style(&run, paragraph));
+        builder.push_style(&skia_style(&run, paragraph, shadows));
         builder.add_text(&segment.text);
         builder.pop();
     }
@@ -454,6 +464,7 @@ fn build_paragraph(
 fn skia_style(
     style: &ResolvedText,
     paragraph: &ParagraphStyle,
+    shadows: &[TextShadow],
 ) -> SkiaTextStyle {
     SkiaTextStyle {
         font_families: if style.family.is_empty() {
@@ -492,6 +503,26 @@ fn skia_style(
             TextDecoration::Overline => SkiaTextDecoration::overline(),
             TextDecoration::LineThrough => SkiaTextDecoration::line_through(),
         },
+        // Node-level rather than inherited, so they come from `Effects` and
+        // not from `ResolvedText` — which is why nothing was reading them: the
+        // scene carried them and the paragraph was built without ever being
+        // shown that field.
+        shadows: shadows
+            .iter()
+            .map(|shadow| SkiaTextShadow {
+                color: RgbaLinear::from_srgb8(
+                    shadow.color.r,
+                    shadow.color.g,
+                    shadow.color.b,
+                    f32::from(shadow.color.a) / 255.0,
+                ),
+                offset_x: shadow.offset_x,
+                offset_y: shadow.offset_y,
+                // CSS gives a blur *radius* and Skia takes a Gaussian sigma.
+                // Half is the conversion every CSS engine uses.
+                blur_sigma: shadow.blur / 2.0,
+            })
+            .collect(),
         line_height_multiplier: style.line_height,
         letter_spacing: spacing_pixels(style.letter_spacing, style.size),
         word_spacing: spacing_pixels(style.word_spacing, style.size),
@@ -835,7 +866,7 @@ mod tests {
             style.style = FontStyle::Italic;
             style.family = TEST_FAMILY.to_owned();
             style.letter_spacing = Spacing::Em(0.1);
-            let translated = super::skia_style(&style, &paragraph);
+            let translated = super::skia_style(&style, &paragraph, &[]);
             assert_eq!(translated.font_families, vec![TEST_FAMILY.to_owned()]);
             assert_eq!(translated.max_lines, Some(2));
             assert_eq!(translated.ellipsis.as_deref(), Some("..."));
@@ -846,7 +877,7 @@ mod tests {
         // backend spells as an empty list rather than a name.
         let anonymous = ResolvedText::initial();
         assert!(
-            super::skia_style(&anonymous, &ParagraphStyle::default())
+            super::skia_style(&anonymous, &ParagraphStyle::default(), &[])
                 .font_families
                 .is_empty()
         );

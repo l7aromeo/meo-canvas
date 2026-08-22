@@ -44,8 +44,8 @@ use meo_canvas_scene::{
 use meo_skia_canvas::{
     BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
     FillRule as SkiaFillRule, GradientInterpolation,
-    GradientStop as SkiaGradientStop, Path2D, Point, RgbaLinear, Shader,
-    StrokeCap, StrokeJoin,
+    GradientStop as SkiaGradientStop, Path2D, PathBuilder, Point, RgbaLinear,
+    Shader, StrokeCap, StrokeJoin,
 };
 
 use crate::{
@@ -715,6 +715,11 @@ fn paint_own_content(
     rect: Rect,
 ) -> Result<(), Error> {
     context.save();
+    // The one place the backend is asked for it. A gradient shallow enough to
+    // band is what shows the difference -- a steep ramp over twenty pixels
+    // moves no bytes with it on -- and `RGB565` and `ARGB4444` are the
+    // layouts it exists for.
+    context.set_dither(node.paint.dither);
     if clips_its_children(node) {
         clip_to_box(context, &node.paint, rect)?;
     }
@@ -782,7 +787,9 @@ fn paint_box(
     rect: Rect,
 ) -> Result<(), Error> {
     let paint = &node.paint;
-    for shadow in &node.effects.box_shadows {
+    // Outer shadows first, under everything: they fall outside the box, so the
+    // background about to be painted cannot reach them.
+    for shadow in node.effects.box_shadows.iter().filter(|s| !s.inset) {
         draw_box_shadow(context, paint, rect, shadow)?;
     }
 
@@ -795,6 +802,14 @@ fn paint_box(
         let shader = build_gradient(gradient, rect)?;
         context.set_fill_shader(&shader);
         fill_box(context, paint, rect)?;
+    }
+
+    // Inset shadows after the background and before the border, which is where
+    // CSS puts them. Drawn with the outer ones they were painted **and then
+    // covered by the very background they fall on**, which is why the arm
+    // looked unimplemented from the outside.
+    for shadow in node.effects.box_shadows.iter().filter(|s| s.inset) {
+        draw_box_shadow(context, paint, rect, shadow)?;
     }
 
     if paint.background_image.is_some()
@@ -1028,6 +1043,19 @@ fn box_path(
     rect: Rect,
 ) -> Result<(), Error> {
     context.begin_path();
+    box_path_continuing(context, paint, rect)
+}
+
+/// The same contour, added to whatever path is already open.
+///
+/// Split from [`box_path`] for the callers that need two contours in one path —
+/// a ring, and an inset shadow's surround-with-a-hole — where a second
+/// `begin_path` would discard the first.
+fn box_path_continuing(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    rect: Rect,
+) -> Result<(), Error> {
     let radii = paint.border_radius;
     let corners = [
         radii.top_left,
@@ -1152,8 +1180,8 @@ fn draw_border(
     // edges.
     if uniform && same_colour {
         context.set_fill_style(to_skia_color(paint.border_color_all));
-        ring_path(context, paint, rect, inner, widths)?;
-        context.fill(SkiaFillRule::EvenOdd);
+        let ring = ring_path(paint, rect, inner, widths)?;
+        context.fill_path(&ring, SkiaFillRule::EvenOdd);
         return Ok(());
     }
 
@@ -1198,9 +1226,9 @@ fn draw_border(
         context.set_fill_style(to_skia_color(
             colour.unwrap_or(paint.border_color_all),
         ));
-        let path = ring_path(context, paint, rect, inner, widths);
-        if path.is_ok() {
-            context.fill(SkiaFillRule::EvenOdd);
+        let path = ring_path(paint, rect, inner, widths);
+        if let Ok(ring) = &path {
+            context.fill_path(ring, SkiaFillRule::EvenOdd);
         }
         context.restore();
         path?;
@@ -1225,6 +1253,107 @@ fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
     )
 }
 
+/// Draws a shadow that falls **inside** the box.
+///
+/// The outer arms of this feature all worked — offset, spread, colour and two
+/// at once — while `inset` returned without drawing, so every test and the
+/// `box-shadow` fixture passed with one arm of it doing nothing.
+///
+/// # How it is drawn
+///
+/// A shadow is a property of the paint rather than a separate draw, so an inset
+/// one is the same trick as an outer one turned inside out: clip to the box,
+/// then fill **everything except** the box — offset, and shrunk by the spread —
+/// with the shadow configured. Skia casts that fill's shadow inwards, the clip
+/// keeps it to the box, and the fill itself is invisible because it lies
+/// entirely outside the clip.
+///
+/// The outer rectangle is the box grown by enough to cover any offset and blur,
+/// so the hole is what casts and the surround never shows an edge of its own.
+fn draw_inset_box_shadow(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    rect: Rect,
+    shadow: &BoxShadow,
+) -> Result<(), Error> {
+    context.save();
+    let result = (|| -> Result<(), Error> {
+        // Only inside the box: this is the whole of what makes it inset.
+        clip_to_box(context, paint, rect)?;
+
+        context.set_shadow_blur(shadow.blur);
+        context.set_shadow_color(to_skia_color(shadow.color));
+        context.set_shadow_offset(shadow.offset_x, shadow.offset_y);
+        context.set_fill_style(to_skia_color(shadow.color));
+
+        // The hole: the box pulled in by the spread, then moved by the offset.
+        // Pulling in is what makes a positive spread a *thicker* inset shadow,
+        // where on an outer one it makes a larger shape.
+        let spread = shadow.spread;
+        let hole = Rect::new(
+            meo_canvas_scene::Point::new(
+                rect.origin.x + spread + shadow.offset_x,
+                rect.origin.y + spread + shadow.offset_y,
+            ),
+            Size::new(
+                spread.mul_add(-2.0, rect.size.width).max(0.0),
+                spread.mul_add(-2.0, rect.size.height).max(0.0),
+            ),
+        );
+
+        // Far enough out that the surround's own edges cannot reach the clip
+        // even at the largest offset and blur.
+        let margin = shadow.blur.mul_add(3.0, spread.abs())
+            + shadow.offset_x.abs()
+            + shadow.offset_y.abs()
+            + rect.size.width
+            + rect.size.height;
+        let surround = Rect::new(
+            meo_canvas_scene::Point::new(
+                rect.origin.x - margin,
+                rect.origin.y - margin,
+            ),
+            Size::new(
+                margin.mul_add(2.0, rect.size.width),
+                margin.mul_add(2.0, rect.size.height),
+            ),
+        );
+
+        context.begin_path();
+        context
+            .round_rect_elliptical(
+                surround.origin.x,
+                surround.origin.y,
+                surround.size.width,
+                surround.size.height,
+                [(0.0, 0.0); 4],
+            )
+            .map_err(|error| Error::Paint(error.to_string()))?;
+        box_path_continuing(context, paint, hole)?;
+        context.fill(SkiaFillRule::EvenOdd);
+        Ok(())
+    })();
+    context.restore();
+    result
+}
+
+/// One box contour as a path of its own.
+///
+/// The corner radii are given per axis because an inner corner shrinks by a
+/// different side's width on each axis.
+fn contour(rect: Rect, radii: [(f32, f32); 4]) -> Result<PathBuilder, Error> {
+    let mut path = PathBuilder::new();
+    path.round_rect_elliptical(
+        rect.origin.x,
+        rect.origin.y,
+        rect.size.width,
+        rect.size.height,
+        radii,
+    )
+    .map_err(|error| Error::Paint(error.to_string()))?;
+    Ok(path)
+}
+
 /// Builds the ring between the border box and the padding box as one path.
 ///
 /// Two subpaths filled even-odd, which is what makes the inner one a hole. The
@@ -1233,49 +1362,58 @@ fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
 /// wide, and drawing it circular would leave the fill and the border
 /// disagreeing about where the curve is.
 fn ring_path(
-    context: &mut Context2D,
     paint: &PaintStyle,
     outer: Rect,
     inner: Rect,
     widths: Sides<f32>,
-) -> Result<(), Error> {
-    box_path(context, paint, outer)?;
+) -> Result<Path2D, Error> {
+    let radii = paint.border_radius;
+    let mut ring = contour(
+        outer,
+        [
+            (radii.top_left, radii.top_left),
+            (radii.top_right, radii.top_right),
+            (radii.bottom_right, radii.bottom_right),
+            (radii.bottom_left, radii.bottom_left),
+        ],
+    )?;
 
     if inner.size.width <= 0.0 || inner.size.height <= 0.0 {
         // No hole: the border meets in the middle and the ring is the whole
         // box.
-        return Ok(());
+        return Ok(ring.build(SkiaFillRule::EvenOdd));
     }
 
-    let radii = paint.border_radius;
-    let inner_radii = [
-        (
-            (radii.top_left - widths.left).max(0.0),
-            (radii.top_left - widths.top).max(0.0),
-        ),
-        (
-            (radii.top_right - widths.right).max(0.0),
-            (radii.top_right - widths.top).max(0.0),
-        ),
-        (
-            (radii.bottom_right - widths.right).max(0.0),
-            (radii.bottom_right - widths.bottom).max(0.0),
-        ),
-        (
-            (radii.bottom_left - widths.left).max(0.0),
-            (radii.bottom_left - widths.bottom).max(0.0),
-        ),
-    ];
+    let hole = contour(
+        inner,
+        [
+            (
+                (radii.top_left - widths.left).max(0.0),
+                (radii.top_left - widths.top).max(0.0),
+            ),
+            (
+                (radii.top_right - widths.right).max(0.0),
+                (radii.top_right - widths.top).max(0.0),
+            ),
+            (
+                (radii.bottom_right - widths.right).max(0.0),
+                (radii.bottom_right - widths.bottom).max(0.0),
+            ),
+            (
+                (radii.bottom_left - widths.left).max(0.0),
+                (radii.bottom_left - widths.bottom).max(0.0),
+            ),
+        ],
+    )?;
 
-    context
-        .round_rect_elliptical(
-            inner.origin.x,
-            inner.origin.y,
-            inner.size.width,
-            inner.size.height,
-            inner_radii,
-        )
-        .map_err(|error| Error::Paint(error.to_string()))
+    // **`Path2D::add_path` appends; `Context2D::round_rect_elliptical`
+    // extends.** That is the whole of this bug. Building both contours on the
+    // context joined them into one self-intersecting shape, and filling it
+    // even-odd drew a diagonal across the box — half of it at first, and after
+    // a narrower fix still a wedge across the bottom edge. Two paths added as
+    // separate subpaths are two regions, which is what a ring is.
+    ring.add_path(&hole.build(SkiaFillRule::EvenOdd));
+    Ok(ring.build(SkiaFillRule::EvenOdd))
 }
 
 /// Draws one box shadow.
@@ -1289,10 +1427,8 @@ fn draw_box_shadow(
     rect: Rect,
     shadow: &BoxShadow,
 ) -> Result<(), Error> {
-    // An inset shadow falls inside the box and needs the inverse of this
-    // path, which is a fixture-verified concern rather than an arithmetic one.
     if shadow.inset {
-        return Ok(());
+        return draw_inset_box_shadow(context, paint, rect, shadow);
     }
     context.save();
     context.set_shadow_blur(shadow.blur);

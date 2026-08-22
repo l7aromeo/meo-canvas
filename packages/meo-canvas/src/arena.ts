@@ -1301,11 +1301,12 @@ function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | un
  * Writes one of a path's two paints.
  *
  * The scene's `PathPaint` is a two-armed tag — solid or gradient — inside an
- * option. This surface writes only the solid arm, because it has no spelling
- * for a gradient anywhere: `gradient` and `backgroundImage` are absent from its
- * style table for the same reason. `'none'` is the absent option rather than a
- * transparent colour, which would be a paint that draws nothing rather than no
- * paint at all.
+ * option, and this writes both arms. `'none'` is the absent option rather than
+ * a transparent colour, which would be a paint that draws nothing rather than
+ * no paint at all.
+ *
+ * The arm is chosen by shape, since the surface type carries no tag: a gradient
+ * is the object, and every string is a colour or `'none'`.
  */
 function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback: number | undefined): void {
   if (paint === 'none' || (paint === undefined && fallback === undefined)) {
@@ -1314,6 +1315,11 @@ function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback
   }
 
   out.present()
+  if (typeof paint === 'object') {
+    out.enum(1)
+    writeGradient(out, paint)
+    return
+  }
   out.enum(0)
   out.integer(paint === undefined ? (fallback as number) : packColor(paint))
 }

@@ -416,15 +416,16 @@ fn baseline_alignment() -> Scene {
 
 /// A negative-`z_index` child under three parents, two of which must hoist it.
 ///
-/// **This fixture pins a defect.** A child at `z_index: -1` belongs to the
-/// nearest ancestor that establishes a stacking context, and paints there
-/// *before* that ancestor's own background. A parent that establishes no
-/// context does not keep the child: it hoists to the grandparent, where the
-/// parent's background then covers it.
+/// A child at `z_index: -1` belongs to the nearest ancestor that establishes a
+/// stacking context, and paints there *before* that ancestor's own background.
+/// A parent that establishes no context does not keep the child: it hoists to
+/// the grandparent, where the parent's background then covers it.
 ///
-/// This renderer sorts children within each node and only within each node, so
-/// every node behaves as though it established a context and the child is never
-/// lifted out. Two of these three cells are therefore wrong today.
+/// The painter sorted children within each node and only within each node, so
+/// every node behaved as though it established a context and the child was
+/// never lifted out. Fixed in the commit that added this image; the fixture
+/// now guards the fix, and cells 0 and 1 turning blue again is the regression
+/// it exists to catch.
 ///
 /// The third is the control, and it is why there are three. It is the cell that
 /// looks right today and must **keep** looking right: its parent establishes a
@@ -462,10 +463,10 @@ fn stacking_hoist() -> Scene {
         .align_items(Align::Center)
         .gap_xy(px(0.0), px(8.0))
         .background_color(hex_rgb(0xff_ff_ff))
-        .name("PINNED DEFECT: cells 0 and 1 must hide the child and do not. See notes.json.")
+        .name("cells 0 and 1 hoist the child and hide it; cell 2 keeps it. See notes.json.")
         .children([
-            cell("no context - DEFECTIVE, child must hoist and be covered"),
-            cell("overflow: hidden - DEFECTIVE, clipping is not a context")
+            cell("no context - the child hoists and the parent's red covers it"),
+            cell("overflow: hidden - clipping is not a context, so it hoists too")
                 .overflow(Overflow::Hidden),
             // Opacity below one establishes a context in Chrome and opens a
             // layer here, so this cell is correct today and must stay correct.
@@ -495,6 +496,15 @@ fn stacking_hoist() -> Scene {
 ///
 /// Every bordered golden in the suite before this one sets a radius, which is
 /// why none of them took the broken branch.
+///
+/// **Its first image still had the wedge on the bottom edge, an eighth of the
+/// size, and this fixture passed anyway.** It was measured at row 35 alone --
+/// the vertical middle, which crosses the left and right edges and never the
+/// top or the bottom -- so a picture with a correct left edge and a diagonal
+/// bottom one read as correct. Three cells, a control and a third branch, and
+/// the sample point could see the failure in none of them. `notes.json` now
+/// names a row per edge; the lesson is that varying the scene is not the same
+/// as varying where it is read.
 fn borders_square() -> Scene {
     let cell = |radius: Corners<f32>, border: Sides<f32>| {
         BoxNode::new()
@@ -512,6 +522,7 @@ fn borders_square() -> Scene {
         .align_items(Align::Center)
         .gap_xy(px(0.0), px(8.0))
         .background_color(hex_rgb(0xff_ff_ff))
+        .name("read a row per edge, not the middle one alone. See notes.json.")
         .children([
             cell(corners_all(0.0), sides(6.0, 6.0, 6.0, 6.0)).name(
                 "square corners - the branch that mixed two contour mechanisms",

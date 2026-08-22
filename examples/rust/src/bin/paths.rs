@@ -7,7 +7,10 @@
 use meo_canvas::{
     Box as BoxNode, Element, FillRule, FlexDirection, Path, Root, Styled,
     hex_rgb, px,
-    scene::{LineCap, LineJoin, PathPaint},
+    scene::{
+        Gradient, GradientGeometry, GradientStop, LineCap, LineJoin,
+        LinearDirection, PathPaint,
+    },
 };
 use meo_canvas_examples::{FORMATS, draw};
 
@@ -95,6 +98,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // A path with neither fill nor stroke set draws its default,
                 // which SVG says is black.
                 cell(Path::d(STAR).size(px(64.0), px(64.0))),
+                // A path paint is a colour or a gradient, and until today the
+                // JavaScript surface could spell only the first.
+                cell(Path::d(STAR).size(px(64.0), px(64.0)).fill(Some(
+                    PathPaint::Gradient(Gradient {
+                        geometry: GradientGeometry::Linear {
+                            direction: LinearDirection::Angle(135.0),
+                        },
+                        stops: vec![
+                            GradientStop {
+                                offset: 0.0,
+                                color: hex_rgb(0x28_50_dc),
+                            },
+                            GradientStop {
+                                offset: 1.0,
+                                color: hex_rgb(0xf2_b0_2c),
+                            },
+                        ],
+                    }),
+                ))),
             ]),
             BoxNode::new().gap(px(6.0)).children(vec![
                 cell(capped(LineCap::Butt)),

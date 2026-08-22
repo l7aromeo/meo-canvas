@@ -5,9 +5,8 @@
  * coordinates, so a difference on the page is a difference in one property
  * rather than in where the shape was put.
  *
- * No gradient here, because this surface cannot spell one on a path: `PathPaint`
- * is a colour or `'none'`, while the scene's own paint has a gradient arm the
- * Rust half reaches. Left out rather than worked around.
+ * The last cell of the first row is a gradient-filled path, which this surface
+ * could not spell until `PathPaint` grew its third arm.
  */
 
 import { Box, Path, Root, type SceneNode } from 'meo-canvas'
@@ -75,6 +74,23 @@ const canvas = await Root({
         // A path with neither fill nor stroke set draws its default, which SVG
         // says is black.
         cell(Path({ d: STAR, width: 64, height: 64 })),
+        // A path paint is a colour or a gradient, told apart by shape: the
+        // gradient is the object and every string is a colour or `'none'`.
+        cell(
+          Path({
+            d: STAR,
+            width: 64,
+            height: 64,
+            fill: {
+              type: 'linear',
+              direction: 135,
+              stops: [
+                { offset: 0, color: '#2850dc' },
+                { offset: 1, color: '#f2b02c' },
+              ],
+            },
+          }),
+        ),
       ],
     }),
     Box({ gap: 6, children: [cell(capped('butt')), cell(capped('round')), cell(capped('square'))] }),

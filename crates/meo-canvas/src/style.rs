@@ -50,7 +50,8 @@ use meo_canvas_scene::{
             PositionType, TrackSize,
         },
         paint::{
-            BlendMode, BorderStyle, Color, Gradient, ObjectFit, PaintStyle,
+            BackgroundImage, BlendMode, BorderStyle, Color, Gradient,
+            ObjectFit, PaintStyle,
         },
         text::{
             FontStyle, FontWeight, Spacing, TextAlign, TextDecoration,
@@ -148,10 +149,12 @@ pub struct Style {
     pub grid_row: Option<GridPlacement>,
 
     // -- Paint ----------------------------------------------------------
-    /// The box's fill. CSS's `background_color-color`.
+    /// The box's fill. CSS's `background-color`.
     pub background_color: Option<Color>,
     /// A gradient painted over the fill.
     pub gradient: Option<Gradient>,
+    /// An image painted over the gradient.
+    pub background_image: Option<BackgroundImage>,
     /// Border colour, per edge.
     pub border_color: Option<Sides<Option<Color>>>,
     /// Border colour for every edge that names none of its own.
@@ -497,7 +500,7 @@ properties! {
 
         /// The box's fill.
         ///
-        /// CSS's `background_color-color`, and distinct from [`color`](Self::color),
+        /// CSS's `background-color`, and distinct from [`color`](Self::color),
         /// which is the text colour. The two sit adjacent and mean different
         /// things; that is CSS's trap and keeping its names is what lets a
         /// design be ported without translation.
@@ -514,6 +517,26 @@ properties! {
         /// Not `const`: a gradient owns its stops, and assigning over one drops
         /// the vector it replaces.
     owned gradient: gradient, Gradient;
+
+        /// An image painted over the gradient.
+        ///
+        /// The tiling, the drawn size and the offset of the first tile travel
+        /// with the source rather than as three properties beside it, which is
+        /// where CSS's `background-repeat`, `background-size` and
+        /// `background-position` each sit on their own -- one value here cannot
+        /// describe a repeat for an image that is not there.
+        ///
+        /// ```
+        /// use meo_canvas::{Style, px, scene::{BackgroundImage, BackgroundRepeat, BackgroundSize, ImageSource}};
+        ///
+        /// let tiled = Style::new().background_image(BackgroundImage {
+        ///     source: ImageSource::Path("grain.png".into()),
+        ///     repeat: BackgroundRepeat::Repeat,
+        ///     size: BackgroundSize::PerAxis(px(32.0).into(), px(32.0).into()),
+        ///     position: (px(0.0), px(0.0)),
+        /// });
+        /// ```
+    owned background_image: background_image, BackgroundImage;
 
         /// One border colour on every edge.
     plain border_color: border_color_all, Color;
@@ -699,6 +722,7 @@ impl Style {
             grid_row: None,
             background_color: None,
             gradient: None,
+            background_image: None,
             border_color: None,
             border_color_all: None,
             border_style: None,
@@ -985,6 +1009,7 @@ impl Style {
             paint.background_color = value;
         }
         paint.gradient = self.gradient;
+        paint.background_image = self.background_image;
         if let Some(value) = self.border_color {
             paint.border_color = value;
         }

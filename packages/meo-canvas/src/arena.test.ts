@@ -167,13 +167,11 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
     if (tag === 'gradient') return { tag, value: read(input, 'Gradient') }
     throw new RangeError('Mask has no such tag')
   },
-  // Only the solid arm. A gradient has no spelling on this surface yet, so one
-  // reaching here would mean the writer invented something, and throwing says
-  // so rather than decoding it into a shape nothing checks.
   PathPaint: input => {
     const tag = ['solid', 'gradient'][slot(input)]
-    if (tag !== 'solid') throw new TypeError(`this reader reads a solid path paint, not ${String(tag)}`)
-    return { tag, value: color(input) }
+    if (tag === 'solid') return { tag, value: color(input) }
+    if (tag === 'gradient') return { tag, value: read(input, 'Gradient') }
+    throw new RangeError('PathPaint has no such tag')
   },
 }
 
@@ -1301,6 +1299,18 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     lineDash: [1, 2],
     lineDashOffset: 0.5,
   }),
+  // The gradient arm of a path's paint, on the stroke and with no fill: the
+  // solid arm is what `__kind_path` pins, so this one is about the tag rather
+  // than about paths.
+  __kind_path_gradient: Path({
+    d: 'M0 0 L4 4',
+    fill: 'none',
+    stroke: {
+      type: 'linear',
+      direction: ['25%', 3, '75%', '25%'],
+      stops: [{ offset: 0.5, color: '#09080706' }],
+    },
+  }),
 }
 
 /**
@@ -1310,10 +1320,7 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
  * probe nor a line here fails, so a payload added upstream forces a decision
  * rather than being quietly untested from this side.
  */
-const UNSPELT_KINDS: Readonly<Record<string, string>> = {
-  __kind_path_gradient:
-    'a path painted with a gradient. This surface has no spelling for a gradient anywhere — `gradient` and `backgroundImage` are absent from its style table for the same reason — so the arm is unreachable from here. Everything else about a path is probed by `__kind_path`, which is why the gradient is a case of its own rather than part of that one.',
-}
+const UNSPELT_KINDS: Readonly<Record<string, string>> = {}
 
 describe('the node kinds', () => {
   it('partition every kind case the fixture carries', () => {
