@@ -218,7 +218,13 @@ export class BoxNode {
     if (alignContent !== undefined) this.node.setAlignContent(alignContent)
     if (flexGrow !== undefined) this.node.setFlexGrow(flexGrow)
     if (flexShrink !== undefined) this.node.setFlexShrink(flexShrink)
-    if (positionType !== undefined) this.node.setPositionType(positionType)
+    // Defaulted to `Static` rather than left at Yoga's own default of `Relative`, because the two
+    // disagree about containing blocks and CSS is on `Static`'s side: an absolutely positioned node
+    // resolves against its nearest *positioned* ancestor, skipping every static box between. Yoga
+    // offers `Static` for exactly that, and leaving the default in place made every ancestor a
+    // containing block -- so an absolute node landed against its immediate parent wherever CSS
+    // would have gone further up.
+    this.node.setPositionType(positionType ?? Style.PositionType.Static)
     if (flexBasis !== undefined) this.node.setFlexBasis(flexBasis)
     // `position: 0` is falsy and meaningful: an absolute node inset by nothing on all four sides
     // fills its parent.
