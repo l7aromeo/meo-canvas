@@ -111,6 +111,15 @@ pub enum Error {
     #[error("a track's {0}")]
     Track(&'static str),
 
+    /// A chart given data it cannot draw.
+    ///
+    /// **A refusal rather than a reproduction.** v1 mis-draws a negative
+    /// value three different ways -- a bar below the plot, a bar five times
+    /// the height for the *most* negative, and nothing at all when every
+    /// value is zero -- so the port refuses instead of picking one of them.
+    #[error("{0}")]
+    Chart(&'static str),
+
     /// The scene is not the forest of pages the contract requires.
     ///
     /// [`meo_canvas_scene::codec::decode`] checks this, so a scene read from

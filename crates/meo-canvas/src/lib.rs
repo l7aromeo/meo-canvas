@@ -117,6 +117,7 @@
 //! here -- that API already exists, in `meo-skia-canvas`, and reproducing it
 //! would give the workspace two answers to the same question.
 
+pub mod chart;
 pub mod element;
 pub mod root;
 pub mod style;

@@ -1,0 +1,376 @@
+//! A bar chart, built out of layout rather than draw calls.
+//!
+//! The plot is `flex-grow: 1` inside a column, so its height is whatever the
+//! label strip and legend leave -- which is v1's `finalChartHeight` arrived at
+//! by subtraction rather than by measurement. Bars are absolutely positioned
+//! inside it in percentages, anchored to the bottom, which is what v1's
+//! `barY = chartY + finalChartHeight - barHeight` says.
+
+#![expect(
+    clippy::suboptimal_flops,
+    reason = "the y-axis label values become strings that the other surface \
+              also computes, so a fused multiply-add -- rounding once where \
+              JavaScript rounds twice -- could change a label by a digit. \
+              Agreement is the objective here, as in `chart::geometry`."
+)]
+
+use meo_canvas_scene::style::{Dimension, paint::Color};
+
+use crate::{
+    Align, Box as BoxElement, Column, Element, Error, Overflow, PositionType,
+    Row, Style, Text,
+    chart::geometry::{
+        Bar, GRID_DIVISIONS, bar_layout, grid_lines, series_color,
+    },
+    pct, px,
+    unit::sides,
+};
+
+/// One series of a cartesian chart.
+#[derive(Debug, Clone, Default)]
+pub struct Dataset {
+    /// What the legend calls it. `Series 1`, `Series 2` and so on when absent.
+    pub label: Option<String>,
+    /// The series colour. Taken from the palette in order when absent.
+    pub color: Option<String>,
+    /// The values, one per label.
+    pub data: Vec<f64>,
+}
+
+/// Whether a grid is drawn behind the plot, and in what colour.
+#[derive(Debug, Clone, Default)]
+pub struct Grid {
+    /// Whether to draw it at all.
+    pub show: bool,
+    /// The rule's colour. v1's `#e0e0e0` when absent.
+    pub color: Option<String>,
+}
+
+/// What every chart understands, as v1 spells it.
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    /// Draw the strip of labels under the plot.
+    pub show_labels: bool,
+    /// Draw each value above its bar.
+    pub show_values: bool,
+    /// Draw the y-axis gutter.
+    pub show_y_axis: bool,
+    /// The grid behind the plot.
+    pub grid: Grid,
+    /// Point size for the labels under the plot.
+    pub label_font_size: Option<f32>,
+    /// Point size for the values above the bars.
+    pub value_font_size: Option<f32>,
+    /// Point size for the y-axis labels.
+    pub y_axis_font_size: Option<f32>,
+    /// Colour for the labels under the plot.
+    pub label_color: Option<Color>,
+    /// Colour for the values above the bars.
+    pub value_color: Option<Color>,
+    /// Colour for the y-axis labels, falling back to `axis_color`.
+    pub y_axis_color: Option<Color>,
+    /// Colour for axis text generally.
+    pub axis_color: Option<Color>,
+    /// The family every piece of chart text is set in.
+    pub font_family: Option<String>,
+}
+
+/// v1's default gridline colour.
+const GRID_COLOR: Color = crate::hex_rgb(0xe0_e0_e0);
+/// The default for every piece of chart text.
+const TEXT_COLOR: Color = crate::hex_rgb(0x00_00_00);
+/// v1's default point size for chart text.
+const TEXT_SIZE: f32 = 12.0;
+/// v1 puts a value five pixels above its bar.
+const VALUE_LIFT: f32 = 5.0;
+
+/// A bar chart of `labels` against `datasets`.
+///
+/// # Errors
+///
+/// Returns [`Error::Chart`] for a negative value, which v1 mis-draws three
+/// different ways rather than supporting.
+pub fn bar(
+    labels: &[String],
+    datasets: &[Dataset],
+    options: &Options,
+) -> Result<Element, Error> {
+    let values: Vec<Vec<f64>> =
+        datasets.iter().map(|set| set.data.clone()).collect();
+    let max_value = values.iter().flatten().copied().fold(0.0_f64, f64::max);
+    let placed = bar_layout(labels.len(), datasets.len(), &values, max_value)?;
+
+    let mut bars: Vec<Element> = Vec::new();
+    for (index, group) in placed.iter().enumerate() {
+        for (dataset, bar) in group.iter().enumerate() {
+            bars.push(one_bar(
+                *bar, index, dataset, &values, datasets, options,
+            ));
+        }
+    }
+
+    let mut body: Vec<Element> = vec![plot_area(options, max_value, bars)];
+    if options.show_labels {
+        body.push(label_strip(labels, options));
+    }
+
+    Ok(Column::new()
+        .name("bar chart")
+        .with_style(Style::new().width(pct(100.0)).height(pct(100.0)))
+        .children([Column::new()
+            .name("body")
+            .with_style(Style::new().flex_grow(1.0))
+            .children(body)]))
+}
+
+/// One bar, placed by percentage and anchored to the plot's floor.
+fn one_bar(
+    bar: Bar,
+    index: usize,
+    dataset: usize,
+    values: &[Vec<f64>],
+    datasets: &[Dataset],
+    options: &Options,
+) -> Element {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a fraction of a plot, narrowed once at the style boundary"
+    )]
+    let (x, width, height) = (
+        bar.x as f32 * 100.0,
+        bar.width as f32 * 100.0,
+        bar.height as f32 * 100.0,
+    );
+    let colour = series_color(dataset, datasets[dataset].color.as_deref());
+    let value = values
+        .get(dataset)
+        .and_then(|row| row.get(index))
+        .copied()
+        .unwrap_or(0.0);
+
+    let mut drawn = BoxElement::new()
+        .name(format!("bar {index}.{dataset}"))
+        .with_style(
+            Style::new()
+                .position_type(PositionType::Absolute)
+                .position(sides(None, None, Some(px(0.0)), Some(pct(x))))
+                .width(pct(width))
+                .height(pct(height))
+                .background_color(
+                    meo_canvas_core::parse_color(&colour).unwrap_or(TEXT_COLOR),
+                ),
+        );
+    if options.show_values {
+        drawn = drawn.children([value_label(value, options)]);
+    }
+    drawn
+}
+
+/// A value sitting five pixels above its bar, centred on it.
+fn value_label(value: f64, options: &Options) -> Element {
+    BoxElement::new()
+        .with_style(
+            Style::new()
+                .position_type(PositionType::Absolute)
+                .position(sides(
+                    None,
+                    Some(px(0.0)),
+                    Some(pct(100.0)),
+                    Some(px(0.0)),
+                ))
+                .margin(sides(
+                    Dimension::Points(0.0),
+                    Dimension::Points(0.0),
+                    Dimension::Points(VALUE_LIFT),
+                    Dimension::Points(0.0),
+                ))
+                .align_items(Align::Center),
+        )
+        .children([text(
+            &format_number(value),
+            options,
+            options.value_font_size,
+            options.value_color,
+        )])
+}
+
+/// The strip of labels under the plot, one equal share each.
+fn label_strip(labels: &[String], options: &Options) -> Element {
+    Row::new().name("labels").children(
+        labels
+            .iter()
+            .map(|label| {
+                BoxElement::new()
+                    .with_style(
+                        Style::new()
+                            .flex_grow(1.0)
+                            .flex_basis(Dimension::Points(0.0))
+                            .align_items(Align::Center),
+                    )
+                    .children([text(
+                        label,
+                        options,
+                        options.label_font_size,
+                        options.label_color,
+                    )])
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// The plot, with a y-axis gutter beside it when one is asked for.
+///
+/// # How the gutter measures without measuring
+///
+/// Three properties are wanted at once: the gutter sizes to its widest label,
+/// the labels centre on the gridlines, and the plot is a sibling so a bar
+/// never covers the gutter. **Absolute children give the last two and do not
+/// size their parent; in-flow children give the first and drift on the
+/// second.** So the gutter holds both -- one zero-height in-flow copy of the
+/// widest label, which sets the width and draws nothing, and the visible
+/// labels absolutely positioned at their gridline fractions and pulled up by
+/// half their own height.
+fn plot_area(options: &Options, max_value: f64, bars: Vec<Element>) -> Element {
+    let mut inside = grid(options);
+    inside.extend(bars);
+    let plot = BoxElement::new()
+        .name("plot")
+        .with_style(
+            Style::new()
+                .flex_grow(1.0)
+                .position_type(PositionType::Relative),
+        )
+        .children(inside);
+
+    if !options.show_y_axis {
+        return plot;
+    }
+
+    // v1: `maxValue - (maxValue / 5) * i`, so the first row is the maximum
+    // and the last is zero.
+    let labels: Vec<String> = grid_lines(GRID_DIVISIONS)
+        .into_iter()
+        .map(|fraction| format_number(max_value - max_value * fraction))
+        .collect();
+    // The widest by character count rather than by measurement, which is the
+    // one thing a builder cannot do. A proportional face can make a shorter
+    // string wider -- `111` against `00` -- so this is a heuristic, and the
+    // sizer is why it only has to be close.
+    let widest = labels
+        .iter()
+        .max_by_key(|label| label.chars().count())
+        .cloned()
+        .unwrap_or_default();
+    let colour = options.y_axis_color.or(options.axis_color);
+
+    let mut gutter: Vec<Element> = vec![
+        BoxElement::new()
+            .name("gutter sizer")
+            .with_style(Style::new().height(px(0.0)).overflow(Overflow::Hidden))
+            .children([text(
+                &widest,
+                options,
+                options.y_axis_font_size,
+                colour,
+            )]),
+    ];
+    for (index, label) in labels.iter().enumerate() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a gridline fraction, narrowed once at the style boundary"
+        )]
+        let top = grid_lines(GRID_DIVISIONS)[index] as f32 * 100.0;
+        gutter.push(
+            BoxElement::new()
+                .name(format!("axis label {index}"))
+                .with_style(
+                    Style::new()
+                        .position_type(PositionType::Absolute)
+                        .position(sides(
+                            Some(pct(top)),
+                            None,
+                            None,
+                            Some(px(0.0)),
+                        )),
+                )
+                .children([text(
+                    label,
+                    options,
+                    options.y_axis_font_size,
+                    colour,
+                )]),
+        );
+    }
+
+    Row::new()
+        .name("plot area")
+        .with_style(Style::new().flex_grow(1.0))
+        .children([
+            Column::new()
+                .name("y axis")
+                .with_style(Style::new().position_type(PositionType::Relative))
+                .children(gutter),
+            plot,
+        ])
+}
+
+/// The gridlines behind the plot, or nothing.
+fn grid(options: &Options) -> Vec<Element> {
+    if !options.grid.show {
+        return Vec::new();
+    }
+    let colour = options
+        .grid
+        .color
+        .as_deref()
+        .and_then(meo_canvas_core::parse_color)
+        .unwrap_or(GRID_COLOR);
+    grid_lines(GRID_DIVISIONS)
+        .into_iter()
+        .map(|fraction| {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a gridline fraction, narrowed once at the style boundary"
+            )]
+            let top = fraction as f32 * 100.0;
+            BoxElement::new()
+                .name(format!("gridline {fraction}"))
+                .with_style(
+                    Style::new()
+                        .position_type(PositionType::Absolute)
+                        .position(sides(
+                            Some(pct(top)),
+                            Some(px(0.0)),
+                            None,
+                            Some(px(0.0)),
+                        ))
+                        .height(px(1.0))
+                        .background_color(colour),
+                )
+        })
+        .collect()
+}
+
+/// A piece of chart text in the chart's own family, size and colour.
+fn text(
+    content: &str,
+    options: &Options,
+    size: Option<f32>,
+    colour: Option<Color>,
+) -> Element {
+    let mut style = Style::new()
+        .font_size(size.unwrap_or(TEXT_SIZE))
+        .color(colour.unwrap_or(TEXT_COLOR));
+    if let Some(family) = options.font_family.as_deref() {
+        style = style.font_family(family);
+    }
+    Text::new(content).with_style(style)
+}
+
+/// A number as the other surface writes it: two decimals at most, and no
+/// trailing zeros.
+fn format_number(value: f64) -> String {
+    let rounded = (value * 100.0).round() / 100.0;
+    let text = format!("{rounded}");
+    text
+}
