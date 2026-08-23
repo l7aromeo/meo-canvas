@@ -278,6 +278,37 @@ impl DecodedImage {
         &self.image
     }
 
+    /// The frame a node asked for, or this image unchanged.
+    ///
+    /// **An animated source drew its first frame whatever the scene said**:
+    /// `NodeKind::Image::frame` crossed the wire, reached here, and nothing
+    /// ever read it. A one-frame source ignores the index rather than
+    /// refusing it, since asking for frame zero of a still picture is what
+    /// every unanimated node does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UndecodableImage`] naming the node when the index is
+    /// past the last frame -- a scene asking for the fourth frame of a
+    /// two-frame source has said something the source cannot answer, and
+    /// drawing the first instead would be the silent wrong picture this whole
+    /// property was.
+    fn at_frame(self, frame: Option<u32>, node: NodeId) -> Result<Self, Error> {
+        let Some(index) = frame.map(|index| index as usize) else {
+            return Ok(self);
+        };
+        if index == 0 || self.image.frame_count() <= 1 {
+            return Ok(self);
+        }
+        if index >= self.image.frame_count() {
+            return Err(Error::UndecodableImage(node));
+        }
+        self.image
+            .frame(index)
+            .map(|image| Self { image })
+            .map_err(|_| Error::UndecodableImage(node))
+    }
+
     /// The image's own size in pixels, which is what an `Auto` box takes.
     #[must_use]
     pub fn intrinsic_size(&self) -> Size {
@@ -322,8 +353,8 @@ impl<'scene> Resolved<'scene> {
             // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
             let id = NodeId::new(id as u32);
             match &node.kind {
-                NodeKind::Image { source, .. } => {
-                    let decoded = decode(id, source)?;
+                NodeKind::Image { source, frame, .. } => {
+                    let decoded = decode(id, source)?.at_frame(*frame, id)?;
                     resolved.images.insert(id, decoded);
                 }
                 NodeKind::Box

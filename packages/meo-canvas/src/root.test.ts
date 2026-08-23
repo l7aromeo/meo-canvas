@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { SideValue } from './arena.js'
 import type { NativeCanvas } from './canvas.js'
-import { Box, Text } from './node.js'
+import { Box, Image, Text } from './node.js'
 import type { ColorType } from './index.js'
 import { Root, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
@@ -105,6 +105,48 @@ describe('the canvas Root describes', () => {
     await Root({ width: 10, height: 10, fonts }, dependencies)
 
     expect(painted[0]?.fonts).toBe(fonts)
+  })
+})
+
+describe('a source this renderer cannot resolve', () => {
+  // The arm is on the wire and a Rust caller with a resolver of its own may
+  // write one; what this surface cannot do is promise to draw it. Nothing here
+  // fetches and `meo-canvas-core` refuses a URL by design, so before this the
+  // scene crossed the wire and failed three layers away with an error naming a
+  // node rather than the thing the caller wrote.
+  it('is refused at the surface, naming the url and the workaround', async () => {
+    const { dependencies } = fakeRenderer()
+
+    await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://example.invalid/a.png' } }) }, dependencies)).rejects.toThrow(
+      /does not fetch: "https:\/\/example.invalid\/a.png".*fetch\(url\)/s,
+    )
+  })
+
+  it('counts the rest rather than naming them all', async () => {
+    const { dependencies } = fakeRenderer()
+
+    await expect(
+      Root(
+        {
+          width: 10,
+          height: 10,
+          children: Box({
+            children: [Image({ src: { url: 'https://a.invalid/1.png' } }), Image({ src: { url: 'https://a.invalid/2.png' } })],
+          }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow(/and 1 more/)
+  })
+
+  // A path and bytes are what this surface can draw, and neither is disturbed
+  // by the check above: a scene with no url in it never reaches the refusal.
+  it('leaves a path alone', async () => {
+    const { dependencies, painted } = fakeRenderer()
+
+    await Root({ width: 10, height: 10, children: Image({ src: 'local.png' }) }, dependencies)
+
+    expect(painted).toHaveLength(1)
   })
 })
 

@@ -54,8 +54,8 @@ use meo_canvas_scene::{
             ObjectFit, PaintStyle,
         },
         text::{
-            FontStyle, FontWeight, Spacing, TextAlign, TextDecoration,
-            TextStroke, TextStyle, VerticalAlign,
+            FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
+            TextDecoration, TextStroke, TextStyle, VerticalAlign,
         },
     },
 };
@@ -202,6 +202,8 @@ pub struct Style {
     pub line_height: Option<f32>,
     /// Extra space between lines, in pixels. Inherits.
     pub line_gap: Option<f32>,
+    /// OpenType features applied to the run. Inherits.
+    pub font_variant: Option<Vec<FontVariant>>,
     /// Space added between characters. Inherits.
     pub letter_spacing: Option<Spacing>,
     /// Space added between words. Inherits.
@@ -249,7 +251,25 @@ macro_rules! properties {
             $( $via:ident($($arg:ident: $arg_type:ty),*); )*
         }
     ) => {
-        impl Style {
+        /// How many tracks lie between two grid lines, at least one.
+///
+/// An end at or before its start is an empty area rather than a placement, and
+/// a `const fn` on the authoring surface has nowhere to report that to — so it
+/// becomes the smallest placement that means anything. The JavaScript surface
+/// refuses the same input, where a throw is what a caller expects.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "the subtraction is guarded to a positive difference"
+)]
+const fn span_between(start: i16, end: i16) -> u16 {
+    if end > start {
+        end.saturating_sub(start) as u16
+    } else {
+        1
+    }
+}
+
+impl Style {
             $( properties!(@style $kind $(#[$doc])* $name: $field, $type); )+
         }
 
@@ -612,6 +632,32 @@ properties! {
         /// Which of a glyph's fill and stroke is painted on top.
     plain paint_order: paint_order, PaintOrder;
 
+        /// OpenType features applied to the run.
+        ///
+        /// A list because CSS's `font-variant` is a space-separated shorthand
+        /// and a caller routinely wants two at once -- `small-caps
+        /// tabular-nums` is one setting rather than a choice between them.
+        ///
+        /// Reaches the **measurer** as well as the painter:
+        /// `DiagonalFractions` moves a nineteen-character sample from 220.61
+        /// to 211.04, so a feature that only reached the drawing would lay
+        /// text out at one width and paint it at another.
+        ///
+        /// **A feature does nothing unless the face carries it.** Seventeen
+        /// tags swept against this repository's Oswald move exactly one,
+        /// `frac`: that face has no small-caps glyphs and nothing synthesises
+        /// them, so `SmallCaps` draws what `Normal` draws and is not a defect.
+        /// A test reaching for "a representative feature" and picking the
+        /// wrong one reports a working property as dead.
+        ///
+        /// ```
+        /// use meo_canvas::{Style, scene::FontVariant};
+        ///
+        /// let recipe =
+        ///     Style::new().font_variant([FontVariant::DiagonalFractions]);
+        /// ```
+    owned font_variant: font_variant, Vec<FontVariant>;
+
         /// Line box height as a multiple of the em size.
     plain line_height: line_height, f32;
 
@@ -745,6 +791,7 @@ impl Style {
             paint_order: None,
             line_height: None,
             line_gap: None,
+            font_variant: None,
             letter_spacing: None,
             word_spacing: None,
             text_stroke: None,
@@ -880,6 +927,68 @@ impl Style {
     #[must_use]
     pub const fn italic(mut self) -> Self {
         self.font_style = Some(FontStyle::Italic);
+        self
+    }
+
+    /// A shorthand for that many equal columns.
+    ///
+    /// v1's `columns`, and pure sugar: this **is**
+    /// [`grid_template_columns`](Self::grid_template_columns) with that many
+    /// `1fr` tracks, so nothing new reaches the wire. A shorthand that needed
+    /// a field of its own would mean the long form could not express it, which
+    /// would be a finding rather than a convenience.
+    ///
+    /// Assigning over a template already set replaces it, as every setter
+    /// here does; the JavaScript surface refuses the pair instead, because
+    /// there both spellings can appear in one object literal and neither is
+    /// obviously later.
+    ///
+    /// ```
+    /// use meo_canvas::{Style, scene::Display};
+    ///
+    /// let thirds = Style::new().display(Display::Grid).columns(3);
+    /// ```
+    #[must_use]
+    pub fn columns(mut self, columns: u16) -> Self {
+        self.grid_template_columns =
+            Some(vec![TrackSize::Fraction(1.0); usize::from(columns)]);
+        self
+    }
+
+    /// Both grid axes at once, as CSS's `grid-area` orders them.
+    ///
+    /// `row_start`, `column_start`, `row_end`, `column_end`, lines counting
+    /// from one and the two ends **exclusive** — `(1, 1, 3, 2)` is the item
+    /// covering rows 1 and 2 of column 1, which is CSS's reading of
+    /// `grid-area: 1 / 1 / 3 / 2`. Sugar over
+    /// [`grid_row`](Self::grid_row) and [`grid_column`](Self::grid_column).
+    ///
+    /// An end at or before its start is an empty area rather than a
+    /// placement, so it is clamped to a span of one: this is a `const fn` on
+    /// the authoring surface and has nowhere to report an error to. The
+    /// JavaScript surface refuses it, where a throw is what a caller expects.
+    ///
+    /// ```
+    /// use meo_canvas::{Style, scene::Display};
+    ///
+    /// let corner = Style::new().display(Display::Grid).grid_area(1, 1, 3, 2);
+    /// ```
+    #[must_use]
+    pub const fn grid_area(
+        mut self,
+        row_start: i16,
+        column_start: i16,
+        row_end: i16,
+        column_end: i16,
+    ) -> Self {
+        self.grid_row = Some(GridPlacement {
+            start: Some(row_start),
+            span: Some(span_between(row_start, row_end)),
+        });
+        self.grid_column = Some(GridPlacement {
+            start: Some(column_start),
+            span: Some(span_between(column_start, column_end)),
+        });
         self
     }
 
@@ -1049,6 +1158,7 @@ impl Style {
         text.paint_order = self.paint_order;
         text.line_height = self.line_height;
         text.line_gap = self.line_gap;
+        text.font_variant = self.font_variant;
         text.letter_spacing = self.letter_spacing;
         text.word_spacing = self.word_spacing;
         text.text_stroke = self.text_stroke;
@@ -1093,7 +1203,8 @@ mod tests {
     use meo_canvas_scene::style::{
         Dimension, Length,
         layout::{
-            Align, Display, FlexDirection, Justify, LayoutStyle, Overflow,
+            Align, Display, FlexDirection, GridPlacement, Justify, LayoutStyle,
+            Overflow,
         },
         paint::PaintStyle,
         text::{FontStyle, FontWeight, Spacing, TextStyle},
@@ -1111,6 +1222,46 @@ mod tests {
         assert!(style.background_color.is_none());
         assert!(style.font_size.is_none());
         assert_eq!(style, Style::default());
+    }
+
+    #[test]
+    fn a_shorthand_is_the_long_form_and_nothing_else() {
+        // The test of whether a shorthand is a shorthand: it has to produce
+        // exactly what a caller could have written out, so nothing new reaches
+        // the wire. A shorthand needing a field of its own would mean the long
+        // form could not express it.
+        assert_eq!(
+            Style::new().columns(3).grid_template_columns,
+            Style::new()
+                .grid_template_columns([
+                    crate::fr(1.0),
+                    crate::fr(1.0),
+                    crate::fr(1.0)
+                ])
+                .grid_template_columns
+        );
+
+        let area = Style::new().grid_area(1, 1, 3, 2);
+        let long = Style::new()
+            .grid_row(GridPlacement::spanning(1, 2))
+            .grid_column(GridPlacement::spanning(1, 1));
+        assert_eq!(area.grid_row, long.grid_row);
+        assert_eq!(area.grid_column, long.grid_column);
+    }
+
+    #[test]
+    fn an_empty_grid_area_becomes_the_smallest_one_that_means_anything() {
+        // `const fn` has nowhere to report an error to, so an end at or before
+        // its start is clamped rather than refused. The JavaScript surface
+        // throws on the same input, where a caller expects it to.
+        let backwards = Style::new().grid_area(3, 1, 1, 2);
+        assert_eq!(
+            backwards.grid_row,
+            Some(GridPlacement {
+                start: Some(3),
+                span: Some(1)
+            })
+        );
     }
 
     #[test]

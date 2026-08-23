@@ -38,8 +38,8 @@ use meo_canvas_scene::{
         layout::{Display, Overflow, PositionType},
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-            Color, Gradient, GradientGeometry, LinearDirection, ObjectFit,
-            PaintStyle,
+            BorderStyle, Color, Gradient, GradientGeometry, LinearDirection,
+            ObjectFit, PaintStyle,
         },
         text::{TextAlign, TextDecoration, VerticalAlign},
     },
@@ -901,9 +901,11 @@ fn paint_box(
     }
 
     if let Some(gradient) = paint.gradient.as_ref() {
-        let shader = build_gradient(gradient, rect)?;
+        let (shader, squash) = build_gradient(gradient, rect)?;
         context.set_fill_shader(&shader);
-        fill_box(context, paint, rect)?;
+        fill_with_gradient(context, squash, rect, |context| {
+            box_path(context, paint, rect)
+        })?;
     }
 
     // Inset shadows after the background and before the border, which is where
@@ -969,8 +971,26 @@ fn paint_kind(
                 .offset(rect.origin.x, rect.origin.y);
 
             if let Some(fill) = fill {
-                set_paint(context, fill, rect, true)?;
-                context.fill_path(&path, to_skia_rule(*fill_rule));
+                let squash = set_paint(context, fill, rect, true)?;
+                let rule = to_skia_rule(*fill_rule);
+                if let Some(squash) = squash {
+                    context.save();
+                    context.clip_path(&path, rule);
+                    context.translate(squash.centre.x, squash.centre.y);
+                    context.scale(1.0, squash.vertical);
+                    context.translate(-squash.centre.x, -squash.centre.y);
+                    let reach = (rect.size.height + rect.size.width)
+                        / squash.vertical.max(f32::EPSILON);
+                    context.fill_rect(
+                        rect.origin.x - 1.0,
+                        squash.centre.y - reach,
+                        rect.size.width + 2.0,
+                        reach * 2.0,
+                    );
+                    context.restore();
+                } else {
+                    context.fill_path(&path, rule);
+                }
             }
             if let Some(stroke) = stroke {
                 set_paint(context, stroke, rect, false)?;
@@ -1130,6 +1150,11 @@ fn draw_run(
     baseline: f32,
 ) {
     context.set_font(&run.style.to_font());
+    // After the font, which resets the variant axes as assigning the CSS
+    // `font` shorthand does -- so setting these first would undo them, and
+    // the run would be drawn in a face the measurer did not measure.
+    let (caps, features) = run.style.to_variant();
+    context.set_font_variant(caps, &features);
     context.set_fill_style(to_skia_color(style.color));
 
     for shadow in &node.effects.text_shadows {
@@ -1727,6 +1752,11 @@ fn draw_border(
 
     let inner = inner_box(rect, widths);
 
+    // Dashes and dots are strokes, not a ring: a fill has no rhythm to break.
+    if !matches!(paint.border_style, BorderStyle::Solid) {
+        return stroke_broken_border(context, node, rect, widths);
+    }
+
     // One ring, one fill, no clip. The same shape the edge-by-edge path
     // produces, reached without four clips when nothing distinguishes the
     // edges.
@@ -1766,45 +1796,15 @@ fn draw_border(
         if width <= 0.0 {
             continue;
         }
-        let next = (edge + 1) % outer_corners.len();
-        // Far enough along each division line to clear the ring at that
-        // corner -- the ring never reaches further from a corner than its
-        // radius plus the thickest edge -- and never past where the two lines
-        // meet, because beyond their meeting point the wedge folds over
-        // itself and a bow-tie is not the shape either fill rule reads.
-        let radii = radii_at(paint);
-        let clearance = radii[edge].max(radii[next])
-            + widths
-                .top
-                .max(widths.right)
-                .max(widths.bottom)
-                .max(widths.left)
-            + 1.0;
-        let limit = meeting_point(
-            outer_corners[edge],
-            divisions[edge],
-            outer_corners[next],
-            divisions[next],
-        )
-        .unwrap_or(clearance)
-        .min(clearance);
-        let far = |corner: (f32, f32), direction: (f32, f32)| {
-            (
-                direction.0.mul_add(limit, corner.0),
-                direction.1.mul_add(limit, corner.1),
-            )
-        };
-        let far_edge = far(outer_corners[edge], divisions[edge]);
-        let far_next = far(outer_corners[next], divisions[next]);
-
         context.save();
-        context.begin_path();
-        context.move_to(outer_corners[edge].0, outer_corners[edge].1);
-        context.line_to(outer_corners[next].0, outer_corners[next].1);
-        context.line_to(far_next.0, far_next.1);
-        context.line_to(far_edge.0, far_edge.1);
-        context.close_path();
-        context.clip(SkiaFillRule::NonZero);
+        clip_to_edge(
+            context,
+            edge,
+            outer_corners,
+            divisions,
+            radii_at(paint),
+            widths,
+        );
 
         context.set_fill_style(to_skia_color(
             colour.unwrap_or(paint.border_color_all),
@@ -1833,6 +1833,588 @@ fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
             rect.origin.y + widths.top,
         ),
         Size::new(width, height),
+    )
+}
+
+/// Narrows the clip to one edge's share of the ring.
+///
+/// The wedge between the two division lines at that edge's corners, extended
+/// far enough to clear the ring there and never past where the two meet. Both
+/// border paths use it, so a solid border and a dashed one divide their
+/// corners the same way by construction rather than by two implementations
+/// agreeing.
+fn clip_to_edge(
+    context: &mut Context2D,
+    edge: usize,
+    outer: [(f32, f32); 4],
+    divisions: [(f32, f32); 4],
+    radii: [f32; 4],
+    widths: Sides<f32>,
+) {
+    let next = (edge + 1) % outer.len();
+    let clearance = radii[edge].max(radii[next])
+        + widths
+            .top
+            .max(widths.right)
+            .max(widths.bottom)
+            .max(widths.left)
+        + 1.0;
+    let limit = meeting_point(
+        outer[edge],
+        divisions[edge],
+        outer[next],
+        divisions[next],
+    )
+    .unwrap_or(clearance)
+    .min(clearance);
+    let far = |corner: (f32, f32), direction: (f32, f32)| {
+        (
+            direction.0.mul_add(limit, corner.0),
+            direction.1.mul_add(limit, corner.1),
+        )
+    };
+    let far_edge = far(outer[edge], divisions[edge]);
+    let far_next = far(outer[next], divisions[next]);
+
+    context.begin_path();
+    context.move_to(outer[edge].0, outer[edge].1);
+    context.line_to(outer[next].0, outer[next].1);
+    context.line_to(far_next.0, far_next.1);
+    context.line_to(far_edge.0, far_edge.1);
+    context.close_path();
+    context.clip(SkiaFillRule::NonZero);
+}
+
+/// The dash and the gap a dashed border of this width is drawn with.
+///
+/// **Two regimes, measured in Chrome rather than derived**, at widths 1, 2, 4
+/// and 8 along a 240-pixel edge:
+///
+/// ```text
+/// width  ink  gap   period    as a multiple of the width
+///   1     3    2      5       dash 3w, gap 2w
+///   2     6    4     10       dash 3w, gap 2w
+///   3     6    3      9       dash 2w, gap 1w
+///   4     8    4     12       dash 2w, gap 1w
+///   8    16    8     24       dash 2w, gap 1w
+/// ```
+///
+/// So a thin border gets a longer dash relative to its width -- a minimum
+/// dash asserting itself, which is what stops a one-pixel dashed line reading
+/// as a dotted one.
+///
+/// **Width 3 was measured after this was written and sits in the upper
+/// regime**: `on:6 off:3`, which is `2w` and `1w`. So the step is at 3 rather
+/// than after it, and the boundary here is a row of the table rather than the
+/// guess it started as.
+///
+/// This replaced `max(2, w * 1.5)` on and `max(1, w)` off, which was v1's and
+/// wrong at every width: v1's rhythm is a decision made without a browser to
+/// check against, and the browser is the baseline for behaviour.
+///
+/// `crates/meo-canvas/tests/assets/chrome/border-rhythm.tsv`.
+///
+/// Public so the Chrome-truth test can assert the ratio directly rather than
+/// counting ink runs off a render: the rhythm is arithmetic, and a test that
+/// re-derives it from pixels would be measuring the rasteriser as well.
+#[must_use]
+pub fn dash_pattern(width: f32) -> (f32, f32) {
+    if width < 3.0 {
+        (width * 3.0, width * 2.0)
+    } else {
+        (width * 2.0, width)
+    }
+}
+
+/// The line a broken border is stroked along, and the radii it curves by.
+///
+/// Half of each edge's width in from the box, so a stroke of that width lands
+/// inside the border box where CSS puts a border. The radii shrink with the
+/// inset and are floored at zero, as CSS floors them.
+fn centre_line(
+    paint: &PaintStyle,
+    rect: Rect,
+    widths: Sides<f32>,
+) -> (Rect, PaintStyle) {
+    let centre = Rect::new(
+        meo_canvas_scene::Point::new(
+            widths.left.mul_add(0.5, rect.origin.x),
+            widths.top.mul_add(0.5, rect.origin.y),
+        ),
+        Size::new(
+            widths
+                .left
+                .midpoint(widths.right)
+                .mul_add(-1.0, rect.size.width)
+                .max(0.0),
+            widths
+                .top
+                .midpoint(widths.bottom)
+                .mul_add(-1.0, rect.size.height)
+                .max(0.0),
+        ),
+    );
+    let shrink = |radius: f32, by: f32| (radius - by).max(0.0);
+    let radii = paint.border_radius;
+    let curved = PaintStyle {
+        border_radius: meo_canvas_scene::Corners {
+            top_left: shrink(radii.top_left, widths.left.min(widths.top) / 2.0),
+            top_right: shrink(
+                radii.top_right,
+                widths.right.min(widths.top) / 2.0,
+            ),
+            bottom_right: shrink(
+                radii.bottom_right,
+                widths.right.min(widths.bottom) / 2.0,
+            ),
+            bottom_left: shrink(
+                radii.bottom_left,
+                widths.left.min(widths.bottom) / 2.0,
+            ),
+        },
+        ..paint.clone()
+    };
+    (centre, curved)
+}
+
+/// Strokes a dashed or dotted border, edge by edge.
+///
+/// # Why this is not the ring
+///
+/// A solid border is the region between the border box and the padding box,
+/// filled. A dashed one is that region **interrupted**, and a fill has no
+/// rhythm to break — so the broken styles are strokes of the box's centre
+/// line, at the border's own width, with a dash pattern.
+///
+/// # The pattern
+///
+/// Chrome's, measured. Dashed takes its lengths from [`dash_pattern`], which
+/// carries the numbers and the two regimes they fall into. Dotted is a
+/// zero-length dash with round caps at a period of twice the width, which
+/// draws circles of the border's own diameter — that one was v1's and turns
+/// out to be Chrome's as well, on and off both exactly the width at all four
+/// measured sizes.
+///
+/// # The fitting, and the two shapes a border can take
+///
+/// A side is fitted to a whole number of dashes, the dash keeping its nominal
+/// length and the slack going into the gaps — but **only while `radius <=
+/// width`**, where the inner corner is square. Above that the inner corner is
+/// genuinely round and the whole border becomes one continuous run, fitted as
+/// a loop. [`fits_per_side`] carries the measurement.
+///
+/// The length fitted is the **border box's** straight run and not the centre
+/// line's; [`straight_run`] carries why, and `chrome_border_rhythm.rs` has the
+/// row that reads it back out of our own render.
+///
+/// # Per edge, through the same wedges the solid path uses
+///
+/// Each edge is clipped to its own corner-divided wedge and strokes the whole
+/// centre line in its own colour and width, so per-edge colours and the corner
+/// division behave exactly as they do for a solid border. Where two edges
+/// differ in width the centre line is a compromise — it is inset by half of
+/// each side's own width, and the stroke of the wider edge is centred a little
+/// off its own middle.
+fn stroke_broken_border(
+    context: &mut Context2D,
+    node: &Node,
+    rect: Rect,
+    widths: Sides<f32>,
+) -> Result<(), Error> {
+    let paint = &node.paint;
+    let (centre, centre_paint) = centre_line(paint, rect, widths);
+
+    let outer_corners = [
+        (rect.origin.x, rect.origin.y),
+        (rect.right(), rect.origin.y),
+        (rect.right(), rect.bottom()),
+        (rect.origin.x, rect.bottom()),
+    ];
+    let inner = inner_box(rect, widths);
+    let inner_corners = [
+        (inner.origin.x, inner.origin.y),
+        (inner.right(), inner.origin.y),
+        (inner.right(), inner.bottom()),
+        (inner.origin.x, inner.bottom()),
+    ];
+    let divisions = divisions_at(outer_corners, inner_corners);
+    let edge_colors = paint.border_color;
+    let curves = fitted_radii(paint, rect);
+    let per_side = fits_per_side(curves, widths);
+
+    for (edge, (width, colour)) in [
+        (widths.top, edge_colors.top),
+        (widths.right, edge_colors.right),
+        (widths.bottom, edge_colors.bottom),
+        (widths.left, edge_colors.left),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if width <= 0.0 {
+            continue;
+        }
+        context.save();
+        clip_to_edge(
+            context,
+            edge,
+            outer_corners,
+            divisions,
+            radii_at(paint),
+            widths,
+        );
+
+        context.set_line_width(width);
+        context.set_stroke_style(to_skia_color(
+            colour.unwrap_or(paint.border_color_all),
+        ));
+
+        let dotted = matches!(paint.border_style, BorderStyle::Dotted);
+        if dotted {
+            context.set_line_cap(StrokeCap::Round);
+            context.set_line_dash(&[0.0, width * 2.0]);
+        } else {
+            context.set_line_cap(StrokeCap::Butt);
+        }
+
+        let path = if per_side {
+            stroke_fitted_side(
+                context,
+                &SideRun {
+                    paint: &centre_paint,
+                    rect,
+                    centre,
+                    outer: outer_corners,
+                    curves,
+                    widths,
+                    edge,
+                    width,
+                    dotted,
+                },
+            )
+        } else {
+            // Above the threshold the border is one continuous run round the
+            // whole path, so the phase is the path's own and the slack is
+            // spread all the way round. Chrome's loop has no seam, which
+            // means the corner this starts at is unobservable.
+            if !dotted {
+                let nominal: [f32; 2] = dash_pattern(width).into();
+                context.set_line_dash(&nominal);
+            }
+            let drawn = box_path(context, &centre_paint, centre);
+            if drawn.is_ok() {
+                context.stroke();
+            }
+            drawn
+        };
+        context.restore();
+        path?;
+    }
+    Ok(())
+}
+
+/// One side of a box that is dashed side by side, and the geometry the two
+/// passes need: the run itself, and the corners that close it.
+struct SideRun<'a> {
+    /// The centre line's own paint, carrying the radii the path curves by.
+    paint: &'a PaintStyle,
+    /// The border box.
+    rect: Rect,
+    /// The line the stroke is centred on.
+    centre: Rect,
+    /// The border box's four corners, in the wedge rotation.
+    outer: [(f32, f32); 4],
+    /// The outer radii, scaled.
+    curves: [f32; 4],
+    /// Every side's width.
+    widths: Sides<f32>,
+    /// Which side this is.
+    edge: usize,
+    /// This side's width.
+    width: f32,
+    /// Whether the style is dotted, which has no fitting.
+    dotted: bool,
+}
+
+/// Strokes one side of a box below the fitting threshold.
+///
+/// Two passes: the straight run, dashed to its own fitted pattern, and the
+/// corners, filled. Both are already clipped to this side's wedge.
+fn stroke_fitted_side(
+    context: &mut Context2D,
+    side: &SideRun<'_>,
+) -> Result<(), Error> {
+    let (from, to) =
+        straight_run(side.rect, side.centre, side.edge, side.curves);
+    let straight = (to.0 - from.0).hypot(to.1 - from.1);
+    if straight > 0.0 {
+        if !side.dotted {
+            let fitted: [f32; 2] = fitted_dash(straight, side.width).into();
+            context.set_line_dash(&fitted);
+        }
+        context.begin_path();
+        context.move_to(from.0, from.1);
+        context.line_to(to.0, to.1);
+        context.stroke();
+    }
+    fill_corner_arcs(context, side)
+}
+
+/// Fills the two corners at the ends of a fitted side.
+///
+/// **A corner below the threshold is filled rather than dashed, and no gap
+/// falls inside it.** Whether Chrome fills it by rule or the adjoining dash
+/// simply covers it is not separable at the radii where this branch applies —
+/// an arc that short is under one dash long — so this claims the behaviour
+/// and not the reason.
+fn fill_corner_arcs(
+    context: &mut Context2D,
+    side: &SideRun<'_>,
+) -> Result<(), Error> {
+    let along = side_line(side.centre, side.edge);
+    let span = (along.1.0 - along.0.0).hypot(along.1.1 - along.0.1);
+    if span <= 0.0 {
+        return Ok(());
+    }
+    let forward = (
+        (along.1.0 - along.0.0) / span,
+        (along.1.1 - along.0.1) / span,
+    );
+    let reach = span
+        + side.widths.top
+        + side.widths.right
+        + side.widths.bottom
+        + side.widths.left;
+    let next = (side.edge + 1) % side.outer.len();
+    for (corner, direction, radius) in [
+        (side.outer[side.edge], forward, side.curves[side.edge]),
+        (
+            side.outer[next],
+            (-forward.0, -forward.1),
+            side.curves[next],
+        ),
+    ] {
+        if radius <= 0.0 {
+            continue;
+        }
+        context.save();
+        clip_to_corner(context, corner, direction, radius, reach);
+        context.set_line_dash(&[]);
+        let path = box_path(context, side.paint, side.centre);
+        if path.is_ok() {
+            context.stroke();
+        }
+        context.restore();
+        path?;
+    }
+    Ok(())
+}
+
+/// The four outer radii, scaled the way CSS scales them when two on one side
+/// overrun it.
+///
+/// The border box's own radii, not the centre line's: Chrome fits a side to
+/// its **outer** straight run, and below the fitting threshold the centre
+/// line's radius has floored at zero while the outer one has not.
+fn fitted_radii(paint: &PaintStyle, rect: Rect) -> [f32; 4] {
+    let [top_left, top_right, bottom_right, bottom_left] = radii_at(paint);
+    let ratio = |sum: f32, length: f32| {
+        if sum > length && sum > 0.0 {
+            length / sum
+        } else {
+            1.0
+        }
+    };
+    let scale = ratio(top_left + top_right, rect.size.width)
+        .min(ratio(bottom_left + bottom_right, rect.size.width))
+        .min(ratio(top_left + bottom_left, rect.size.height))
+        .min(ratio(top_right + bottom_right, rect.size.height));
+    [
+        top_left * scale,
+        top_right * scale,
+        bottom_right * scale,
+        bottom_left * scale,
+    ]
+}
+
+/// Whether this box is dashed side by side rather than round its path.
+///
+/// **The threshold is `radius > width`, and it is a degeneracy rather than a
+/// margin.** The inner edge of a border curves by `radius - width`; at or
+/// below the width that is zero or negative, **the inner corner is square**,
+/// and Chrome fits each side on its own exactly as it does for a square box.
+/// Above it the inner corner is genuinely round and the border becomes one
+/// continuous run round the path.
+///
+/// Measured by the one signature that separates the two: a mark longer than a
+/// dash, which only two per-side runs butting at a corner can produce.
+///
+/// ```text
+/// width 4   r 0, 4 -> 3 butting marks     r 5, 6, 8, 12, 24 -> none
+/// width 8   r 4, 6, 7, 8 -> 3 butting     r 9, 10, 12       -> none
+/// ```
+///
+/// Both turn at `r > w`. Flushness at a tangent does **not** measure this and
+/// contradicted it three times: it recurs in bands as the arithmetic comes
+/// round -- at width 2, flush at radii 1-4, not 5-7, flush 8-9 -- which is a
+/// coincidence with a period rather than a branch. An earlier reading of this
+/// threshold as `5 < r <= 6` came from exactly that, and `w + 2` and `1.5w`
+/// were both fitted to it.
+///
+/// **Where a corner's two sides differ in width this is reasoned rather than
+/// measured**: the inner corner is round only if it is round along both, so a
+/// corner counts as degenerate until the radius clears the thicker of them.
+fn fits_per_side(curves: [f32; 4], widths: Sides<f32>) -> bool {
+    let pairs = [
+        (widths.top, widths.left),
+        (widths.top, widths.right),
+        (widths.bottom, widths.right),
+        (widths.bottom, widths.left),
+    ];
+    curves
+        .iter()
+        .zip(pairs)
+        .all(|(radius, (one, other))| *radius <= one.max(other))
+}
+
+/// The straight part of one side: where its ink begins and ends.
+///
+/// **Taken from the border box and not from the line it is drawn on.** Chrome
+/// fits a side to `outer - r_start - r_end`, which the centre line cannot
+/// give: inset by half a width, its own radius floors at zero, and at width 8
+/// with a 1px radius the two lengths differ by 6. Three radii at that width
+/// track the outer run exactly.
+///
+/// So the run is positioned across the side by the centre line -- a stroke of
+/// the border's width lands where CSS puts a border -- and along it by the
+/// border box.
+fn straight_run(
+    rect: Rect,
+    centre: Rect,
+    edge: usize,
+    curves: [f32; 4],
+) -> ((f32, f32), (f32, f32)) {
+    let (left, top) = (rect.origin.x, rect.origin.y);
+    let (right, bottom) = (rect.right(), rect.bottom());
+    let (near, far) = (centre.origin.x, centre.origin.y);
+    let across = (near + centre.size.width, far + centre.size.height);
+    let [top_left, top_right, bottom_right, bottom_left] = curves;
+    match edge {
+        0 => ((left + top_left, far), (right - top_right, far)),
+        1 => (
+            (across.0, top + top_right),
+            (across.0, bottom - bottom_right),
+        ),
+        2 => (
+            (right - bottom_right, across.1),
+            (left + bottom_left, across.1),
+        ),
+        _ => ((near, bottom - bottom_left), (near, top + top_left)),
+    }
+}
+
+/// Narrows the clip to one corner's share of a side.
+///
+/// Everything within `distance` of `corner` along `direction`, which for a
+/// rounded box is exactly the part of the side the arc occupies. `reach`
+/// carries the polygon far enough out to cover the ring in both directions;
+/// the wedge this sits inside does the real cutting.
+fn clip_to_corner(
+    context: &mut Context2D,
+    corner: (f32, f32),
+    direction: (f32, f32),
+    distance: f32,
+    reach: f32,
+) {
+    let normal = (-direction.1, direction.0);
+    let point = |along: f32, across: f32| {
+        (
+            normal
+                .0
+                .mul_add(across, direction.0.mul_add(along, corner.0)),
+            normal
+                .1
+                .mul_add(across, direction.1.mul_add(along, corner.1)),
+        )
+    };
+    let corners = [
+        point(-reach, -reach),
+        point(distance, -reach),
+        point(distance, reach),
+        point(-reach, reach),
+    ];
+    context.begin_path();
+    context.move_to(corners[0].0, corners[0].1);
+    for step in &corners[1..] {
+        context.line_to(step.0, step.1);
+    }
+    context.close_path();
+    context.clip(SkiaFillRule::NonZero);
+}
+
+/// The centre line of one side, corner to corner.
+///
+/// Ordered so that it starts at the side's first corner in the same rotation
+/// the wedges use — top, right, bottom, left — because the dash starts where
+/// the line does and Chrome anchors it at the corner.
+const fn side_line(centre: Rect, edge: usize) -> ((f32, f32), (f32, f32)) {
+    let (left, top) = (centre.origin.x, centre.origin.y);
+    let right = left + centre.size.width;
+    let bottom = top + centre.size.height;
+    match edge {
+        0 => ((left, top), (right, top)),
+        1 => ((right, top), (right, bottom)),
+        2 => ((right, bottom), (left, bottom)),
+        _ => ((left, bottom), (left, top)),
+    }
+}
+
+/// The dash and gap for one side, fitted to that side's own length.
+///
+/// # What Chrome does
+///
+/// **The dash keeps its nominal length and the slack goes into the gaps**, and
+/// a side begins and ends flush with a whole dash. On a 48-pixel edge at width
+/// 4 the runs are `8, 5, 8, 6, 8, 5, 8` -- four dashes of exactly `2w`, three
+/// gaps, summing to exactly 48.
+///
+/// So the count is chosen and the gap follows: `n` dashes leave `n - 1` gaps,
+/// and the gap that makes them fit is `(length - n * dash) / (n - 1)`.
+///
+/// # Choosing the count
+///
+/// The **nearest** fit, not the largest that fits. Chrome's gaps go both ways
+/// around the nominal: `5, 6, 5` on that 48-pixel edge are all wider than the
+/// nominal 4, and `4, 3, 4, 4` on a 137-pixel one include a narrower. A rule
+/// that only ever padded would be right on the first edge and wrong on the
+/// second.
+///
+/// Rounding `(length + gap) / (dash + gap)` is that rule: 52/12 rounds to four
+/// dashes on the 48 edge, and 141/12 rounds to twelve on the 137 one, which
+/// are the counts measured in both.
+///
+/// # What this does not reproduce
+///
+/// Chrome distributes the remainder **symmetrically** -- `5, 6, 5` rather than
+/// `6, 5, 5` -- and a single dash array cannot say that: every gap here is the
+/// same fractional length and the rasteriser rounds each one where it falls.
+/// The symmetry is measured on the 48-pixel edge alone, where three gaps make
+/// it plain; the longer edge was read through a sixty-pixel window that never
+/// reached its middle. Reproducing it needs a per-gap path rather than a dash
+/// pattern, and a row that reads a long edge whole to check it against.
+#[must_use]
+pub fn fitted_dash(length: f32, width: f32) -> (f32, f32) {
+    let (dash, nominal) = dash_pattern(width);
+    if dash <= 0.0 || length <= dash {
+        return (dash, nominal);
+    }
+    let count = ((length + nominal) / (dash + nominal)).round();
+    if count < 2.0 {
+        return (dash, nominal);
+    }
+    (
+        dash,
+        (count.mul_add(-dash, length) / (count - 1.0)).max(0.0),
     )
 }
 
@@ -2125,12 +2707,20 @@ fn draw_box_shadow(
 }
 
 /// Sets the fill or stroke source for a painted path.
+/// Sets a path's fill or stroke, and reports how a radial gradient among them
+/// wants its space squashed.
+///
+/// `None` for every paint but an elliptical radial, and **`None` for a
+/// stroke** whatever the gradient: the squash is a non-uniform scale of the
+/// space, which would squash the stroke's own width with it. A radial gradient
+/// stroking a path stays a circle, and that is the one place this renderer
+/// still draws v1's shape.
 fn set_paint(
     context: &mut Context2D,
     paint: &PathPaint,
     rect: Rect,
     fill: bool,
-) -> Result<(), Error> {
+) -> Result<Option<Squash>, Error> {
     match paint {
         PathPaint::Solid(color) => {
             if fill {
@@ -2140,19 +2730,79 @@ fn set_paint(
             }
         }
         PathPaint::Gradient(gradient) => {
-            let shader = build_gradient(gradient, rect)?;
+            let (shader, squash) = build_gradient(gradient, rect)?;
             if fill {
                 context.set_fill_shader(&shader);
-            } else {
-                context.set_stroke_shader(&shader);
+                return Ok(squash);
             }
+            context.set_stroke_shader(&shader);
         }
     }
-    Ok(())
+    Ok(None)
+}
+
+/// A radial gradient's two radii, from its own centre.
+///
+/// CSS's default for `radial-gradient` is **`farthest-corner ellipse`**: an
+/// ellipse with the aspect ratio of the farthest *sides* that passes through
+/// the farthest *corner*. With `dx` and `dy` the distances to the farthest
+/// side on each axis, the corner sits at `(dx, dy)`, so a ratio-preserving
+/// ellipse through it has `rx = dx * sqrt(2)` and `ry = dy * sqrt(2)`.
+///
+/// # What this replaced, and why the old comment read as true
+///
+/// It was half the box's diagonal, from the box's centre, which is
+/// `farthest-corner` **only** for a circle at the centre -- so the comment
+/// claiming `farthest-corner` was right about the intent and wrong about both
+/// the shape and the point. Measured in a 120x60 box with `at 25% 75%`, the
+/// old radius fell 31 pixels short of the far corner and the ramp held its
+/// last stop flat across everything past it.
+///
+/// # Measured against Chrome, at the mid-edges
+///
+/// ```text
+///                         left  right  top  bottom
+/// ellipse, CSS's default  0.68  0.68   0.67  0.67
+/// circle                  0.82  0.81   0.51  0.50
+/// ours before this        0.87  0.87   0.42  0.42
+/// ```
+///
+/// **The corners cannot tell the two apart** -- they are equidistant from the
+/// centre of a rectangle whichever shape is drawn -- so the mid-edges are the
+/// sample, and an ellipse is the one that reads the same at all four.
+fn radial_radii(centre: Point, rect: Rect) -> (f32, f32) {
+    let right = rect.origin.x + rect.size.width;
+    let bottom = rect.origin.y + rect.size.height;
+    let dx = (centre.x - rect.origin.x)
+        .abs()
+        .max((right - centre.x).abs());
+    let dy = (centre.y - rect.origin.y)
+        .abs()
+        .max((bottom - centre.y).abs());
+    (
+        dx * core::f32::consts::SQRT_2,
+        dy * core::f32::consts::SQRT_2,
+    )
+}
+
+/// How a radial gradient's circle is squashed into its ellipse.
+///
+/// Skia's radial shader is a circle and this binding exposes no local matrix
+/// for it, so the ellipse is made by squashing the **space** the circle is
+/// drawn in: clip to the shape, scale about the gradient's centre, fill.
+#[derive(Debug, Clone, Copy)]
+struct Squash {
+    /// The point the scale is about: the gradient's own centre.
+    centre: Point,
+    /// How much the vertical axis is compressed, `ry / rx`.
+    vertical: f32,
 }
 
 /// Builds a shader for a gradient placed against a node's box.
-fn build_gradient(gradient: &Gradient, rect: Rect) -> Result<Shader, Error> {
+fn build_gradient(
+    gradient: &Gradient,
+    rect: Rect,
+) -> Result<(Shader, Option<Squash>), Error> {
     let stops: Vec<SkiaGradientStop> = gradient
         .stops
         .iter()
@@ -2172,6 +2822,7 @@ fn build_gradient(gradient: &Gradient, rect: Rect) -> Result<Shader, Error> {
         )
     };
 
+    let mut squash = None;
     let shader = match gradient.geometry {
         GradientGeometry::Linear { direction } => {
             let (start, end) = match direction {
@@ -2191,12 +2842,18 @@ fn build_gradient(gradient: &Gradient, rect: Rect) -> Result<Shader, Error> {
             )
         }
         GradientGeometry::Radial { at } => {
-            // The radius that reaches the furthest corner, which is CSS's
-            // `farthest-corner` default for a radial gradient.
-            let radius = rect.size.width.hypot(rect.size.height) / 2.0;
+            let centre = place(at);
+            let (horizontal, vertical) = radial_radii(centre, rect);
+            // Drawn as the circle of the wider radius and squashed to the
+            // narrower one. A degenerate axis leaves it a circle rather than
+            // collapsing the fill to a line.
+            squash = (horizontal > 0.0 && vertical > 0.0).then_some(Squash {
+                centre,
+                vertical: vertical / horizontal,
+            });
             Shader::radial_gradient(
-                place(at),
-                radius,
+                centre,
+                horizontal,
                 &stops,
                 GradientInterpolation::default(),
             )
@@ -2209,7 +2866,52 @@ fn build_gradient(gradient: &Gradient, rect: Rect) -> Result<Shader, Error> {
             GradientInterpolation::default(),
         ),
     };
-    shader.map_err(|error| Error::Paint(error.to_string()))
+    let shader = shader.map_err(|error| Error::Paint(error.to_string()))?;
+    Ok((shader, squash))
+}
+
+/// Fills a shape with a gradient, squashing the space for an elliptical one.
+///
+/// A radial gradient is drawn as a circle and made elliptical by scaling the
+/// space about its centre — Skia's radial shader is a circle and this binding
+/// exposes no local matrix for it. So the shape is clipped first, in its own
+/// coordinates, and the fill that follows happens in the squashed space where
+/// the circle reads as the ellipse CSS asks for.
+///
+/// The rectangle filled under that scale is the clip's own bounds stretched by
+/// the inverse of it, which is what covers the clip however tall the squash
+/// makes it.
+fn fill_with_gradient(
+    context: &mut Context2D,
+    squash: Option<Squash>,
+    bounds: Rect,
+    shape: impl FnOnce(&mut Context2D) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let Some(squash) = squash else {
+        shape(context)?;
+        context.fill(SkiaFillRule::NonZero);
+        return Ok(());
+    };
+
+    context.save();
+    let result = (|context: &mut Context2D| {
+        shape(context)?;
+        context.clip(SkiaFillRule::NonZero);
+        context.translate(squash.centre.x, squash.centre.y);
+        context.scale(1.0, squash.vertical);
+        context.translate(-squash.centre.x, -squash.centre.y);
+        let reach = (bounds.size.height + bounds.size.width)
+            / squash.vertical.max(f32::EPSILON);
+        context.fill_rect(
+            bounds.origin.x - 1.0,
+            squash.centre.y - reach,
+            bounds.size.width + 2.0,
+            reach * 2.0,
+        );
+        Ok(())
+    })(context);
+    context.restore();
+    result
 }
 
 /// The two endpoints of a linear gradient's line.
@@ -2702,15 +3404,18 @@ fn draw_mask(
             Ok(())
         }
         Mask::Gradient(gradient) => {
-            let shader = build_gradient(gradient, rect)?;
+            let (shader, squash) = build_gradient(gradient, rect)?;
             context.set_fill_shader(&shader);
-            context.fill_rect(
-                rect.origin.x,
-                rect.origin.y,
-                rect.size.width,
-                rect.size.height,
-            );
-            Ok(())
+            fill_with_gradient(context, squash, rect, |context| {
+                context.begin_path();
+                context.rect(
+                    rect.origin.x,
+                    rect.origin.y,
+                    rect.size.width,
+                    rect.size.height,
+                );
+                Ok(())
+            })
         }
         Mask::Image(_) => {
             if let Some(image) = resolved.mask(id).map(DecodedImage::inner) {
@@ -2740,8 +3445,8 @@ mod tests {
         LinearDirection, Overflow, PositionType, SkiaFillRule, Surface,
         SurfaceOptions, device_bounds, draw, fill_box, filter_spill, fit_image,
         gradient_line, inner_box, page_scale, participants, pixel_size,
-        resolve_length, ring_path, scale_filter_lengths, to_skia_blend,
-        to_skia_color,
+        radial_radii, resolve_length, ring_path, scale_filter_lengths,
+        to_skia_blend, to_skia_color,
     };
     use crate::{
         layout::LayoutResult,
@@ -3610,6 +4315,40 @@ mod tests {
     /// runs from the outer corner point to the inner one, so swapping the two
     /// widths reflects it. Equal widths are the control -- the 45-degree
     /// mitre every bordered fixture already draws, which must not move.
+    #[test]
+    fn a_radial_gradient_is_an_ellipse_measured_from_its_own_centre() {
+        use meo_canvas_scene::Point as ScenePoint;
+        use meo_skia_canvas::Point;
+
+        let rect = Rect::new(ScenePoint::new(0.0, 0.0), Size::new(120.0, 60.0));
+
+        // Centred: CSS's farthest-corner ellipse has the farthest-side ratio
+        // and passes through the farthest corner, so each radius is that
+        // side's distance times the square root of two.
+        let (rx, ry) = radial_radii(Point::new(60.0, 30.0), rect);
+        assert!(core::f32::consts::SQRT_2.mul_add(-60.0, rx).abs() < 0.001);
+        assert!(core::f32::consts::SQRT_2.mul_add(-30.0, ry).abs() < 0.001);
+
+        // **The property that separates an ellipse from a circle**: every
+        // mid-edge sits at the same fraction along the ramp. A circle reads
+        // 0.82 and 0.51 at the same points; the four corners cannot tell them
+        // apart at all, which is why they are the wrong sample.
+        assert!(((60.0 / rx) - (30.0 / ry)).abs() < 0.001);
+
+        // Off-centre, both radii are measured from the point given. At
+        // 25% 75% of this box the centre is (30, 45), whose farthest sides
+        // are 90 across and 45 down.
+        let (rx, ry) = radial_radii(Point::new(30.0, 45.0), rect);
+        assert!(core::f32::consts::SQRT_2.mul_add(-90.0, rx).abs() < 0.001);
+        assert!(core::f32::consts::SQRT_2.mul_add(-45.0, ry).abs() < 0.001);
+
+        // A centre outside the box still measures every side: `at` is a
+        // length, not a fraction clamped to the box.
+        let (rx, ry) = radial_radii(Point::new(-40.0, -40.0), rect);
+        assert!(core::f32::consts::SQRT_2.mul_add(-160.0, rx).abs() < 0.001);
+        assert!(core::f32::consts::SQRT_2.mul_add(-100.0, ry).abs() < 0.001);
+    }
+
     #[test]
     fn a_corner_between_unequal_edges_leaves_no_gap() {
         const RADIUS: f32 = 20.0;

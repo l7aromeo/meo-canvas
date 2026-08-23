@@ -1017,3 +1017,484 @@ fn overflow_against_position_matches_chrome() {
         painted.join("\n")
     );
 }
+
+/// The truncation rows this renderer answers differently from Chrome today.
+///
+/// Keyed by the string Chrome keeps, which is the answer under test.
+///
+/// **Empty, and it held two rows that were two different defects.**
+///
+/// `Antidisestabli…` was a word with no break opportunity in it: Chrome cuts
+/// mid-word rather than overflow and we drew the whole word, 171 pixels of ink
+/// in a box 90 wide. The character-level refill was ported and correct; what
+/// was missing was **when it ran**. Truncation fired on the line count, and a
+/// word placed whole however wide it is never overflows a count. `lines.rs`
+/// now triggers on the width as well: once `max_lines` has had its say, a
+/// marked line still wider than its box is rebuilt.
+///
+/// `Flower of …` was one **space**. v1 pops trailing whitespace before the
+/// marker so it is not pushed away from the text it belongs to; Chrome keeps
+/// the longest prefix that fits and a space is part of the string. It survives
+/// only while it fits, which is the same rule and not a second one -- the line
+/// is measured with the marker on it, so the 22px row in 90 keeps its space at
+/// 89.98 wide and the 16px row in 60 does not.
+///
+/// A width comparison would have called the second a rounding argument. It is
+/// a content difference, which is why this table is measured as a string.
+const KNOWN_ELLIPSIS: &[&str] = &[];
+
+/// The font every ellipsis case is measured in, and the file behind it.
+const ELLIPSIS_FONT: (&str, &str) = (
+    "Fixture",
+    "../meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf",
+);
+
+/// How wide the ink of one line is, in whole pixels, or `None` if there is
+/// none.
+///
+/// The comparison this feeds is **structural**: Chrome's rasteriser is not
+/// ours, so what is compared is which glyphs were drawn rather than which
+/// pixels. A line truncated by a word boundary and one truncated by character
+/// differ by a whole word, which is far outside any antialiasing margin.
+fn ink_width(text: &str, size: f32, width: Option<f32>) -> Option<f32> {
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    renderer
+        .register_font(ELLIPSIS_FONT.0, ELLIPSIS_FONT.1)
+        .unwrap_or_else(|error| {
+            unreachable!("the font did not register: {error}")
+        });
+
+    let mut line =
+        meo_canvas::Text::rich([(text.to_owned(), meo_canvas::Style::new())])
+            .font_family(ELLIPSIS_FONT.0)
+            .font_size(size)
+            .color(Color::rgb(0, 0, 0));
+    // A width only where the case truncates. Without one the reference line
+    // needs room not to wrap -- a text node left to shrink wraps into the
+    // column it is given, and the ink of three stacked lines is not the ink of
+    // one. That mistake made every reference here read 52 pixels wide.
+    line = match width {
+        Some(width) => line.width(px(width)).max_lines(1).ellipsis("…"),
+        None => line.width(px(380.0)),
+    };
+
+    let mut canvas = Root::new(400.0, 80.0)
+        .background_color(hex_rgb(0xff_ff_ff))
+        .children(line)
+        .render(&renderer)
+        .unwrap_or_else(|error| {
+            unreachable!("the scene did not render: {error}")
+        });
+    let bytes = canvas.to_buffer(Format::Raw).unwrap_or_else(|error| {
+        unreachable!("the canvas did not encode: {error}")
+    });
+
+    // 128 in the red channel, stated here because a threshold is part of a
+    // measurement: 240 counts an off-white background as ink and 128 does not.
+    let mut left = None;
+    let mut right = 0_usize;
+    for y in 0..80_usize {
+        for x in 0..400_usize {
+            if bytes[(y * 400 + x) * 4] < 128 {
+                left = Some(left.map_or(x, |found: usize| found.min(x)));
+                right = right.max(x);
+            }
+        }
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "an ink span of a 400-pixel page is exact in an f32"
+    )]
+    left.map(|left| (right - left + 1) as f32)
+}
+
+#[test]
+fn what_a_truncated_line_keeps_matches_chrome() {
+    let text = include_str!("assets/chrome/ellipsis.tsv");
+    let mut wrong = Vec::new();
+    let mut compared = 0_usize;
+
+    for line in text.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let (Some(size), Some(width)) = (
+            fields.get(1).and_then(|f| f.parse::<f32>().ok()),
+            fields.get(2).and_then(|f| f.parse::<f32>().ok()),
+        ) else {
+            continue;
+        };
+        let source = fields[0].trim_matches('"');
+        let drawn = fields[4].trim_matches('"');
+
+        // Chrome's answer, drawn whole, against ours drawn under the width
+        // that truncates it. Equal ink means we kept the same glyphs.
+        let Some(theirs) = ink_width(drawn, size, None) else {
+            continue;
+        };
+        let Some(ours) = ink_width(source, size, Some(width)) else {
+            wrong.push(format!("{drawn:?} at {width}: we drew nothing at all"));
+            continue;
+        };
+        compared += 1;
+
+        // Two pixels: the same glyphs shaped by two engines land within
+        // rounding of each other, and one word of difference is twenty or
+        // more. The tolerance is wide enough to ignore the first and far too
+        // narrow to admit the second.
+        let known = KNOWN_ELLIPSIS.contains(&drawn);
+        let apart = (ours - theirs).abs() > 2.0;
+        if apart && !known {
+            wrong.push(format!(
+                "at {size}px in {width}: Chrome keeps {drawn:?} at {theirs} wide, our ink is {ours}"
+            ));
+        }
+        if !apart && known {
+            wrong.push(format!(
+                "{drawn:?} now agrees with Chrome. That is a fix -- delete the row from KNOWN_ELLIPSIS"
+            ));
+        }
+    }
+
+    assert!(compared > 0, "the ellipsis table has no rows to compare");
+    assert!(
+        wrong.is_empty(),
+        "{} rows differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+    eprintln!("ellipsis: {compared} rows compared against Chrome");
+}
+
+/// The three children every flex case lays out, and the colour each is drawn
+/// in.
+///
+/// Sized by a **spacer inside them** rather than by a height of their own,
+/// which is what gives `Align::Stretch` something to change: an item with its
+/// own height stretches to the height it already had, and a matrix built that
+/// way reports one of its five alignments as a duplicate of another.
+const FLEX_CHILDREN: [(f32, f32, Color); 3] = [
+    (24.0, 20.0, Color::rgb(220, 40, 40)),
+    (30.0, 32.0, Color::rgb(40, 80, 220)),
+    (20.0, 44.0, Color::rgb(40, 140, 60)),
+];
+
+/// The container every flex case is laid out in.
+const FLEX_BOX: (f32, f32) = (160.0, 80.0);
+
+/// The rows we answer differently from Chrome today.
+///
+/// **Empty: all thirty cases agree**, baseline included — and that last part
+/// is worth reading carefully rather than as good news.
+///
+/// I pinned `baseline` here before running it, expecting the defect
+/// `fixtures/baseline-alignment` pins: taffy discards a **measured leaf's**
+/// baseline and reads the missing value as the leaf's height. These children
+/// are boxes with no text in them, and a box's baseline *is* its bottom margin
+/// edge — in Chrome as much as here — so the defect cannot appear in this
+/// matrix at all. The rows agreeing says our flex alignment is right; it says
+/// nothing about baselines, and a reader who took thirty green rows as
+/// covering `Align::Baseline` would be wrong.
+///
+/// The text case is a fixture, where it belongs, and it is still red.
+const KNOWN_FLEX: &[&str] = &[];
+
+/// The `Justify` a table's name asks for.
+fn justify_of(name: &str) -> meo_canvas::Justify {
+    match name {
+        "flex-end" => meo_canvas::Justify::FlexEnd,
+        "center" => meo_canvas::Justify::Center,
+        "space-between" => meo_canvas::Justify::SpaceBetween,
+        "space-around" => meo_canvas::Justify::SpaceAround,
+        "space-evenly" => meo_canvas::Justify::SpaceEvenly,
+        _ => meo_canvas::Justify::FlexStart,
+    }
+}
+
+/// The `Align` a table's name asks for.
+fn align_of(name: &str) -> meo_canvas::Align {
+    match name {
+        "flex-end" => meo_canvas::Align::FlexEnd,
+        "center" => meo_canvas::Align::Center,
+        "stretch" => meo_canvas::Align::Stretch,
+        "baseline" => meo_canvas::Align::Baseline,
+        _ => meo_canvas::Align::FlexStart,
+    }
+}
+
+/// Each child's rectangle, relative to the container, as we lay them out.
+///
+/// Read from the pixels because that is the currency both sides can be asked
+/// in: Chrome reports a layout rectangle and we have no such API, but a child
+/// drawn in a colour of its own has a bounding box, and the two are the same
+/// number when the layout agrees.
+fn flex_rects(justify: &str, align: &str) -> Vec<[f32; 4]> {
+    let children: Vec<Element> = FLEX_CHILDREN
+        .iter()
+        .map(|(width, content, ink)| {
+            BoxNode::new()
+                .width(px(*width))
+                .background_color(*ink)
+                // The spacer, which gives the child a height without setting
+                // one.
+                .children(BoxNode::new().height(px(*content)))
+        })
+        .collect();
+
+    let page = render(
+        FLEX_BOX,
+        BoxNode::new()
+            .size(px(FLEX_BOX.0), px(FLEX_BOX.1))
+            .justify_content(justify_of(justify))
+            .align_items(align_of(align))
+            .children(children),
+    );
+
+    FLEX_CHILDREN
+        .iter()
+        .map(|(_, _, ink)| {
+            page.extent(*ink).map_or([-1.0, -1.0, -1.0, -1.0], |found| {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a coordinate on a 160-pixel page is exact in an f32"
+                )]
+                [
+                    found.0 as f32,
+                    found.1 as f32,
+                    (found.2 - found.0 + 1) as f32,
+                    (found.3 - found.1 + 1) as f32,
+                ]
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn flex_alignment_matches_chrome() {
+    let text = include_str!("assets/chrome/flex-alignment.tsv");
+    let mut wrong = Vec::new();
+    let mut compared = 0_usize;
+    let mut cases: BTreeMap<(String, String), Vec<[f32; 4]>> = BTreeMap::new();
+
+    for line in text.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        // The wrapping rows live in the same file under a second shape, and
+        // this walker lays out three children where they have six: without
+        // this it reads `six-children` as an alignment and reports three
+        // rectangles against Chrome's six.
+        if fields.len() < 7 || fields[1] == "six-children" {
+            continue;
+        }
+        let numbers: Vec<f32> = fields[3..7]
+            .iter()
+            .filter_map(|field| field.parse().ok())
+            .collect();
+        if numbers.len() != 4 {
+            continue;
+        }
+        cases
+            .entry((fields[0].to_owned(), fields[1].to_owned()))
+            .or_default()
+            .push([numbers[0], numbers[1], numbers[2], numbers[3]]);
+    }
+
+    for ((justify, align), theirs) in &cases {
+        let ours = flex_rects(justify, align);
+        let known = KNOWN_FLEX.contains(&align.as_str());
+        // A pixel of tolerance: a bounding box read from ink is the box the
+        // colour covers, and a layout rectangle is where the box was put.
+        let apart = ours.iter().zip(theirs.iter()).any(|(ours, theirs)| {
+            ours.iter()
+                .zip(theirs.iter())
+                .any(|(ours, theirs)| (ours - theirs).abs() > 1.0)
+        });
+        compared += 1;
+
+        if apart && !known {
+            wrong.push(format!(
+                "{justify} | {align}: we lay the children out at {ours:?}, Chrome at {theirs:?}"
+            ));
+        }
+        if !apart && known {
+            wrong.push(format!(
+                "{justify} | {align}: now agrees with Chrome. That is a fix -- delete the row from KNOWN_FLEX"
+            ));
+        }
+    }
+
+    assert!(compared > 0, "the flex table has no cases to compare");
+    assert!(
+        wrong.is_empty(),
+        "{} cases differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+    eprintln!(
+        "flex alignment: {compared} cases compared, {} pinned",
+        KNOWN_FLEX.len()
+    );
+}
+
+/// The six children the wrapping cases lay out, each in a colour of its own.
+///
+/// Six colours rather than the matrix's three repeated: a child is located by
+/// its ink, and two children sharing a colour would report one bounding box
+/// covering both. The widths and contents are the matrix's three, twice.
+const FLEX_SIX: [(f32, f32, Color); 6] = [
+    (24.0, 20.0, Color::rgb(220, 40, 40)),
+    (30.0, 32.0, Color::rgb(40, 80, 220)),
+    (20.0, 44.0, Color::rgb(40, 140, 60)),
+    (24.0, 20.0, Color::rgb(230, 160, 30)),
+    (30.0, 32.0, Color::rgb(150, 60, 190)),
+    (20.0, 44.0, Color::rgb(30, 170, 180)),
+];
+
+/// The box the wrapping cases use: narrow enough that six children cannot fit.
+const FLEX_WRAP_BOX: (f32, f32) = (88.0, 56.0);
+
+/// The page that box is drawn on.
+///
+/// **Taller than the box**, because a wrapped line can fall outside its
+/// container: Chrome puts `wrap`'s second line at `y = 44` in a box 56 tall
+/// and `wrap-reverse`'s at `y = -32`, so both overflow. Measured on a page the
+/// size of the box, the overflowing halves are not there to find and read as
+/// children we failed to place -- which is what this walker reported before
+/// the page grew.
+const FLEX_WRAP_PAGE: (f32, f32) = (88.0, 200.0);
+
+/// Where the container sits on that page, so a line above it is still drawn.
+const FLEX_WRAP_AT: f32 = 72.0;
+
+/// Which wrapping cases we answer differently from Chrome today.
+///
+/// **One, and it is where the two lines sit rather than whether they exist.**
+/// `wrap` agrees exactly: line one at `y = 0` and line two at `y = 44`, both
+/// 44 tall in a box 56 tall, so the second overflows in Chrome and here alike.
+/// `wrap-reverse` reverses the stack in both, and the two disagree about where
+/// the pair is placed: Chrome puts it at `y = -32` and `y = 12`, bottom-
+/// aligned so the *last* line ends at the box's bottom edge; we put it at
+/// `y = 44` and `y = 0`, which is the same reversal packed from the top.
+/// Thirty-two pixels, one property -- how a reversed line stack is aligned in
+/// a container taller than it.
+///
+/// **This list held both cases an hour ago and the first was my measurement.**
+/// The page was the size of the box, so a line at `y = 44` in a box 56 tall
+/// had 12 of its 44 rows on the page and the other 32 nowhere -- and a child
+/// two thirds missing reads as a child that was never placed. The page is
+/// taller than the box now and the container is offset down it, so a line
+/// above the box is drawn rather than lost.
+/// **Empty, and it held `wrap-reverse` until the alignment was fixed.** taffy
+/// applies css-align-3's *safe* fallback when a distributed alignment
+/// overflows, which throws the reversal away at exactly the moment it would
+/// push content out of the box; Chrome keeps it. `layout.rs` shifts the stack
+/// after the solve, in `bottom_align_reversed_wraps`, and all three cases now
+/// agree.
+const KNOWN_WRAP: &[&str] = &[];
+
+/// Each child's rectangle when six of them are wrapped in a narrow box.
+fn wrap_rects(wrap: &str) -> Vec<[f32; 4]> {
+    let children: Vec<Element> = FLEX_SIX
+        .iter()
+        .map(|(width, content, ink)| {
+            BoxNode::new()
+                .width(px(*width))
+                .background_color(*ink)
+                .children(BoxNode::new().height(px(*content)))
+        })
+        .collect();
+
+    let page = render(
+        FLEX_WRAP_PAGE,
+        BoxNode::new()
+            .position_type(PositionType::Absolute)
+            .position(sides(Some(px(FLEX_WRAP_AT)), None, None, Some(px(0.0))))
+            .size(px(FLEX_WRAP_BOX.0), px(FLEX_WRAP_BOX.1))
+            .flex_wrap(match wrap {
+                "wrap" => meo_canvas::FlexWrap::Wrap,
+                "wrap-reverse" => meo_canvas::FlexWrap::WrapReverse,
+                _ => meo_canvas::FlexWrap::NoWrap,
+            })
+            .children(children),
+    );
+
+    FLEX_SIX
+        .iter()
+        .map(|(_, _, ink)| {
+            page.extent(*ink).map_or([-1.0, -1.0, -1.0, -1.0], |found| {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a coordinate on an 88-pixel page is exact in an f32"
+                )]
+                [
+                    found.0 as f32,
+                    found.1 as f32 - FLEX_WRAP_AT,
+                    (found.2 - found.0 + 1) as f32,
+                    (found.3 - found.1 + 1) as f32,
+                ]
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn flex_wrapping_matches_chrome() {
+    let text = include_str!("assets/chrome/flex-alignment.tsv");
+    let mut wrong = Vec::new();
+    let mut cases: BTreeMap<String, Vec<[f32; 4]>> = BTreeMap::new();
+
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 7 || fields.get(1) != Some(&"six-children") {
+            continue;
+        }
+        let numbers: Vec<f32> = fields[3..7]
+            .iter()
+            .filter_map(|field| field.parse().ok())
+            .collect();
+        if numbers.len() == 4 {
+            cases
+                .entry(fields[0].to_owned())
+                .or_default()
+                .push([numbers[0], numbers[1], numbers[2], numbers[3]]);
+        }
+    }
+
+    for (wrap, theirs) in &cases {
+        let ours = wrap_rects(wrap);
+        let known = KNOWN_WRAP.contains(&wrap.as_str());
+        let apart = ours.iter().zip(theirs.iter()).any(|(ours, theirs)| {
+            ours.iter()
+                .zip(theirs.iter())
+                .any(|(ours, theirs)| (ours - theirs).abs() > 1.0)
+        });
+
+        if apart && !known {
+            wrong.push(format!(
+                "{wrap}: we lay the six children out at {ours:?}, Chrome at {theirs:?}"
+            ));
+        }
+        if !apart && known {
+            wrong.push(format!(
+                "{wrap}: now agrees with Chrome. That is a fix -- delete the row from KNOWN_WRAP"
+            ));
+        }
+    }
+
+    assert!(!cases.is_empty(), "the flex table has no wrapping cases");
+    assert!(
+        wrong.is_empty(),
+        "{} cases differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+    eprintln!(
+        "flex wrapping: {} cases compared, {} pinned",
+        cases.len(),
+        KNOWN_WRAP.len()
+    );
+}

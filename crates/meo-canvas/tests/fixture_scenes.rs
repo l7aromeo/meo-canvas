@@ -16,14 +16,14 @@
 //! scene change that happens to render the same slip through.
 
 use meo_canvas::{
-    Align, Box as BoxNode, Display, FlexDirection, Image, Justify, ObjectFit,
-    Overflow, PositionType, Root, Styled, Text, corners, corners_all, hex_rgb,
-    px,
+    Align, Box as BoxNode, Display, Element, FlexDirection, FlexWrap, Image,
+    Justify, ObjectFit, Overflow, Path, PositionType, Root, Styled, Text,
+    corners, corners_all, hex_rgb, px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BoxShadow, Color,
         Corners, Dimension, FillRule, FontWeight, Gradient, GradientGeometry,
         GradientStop, ImageSource, Length, LinearDirection, Mask, MaskShape,
-        Scene, Sides, VerticalAlign, codec,
+        PathPaint, Scene, Sides, VerticalAlign, codec,
     },
     sides,
 };
@@ -47,6 +47,10 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("vertical-align", vertical_align()),
         ("background-tiling", background_tiling()),
         ("borders-square", borders_square()),
+        ("gradient-as-paint", gradient_as_paint()),
+        ("gradient-linear", gradient_linear()),
+        ("blend-modes", blend_modes()),
+        ("flex-alignment", flex_alignment()),
     ]
 }
 
@@ -874,6 +878,482 @@ fn borders_square() -> Scene {
                 .name("rounded - CONTROL, the branch that was always right"),
             cell(corners_all(0.0), sides(2.0, 10.0, 6.0, 14.0))
                 .name("square, per-edge widths - the third branch"),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// One gradient in each of the four roles a gradient has, over their controls.
+///
+/// **Three of these four code paths are drawn by no other fixture.** A
+/// gradient reaches the shader as a background, as a path's fill, as a path's
+/// stroke and as a mask, and only the first has ever been in a picture -- which
+/// is the shape of both defects that got past every gate this week: a branch
+/// nothing drew.
+///
+/// The cells are **72 by 48 rather than square**, and the ramp runs left to
+/// right. A square cell with a diagonal ramp is the arrangement that hides an
+/// axis swap, which is the fault the whole gradient sweep exists to catch.
+///
+/// The second row is the control for the first, one cell under the other: the
+/// same four roles painted in a flat colour, except the mask, whose control is
+/// the same box **unmasked** -- a mask has no flat equivalent, and what its
+/// cell has to be read against is the shape it was applied to.
+fn gradient_as_paint() -> Scene {
+    let ramp = || {
+        vec![
+            GradientStop {
+                offset: 0.0,
+                color: hex_rgb(0xf0_3c_3c),
+            },
+            GradientStop {
+                offset: 0.5,
+                color: hex_rgb(0xfa_d2_3c),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: hex_rgb(0x28_5a_d2),
+            },
+        ]
+    };
+    // Left to right, so the ramp crosses the long axis of the cell and a
+    // direction read off the wrong axis is a different picture rather than a
+    // rotated one.
+    let across = || Gradient {
+        geometry: GradientGeometry::Linear {
+            direction: LinearDirection::Angle(90.0),
+        },
+        stops: ramp(),
+    };
+    // The same geometry as an alpha ramp, which is what a mask reads.
+    let fade = || Gradient {
+        geometry: GradientGeometry::Linear {
+            direction: LinearDirection::Angle(90.0),
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::rgba(0, 0, 0, 0xff),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::rgba(0, 0, 0, 0x00),
+            },
+        ],
+    };
+
+    let cell = || {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(72.0), px(48.0))
+            .background_color(hex_rgb(0xf4_f4_f6))
+    };
+    // A triangle rather than a rectangle: a path filled with a gradient and a
+    // box painted with one would be the same picture in a rectangle, and the
+    // point of these two cells is that they are different code.
+    let triangle = "M6 42 L36 6 L66 42 Z";
+    let path = || {
+        Path::d(triangle)
+            .position_type(PositionType::Relative)
+            .size(px(72.0), px(48.0))
+    };
+
+    Root::new(328.0, 128.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .flex_direction(FlexDirection::Column)
+        .gap_xy(px(8.0), px(8.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("one gradient in four roles, over four controls. See notes.json.")
+        .children([
+            gradient_roles(&cell, &path, &across, &fade),
+            flat_roles(&cell, &path),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// The row where every role takes the gradient.
+fn gradient_roles(
+    cell: &dyn Fn() -> Element,
+    path: &dyn Fn() -> Element,
+    across: &dyn Fn() -> Gradient,
+    fade: &dyn Fn() -> Gradient,
+) -> Element {
+    BoxNode::new()
+        .position_type(PositionType::Relative)
+        .gap_xy(px(0.0), px(8.0))
+        .children([
+            cell().gradient(across()).name("background"),
+            cell().children(
+                path()
+                    .fill(Some(PathPaint::Gradient(across())))
+                    .name("path fill"),
+            ),
+            cell().children(
+                path()
+                    .fill(None)
+                    .stroke(Some(PathPaint::Gradient(across())))
+                    .line_width(8.0)
+                    .name("path stroke"),
+            ),
+            cell()
+                .background_color(hex_rgb(0x28_5a_d2))
+                .mask(Mask::Gradient(fade()))
+                .name("mask"),
+        ])
+}
+
+/// The control row: the same four roles in one flat colour, and the mask cell
+/// unmasked -- a mask has no flat equivalent, so what its cell is read against
+/// is the shape it was applied to.
+fn flat_roles(
+    cell: &dyn Fn() -> Element,
+    path: &dyn Fn() -> Element,
+) -> Element {
+    let flat = hex_rgb(0xfa_d2_3c);
+    BoxNode::new()
+        .position_type(PositionType::Relative)
+        .gap_xy(px(0.0), px(8.0))
+        .children([
+            cell()
+                .background_color(flat)
+                .name("CONTROL flat background"),
+            cell().children(
+                path()
+                    .fill(Some(PathPaint::Solid(flat)))
+                    .name("CONTROL flat path fill"),
+            ),
+            cell().children(
+                path()
+                    .fill(None)
+                    .stroke(Some(PathPaint::Solid(flat)))
+                    .line_width(8.0)
+                    .name("CONTROL flat path stroke"),
+            ),
+            cell()
+                .background_color(hex_rgb(0x28_5a_d2))
+                .name("CONTROL the same box unmasked"),
+        ])
+}
+
+/// A linear gradient in each direction it can be given, plus the two forms.
+///
+/// **The axis-aligned directions are the ones an always-diagonal fixture never
+/// exercises.** `gradients` draws one linear cell, at 45 degrees, in a square
+/// box -- the single arrangement in which an implementation that swapped its
+/// axes would look right. Four cells here run up, right, down and left, and a
+/// fifth runs at 30 degrees so the arithmetic is not symmetric either.
+///
+/// **`Angle(0.0)` points up**, measured clockwise from twelve o'clock, which
+/// is CSS's convention and Chrome's measured behaviour. Nothing proved that
+/// before this fixture: an implementation with the sign flipped would be
+/// self-consistent and wrong, and the first cell is here to pin the sign
+/// rather than to look interesting.
+///
+/// The last two cells take `LinearDirection::Between`, which is v1's
+/// `[x0, y0, x1, y1]` and a different code path from an angle: one spanning
+/// the box, one **stopping short** at the middle, where the ramp has to finish
+/// before the box does and the remainder takes the last stop's colour. That
+/// form has no CSS spelling, so those two are ours to decide rather than
+/// Chrome's to answer.
+fn gradient_linear() -> Scene {
+    // Two stops rather than three: a direction is read from where the ends
+    // are, and a midpoint would only add a colour to describe.
+    let ends = || {
+        vec![
+            GradientStop {
+                offset: 0.0,
+                color: hex_rgb(0xf0_3c_3c),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: hex_rgb(0x28_5a_d2),
+            },
+        ]
+    };
+    let cell = |geometry: GradientGeometry| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            // 88 by 56: a direction read off the wrong axis lands somewhere a
+            // square cell would have hidden.
+            .size(px(88.0), px(56.0))
+            .gradient(Gradient {
+                geometry,
+                stops: ends(),
+            })
+    };
+    let angle = |degrees: f32| {
+        cell(GradientGeometry::Linear {
+            direction: LinearDirection::Angle(degrees),
+        })
+    };
+    let between = |start, end| {
+        cell(GradientGeometry::Linear {
+            direction: LinearDirection::Between { start, end },
+        })
+    };
+    let row = |children: Vec<Element>| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .gap_xy(px(0.0), px(8.0))
+            .children(children)
+    };
+
+    Root::new(392.0, 136.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .flex_direction(FlexDirection::Column)
+        .gap_xy(px(8.0), px(0.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("linear gradients: four axes, an odd angle, and both forms. See notes.json.")
+        .children([
+            row(vec![
+                angle(0.0).name("0deg - red at the BOTTOM, this cell pins the sign"),
+                angle(90.0).name("90deg - to the right"),
+                angle(180.0).name("180deg - to the bottom"),
+                angle(270.0).name("270deg - to the left"),
+            ]),
+            row(vec![
+                angle(30.0).name("30deg - not symmetric, unlike 45"),
+                between(
+                    (Length::Percent(0.0), Length::Percent(0.0)),
+                    (Length::Percent(1.0), Length::Percent(0.5)),
+                )
+                .name("between: corner to mid-right"),
+                between(
+                    (Length::Percent(0.0), Length::Percent(0.0)),
+                    (Length::Percent(0.5), Length::Percent(0.5)),
+                )
+                .name("between: stops short, the rest takes the last stop"),
+                // Two stops of one colour: whatever the geometry does, this
+                // cell is flat. It is what says a difference between the other
+                // seven is the direction and not the ramp.
+                cell(GradientGeometry::Linear {
+                    direction: LinearDirection::Angle(30.0),
+                })
+                .gradient(Gradient {
+                    geometry: GradientGeometry::Linear {
+                        direction: LinearDirection::Angle(30.0),
+                    },
+                    stops: vec![
+                        GradientStop {
+                            offset: 0.0,
+                            color: hex_rgb(0xf0_3c_3c),
+                        },
+                        GradientStop {
+                            offset: 1.0,
+                            color: hex_rgb(0xf0_3c_3c),
+                        },
+                    ],
+                })
+                .name("CONTROL one colour twice - flat whatever the angle"),
+            ]),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// Every `BlendMode`, each over the same backdrop, with the backdrop alone.
+///
+/// **Fourteen of the sixteen are drawn by nothing else in this project.** The
+/// showcase draws `Multiply` and `Difference`; no fixture draws any of them,
+/// and a control pair can only say that a mode changed the picture -- not that
+/// `Screen` is `Screen` rather than `Lighten`, which on many backdrops looks
+/// nearly the same.
+///
+/// The backdrop is a **ramp**, not a flat colour, and the source square is a
+/// mid-tone. A blend mode on a flat backdrop collapses several of these onto
+/// each other: `Multiply` and `Darken` agree wherever the backdrop is lighter
+/// than the source, and `Screen` and `Lighten` agree wherever it is darker, so
+/// a flat cell would prove far less than it appears to. The ramp puts both
+/// halves of every one of those pairs in the same cell.
+///
+/// The last cell is the backdrop with **no source at all**, which is what
+/// `Normal` has to be read against: a mode that drew nothing would otherwise
+/// look like a mode that drew the backdrop back.
+fn blend_modes() -> Scene {
+    use meo_canvas::scene::BlendMode;
+
+    let backdrop = || Gradient {
+        geometry: GradientGeometry::Linear {
+            direction: LinearDirection::Angle(90.0),
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: hex_rgb(0x18_18_38),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: hex_rgb(0xf0_e0_a0),
+            },
+        ],
+    };
+    let cell = |mode: Option<BlendMode>| {
+        let mut source = BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(36.0), px(24.0))
+            .margin(sides(px(8.0), px(0.0), px(0.0), px(10.0)))
+            .background_color(hex_rgb(0x40_90_c0));
+        if let Some(mode) = mode {
+            source = source.mix_blend_mode(mode);
+        }
+        let cell = BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(56.0), px(40.0))
+            .gradient(backdrop());
+        match mode {
+            None => cell,
+            Some(_) => cell.children(source),
+        }
+    };
+    let row = |children: Vec<Element>| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .gap_xy(px(0.0), px(6.0))
+            .children(children)
+    };
+
+    Root::new(382.0, 148.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .flex_direction(FlexDirection::Column)
+        .gap_xy(px(6.0), px(0.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("every blend mode over one ramp. See notes.json.")
+        .children([
+            row(vec![
+                cell(Some(BlendMode::Normal)).name("normal"),
+                cell(Some(BlendMode::Multiply)).name("multiply"),
+                cell(Some(BlendMode::Screen)).name("screen"),
+                cell(Some(BlendMode::Overlay)).name("overlay"),
+                cell(Some(BlendMode::Darken)).name("darken"),
+                cell(Some(BlendMode::Lighten)).name("lighten"),
+            ]),
+            row(vec![
+                cell(Some(BlendMode::ColorDodge)).name("color-dodge"),
+                cell(Some(BlendMode::ColorBurn)).name("color-burn"),
+                cell(Some(BlendMode::HardLight)).name("hard-light"),
+                cell(Some(BlendMode::SoftLight)).name("soft-light"),
+                cell(Some(BlendMode::Difference)).name("difference"),
+                cell(Some(BlendMode::Exclusion)).name("exclusion"),
+            ]),
+            row(vec![
+                cell(Some(BlendMode::Hue)).name("hue"),
+                cell(Some(BlendMode::Saturation)).name("saturation"),
+                cell(Some(BlendMode::Color)).name("color"),
+                cell(Some(BlendMode::Luminosity)).name("luminosity"),
+                cell(None).name("CONTROL the backdrop with no source"),
+            ]),
+        ])
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// Five cross-axis alignments and the wrapping the matrix cannot show.
+///
+/// The thirty-row Chrome table beside this covers every `justify_content`
+/// against every `align_items`, so what a picture adds is the part a table of
+/// rectangles does not: **`Stretch` and `Wrap` are the two that change a
+/// child's own size**, and a reader can see that in one glance and would have
+/// to reconstruct it from ninety numbers.
+///
+/// The children are sized by a **spacer inside them** rather than by a height
+/// of their own. An item with its own height stretches to exactly the height
+/// it already had, so a row built that way draws `Stretch` as a copy of
+/// `FlexStart` and claims to have covered it.
+fn flex_alignment() -> Scene {
+    let child = |width: f32, content: f32, ink: Color| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .width(px(width))
+            .background_color(ink)
+            .children(
+                BoxNode::new()
+                    .position_type(PositionType::Relative)
+                    .height(px(content)),
+            )
+    };
+    let children = || {
+        vec![
+            child(24.0, 20.0, hex_rgb(0xdc_28_28)),
+            child(30.0, 32.0, hex_rgb(0x28_50_dc)),
+            child(20.0, 44.0, hex_rgb(0x28_8c_3c)),
+        ]
+    };
+    // Six children in six DISTINCT colours. The first version of these two
+    // cells drew the three above twice, and two lines of identical colours in
+    // identical columns are one picture: the wrap cell and the wrap-reverse
+    // cell came out pixel-identical, and a per-colour bounding box merged the
+    // two lines into one. It read as "wrapping does nothing" and wrapping was
+    // working. A cell has to be able to tell its children apart before it can
+    // say where they went.
+    let six = || {
+        vec![
+            child(24.0, 20.0, hex_rgb(0xdc_28_28)),
+            child(30.0, 32.0, hex_rgb(0x28_50_dc)),
+            child(20.0, 44.0, hex_rgb(0x28_8c_3c)),
+            child(24.0, 20.0, hex_rgb(0xe6_a0_1e)),
+            child(30.0, 32.0, hex_rgb(0x96_3c_be)),
+            child(20.0, 44.0, hex_rgb(0x1e_aa_b4)),
+        ]
+    };
+    let cell = |align: Align| {
+        BoxNode::new()
+            .position_type(PositionType::Relative)
+            .size(px(88.0), px(56.0))
+            .background_color(hex_rgb(0xf0_f0_f4))
+            .align_items(align)
+            .justify_content(Justify::SpaceBetween)
+            .children(children())
+    };
+
+    Root::new(392.0, 136.0)
+        .position_type(PositionType::Relative)
+        .padding(px(8.0))
+        .flex_direction(FlexDirection::Column)
+        .gap_xy(px(8.0), px(0.0))
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("the five cross-axis alignments, and wrapping. See notes.json.")
+        .children([
+            BoxNode::new()
+                .position_type(PositionType::Relative)
+                .gap_xy(px(0.0), px(8.0))
+                .children([
+                    cell(Align::FlexStart).name("flex-start"),
+                    cell(Align::Center).name("center"),
+                    cell(Align::FlexEnd).name("flex-end"),
+                    cell(Align::Stretch).name("stretch - the one that resizes"),
+                ]),
+            BoxNode::new()
+                .position_type(PositionType::Relative)
+                .gap_xy(px(0.0), px(8.0))
+                .children([
+                    cell(Align::Baseline).name("baseline - on boxes, the bottom edge"),
+                    // Wrap needs more children than fit, so this cell has six.
+                    BoxNode::new()
+                        .position_type(PositionType::Relative)
+                        .size(px(88.0), px(56.0))
+                        .background_color(hex_rgb(0xf0_f0_f4))
+                        .flex_wrap(FlexWrap::Wrap)
+                        .children(six())
+                        .name("wrap - six children in a box that fits three"),
+                    BoxNode::new()
+                        .position_type(PositionType::Relative)
+                        .size(px(88.0), px(56.0))
+                        .background_color(hex_rgb(0xf0_f0_f4))
+                        .flex_wrap(FlexWrap::WrapReverse)
+                        .children(six())
+                        .name("wrap-reverse - the same six, lines the other way up"),
+                    BoxNode::new()
+                        .position_type(PositionType::Relative)
+                        .size(px(88.0), px(56.0))
+                        .background_color(hex_rgb(0xf0_f0_f4))
+                        .flex_direction(FlexDirection::ColumnReverse)
+                        .children(children())
+                        .name("column-reverse - the axis and the order both flip"),
+                ]),
         ])
         .into_scene()
         .unwrap_or_else(|error| unreachable!("{error}"))

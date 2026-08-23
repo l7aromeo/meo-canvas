@@ -330,6 +330,24 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   }
   const arena = encodeScene(await pages(props), props.width, props.height, scale, surface)
 
+  // **Refused here, at the surface, rather than at the far end.** Nothing in
+  // this package fetches, and `meo-canvas-core` refuses a URL source by design
+  // -- it excludes network and an async runtime so that a consumer already
+  // inside a runtime is not asked to host another. So a scene naming a URL
+  // crossed the wire only to fail three layers away, with an error that named
+  // a node rather than the thing the caller wrote.
+  //
+  // Whether this surface should fetch is an open question. Refusing with the
+  // workaround named is correct under either answer: if fetching lands, this
+  // is where it goes.
+  if (arena.urls.length > 0) {
+    const [first] = arena.urls
+    throw new TypeError(
+      `this renderer does not fetch: ${JSON.stringify(first)}${arena.urls.length > 1 ? ` and ${arena.urls.length - 1} more` : ''}. ` +
+        'Fetch it yourself and pass the bytes — `{ bytes: new Uint8Array(await (await fetch(url)).arrayBuffer()) }`',
+    )
+  }
+
   const native = dependencies.renderer.paint(arena.slots, arena.values, {
     fonts: props.fonts ?? [],
   })

@@ -512,6 +512,11 @@ const PROBES: Readonly<Record<string, Style>> = {
   flex_shrink: { flexShrink: 0.25 },
   flex_wrap: { flexWrap: 'wrap' },
   font_family: { fontFamily: PROBE_STRING },
+  // `historical-forms` because the case fixture writes that variant, not
+  // because it does anything to our face: of seventeen tags swept against the
+  // repository's Oswald exactly one moves it, and a probe is about the wire
+  // rather than about the glyphs.
+  font_variant: { fontVariant: ['historical-forms'] },
   font_size: { fontSize: 0.25 },
   font_style: { fontStyle: 'italic' },
   font_weight: { fontWeight: 1 },
@@ -575,9 +580,7 @@ const PROBES: Readonly<Record<string, Style>> = {
  * `arena_group!` upstream forces a decision about its TypeScript spelling
  * instead of leaving it silently absent from every scene this package writes.
  */
-const UNSPELT: Readonly<Record<string, string>> = {
-  font_variant: 'the thirty-five OpenType features need a spelling of their own',
-}
+const UNSPELT: Readonly<Record<string, string>> = {}
 
 describe('the property tables', () => {
   it('agree with the generated ones', () => {
@@ -691,6 +694,82 @@ describe('the arena', () => {
     const arena = encodeScene([Box({ children: [Box({ fontFamily: 'Inter' }), Box({ fontFamily: 'Inter' })] })], SIZE[0], SIZE[1], SCALE)
 
     expect(arena.values).toEqual(['Inter'])
+  })
+})
+
+describe('the two grid shorthands', () => {
+  // Sugar over fields that already exist, so what these assert is that they
+  // reach the wire as **the long form and nothing new**. A shorthand that
+  // needed a slot of its own would mean the long form could not express it,
+  // which would be a finding rather than a convenience.
+  it('write exactly what the long form writes', () => {
+    expect(throughTheAddon({ columns: 3 })).toBe(throughTheAddon({ gridTemplateColumns: ['1fr', '1fr', '1fr'] }))
+    expect(throughTheAddon({ gridArea: [1, 1, 3, 2] })).toBe(throughTheAddon({ gridRow: { start: 1, span: 2 }, gridColumn: { start: 1, span: 1 } }))
+  })
+
+  it('refuse to be named beside the form they stand for', () => {
+    expect(() => throughTheAddon({ columns: 2, gridTemplateColumns: ['1fr'] })).toThrow(/not both/)
+    expect(() => throughTheAddon({ gridArea: [1, 1, 2, 2], gridRow: { start: 1 } })).toThrow(/not both/)
+    expect(() => throughTheAddon({ gridArea: [1, 1, 2, 2], gridColumn: { start: 1 } })).toThrow(/not both/)
+  })
+
+  it('refuse a count or a line that is not one', () => {
+    expect(() => throughTheAddon({ columns: 0 })).toThrow(/whole number of columns/)
+    expect(() => throughTheAddon({ columns: 2.5 })).toThrow(/whole number of columns/)
+    // An end at or before its start is an empty area, which is a mistake
+    // rather than a placement: CSS reads the pair as [start, end).
+    expect(() => throughTheAddon({ gridArea: [1, 1, 1, 2] })).toThrow(/each end past its start/)
+  })
+})
+
+describe("a gradient's eight direction keywords", () => {
+  // The scene carries an ANGLE and nothing else: `'to-bottom'` is resolved
+  // here, before anything is encoded, so the equivalence is a property of this
+  // surface rather than of the renderer. A fixture would have drawn two
+  // identical cells and proved nothing about where the resolution happened.
+  //
+  // Chrome treats the keyword and the angle as one path, which is what makes
+  // the pairing below the right assertion: not that each keyword writes *an*
+  // angle, but that it writes the SAME angle as the number a caller could have
+  // written instead.
+  it('each write the angle a caller could have written instead', () => {
+    const pairs: readonly [string, number][] = [
+      ['to-top', 0],
+      ['to-top-right', 45],
+      ['to-right', 90],
+      ['to-bottom-right', 135],
+      ['to-bottom', 180],
+      ['to-bottom-left', 225],
+      ['to-left', 270],
+      ['to-top-left', 315],
+    ]
+
+    for (const [keyword, degrees] of pairs) {
+      const ramp = {
+        stops: [
+          { offset: 0, color: '#000000' },
+          { offset: 1, color: '#ffffff' },
+        ],
+      } as const
+      const named = throughTheAddon({ gradient: { type: 'linear', direction: keyword as 'to-top', ...ramp } })
+      const numbered = throughTheAddon({ gradient: { type: 'linear', direction: degrees, ...ramp } })
+      expect(named, keyword).toBe(numbered)
+    }
+  })
+
+  it('is refused by name when it is not one of the eight', () => {
+    expect(() =>
+      throughTheAddon({
+        gradient: {
+          type: 'linear',
+          direction: 'to-nowhere' as 'to-top',
+          stops: [
+            { offset: 0, color: '#000000' },
+            { offset: 1, color: '#ffffff' },
+          ],
+        },
+      }),
+    ).toThrow(/has no direction "to-nowhere"/)
   })
 })
 

@@ -44,14 +44,14 @@
 //! looked like.
 
 use meo_canvas::{
-    Box as BoxNode, Element, Format, Renderer, Root, Style, Styled, Text,
-    hex_rgb, px,
+    Box as BoxNode, Element, Format, Image, Renderer, Root, Style, Styled,
+    Text, hex_rgb, px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-        BoxShadow, Color, Dimension, FillRule, Gradient, GradientGeometry,
-        GradientStop, ImageSource, Length, LinearDirection, Mask, MaskShape,
-        PaintOrder, TextAlign, TextDecoration, TextShadow, TextStroke,
-        Transform, VerticalAlign,
+        BorderStyle, BoxShadow, Color, Dimension, FillRule, Gradient,
+        GradientGeometry, GradientStop, ImageSource, Length, LinearDirection,
+        Mask, MaskShape, PaintOrder, TextAlign, TextDecoration, TextShadow,
+        TextStroke, Transform, VerticalAlign,
     },
     sides,
 };
@@ -245,9 +245,11 @@ fn cases() -> Vec<Case> {
     all.extend(shape_cases());
     all.extend(background_image_cases());
     all.extend(background_tiling_cases());
+    all.extend(frame_cases());
     all.extend(mask_cases());
     all.extend(text_cases());
-    all.extend(glyph_cases());
+    all.extend(font_feature_cases());
+    all.extend(glyph_paint_cases());
     all
 }
 
@@ -305,6 +307,46 @@ fn composite_cases() -> Vec<Case> {
 /// The box's own shape, the shadows it casts, and the ramp it fills with.
 fn shape_cases() -> Vec<Case> {
     vec![
+        // A border wide enough for a dash to be longer than a pixel, on a box
+        // long enough to hold several. Against `solid` rather than against no
+        // border at all: the question is whether the *style* reaches the
+        // painter, and a pair against an unbordered box would report the
+        // border.
+        Case {
+            property: "border_style",
+            with: || {
+                filled()
+                    .border(sides(4.0, 4.0, 4.0, 4.0))
+                    .border_color(hex_rgb(0x14_14_1e))
+                    .border_style(BorderStyle::Dashed)
+            },
+            without: || {
+                filled()
+                    .border(sides(4.0, 4.0, 4.0, 4.0))
+                    .border_color(hex_rgb(0x14_14_1e))
+                    .border_style(BorderStyle::Solid)
+            },
+            effect: Effect::Draws,
+        },
+        // Dotted against dashed, not against solid. Both break the line, so a
+        // renderer that dashed everything and ignored the keyword's *value*
+        // would pass the row above and fail this one.
+        Case {
+            property: "border_style dotted",
+            with: || {
+                filled()
+                    .border(sides(4.0, 4.0, 4.0, 4.0))
+                    .border_color(hex_rgb(0x14_14_1e))
+                    .border_style(BorderStyle::Dotted)
+            },
+            without: || {
+                filled()
+                    .border(sides(4.0, 4.0, 4.0, 4.0))
+                    .border_color(hex_rgb(0x14_14_1e))
+                    .border_style(BorderStyle::Dashed)
+            },
+            effect: Effect::Draws,
+        },
         Case {
             property: "border_radius",
             with: || over(inner().border_radius(16.0)),
@@ -334,6 +376,18 @@ fn shape_cases() -> Vec<Case> {
         },
     ]
 }
+
+/// A two-frame animation: frame 0 solid red, frame 1 solid blue.
+///
+/// **Solid colours a channel apart, and deliberately.** A frame index that
+/// reached nothing would draw frame 0 whatever the scene asked for, so the two
+/// frames have to differ in a way no rounding could produce -- an animation
+/// whose frames looked alike would pin "the property did nothing" exactly as
+/// an opaque mask asset nearly did.
+///
+/// Written by this repository's own encoder rather than by hand: 107 bytes,
+/// two pages at two frames a second.
+const TWO_FRAMES: &[u8] = include_bytes!("assets/two-frames.gif");
 
 /// An 8x8 image whose left half is opaque and whose right half is clear.
 ///
@@ -452,6 +506,19 @@ fn background_image_cases() -> Vec<Case> {
             effect: Effect::Draws,
         },
     ]
+}
+
+/// Which frame of an animated source is drawn.
+///
+/// Its own case rather than a row above, because the subject is an `Image`
+/// node and every background row is a `Box`.
+fn frame_cases() -> Vec<Case> {
+    vec![Case {
+        property: "image frame",
+        with: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)).frame(1),
+        without: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)),
+        effect: Effect::Draws,
+    }]
 }
 
 /// `Round` and `Space` against `Repeat`, on a tile the box does not divide.
@@ -605,8 +672,42 @@ fn text_cases() -> Vec<Case> {
     ]
 }
 
-/// What a paint property does to glyphs, and what the glyphs are made of.
-fn glyph_cases() -> Vec<Case> {
+/// What the font itself is asked to do, as against what is painted over it.
+fn font_feature_cases() -> Vec<Case> {
+    vec![
+        // **`DiagonalFractions`, not small caps.** Seventeen OpenType tags
+        // swept against this repository's Oswald move exactly one of them:
+        // `frac`. The face has no small-caps glyphs and nothing synthesises
+        // them, so a control written with `SmallCaps` would report a working
+        // property as dead — the opaque mask asset, one layer in.
+        //
+        // The sample is a fraction for the same reason: `1/2` is what `frac`
+        // acts on, and a string without a slash gives the feature nothing to
+        // do however well it is plumbed.
+        Case {
+            property: "font_variant",
+            with: || {
+                Text::new("1/2 3/4 5/8")
+                    .font_family(FONT.0)
+                    .font_size(14.0)
+                    .color(hex_rgb(0x14_14_1e))
+                    .font_variant([
+                        meo_canvas::scene::FontVariant::DiagonalFractions,
+                    ])
+            },
+            without: || {
+                Text::new("1/2 3/4 5/8")
+                    .font_family(FONT.0)
+                    .font_size(14.0)
+                    .color(hex_rgb(0x14_14_1e))
+            },
+            effect: Effect::Draws,
+        },
+    ]
+}
+
+/// What a paint property does to glyphs, as against what the font does.
+fn glyph_paint_cases() -> Vec<Case> {
     vec![
         Case {
             property: "text_shadow",

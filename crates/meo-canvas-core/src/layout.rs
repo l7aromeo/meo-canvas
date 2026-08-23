@@ -195,8 +195,108 @@ where
 
     let mut rects = HashMap::with_capacity(to_scene.len());
     collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects)?;
+    bottom_align_reversed_wraps(scene, page, &mut rects);
 
     Ok(LayoutResult { rects, baselines })
+}
+
+/// Moves an overflowing `wrap-reverse` line stack to the bottom of its box.
+///
+/// # The one row of the wrap table we answer differently
+///
+/// `flex-wrap: wrap-reverse` reverses the cross axis, so its lines are packed
+/// from the **bottom**. taffy reverses the line order and then packs the stack
+/// from the top whenever it overflows, which is visible only when it does:
+/// six 28x44 children in an 88x56 box give lines at `y = 0` and `44` here and
+/// `y = -32` and `12` in Chrome. Both reverse the stack; only Chrome puts the
+/// last line's bottom on the box's bottom edge and lets the first hang off the
+/// top.
+///
+/// **It is a defensible reading of the specification rather than a taffy
+/// bug.** css-align-3 says a distributed alignment that overflows falls back
+/// to a positional one with *safe* semantics, and safe alignment falls back to
+/// `start` — and taffy takes `start` as the physical start, so the reversal
+/// stops applying at exactly the moment it would push content out of the box.
+/// Chrome keeps the reversal. The browser is the baseline for behaviour, so
+/// Chrome wins and this shifts the stack after the solve.
+///
+/// # Why after, and why only in-flow children
+///
+/// taffy has no style that asks for this: `FlexStart` would lose the stretch
+/// when the lines *do* fit, and the safe fallback is applied inside the
+/// algorithm rather than chosen by a keyword. So the correction is a shift of
+/// the solved rectangles.
+///
+/// Out-of-flow children are left where they are. An absolute box resolves
+/// against its containing block's padding box, which this does not move; only
+/// the flow the wrap arranged is out of place.
+fn bottom_align_reversed_wraps(
+    scene: &Scene,
+    page: NodeId,
+    rects: &mut HashMap<NodeId, Rect>,
+) {
+    let mut pending = vec![page];
+    while let Some(id) = pending.pop() {
+        let Some(node) = scene.get(id) else { continue };
+        pending.extend(node.children.iter().copied());
+
+        if !matches!(node.layout.flex_wrap, FlexWrap::WrapReverse)
+            || !matches!(node.layout.display, Display::Flex)
+        {
+            continue;
+        }
+        let Some(rect) = rects.get(&id).copied() else {
+            continue;
+        };
+
+        let flow: Vec<NodeId> = node
+            .children
+            .iter()
+            .copied()
+            .filter(|child| {
+                scene.get(*child).is_some_and(|child| {
+                    matches!(
+                        child.layout.position_type,
+                        PositionType::Static
+                            | PositionType::Relative
+                            | PositionType::Sticky
+                    )
+                })
+            })
+            .collect();
+        let bottom = flow
+            .iter()
+            .filter_map(|child| rects.get(child))
+            .map(Rect::bottom)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        // The content box's own bottom: the border box less the edges taffy
+        // took off before it placed anything.
+        // A percentage padding resolves against the containing block's
+        // width, which for this node's own padding is its own width.
+        let padding = match node.layout.padding.bottom {
+            Length::Points(points) => points,
+            Length::Percent(fraction) => fraction * rect.size.width,
+        };
+        let inset = node.layout.border.bottom + padding;
+        let content_bottom = rect.bottom() - inset;
+        let shift = content_bottom - bottom;
+        if shift >= 0.0 {
+            continue;
+        }
+
+        // Every in-flow child, and everything inside it, since the rectangles
+        // are absolute.
+        let mut subtree: Vec<NodeId> = flow;
+        while let Some(moving) = subtree.pop() {
+            if let Some(rect) = rects.get_mut(&moving) {
+                rect.origin.y += shift;
+            }
+            if let Some(node) = scene.get(moving) {
+                subtree.extend(node.children.iter().copied());
+            }
+        }
+    }
 }
 
 /// Gives the page root the scene's extent on any axis it leaves to content.
@@ -1146,6 +1246,63 @@ mod tests {
             super::to_taffy_style(&style).inset.top,
             taffy::LengthPercentageAuto::length(30.0),
             "a relative inset is not"
+        );
+    }
+
+    #[test]
+    fn a_reversed_wrap_that_overflows_hangs_off_the_top() {
+        use meo_canvas_scene::style::layout::FlexWrap;
+
+        // Six 28x44 children in an 88x56 box: three fit across, so two lines
+        // of 44 in a box of 56. Chrome puts the last line's bottom on the
+        // box's bottom edge and lets the first hang off the top -- y = 12 and
+        // -32 -- where taffy packs the pair from y = 0.
+        let placed = |wrap: FlexWrap, height: f32| {
+            // A page far larger than the box, so a line placed above it is
+            // still measured rather than cropped: the page a thing is
+            // measured on is part of the measurement.
+            let mut scene = Scene::new(Size::new(300.0, 300.0));
+            let mut outer = Node::container();
+            outer.layout.size =
+                (Dimension::Points(88.0), Dimension::Points(height));
+            outer.layout.flex_wrap = wrap;
+            let outer = scene
+                .push(NodeId::ROOT, outer)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let mut ids = Vec::new();
+            for _ in 0..6 {
+                let mut child = Node::container();
+                child.layout.size =
+                    (Dimension::Points(28.0), Dimension::Points(44.0));
+                ids.push(
+                    scene
+                        .push(outer, child)
+                        .unwrap_or_else(|error| unreachable!("{error}")),
+                );
+            }
+            let result = solved(&scene, NodeId::ROOT);
+            let origin = result
+                .get(outer)
+                .unwrap_or_else(|| unreachable!("the box is laid out"))
+                .origin;
+            ids.into_iter()
+                .filter_map(|id| result.get(id))
+                .map(|rect| (rect.origin.y - origin.y) as i32)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            placed(FlexWrap::WrapReverse, 56.0),
+            vec![12, 12, 12, -32, -32, -32],
+            "an overflowing reversed stack sits on the bottom edge"
+        );
+        // Unreversed, and reversed where the lines fit, are taffy's and stay
+        // taffy's: the correction applies only where the safe fallback threw
+        // the reversal away.
+        assert_eq!(placed(FlexWrap::Wrap, 56.0), vec![0, 0, 0, 44, 44, 44]);
+        assert_eq!(
+            placed(FlexWrap::WrapReverse, 140.0),
+            vec![96, 96, 96, 26, 26, 26]
         );
     }
 

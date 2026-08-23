@@ -502,6 +502,35 @@ Yoga's raw defaults, a column direction with `flex-shrink: 0`, where Chrome's
 of this kind is worth a comment naming both behaviours, because the next reader
 will otherwise assume the reference was not consulted.
 
+### A property whose whole meaning is a DOM event
+
+**The two-baseline rule was not written for a property that only means
+something inside a document.** v1 is a browser-side renderer, so a callback has
+somewhere to fire and `alt` reaches an accessibility tree. This renderer takes
+a scene and returns bytes: there is no DOM, no observer, and nothing between
+the call and the image for an event to happen in.
+
+Three of v1's props are that case, and they **do not exist here**:
+
+- **`onLoad` and `onError`** are v1's asynchronous loading model rather than a
+  capability. Loading happens before `render` returns, and a source that cannot
+  be read is already an error at the call — a callback would fire into a
+  program that is holding the result.
+- **`key`** is reconciliation identity, and there is no reconciliation: one
+  scene in, one image out, nothing retained between calls to match against.
+  `name` is the identity field, carried on the wire for diagnostics.
+
+**`alt` is the one to revisit rather than refuse forever.** It has no behaviour
+today, and it has an obvious one waiting: SVG has `<title>`, PDF has alternate
+text, and an encoder that wrote either would make `alt` measurable. It stays
+out until an encoder uses it, because a property that reaches the wire and is
+read by nobody is the defect this project has found six times.
+
+The test to apply: **could a Chrome comparison ever measure it?** If the answer
+is no because a browser is answering a question this renderer is not asked, the
+property does not exist here, and the omission belongs in this file rather than
+in silence.
+
 ## Conventions
 
 ### Comments
@@ -827,6 +856,40 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**A claim about the format and a test of the arithmetic sit on different sides
+of the defect between them.** Two in one day, both in the dashed border. The
+renderer fitted the centre line it strokes where Chrome fits the border box, so
+a 48-pixel edge got the pattern for 44 -- and `chrome_border_rhythm.rs` never
+saw it, because every assertion there called `fitted_dash(48.0, 4.0)` directly
+and got the right answer to a question the renderer was not asking. In the same
+file a claim that a dash array _cannot_ express Chrome's `5, 6, 5` stood for
+hours and was wrong: a gap of `16 / 3` puts its boundaries at 8, 13.33, 21.33,
+26.67, 34.67 and 40, and rounding each where it falls draws exactly that. It
+survived because it was reasoning about the format while every check asked the
+arithmetic, and nothing in the suite could contradict it until something
+rendered. **So a helper's own test is not a test of the feature: one assertion
+has to go through the renderer and read the ink back**, which is what
+`the_renderer_draws_the_runs_chrome_draws` is for.
+
+**A layout needs an input its own rules can act on, not merely a property
+that does.** The rule above is usually applied to a value -- an opaque asset for
+an alpha mask, a tile a box divides evenly. It applies to arrangements too. A
+grid table measuring `grid-auto-flow` gave its spanning item a span of two in a
+three-column grid: that **fits** beside the first item, leaves no hole, and
+`dense` has nothing to go back for -- so `row` and `row-dense` came out
+byte-identical and the table would have reported two working keywords as one. A
+span of three cannot fit beside anything, starts a new line, and leaves the hole
+the keyword exists for. Ask what the _arrangement_ has to contain before the
+property has anything to do, not only what the value has to be.
+
+**The sampling has to be finer than the feature.** Four samples per pixel hid
+the marks where two per-side dashes butt at a corner, and made a radius of 8
+read as a radius of 4 -- and on a curve several consecutive samples land in one
+pixel and read as ink continuing rather than as a mark ending. The same error
+in the other axis is the sixty-pixel window that made a 137-pixel edge look
+uniform when its slack had simply not accumulated yet. **A run that looks even
+because the remainder has not arrived is not an even run.**
+
 **A check written in the same currency as the thing it checks agrees with it
 whatever it does.** A probe and the bytes it is compared against are written
 from one number, so a units error in that number encodes identically on both
@@ -853,6 +916,48 @@ raw slot path and read as an integer were the same read. Only a value the suite
 did not contain separates them, which is why the probe reader answers by what
 the read asks for -- whole where a whole number is demanded, `0.25` where the
 slot is taken as written.
+
+**The sampling has to be finer than the feature.** A walk of a dashed border
+at four samples per pixel reported the corners of a radius-4 box and a radius-8
+box as identical, and the difference between them is the whole question: on a
+curve several consecutive samples round to the same pixel, so an under-sampled
+walk reads ink as _continuing_ rather than reporting nothing. Sixteen samples
+per pixel separated them cleanly. **The instrument did not fail — it returned a
+smooth, plausible run**, which is the same family as the degenerate shape and
+expensive for the same reason. State the density beside the number, because a
+reader with no density will pick the one that looks sufficient.
+
+**When a coincidence-prone reading and a structural signature disagree, the
+signature wins.** Ink spanning a box's straight portion exactly is _sometimes_
+per-side fitting and sometimes a dash boundary landing on a tangent by
+arithmetic; a mark longer than a dash can only be two dashes meeting. The first
+is an absence that has to be interpreted, the second is a positive signature of
+one mechanism. They disagreed three times in one investigation and the
+signature was right each time -- including where the coincidence-prone reading
+was **not wrong**, merely coincidental, which is what makes it dangerous:
+radius 5 really did land flush at both tangents while already being fitted
+continuously.
+
+**A scene has to be able to hold the feature being measured.** The
+control-pair rule says a property needs an input it can act on; this is the
+same requirement on the _shape_. A perimeter walk of a 240x48 box with a 24px
+radius reported a seam — and that box has no vertical sides at all, because two
+24px corners consume its whole 48px height. The path model produced a
+negative-length segment and the walk put a structure exactly there. **The
+instrument did not fail; it reported a feature of my own arithmetic**, which is
+worse, because a failure would have been noticed. Before walking, tiling or
+wrapping a shape, check that the shape still has the parts being measured:
+`height - 2 * radius > 0` is a precondition, not a detail.
+
+**Test the subject, not its neighbour.** A check written against the nearest
+convenient node measures whatever that node happens to route through, and two
+routes to one behaviour is the commonest way for half a fix to look whole. The
+refusal of a URL source was written against a _background image_ and passed;
+`Image` — the node the property is actually for — went on encoding a URL,
+because `writeSource` and `writeImagePayload` each carried their own copy of the
+same three-armed branch. One writer was fixed, one reader was satisfied, and the
+subject was untouched. When a property has an obvious home, exercise it there
+first and reach for a neighbour only to prove the behaviour generalises.
 
 **A control pair needs an input the property can act on.** A pair renders the
 same scene with a property and without it and asks only whether the two differ,
@@ -899,6 +1004,30 @@ hour spent confirming a defect in the source answers only the second, and
 reading the code cannot tell you whether the maintainers already know: taffy's
 baseline gap was issue #199 with the fix merged as PR #1091 two days after the
 release we pin. Search the tracker before drafting a report, not after.
+
+**A conformance run that confirms is not a wasted one.** `object-fit`'s fixture
+ended with "needs a Chrome number" for weeks; the measurement agreed with it on
+all five rules and on the discriminator, and not one pixel changed. The fixture
+is a different artefact afterwards all the same — it moved from _our arithmetic,
+twice_ to _our arithmetic and a browser_, which is the only difference between a
+suite that is self-consistent and one that is right. A suite where every
+measurement is expected to find something is a suite that stops taking the easy
+measurements, and the easy ones are what make the hard ones trustworthy.
+
+**A qualification that does not reach the conclusion is the same as not having
+made it.** The far-corner reading of a dashed border was declared decisive in a
+message whose own earlier paragraph said the edge "divides almost evenly, which
+is why only one gap widened" -- and near-even division is exactly what makes a
+continuous phase and a per-side fit predict the same picture at that corner.
+The caveat was correct, it was written down, and it sat one paragraph above the
+claim it should have blocked. Two other readers had to enforce it.
+
+So: after writing a caveat, read the conclusion again **against** it. If the
+conclusion would survive the caveat being false, the caveat is decoration; if it
+would not, the conclusion needs a measurement the caveat does not undercut. This
+is the coinciding-answers rule failing at the level of prose rather than of a
+probe, and it is harder to see, because the evidence that should have stopped
+you is in your own hand.
 
 **Before trusting a green probe, ask what the wrong answer would have looked
 like.** If it looks the same, the probe is measuring nothing. Four probes in the

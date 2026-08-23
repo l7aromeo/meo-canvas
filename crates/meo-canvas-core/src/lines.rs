@@ -37,9 +37,11 @@
 use std::collections::{HashMap, VecDeque};
 
 use meo_canvas_scene::style::text::{
-    FontStyle, ParagraphStyle, Spacing, TextSegment,
+    FontStyle, FontVariant, ParagraphStyle, Spacing, TextSegment,
 };
-use meo_skia_canvas::{Canvas, CanvasOptions, Font, FontStretch};
+use meo_skia_canvas::{
+    Canvas, CanvasOptions, Font, FontFeature, FontStretch, FontVariantCaps,
+};
 
 use crate::resolve::ResolvedText;
 
@@ -88,6 +90,9 @@ struct FontKey {
     weight: u16,
     /// Whether an italic face was asked for.
     italic: bool,
+    /// The OpenType features asked for, by their wire values, since a
+    /// `FontVariant` is not `Hash` and a feature changes the advance.
+    variant: Vec<u8>,
 }
 
 /// What one measurement answers.
@@ -127,6 +132,13 @@ pub struct RunStyle {
     pub weight: u16,
     /// Whether the face is italic.
     pub italic: bool,
+    /// The OpenType features the run asks for.
+    ///
+    /// **Part of the measurement, not only of the drawing.** `frac` alone
+    /// takes a nineteen-character sample from 220.61 to 211.04 in the
+    /// repository's own face, so a width measured without the features is the
+    /// wrong width.
+    pub variant: Vec<FontVariant>,
 }
 
 impl RunStyle {
@@ -145,6 +157,10 @@ impl RunStyle {
                 style.font_style.unwrap_or(base.style),
                 FontStyle::Italic
             ),
+            variant: style
+                .font_variant
+                .clone()
+                .unwrap_or_else(|| base.font_variant.clone()),
         }
     }
 
@@ -157,6 +173,7 @@ impl RunStyle {
             size: base.size,
             weight: base.weight.get(),
             italic: matches!(base.style, FontStyle::Italic),
+            variant: base.font_variant.clone(),
         }
     }
 
@@ -180,7 +197,73 @@ impl RunStyle {
             size: self.size.to_bits(),
             weight: self.weight,
             italic: self.italic,
+            variant: self.variant.iter().map(|v| v.to_wire()).collect(),
         }
+    }
+
+    /// This style's features as the backend takes them: a caps keyword and a
+    /// list of OpenType tags.
+    ///
+    /// CSS spells all of these as `font-variant` keywords; the backend splits
+    /// them, because the caps forms select a face's alternate glyphs and the
+    /// rest are feature tags. A keyword the backend has no place for is
+    /// dropped rather than approximated.
+    #[must_use]
+    pub fn to_variant(&self) -> (FontVariantCaps, Vec<FontFeature>) {
+        let mut caps = FontVariantCaps::Normal;
+        let mut features = Vec::new();
+        let mut tag = |name: &str, value: i32| {
+            features.push(FontFeature {
+                name: name.to_owned(),
+                value,
+            });
+        };
+        for variant in &self.variant {
+            match variant {
+                FontVariant::Normal => {}
+                FontVariant::SmallCaps => caps = FontVariantCaps::SmallCaps,
+                FontVariant::AllSmallCaps => {
+                    caps = FontVariantCaps::AllSmallCaps;
+                }
+                FontVariant::PetiteCaps => caps = FontVariantCaps::PetiteCaps,
+                FontVariant::AllPetiteCaps => {
+                    caps = FontVariantCaps::AllPetiteCaps;
+                }
+                FontVariant::Unicase => caps = FontVariantCaps::Unicase,
+                FontVariant::TitlingCaps => {
+                    caps = FontVariantCaps::TitlingCaps;
+                }
+                FontVariant::HistoricalForms => tag("hist", 1),
+                FontVariant::LiningNums => tag("lnum", 1),
+                FontVariant::OldstyleNums => tag("onum", 1),
+                FontVariant::ProportionalNums => tag("pnum", 1),
+                FontVariant::TabularNums => tag("tnum", 1),
+                FontVariant::DiagonalFractions => tag("frac", 1),
+                FontVariant::StackedFractions => tag("afrc", 1),
+                FontVariant::Ordinal => tag("ordn", 1),
+                FontVariant::SlashedZero => tag("zero", 1),
+                FontVariant::CommonLigatures => tag("liga", 1),
+                FontVariant::NoCommonLigatures => tag("liga", 0),
+                FontVariant::DiscretionaryLigatures => tag("dlig", 1),
+                FontVariant::NoDiscretionaryLigatures => tag("dlig", 0),
+                FontVariant::HistoricalLigatures => tag("hlig", 1),
+                FontVariant::NoHistoricalLigatures => tag("hlig", 0),
+                FontVariant::Contextual => tag("calt", 1),
+                FontVariant::NoContextual => tag("calt", 0),
+                FontVariant::Simplified => tag("smpl", 1),
+                FontVariant::Traditional => tag("trad", 1),
+                FontVariant::Jis78 => tag("jp78", 1),
+                FontVariant::Jis83 => tag("jp83", 1),
+                FontVariant::Jis90 => tag("jp90", 1),
+                FontVariant::Jis04 => tag("jp04", 1),
+                FontVariant::FullWidth => tag("fwid", 1),
+                FontVariant::ProportionalWidth => tag("pwid", 1),
+                FontVariant::Ruby => tag("ruby", 1),
+                FontVariant::Super => tag("sups", 1),
+                FontVariant::Sub => tag("subs", 1),
+            }
+        }
+        (caps, features)
     }
 }
 
@@ -270,8 +353,12 @@ impl TextMeasurer {
         }
 
         let font = style.to_font();
+        let (caps, features) = style.to_variant();
         let context = self.canvas.context();
         context.set_font(&font);
+        // After `set_font`, which resets the variant axes as assigning the
+        // CSS `font` shorthand does.
+        context.set_font_variant(caps, &features);
         context.set_letter_spacing(letter_spacing);
         let metrics = context.measure_text(text, None);
         let measurement = Measurement {
@@ -778,15 +865,39 @@ fn truncate_with(
         break;
     }
 
-    // A trailing space would push the marker away from the text it belongs to.
-    while runs.last().is_some_and(Run::is_space) {
-        runs.pop();
-    }
     runs.push(Run {
         text: marker.to_owned(),
         style,
         width: marker_width,
     });
+
+    // **A space before the marker is kept if it fits.** v1 strips trailing
+    // whitespace here, reasoning that it pushes the marker away from the text
+    // it belongs to; Chrome does not, because it keeps the longest prefix of
+    // the string that fits and a space is part of the string. Measured:
+    // `Flower of Paradise` at 22px in 90 is drawn as `Flower of …`, 89.98
+    // wide, space and all.
+    //
+    // It only survives while it fits, which is the same rule and not a second
+    // one: the gap a space stands for is arithmetic the marker's own width
+    // competes with, so the line is measured with the marker on it and the
+    // space goes if that is what does not fit.
+    while runs.len() > 1
+        && line_width(
+            &Line {
+                runs: runs.clone(),
+                ascent: 0.0,
+                content_height: 0.0,
+                height: 0.0,
+                hard_break: true,
+            },
+            space,
+            metrics.word_spacing,
+        ) > max_width
+        && runs.get(runs.len() - 2).is_some_and(Run::is_space)
+    {
+        runs.remove(runs.len() - 2);
+    }
 
     Line {
         runs,
@@ -881,14 +992,15 @@ pub fn layout(
 ) -> Block {
     let all = wrap(measurer, base, segments, max_width, metrics);
     let mut lines = all.clone();
+    let marker = paragraph
+        .ellipsis
+        .as_deref()
+        .filter(|marker| !marker.is_empty());
     if let Some(limit) = paragraph.max_lines.map(|lines| lines as usize)
         && lines.len() > limit
     {
         lines.truncate(limit);
-        if let Some(marker) = paragraph
-            .ellipsis
-            .as_deref()
-            .filter(|marker| !marker.is_empty())
+        if let Some(marker) = marker
             && let Some(last) = limit.checked_sub(1)
         {
             lines[last] = truncate_with(
@@ -896,10 +1008,30 @@ pub fn layout(
             );
         }
     }
-    measure_lines(measurer, base, &mut lines, metrics);
 
     let base_style = RunStyle::base(base);
     let space = measurer.space_width(&base_style, metrics.letter_spacing);
+
+    // **A line can overflow with no line after it.** Wrapping breaks at
+    // spaces, so a word with no space in it is placed whole however wide it
+    // is -- `Antidisestablishmentarianism` occupies 171.81 in a box of 90 --
+    // and the truncation above never runs, because its trigger is the *line
+    // count*. Chrome cuts such a line at the last **letter** that fits and
+    // draws the marker after it: `Antidisestabli…`, 88.00 wide. Measured in
+    // `crates/meo-canvas/tests/assets/chrome/ellipsis.tsv`.
+    //
+    // The rule is the one `truncate_with` already implements. Only the
+    // trigger was missing.
+    if let Some(marker) = marker
+        && let Some(last) = lines.len().checked_sub(1)
+        && line_width(&lines[last], space, metrics.word_spacing) > max_width
+    {
+        lines[last] = truncate_with(
+            measurer, base, &all, last, max_width, marker, metrics,
+        );
+    }
+
+    measure_lines(measurer, base, &mut lines, metrics);
     let width = lines
         .iter()
         .map(|line| line_width(line, space, metrics.word_spacing))
@@ -1113,6 +1245,37 @@ mod tests {
         // has to be a different entry rather than a hit.
         let _ = measurer.measure(&base, 2.0, METRICS_STRING);
         assert_eq!(measurer.cached(), cached + 1);
+    }
+
+    #[test]
+    fn a_font_variant_changes_the_width_it_is_measured_at() {
+        use meo_canvas_scene::style::text::FontVariant;
+
+        let mut measurer = TextMeasurer::new();
+        let base = style();
+        let plain = RunStyle::base(&base);
+        let mut fractions = plain.clone();
+        fractions.variant = vec![FontVariant::DiagonalFractions];
+
+        // **A fraction, because that is the one feature this face answers
+        // to.** Measured across seventeen OpenType tags on the repository's
+        // own Oswald: `frac` moves a nineteen-character sample from 220.61 to
+        // 211.04 and every other tag moves nothing, `smcp` included -- the
+        // face has no small-caps glyphs and nothing synthesises them. A test
+        // written with `SmallCaps` would report this property as dead however
+        // well it worked.
+        let sample = "about 1/2 of it";
+        let without = measurer.run_width(&plain, 0.0, sample);
+        let with = measurer.run_width(&fractions, 0.0, sample);
+        assert!(
+            (without - with).abs() > 0.5,
+            "the feature did not reach the measurement: {without} against \
+             {with}"
+        );
+
+        // And the two are separate cache entries rather than one answer
+        // served twice, which is the way this would fail silently.
+        assert_eq!(measurer.cached(), 2);
     }
 
     #[test]

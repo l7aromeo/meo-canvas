@@ -237,6 +237,10 @@ conformance: ensure-deps
     node packages/meo-canvas/tools/conformance/ellipsis.mjs
     node packages/meo-canvas/tools/conformance/gradients.mjs
     node packages/meo-canvas/tools/conformance/flex.mjs
+    node packages/meo-canvas/tools/conformance/borders.mjs
+    node packages/meo-canvas/tools/conformance/blend.mjs
+    node packages/meo-canvas/tools/conformance/objectfit.mjs
+    node packages/meo-canvas/tools/conformance/grid.mjs
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps

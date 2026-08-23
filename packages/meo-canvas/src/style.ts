@@ -126,6 +126,58 @@ export type TextDecoration = 'none' | 'underline' | 'overline' | 'line-through'
  */
 export type VerticalAlign = 'top' | 'middle' | 'bottom'
 
+/**
+ * One OpenType feature, spelled as CSS's `font-variant` spells it.
+ *
+ * Thirty-five keywords, which is what the shorthand accepts and what the
+ * renderer carries. A list rather than a single value, because CSS's
+ * `font-variant` is space-separated and a caller routinely wants two at once —
+ * `small-caps tabular-nums` is one setting, not a choice between them.
+ *
+ * **A feature does nothing unless the face carries it.** Seventeen tags swept
+ * against the repository's own Oswald move exactly one of them, `frac`: there
+ * are no small-caps glyphs in that face and nothing synthesises them, so
+ * `'small-caps'` draws the same picture as `'normal'` and is not a defect. A
+ * test that reaches for "a representative feature" and picks the wrong one
+ * reports a working property as dead.
+ */
+export type FontVariant =
+  | 'normal'
+  | 'historical-forms'
+  | 'small-caps'
+  | 'all-small-caps'
+  | 'petite-caps'
+  | 'all-petite-caps'
+  | 'unicase'
+  | 'titling-caps'
+  | 'lining-nums'
+  | 'oldstyle-nums'
+  | 'proportional-nums'
+  | 'tabular-nums'
+  | 'diagonal-fractions'
+  | 'stacked-fractions'
+  | 'ordinal'
+  | 'slashed-zero'
+  | 'common-ligatures'
+  | 'no-common-ligatures'
+  | 'discretionary-ligatures'
+  | 'no-discretionary-ligatures'
+  | 'historical-ligatures'
+  | 'no-historical-ligatures'
+  | 'contextual'
+  | 'no-contextual'
+  | 'jis78'
+  | 'jis83'
+  | 'jis90'
+  | 'jis04'
+  | 'simplified'
+  | 'traditional'
+  | 'full-width'
+  | 'proportional-width'
+  | 'ruby'
+  | 'super'
+  | 'sub'
+
 /** Which of a glyph's fill and stroke is painted on top. */
 export type PaintOrder = 'fill' | 'stroke'
 
@@ -434,6 +486,20 @@ export interface Style {
    * same clause that settled the bare container's defaults.
    */
   readonly gridTemplateColumns?: readonly TrackSize[]
+  /**
+   * A shorthand for that many equal columns.
+   *
+   * v1's `columns`, and pure sugar: `columns: 3` is
+   * `gridTemplateColumns: [fr(1), fr(1), fr(1)]` and reaches the renderer as
+   * exactly those tracks. Nothing new crosses the wire, which is the test of
+   * whether a shorthand is a shorthand — if it needed a slot of its own, the
+   * long form could not express it and that would be a different finding.
+   *
+   * Naming both this and {@link Style.gridTemplateColumns} is refused rather
+   * than resolved by precedence: a caller who wrote both meant one of them,
+   * and nothing here can tell which.
+   */
+  readonly columns?: number
   /** The grid's row tracks. */
   readonly gridTemplateRows?: readonly TrackSize[]
   /** Size given to rows the template does not name. */
@@ -446,6 +512,19 @@ export interface Style {
   readonly gridColumn?: GridPlacement
   /** Where this item sits on the row axis. */
   readonly gridRow?: GridPlacement
+  /**
+   * Both axes at once, as CSS's `grid-area` orders them.
+   *
+   * `[rowStart, columnStart, rowEnd, columnEnd]`, lines counting from one and
+   * the two ends **exclusive** — `[1, 1, 3, 2]` is the item covering rows 1
+   * and 2 of column 1, which is CSS's reading of `grid-area: 1 / 1 / 3 / 2`.
+   * Sugar over {@link Style.gridRow} and {@link Style.gridColumn}, so it adds
+   * nothing to the wire.
+   *
+   * Naming this beside either of those is refused, for the reason
+   * {@link Style.columns} is.
+   */
+  readonly gridArea?: readonly [number, number, number, number]
 
   // -- Paint ----------------------------------------------------------
   /**
@@ -493,6 +572,15 @@ export interface Style {
   /** The colour glyphs are drawn in, CSS's `color`. Inherits. */
   readonly color?: Color
   /** Horizontal alignment within the box. Inherits. */
+  /**
+   * OpenType features applied to the run.
+   *
+   * Reaches the **measurer** as well as the painter: `diagonal-fractions`
+   * moves a nineteen-character sample from 220.61 to 211.04, so a feature that
+   * only reached the drawing would lay text out at one width and paint it at
+   * another.
+   */
+  readonly fontVariant?: readonly FontVariant[]
   readonly textAlign?: TextAlign
   /** A line through, over or under. Inherits. */
   readonly textDecoration?: TextDecoration

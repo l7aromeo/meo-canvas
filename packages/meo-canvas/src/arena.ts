@@ -32,6 +32,7 @@ import {
   FLEX_DIRECTION,
   FLEX_WRAP,
   FONT_STYLE,
+  FONT_VARIANT,
   GRADIENT_KIND,
   MASK_SHAPE,
   GRID_AUTO_FLOW,
@@ -82,6 +83,17 @@ export interface Arena {
   readonly slots: Float64Array
   /** The strings and buffers the slots index into. */
   readonly values: readonly SideValue[]
+  /**
+   * Every URL source the scene named.
+   *
+   * Carried out rather than refused in the writer: the arm belongs to the wire
+   * and a Rust caller that resolves its own sources may write one. What this
+   * surface cannot do is promise to *draw* it — nothing here fetches, and
+   * `meo-canvas-core` refuses a URL by design — so {@link Root} reads this and
+   * refuses before rendering, at the surface where the promise was made rather
+   * than at the far end where it could only fail.
+   */
+  readonly urls: readonly string[]
 }
 
 /**
@@ -126,8 +138,11 @@ export class ArenaWriter {
   readonly #strings = new Map<string, number>()
 
   /** The scene, ready to hand across. */
+  /** Every URL source written so far. */
+  readonly urls: string[] = []
+
   finish(): Arena {
-    return { slots: Float64Array.from(this.#slots), values: this.#values }
+    return { slots: Float64Array.from(this.#slots), values: this.#values, urls: this.urls }
   }
 
   /** Writes one slot exactly as given. */
@@ -692,6 +707,13 @@ function writeSource(out: ArenaWriter, src: string | ImageSource): void {
     return
   }
   if ('url' in source) {
+    // Written, and **counted**. The arm is part of the wire and a Rust caller
+    // with a resolver of its own can use it; what this surface cannot do is
+    // promise to draw one, because nothing here fetches and
+    // `meo-canvas-core` refuses a URL by design. `Root` reads the count and
+    // refuses before rendering — at the surface, where the promise was made,
+    // rather than at the far end where it could only fail.
+    out.urls.push(source.url)
     out.enum(1)
     out.text(source.url)
     return
@@ -939,8 +961,9 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
   {
     index: 23,
     rust: 'grid_template_columns',
-    keys: ['gridTemplateColumns'],
-    write: (out, style) => writeTracks(out, style.gridTemplateColumns as readonly TrackSize[]),
+    keys: ['gridTemplateColumns', 'columns'],
+    present: style => columnTracks(style) !== undefined,
+    write: (out, style) => writeTracks(out, columnTracks(style) as readonly TrackSize[]),
   },
   {
     index: 24,
@@ -966,9 +989,66 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     keys: ['gridAutoFlow'],
     write: (out, style) => out.enum(variant(GRID_AUTO_FLOW, style.gridAutoFlow as string, 'gridAutoFlow')),
   },
-  { index: 28, rust: 'grid_column', keys: ['gridColumn'], write: (out, style) => writePlacement(out, style.gridColumn) },
-  { index: 29, rust: 'grid_row', keys: ['gridRow'], write: (out, style) => writePlacement(out, style.gridRow) },
+  {
+    index: 28,
+    rust: 'grid_column',
+    keys: ['gridColumn', 'gridArea'],
+    present: style => placement(style, 'column') !== undefined,
+    write: (out, style) => writePlacement(out, placement(style, 'column')),
+  },
+  {
+    index: 29,
+    rust: 'grid_row',
+    keys: ['gridRow', 'gridArea'],
+    present: style => placement(style, 'row') !== undefined,
+    write: (out, style) => writePlacement(out, placement(style, 'row')),
+  },
 ]
+
+/**
+ * The tracks a style asks for, whether it wrote them out or asked for `n`.
+ *
+ * `columns: 3` is three equal fractions and nothing else, so the shorthand is
+ * resolved here rather than carried: the arena has one way to say a track list
+ * and this is where the surface's two spellings become it.
+ *
+ * Both at once is refused. A caller who wrote `columns` beside
+ * `gridTemplateColumns` meant one of them and nothing here can tell which, and
+ * a precedence rule would silently drop the other.
+ */
+function columnTracks(style: Style): readonly TrackSize[] | undefined {
+  if (style.columns === undefined) return style.gridTemplateColumns
+  if (style.gridTemplateColumns !== undefined) {
+    throw new TypeError('name `columns` or `gridTemplateColumns`, not both; they are two spellings of one track list')
+  }
+  if (!Number.isInteger(style.columns) || style.columns < 1) {
+    throw new TypeError(`\`columns\` is a whole number of columns, not ${JSON.stringify(style.columns)}`)
+  }
+  return Array.from({ length: style.columns }, () => '1fr' as TrackSize)
+}
+
+/**
+ * The placement a style asks for on one axis, from either spelling.
+ *
+ * `gridArea` is `[rowStart, columnStart, rowEnd, columnEnd]` with the ends
+ * exclusive, as CSS orders and reads them, so a span is the difference between
+ * a pair. Refused beside the long form for the reason `columns` is.
+ */
+function placement(style: Style, axis: 'row' | 'column'): GridPlacement | undefined {
+  const long = axis === 'row' ? style.gridRow : style.gridColumn
+  if (style.gridArea === undefined) return long
+  if (long !== undefined) {
+    throw new TypeError(`name \`gridArea\` or \`grid${axis === 'row' ? 'Row' : 'Column'}\`, not both; they are two spellings of one placement`)
+  }
+  const [rowStart, columnStart, rowEnd, columnEnd] = style.gridArea
+  const [start, end] = axis === 'row' ? [rowStart, rowEnd] : [columnStart, columnEnd]
+  if (![start, end].every(line => Number.isInteger(line)) || end <= start) {
+    throw new TypeError(
+      `\`gridArea\` takes four whole lines as [rowStart, columnStart, rowEnd, columnEnd], each end past its start, not ${JSON.stringify(style.gridArea)}`,
+    )
+  }
+  return { start, span: end - start }
+}
 
 /** Writes a track list: the count, then each track. */
 function writeTracks(out: ArenaWriter, tracks: readonly TrackSize[]): void {
@@ -1077,6 +1157,16 @@ const TEXT_PROPERTIES: readonly Property[] = [
   { index: 10, rust: 'line_gap', keys: ['lineGap'], write: (out, style) => out.optional(style.lineGap, gap => out.f32(gap)) },
   { index: 11, rust: 'letter_spacing', keys: ['letterSpacing'], write: (out, style) => out.optional(style.letterSpacing, value => writeSpacing(out, value)) },
   { index: 12, rust: 'word_spacing', keys: ['wordSpacing'], write: (out, style) => out.optional(style.wordSpacing, value => writeSpacing(out, value)) },
+  {
+    index: 13,
+    rust: 'font_variant',
+    keys: ['fontVariant'],
+    write: (out, style) =>
+      out.optional(style.fontVariant, features => {
+        out.count(features.length)
+        for (const feature of features) out.enum(variant(FONT_VARIANT, feature, 'fontVariant'))
+      }),
+  },
   {
     index: 14,
     rust: 'text_stroke',
@@ -1236,16 +1326,11 @@ function writeTextPayload(out: ArenaWriter, node: SceneNode): void {
 
 /** Writes the payload only an image node has. */
 function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | undefined): void {
-  if ('path' in src) {
-    out.enum(0)
-    out.text(src.path)
-  } else if ('url' in src) {
-    out.enum(1)
-    out.text(src.url)
-  } else {
-    out.enum(2)
-    out.bytes(src.bytes)
-  }
+  // The image node's own source, written by the same rules as one in a style.
+  // Two writers existed here and only one counted its URLs, which meant the
+  // check in `Root` saw a background image's URL and never an `Image`'s -- the
+  // node the property is *for*.
+  writeSource(out, src)
 
   // `objectFit` and `frame` sit in the payload rather than in a style group,
   // because they are meaningless on anything but an image and the scene puts

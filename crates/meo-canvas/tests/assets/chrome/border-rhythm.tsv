@@ -141,3 +141,6 @@ corner-run	top=8 left=8	6	one pixel inside the outer boundary	128	longest-ink=26
 corner-run	top=4 left=8	6	one pixel inside the outer boundary	128	longest-ink=16.0 dash-top=8 dash-left=16 tangent-at=40.0 arc-ends=47.9 off:0.6 on:12.0 off:8.0 on:16.0 off:9.8 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:4.5
 corner-run	top=4 left=12	6	one pixel inside the outer boundary	128	longest-ink=24.0 dash-top=8 dash-left=24 tangent-at=40.0 arc-ends=47.9 off:8.6 on:24.0 off:13.1 on:0.7 off:1.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:4.5
 corner-run	top=12 left=12	6	one pixel inside the outer boundary	128	longest-ink=64.8 dash-top=24 dash-left=24 tangent-at=40.0 arc-ends=47.9 off:0.6 on:64.8 off:12.0 on:10.5
+corner-run	top=1 left=1	2	one pixel inside the outer boundary	128	longest-ink=0.0 dash-top=2 dash-left=2 tangent-at=40.0 arc-ends=42.4 off:82.4
+corner-run	top=20 left=20	2	one pixel inside the outer boundary	128	longest-ink=79.1 dash-top=40 dash-left=40 tangent-at=40.0 arc-ends=41.6 on:79.1 off:2.4
+corner-run	top=1 left=20	2	one pixel inside the outer boundary	128	longest-ink=23.6 dash-top=2 dash-left=40 tangent-at=40.0 arc-ends=42.4 on:23.6 off:26.3 on:10.0 off:22.5
