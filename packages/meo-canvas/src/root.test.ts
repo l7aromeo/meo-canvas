@@ -108,39 +108,129 @@ describe('the canvas Root describes', () => {
   })
 })
 
-describe('a source this renderer cannot resolve', () => {
-  // The arm is on the wire and a Rust caller with a resolver of its own may
-  // write one; what this surface cannot do is promise to draw it. Nothing here
-  // fetches and `meo-canvas-core` refuses a URL by design, so before this the
-  // scene crossed the wire and failed three layers away with an error naming a
-  // node rather than the thing the caller wrote.
-  it('is refused at the surface, naming the url and the workaround', async () => {
-    const { dependencies } = fakeRenderer()
+describe('a url source', () => {
+  // **Every test here stubs `fetch`.** A test that dials out is a test that
+  // fails on an aeroplane, and worse, one whose failure mode is a DNS error
+  // dressed up as a renderer error — which is exactly what the two tests this
+  // replaced did once the surface started fetching.
+  const withFetch = (handler: typeof fetch) => {
+    const real = globalThis.fetch
+    globalThis.fetch = handler
+    return () => {
+      globalThis.fetch = real
+    }
+  }
 
-    await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://example.invalid/a.png' } }) }, dependencies)).rejects.toThrow(
-      /does not fetch: "https:\/\/example.invalid\/a.png".*fetch\(url\)/s,
-    )
+  it('fetches the bytes and sends those, never the url', async () => {
+    const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])
+    const asked: string[] = []
+    const restore = withFetch(async (input: RequestInfo | URL) => {
+      asked.push(String(input))
+      return new Response(png, { status: 200 })
+    })
+
+    try {
+      const { dependencies, painted } = fakeRenderer()
+      await Root({ width: 10, height: 10, children: Image({ src: { url: 'https://example.invalid/a.png' } }) }, dependencies)
+
+      expect(asked).toEqual(['https://example.invalid/a.png'])
+      expect(painted).toHaveLength(1)
+      // The arena the addon received carries no url at all: the bytes were
+      // substituted at encode time, so nothing downstream knows a network was
+      // involved and `meo-canvas-core` needs no `net` feature to draw it.
+      const [first] = painted
+      if (first === undefined) throw new Error('nothing reached the renderer')
+      expect(JSON.stringify(first.values)).not.toContain('example.invalid')
+    } finally {
+      restore()
+    }
   })
 
-  it('counts the rest rather than naming them all', async () => {
-    const { dependencies } = fakeRenderer()
+  it('asks once for a url two nodes share', async () => {
+    const asked: string[] = []
+    const restore = withFetch(async (input: RequestInfo | URL) => {
+      asked.push(String(input))
+      return new Response(Uint8Array.from([137, 80, 78, 71]), { status: 200 })
+    })
 
-    await expect(
-      Root(
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(
         {
           width: 10,
           height: 10,
           children: Box({
-            children: [Image({ src: { url: 'https://a.invalid/1.png' } }), Image({ src: { url: 'https://a.invalid/2.png' } })],
+            children: [Image({ src: { url: 'https://a.invalid/1.png' } }), Image({ src: { url: 'https://a.invalid/1.png' } })],
           }),
         },
         dependencies,
-      ),
-    ).rejects.toThrow(/and 1 more/)
+      )
+
+      expect(asked).toEqual(['https://a.invalid/1.png'])
+    } finally {
+      restore()
+    }
   })
 
-  // A path and bytes are what this surface can draw, and neither is disturbed
-  // by the check above: a scene with no url in it never reaches the refusal.
+  it('passes httpOptions through to fetch', async () => {
+    let seen: RequestInit | undefined
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen = init
+      return new Response(Uint8Array.from([137, 80]), { status: 200 })
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(
+        {
+          width: 10,
+          height: 10,
+          httpOptions: { headers: { authorization: 'Bearer t' } },
+          children: Image({ src: { url: 'https://a.invalid/1.png' } }),
+        },
+        dependencies,
+      )
+
+      expect(seen?.headers).toEqual({ authorization: 'Bearer t' })
+    } finally {
+      restore()
+    }
+  })
+
+  // The status is named rather than swallowed: a 404 that reached the decoder
+  // as an HTML error page would fail as "undecodable image", which sends the
+  // reader looking at the picture instead of at the server.
+  it('names the status when the server refuses', async () => {
+    const restore = withFetch(async () => new Response('nope', { status: 404, statusText: 'Not Found' }))
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies)).rejects.toThrow(
+        /cannot fetch "https:\/\/a.invalid\/1.png": 404 Not Found/,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('names the url when the fetch itself throws', async () => {
+    const restore = withFetch(async () => {
+      throw new TypeError('network unreachable')
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies)).rejects.toThrow(
+        /cannot fetch "https:\/\/a.invalid\/1.png".*network unreachable/s,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  // A path and bytes are what this surface could always draw, and neither is
+  // disturbed: a scene with no url in it never runs the fetch pass, and never
+  // encodes twice.
   it('leaves a path alone', async () => {
     const { dependencies, painted } = fakeRenderer()
 

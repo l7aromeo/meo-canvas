@@ -26,6 +26,18 @@ default = []
 metal = ["meo-skia-canvas/metal"]
 vulkan = ["meo-skia-canvas/vulkan"]
 
+# Fetching an `ImageSource::Url`, off unless a consumer asks.
+#
+# **Off by default because the cost is not the code, it is the dependency.** A
+# consumer who never names a URL should not link an HTTP stack, and with this
+# off the `Url` arm is the refusal it has always been -- so the failure is
+# identical to the one the TypeScript surface gives before it fetches, and the
+# difference between the two builds is a flag rather than a capability gap.
+#
+# The client is blocking, which is the part that matters: see the note beside
+# `ureq` below for what this crate promised and what changed.
+net = ["dep:ureq"]
+
 [dependencies]
 csscolorparser = { workspace = true }
 meo-canvas-scene = { workspace = true }
@@ -33,11 +45,28 @@ meo-skia-canvas = { workspace = true }
 taffy = { workspace = true }
 thiserror = { workspace = true }
 
-# No tokio, no smol, no async of any kind, and no HTTP client. The pipeline is a
-# function from bytes to bytes: a caller who wants a remote image resolves it
-# before calling, and the CLI's `net` feature is where a fetcher lives. A
-# runtime in this crate would be a runtime in every Rust consumer of the public
-# `meo-canvas` crate, including those already inside one.
+# No tokio, no smol, no async of any kind. **That half stands and is the half
+# that was load-bearing**: a runtime in this crate would be a runtime in every
+# Rust consumer of the public `meo-canvas` crate, including those already
+# inside one, and `ureq` is blocking by construction.
+#
+# **The other half of what this comment used to say -- "and no HTTP client" --
+# is no longer true, and it is recorded here rather than deleted.** The user
+# approved fetching on the JavaScript surface and then asked whether the Rust
+# side would fetch too. That was a question, not an instruction: the ruling in
+# answer to it was that the core gains an HTTP client behind a default-off
+# feature, because a Rust surface that cannot do what the JavaScript one does is
+# the asymmetry the fetching decision existed to avoid. So the promise that
+# changed was about the dependency, not about the runtime, and a consumer who
+# does not enable `net` still gets exactly the crate the old comment described.
+#
+# Audited rather than assumed, because the workspace note beside `ureq` lists a
+# smaller tree than the one it actually pulls: `cargo tree -e normal` under the
+# feature also brings `rustls`, `ring`, `flate2`, `once_cell`, `subtle`,
+# `zeroize` and `untrusted`. Grepped for `tokio`, `futures`, `async`, `mio` and
+# `smol` across the whole tree and it is clean -- **no runtime anywhere, which
+# is the claim, and it is bigger than the note suggests, which is not.**
+ureq = { workspace = true, optional = true }
 
 [[bench]]
 name = "render"

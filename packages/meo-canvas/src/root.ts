@@ -122,6 +122,20 @@ export type RootProps = Style & {
   /** Font files to register for this render. */
   readonly fonts?: readonly FontRegistration[]
   /**
+   * Passed to `fetch` for every URL source in the scene.
+   *
+   * `RequestInit` as the platform defines it, so headers, credentials, an
+   * `AbortSignal` and a proxy agent all work the way they do everywhere else in
+   * this runtime rather than through a second set of options this package
+   * invented. One object for the whole render: a per-source variant would be a
+   * larger promise than v1 made and nothing has asked for it.
+   *
+   * Only the URLs are fetched — **bytes cross the wire to the renderer, never a
+   * URL** — so a `credentials` or `Authorization` set here reaches the origin
+   * and nothing else.
+   */
+  readonly httpOptions?: RequestInit
+  /**
    * Rasterise on the GPU when there is one. `false` forces the CPU.
    *
    * Asking is not getting: a build without GPU support or a driver that
@@ -328,24 +342,44 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
     ...(props.colorType === undefined ? {} : { colorType: props.colorType }),
     ...(props.colorSpace === undefined ? {} : { colorSpace: props.colorSpace }),
   }
-  const arena = encodeScene(await pages(props), props.width, props.height, scale, surface)
+  // The tree is built **once**, not once per encode: a page builder is a
+  // caller's function and may fetch, count or otherwise refuse to be run twice.
+  const tree = await pages(props)
+  let arena = encodeScene(tree, props.width, props.height, scale, surface)
 
-  // **Refused here, at the surface, rather than at the far end.** Nothing in
-  // this package fetches, and `meo-canvas-core` refuses a URL source by design
-  // -- it excludes network and an async runtime so that a consumer already
-  // inside a runtime is not asked to host another. So a scene naming a URL
-  // crossed the wire only to fail three layers away, with an error that named
-  // a node rather than the thing the caller wrote.
+  // **Fetched here, at the surface, and only bytes cross the wire.**
   //
-  // Whether this surface should fetch is an open question. Refusing with the
-  // workaround named is correct under either answer: if fetching lands, this
-  // is where it goes.
+  // `meo-canvas-core` can fetch too, behind a default-off `net` feature, and
+  // that is deliberate rather than duplication: with the feature off it refuses
+  // a URL exactly as this surface used to, so **the two surfaces fail the same
+  // way and the difference between them is a build flag rather than a
+  // capability gap.** Doing it here as well means the addon needs no HTTP stack
+  // and a Node caller gets `fetch`, with the platform's own proxy, TLS and DNS
+  // rather than a second set inside a native module.
+  //
+  // The second encode is the price of not having a second walker. This module
+  // would otherwise need its own idea of everywhere a source can appear — image
+  // `src`, background image, mask — which is exactly the kind of duplicate that
+  // drifts the first time a source moves. The encoder already knows; the first
+  // pass asks it, and a scene naming no URL never runs the second.
   if (arena.urls.length > 0) {
-    const [first] = arena.urls
-    throw new TypeError(
-      `this renderer does not fetch: ${JSON.stringify(first)}${arena.urls.length > 1 ? ` and ${arena.urls.length - 1} more` : ''}. ` +
-        'Fetch it yourself and pass the bytes — `{ bytes: new Uint8Array(await (await fetch(url)).arrayBuffer()) }`',
+    const wanted = [...new Set(arena.urls)]
+    const fetched = new Map<string, Uint8Array>()
+    await Promise.all(
+      wanted.map(async url => {
+        let response: Response
+        try {
+          response = await fetch(url, props.httpOptions)
+        } catch (cause) {
+          throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
+        }
+        if (!response.ok) {
+          throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${response.status} ${response.statusText}`)
+        }
+        fetched.set(url, new Uint8Array(await response.arrayBuffer()))
+      }),
     )
+    arena = encodeScene(tree, props.width, props.height, scale, surface, fetched)
   }
 
   const native = dependencies.renderer.paint(arena.slots, arena.values, {

@@ -141,6 +141,16 @@ export class ArenaWriter {
   /** Every URL source written so far. */
   readonly urls: string[] = []
 
+  /**
+   * Bytes already obtained for a URL source, keyed by the URL.
+   *
+   * Set on the **second** encode of a render that named one. The first encode
+   * is what discovers the URLs — this writer is the only thing that knows every
+   * position a source can occupy, so asking it is cheaper than maintaining a
+   * second walker that would drift from it the first time a source moves.
+   */
+  fetched: ReadonlyMap<string, Uint8Array> | undefined = undefined
+
   finish(): Arena {
     return { slots: Float64Array.from(this.#slots), values: this.#values, urls: this.urls }
   }
@@ -707,12 +717,21 @@ function writeSource(out: ArenaWriter, src: string | ImageSource): void {
     return
   }
   if ('url' in source) {
-    // Written, and **counted**. The arm is part of the wire and a Rust caller
-    // with a resolver of its own can use it; what this surface cannot do is
-    // promise to draw one, because nothing here fetches and
-    // `meo-canvas-core` refuses a URL by design. `Root` reads the count and
-    // refuses before rendering — at the surface, where the promise was made,
-    // rather than at the far end where it could only fail.
+    // **Bytes cross the wire, never a URL.** Where this render has already
+    // fetched the URL, the source is written as though the caller had passed
+    // the bytes — so nothing downstream has to know a network was involved and
+    // `meo-canvas-core` needs no `net` feature to draw it.
+    const bytes = out.fetched?.get(source.url)
+    if (bytes !== undefined) {
+      out.enum(2)
+      out.bytes(bytes)
+      return
+    }
+
+    // Otherwise written, and **counted**. The arm is part of the wire and a
+    // Rust caller with a resolver of its own can use it. The count is what
+    // `Root` reads to decide whether a fetch pass is needed at all, so a scene
+    // naming no URL pays nothing for this.
     out.urls.push(source.url)
     out.enum(1)
     out.text(source.url)
@@ -1416,8 +1435,16 @@ function writeNode(out: ArenaWriter, node: SceneNode): void {
  * evaluates arguments inside out and writing opcodes as each factory ran would
  * land them post-order where the arena is pre-order.
  */
-export function encodeScene(pages: readonly SceneNode[], width: number, height: number, scale: number, surface: SurfaceOptions = {}): Arena {
+export function encodeScene(
+  pages: readonly SceneNode[],
+  width: number,
+  height: number,
+  scale: number,
+  surface: SurfaceOptions = {},
+  fetched?: ReadonlyMap<string, Uint8Array>,
+): Arena {
   const out = new ArenaWriter()
+  out.fetched = fetched
   writeHeader(out, width, height, scale, surface, pages.length)
   for (const page of pages) writeNode(out, page)
   return out.finish()

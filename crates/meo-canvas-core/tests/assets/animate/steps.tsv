@@ -1,0 +1,78 @@
+# Ground truth for steps(), generated from meo-canvas v1's built module
+# (`dist/esm/animate`) rather than from either v2 implementation.
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean. The tag is here so
+# this file can be regenerated comparably: a vector table whose provenance
+# is "v1" cannot be, and one that names a commit can. The build was newer
+# than its source when this ran, so it is not a stale artifact -- which is
+# a thing that happened to us on this tree the same afternoon.
+#
+# Neither surface may be written from the other: a misreading of v1 that
+# reaches both looks like agreement. Both are written against this, and this
+# came from v1 running, not from anyone reading it.
+#
+# What a table catches that nothing else does: `expo(0)` computed rather
+# than special-cased gives 0.000977, which is not a bug anyone finds by
+# looking -- it is a curve that starts almost at rest, and at eight pixels
+# of travel it is a hundredth of a pixel. No fixture, no eye and no
+# tolerance catches that. An exact zero in a row does.
+#
+# Values are printed at JavaScript default precision, which is the shortest
+# string that round-trips an f64 exactly -- so both surfaces parse the same
+# number rather than a rounded one.
+#
+# count	t	value
+1	0	0
+1	0.999999999	0
+1	1	1
+1	1.000000001	1
+1	0.5	0
+1	0.999999999	0
+1	1	1
+1	1.25	1
+1	-0.25	0
+2	0	0
+2	0.499999999	0
+2	0.5	0.5
+2	0.500000001	0.5
+2	0.5	0.5
+2	0.999999999	0.5
+2	1	1
+2	1.25	1
+2	-0.25	0
+3	0	0
+3	0.3333333323333333	0
+3	0.3333333333333333	0.3333333333333333
+3	0.33333333433333334	0.3333333333333333
+3	0.5	0.3333333333333333
+3	0.999999999	0.6666666666666666
+3	1	1
+3	1.25	1
+3	-0.25	0
+4	0	0
+4	0.249999999	0
+4	0.25	0.25
+4	0.250000001	0.25
+4	0.5	0.5
+4	0.999999999	0.75
+4	1	1
+4	1.25	1
+4	-0.25	0
+5	0	0
+5	0.199999999	0
+5	0.2	0.2
+5	0.200000001	0.2
+5	0.5	0.4
+5	0.999999999	0.8
+5	1	1
+5	1.25	1
+5	-0.25	0
+10	0	0
+10	0.099999999	0
+10	0.1	0.1
+10	0.100000001	0.1
+10	0.5	0.5
+10	0.999999999	0.9
+10	1	1
+10	1.25	1
+10	-0.25	0

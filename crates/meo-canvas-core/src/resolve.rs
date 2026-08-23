@@ -7,11 +7,22 @@
 //! folded down the tree, so a text node carries the family its container set
 //! rather than a chain of ancestors to walk at measure time.
 //!
-//! This pass reads local files and accepts bytes the caller already holds. **It
-//! does not fetch.** An [`ImageSource::Url`] arriving here is
-//! [`Error::UnresolvedSource`] -- resolving it needs an HTTP client, an HTTP
-//! client needs a policy about runtimes, and that policy belongs to the surface
-//! talking to the user rather than to a library every surface links.
+//! This pass reads local files and accepts bytes the caller already holds.
+//! **Whether it also fetches is a build-time decision**: with the `net` feature
+//! off -- the default -- an [`ImageSource::Url`] arriving here is
+//! [`Error::UnresolvedSource`], exactly as it always was, and no HTTP stack is
+//! linked. With it on, the URL is fetched over a blocking client.
+//!
+//! The policy that used to keep fetching out of this crate was about
+//! **runtimes**, not about the network: an async client would put a runtime in
+//! every Rust consumer of the public crate, including those already inside one.
+//! A blocking client puts none, so the objection does not reach it. The
+//! dependency is still real, which is why the feature is off unless asked for.
+//!
+//! The TypeScript surface fetches before it encodes and sends bytes, so it
+//! never produces a URL source at all. **The two surfaces therefore fail the
+//! same way** -- a URL reaching a build without `net` is refused on both sides,
+//! and the difference between them is a flag rather than a capability gap.
 //!
 //! # One resolve per scene, not per page
 //!
@@ -590,6 +601,36 @@ fn taken(
         .ok_or(Error::UndecodableImage(node))
 }
 
+/// Reads a URL source over HTTP, blocking until it has the bytes.
+///
+/// **Blocking on purpose, and it is the whole reason this crate may have an
+/// HTTP client at all.** The pipeline is a function from bytes to bytes, called
+/// from whatever thread the consumer has; an async client would put a runtime
+/// in every Rust consumer of the public crate, including those already inside
+/// one. `ureq` is blocking by construction and brings no runtime -- audited by
+/// walking its tree rather than by reading the note beside it, which lists a
+/// smaller set than it pulls.
+///
+/// No redirect limit, timeout or size cap is set here beyond `ureq`'s own. That
+/// is not an oversight and it is not a promise: a caller wanting a policy has
+/// the same escape the TypeScript surface has, which is to fetch the bytes
+/// themselves and pass `ImageSource::Bytes`.
+#[cfg(feature = "net")]
+fn fetch(url: &str) -> Result<Vec<u8>, Error> {
+    let mut response =
+        ureq::get(url).call().map_err(|error| Error::SourceFetch {
+            url: url.to_owned(),
+            detail: error.to_string(),
+        })?;
+    response
+        .body_mut()
+        .read_to_vec()
+        .map_err(|error| Error::SourceFetch {
+            url: url.to_owned(),
+            detail: error.to_string(),
+        })
+}
+
 fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
     // The `Path` arm owns what it read and the `Bytes` arm borrows what the
     // caller already holds, so only the one that has to allocate does. Making
@@ -606,6 +647,16 @@ fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
             })?;
             &read
         }
+        // The two arms are one decision spelt twice, and the second is why
+        // the first is safe to add: with `net` off this is the refusal it has
+        // always been, so a build that did not ask for an HTTP stack behaves
+        // exactly as it did before the feature existed.
+        #[cfg(feature = "net")]
+        ImageSource::Url(url) => {
+            read = fetch(url)?;
+            &read
+        }
+        #[cfg(not(feature = "net"))]
         ImageSource::Url(_) => return Err(Error::UnresolvedSource(node)),
     };
 
@@ -690,6 +741,44 @@ pub(crate) mod tests {
         assert!(fonts.has("FromBytes"));
     }
 
+    /// A URL that fails without leaving the machine.
+    ///
+    /// Port 1 on the loopback: the connection is refused immediately, so the
+    /// `net` build's fetch fails fast with **no DNS lookup and no traffic**. A
+    /// hostname would resolve -- even a reserved one asks the resolver -- and a
+    /// test that touches the network is a test that fails on an aeroplane.
+    const UNREACHABLE: &str = "http://127.0.0.1:1/image.png";
+
+    /// Asserts that a scene naming a URL is refused, in whichever way this
+    /// build refuses it.
+    ///
+    /// **The two builds refuse differently and both are correct**, which is the
+    /// point of the feature: with `net` off nothing fetches and the node is
+    /// [`Error::UnresolvedSource`]; with it on the fetch is attempted and fails
+    /// as [`Error::SourceFetch`]. Asserting only one of them would make the
+    /// suite pass on one build and fail on the other for no defect.
+    fn assert_url_is_refused(scene: &Scene, node: Option<NodeId>) {
+        let result = Resolved::new(scene, &Fonts::new());
+        #[cfg(not(feature = "net"))]
+        match (result, node) {
+            (Err(Error::UnresolvedSource(id)), Some(want)) => {
+                assert_eq!(id, want, "the refusal names the wrong node");
+            }
+            (Err(Error::UnresolvedSource(_)), None) => {}
+            (other, _) => {
+                unreachable!("a URL should be unresolved here, got {other:?}")
+            }
+        }
+        #[cfg(feature = "net")]
+        {
+            let _ = node;
+            assert!(
+                matches!(result, Err(Error::SourceFetch { .. })),
+                "a URL should have been fetched and failed, got {result:?}"
+            );
+        }
+    }
+
     #[test]
     fn a_url_is_refused_because_the_core_does_not_fetch() {
         assert!(is_local(&ImageSource::Path("a".to_owned())));
@@ -698,12 +787,12 @@ pub(crate) mod tests {
 
         let mut scene = Scene::new(Size::ZERO);
         let node = scene
-            .push(NodeId::ROOT, image_node(ImageSource::Url("u".to_owned())))
+            .push(
+                NodeId::ROOT,
+                image_node(ImageSource::Url(UNREACHABLE.to_owned())),
+            )
             .unwrap_or_else(|error| unreachable!("{error}"));
-        assert!(matches!(
-            Resolved::new(&scene, &Fonts::new()),
-            Err(Error::UnresolvedSource(id)) if id == node
-        ));
+        assert_url_is_refused(&scene, Some(node));
     }
 
     #[test]
@@ -758,7 +847,7 @@ pub(crate) mod tests {
         let mut scene = Scene::new(Size::ZERO);
         scene.nodes[0].paint.background_image =
             Some(meo_canvas_scene::style::paint::BackgroundImage {
-                source: ImageSource::Url("https://a.test/bg.png".to_owned()),
+                source: ImageSource::Url(UNREACHABLE.to_owned()),
                 repeat:
                     meo_canvas_scene::style::paint::BackgroundRepeat::Repeat,
                 size: meo_canvas_scene::style::paint::BackgroundSize::AUTO,
@@ -767,10 +856,7 @@ pub(crate) mod tests {
                     meo_canvas_scene::Length::ZERO,
                 ),
             });
-        assert!(matches!(
-            Resolved::new(&scene, &Fonts::new()),
-            Err(Error::UnresolvedSource(_))
-        ));
+        assert_url_is_refused(&scene, None);
     }
 
     #[test]

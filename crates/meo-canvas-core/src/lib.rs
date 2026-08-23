@@ -50,6 +50,7 @@
     reason = "contradicts the workspace's unreachable_pub"
 )]
 
+pub mod animate;
 pub mod color;
 pub mod encode;
 pub mod layout;
@@ -78,6 +79,37 @@ pub enum Error {
     /// A node names a source the renderer cannot obtain by itself.
     #[error("node {} names a source this crate does not fetch", .0.get())]
     UnresolvedSource(NodeId),
+
+    /// A URL source the fetcher could not obtain.
+    ///
+    /// Distinct from [`Error::UnresolvedSource`], which is the same node with
+    /// the `net` feature **off**: that one says this build does not fetch, and
+    /// this one says the fetch was attempted and failed. A caller can act on
+    /// the difference -- the first is a build flag, the second is the network.
+    #[error("cannot fetch {url}: {detail}")]
+    SourceFetch {
+        /// The URL the node named.
+        url: String,
+        /// What the HTTP client reported.
+        detail: String,
+    },
+
+    /// A [`animate::easing::steps`] count with no width to hold a value for.
+    #[error("steps({0}) needs at least one step")]
+    Steps(u32),
+
+    /// A spring whose parameters have no equation: the three regimes all
+    /// divide by something derived from the stiffness and the mass.
+    #[error("a spring's {0}")]
+    Spring(&'static str),
+
+    /// A keyframe track whose stops and values do not describe a track.
+    #[error("a keyframe track {0}")]
+    Keyframes(&'static str),
+
+    /// A track whose timing does not describe a motion.
+    #[error("a track's {0}")]
+    Track(&'static str),
 
     /// The scene is not the forest of pages the contract requires.
     ///
@@ -882,7 +914,17 @@ mod ico_promise {
     fn a_scene_whose_page_roots_state_four_sizes_writes_four_ico_entries() {
         // The scene size is deliberately none of the four, so a page that fell
         // back to it would be visible in the directory rather than hidden by
-        // agreeing with one of the answers.
+        // agreeing with one of the answers. 16 would have been the natural
+        // pick and would have hidden exactly that.
+        //
+        // **And what it caught was not what it was placed for.** It was put
+        // here against the renderer falling back; the first run reported five
+        // entries with `(100, 100)` ahead of the four, because `Scene::new`
+        // already carries a page and pushing one per size made five. The
+        // scaffolding fell back, not the renderer. A control catches what it
+        // catches -- which is the argument for placing one even when you are
+        // sure what it is for, and the reason not to delete this as
+        // over-caution about a case that cannot happen.
         let mut scene = Scene::new(Size::new(100.0, 100.0));
         for (index, side) in SIZES.into_iter().enumerate() {
             // `Scene::new` already carries a page, so only the rest are pushed.

@@ -856,6 +856,26 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**Where a v1 API rests on a TypeScript type-level construct, the JavaScript
+surface carries it and the Rust surface carries what the language expresses
+instead.** v1's `parallel` takes a record of named members and returns a record
+of their values, assembled by TypeScript's mapped types. TypeScript can express
+that, so the JavaScript surface keeps it whole -- v1 is the baseline for which
+APIs exist, and narrowing a surface that can carry one is a loss for no gain.
+Rust has no need of the construct: a caller with three tracks writes a struct
+with three fields and calls each, which is what the mapped type was
+reconstructing. What does **not** fall out is the timing, because the members
+differ in value type and only their durations compare -- so the Rust side is
+`animate::sequence::longest` and its doc says why it is not `parallel`.
+
+**This is not the same as a policy asymmetry, and the two must not be confused.**
+A URL that fetches on one surface and refuses on the other has to be equalised,
+because a caller issuing the same request gets different behaviour. The test is
+one question: **could a caller observe the difference as behaviour, or only as a
+different way of writing the same thing?** `parallel` against a struct is the
+second -- identical values, different assembly. Fetching against refusing is the
+first.
+
 **A stale artifact does not announce itself as stale -- it reports a type error
 that is false.** `just docs` failed with `the trait bound ImageSource: Hash is
 not satisfied` against a derive sitting three lines above the enum, while
@@ -1257,7 +1277,14 @@ The rule points at our own reporting as well as at the code, and it costs two
 habits. **Check the exit status**: `just ci | grep -E '^error'` returns
 _grep's_ status, not `just`'s, so "no lines matched" is a pattern match on
 output rather than a passing gate, and a failure phrased outside the pattern
-reads as success. **Quote the recipe names from the justfile**, not from what
+reads as success. **And `-p` is not the gate.** `cargo fmt -p meo-canvas-core` leaves comments
+unwrapped where `just fmt-check` fails on them, because the gate runs the pinned
+nightly and only that honours `wrap_comments`; `cargo clippy -p` likewise checks
+one crate where `lint-check` checks the workspace. A scoped command is a
+faster question, not the same question -- so verify with the recipe, and know
+that fixing your own file with `fmt --all` reformats a tree you may be sharing.
+
+**Quote the recipe names from the justfile**, not from what
 scrolled past -- a chain reported off a terminal is the prefix that happened to
 be visible, which is how six recipes came to be described as not having run
 when they had.
