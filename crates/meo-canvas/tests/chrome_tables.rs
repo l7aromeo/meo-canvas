@@ -41,7 +41,7 @@ use std::collections::BTreeMap;
 use meo_canvas::{
     Box as BoxNode, BoxSizing, Display, Element, Format, PositionType,
     Renderer, Root, Styled, hex_rgb, pct, px,
-    scene::{Color, GridPlacement, Transform},
+    scene::{Color, GridAutoFlow, GridPlacement, TrackSize, Transform},
     sides,
 };
 
@@ -1496,5 +1496,209 @@ fn flex_wrapping_matches_chrome() {
         "flex wrapping: {} cases compared, {} pinned",
         cases.len(),
         KNOWN_WRAP.len()
+    );
+}
+
+/// The grid every placement case is laid out in: three columns, three rows.
+const GRID: (f32, f32) = (120.0, 90.0);
+
+/// The page it sits on, and where.
+///
+/// **Bigger than the grid, and offset into it**, for the reason the flex
+/// wrapping page is: an item the auto-placement algorithm pushes outside the
+/// explicit tracks is still drawn, and a page the size of the grid would lose
+/// it and report a placement failure that is really a measurement failure.
+/// Chrome puts `column` flow's fifth item at `x = 120`, one whole grid width
+/// to the right of the container.
+const GRID_PAGE: (f32, f32) = (240.0, 200.0);
+
+/// Where the grid sits on that page.
+const GRID_AT: f32 = 40.0;
+
+/// The six items, each in a colour of its own.
+///
+/// A colour each rather than a shared one, for the reason the wrapping cases
+/// have six: an item is located by its ink, and two items sharing a colour
+/// report one bounding box covering both.
+const GRID_INK: [Color; 6] = [
+    Color::rgb(220, 40, 40),
+    Color::rgb(40, 80, 220),
+    Color::rgb(40, 140, 60),
+    Color::rgb(230, 160, 30),
+    Color::rgb(150, 60, 190),
+    Color::rgb(30, 170, 180),
+];
+
+/// Which flows we place differently from Chrome today.
+const KNOWN_GRID: &[&str] = &[];
+
+/// Where each item lands, for one auto-placement flow.
+///
+/// The second item spans all three columns and the fifth spans two rows,
+/// which is the whole point of the table: uniform single-cell items are placed
+/// identically by all four flows, so a grid without a spanning item reports
+/// `dense` and its plain counterpart as the same keyword. `dense` exists only
+/// to go back for a hole, and an item that spans is what leaves one.
+fn grid_rects(flow: GridAutoFlow) -> Vec<Option<[f32; 4]>> {
+    let children: Vec<Element> = GRID_INK
+        .iter()
+        .enumerate()
+        .map(|(index, ink)| {
+            let item = BoxNode::new().background_color(*ink);
+            match index {
+                // `span 3` and `span 2` with no start line: the placement is
+                // still the algorithm's, and only the size is ours.
+                1 => item.grid_column(GridPlacement {
+                    start: None,
+                    span: Some(3),
+                }),
+                4 => item.grid_row(GridPlacement {
+                    start: None,
+                    span: Some(2),
+                }),
+                _ => item,
+            }
+        })
+        .collect();
+
+    let page = render(
+        GRID_PAGE,
+        BoxNode::new()
+            .position_type(PositionType::Absolute)
+            .position(sides(Some(px(GRID_AT)), None, None, Some(px(GRID_AT))))
+            .size(px(GRID.0), px(GRID.1))
+            .display(Display::Grid)
+            // The track lists spelt out rather than through `Style::columns`:
+            // that sugar is on `Style` alone, and this builds an `Element`.
+            .grid_template_columns(vec![TrackSize::Fraction(1.0); 3])
+            .grid_template_rows(vec![TrackSize::Fraction(1.0); 3])
+            .grid_auto_flow(flow)
+            .children(children),
+    );
+
+    GRID_INK
+        .iter()
+        .map(|ink| {
+            page.extent(*ink).map(|found| {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a coordinate on a 240-pixel page is exact in an f32"
+                )]
+                [
+                    found.0 as f32 - GRID_AT,
+                    found.1 as f32 - GRID_AT,
+                    (found.2 - found.0 + 1) as f32,
+                    (found.3 - found.1 + 1) as f32,
+                ]
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn grid_placement_matches_chrome() {
+    let text = include_str!("assets/chrome/grid-placement.tsv");
+    let mut wrong = Vec::new();
+    let mut compared = 0_usize;
+    let mut unobservable = 0_usize;
+    let mut cases: BTreeMap<String, Vec<[f32; 4]>> = BTreeMap::new();
+
+    for line in text.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 6 {
+            continue;
+        }
+        let numbers: Vec<f32> = fields[2..6]
+            .iter()
+            .filter_map(|field| field.parse().ok())
+            .collect();
+        if numbers.len() != 4 {
+            continue;
+        }
+        cases
+            .entry(fields[0].to_owned())
+            .or_default()
+            .push([numbers[0], numbers[1], numbers[2], numbers[3]]);
+    }
+
+    for (flow, theirs) in &cases {
+        let ours = grid_rects(match flow.as_str() {
+            "column" => GridAutoFlow::Column,
+            "row-dense" => GridAutoFlow::RowDense,
+            "column-dense" => GridAutoFlow::ColumnDense,
+            _ => GridAutoFlow::Row,
+        });
+        let known = KNOWN_GRID.contains(&flow.as_str());
+        let mut apart = false;
+
+        for (index, theirs) in theirs.iter().enumerate() {
+            let empty = theirs[2] == 0.0 || theirs[3] == 0.0;
+            match (ours.get(index).copied().flatten(), empty) {
+                // Chrome placed it in an implicit track of zero size. A
+                // rectangle with no area paints nothing, so **where** it went
+                // is not a question a pixel can answer -- but *that* it went
+                // nowhere is, and that is what this arm checks. Named and
+                // counted rather than skipped, because a silent skip turns a
+                // conformance table into a self-portrait.
+                (None, true) => unobservable += 1,
+                (Some(ours), true) => {
+                    apart = true;
+                    wrong.push(format!(
+                        "{flow} item {index}: Chrome gives it no area at {:?} and we paint it at {ours:?}",
+                        [theirs[0], theirs[1]]
+                    ));
+                }
+                (None, false) => {
+                    apart = true;
+                    wrong.push(format!(
+                        "{flow} item {index}: Chrome puts it at {theirs:?} and we paint nothing"
+                    ));
+                }
+                // A pixel of tolerance, as the flex matrix takes: a bounding
+                // box read from ink is the box the colour covers, and a
+                // layout rectangle is where the box was put.
+                (Some(ours), false) => {
+                    if ours
+                        .iter()
+                        .zip(theirs.iter())
+                        .any(|(ours, theirs)| (ours - theirs).abs() > 1.0)
+                    {
+                        apart = true;
+                        wrong.push(format!(
+                            "{flow} item {index}: we place it at {ours:?}, Chrome at {theirs:?}"
+                        ));
+                    }
+                }
+            }
+            compared += 1;
+        }
+
+        if apart && known {
+            wrong.retain(|line| !line.starts_with(flow.as_str()));
+        }
+        if !apart && known {
+            wrong.push(format!(
+                "{flow}: now agrees with Chrome. That is a fix -- delete the row from KNOWN_GRID"
+            ));
+        }
+    }
+
+    assert_eq!(cases.len(), 4, "all four flows have to be in the table");
+    assert!(compared > 0, "the grid table has no cases to compare");
+    assert!(
+        wrong.is_empty(),
+        "{} placements differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+    eprintln!(
+        "grid placement: {compared} placements compared across {} flows, \
+         {unobservable} of them zero-area and checked only for absence, \
+         {} pinned",
+        cases.len(),
+        KNOWN_GRID.len()
     );
 }

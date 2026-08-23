@@ -128,6 +128,17 @@ try {
     '# CORNERS OF A RECTANGLE ARE EQUIDISTANT FROM ITS CENTRE: a corner-only table',
     '# cannot tell a circle from an ellipse, which is half of what these cases ask.',
     '#',
+    '# CHROME DITHERS ITS GRADIENTS, AND THIS TABLE ALREADY SHOWS IT: `linear',
+    '# 0deg` reads 126 at mid-left and 125 at mid-right, two points that are',
+    '# analytically identical on a vertical ramp, and `180deg` reads 130 against',
+    '# 129. Dither is a per-pixel offset from a pattern tied to device',
+    '# coordinates and to a Skia build, so it is not reproducible across',
+    '# renderers and not worth matching -- our own surface does not dither by',
+    '# default. A consumer of this table must therefore NEVER assert equality',
+    '# between two samples at the same `t`, and must carry at least one unit of',
+    '# tolerance per channel against an undithered surface. Both are measurable',
+    '# in the rows below rather than taken on trust.',
+    '#',
     '# case\tw\th\tpoint\tx\ty\tr\tg\tb\tt\tcss',
   ]
   await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
