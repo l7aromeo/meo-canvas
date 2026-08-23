@@ -2094,14 +2094,16 @@ fn stroke_broken_border(
             )
         } else {
             // Above the threshold the border is one continuous run round the
-            // whole path, so the phase is the path's own and the slack is
-            // spread all the way round. Chrome's loop has no seam, which
-            // means the corner this starts at is unobservable.
+            // whole path, **fitted to the perimeter rather than to a side**.
+            // Chrome's loop has no seam: the slack is spread all the way
+            // round, so the corner the run starts at is unobservable and this
+            // may start wherever the path does.
             if !dotted {
-                let nominal: [f32; 2] = dash_pattern(width).into();
-                context.set_line_dash(&nominal);
+                let loop_fit: [f32; 2] =
+                    fitted_loop(perimeter(&centre_paint, centre), width).into();
+                context.set_line_dash(&loop_fit);
             }
-            let drawn = box_path(context, &centre_paint, centre);
+            let drawn = anchored_loop(context, &centre_paint, centre);
             if drawn.is_ok() {
                 context.stroke();
             }
@@ -2208,6 +2210,140 @@ fn fill_corner_arcs(
         path?;
     }
     Ok(())
+}
+
+/// The dash and gap for a closed path, fitted to the whole of it.
+///
+/// **The same arithmetic as [`fitted_dash`] with one term changed: a loop has
+/// as many gaps as dashes**, because the last gap closes onto the first dash
+/// rather than stopping at a corner. An open run of `n` dashes has `n - 1`
+/// gaps; getting that wrong here leaves the gaps a shade too wide and the
+/// fitting invisible -- on a 240x48 box at radius 8 the open form fits 46
+/// dashes with a gap of 4.04 and draws what an unfitted period draws, where
+/// the closed form fits 46 with 3.95 and scatters the threes Chrome scatters.
+///
+/// **The length is the centre path's**, measured on both renderers: a 240x48
+/// box at radius 8 holds 46 marks where the outer perimeter predicts 47, and
+/// Chrome's own 137x120 row holds 41 where the outer predicts 42. So a
+/// dashed border fits the **outer** straight run per side and the **centre**
+/// path round a loop -- two mechanisms, which is not what either of us
+/// expected and is measured on both sides.
+///
+/// Chrome's loop has no seam, so this says nothing about where the run starts.
+#[must_use]
+pub fn fitted_loop(length: f32, width: f32) -> (f32, f32) {
+    let (dash, nominal) = dash_pattern(width);
+    if dash <= 0.0 || length <= dash + nominal {
+        return (dash, nominal);
+    }
+    let count = (length / (dash + nominal)).round().max(1.0);
+    (dash, (count.mul_add(-dash, length) / count).max(0.0))
+}
+
+/// The same contour [`box_path`] draws, opened at the top-left tangent.
+///
+/// # Why this exists rather than a dash offset
+///
+/// A dashed loop's phase begins where its path begins. Chrome's begins at a
+/// tangent -- its dashes fall on `x = 8` of a 240x48 box at radius 8, which is
+/// where the top edge's straight part starts -- and ours fell on `x = 3`,
+/// which is inside the arc and is not a landmark at all. **Neither our own
+/// start point nor the offset from it to a tangent is derivable**: the two
+/// candidate starts a rounded rectangle might open at predict 8 and 10.5, and
+/// the phase we actually got is neither, so `round_rect` is opening somewhere
+/// unstated or Skia's measured length differs from the geometric one by the
+/// conic approximation of the arcs. An offset tuned until the picture agreed
+/// would be a number nobody could derive, and the first box with a different
+/// radius would move it.
+///
+/// So the path is traced from the tangent instead, and the phase starts there
+/// **because the path does** -- the same reason each side of a square box is
+/// stroked as its own line rather than given a computed offset.
+///
+/// **Which tangent is not a choice**: the outer contour's is at `r` from the
+/// box's edge, and the centre line's is at `w / 2 + (r - w / 2)`, the same
+/// point. They separate only where the centre radius floors at zero, `r < w /
+/// 2`, and a box on this branch has `r > w`. On the branch that uses an
+/// anchor, there is one point to mean.
+///
+/// # The hazard
+///
+/// Skia adds a rectangle and a rounded rectangle to a path by different
+/// mechanisms, and mixing them in one path joins the contours instead of
+/// leaving them separate -- which painted a triangle over half a box once
+/// already; [`box_path_continuing`] carries that story. This traces lines and
+/// arcs only, so it never takes the rectangle route, and **it is used for the
+/// dashed loop alone**. Every filling caller stays on [`box_path`], where the
+/// contour's start point does not matter and the even-odd ring does.
+fn anchored_loop(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    rect: Rect,
+) -> Result<(), Error> {
+    let [top_left, top_right, bottom_right, bottom_left] =
+        fitted_radii(paint, rect);
+    let (left, top) = (rect.origin.x, rect.origin.y);
+    let (right, bottom) = (rect.right(), rect.bottom());
+
+    context.begin_path();
+    context.move_to(left + top_left, top);
+    // Clockwise from the top-left tangent: each side, then the corner it runs
+    // into. A zero radius is a corner rather than an arc of no length, because
+    // `arc_to` through coincident points has no circle to fit.
+    for (side, corner, next, radius) in [
+        (
+            (right - top_right, top),
+            (right, top),
+            (right, top + top_right),
+            top_right,
+        ),
+        (
+            (right, bottom - bottom_right),
+            (right, bottom),
+            (right - bottom_right, bottom),
+            bottom_right,
+        ),
+        (
+            (left + bottom_left, bottom),
+            (left, bottom),
+            (left, bottom - bottom_left),
+            bottom_left,
+        ),
+        (
+            (left, top + top_left),
+            (left, top),
+            (left + top_left, top),
+            top_left,
+        ),
+    ] {
+        context.line_to(side.0, side.1);
+        if radius > 0.0 {
+            context
+                .arc_to(corner.0, corner.1, next.0, next.1, radius)
+                .map_err(|error| Error::Paint(error.to_string()))?;
+        } else {
+            context.line_to(corner.0, corner.1);
+        }
+    }
+    context.close_path();
+    Ok(())
+}
+
+/// The length of the closed path a rounded box is stroked along.
+///
+/// Each corner takes its radius off both of the sides it joins and gives back
+/// a quarter arc, so a radius costs `2r` of straight and returns `pi * r / 2`.
+///
+/// This is what a continuous border is fitted to. **Not a side**: above the
+/// threshold Chrome fits the loop, spreads the remainder round the whole of
+/// it, and leaves no seam — which is why a side of such a box is neither
+/// flush at its corners nor a whole number of periods long. Ours was flush at
+/// both ends of every side for the accidental reason that each stroke began
+/// at a corner, and flushness is the *per-side* signature.
+fn perimeter(paint: &PaintStyle, rect: Rect) -> f32 {
+    let curved: f32 = radii_at(paint).iter().sum();
+    let straight = 2.0f32.mul_add(rect.size.width + rect.size.height, 0.0);
+    (std::f32::consts::FRAC_PI_2 - 2.0).mul_add(curved, straight)
 }
 
 /// The four outer radii, scaled the way CSS scales them when two on one side

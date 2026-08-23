@@ -20,10 +20,10 @@ use meo_canvas::{
     Justify, ObjectFit, Overflow, Path, PositionType, Root, Styled, Text,
     corners, corners_all, hex_rgb, px,
     scene::{
-        BackgroundImage, BackgroundRepeat, BackgroundSize, BoxShadow, Color,
-        Corners, Dimension, FillRule, FontWeight, Gradient, GradientGeometry,
-        GradientStop, ImageSource, Length, LinearDirection, Mask, MaskShape,
-        PathPaint, Scene, Sides, VerticalAlign, codec,
+        BackgroundImage, BackgroundRepeat, BackgroundSize, BorderStyle,
+        BoxShadow, Color, Corners, Dimension, FillRule, FontWeight, Gradient,
+        GradientGeometry, GradientStop, ImageSource, Length, LinearDirection,
+        Mask, MaskShape, PathPaint, Scene, Sides, VerticalAlign, codec,
     },
     sides,
 };
@@ -51,6 +51,8 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("gradient-linear", gradient_linear()),
         ("blend-modes", blend_modes()),
         ("flex-alignment", flex_alignment()),
+        ("borders-dashed-square", borders_dashed_square()),
+        ("borders-dashed-radius", borders_dashed_radius()),
     ]
 }
 
@@ -1360,6 +1362,69 @@ fn flex_alignment() -> Scene {
 }
 
 /// Where the fixtures live, relative to this crate.
+/// A dashed border with square corners, at the width the defect lived at.
+///
+/// **Nothing golden in this project drew a dashed border before this.** The
+/// renderer fitted its dashes to the centreline's length where Chrome fits the
+/// outer one -- `8, 4, 8, 4, 8, 4, 8` against `8, 5, 8, 6, 8, 5, 8` on a
+/// 48-pixel edge -- and no fixture could have caught it, because no fixture
+/// drew one. The whole rhythm rested on a single renderer-level assertion that
+/// called the arithmetic directly and would have passed unchanged either side
+/// of the fix.
+///
+/// 240 by 48 with a 4-wide border, which is exactly the box the Chrome table
+/// was measured in, so `notes.json` can name Chrome's own runs rather than
+/// ours. `borders-per-edge` is the reason that matters: it certified two
+/// corners while they were wrong, twice, because it was accepted from our own
+/// render.
+fn borders_dashed_square() -> Scene {
+    Root::new(240.0, 48.0)
+        .position_type(PositionType::Relative)
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("a dashed square border. Chrome's runs are in notes.json.")
+        .children(
+            BoxNode::new()
+                .position_type(PositionType::Relative)
+                .size(px(240.0), px(48.0))
+                .border(sides(4.0, 4.0, 4.0, 4.0))
+                .border_style(BorderStyle::Dashed)
+                .border_color(hex_rgb(0x00_00_00))
+                .background_color(hex_rgb(0xff_ff_ff))
+                .name(
+                    "border: 4px dashed -- per-side fitting, both ends flush",
+                ),
+        )
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// The same border above the threshold, where the run goes round the path.
+///
+/// Radius 8 at width 4: `radius > width`, so the inner corner is genuinely
+/// round and Chrome stops fitting each side to its own length and runs one
+/// dash pattern around the whole path. The square fixture beside this one is
+/// the control -- **the pair is the point**, because either picture alone is
+/// just a dashed box and only the two together say that the behaviour changes.
+fn borders_dashed_radius() -> Scene {
+    Root::new(240.0, 48.0)
+        .position_type(PositionType::Relative)
+        .background_color(hex_rgb(0xff_ff_ff))
+        .name("a dashed border above the radius threshold. See notes.json.")
+        .children(
+            BoxNode::new()
+                .position_type(PositionType::Relative)
+                .size(px(240.0), px(48.0))
+                .border(sides(4.0, 4.0, 4.0, 4.0))
+                .border_style(BorderStyle::Dashed)
+                .border_color(hex_rgb(0x00_00_00))
+                .border_radius(8.0)
+                .background_color(hex_rgb(0xff_ff_ff))
+                .name("radius 8 at width 4 -- one run around the path"),
+        )
+        .into_scene()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
 const FIXTURES: &str = "../../fixtures";
 
 #[test]
