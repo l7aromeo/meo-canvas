@@ -2239,15 +2239,27 @@ fn fitted_radii(paint: &PaintStyle, rect: Rect) -> [f32; 4] {
 
 /// Whether this box is dashed side by side rather than round its path.
 ///
-/// **The threshold is `radius > width`, and it is a degeneracy rather than a
-/// margin.** The inner edge of a border curves by `radius - width`; at or
-/// below the width that is zero or negative, **the inner corner is square**,
-/// and Chrome fits each side on its own exactly as it does for a square box.
-/// Above it the inner corner is genuinely round and the border becomes one
-/// continuous run round the path.
+/// **The threshold is a degeneracy rather than a margin.** The inner edge of a
+/// border curves by `radius - width`; where that is zero or negative **the
+/// inner corner is square**, and Chrome fits each side on its own exactly as
+/// it does for a square box. Above it the inner corner is genuinely round and
+/// the border becomes one continuous run round the whole path.
 ///
-/// Measured by the one signature that separates the two: a mark longer than a
-/// dash, which only two per-side runs butting at a corner can produce.
+/// # The signature, which is a length and not a presence
+///
+/// What separates the two is **a mark longer than that side's own dash**,
+/// which only two per-side runs butting at a corner can produce. Ink spanning
+/// the tangent is *not* the signature: a continuous run crosses the corner
+/// with one ordinary dash, and reading presence rather than length inverts the
+/// answer on exactly the case in question.
+///
+/// ```text
+/// w 4/4    on:8.1   one dash at that width   crossing, not butting
+/// w 8/8    on:26.8  against a 16 dash        butting
+/// w 12/12  on:64.8  against a 24 dash        butting
+/// ```
+///
+/// # Uniform widths: `radius > width`
 ///
 /// ```text
 /// width 4   r 0, 4 -> 3 butting marks     r 5, 6, 8, 12, 24 -> none
@@ -2261,9 +2273,43 @@ fn fitted_radii(paint: &PaintStyle, rect: Rect) -> [f32; 4] {
 /// threshold as `5 < r <= 6` came from exactly that, and `w + 2` and `1.5w`
 /// were both fitted to it.
 ///
-/// **Where a corner's two sides differ in width this is reasoned rather than
-/// measured**: the inner corner is round only if it is round along both, so a
-/// corner counts as degenerate until the radius clears the thicker of them.
+/// # Unequal widths: the **thinner** side decides, and it is measured
+///
+/// Two pairs, both walked by Agent Zero at `r = 6`, and neither side butts:
+///
+/// ```text
+/// w_top 4 / w_left 8    off:9.8  over the corner    continuous
+/// w_top 4 / w_left 12   off:13.1 over the corner    continuous
+/// ```
+///
+/// So a corner is degenerate up to `min(w_a, w_b)`. The second pair is what
+/// makes it a rule rather than a fit: at `4/8` the two candidate thresholds
+/// are 4 and 8 with the radius between them, and at `4/12` they are far apart
+/// and the answer still follows the smaller.
+///
+/// **What this displaced**: that Chrome asks each *side* about its own width,
+/// which a corner would see as `min`. That framing accounts for each side
+/// keeping its own dash length -- `2w` at 12 on one side of a corner and `2w`
+/// at 4 on the other -- but so does this one, because a continuous border is
+/// still stroked edge by edge in each edge's own width. It fails on the bit
+/// that does separate them: it predicts the thicker side butts at a corner its
+/// own width calls degenerate, and at both pairs it does not.
+///
+/// **A consequence worth meeting here rather than in a render**: a thin edge
+/// beside a thick one sends the whole corner continuous early. Widths 1 and 20
+/// at a radius of 2 is continuous, though the 20-wide side's own geometry is
+/// nowhere near its threshold. That follows from both rows rather than adding
+/// to them, and it is where this rule would be wrong if it is wrong.
+///
+/// # Why the arc is safe to fill from whichever wedge is painting
+///
+/// **Dash length is per side; whether the corner is filled is a corner
+/// decision.** So a corner's two sides never branch differently, and the arc
+/// between them never has two answers to choose from. That is a reason rather
+/// than a construction -- the code would happily paint a corner twice if the
+/// sides disagreed -- so it is written here: if a measurement ever shows one
+/// side of a corner fitted and the other continuous, [`fill_corner_arcs`]
+/// becomes a third case and not a detail.
 fn fits_per_side(curves: [f32; 4], widths: Sides<f32>) -> bool {
     let pairs = [
         (widths.top, widths.left),
@@ -2274,7 +2320,7 @@ fn fits_per_side(curves: [f32; 4], widths: Sides<f32>) -> bool {
     curves
         .iter()
         .zip(pairs)
-        .all(|(radius, (one, other))| *radius <= one.max(other))
+        .all(|(radius, (one, other))| *radius <= one.min(other))
 }
 
 /// The straight part of one side: where its ink begins and ends.
