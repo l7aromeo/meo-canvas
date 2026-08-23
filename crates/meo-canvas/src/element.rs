@@ -616,6 +616,31 @@ impl Element {
         self
     }
 
+    /// The coordinate space this path's `d` is written in, as SVG's
+    /// `viewBox`: `(min_x, min_y, width, height)`.
+    ///
+    /// **The node must have a size**, since the drawing is scaled into it and
+    /// a path node has no intrinsic one. Without a box the `d` is absolute, as
+    /// it has always been.
+    ///
+    /// ```
+    /// use meo_canvas::Path;
+    ///
+    /// // A unit square that fills whatever box it is given.
+    /// let square =
+    ///     Path::d("M0 0 H10 V10 H0 Z").view_box(Some((0.0, 0.0, 10.0, 10.0)));
+    /// ```
+    #[must_use]
+    pub const fn view_box(
+        mut self,
+        view: Option<(f32, f32, f32, f32)>,
+    ) -> Self {
+        if let NodeKind::Path { view_box, .. } = &mut self.kind {
+            *view_box = view;
+        }
+        self
+    }
+
     /// How a path's outline is painted. `None` leaves it unstroked.
     #[must_use]
     pub fn stroke(mut self, paint: Option<PathPaint>) -> Self {
@@ -695,6 +720,10 @@ impl Path {
     pub fn d(data: impl Into<String>) -> Element {
         Element::new(NodeKind::Path {
             data: data.into(),
+            // Absolute coordinates unless a caller asks otherwise, which is
+            // what `d` alone has always meant.
+            view_box: None,
+            stretch: false,
             fill: Some(PathPaint::Solid(Color::BLACK)),
             stroke: None,
             line_width: 1.0,

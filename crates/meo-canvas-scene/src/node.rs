@@ -167,8 +167,62 @@ pub enum NodeKind {
 
     /// An arbitrary shape from SVG path data.
     Path {
-        /// The `d` attribute of an SVG path, in the node's coordinate space.
+        /// The `d` attribute of an SVG path, in the node's coordinate space —
+        /// or in `view_box`'s space when one is given.
         data: String,
+        /// The coordinate space `data` is written in, as SVG's `viewBox`:
+        /// `(min_x, min_y, width, height)`.
+        ///
+        /// **`None` means the path draws in absolute local coordinates**,
+        /// which is what every path did before this existed and what one still
+        /// does without it. With a box, the path is scaled and centred into
+        /// the node's resolved size under SVG's default
+        /// `preserveAspectRatio` — `xMidYMid meet` — so it fits
+        /// without distorting.
+        ///
+        /// **Equivalent to SVG's `viewBox` with
+        /// `vector-effect: non-scaling-stroke`.** The drawing scales; the pen
+        /// does not. In SVG a two-pixel stroke in a box scaled five times is
+        /// drawn ten pixels wide, and ours stays two — deliberately, because a
+        /// caller authoring a `d` in a unit square wants `line_width` to mean
+        /// pixels and a chart's gridlines to stay hairlines whatever the box.
+        /// Nothing here consumes SVG artwork, so nothing wants the other
+        /// behaviour yet; `vector-effect` is the piece to add if something
+        /// does. Asserted in `tests/path_view_box.rs` rather than left true by
+        /// accident.
+        ///
+        /// **The node must have a size for this to mean anything.** A path
+        /// node has no intrinsic size, so one with neither a width nor a
+        /// height gets an empty box — and scaling a drawing into nothing draws
+        /// nothing. Without a box that is harmless, since only the origin is
+        /// used; with one it is the difference between a picture and a blank.
+        ///
+        /// It exists because a path in a percentage-sized box was otherwise
+        /// undrawable: `d` is absolute, `Transform::scale_x` is an `f32`
+        /// rather than a length, and a percentage-sized path node
+        /// still draws `d` in absolute local coordinates. A chart's
+        /// line, pie and doughnut all hit that, where its bars did not
+        /// — a rectangle can be a percentage and a path cannot. No
+        /// `preserve_aspect_ratio` field: the web's default is
+        /// the only one anything here has needed, and a knob nobody uses is
+        /// worse than none.
+        view_box: Option<(f32, f32, f32, f32)>,
+        /// Whether the drawing may be stretched to fill the node.
+        ///
+        /// SVG's `preserveAspectRatio`, and **only its `none` value**: `false`
+        /// is the default `xMidYMid meet`, which fits the drawing without
+        /// distorting it, and `true` is `none`, which scales each axis
+        /// independently so the drawing fills the node exactly.
+        ///
+        /// A subset rather than a private spelling, so the other eight
+        /// alignments stay addable without breaking a caller. `none` is here
+        /// because a line chart needs it: a plot must fill its box, `meet`
+        /// preserves aspect, and no viewBox fixes that — the box's aspect
+        /// would have to match the node's, which is exactly what is unknown
+        /// when the drawing is authored.
+        ///
+        /// It does **not** distort the pen, for the reason `view_box` gives.
+        stretch: bool,
         /// How the interior is painted, if at all.
         fill: Option<PathPaint>,
         /// How the outline is painted, if at all.

@@ -6,8 +6,22 @@
 //! That type is four bytes, which is what a scene carries and what a painter
 //! draws. **An interpolation needs somewhere to be between two of them**, and
 //! an overshooting curve needs somewhere to be outside both. So this is `f64`
-//! per channel, normalised to 0..1, and **unclamped** -- the narrowing to
-//! bytes happens once, where the value becomes a scene colour.
+//! per channel and **unclamped** -- the narrowing to bytes happens once, where
+//! the value becomes a scene colour.
+//!
+//! # The units are v1's, deliberately
+//!
+//! `r`, `g` and `b` run 0 to 255 and `a` runs 0 to 1. That is v1's shape and
+//! the TypeScript surface's, and **the same type on two surfaces must carry
+//! the same numbers**: a factor of 255 between them would make every
+//! cross-surface comparison need a conversion neither implementation
+//! performs, and a mistake in that conversion would read as a defect in one
+//! of them.
+//!
+//! It is also the scale the out-of-gamut path is written in. A 0..1 colour
+//! would be inside `0..=255` always, so `in_gamut` would never be false and
+//! **the extended `color(srgb ...)` branch would silently never run** --
+//! every colour coming back as hex, with nothing failing to say so.
 //!
 //! # Why the mix does not clamp its time
 //!
@@ -30,16 +44,19 @@
 
 use meo_canvas_scene::style::paint::Color;
 
+/// The top of a colour channel, which is v1's scale and the surface's.
+pub const CHANNEL_MAX: f64 = 255.0;
+
 /// A colour with room to be between two others, and outside both.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgba {
-    /// Red, normalised, and not clamped to 0..1.
+    /// Red, 0 to 255, and not clamped to it.
     pub r: f64,
     /// Green, likewise.
     pub g: f64,
     /// Blue, likewise.
     pub b: f64,
-    /// Alpha, likewise.
+    /// Alpha, 0 to 1, and not clamped to it either.
     pub a: f64,
 }
 
@@ -52,7 +69,7 @@ impl Rgba {
     pub fn in_gamut(self) -> bool {
         [self.r, self.g, self.b]
             .iter()
-            .all(|channel| (0.0..=1.0).contains(channel))
+            .all(|channel| (0.0..=CHANNEL_MAX).contains(channel))
     }
 
     /// The scene colour this becomes when it is drawn.
@@ -102,13 +119,13 @@ mod tests {
         // hands `t` past 1, and v1 clamps it here -- see the module doc for
         // why we do not.
         let white = Rgba {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
+            r: 255.0,
+            g: 255.0,
+            b: 255.0,
             a: 1.0,
         };
         let over = mix(GREY, white, 1.5);
-        assert!(over.r > 1.0, "the mix stopped at the endpoint");
+        assert!(over.r > 255.0, "the mix stopped at the endpoint");
         assert!(!over.in_gamut());
         // And it comes back at the byte boundary rather than in between.
         assert_eq!(over.to_color().r, 255);
@@ -150,7 +167,7 @@ mod tests {
     #[test]
     fn a_negative_channel_is_out_of_gamut_at_both_ends() {
         assert!(!Rgba { r: -0.01, ..GREY }.in_gamut());
-        assert!(!Rgba { b: 1.01, ..GREY }.in_gamut());
-        assert_eq!(Rgba { r: -0.5, ..GREY }.to_color().r, 0);
+        assert!(!Rgba { b: 255.01, ..GREY }.in_gamut());
+        assert_eq!(Rgba { r: -20.0, ..GREY }.to_color().r, 0);
     }
 }

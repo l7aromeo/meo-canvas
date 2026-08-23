@@ -859,6 +859,8 @@ impl Wire for NodeKind {
             }
             Self::Path {
                 data,
+                view_box,
+                stretch,
                 fill,
                 stroke,
                 line_width,
@@ -870,6 +872,18 @@ impl Wire for NodeKind {
             } => {
                 out.u8(NodeTag::Path.to_wire());
                 out.str(data);
+                // Written as four separate optionals rather than one optional
+                // tuple: `Option<(f32, f32, f32, f32)>` has no `Wire` impl and
+                // adding one for a shape used once would be a wider change
+                // than the field itself.
+                view_box.is_some().write(out);
+                if let Some((min_x, min_y, width, height)) = view_box {
+                    out.f32(*min_x);
+                    out.f32(*min_y);
+                    out.f32(*width);
+                    out.f32(*height);
+                }
+                stretch.write(out);
                 fill.write(out);
                 stroke.write(out);
                 out.f32(*line_width);
@@ -902,6 +916,17 @@ impl Wire for NodeKind {
             }),
             Some(NodeTag::Path) => Ok(Self::Path {
                 data: input.str()?,
+                view_box: if bool::read(input)? {
+                    Some((
+                        input.f32()?,
+                        input.f32()?,
+                        input.f32()?,
+                        input.f32()?,
+                    ))
+                } else {
+                    None
+                },
+                stretch: bool::read(input)?,
                 fill: Option::read(input)?,
                 stroke: Option::read(input)?,
                 line_width: input.f32()?,

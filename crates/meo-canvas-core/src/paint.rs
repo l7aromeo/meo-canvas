@@ -961,6 +961,8 @@ fn paint_kind(
         }
         NodeKind::Path {
             data,
+            view_box,
+            stretch,
             fill,
             stroke,
             line_width,
@@ -970,9 +972,16 @@ fn paint_kind(
             line_dash,
             line_dash_offset,
         } => {
-            let path = Path2D::from_svg(data, to_skia_rule(*fill_rule))
-                .map_err(|error| Error::Paint(error.to_string()))?
-                .offset(rect.origin.x, rect.origin.y);
+            let drawn = Path2D::from_svg(data, to_skia_rule(*fill_rule))
+                .map_err(|error| Error::Paint(error.to_string()))?;
+            // No box is the behaviour every path had before one existed:
+            // absolute coordinates, shifted to where the node sits.
+            let path = view_box.map_or_else(
+                || drawn.offset(rect.origin.x, rect.origin.y),
+                |view| {
+                    drawn.transform(view_box_transform(view, rect, *stretch))
+                },
+            );
 
             if let Some(fill) = fill {
                 let squash = set_paint(context, fill, rect, true)?;
@@ -3572,6 +3581,65 @@ fn draw_backdrop(
 ///
 /// One number for a transform that may scale the axes differently, which is
 /// what a filter's single radius needs. v1's own reading of the matrix.
+/// The transform that fits a path's `viewBox` into the box it was given.
+///
+/// **SVG's `xMidYMid meet`, which is its default and the only one here.** One
+/// scale for both axes — the smaller, so the whole box fits — and the
+/// remainder split evenly, which is what centres it. A per-axis scale would
+/// fill the node exactly and distort the drawing; `meet` keeps the shape and
+/// leaves letterboxing.
+///
+/// A zero or negative extent has no scale that means anything, so the path is
+/// placed unscaled at the node's origin rather than multiplied by infinity —
+/// the same choice as a zero `maxValue` in a chart, and for the same reason: a
+/// degenerate input should draw something explicable rather than nothing.
+fn view_box_transform(
+    view: (f32, f32, f32, f32),
+    rect: Rect,
+    stretch: bool,
+) -> Affine {
+    let (min_x, min_y, width, height) = view;
+    if width <= 0.0 || height <= 0.0 {
+        return Affine {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: rect.origin.x - min_x,
+            ty: rect.origin.y - min_y,
+        };
+    }
+
+    // `none` scales each axis on its own so the drawing fills the node;
+    // `meet` takes the smaller for both, which fits it without distorting.
+    let (scale_x, scale_y) = if stretch {
+        (rect.size.width / width, rect.size.height / height)
+    } else {
+        let scale = (rect.size.width / width).min(rect.size.height / height);
+        (scale, scale)
+    };
+    Affine {
+        a: scale_x,
+        b: 0.0,
+        c: 0.0,
+        d: scale_y,
+        // `mul_add` because clippy asks for it and it is right here: this
+        // crate is the single implementation both surfaces render through, and
+        // nothing compares these numbers bit-for-bit against another engine.
+        // The opposite rule holds in `animate`, where the comparison is exact
+        // against v1's own output — the boundary is the comparison, not the
+        // file.
+        // Under `none` the remainder is zero on both axes, so the centring
+        // term vanishes and this is the same expression for both cases.
+        tx: width
+            .mul_add(-scale_x, rect.size.width)
+            .mul_add(0.5, min_x.mul_add(-scale_x, rect.origin.x)),
+        ty: height
+            .mul_add(-scale_y, rect.size.height)
+            .mul_add(0.5, min_y.mul_add(-scale_y, rect.origin.y)),
+    }
+}
+
 fn page_scale(transform: Affine) -> f32 {
     let horizontal = transform.a.hypot(transform.b);
     let vertical = transform.c.hypot(transform.d);
@@ -3910,6 +3978,91 @@ fn draw_mask(
 
 #[cfg(test)]
 mod tests {
+    /// The transform a `viewBox` produces, checked against SVG's own rule.
+    ///
+    /// Verified against a render before these were written: a `0 0 10 10` box
+    /// in a 100x50 node at (20, 10) draws its unit square at `x 45..94,
+    /// y 10..59` — scale 5, fifty wide, centred horizontally with twenty-five
+    /// pixels either side and flush vertically. The numbers below are that
+    /// reading turned into arithmetic.
+    mod view_box {
+        use meo_canvas_scene::{Point, Rect, Size};
+
+        use super::super::view_box_transform;
+
+        fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
+            Rect {
+                origin: Point { x, y },
+                size: Size { width, height },
+            }
+        }
+
+        #[test]
+        fn meet_takes_the_smaller_scale_so_the_whole_box_fits() {
+            // 100/10 is 10 and 50/10 is 5; `meet` takes 5, which is what keeps
+            // the drawing's shape. A per-axis scale would fill the node and
+            // distort it.
+            let transform = view_box_transform(
+                (0.0, 0.0, 10.0, 10.0),
+                rect(20.0, 10.0, 100.0, 50.0),
+                false,
+            );
+            assert!((transform.a - 5.0).abs() < f32::EPSILON);
+            assert!((transform.d - 5.0).abs() < f32::EPSILON);
+        }
+
+        #[test]
+        fn the_remainder_is_split_evenly_which_is_what_centres_it() {
+            // Fifty wide inside a hundred leaves fifty, so twenty-five each
+            // side: 20 + 25 = 45. Vertically it is flush, so the origin is
+            // untouched.
+            let transform = view_box_transform(
+                (0.0, 0.0, 10.0, 10.0),
+                rect(20.0, 10.0, 100.0, 50.0),
+                false,
+            );
+            assert!((transform.tx - 45.0).abs() < f32::EPSILON);
+            assert!((transform.ty - 10.0).abs() < f32::EPSILON);
+        }
+
+        #[test]
+        fn a_min_corner_shifts_the_drawing_rather_than_scaling_it() {
+            // `min-x` and `min-y` say where the drawing's own origin is, so a
+            // box starting at (2, 2) moves the picture by two scaled units.
+            let plain = view_box_transform(
+                (0.0, 0.0, 10.0, 10.0),
+                rect(0.0, 0.0, 50.0, 50.0),
+                false,
+            );
+            let shifted = view_box_transform(
+                (2.0, 2.0, 10.0, 10.0),
+                rect(0.0, 0.0, 50.0, 50.0),
+                false,
+            );
+            assert!(
+                (shifted.a - plain.a).abs() < f32::EPSILON,
+                "the scale is unchanged"
+            );
+            assert!((plain.tx - shifted.tx - 10.0).abs() < f32::EPSILON);
+        }
+
+        #[test]
+        fn a_degenerate_box_places_the_path_rather_than_multiplying_by_infinity()
+         {
+            // A zero extent has no scale that means anything. Drawing at the
+            // node's origin unscaled is explicable; NaN coordinates are not,
+            // and would draw nothing while looking like a renderer fault.
+            let transform = view_box_transform(
+                (0.0, 0.0, 0.0, 10.0),
+                rect(7.0, 9.0, 50.0, 50.0),
+                false,
+            );
+            assert!((transform.a - 1.0).abs() < f32::EPSILON);
+            assert!((transform.tx - 7.0).abs() < f32::EPSILON);
+            assert!((transform.ty - 9.0).abs() < f32::EPSILON);
+        }
+    }
+
     use meo_canvas_scene::{
         Length, Point, Rect, Scene, Size,
         node::{ImageSource, Node, NodeId, NodeKind},
@@ -4881,6 +5034,8 @@ mod tests {
                 NodeId::ROOT,
                 Node::new(NodeKind::Path {
                     data: "M0 0 L20 20 L0 20 Z".to_owned(),
+                    view_box: None,
+                    stretch: false,
                     fill: Some(meo_canvas_scene::node::PathPaint::Solid(
                         meo_canvas_scene::style::paint::Color::BLACK,
                     )),
@@ -5084,6 +5239,8 @@ mod tests {
                 NodeId::ROOT,
                 Node::new(NodeKind::Path {
                     data: "M0 0 L5 5".to_owned(),
+                    view_box: None,
+                    stretch: false,
                     fill: None,
                     stroke: None,
                     line_width: 1.0,
@@ -5121,6 +5278,8 @@ mod tests {
                 NodeId::ROOT,
                 Node::new(NodeKind::Path {
                     data: "this is not path data".to_owned(),
+                    view_box: None,
+                    stretch: false,
                     fill: Some(meo_canvas_scene::node::PathPaint::Solid(
                         meo_canvas_scene::style::paint::Color::BLACK,
                     )),
@@ -5181,6 +5340,8 @@ mod tests {
                 NodeId::ROOT,
                 Node::new(NodeKind::Path {
                     data: "M0 0 L10 0 L10 10 Z".to_owned(),
+                    view_box: None,
+                    stretch: false,
                     fill: Some(PathPaint::Gradient(gradient.clone())),
                     stroke: Some(PathPaint::Gradient(gradient)),
                     line_width: 1.0,

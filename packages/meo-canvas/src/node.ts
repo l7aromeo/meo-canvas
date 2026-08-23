@@ -336,8 +336,53 @@ export function Image(props: ImageProps): SceneNode {
 export type PathPaint = Color | 'none' | Gradient
 
 export type PathProps = Style & {
-  /** The SVG `d` attribute, in the node's own coordinates. */
+  /** The SVG `d` attribute, in the node's own coordinates — or in
+   * {@link PathProps.viewBox}'s space when one is given. */
   readonly d: string
+  /**
+   * The coordinate space `d` is written in, as SVG's `viewBox`:
+   * `[minX, minY, width, height]`.
+   *
+   * **Absent means absolute coordinates**, which is what every path did before
+   * this existed. With a box, the path is scaled and centred into the node's
+   * resolved size under SVG's default `preserveAspectRatio` — `xMidYMid meet`
+   * — so it fits without distorting.
+   *
+   * **Equivalent to SVG's `viewBox` with
+   * `vector-effect: non-scaling-stroke`.** The drawing scales; the pen does
+   * not. In SVG a two-pixel stroke in a box scaled five times is drawn ten
+   * pixels wide, and ours stays two — deliberately, because a caller authoring
+   * a `d` in a unit square wants `lineWidth` to mean pixels. `vector-effect`
+   * is the piece to add if something ever wants the other behaviour.
+   *
+   * **The node must have a size for this to mean anything.** A path node has
+   * no intrinsic size, so one with neither a width nor a height gets an empty
+   * box, and scaling a drawing into nothing draws nothing.
+   *
+   * It exists because a path in a percentage-sized box was otherwise
+   * undrawable: `d` is absolute, `transform.scale` is a number rather than a
+   * length, and a percentage-sized path node still draws `d` in absolute local
+   * coordinates. **A rectangle can be a percentage and a path cannot** — which
+   * is why a chart's bars needed nothing and its line, pie and doughnut need
+   * this.
+   */
+  readonly viewBox?: readonly [number, number, number, number]
+  /**
+   * Whether the drawing may be stretched to fill the node.
+   *
+   * SVG's `preserveAspectRatio`, and **only its `none` value**: absent is the
+   * default `xMidYMid meet`, which fits the drawing without distorting it, and
+   * `'none'` scales each axis independently so it fills the node exactly.
+   *
+   * A subset rather than a private spelling, so the other eight alignments
+   * stay addable without breaking a caller. `none` is here because a line
+   * chart needs it — a plot must fill its box, `meet` preserves aspect, and no
+   * viewBox fixes that, since the box's aspect would have to match the node's
+   * and that is exactly what is unknown when the drawing is authored.
+   *
+   * It does **not** distort the pen — see {@link PathProps.viewBox}.
+   */
+  readonly preserveAspectRatio?: 'none'
   /** How the interior is painted. Defaults to black, as SVG does. */
   readonly fill?: PathPaint
   /** How the outline is painted. Unset draws no stroke. */

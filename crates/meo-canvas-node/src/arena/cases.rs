@@ -557,23 +557,6 @@ fn case_scene(apply: impl FnOnce(&mut Node)) -> Scene {
 /// byte buffer, so a writer that got the buffer wrong would pass on the
 /// strength of a path -- plus both arms of the text discriminant.
 fn kind_cases() -> Vec<KindCase> {
-    let gradient = Gradient {
-        // The endpoint arm, which is the reason the geometry moved onto the
-        // kinds and which nothing else in the artefact reaches. Quarters and
-        // three-quarters rather than whole percentages: `Percent(1.0)` is the
-        // one value at which a hundredfold units disagreement between the two
-        // surfaces encodes identically, and a quarter is exact in an `f32`.
-        geometry: GradientGeometry::Linear {
-            direction: LinearDirection::Between {
-                start: (Length::Percent(0.25), Length::Points(3.0)),
-                end: (Length::Percent(0.75), Length::Percent(0.25)),
-            },
-        },
-        stops: vec![GradientStop {
-            offset: 0.5,
-            color: Color::rgba(9, 8, 7, 6),
-        }],
-    };
     let image = |source| NodeKind::Image {
         source,
         // Every field away from its default, so a payload that stopped writing
@@ -647,11 +630,43 @@ fn kind_cases() -> Vec<KindCase> {
         // Two path cases, split along what a surface can say rather than along
         // anything in the format. Everything here is solid paint, which both
         // surfaces spell, so this one is probed from both sides.
+    ]
+    .into_iter()
+    .chain(path_cases())
+    .collect()
+}
+
+/// The path kind's cases, lifted out because `kind_cases` outgrew its line
+/// budget — and because the pair belongs together: one carries a `view_box`
+/// and a `stretch` and the other carries neither, which is what covers both
+/// arms of each.
+fn path_cases() -> Vec<KindCase> {
+    let gradient = Gradient {
+        // The endpoint arm, which is the reason the geometry moved onto the
+        // kinds and which nothing else in the artefact reaches. Quarters and
+        // three-quarters rather than whole percentages: `Percent(1.0)` is the
+        // one value at which a hundredfold units disagreement between the two
+        // surfaces encodes identically, and a quarter is exact in an `f32`.
+        geometry: GradientGeometry::Linear {
+            direction: LinearDirection::Between {
+                start: (Length::Percent(0.25), Length::Points(3.0)),
+                end: (Length::Percent(0.75), Length::Percent(0.25)),
+            },
+        },
+        stops: vec![GradientStop {
+            offset: 0.5,
+            color: Color::rgba(9, 8, 7, 6),
+        }],
+    };
+
+    vec![
         KindCase::built(
             format!("{KIND_PREFIX}path"),
             NodeTag::Path,
             NodeKind::Path {
                 data: String::from("M0 0 L4 4"),
+                view_box: None,
+                stretch: false,
                 fill: Some(PathPaint::Solid(Color::rgba(1, 2, 3, 4))),
                 stroke: Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))),
                 line_width: 2.5,
@@ -674,6 +689,11 @@ fn kind_cases() -> Vec<KindCase> {
             NodeTag::Path,
             NodeKind::Path {
                 data: String::from("M0 0 L4 4"),
+                // The one case that carries a box. Both cases writing `None`
+                // would leave the four floats on the wire unread by any case,
+                // and an encoder that dropped them would still pass.
+                view_box: Some((-1.0, -2.0, 8.0, 4.0)),
+                stretch: true,
                 fill: None,
                 stroke: Some(PathPaint::Gradient(gradient)),
                 line_width: 1.0,
@@ -778,6 +798,8 @@ fn kind_json(kind: &NodeKind) -> String {
         ),
         NodeKind::Path {
             data,
+            view_box,
+            stretch,
             fill,
             stroke,
             line_width,
@@ -787,10 +809,21 @@ fn kind_json(kind: &NodeKind) -> String {
             line_dash,
             line_dash_offset,
         } => format!(
-            "{{\"data\":{},\"fill\":{},\"stroke\":{},\"line_width\":{},\
-             \"fill_rule\":{},\"line_cap\":{},\"line_join\":{},\
-             \"line_dash\":{},\"line_dash_offset\":{}}}",
+            "{{\"data\":{},\"view_box\":{},\"stretch\":{},\"fill\":{},\"stroke\":{},\
+             \"line_width\":{},\"fill_rule\":{},\"line_cap\":{},\
+             \"line_join\":{},\"line_dash\":{},\"line_dash_offset\":{}}}",
             data.to_json(),
+            match view_box {
+                None => String::from("null"),
+                Some((min_x, min_y, width, height)) => format!(
+                    "[{},{},{},{}]",
+                    min_x.to_json(),
+                    min_y.to_json(),
+                    width.to_json(),
+                    height.to_json()
+                ),
+            },
+            stretch.to_json(),
             fill.to_json(),
             stroke.to_json(),
             line_width.to_json(),

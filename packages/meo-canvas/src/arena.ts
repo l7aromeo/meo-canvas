@@ -1394,6 +1394,12 @@ function writePathPaint(out: ArenaWriter, paint: PathPaint | undefined, fallback
 function writePathPayload(out: ArenaWriter, props: PathProps): void {
   out.text(props.d)
 
+  // Four floats behind a flag, matching the byte codec.
+  const view = props.viewBox
+  out.bool(view !== undefined)
+  if (view !== undefined) for (const number of view) out.f32(number)
+  out.bool(props.preserveAspectRatio === 'none')
+
   // Black and unstroked when the caller says nothing, which is SVG's default
   // and what the Rust surface writes.
   writePathPaint(out, props.fill, BLACK)

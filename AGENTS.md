@@ -890,6 +890,32 @@ records a fingerprint against the old file. It is the tree-moving-under-a-run
 hazard in the one form that does not look like it: **not a wrong result, a
 wrong error.**
 
+**A stale instrument reports something plausible rather than failing, and it
+has now done so three ways.** `cargo doc` type-checked against a cached crate
+and named a derive that was plainly present. A probe left in `tests/` outlived
+its deletion by long enough to catch another session's gate. A built addon on
+the old wire layout reported `slot 23 holds 2.5, which is not an integer` --
+a perfectly sensible complaint about a world that no longer existed, and the
+first instinct was to look for a field-order mistake. **Each was diagnosed as a
+defect in the thing being measured before anyone suspected the thing
+measuring**, which is what makes the family expensive rather than merely
+annoying. `touch` the file, delete the probe, `just addon`.
+
+**`cargo check --workspace` does not compile `#[cfg(test)]` code, so a struct
+field can be complete everywhere the library looks and absent everywhere the
+tests do.** A new field on `NodeKind::Path` passed a clean `check --workspace`
+and then failed `lint-check`, which uses `--all-targets`, in the scene crate's
+own tests and in two other crates' test modules. **It is the `-p is not the
+gate` rule one axis over: not the wrong crate, the wrong target.** Anything
+that changes a type's shape wants `--all-targets` before it is called done.
+
+**A probe belongs outside `tests/` entirely.** A module under `src/` is opt-in
+and is inert until something declares it; **a file under `tests/` is opt-out
+and there is no declaration to withhold** -- every file there is its own cargo
+target, compiled unconditionally. The window between writing a probe and
+deleting it is long enough to catch someone else's gate, and it did. Write
+probes in a scratch directory the compiler cannot reach.
+
 **A capability promised at the layer that has it, and blocked at a layer that
 never mentions it, is invisible to every test we write.** `ImageFormat::Ico` is
 in `ALL`, encodes, round-trips, and its doc at `encode.rs:56` promises the

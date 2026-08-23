@@ -38,15 +38,34 @@ use meo_canvas_scene::style::paint::Color;
 /// ```
 #[must_use]
 pub fn parse_color(css: &str) -> Option<Color> {
-    let [r, g, b, a] = extended_srgb(css).map_or_else(
-        || {
-            csscolorparser::parse(css)
-                .ok()
-                .map(|parsed| parsed.to_rgba8())
-        },
-        |channels| Some(to_rgba8(channels)),
-    )?;
+    let [r, g, b, a] = to_rgba8(parse_channels(css)?);
     Some(Color::rgba(r, g, b, a))
+}
+
+/// The same parse, **unclamped**, in the units the surfaces use.
+///
+/// `r`, `g` and `b` run 0 to 255 and `a` runs 0 to 1 -- v1's shape, which both
+/// the TypeScript surface and [`crate::animate::color::Rgba`] carry.
+///
+/// # Why unclamped, and why this is not [`parse_color`]
+///
+/// `color(srgb 1.25 1.25 1.25)` is a real colour outside the gamut, and it is
+/// **the only CSS syntax that can express one**. A scene stores four bytes, so
+/// [`parse_color`] clamps -- right for a renderer. An animation mixing colours
+/// needs somewhere to be outside the gamut between two of them, and clamping
+/// at the parse would flatten the overshoot before the mix ever saw it. **The
+/// clamp belongs where a colour becomes paint and not before.**
+///
+/// Both spellings come through here: the `color(srgb ...)` pre-pass and
+/// everything `csscolorparser` reads. **One parser, one answer** -- which is
+/// why the addon exports this rather than each surface parsing for itself.
+#[must_use]
+pub fn parse_channels(css: &str) -> Option<[f32; 4]> {
+    let [r, g, b, a] = extended_srgb(css).or_else(|| {
+        let parsed = csscolorparser::parse(css).ok()?;
+        Some([parsed.r, parsed.g, parsed.b, parsed.a])
+    })?;
+    Some([r * 255.0, g * 255.0, b * 255.0, a])
 }
 
 /// The channels of a `color(srgb …)` string, unclamped, or `None` for
@@ -123,7 +142,16 @@ fn color_function(css: &str) -> Option<(&str, &str)> {
 /// and is clamped here -- which is the same place a browser clamps, at the
 /// point of painting rather than during interpolation.
 fn to_rgba8(channels: [f32; 4]) -> [u8; 4] {
-    channels.map(|value| (value.clamp(0.0, 1.0) * 255.0).round() as u8)
+    let [r, g, b, a] = channels;
+    [r, g, b, a * 255.0].map(|value| {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped to the byte range on the same line as the cast"
+        )]
+        let byte = value.clamp(0.0, 255.0).round() as u8;
+        byte
+    })
 }
 
 #[cfg(test)]
@@ -176,6 +204,45 @@ mod tests {
             parse_color("color(srgb 1.2 -0.1 0.5)"),
             Some(Color::rgba(255, 0, 128, 255))
         );
+    }
+
+    #[test]
+    fn the_unclamped_parse_keeps_what_the_clamped_one_cannot() {
+        // The two agree wherever a colour fits in a byte, and part company
+        // exactly where the syntax exists to go outside it. If they ever
+        // agreed everywhere, `parse_channels` would be pointless.
+        assert_eq!(
+            super::parse_channels("#ff0000"),
+            Some([255.0, 0.0, 0.0, 1.0])
+        );
+        assert_eq!(parse_color("#ff0000"), Some(Color::rgba(255, 0, 0, 255)));
+
+        let over = super::parse_channels("color(srgb 1.2 -0.1 0.5)")
+            .unwrap_or_else(|| unreachable!("an srgb colour"));
+        assert!(over[0] > 255.0, "the overshoot was flattened at the parse");
+        assert!(over[1] < 0.0, "the undershoot was flattened at the parse");
+        // And the clamped one puts it back in the byte range, which is what a
+        // scene can hold.
+        assert_eq!(
+            parse_color("color(srgb 1.2 -0.1 0.5)"),
+            Some(Color::rgba(255, 0, 128, 255))
+        );
+    }
+
+    #[test]
+    fn alpha_is_the_one_channel_that_does_not_scale() {
+        // `r`, `g` and `b` are 0 to 255 and `a` is 0 to 1, which is v1's shape
+        // and the surface's. A parse that scaled all four alike would report
+        // an opaque colour as `a: 255` and every caller comparing against 1
+        // would read it as transparent.
+        let half = super::parse_channels("rgba(0, 0, 0, 0.5)")
+            .unwrap_or_else(|| unreachable!("an rgba colour"));
+        assert!(
+            (half[3] - 0.5).abs() < 0.01,
+            "alpha came back as {}",
+            half[3]
+        );
+        assert_eq!(parse_color("rgba(0, 0, 0, 0.5)").map(|c| c.a), Some(128));
     }
 
     #[test]

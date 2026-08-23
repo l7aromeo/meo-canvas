@@ -662,6 +662,13 @@ mod tests {
             },
             NodeKind::Path {
                 data: "M0 0 H10".to_owned(),
+                // Present rather than `None`: this is the round-trip case, and
+                // an encoder that dropped the four floats would survive a
+                // `None` here without anything failing.
+                view_box: Some((-1.0, -2.0, 8.0, 4.0)),
+                // `true` for the same reason the box is present: a codec that
+                // dropped the flag would round-trip a `false` unchanged.
+                stretch: true,
                 fill: Some(PathPaint::Solid(Color::rgb(1, 1, 1))),
                 stroke: Some(PathPaint::Gradient(gradient.clone())),
                 line_width: 2.5,

@@ -368,6 +368,11 @@ function readPayload(input: Cursor, kind: string): unknown {
 
   return {
     data: side(input),
+    // Four floats behind a flag, matching both writers. Reading the floats
+    // unconditionally would desynchronise every field after it, which is why
+    // this moves with the writer rather than guessing a fixed width.
+    view_box: slot(input) === 1 ? [f32(input), f32(input), f32(input), f32(input)] : null,
+    stretch: slot(input) === 1,
     fill: read(input, 'Option<PathPaint>'),
     stroke: read(input, 'Option<PathPaint>'),
     line_width: f32(input),
@@ -955,6 +960,10 @@ describe('a path node', () => {
     // produce one scene and a picture should not depend on which built it.
     expect(page(Path({ d: 'M2 8 L6 12 L14 3' })).payload).toEqual({
       data: 'M2 8 L6 12 L14 3',
+      // Absent, which is what every path meant before a viewBox existed:
+      // absolute coordinates in the node's own space.
+      view_box: null,
+      stretch: false,
       fill: { tag: 'solid', value: { r: 0, g: 0, b: 0, a: 255 } },
       stroke: null,
       line_width: 1,
@@ -983,6 +992,8 @@ describe('a path node', () => {
       ).payload,
     ).toEqual({
       data: 'M0 0 L4 4',
+      view_box: null,
+      stretch: false,
       fill: { tag: 'solid', value: { r: 1, g: 2, b: 3, a: 4 } },
       stroke: { tag: 'solid', value: { r: 5, g: 6, b: 7, a: 8 } },
       line_width: 2.5,
@@ -1451,6 +1462,11 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
   // than about paths.
   __kind_path_gradient: Path({
     d: 'M0 0 L4 4',
+    // The one case carrying a box, so the present arm is on the wire in a
+    // case that reads it. Both cases writing none would leave four floats
+    // that no case covers, and an encoder dropping them would still pass.
+    viewBox: [-1, -2, 8, 4],
+    preserveAspectRatio: 'none',
     fill: 'none',
     stroke: {
       type: 'linear',

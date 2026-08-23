@@ -175,6 +175,53 @@ fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     Ok(object)
 }
 
+/// A CSS colour string as four channels, or `null`.
+///
+/// # Why the addon and not the surface
+///
+/// **The renderer already parses colour, and a second implementation would
+/// drift from it.** The first thing it would disagree about is
+/// `color(srgb ...)`, which `csscolorparser` does not implement at all and
+/// which this crate handles in a pre-pass -- so a JavaScript parser written to
+/// the same specification would refuse a string the renderer accepts, and the
+/// disagreement would surface as a colour that draws but cannot be animated.
+///
+/// So the string boundary is here: one parser, both surfaces.
+///
+/// # The shape
+///
+/// `{ r, g, b, a }` with `r`, `g` and `b` in 0 to 255 and `a` in 0 to 1, which
+/// is v1's convention and what `animate.ts` carries. **Unclamped**: a
+/// `color(srgb 1.25 ...)` comes back above 255 rather than flattened, because
+/// an animation needs somewhere to be outside the gamut and the clamp belongs
+/// where a colour becomes paint.
+fn parse_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
+    let css = cx.argument::<JsString>(0)?.value(&mut cx);
+    let Some([red, green, blue, alpha]) =
+        meo_canvas_core::color::parse_channels(&css)
+    else {
+        return Ok(cx.null().upcast());
+    };
+    let object = cx.empty_object();
+    for (name, channel) in [("r", red), ("g", green), ("b", blue), ("a", alpha)]
+    {
+        let value = cx.number(f64::from(channel));
+        object.set(&mut cx, name, value)?;
+    }
+    Ok(object.upcast())
+}
+
+/// Whether a string is a colour this renderer understands.
+///
+/// **Defined as [`parse_color`] returning something**, rather than as its own
+/// check: two functions that can disagree about one string are a defect
+/// waiting for the first caller who uses both, and a caller who asks this
+/// before parsing is entitled to the same answer.
+fn is_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBoolean> {
+    let css = cx.argument::<JsString>(0)?.value(&mut cx);
+    Ok(cx.boolean(meo_canvas_core::color::parse_channels(&css).is_some()))
+}
+
 /// The surface [`backend`] asks. One pixel, because nothing is drawn on it.
 const PROBE_SIZE: meo_canvas_scene::Size = meo_canvas_scene::Size {
     width: 1.0,
@@ -466,5 +513,7 @@ fn main(mut cx: ModuleContext<'_>) -> NeonResult<()> {
     cx.export_function("render", render)?;
     cx.export_function("backend", backend)?;
     cx.export_function("sceneBytes", scene_bytes)?;
+    cx.export_function("parseColor", parse_color)?;
+    cx.export_function("isColor", is_color)?;
     Ok(())
 }

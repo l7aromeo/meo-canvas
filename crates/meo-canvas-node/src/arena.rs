@@ -947,6 +947,19 @@ fn read_kind(
         }),
         NodeTag::Path => Ok(NodeKind::Path {
             data: String::read(input)?,
+            // Four floats behind a flag, matching the byte codec: a
+            // `(f32, f32, f32, f32)` has no `Wire` impl of its own.
+            view_box: if bool::read(input)? {
+                Some((
+                    f32::read(input)?,
+                    f32::read(input)?,
+                    f32::read(input)?,
+                    f32::read(input)?,
+                ))
+            } else {
+                None
+            },
+            stretch: bool::read(input)?,
             fill: Option::<PathPaint>::read(input)?,
             stroke: Option::<PathPaint>::read(input)?,
             line_width: f32::read(input)?,
