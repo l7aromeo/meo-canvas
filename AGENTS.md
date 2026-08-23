@@ -970,6 +970,36 @@ defect in the thing being measured before anyone suspected the thing
 measuring**, which is what makes the family expensive rather than merely
 annoying. `touch` the file, delete the probe, `just addon`.
 
+**The near neighbour of that family, which is not in it, and the one test that
+tells them apart: re-run and see whether the answer changes on its own.** A
+stale instrument keeps its answer until you clear it. A moving subject does not
+need you to. At the moment of the report the two are indistinguishable -- both
+are a tool you trust saying something the source contradicts -- and they take
+opposite guards, so the discrimination has to come first.
+
+A clippy run reported `more than 3 bools in a struct` at `bar.rs:55` and the
+gate was genuinely red. Minutes later it exited 0, unchanged by `touch`, so
+nothing was cached. The line number placed the read: the struct sits at 66 now
+and at 51 in `HEAD`, and 55 is where it sat in the window **after** the fourth
+bool arrived -- the one that makes the lint fire -- and **before** the `expect`
+above it did. The reading caught the tree between two edits about a minute
+apart.
+
+Nothing here was stale. The instrument was current, its inputs were current,
+and its answer was true of the tree it read. **What moved was the subject** --
+so the guard is the opposite of `touch`: not "make the tool prove what it
+looked at" but **a reading of a shared tree is a reading of a moment, so report
+it with the commit or the timestamp that names which moment.** A line number
+alone is unresolvable from the other side without reconstructing the window by
+hand, which is what it cost here.
+
+This entry then happened to itself. Two of us were asked to write it, an hour
+apart, neither told the other had it -- **two readings of one shared tree at
+different moments, each acted on.** It was caught only because `git status`
+still listed `AGENTS.md` as modified. **An uncommitted file is precisely where
+this guard has no purchase**, because the commit is the thing that makes a
+moment nameable.
+
 **A bound satisfied exactly by the worst case cannot see the worst case.**
 `rounding_drift.rs` asserts our edges stay within half a pixel of exact.
 Edge five is **exactly** `0.5` away -- it passes, and it is the one edge where
@@ -1560,6 +1590,29 @@ A rendered check would have asked none of these: the first is invisible where
 a degenerate flex line still fills its parent, the second is a few pixels of
 gutter, and the third moves a label by half a line.
 
+**A wrong claim leaves a trace and a missing one does not.** Two of those
+findings were the same defect in opposite forms. The axis label was caught
+because a doc comment described a transform the code never applied -- **the
+prose was the evidence**, and a reader comparing the two could see the gap
+without running anything. The pie's slice label was missing the same kind of
+transform and nothing beside it claimed otherwise, so there was nothing to
+contradict: it read as complete code doing exactly what it said, which was
+nothing. **An omission with no prose against it is invisible to review**, and
+only a second implementation that _did_ write the transform could say it was
+missing.
+
+The same shape decides where the fix goes. `pct(p) = Length::Percent(p / 100.0)`
+takes an `f32`, so a caller holding an `f64` fraction writes `pct(f * 100.0)`
+and the division runs on the already-narrowed value -- one ulp, four bytes of a
+line chart, nothing a render could show. **Widening `pct` to `f64` is the
+tempting fix and it is the wrong one**: `f * 100.0 / 100.0` in `f64` is within
+an ulp of `f` rather than equal to it, and that ulp usually dies in the
+narrowing but is not guaranteed to. **A fix that is probably bit-exact is not a
+fix for a check whose whole value is bit-exactness.** `fraction()` beside `pct`
+removes the round trip instead of shortening it -- exact by construction. Both
+names stay, because a caller that genuinely holds a percentage still wants
+`pct`, and a note at the site says so before someone unifies them.
+
 ### And what only a pixel can
 
 The converse of the byte comparison's strength is its blind spot: **it can only
@@ -1578,6 +1631,31 @@ landed. **A cross-surface agreement test measures agreement, not correctness**
 The fix moves the pinned bytes, so it lands on both surfaces at once: a
 one-sided change makes the agreement test fail for the right reason at the
 wrong moment, and the next reader diagnoses a port defect.
+
+### A green row is not coverage of a number the case cannot produce
+
+**The four-kinds rule one level down: not a kind that is missing, but a value
+the case cannot generate.**
+
+`pct` narrowed to `f32` in the middle of a percentage round trip, so a fraction
+scaled up and divided down again rounded twice and moved its last bit. The bar
+agreement case never saw it. Its values are 1 and 2 against a maximum of 2,
+which gives halves and ones — **dyadic fractions, which survive a `×100 ÷100`
+round trip exactly.** Bar was green for the whole life of the defect, and when
+the fix landed its bytes did not move: same hash before and after. It took a
+chart whose points land on **thirds** — the line case — to produce a number the
+defect could damage.
+
+Nothing about the passing row said so. Not the test, not the code, not the
+pass.
+
+**The guard: when a check compares numbers, ask what values the case can
+actually produce, and whether the defect being guarded against could appear in
+them.** A dyadic-only case cannot exhibit a rounding bug; an all-integer case
+cannot exhibit a formatting one; a case whose maximum equals every value cannot
+exhibit a scaling one. **The case has to be able to fail before its passing
+means anything** — which is the same demand as "a case that cannot discriminate
+is not a case that agreed", asked of the inputs rather than the assertion.
 
 ### A language's convenient default is not the other language's
 
@@ -1604,6 +1682,47 @@ artifact fresh and the test runs against the binary built from the bug — which
 reads as a fix that did not take. `touch` the file, or restore by writing it
 rather than moving one over it. **The stale-artifact trap, manufactured by the
 revert mechanism itself.**
+
+**The fourth member of that family**, after a cached crate reporting a type
+error the source does not have, a probe that survived the window in which it
+was deleted, and an addon binary answering on an old wire layout. What the four
+share is the whole difficulty: **the tool is correct, its inputs are stale, and
+nothing in the output distinguishes that from a correct answer.** A wrong tool
+eventually says something impossible; a stale one says something plausible, and
+it is usually the thing that was expected. So the guard is never _read the
+result carefully_ — it is to make the instrument prove it looked at what it is
+thought to have looked at: assert the revert found its target, check the
+binary's hash, delete the artifact rather than trusting its date.
+
+### A test that fails is not evidence about which side is wrong
+
+A render corrected a prediction three times in one day. The sharpest: a legend
+on the right was expected to leave the bars starting at 10, and they start at
+7 — **the plot keeps its left edge and loses its right, so 5% of a narrower
+plot is a smaller number.** The arithmetic was right and the expectation was
+not.
+
+**Two of the three corrections were the render teaching the test what the
+layout does, and one was a real defect. Nothing about the failure told them
+apart.** Only re-deriving the number for the case in hand did. So the pull to
+reuse a number remembered from the last case, and to read a disagreement as a
+bug in the code, is the thing to resist: derive for the case in front of you,
+and when the picture disagrees, find out which of the two is wrong before
+changing either.
+
+### For shared code the question is not whether it is right
+
+`framed` and `legend` are reached by all four chart kinds, so the failure that
+matters is not that they draw wrongly but that **a kind never calls them** —
+and every legend assertion asked a bar chart, so not one of them could see it.
+
+**The four-kinds rule inverted.** Where separate code lets two kinds hide each
+other's gaps, shared code lets one kind's coverage look like everyone's.
+
+A kind never calling `framed` is **an absent node and needs no ink to see**, so
+a tree assertion is the better instrument here — the JavaScript surface's is
+one, and the renders on the Rust side stay only because they are written and
+passing.
 
 ## Before publishing
 

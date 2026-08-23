@@ -22,7 +22,7 @@ use crate::{
         frame::{framed, legend},
         geometry::{LINE_SPACE, line_path, line_points, series_color},
     },
-    hex_rgb, pct, px,
+    fraction, hex_rgb, px,
     unit::sides,
 };
 
@@ -124,17 +124,17 @@ fn marker(
     y: f64,
     colour: &str,
 ) -> Element {
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a fraction of a plot, narrowed once at the style boundary"
-    )]
-    let (left, top) = (x as f32 * 100.0, y as f32 * 100.0);
     BoxElement::new()
         .name(format!("point {series}.{index}"))
         .with_style(
             Style::new()
                 .position_type(PositionType::Absolute)
-                .position(sides(Some(pct(top)), None, None, Some(pct(left))))
+                .position(sides(
+                    Some(fraction(y)),
+                    None,
+                    None,
+                    Some(fraction(x)),
+                ))
                 .width(px(POINT_RADIUS * 2.0))
                 .height(px(POINT_RADIUS * 2.0))
                 .border_radius(POINT_RADIUS)

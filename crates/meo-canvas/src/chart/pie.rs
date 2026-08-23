@@ -7,7 +7,24 @@
 //! any box, and `xMidYMid meet` does the same thing. **A line chart is the one
 //! that does not**, since it should fill its box rather than stay square.
 
-use meo_canvas_scene::node::PathPaint;
+#![expect(
+    clippy::suboptimal_flops,
+    reason = "a slice label's position is compared against the other \
+              surface's byte for byte, and `mul_add` is fused -- one \
+              rounding where JavaScript's `0.5 + Math.cos(m) * reach` has \
+              two and no fused form to reach for. Clippy's `more \
+              accurately` is true and it is the wrong property. THE LINT DID \
+              NOT CHANGE, THE CODE'S OBLIGATIONS DID: this was ordinary \
+              arithmetic until it acquired a second implementation, which \
+              moved it from `paint.rs`'s category to `animate`'s without the \
+              line being edited. And the tempting repair is the dangerous \
+              one -- fusing makes `chart_agreement` fail, and regenerating \
+              the assets would leave a green test asserting that a fused \
+              Rust and an unfused JavaScript match. A re-pin is how a broken \
+              agreement becomes a documented one."
+)]
+
+use meo_canvas_scene::{Length, node::PathPaint, style::effect::Transform};
 
 use crate::{
     Box as BoxElement, Element, Error, Path, PositionType, Style, Text,
@@ -16,7 +33,7 @@ use crate::{
         frame::{framed, legend},
         geometry::{series_color, slice_angles},
     },
-    hex_rgb, pct, px,
+    fraction, hex_rgb, px,
     unit::sides,
 };
 
@@ -107,6 +124,7 @@ pub fn pie(
     if options.show_labels {
         for (index, (start, end)) in angles.iter().enumerate() {
             drawn.push(slice_label(
+                index,
                 *start,
                 *end,
                 outer,
@@ -155,6 +173,7 @@ pub fn pie(
 /// **In percentages of the plot rather than pixels**, since the drawing is
 /// square and centred and the label rides with it.
 fn slice_label(
+    index: usize,
     start: f64,
     end: f64,
     outer: f64,
@@ -162,21 +181,31 @@ fn slice_label(
     options: &Options,
 ) -> Element {
     let middle = start + (end - start) / 2.0;
-    let reach = ((outer * PIE_LABEL_REACH) / PIE_SPACE) * 100.0;
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a fraction of the plot, narrowed once at the style boundary"
-    )]
-    let (left, top) = (
-        ((0.5 + (middle.cos() * reach) / 100.0) * 100.0) as f32,
-        ((0.5 + (middle.sin() * reach) / 100.0) * 100.0) as f32,
-    );
+    let reach = (outer * PIE_LABEL_REACH) / PIE_SPACE;
+    let (left, top) = (0.5 + middle.cos() * reach, 0.5 + middle.sin() * reach);
     BoxElement::new()
-        .name("slice label")
+        .name(format!("slice label {index}"))
         .with_style(
             Style::new()
                 .position_type(PositionType::Absolute)
-                .position(sides(Some(pct(top)), None, None, Some(pct(left)))),
+                .position(sides(
+                    Some(fraction(top)),
+                    None,
+                    None,
+                    Some(fraction(left)),
+                ))
+                // **Half its own width and half its own height back from the
+                // point**, which is v1's
+                // `render(ctx, labelX - width / 2, labelY - height / 2)`.
+                // Without it the label's top-left corner sits on the point and
+                // the text hangs down and to the right of where it belongs.
+                // The same shape as the axis label's missing transform, and it
+                // survived longer here because no doc comment claimed it.
+                .transform(Transform {
+                    translate_x: Length::Percent(-0.5),
+                    translate_y: Length::Percent(-0.5),
+                    ..Transform::default()
+                }),
         )
         .children([Text::new(label).with_style(
             Style::new()

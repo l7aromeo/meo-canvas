@@ -41,6 +41,15 @@ pub const fn px(points: f32) -> Length {
 /// The scene stores the fraction, and converting here rather than at the call
 /// site is what keeps `50` from meaning `5000%` on the way in.
 ///
+/// **For a caller who already holds a fraction, [`fraction`] rather than
+/// `pct(f * 100.0)`** — the round trip out of and back into a fraction rounds
+/// twice and moves the last bit: `1 - 1/3` arrives as `0.666_666_75` that way
+/// and `0.666_666_69` every other. **No render can see it** — it is a sixth
+/// of a hundred-millionth of a box — so the only thing that ever will is a
+/// comparison against another implementation of the same drawing. The two
+/// functions are kept separate rather than unified for that reason: widening
+/// `pct` to `f64` would shorten the round trip without removing it.
+///
 /// ```
 /// use meo_canvas::{Style, pct};
 ///
@@ -49,6 +58,42 @@ pub const fn px(points: f32) -> Length {
 #[must_use]
 pub const fn pct(percent: f32) -> Length {
     Length::Percent(percent / 100.0)
+}
+
+/// A fraction of whatever the property resolves against, narrowed **once**.
+///
+/// `fraction(0.5)` is `50%`, where [`pct`] spells the same length `pct(50.0)`.
+/// Both exist because a caller either holds a percentage or holds a fraction,
+/// and **the conversion between them is not free**.
+///
+/// # Why a caller holding a fraction must not reach for `pct`
+///
+/// `pct` takes an `f32` and divides by a hundred. A caller with an `f64`
+/// fraction therefore multiplies by a hundred in `f64`, narrows at the
+/// argument, and divides again in `f32` — **two roundings of one number**, and
+/// the second moves the last bit. `1 - 1/3` arrives as `0.666_666_75` by that
+/// route and `0.666_666_69` by every other, including the same computation on
+/// the JavaScript surface.
+///
+/// **Nothing renders differently for it.** A sixth of a hundred-millionth of a
+/// box is not a pixel anywhere. It was found by comparing encoded bytes
+/// against the other surface, and that is the only kind of check that can see
+/// it — which is also why it is worth having: any Rust caller scaling a
+/// fraction into `pct` loses the same bit silently.
+///
+/// ```
+/// use meo_canvas::{Style, Styled, fraction};
+///
+/// // A third of the way down, narrowed at the boundary and nowhere else.
+/// let placed = Style::new().height(fraction(1.0 / 3.0));
+/// ```
+#[must_use]
+pub const fn fraction(of_the_box: f64) -> Length {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the single narrowing this exists to perform"
+    )]
+    Length::Percent(of_the_box as f32)
 }
 
 /// A share of a grid's leftover space, as CSS's `fr`.

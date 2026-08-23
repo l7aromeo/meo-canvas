@@ -190,8 +190,8 @@ pub use root::{BuildError, Canvas, PageInfo, Root, SequenceError};
 pub use style::{Style, Styled};
 pub use unit::{
     DefaultZero, IntoCorners, IntoSides, all, auto, bottom, corners,
-    corners_all, fr, hex, hex_rgb, hex_rgba, left, pct, px, rgb, rgba, right,
-    sides, size_auto, top, track, xy,
+    corners_all, fr, fraction, hex, hex_rgb, hex_rgba, left, pct, px, rgb,
+    rgba, right, sides, size_auto, top, track, xy,
 };
 
 /// The scene vocabulary, re-exported so callers need one dependency rather than

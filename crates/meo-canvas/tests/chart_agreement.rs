@@ -25,8 +25,13 @@
 //! `UPDATE_CHART_BYTES=1 npx vitest run chart.agreement`.
 
 use meo_canvas::{
-    Root,
-    chart::bar::{Dataset, Grid, Options, bar},
+    Element, Root,
+    chart::{
+        bar::{Dataset, Grid, Options, bar},
+        frame::LegendPosition,
+        line::line,
+        pie::{Slice, pie},
+    },
     hex_rgb,
     scene::codec,
 };
@@ -90,12 +95,12 @@ fn ours() -> Vec<u8> {
 /// different default styles, and their disagreement is about the harness
 /// rather than about either chart. Everything from the `bar chart` node
 /// onward is the chart.
-fn from_the_chart(bytes: &[u8]) -> &[u8] {
-    let needle = b"bar chart";
+fn from_the_chart<'a>(bytes: &'a [u8], name: &str) -> &'a [u8] {
+    let needle = name.as_bytes();
     let at = bytes
         .windows(needle.len())
         .position(|window| window == needle)
-        .unwrap_or_else(|| unreachable!("the scene has no `bar chart` node"));
+        .unwrap_or_else(|| unreachable!("the scene has no `{name}` node"));
     &bytes[at..]
 }
 
@@ -108,7 +113,7 @@ fn both_surfaces_encode_the_same_chart_to_the_same_bytes() {
     );
 
     let encoded = ours();
-    let ours = hex(from_the_chart(&encoded));
+    let ours = hex(from_the_chart(&encoded, "bar chart"));
     let theirs = hex(from_the_chart(
         &(0..theirs.len() / 2)
             .map(|index| {
@@ -118,6 +123,7 @@ fn both_surfaces_encode_the_same_chart_to_the_same_bytes() {
                     })
             })
             .collect::<Vec<u8>>(),
+        "bar chart",
     ));
     assert_eq!(
         ours, theirs,
@@ -144,4 +150,159 @@ fn hex(bytes: &[u8]) -> String {
         out.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
     out
+}
+
+/// The bytes the TypeScript surface writes for each of the other three kinds.
+const THEIR_LINE: &str = include_str!("assets/chart/line-bytes.txt");
+/// As [`THEIR_LINE`], for the pie.
+const THEIR_PIE: &str = include_str!("assets/chart/pie-bytes.txt");
+/// As [`THEIR_LINE`], for the doughnut.
+const THEIR_DOUGHNUT: &str = include_str!("assets/chart/doughnut-bytes.txt");
+
+/// Every option switched on, and a legend on a stated side.
+///
+/// **A default is a branch neither surface takes**, so a case that leaves one
+/// alone has the two agreeing about nothing. The legend position differs per
+/// case because it is the one option that changes the chart's *root* node from
+/// a column to a row — a branch the bar case cannot reach, since it can only
+/// take one side at a time.
+fn everything(position: LegendPosition) -> Options {
+    Options {
+        show_labels: true,
+        show_values: true,
+        show_y_axis: true,
+        show_legend: true,
+        legend_position: position,
+        grid: Grid {
+            show: true,
+            color: Some("#e0e0e0".to_owned()),
+        },
+        label_font_size: Some(11.0),
+        value_font_size: Some(10.0),
+        y_axis_font_size: Some(9.0),
+        label_color: Some(hex_rgb(0x11_22_33)),
+        value_color: Some(hex_rgb(0x44_55_66)),
+        y_axis_color: Some(hex_rgb(0x77_88_99)),
+        ..Options::default()
+    }
+}
+
+/// The three slices the pie and the doughnut both draw.
+///
+/// **Colours on the first and third only**, so the palette fallback is inside
+/// the comparison rather than beside it. Whole numbers throughout: the pie's
+/// legend spells a slice `label (value)` with the value unrounded, and
+/// `Display` and JavaScript's number-to-string part company at both ends of
+/// the range -- at or above `1e21` and below `1e-6`. Keeping the values whole
+/// keeps that out of what is being asked.
+fn three_slices() -> Vec<Slice> {
+    vec![
+        Slice {
+            label: "a".to_owned(),
+            value: 3.0,
+            color: Some("#3366cc".to_owned()),
+        },
+        Slice {
+            label: "b".to_owned(),
+            value: 2.0,
+            color: None,
+        },
+        Slice {
+            label: "c".to_owned(),
+            value: 1.0,
+            color: Some("#cc6633".to_owned()),
+        },
+    ]
+}
+
+/// One chart, encoded as a page the way `ours` does.
+fn encoded(chart: Element) -> Vec<u8> {
+    let scene = Root::new(200.0, 120.0)
+        .children(chart)
+        .into_scene()
+        .unwrap_or_else(|error| {
+            unreachable!("the scene did not assemble: {error}")
+        });
+    codec::encode(&scene)
+}
+
+/// Compares one kind, and fails first if there is nothing to compare.
+///
+/// **An agreement between two nothings is an agreement.** A byte comparison
+/// that passes says the ports match; it does not say the case had a subject.
+/// So the asset is checked for content and the scene for the chart's own node
+/// -- `from_the_chart` cannot find a name that was never encoded -- before
+/// either is compared.
+fn agrees(name: &str, ours: &[u8], theirs: &str) {
+    let theirs = theirs.trim();
+    assert!(
+        !theirs.is_empty(),
+        "the committed bytes for the {name} are empty, so this would compare \
+         against nothing -- generate them from the TypeScript surface"
+    );
+    let decoded: Vec<u8> = (0..theirs.len() / 2)
+        .map(|index| {
+            u8::from_str_radix(&theirs[index * 2..index * 2 + 2], 16)
+                .unwrap_or_else(|error| {
+                    unreachable!("the {name} asset is not hex: {error}")
+                })
+        })
+        .collect();
+
+    let mine = hex(from_the_chart(ours, name));
+    assert!(
+        mine.len() > 64,
+        "the {name} encodes to {} hex digits from its own node on, which is \
+         not a chart",
+        mine.len()
+    );
+    assert_eq!(
+        mine,
+        hex(from_the_chart(&decoded, name)),
+        "the two {name} implementations disagree. One of them is wrong and \
+         this comparison cannot say which -- read the rendered checks, which \
+         measure the picture rather than the agreement"
+    );
+}
+
+#[test]
+fn both_surfaces_encode_the_same_line_chart() {
+    let labels = ["a".to_owned(), "b".to_owned(), "c".to_owned()];
+    let datasets = [
+        Dataset {
+            label: Some("Sales".to_owned()),
+            color: Some("#3366cc".to_owned()),
+            data: vec![1.0, 3.0, 2.0],
+        },
+        Dataset {
+            label: None,
+            color: None,
+            data: vec![3.0, 1.0, 2.0],
+        },
+    ];
+    let chart = line(&labels, &datasets, &everything(LegendPosition::Left))
+        .unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    agrees("line chart", &encoded(chart), THEIR_LINE);
+}
+
+#[test]
+fn both_surfaces_encode_the_same_pie() {
+    let chart = pie(&three_slices(), 0.0, &everything(LegendPosition::Top))
+        .unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    agrees("pie chart", &encoded(chart), THEIR_PIE);
+}
+
+#[test]
+fn both_surfaces_encode_the_same_doughnut() {
+    // v1's `chartOptions?.innerRadius ?? 0.6`, which is what the TypeScript
+    // surface passes and what my own builder has no default for.
+    let chart = pie(&three_slices(), 0.6, &everything(LegendPosition::Bottom))
+        .unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    agrees("doughnut chart", &encoded(chart), THEIR_DOUGHNUT);
 }

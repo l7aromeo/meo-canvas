@@ -26,7 +26,7 @@ use crate::{
         frame::{LegendPosition, framed, legend},
         geometry::{Bar, GRID_DIVISIONS, bar_layout, grid_lines, series_color},
     },
-    pct, px,
+    fraction, pct, px,
     unit::sides,
 };
 
@@ -155,15 +155,6 @@ fn one_bar(
     datasets: &[Dataset],
     options: &Options,
 ) -> Element {
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a fraction of a plot, narrowed once at the style boundary"
-    )]
-    let (x, width, height) = (
-        bar.x as f32 * 100.0,
-        bar.width as f32 * 100.0,
-        bar.height as f32 * 100.0,
-    );
     let colour = series_color(dataset, datasets[dataset].color.as_deref());
     let value = values
         .get(dataset)
@@ -176,9 +167,14 @@ fn one_bar(
         .with_style(
             Style::new()
                 .position_type(PositionType::Absolute)
-                .position(sides(None, None, Some(px(0.0)), Some(pct(x))))
-                .width(pct(width))
-                .height(pct(height))
+                .position(sides(
+                    None,
+                    None,
+                    Some(px(0.0)),
+                    Some(fraction(bar.x)),
+                ))
+                .width(fraction(bar.width))
+                .height(fraction(bar.height))
                 .background_color(
                     meo_canvas_core::parse_color(&colour).unwrap_or(TEXT_COLOR),
                 ),
@@ -322,11 +318,7 @@ pub(crate) fn plot_area(
             )]),
     ];
     for (index, label) in labels.iter().enumerate() {
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a gridline fraction, narrowed once at the style boundary"
-        )]
-        let top = grid_lines(GRID_DIVISIONS)[index] as f32 * 100.0;
+        let top = grid_lines(GRID_DIVISIONS)[index];
         gutter.push(
             BoxElement::new()
                 .name(format!("axis label {index}"))
@@ -334,7 +326,7 @@ pub(crate) fn plot_area(
                     Style::new()
                         .position_type(PositionType::Absolute)
                         .position(sides(
-                            Some(pct(top)),
+                            Some(fraction(top)),
                             None,
                             None,
                             Some(px(0.0)),
@@ -379,26 +371,19 @@ fn grid(options: &Options) -> Vec<Element> {
         .unwrap_or(GRID_COLOR);
     grid_lines(GRID_DIVISIONS)
         .into_iter()
-        .map(|fraction| {
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "a gridline fraction, narrowed once at the style boundary"
-            )]
-            let top = fraction as f32 * 100.0;
-            BoxElement::new()
-                .name(format!("gridline {fraction}"))
-                .with_style(
-                    Style::new()
-                        .position_type(PositionType::Absolute)
-                        .position(sides(
-                            Some(pct(top)),
-                            Some(px(0.0)),
-                            None,
-                            Some(px(0.0)),
-                        ))
-                        .height(px(1.0))
-                        .background_color(colour),
-                )
+        .map(|at| {
+            BoxElement::new().name(format!("gridline {at}")).with_style(
+                Style::new()
+                    .position_type(PositionType::Absolute)
+                    .position(sides(
+                        Some(fraction(at)),
+                        Some(px(0.0)),
+                        None,
+                        Some(px(0.0)),
+                    ))
+                    .height(px(1.0))
+                    .background_color(colour),
+            )
         })
         .collect()
 }
