@@ -818,3 +818,116 @@ mod tests {
         assert_eq!(vector, vec![ImageFormat::Svg, ImageFormat::Pdf]);
     }
 }
+
+#[cfg(test)]
+mod ico_pages {
+    use meo_canvas_scene::Size;
+
+    use super::{ImageFormat, encode};
+    use crate::paint::{Surface, SurfaceOptions};
+
+    /// One directory entry of an ICO, as the file writes it.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Entry {
+        width: u32,
+        height: u32,
+    }
+
+    /// Reads an ICO's directory, which is the only part this asserts on.
+    ///
+    /// **Decoded from the bytes we wrote rather than inferred from the call we
+    /// made.** A test that checks the encoder was invoked with four pages
+    /// passes whether or not the file has four entries, and the promise in
+    /// `ImageFormat::Ico` is about the file.
+    ///
+    /// Layout: a six-byte header of `reserved:u16 = 0`, `type:u16 = 1`,
+    /// `count:u16`, then `count` sixteen-byte entries whose first two bytes are
+    /// the width and height. **A zero means 256** -- one byte cannot hold it,
+    /// which is why an icon's largest conventional size is the one that reads
+    /// as nothing.
+    fn directory(bytes: &[u8]) -> Vec<Entry> {
+        assert!(bytes.len() >= 6, "an ICO has at least a header");
+        assert_eq!(
+            u16::from_le_bytes([bytes[0], bytes[1]]),
+            0,
+            "the reserved field is not zero, so this is not an ICO"
+        );
+        assert_eq!(
+            u16::from_le_bytes([bytes[2], bytes[3]]),
+            1,
+            "the type field does not say icon"
+        );
+        let count = usize::from(u16::from_le_bytes([bytes[4], bytes[5]]));
+        (0..count)
+            .map(|index| {
+                let at = 6 + index * 16;
+                let dimension = |byte: u8| {
+                    if byte == 0 { 256 } else { u32::from(byte) }
+                };
+                Entry {
+                    width: dimension(bytes[at]),
+                    height: dimension(bytes[at + 1]),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_ico_carries_one_directory_entry_per_page_at_that_page_s_own_size() {
+        let sizes = [16.0_f32, 32.0, 48.0, 256.0];
+        let mut surface = Surface::new(
+            Size {
+                width: sizes[0],
+                height: sizes[0],
+            },
+            1.0,
+            SurfaceOptions::default(),
+        )
+        .unwrap_or_else(|error| {
+            unreachable!("the surface did not allocate: {error}")
+        });
+
+        for &side in &sizes[1..] {
+            surface
+                .begin_page(Size {
+                    width: side,
+                    height: side,
+                })
+                .unwrap_or_else(|error| {
+                    unreachable!("a page did not begin: {error}")
+                });
+        }
+
+        let written = encode(
+            &mut surface,
+            ImageFormat::Ico,
+            &super::EncodeOptions::default(),
+        )
+        .unwrap_or_else(|error| {
+            unreachable!("the ICO did not encode: {error}")
+        });
+
+        let entries = directory(&written.bytes);
+        assert_eq!(
+            entries,
+            sizes
+                .iter()
+                .map(|&side| Entry {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "every side here is a small whole number"
+                    )]
+                    width: side as u32,
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "every side here is a small whole number"
+                    )]
+                    height: side as u32,
+                })
+                .collect::<Vec<_>>(),
+            "the pages went in at four sizes and the directory should say so"
+        );
+    }
+}

@@ -1029,6 +1029,35 @@ mod tests {
         assert_eq!(root.origin, Point { x: 0.0, y: 0.0 });
     }
 
+    /// Whether a page root's own definite size already survives layout.
+    ///
+    /// **The compatibility question under the ICO change**, and it has to be
+    /// answered before a page is begun at the root's size rather than the
+    /// scene's: if a definite root size were currently discarded, giving it
+    /// meaning would move existing scenes rather than leave them alone.
+    /// `pin_page_root` substitutes `scene.size` only where the root's own
+    /// dimension is `auto`, so a stated one is already honoured -- and this
+    /// says so in a test rather than in a reading of that function.
+    #[test]
+    fn a_definite_root_size_is_kept_where_the_scene_says_otherwise() {
+        let (mut scene, page) = scene_with_page(100.0, 60.0);
+        let root = scene
+            .get_mut(page)
+            .unwrap_or_else(|| unreachable!("the page root was just created"));
+        root.layout.size = (Dimension::Points(40.0), Dimension::Points(20.0));
+
+        let result = solved(&scene, page);
+        let solved_root = result
+            .get(page)
+            .unwrap_or_else(|| unreachable!("the page root is laid out"));
+
+        assert_eq!(
+            solved_root.size,
+            Size::new(40.0, 20.0),
+            "a stated root size is the root's size, not the scene's"
+        );
+    }
+
     #[test]
     fn a_missing_page_is_a_layout_error() {
         let (scene, _page) = scene_with_page(10.0, 10.0);

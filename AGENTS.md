@@ -856,6 +856,33 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**A stale artifact does not announce itself as stale -- it reports a type error
+that is false.** `just docs` failed with `the trait bound ImageSource: Hash is
+not satisfied` against a derive sitting three lines above the enum, while
+`cargo clippy --workspace` and `cargo build -p meo-canvas-core` both passed on
+the same tree seconds either side of it. `cargo doc` had cached a
+`meo-canvas-scene` from before the edit and type-checked against that;
+`touch`ing the file cleared it and nothing else changed. **If a compile error
+names something the source plainly has, suspect the artifact before the
+source: `touch` and re-run before investigating.** The cause is ours and it
+will recur -- an edit landing while another session's cargo holds the build
+records a fingerprint against the old file. It is the tree-moving-under-a-run
+hazard in the one form that does not look like it: **not a wrong result, a
+wrong error.**
+
+**A capability promised at the layer that has it, and blocked at a layer that
+never mentions it, is invisible to every test we write.** `ImageFormat::Ico` is
+in `ALL`, encodes, round-trips, and its doc at `encode.rs:56` promises the
+thing only it can do -- _an icon at 16, 32, 48 and 256 pixels is one file_. No
+caller can ask for that: `lib.rs:277` begins every page at `scene.size`, so the
+pages cannot differ. **The encoder is correct and proves it; the promise is
+unreachable and nothing fails.** Both halves are tested and the defect is in
+neither. This is the same shape as `fitted_dash(48.0, 4.0)` asserting the
+arithmetic while the renderer handed it a different length -- **the claim and
+the check on opposite sides of the boundary the defect lives on.** So: when a
+doc comment promises a capability, find the caller that can reach it, and if
+there is none, that is the finding.
+
 **A claim about the format and a test of the arithmetic sit on different sides
 of the defect between them.** Two in one day, both in the dashed border. The
 renderer fitted the centre line it strokes where Chrome fits the border box, so

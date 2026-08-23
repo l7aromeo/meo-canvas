@@ -28,7 +28,11 @@
 //! `FontLibrary`, which this crate cannot opt out of; what it can do, and does,
 //! is add no second one.)
 
-use std::{collections::HashMap, path::Path, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::OnceLock,
+};
 
 use meo_canvas_scene::{
     Scene, Size,
@@ -349,12 +353,23 @@ impl<'scene> Resolved<'scene> {
             text: HashMap::new(),
         };
 
+        // One decode per distinct source rather than per node. Sixty nodes
+        // drawing one picture decoded it sixty times, which nothing pointed
+        // at because every table was keyed by node and every node got the
+        // right bytes -- just not the same ones.
+        let once = decode_sources(scene)?;
+
         for (id, node) in scene.nodes.iter().enumerate() {
             // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
             let id = NodeId::new(id as u32);
             match &node.kind {
                 NodeKind::Image { source, frame, .. } => {
-                    let decoded = decode(id, source)?.at_frame(*frame, id)?;
+                    // `at_frame` is applied per node and not shared: it is
+                    // what a node asked of the source rather than part of
+                    // decoding it, so two nodes may hold one decode and
+                    // still want different frames of it.
+                    let decoded =
+                        taken(&once, id, source)?.at_frame(*frame, id)?;
                     resolved.images.insert(id, decoded);
                 }
                 NodeKind::Box
@@ -367,14 +382,14 @@ impl<'scene> Resolved<'scene> {
                 // its extent is not a layout input the way an image node's is,
                 // and the measure pass must not find it by asking for a node's
                 // image.
-                let decoded = decode(id, &background.source)?;
+                let decoded = taken(&once, id, &background.source)?;
                 resolved.backgrounds.insert(id, decoded);
             }
             // A third table for the same reason the second one exists: a mask
             // image is neither the node's own picture nor its background, and
             // a node may carry all three at once.
             if let Some(Mask::Image(source)) = node.effects.mask.as_ref() {
-                let decoded = decode(id, source)?;
+                let decoded = taken(&once, id, source)?;
                 resolved.masks.insert(id, decoded);
             }
         }
@@ -458,6 +473,121 @@ fn check_family(fonts: &Fonts, family: &str) -> Result<(), Error> {
     } else {
         Err(Error::UnknownFont(family.to_owned()))
     }
+}
+
+/// Every source in a scene, decoded once each and in parallel.
+///
+/// **The three tables ask for the same thing.** An image node, a background
+/// and a mask each hand `decode` a source and get a bitmap back, and nothing
+/// about the use site changes what comes out -- no scale, no colour type, no
+/// rasterisation size. So the source is the whole key, and a picture wanted
+/// sixty times is decoded once.
+///
+/// The frame index is the one thing that varies, and it is **not** part of the
+/// key: [`DecodedImage::at_frame`] derives a frame from a decode that already
+/// happened, so it is applied per node afterwards. `shared_decode.rs` asserts
+/// that two nodes sharing a source keep their own frames, through the renderer.
+///
+/// # Why the walk happens twice
+///
+/// The first walk finds what is distinct and the second fills the tables. That
+/// costs a pass over the arena and buys the decodes being independent of each
+/// other, which is what lets them run at once.
+///
+/// # The error a scene gets
+///
+/// The **first failing source in node order**, not the first thread to finish.
+/// Decoding concurrently must not make which error a caller sees depend on
+/// scheduling, and the node named is the first that asked for those bytes.
+fn decode_sources<'scene>(
+    scene: &'scene Scene,
+) -> Result<HashMap<&'scene ImageSource, DecodedImage>, Error> {
+    let mut wanted: Vec<(&ImageSource, NodeId)> = Vec::new();
+    let mut seen: HashSet<&ImageSource> = HashSet::new();
+    let mut want = |source: &'scene ImageSource, id: NodeId| {
+        if seen.insert(source) {
+            wanted.push((source, id));
+        }
+    };
+    for (id, node) in scene.nodes.iter().enumerate() {
+        let id = NodeId::new(id as u32);
+        if let NodeKind::Image { source, .. } = &node.kind {
+            want(source, id);
+        }
+        if let Some(background) = node.paint.background_image.as_ref() {
+            want(&background.source, id);
+        }
+        if let Some(Mask::Image(source)) = node.effects.mask.as_ref() {
+            want(source, id);
+        }
+    }
+
+    let decoded = in_parallel(&wanted);
+    let mut once = HashMap::with_capacity(decoded.len());
+    for ((source, _), result) in wanted.iter().zip(decoded) {
+        once.insert(*source, result?);
+    }
+    Ok(once)
+}
+
+/// Decodes a list of sources across the machine's threads, in order.
+///
+/// One thread per source up to the machine's parallelism, and the results come
+/// back in the order they were asked for so the caller's error is the first in
+/// node order rather than the first to fail.
+///
+/// **No number is claimed for this.** Decode is Skia's, and whether it is
+/// bound by the CPU or by a lock inside the decoder is not something the shape
+/// of this function establishes. The argument for it is that the decodes are
+/// independent and were serial; the measurement is owed and is not here.
+fn in_parallel(
+    wanted: &[(&ImageSource, NodeId)],
+) -> Vec<Result<DecodedImage, Error>> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(wanted.len().max(1));
+    if threads <= 1 || wanted.len() <= 1 {
+        return wanted
+            .iter()
+            .map(|(source, id)| decode(*id, source))
+            .collect();
+    }
+
+    let mut out: Vec<Result<DecodedImage, Error>> = Vec::new();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = wanted
+            .chunks(wanted.len().div_ceil(threads))
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .map(|(source, id)| decode(*id, source))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        for handle in handles {
+            match handle.join() {
+                Ok(part) => out.extend(part),
+                // A decoder that panicked is a bug in the decoder, and the
+                // scene still has to answer. The source is named through the
+                // node that asked for it.
+                Err(_) => out.push(Err(Error::UndecodableImage(NodeId::ROOT))),
+            }
+        }
+    });
+    out
+}
+
+/// The decode a node asked for, taken from what was decoded up front.
+fn taken(
+    once: &HashMap<&ImageSource, DecodedImage>,
+    node: NodeId,
+    source: &ImageSource,
+) -> Result<DecodedImage, Error> {
+    once.get(source)
+        .cloned()
+        .ok_or(Error::UndecodableImage(node))
 }
 
 fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {

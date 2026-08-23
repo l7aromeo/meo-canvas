@@ -63,7 +63,7 @@ pub use color::parse_color;
 pub use encode::{EncodeOptions, EncodedImage, ImageFormat};
 pub use layout::LayoutResult;
 pub use measure::{Available, Measure, MeasuredLeaf};
-use meo_canvas_scene::{Scene, node::NodeId};
+use meo_canvas_scene::{Scene, Size, node::NodeId, style::Dimension};
 pub use paint::{Surface, SurfaceOptions};
 pub use resolve::{Fonts, Resolved};
 
@@ -149,6 +149,42 @@ impl Default for Renderer {
             gpu: Self::DEFAULT_GPU,
         }
     }
+}
+
+/// The size to begin a page at.
+///
+/// **A page root's own *definite* size, and `scene.size` for anything else.**
+/// This is what makes [`ImageFormat::Ico`]'s promise reachable -- *the only
+/// format whose pages may differ in size, an icon at 16, 32, 48 and 256 pixels
+/// is one file* -- because a page has to be begun before it can be painted, and
+/// until now every page was begun at `scene.size`.
+///
+/// # Why definite rather than solved
+///
+/// Because a solved size would be circular. Solving the root needs the space
+/// available to it, and that space is the page size this function exists to
+/// determine -- so a page cannot be sized from a layout that has not run and
+/// cannot run until the page is sized. A width and height stated in pixels is
+/// readable before any layout, which breaks the circle.
+///
+/// **So a percentage or `auto` falls back to `scene.size`, and that is the
+/// honest reading rather than a limitation**: a root that says `50%` is asking
+/// for half of something, and the only thing it could be half of is the page.
+/// A root that says nothing has no opinion about how big its page should be.
+///
+/// Nothing in this repository sets a definite root size today -- 61 `Root::new`
+/// sites, none of them -- so this changes no existing output. `pin_page_root`
+/// already keeps a stated root size through layout, which is the other half of
+/// why this is safe and is asserted in `layout.rs` rather than reasoned about.
+fn page_size(scene: &Scene, page: NodeId) -> Size {
+    let stated = |dimension, fallback| match dimension {
+        Dimension::Points(value) => value,
+        Dimension::Auto | Dimension::Percent(_) => fallback,
+    };
+    scene.get(page).map_or(scene.size, |root| Size {
+        width: stated(root.layout.size.0, scene.size.width),
+        height: stated(root.layout.size.1, scene.size.height),
+    })
 }
 
 impl Renderer {
@@ -267,14 +303,17 @@ impl Renderer {
 
         let resolved = Resolved::new(scene, &self.fonts)?;
         let mut measurer = SceneMeasurer::prepare(&resolved, &self.fonts)?;
-        let mut surface =
-            Surface::new(scene.size, scene.scale, self.surface_for(scene))?;
+        let mut surface = Surface::new(
+            page_size(scene, scene.pages[0]),
+            scene.scale,
+            self.surface_for(scene),
+        )?;
 
         for (index, &page) in scene.pages.iter().enumerate() {
             // The first page is the one `Surface::new` created; beginning a
             // page for it would leave a blank sheet ahead of the drawing.
             if index > 0 {
-                surface.begin_page(scene.size)?;
+                surface.begin_page(page_size(scene, page))?;
             }
             let solved = layout::solve(scene, page, &mut measurer)?;
             paint::draw(&mut surface, &resolved, &solved, &mut measurer)?;
@@ -813,5 +852,91 @@ mod tests {
                 .is_ok()
         );
         assert!(!format!("{canvas:?}").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ico_promise {
+    use meo_canvas_scene::{Scene, Size, style::Dimension};
+
+    use super::{EncodeOptions, ImageFormat, Renderer};
+
+    /// The sizes an icon conventionally carries, and the ones
+    /// `ImageFormat::Ico` names.
+    const SIZES: [f32; 4] = [16.0, 32.0, 48.0, 256.0];
+
+    /// A caller can reach the promise at `encode.rs:56`.
+    ///
+    /// **Written as a scene rather than as four `begin_page` calls, and that is
+    /// the whole point of it.** The encoder could always write four directory
+    /// entries at four sizes — `encode.rs`'s own probe proves it — while no
+    /// caller could ask for one, because every page was begun at `scene.size`.
+    /// A test that drives `begin_page` directly passes in both worlds and says
+    /// nothing about whether the promise is reachable.
+    ///
+    /// So this builds a scene whose four page roots **state** their sizes, puts
+    /// it through the public `Renderer`, and reads the directory back out of
+    /// the bytes. The promise is about a file, so the assertion is about a
+    /// file.
+    #[test]
+    fn a_scene_whose_page_roots_state_four_sizes_writes_four_ico_entries() {
+        // The scene size is deliberately none of the four, so a page that fell
+        // back to it would be visible in the directory rather than hidden by
+        // agreeing with one of the answers.
+        let mut scene = Scene::new(Size::new(100.0, 100.0));
+        for (index, side) in SIZES.into_iter().enumerate() {
+            // `Scene::new` already carries a page, so only the rest are pushed.
+            // Pushing one per size leaves a fifth page at `scene.size` ahead of
+            // them all, which the directory reports and nothing else would.
+            let page = if index == 0 {
+                scene.pages[0]
+            } else {
+                scene.push_page().unwrap_or_else(|error| {
+                    unreachable!("the page pushes: {error}")
+                })
+            };
+            let root = scene
+                .get_mut(page)
+                .unwrap_or_else(|| unreachable!("the page root exists"));
+            root.layout.size =
+                (Dimension::Points(side), Dimension::Points(side));
+        }
+
+        let written = Renderer::new()
+            .render_to_buffer(
+                &scene,
+                ImageFormat::Ico,
+                &EncodeOptions::default(),
+            )
+            .unwrap_or_else(|error| {
+                unreachable!("the ICO did not encode: {error}")
+            });
+
+        // A zero width or height means 256: one byte cannot hold it, which is
+        // why an icon's largest conventional size reads as nothing.
+        let bytes = &written;
+        let count = usize::from(u16::from_le_bytes([bytes[4], bytes[5]]));
+        let entries: Vec<(u32, u32)> = (0..count)
+            .map(|index| {
+                let at = 6 + index * 16;
+                let side =
+                    |byte: u8| if byte == 0 { 256 } else { u32::from(byte) };
+                (side(bytes[at]), side(bytes[at + 1]))
+            })
+            .collect();
+
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "every side here is a small whole number"
+        )]
+        let want: Vec<(u32, u32)> = SIZES
+            .iter()
+            .map(|&side| (side as u32, side as u32))
+            .collect();
+        assert_eq!(
+            entries, want,
+            "four page roots stated four sizes and the file should carry them"
+        );
     }
 }

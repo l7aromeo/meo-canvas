@@ -55,7 +55,7 @@ impl NodeId {
 }
 
 /// Where an image finds its bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ImageSource {
     /// A path on the local filesystem.
     Path(String),
