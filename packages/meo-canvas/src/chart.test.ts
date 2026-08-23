@@ -460,3 +460,85 @@ describe('a line chart s point markers', () => {
     expect(findAll(chart, name => name.startsWith('point '))).toHaveLength(4)
   })
 })
+
+describe('the three options a surface report said were missing', () => {
+  // Two were real gaps. I had claimed nothing was absent after checking one
+  // interface; v1 spreads its chart options across several, and checking the
+  // whole set found these. The claim was too strong and this is the correction.
+  it('takes a doughnut hole from the caller, defaulting to v1 s', () => {
+    const data = [
+      { label: 'a', value: 1 },
+      { label: 'b', value: 3 },
+    ]
+    const wide = Chart({ type: 'doughnut', data, options: { innerRadius: 0.9 } })
+    const narrow = Chart({ type: 'doughnut', data })
+    const arc = (chart: SceneNode) => (find(chart, 'slice 0')?.style as { d?: string })?.d ?? ''
+    // A bigger hole means a bigger inner arc radius in the path data.
+    expect(arc(wide)).not.toBe(arc(narrow))
+    // v1's default is 0.6 of the outer radius.
+    expect(arc(Chart({ type: 'doughnut', data, options: { innerRadius: 0.6 } }))).toBe(arc(narrow))
+  })
+
+  it('formats a category label, and passes the index as v1 does', () => {
+    const seen: [string, number][] = []
+    const chart = Chart({
+      type: 'bar',
+      data: { labels: ['a', 'b'], datasets: [{ data: [1, 2] }] },
+      options: {
+        showLabels: true,
+        xAxisLabelFormatter: (label, index) => {
+          seen.push([label, index])
+          return label.toUpperCase()
+        },
+      },
+    })
+    expect(seen).toEqual([
+      ['a', 0],
+      ['b', 1],
+    ])
+    expect(find(chart, 'labels')?.children?.[0]?.children?.[0]?.markup).toBe('A')
+  })
+
+  // `sliceBorderRadius` is declared in v1's types and read nowhere in v1's
+  // source — an option it advertises and does not implement. Porting it would
+  // mean building a behaviour that has never existed, so it is absent here on
+  // purpose rather than by omission.
+  it('does not carry an option v1 declares and never reads', () => {
+    const options: Record<string, unknown> = {}
+    expect('sliceBorderRadius' in options).toBe(false)
+  })
+})
+
+describe('the line chart s own label strip', () => {
+  // The bar's strip was tested and the line's was not — the same code twice
+  // over, and only one of them covered. A formatter that worked on bars and
+  // threw on lines would have passed everything above.
+  const data = { labels: ['a', 'b'], datasets: [{ data: [1, 2] }] }
+
+  it('formats its categories', () => {
+    const chart = Chart({
+      type: 'line',
+      data,
+      options: { showLabels: true, xAxisLabelFormatter: label => label.toUpperCase() },
+    })
+    expect(find(chart, 'labels')?.children?.[0]?.children?.[0]?.markup).toBe('A')
+  })
+
+  it('takes the label hatch and places its node', () => {
+    const chart = Chart({
+      type: 'line',
+      data,
+      options: { showLabels: true, renderLabelItem: () => ({ kind: 'box', name: 'mine' }) as never },
+    })
+    expect(find(chart, 'mine')).toBeDefined()
+  })
+})
+
+describe('a chart type that does not exist', () => {
+  // The unbuilt-kind pin retired when the fourth kind landed, and the throw
+  // stopped being exercised with it. A caller can still reach it — from
+  // JavaScript, or from a `ChartType` widened later — so it stays asserted.
+  it('says so rather than drawing an empty box', () => {
+    expect(() => Chart({ type: 'radar' as never, data: [] as never })).toThrow(/not built yet/)
+  })
+})

@@ -201,6 +201,16 @@ export interface BaseChartOptions {
   readonly axisColor?: string
   readonly grid?: { readonly show?: boolean; readonly color?: string }
   readonly yAxisLabelFormatter?: (value: number) => string
+  /** Formats a category label before it is drawn. v1 passes the index too. */
+  readonly xAxisLabelFormatter?: (label: string, index: number) => string
+  /**
+   * A doughnut's hole, as a fraction of its outer radius.
+   *
+   * v1's `outerRadius * (innerRadius ?? 0.6)`, so the default is the same hole
+   * and a caller can change it. Ignored by the other three kinds, as v1
+   * ignores it.
+   */
+  readonly innerRadius?: number
   /**
    * Draw the label beside each value yourself.
    *
@@ -459,13 +469,14 @@ function barChart(props: ChartProps<'bar'>): SceneNode {
         name: 'labels',
         children: labels.map((label, index) => {
           const drawn = options.renderLabelItem?.({ item: label, index })
+          const shown = options.xAxisLabelFormatter?.(label, index) ?? label
           return Box({
             flexGrow: 1,
             flexBasis: 0,
             alignItems: 'center',
             children:
               drawn ??
-              Text(label, {
+              Text(shown, {
                 ...(props.fontFamily === undefined ? {} : { fontFamily: props.fontFamily }),
                 fontSize: options.labelFontSize ?? 12,
                 color: options.labelColor ?? '#000000',
@@ -694,13 +705,14 @@ function lineChart(props: ChartProps<'line'>): SceneNode {
         name: 'labels',
         children: labels.map((label, index) => {
           const drawn = options.renderLabelItem?.({ item: label, index })
+          const shown = options.xAxisLabelFormatter?.(label, index) ?? label
           return Box({
             flexGrow: 1,
             flexBasis: 0,
             alignItems: 'center',
             children:
               drawn ??
-              Text(label, {
+              Text(shown, {
                 ...(props.fontFamily === undefined ? {} : { fontFamily: props.fontFamily }),
                 fontSize: options.labelFontSize ?? 12,
                 color: options.labelColor ?? '#000000',
@@ -783,6 +795,9 @@ export function Chart<T extends ChartType>(props: ChartProps<T>): SceneNode {
   if (props.type === 'bar') return barChart(props as ChartProps<'bar'>)
   if (props.type === 'line') return lineChart(props as ChartProps<'line'>)
   if (props.type === 'pie') return pieChart(props as ChartProps<'pie'>, 0)
-  if (props.type === 'doughnut') return pieChart(props as ChartProps<'doughnut'>, 0.6)
+  if (props.type === 'doughnut') {
+    // v1's `outerRadius * (chartOptions?.innerRadius ?? 0.6)`.
+    return pieChart(props as ChartProps<'doughnut'>, props.options?.innerRadius ?? 0.6)
+  }
   throw new Error(`[canvas] chart type ${JSON.stringify(props.type)} is not built yet`)
 }

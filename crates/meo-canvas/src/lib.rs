@@ -126,6 +126,37 @@ pub use element::{
     Box, Column, Each, Element, Grid, Image, IntoElements, Path, Row, Text,
     each,
 };
+/// The animation helpers, as a module rather than a curated list.
+///
+/// **A list would be a second surface that can drift from the first.**
+/// These are five submodules and a dozen or so items -- `Easing`,
+/// `cubic_bezier`, `steps`, `Spring`, `Shape`, `Rgba`, `mix`, `keyframes`,
+/// `Track`, `Motion`, `Sequence`, `page_time` -- and naming them here
+/// means a caller's reach is whatever someone remembered to add. **The
+/// failure mode of that is silence**: a helper exists in the core, is
+/// absent from the facade, and nothing says so. Re-exporting the module
+/// cannot omit.
+///
+/// The cost is the other direction: **the module publishes whatever it
+/// later grows.** That is acceptable here because `animate` is already a
+/// curated module rather than a dumping ground -- anything added to it is
+/// added for callers, since nothing inside the renderer uses it. If that
+/// stops being true, this should become a list and the reason will have
+/// changed.
+///
+/// # Examples
+///
+/// ```
+/// use meo_canvas::animate::{easing::Easing, spring::Spring};
+///
+/// assert!((Easing::OutCubic.at(0.5) - 0.875).abs() < f64::EPSILON);
+/// assert!(Spring::default().at(0.2).unwrap_or(0.0) > 0.0);
+/// ```
+///
+/// That example is the point rather than decoration: **it compiles from
+/// outside this crate**, which is the thing a `pub use` either achieves or
+/// does not, and which building this crate cannot tell you.
+pub use meo_canvas_core::animate;
 pub use meo_canvas_core::{
     EncodeOptions, Error, ImageFormat as Format, RenderedCanvas, Renderer,
 };

@@ -504,22 +504,52 @@ question exists because a released signature said otherwise. And test it on
 where the fallback and a real baseline differ -- **a fixture that passes before
 and after an upgrade has not tested the upgrade.**
 
-**Whole-pixel rounding against Chrome's sixty-fourths: not opened.** taffy
-rounds every box; Chrome works in `LayoutUnit`, floors each line box into that
-grid and never rounds the total. **It does not accumulate**, and the reason is
-the formula: `round_layout` rounds _cumulative_ coordinates and differences
-them, so every edge lands on `round(its exact position)` and is within half a
-pixel of it at any depth. **The per-box wobble is what keeps the edges true
-rather than what accumulates** -- the boxes look wrong and the stack stays
-right. The bound is half a _logical_ pixel, so it is a whole device pixel at
-2x. Not opened because **turning rounding off makes adjacent boxes meet on
-fractions and antialias against each other**: a bounded difference traded for a
-visible one at every shared edge. A third option nobody has costed --
-**solve in device pixels and paint 1:1**, which puts the rounding on the device
-grid and keeps the seam-free property. `LAYOUT_SCALE`'s note argues against
-solving at a device scale because paint would round a second time; **that rules
-out the version where both happen**, and which one its author meant is not
-recorded.
+**Whole-pixel rounding against Chrome's sixty-fourths: measured, characterised,
+not opened.**
+
+**Layout and paint are different stages and the claim differs between them.**
+Chrome's _layout_ is fractional -- it snaps a length into sixty-fourths once and
+accumulates exactly, so `getBoundingClientRect` reports `67.171875`. Chrome's
+_painting_ is not: each edge is rounded to a whole CSS pixel and then multiplied
+by the device scale, so at `dpr 2` it discards precision it holds. **"Chrome
+never rounds to integers" is true of layout and false of paint**, and a
+statement that does not say which stage it means is wrong half the time.
+
+**Both engines paint crisp edges at both scales, and still disagree.** Rendered,
+eight boxes of `10.3`:
+
+```text
+ours    dpr 1   10  21  31  41  52  62  72
+chrome  dpr 1   10  21  31  41  51  62  72
+```
+
+**Crisp said nothing about where.** Our per-box rounding does not accumulate --
+`round_layout` rounds _cumulative_ coordinates and differences them, so every
+edge is `round(its exact position)` and the _wobble in the box heights is what
+keeps the edges true_ rather than what drifts. The disagreement is not drift.
+
+**It is a whole CSS pixel exactly where the accumulated exact position lands on
+a half, and nowhere else.** Five boxes of `10.3` sum to exactly `51.5` and we
+round up; Chrome snapped to `10.296875` first, reaches `51.484375`, and rounds
+down. **Chrome never sees a tie because the snap has already nudged the value
+below it.** Six of the seven edges agree to the integer. In `f32` the
+representation error cancels rather than pushing past the boundary, so the tie
+is real in our arithmetic and not an artefact of checking it in doubles.
+
+**The fix, named so nobody starts from the wrong one: snap each length into
+sixty-fourths before accumulating**, so the tie never forms. **Not** _round
+differently_ -- rounding is not where the two part -- and **not** _disable
+taffy's rounding_, which was costed twice and was wrong both times: turning it
+off makes adjacent boxes meet on fractions and antialias against each other,
+trading a bounded difference for a visible one at every shared edge.
+
+**Unknowns, stated rather than discovered later**: it is a quantisation applied
+to every length entering layout; percentages and `auto` are unconsidered; and it
+moves every fixture in the tree. A third option nobody has costed is to **solve
+in device pixels and paint 1:1**, which puts the rounding on the device grid and
+keeps the seam-free property. `LAYOUT_SCALE`'s note argues against solving at a
+device scale because paint would round a second time; **that rules out the
+version where both happen**, and which one its author meant is not recorded.
 
 **CSS table layout: nobody has asked for it.** v1 has none, no fixture wants
 one, and taffy has four display modes of which none is a table -- so it would
@@ -939,6 +969,26 @@ first instinct was to look for a field-order mistake. **Each was diagnosed as a
 defect in the thing being measured before anyone suspected the thing
 measuring**, which is what makes the family expensive rather than merely
 annoying. `touch` the file, delete the probe, `just addon`.
+
+**A bound satisfied exactly by the worst case cannot see the worst case.**
+`rounding_drift.rs` asserts our edges stay within half a pixel of exact.
+Edge five is **exactly** `0.5` away -- it passes, and it is the one edge where
+we disagree with Chrome by a whole pixel. The test is not wrong and it was one
+ulp from being the test that caught it. **An inequality whose boundary is the
+interesting case is an assertion that stops meaning anything at the moment it
+matters**; pin the worst case as a value instead, so a change that moves it
+fails in both directions. Same family as an absence assertion with no presence
+beside it.
+
+**Two guards fail against different mistakes, so a row wants both.** A browser
+row screenshotted with `scale: 'device'` rather than `deviceScaleFactor` came
+back the same size at both settings -- **the second scale was never tested and
+both rows reported the same answer for one reason rather than two**; the frame's
+dimensions were the tell. A second attempt laid eight boxes in a _row_ rather
+than a stack and reported one edge at 10: **it did not look like an error, it
+looked like a stack with one boundary**, and the frame size would not have
+caught it. **Print the frame and assert the feature count.** One catches a scale
+that never varied; the other catches a subject that was never built.
 
 **An instrument can also be silent about what it never saw, and that is the
 quietest of the three.** Four scoping documents were written to `docs/`, a

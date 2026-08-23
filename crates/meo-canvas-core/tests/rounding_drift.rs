@@ -98,6 +98,39 @@ fn a_stack_of_fractional_boxes_does_not_drift() {
 }
 
 #[test]
+fn the_worst_edge_is_pinned_rather_than_bounded() {
+    // **A bound satisfied exactly by the worst case cannot see the worst
+    // case.** The assertion above allows half a pixel and edge five is
+    // exactly half a pixel out -- it passes, and it is the one edge where we
+    // disagree with Chrome by a whole pixel. So the worst case is pinned as a
+    // value here: a change that moves it fails in either direction, where the
+    // inequality only fails in one and only past the point that matters.
+    //
+    // Why that edge: five boxes of 10.3 sum to exactly 51.5, and a tie rounds
+    // up. Chrome snaps the length into sixty-fourths first, reaches 51.484375
+    // and rounds down -- **it never sees a tie, because the snap has already
+    // nudged the value below it.**
+    let mut worst = (0_usize, 0.0_f32);
+    for count in 1..=8_usize {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "eight boxes is exactly representable"
+        )]
+        let exact = STEP * count as f32;
+        let error = (stack_bottom(count) - exact).abs();
+        if error > worst.1 {
+            worst = (count, error);
+        }
+    }
+    assert_eq!(worst.0, 5, "the tie moved off edge five, to {}", worst.0);
+    assert!(
+        (worst.1 - 0.5).abs() < f32::EPSILON,
+        "the worst edge is {} out rather than exactly half a pixel",
+        worst.1
+    );
+}
+
+#[test]
 fn the_boxes_wobble_even_though_the_stack_does_not() {
     // The other half, and the reason the heights look wrong when the edges
     // are right: a 10.3 box is drawn 10 or 11 tall depending on where it
