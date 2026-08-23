@@ -2312,18 +2312,33 @@ fn inset_ends(
 /// with each other, so the fixture for this is a 131- or 137-wide box rather
 /// than the 240 every measured width ties on.
 ///
-/// # What is still not Chrome's, measured
+/// # What is still not Chrome's, measured -- and the mechanism is not known
 ///
-/// A corner now carries a whole dot -- both edges place one there and the two
-/// coincide. **Chrome's corner block is fuller than a dot**: `####` on all
-/// four rows, where an ordinary dot has partial coverage at its four corners
-/// and ours does too. So Chrome is not drawing a disc there at all; the
-/// remaining difference is eight part-covered pixels per corner, and what
-/// fills them is unmeasured.
+/// A corner carries a whole dot: both edges place one there and the two
+/// coincide. **Chrome's corner is fuller, and it is fuller in one direction.**
+/// At width 8, ours against Chrome's, and an ordinary dot for scale:
 ///
-/// Worth knowing before chasing it: **a test asserting "the corner holds a
-/// whole dot" passes for both pictures.** The shoulders are the signature --
-/// a disc has partial coverage at its corners and a filled square does not.
+/// ```text
+/// ours corner    chrome corner    an ordinary dot
+/// .+####+..      .######..        .+####+..
+/// +######+.      #######+.        +######+.
+/// ########.      ########.        ########.
+/// ```
+///
+/// **Ours is a symmetric disc. Chrome's leans toward the corner diagonal.**
+///
+/// The mechanism offered for it was *two overlapping discs, one from each
+/// edge* -- and **our own render refutes that on its own terms**: we place a
+/// dot from each edge at the corner too, and two discs sharing a centre are
+/// one disc, which is exactly the symmetric shape we draw. **Whatever leans
+/// Chrome's corner into the diagonal is not two coincident discs**, and it has
+/// not been measured. The difference is a handful of part-covered pixels per
+/// corner.
+///
+/// Worth knowing before chasing it: **at width 4 the two shapes are
+/// indistinguishable** -- a disc of diameter 4 saturates its own 4x4 box, so
+/// the shoulders that separate them do not exist to read. The case only
+/// discriminates from width 8 up, which is why it went unnoticed.
 ///
 /// `crates/meo-canvas/tests/assets/chrome/dotted-rhythm.tsv`.
 #[must_use]

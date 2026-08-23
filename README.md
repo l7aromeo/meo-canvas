@@ -14,14 +14,27 @@ Layout, text shaping, painting and encoding all happen in Rust. The Node surface
 ## What it renders
 
 - **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps and absolute positioning.
-- **Text** — shaped and broken by Skia's paragraph engine, with per-span styling, letter and word spacing, decorations, line clamping and ellipsis.
+- **Text** — shaped by Skia and broken into lines here, with per-span styling, letter and word spacing, decorations, line clamping and ellipsis.
 - **Images** — from a file or a buffer, with object-fit and object-position placement. The Node surface and the CLI resolve a URL to bytes before rendering; the renderer itself performs no network I/O.
-- **Paths** — arbitrary shapes from SVG path data, filled and stroked.
+- **Paths** — arbitrary shapes from SVG path data, filled and stroked, with an optional `viewBox` so a path scales to the box that holds it.
 - **Charts** — bar, line, pie and doughnut.
 - **Effects** — gradients, masks, shadows, opacity groups, blend modes and CSS filters.
 - **Export** — PNG, JPEG, WebP, AVIF, TIFF, BMP, ICO, SVG, PDF, GIF, APNG and raw pixels.
 
 Multi-page renders produce frames for GIF and APNG, sheets for PDF and TIFF, and sizes for ICO.
+
+## What it computes
+
+Nothing here draws. These are pure functions a caller uses to work out _what_ to
+draw, and they exist on both surfaces.
+
+- **Easing** — the CSS catalogue, `cubic-bezier` and `steps`.
+- **Springs** — a damped spring solved in closed form, so any frame can be
+  evaluated on its own, plus the settling time to size a render by.
+- **Interpolation** — numbers, colours and keyframe tracks, and the tracks and
+  sequences that drive them over time.
+- **Colour** — one CSS parser behind both surfaces, so a string the renderer
+  accepts is a string the animation helpers accept.
 
 ## Installation
 

@@ -190,6 +190,8 @@ export interface BaseChartOptions {
   readonly showLabels?: boolean
   readonly showValues?: boolean
   readonly showYAxis?: boolean
+  readonly showLegend?: boolean
+  readonly legendPosition?: LegendPosition
   readonly labelFontSize?: number
   readonly valueFontSize?: number
   readonly yAxisFontSize?: number
@@ -237,6 +239,169 @@ function grid(options: BaseChartOptions | undefined): SceneNode[] {
       name: `gridline ${fraction}`,
     }),
   )
+}
+
+/** v1's swatch is `Math.min(15, itemHeight - 2)`; fifteen is its cap. */
+const LEGEND_SWATCH = 15
+/** v1's gap between a swatch and its label. */
+const LEGEND_GAP = 5
+/** v1's padding between one legend item and the next. */
+const LEGEND_PADDING = 20
+
+/** Where a legend sits, as v1 spells it. */
+export type LegendPosition = 'top' | 'bottom' | 'left' | 'right'
+
+/**
+ * The legend, as a wrapping row of swatch-and-label pairs.
+ *
+ * **v1 measures every label and wraps by hand** — `currentX + itemWidth >
+ * totalWidth` and a running row count, so it can subtract the legend's height
+ * from the plot's. A builder needs none of that: `flexWrap` does the wrapping,
+ * the row's height is whatever it wraps to, and the plot takes the rest
+ * through `flexGrow`. **The measuring v1 does to size the plot is the thing
+ * layout was going to do anyway.**
+ */
+function legend(
+  options: BaseChartOptions | undefined,
+  entries: readonly { label: string; color: string }[],
+  fontFamily: string | undefined,
+): SceneNode | undefined {
+  if (!options?.showLegend || entries.length === 0) return undefined
+
+  const upright = options.legendPosition === 'left' || options.legendPosition === 'right'
+  const items = entries.map((entry, index) =>
+    Row({
+      alignItems: 'center',
+      gap: LEGEND_GAP,
+      margin: upright ? { bottom: LEGEND_GAP } : { right: LEGEND_PADDING },
+      name: `legend item ${index}`,
+      children: [
+        Box({ width: LEGEND_SWATCH, height: LEGEND_SWATCH, backgroundColor: entry.color, name: 'swatch' }),
+        Text(entry.label, {
+          ...(fontFamily === undefined ? {} : { fontFamily }),
+          fontSize: options.labelFontSize ?? 12,
+          color: options.labelColor ?? '#000000',
+        }),
+      ],
+    }),
+  )
+
+  return upright ? Column({ name: 'legend', children: items }) : Row({ flexWrap: 'wrap', name: 'legend', children: items })
+}
+
+/**
+ * The chart's own frame: the legend on whichever side, and everything else.
+ *
+ * The legend is a sibling rather than an overlay, so the plot's `flexGrow`
+ * takes what the legend leaves — which is v1's `chartHeight - legendHeight`
+ * arrived at by layout instead of by subtraction.
+ */
+function framed(
+  options: BaseChartOptions | undefined,
+  bars: SceneNode,
+  legendNode: SceneNode | undefined,
+  props: { width?: number | string; height?: number | string },
+  name: string,
+): SceneNode {
+  const size = {
+    width: (props.width ?? '100%') as `${number}%` | number,
+    height: (props.height ?? '100%') as `${number}%` | number,
+  }
+  if (legendNode === undefined) {
+    return Column({ ...size, name, children: bars })
+  }
+
+  const where = options?.legendPosition ?? 'bottom'
+  if (where === 'left' || where === 'right') {
+    return Row({
+      ...size,
+      name,
+      children: where === 'left' ? [legendNode, bars] : [bars, legendNode],
+    })
+  }
+  return Column({
+    ...size,
+    name,
+    children: where === 'top' ? [legendNode, bars] : [bars, legendNode],
+  })
+}
+
+/**
+ * The plot, with a y-axis gutter beside it when one is asked for.
+ *
+ * # How the gutter measures without measuring
+ *
+ * v1 sizes it with `measureText(ctx, maxLabel).width + 10` and centres each
+ * label on its gridline with `textBaseline: 'middle'`. A builder can do
+ * neither directly, and **three properties are wanted at once**: the gutter
+ * sizes to its widest label, the labels centre on the gridlines, and the plot
+ * is a sibling so a bar never covers the gutter.
+ *
+ * Absolutely positioned children give the second and third and **do not size
+ * their parent** — measured: a gutter holding only absolute labels came out 9
+ * pixels wide where the same labels in flow made it 30. In-flow children give
+ * the first and drift on the second, because `space-between` spreads label
+ * *boxes* evenly rather than their centres — measured at 8.5, 5.5, 1.5, −1.5
+ * and −5.5 pixels across five rows of a 120-pixel plot.
+ *
+ * So the gutter holds **both**: one zero-height in-flow copy of the widest
+ * label, which sets the width and draws nothing, and the visible labels
+ * absolutely positioned at their gridline fractions and pulled up by half
+ * their own height. Measured: 6 pixels wide for single digits against 30 for
+ * `10000`, gridlines full height, label centres on their lines.
+ *
+ * The extreme labels overflow the plot by half their height, which is v1's
+ * behaviour too — its top label is centred on the plot's own top edge.
+ */
+function plotArea(options: BaseChartOptions | undefined, maxValue: number, fontFamily: string | undefined, drawn: readonly SceneNode[]): SceneNode {
+  const plot = Box({
+    flexGrow: 1,
+    positionType: 'relative',
+    name: 'plot',
+    children: [...grid(options), ...drawn],
+  })
+
+  if (!options?.showYAxis) return plot
+
+  const format = options.yAxisLabelFormatter ?? ((value: number) => String(Math.round(value * 100) / 100))
+  // v1: `const value = maxValue - (maxValue / 5) * i`, so the first row is the
+  // maximum and the last is zero.
+  const labels = gridLines().map(fraction => format(maxValue - maxValue * fraction))
+  const style = {
+    ...(fontFamily === undefined ? {} : { fontFamily }),
+    fontSize: options.yAxisFontSize ?? 12,
+    color: options.yAxisColor ?? options.axisColor ?? '#000000',
+  }
+  // The widest by character count rather than by measurement, which is the one
+  // thing a builder cannot do. A proportional face can make a shorter string
+  // wider — `111` against `00` — so this is a heuristic, and the sizer is why
+  // it only has to be close: an underestimate costs a few pixels of gutter,
+  // not a wrong layout.
+  const widest = labels.reduce((longest, label) => (label.length > longest.length ? label : longest), '')
+
+  return Row({
+    flexGrow: 1,
+    name: 'plot area',
+    children: [
+      Column({
+        positionType: 'relative',
+        name: 'y axis',
+        children: [
+          Box({ height: 0, overflow: 'hidden', name: 'gutter sizer', children: Text(widest, style) }),
+          ...labels.map((label, index) =>
+            Box({
+              positionType: 'absolute',
+              position: { top: percent(gridLines()[index] as number), left: 0 },
+              transform: { translateY: '-50%' },
+              name: `axis label ${index}`,
+              children: Text(label, style),
+            }),
+          ),
+        ],
+      }),
+      plot,
+    ],
+  })
 }
 
 /**
@@ -310,26 +475,25 @@ function barChart(props: ChartProps<'bar'>): SceneNode {
       })
     : undefined
 
-  return Column({
-    // **Filling the parent by default, rather than shrinking to content.**
-    // Every quantity below is a percentage of the plot, so a chart with no size
-    // resolves them against nothing and draws a few pixels wide — which reads
-    // as a broken renderer rather than as a missing dimension. v1 could not hit
-    // this because it painted into a rectangle it was handed.
-    width: (props.width ?? '100%') as `${number}%` | number,
-    height: (props.height ?? '100%') as `${number}%` | number,
-    name: 'bar chart',
-    children: [Box({ flexGrow: 1, positionType: 'relative', name: 'plot', children: [...grid(options), ...bars] }), ...(strip ? [strip] : [])],
+  const inner = Column({
+    flexGrow: 1,
+    name: 'body',
+    children: [plotArea(options, maxValue, props.fontFamily, bars), ...(strip ? [strip] : [])],
   })
-}
-
-/** Builds a chart's node tree. */
-export function Chart<T extends ChartType>(props: ChartProps<T>): SceneNode {
-  if (props.type === 'bar') return barChart(props as ChartProps<'bar'>)
-  if (props.type === 'line') return lineChart(props as ChartProps<'line'>)
-  if (props.type === 'pie') return pieChart(props as ChartProps<'pie'>, 0)
-  if (props.type === 'doughnut') return pieChart(props as ChartProps<'doughnut'>, 0.6)
-  throw new Error(`[canvas] chart type ${JSON.stringify(props.type)} is not built yet`)
+  return framed(
+    options,
+    inner,
+    legend(
+      options,
+      datasets.map((dataset, index) => ({
+        label: dataset.label ?? `Series ${index + 1}`,
+        color: seriesColor(index, dataset.color),
+      })),
+      props.fontFamily,
+    ),
+    props,
+    'bar chart',
+  )
 }
 
 /**
@@ -354,6 +518,9 @@ const PIE_SPACE = 100
  * invisible on a thousand-pixel one.
  */
 const PIE_INSET = 0.05
+
+/** How far along the radius v1 puts a slice's label: `radius * 0.7`. */
+const PIE_LABEL_REACH = 0.7
 
 /** Where one slice begins and ends, in turns clockwise from the top. */
 export function sliceAngles(values: readonly number[]): { start: number; end: number }[] {
@@ -396,15 +563,12 @@ function pieChart(props: ChartProps<'pie' | 'doughnut'>, innerFraction: number):
   const inner = outer * innerFraction
   const angles = sliceAngles(points.map(point => point.value))
 
-  return Column({
-    width: (props.width ?? '100%') as `${number}%` | number,
-    height: (props.height ?? '100%') as `${number}%` | number,
-    name: props.type === 'doughnut' ? 'doughnut chart' : 'pie chart',
-    children: Box({
-      flexGrow: 1,
-      positionType: 'relative',
-      name: 'plot',
-      children: angles.map((angle, index) =>
+  const slices = Box({
+    flexGrow: 1,
+    positionType: 'relative',
+    name: 'plot',
+    children: [
+      ...angles.map((angle, index) =>
         Path({
           positionType: 'absolute',
           position: { top: 0, right: 0, bottom: 0, left: 0 },
@@ -421,8 +585,55 @@ function pieChart(props: ChartProps<'pie' | 'doughnut'>, innerFraction: number):
           name: `slice ${index}`,
         }),
       ),
-    }),
+      // v1 puts a slice's label at seven tenths of the radius along the
+      // slice's own middle angle. In percentages of the plot rather than
+      // pixels, since the drawing is square and centred and the label rides
+      // with it.
+      ...(props.options?.showLabels
+        ? angles.map((angle, index) => {
+            const middle = angle.start + (angle.end - angle.start) / 2
+            const reach = ((outer * PIE_LABEL_REACH) / PIE_SPACE) * 100
+            const drawn = props.options?.renderLabelItem?.({
+              item: points[index]?.label ?? '',
+              index,
+            })
+            return Box({
+              positionType: 'absolute',
+              position: {
+                left: percent(0.5 + (Math.cos(middle) * reach) / 100),
+                top: percent(0.5 + (Math.sin(middle) * reach) / 100),
+              },
+              transform: { translateX: '-50%', translateY: '-50%' },
+              name: `slice label ${index}`,
+              children:
+                drawn ??
+                Text(points[index]?.label ?? '', {
+                  ...(props.fontFamily === undefined ? {} : { fontFamily: props.fontFamily }),
+                  fontSize: props.options?.labelFontSize ?? 12,
+                  color: props.options?.labelColor ?? '#000000',
+                }),
+            })
+          })
+        : []),
+    ],
   })
+
+  return framed(
+    props.options,
+    slices,
+    legend(
+      props.options,
+      points.map((point, index) => ({
+        // v1's pie legend reads `label (value)`, where a cartesian one is just
+        // the series name.
+        label: `${point.label} (${point.value})`,
+        color: seriesColor(index, point.color),
+      })),
+      props.fontFamily,
+    ),
+    props,
+    props.type === 'doughnut' ? 'doughnut chart' : 'pie chart',
+  )
 }
 
 /**
@@ -434,6 +645,9 @@ function pieChart(props: ChartProps<'pie' | 'doughnut'>, innerFraction: number):
  * independently onto the node.
  */
 const LINE_SPACE = 100
+
+/** v1's point marker: `ctx.arc(pointX, pointY, 4, 0, Math.PI * 2)`. */
+const LINE_POINT_RADIUS = 4
 
 /**
  * Where each point of a line series sits, as fractions of the plot.
@@ -496,37 +710,79 @@ function lineChart(props: ChartProps<'line'>): SceneNode {
       })
     : undefined
 
-  return Column({
-    width: (props.width ?? '100%') as `${number}%` | number,
-    height: (props.height ?? '100%') as `${number}%` | number,
-    name: 'line chart',
+  const inner = Column({
+    flexGrow: 1,
+    name: 'body',
     children: [
-      Box({
-        flexGrow: 1,
-        positionType: 'relative',
-        name: 'plot',
-        children: [
-          ...grid(options),
-          ...datasets.map((dataset, index) =>
-            Path({
+      plotArea(options, maxValue, props.fontFamily, [
+        ...datasets.map((dataset, index) =>
+          Path({
+            positionType: 'absolute',
+            position: { top: 0, right: 0, bottom: 0, left: 0 },
+            viewBox: [0, 0, LINE_SPACE, LINE_SPACE],
+            // The one place a chart needs `none`: a plot fills its box, and
+            // `meet` would letterbox it. The pen is not distorted by it —
+            // see `PathProps.viewBox`.
+            preserveAspectRatio: 'none',
+            d: linePath(linePoints(labels.length, dataset.data, maxValue)),
+            fill: 'none',
+            stroke: seriesColor(index, dataset.color),
+            // v1's `ctx.lineWidth = 2` for a line series.
+            lineWidth: 2,
+            name: `series ${index}`,
+          }),
+        ),
+        // **Markers cannot go in the path.** The series is drawn under
+        // `preserveAspectRatio: 'none'`, so a circle authored in the viewBox
+        // comes out an ellipse — stretched by the ratio of the two scales,
+        // which on a wide plot is not subtle. They are round boxes placed in
+        // percentages instead, which the stretch never touches.
+        ...datasets.flatMap((dataset, series) =>
+          linePoints(labels.length, dataset.data, maxValue).map((point, index) =>
+            Box({
               positionType: 'absolute',
-              position: { top: 0, right: 0, bottom: 0, left: 0 },
-              viewBox: [0, 0, LINE_SPACE, LINE_SPACE],
-              // The one place a chart needs `none`: a plot fills its box, and
-              // `meet` would letterbox it. The pen is not distorted by it —
-              // see `PathProps.viewBox`.
-              preserveAspectRatio: 'none',
-              d: linePath(linePoints(labels.length, dataset.data, maxValue)),
-              fill: 'none',
-              stroke: seriesColor(index, dataset.color),
-              // v1's `ctx.lineWidth = 2` for a line series.
-              lineWidth: 2,
-              name: `series ${index}`,
+              position: { left: percent(point.x), top: percent(point.y) },
+              transform: { translateX: '-50%', translateY: '-50%' },
+              width: LINE_POINT_RADIUS * 2,
+              height: LINE_POINT_RADIUS * 2,
+              borderRadius: LINE_POINT_RADIUS,
+              backgroundColor: seriesColor(series, dataset.color),
+              name: `point ${series}.${index}`,
             }),
           ),
-        ],
-      }),
+        ),
+      ]),
       ...(strip ? [strip] : []),
     ],
   })
+
+  return framed(
+    options,
+    inner,
+    legend(
+      options,
+      datasets.map((dataset, index) => ({
+        label: dataset.label ?? `Series ${index + 1}`,
+        color: seriesColor(index, dataset.color),
+      })),
+      props.fontFamily,
+    ),
+    props,
+    'line chart',
+  )
+}
+
+/**
+ * Builds a chart's node tree.
+ *
+ * A **builder**, not a node kind: it expands to boxes, paths and text before a
+ * scene is encoded, so nothing here crosses the arena and the renderer never
+ * learns what a chart is.
+ */
+export function Chart<T extends ChartType>(props: ChartProps<T>): SceneNode {
+  if (props.type === 'bar') return barChart(props as ChartProps<'bar'>)
+  if (props.type === 'line') return lineChart(props as ChartProps<'line'>)
+  if (props.type === 'pie') return pieChart(props as ChartProps<'pie'>, 0)
+  if (props.type === 'doughnut') return pieChart(props as ChartProps<'doughnut'>, 0.6)
+  throw new Error(`[canvas] chart type ${JSON.stringify(props.type)} is not built yet`)
 }

@@ -31,7 +31,7 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example unused
+ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -486,6 +486,50 @@ layout-check:
 [doc("Fail on a rustdoc warning -- broken intra-doc links above all.")]
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+# Compare v1's prop surface against v2's.
+#
+# Deliberately not in `ci`: it reads `../meo-canvas-old`, which a CI machine has
+# no reason to hold, and a recipe that fails for being run somewhere ordinary
+# gets removed from the gate rather than fixed.
+#
+# It replaces a checked-in Markdown table whose own header told the reader to
+# regenerate it. A document cannot enforce that -- a transcribed list is a copy,
+# and a copy is only correct at the moment it is made.
+[doc("Print v1's prop surface against v2's, naming v1's tag and commit.")]
+surface-report:
+    node packages/meo-canvas/tools/surface-report.mjs
+
+# Fail if an async runtime has entered the dependency tree.
+#
+# `meo-canvas-core`'s README promises "runtime-free always, and fetch-free by
+# default", and the second half is pinned by `tests/manifest_claims.rs`. This is
+# the first half. A runtime here is a runtime in every consumer -- it is the one
+# constraint the crate's manifest states about itself -- and the `net` feature
+# relaxed *fetching* without relaxing it.
+#
+# `-e normal` excludes dev and build dependencies, which may pull whatever they
+# like: the claim is about what a consumer links, not what we test with.
+# `--all-features` because a feature nobody enables today is still a runtime the
+# moment someone does.
+#
+# The names are the runtimes and their reactors rather than everything
+# async-flavoured: `async-trait` is a macro and `futures-core` is a trait
+# definition, and refusing those would be refusing a vocabulary rather than a
+# runtime.
+[doc("Fail if an async runtime is anywhere in the dependency tree.")]
+runtime-free:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    found=$(cargo tree -e normal --workspace --all-features \
+        | grep -oE "(tokio|async-std|smol|mio|futures-executor) v[0-9][0-9.]*" \
+        | sort -u || true)
+    if [ -n "$found" ]; then
+        echo "an async runtime is in the tree:" >&2
+        echo "$found" >&2
+        echo "`meo-canvas-core` promises runtime-free; see its README." >&2
+        exit 1
+    fi
 
 # Report dependencies declared in Cargo.toml that nothing imports.
 unused:

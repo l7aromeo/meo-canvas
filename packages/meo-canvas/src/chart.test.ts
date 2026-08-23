@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest'
 
 import { BAR_GROUP_SPACING, barLayout, Chart, GRID_DIVISIONS, gridLines, linePath, linePoints, seriesColor, sliceAngles, slicePath } from './chart.js'
+import type { SceneNode } from './node.js'
+
+/**
+ * The first node with this name, anywhere in the tree.
+ *
+ * By name rather than by position: the tree gained a `body` level when the
+ * legend arrived, and every test that walked `children[0]` broke at once
+ * without any of them being wrong about what they asserted.
+ */
+function find(node: SceneNode, name: string): SceneNode | undefined {
+  if (node.name === name) return node
+  for (const child of node.children ?? []) {
+    const hit = find(child, name)
+    if (hit) return hit
+  }
+  return undefined
+}
+
+/** Every node with this name, in tree order. */
+function findAll(node: SceneNode, test: (name: string) => boolean): SceneNode[] {
+  const out = node.name !== undefined && test(node.name) ? [node] : []
+  for (const child of node.children ?? []) out.push(...findAll(child, test))
+  return out
+}
 
 describe('the bar geometry, which is the only reference there is', () => {
   // Chrome has no charts, so nothing external adjudicates these. The numbers
@@ -78,19 +102,19 @@ describe('the tree a bar chart expands to', () => {
 
   it('is a plot area and nothing else when nothing is asked for', () => {
     const chart = Chart({ type: 'bar', data })
-    expect(chart.children?.map(child => child.name)).toEqual(['plot'])
+    expect(find(chart, 'plot')).toBeDefined()
+    expect(find(chart, 'labels')).toBeUndefined()
+    expect(find(chart, 'legend')).toBeUndefined()
   })
 
   it('adds a label strip only when labels are asked for', () => {
     const chart = Chart({ type: 'bar', data, options: { showLabels: true } })
-    expect(chart.children?.map(child => child.name)).toEqual(['plot', 'labels'])
+    expect(find(chart, 'labels')).toBeDefined()
   })
 
   it('puts a gridline at every division, both edges included', () => {
     const chart = Chart({ type: 'bar', data, options: { grid: { show: true } } })
-    const plot = chart.children?.[0]
-    const lines = plot?.children?.filter(child => child.name?.startsWith('gridline')) ?? []
-    expect(lines).toHaveLength(GRID_DIVISIONS + 1)
+    expect(findAll(chart, name => name.startsWith('gridline'))).toHaveLength(GRID_DIVISIONS + 1)
   })
 
   // The hatch's node is PLACED, not measured and drawn — so it must appear in
@@ -103,10 +127,7 @@ describe('the tree a bar chart expands to', () => {
       data,
       options: { showValues: true, renderValueItem: () => marker as never },
     })
-    const plot = chart.children?.[0]
-    const bar = plot?.children?.find(child => child.name === 'bar 0.0')
-    const holder = bar?.children?.[0]
-    expect(holder?.children?.[0]?.name).toBe('mine')
+    expect(find(chart, 'mine')).toBeDefined()
   })
 
   // The unbuilt-kind pin is gone because every kind is built. It moved from
@@ -205,7 +226,7 @@ describe('the tree a pie expands to', () => {
 
   it('is one path per slice, each in the whole drawing space', () => {
     const chart = Chart({ type: 'pie', data })
-    const slices = chart.children?.[0]?.children ?? []
+    const slices = findAll(chart, name => name.startsWith('slice '))
     expect(slices).toHaveLength(2)
     // Concentric because every slice shares one viewBox rather than being
     // scaled to its own bounds.
@@ -266,7 +287,7 @@ describe('the tree a line chart expands to', () => {
   // 2.4:1 scale.
   it('stretches to fill its box rather than fitting inside it', () => {
     const chart = Chart({ type: 'line', data })
-    const series = chart.children?.[0]?.children?.find(child => child.name === 'series 0')
+    const series = find(chart, 'series 0')
     expect((series?.style as { preserveAspectRatio?: string })?.preserveAspectRatio).toBe('none')
   })
 
@@ -275,11 +296,167 @@ describe('the tree a line chart expands to', () => {
       type: 'line',
       data: { labels: ['a', 'b'], datasets: [{ data: [1, 2] }, { data: [2, 1] }] },
     })
-    const paths = chart.children?.[0]?.children?.filter(child => child.name?.startsWith('series')) ?? []
-    expect(paths).toHaveLength(2)
+    expect(findAll(chart, name => name.startsWith('series '))).toHaveLength(2)
   })
 
   it('refuses a negative value, as the other kinds do', () => {
     expect(() => Chart({ type: 'line', data: { labels: ['a'], datasets: [{ data: [-1] }] } })).toThrow(/negative value/)
+  })
+})
+
+describe('the y-axis gutter', () => {
+  const data = { labels: ['a', 'b'], datasets: [{ data: [1, 2] }] }
+
+  it('is absent unless asked for', () => {
+    const chart = Chart({ type: 'bar', data })
+    expect(find(chart, 'y axis')).toBeUndefined()
+  })
+
+  // **Three properties at once, and each arrangement gives only two.**
+  // Absolute labels do not size their parent (measured: 9px against 30 for the
+  // same labels in flow); in-flow labels drift from the gridlines (measured:
+  // 8.5, 5.5, 1.5, -1.5, -5.5 across five rows). So the gutter holds a
+  // zero-height in-flow sizer AND absolute labels.
+  it('holds a zero-height sizer so it can measure without drawing', () => {
+    const chart = Chart({ type: 'bar', data, options: { showYAxis: true } })
+    const axis = find(chart, 'y axis')
+    expect(axis).toBeDefined()
+    const sizer = axis?.children?.[0]
+    expect(sizer?.name).toBe('gutter sizer')
+    expect(sizer?.style?.height).toBe(0)
+  })
+
+  it('labels every gridline, from the maximum down to zero', () => {
+    const chart = Chart({ type: 'bar', data, options: { showYAxis: true } })
+    const labels = findAll(chart, name => name.startsWith('axis label'))
+    expect(labels).toHaveLength(GRID_DIVISIONS + 1)
+    // v1: `maxValue - (maxValue / 5) * i`, so the top row is the maximum.
+    expect(labels[0]?.children?.[0]?.markup ?? '').toBe('2')
+    expect(labels[labels.length - 1]?.children?.[0]?.markup ?? '').toBe('0')
+  })
+
+  it('takes a formatter, as v1 does', () => {
+    const chart = Chart({
+      type: 'bar',
+      data,
+      options: { showYAxis: true, yAxisLabelFormatter: value => `${value}kg` },
+    })
+    const first = find(chart, 'axis label 0')
+    expect(first?.children?.[0]?.markup ?? '').toBe('2kg')
+  })
+
+  it('puts the plot beside the gutter rather than over it', () => {
+    // Measured: bars start at x=24 with single-digit labels and x=41 with
+    // `10000` on a 240-pixel chart, so the plot is inset by what the gutter
+    // took. A plot layered over the gutter would start at the same x for both.
+    const chart = Chart({ type: 'bar', data, options: { showYAxis: true } })
+    const area = find(chart, 'plot area')
+    expect(area?.children?.map(child => child.name)).toEqual(['y axis', 'plot'])
+  })
+})
+
+describe('the legend', () => {
+  const cartesian = { labels: ['a', 'b'], datasets: [{ data: [1, 2], label: 'Sales' }, { data: [2, 1] }] }
+  const pie = [
+    { label: 'a', value: 1 },
+    { label: 'b', value: 3 },
+  ]
+
+  it('is absent unless asked for', () => {
+    expect(find(Chart({ type: 'bar', data: cartesian }), 'legend')).toBeUndefined()
+  })
+
+  it('gives every series a swatch and a label', () => {
+    const chart = Chart({ type: 'bar', data: cartesian, options: { showLegend: true } })
+    const items = findAll(chart, name => name.startsWith('legend item'))
+    expect(items).toHaveLength(2)
+    expect(findAll(chart, name => name === 'swatch')).toHaveLength(2)
+  })
+
+  // v1 falls back to a positional name when a dataset has none, so a legend
+  // never shows a blank row.
+  it('names an unnamed series by its position', () => {
+    const chart = Chart({ type: 'bar', data: cartesian, options: { showLegend: true } })
+    const items = findAll(chart, name => name.startsWith('legend item'))
+    expect(items[0]?.children?.[1]?.markup).toBe('Sales')
+    expect(items[1]?.children?.[1]?.markup).toBe('Series 2')
+  })
+
+  // v1's pie legend reads `label (value)` where a cartesian one is the series
+  // name alone — a difference in the data rather than in the drawing.
+  it('reads label and value for a pie', () => {
+    const chart = Chart({ type: 'pie', data: pie, options: { showLegend: true } })
+    const items = findAll(chart, name => name.startsWith('legend item'))
+    expect(items[0]?.children?.[1]?.markup).toBe('a (1)')
+  })
+
+  // The legend is a sibling of the body rather than an overlay, so the plot's
+  // `flexGrow` takes what the legend leaves — v1's `chartHeight -
+  // legendHeight` arrived at by layout instead of by subtraction.
+  it.each([
+    ['top', ['legend', 'body']],
+    ['bottom', ['body', 'legend']],
+    ['left', ['legend', 'body']],
+    ['right', ['body', 'legend']],
+  ] as const)('puts itself %s', (legendPosition, order) => {
+    const chart = Chart({ type: 'bar', data: cartesian, options: { showLegend: true, legendPosition } })
+    expect(chart.children?.map(child => child.name)).toEqual(order)
+  })
+
+  it('wraps across rows when it is not upright', () => {
+    const chart = Chart({ type: 'bar', data: cartesian, options: { showLegend: true, legendPosition: 'bottom' } })
+    expect(find(chart, 'legend')?.style?.flexWrap).toBe('wrap')
+  })
+})
+
+describe('a pie slice label', () => {
+  const pie = [
+    { label: 'a', value: 1 },
+    { label: 'b', value: 3 },
+  ]
+
+  it('sits at seven tenths of the radius on the slice s own angle', () => {
+    const chart = Chart({ type: 'pie', data: pie, options: { showLabels: true } })
+    const labels = findAll(chart, name => name.startsWith('slice label'))
+    expect(labels).toHaveLength(2)
+    // The first slice sweeps from twelve o'clock through a quarter turn, so
+    // its middle is at 45 degrees: right of centre and above it.
+    const first = labels[0]?.style?.position as { left?: string; top?: string }
+    expect(Number.parseFloat(first?.left ?? '0')).toBeGreaterThan(50)
+    expect(Number.parseFloat(first?.top ?? '0')).toBeLessThan(50)
+  })
+
+  it('takes the label hatch, and places its node rather than measuring it', () => {
+    const chart = Chart({
+      type: 'pie',
+      data: pie,
+      options: { showLabels: true, renderLabelItem: () => ({ kind: 'box', name: 'mine' }) as never },
+    })
+    expect(find(chart, 'mine')).toBeDefined()
+  })
+})
+
+describe('a line chart s point markers', () => {
+  const data = { labels: ['a', 'b', 'c'], datasets: [{ data: [1, 3, 2] }] }
+
+  // **They cannot live in the path.** The series is drawn under
+  // `preserveAspectRatio: 'none'`, so a circle authored in the viewBox comes
+  // out an ellipse, stretched by the ratio of the two scales. Round boxes
+  // placed in percentages are untouched by the stretch.
+  it('are boxes beside the path, not circles inside it', () => {
+    const chart = Chart({ type: 'line', data })
+    const points = findAll(chart, name => name.startsWith('point '))
+    expect(points).toHaveLength(3)
+    expect(points.every(point => point.kind === 'box')).toBe(true)
+    // Round, and the same both ways — an ellipse would be the defect.
+    expect(points[0]?.style?.width).toBe(points[0]?.style?.height)
+  })
+
+  it('sits one at every data point', () => {
+    const chart = Chart({
+      type: 'line',
+      data: { labels: ['a', 'b'], datasets: [{ data: [1, 2] }, { data: [2, 1] }] },
+    })
+    expect(findAll(chart, name => name.startsWith('point '))).toHaveLength(4)
   })
 })

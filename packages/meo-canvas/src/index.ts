@@ -227,3 +227,38 @@ export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOpti
 
 export { Canvas } from './canvas.js'
 export type { EncodeOptions, Format, NativeCanvas, WriteFile, WriteFileSync } from './canvas.js'
+
+export {
+  EASING_NAMES,
+  assertSpringHasNoRange,
+  cubicBezier,
+  ease,
+  formatColor,
+  interpolate,
+  lerp,
+  mapRange,
+  mix,
+  mixColor,
+  parallel,
+  resolveEasing,
+  sequence,
+  spring,
+  springDuration,
+  steps,
+  track,
+} from './animate.js'
+export type {
+  Animatable,
+  EasingName,
+  GroupValue,
+  Rgba,
+  Sampled,
+  SequenceConfig,
+  SequenceStep,
+  SpringConfig,
+  SpringDurationOptions,
+  TrackConfig,
+} from './animate.js'
+
+export { BAR_GROUP_SPACING, Chart, GRID_DIVISIONS, barLayout, gridLines, linePath, linePoints, seriesColor, sliceAngles, slicePath } from './chart.js'
+export type { BaseChartOptions, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint } from './chart.js'

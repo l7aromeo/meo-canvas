@@ -490,6 +490,45 @@ Ask which of the two a v1 choice is before copying it.
 
 Where a question has a CSS answer, the answer is what Chrome does.
 
+### Three questions answered and closed
+
+**Baselines from measured text: fixed upstream, unreleased.** taffy 0.13's
+measure closure returns `Size<f32>`, so a text leaf has nowhere to report a
+baseline and `align-items: baseline` falls back to the box's bottom edge. The
+maintainers' own changelog has the measure function returning `LayoutOutput`
+instead, **explicitly so measure functions can set baselines** -- so there is
+nothing to file and nothing to work around. **When a release carries it,
+confirm the _released_ signature rather than the changelog**: this whole
+question exists because a released signature said otherwise. And test it on
+`align-items: baseline` over mixed font sizes, which is the only arrangement
+where the fallback and a real baseline differ -- **a fixture that passes before
+and after an upgrade has not tested the upgrade.**
+
+**Whole-pixel rounding against Chrome's sixty-fourths: not opened.** taffy
+rounds every box; Chrome works in `LayoutUnit`, floors each line box into that
+grid and never rounds the total. **It does not accumulate**, and the reason is
+the formula: `round_layout` rounds _cumulative_ coordinates and differences
+them, so every edge lands on `round(its exact position)` and is within half a
+pixel of it at any depth. **The per-box wobble is what keeps the edges true
+rather than what accumulates** -- the boxes look wrong and the stack stays
+right. The bound is half a _logical_ pixel, so it is a whole device pixel at
+2x. Not opened because **turning rounding off makes adjacent boxes meet on
+fractions and antialias against each other**: a bounded difference traded for a
+visible one at every shared edge. A third option nobody has costed --
+**solve in device pixels and paint 1:1**, which puts the rounding on the device
+grid and keeps the seam-free property. `LAYOUT_SCALE`'s note argues against
+solving at a device scale because paint would round a second time; **that rules
+out the version where both happen**, and which one its author meant is not
+recorded.
+
+**CSS table layout: nobody has asked for it.** v1 has none, no fixture wants
+one, and taffy has four display modes of which none is a table -- so it would
+be a layout algorithm we write and maintain in a tree whose whole layout story
+is that taffy does it. Three of the four things a table adds over a grid are a
+grid with different spelling; the fourth, **row groups with header repetition
+across pages**, is the one a grid cannot express and the only reason to revisit.
+**A decision to defer is a decision**, and this is it.
+
 `../meo-canvas-old` is the reference implementation of that target. It was built
 to match Chrome, so where this renderer and that one disagree, that one is
 right — read it before inventing a rule. Its line boxes come from the face's own
@@ -900,6 +939,19 @@ first instinct was to look for a field-order mistake. **Each was diagnosed as a
 defect in the thing being measured before anyone suspected the thing
 measuring**, which is what makes the family expensive rather than merely
 annoying. `touch` the file, delete the probe, `just addon`.
+
+**An instrument can also be silent about what it never saw, and that is the
+quietest of the three.** Four scoping documents were written to `docs/`, a
+directory the deny-by-default `.gitignore` does not allow. They were correct,
+every gate passed, and **they were not in the repository** -- `git status` does
+not list an ignored file, so nothing distinguished them from files that did not
+exist. **Not a wrong result and not a wrong error: an absence.** An instrument
+that lies, an instrument that errs, and an instrument that says nothing at all.
+
+**A `.gitignore` that denies by default is the right design and this is its one
+cost.** Anything written outside a path the allowlist already names needs that
+path checked once, deliberately, at the moment it is invented -- not later,
+because there is no later signal.
 
 **`cargo check --workspace` does not compile `#[cfg(test)]` code, so a struct
 field can be complete everywhere the library looks and absent everywhere the
@@ -1314,6 +1366,83 @@ that fixing your own file with `fmt --all` reformats a tree you may be sharing.
 scrolled past -- a chain reported off a terminal is the prefix that happened to
 be visible, which is how six recipes came to be described as not having run
 when they had.
+
+**An absence test needs a presence test beside it, or it decays into
+always-true.** _Nothing here fetches_, _no async runtime_, _no intermediate
+pixel_, _this list is empty_ — every one passes when the thing it checks has
+been renamed, moved, or deleted, and passes for the wrong reason without
+saying so. So pair it: assert the feature exists before asserting it is off,
+assert the stack was drawn before asserting it has no blend, keep a row that
+**must** discriminate beside the rows that must not. Four instances in a day —
+a seam control on a walk, a must-not-discriminate row in a table, three
+presence tests beside three absence assertions in a README's guarantees, and a
+detector fed a synthetic tree containing `tokio` to prove it fires at all.
+**That last is the form to copy**: a guard whose author checked it could report
+the thing it exists to report.
+
+The fourth form is the one with no test at all. A README said text was _shaped
+and broken by Skia's paragraph engine_; the paragraph engine had been replaced
+by our own line breaker, which was most of a port. **True when written, quietly
+stopped being, nothing watching.** Prose about the architecture is an assertion
+with no assertion mechanism — so either pin it to something that fails, or
+expect it to rot at exactly the rate the code moves.
+
+**A correct transform of nothing is nothing, and nothing looks like a bug in
+the transform.** Three failures in one day shared a shape: the mechanism was
+right and the input was empty, and the empty result read as a defect in the
+mechanism. A sampler read a one-pixel band off its own row and returned zero
+ink; a chart resolved percentages against a box with no size and drew two bars
+nine pixels wide on a two-hundred-pixel canvas; a path was scaled into a node
+with no intrinsic size and drew **nothing at all**. **The unit tests passed in
+every case** — the `viewBox` transform _is_ right, and it was handed an empty
+node. So when something draws nothing, measure the input before reading the
+mechanism, and remember that a zero-size box is a legitimate thing for a caller
+to produce: a node sized by flex growth, by a percentage of an unsized parent,
+or hidden deliberately. **That makes it documentation rather than an error to
+throw** — which is the opposite of a chart dividing zero by zero, where the
+arithmetic produces a value nobody asked for.
+
+**`cargo check --workspace` does not compile `#[cfg(test)]` code.** A struct
+field can be complete everywhere the library looks and absent everywhere the
+tests do: a new field on `NodeKind::Path` left six test constructors broken
+across three crates while `check --workspace` was clean. **`--all-targets` is
+what closes it**, and `lint-check` uses it. This is the `-p` rule one axis over
+— not the wrong crate, the wrong _target_.
+
+**A no-op edit is invisible to every check that asks whether the code is
+valid.** An edit matched on a line a formatter had since reflowed, so it
+replaced nothing and reported nothing; `typecheck` stayed at 0 throughout,
+because unchanged code is still valid code. **What caught it was a render
+reporting no text ink at all** — a check that asked what the code _did_ rather
+than whether it was well formed. After a scripted edit, assert the change is
+present rather than that the tree still compiles: `grep` for what you inserted,
+or read back the region you claimed to have replaced.
+
+**This vocabulary is complete for things laid out and incomplete for things
+drawn.** Three capability gaps surfaced in one sitting — a URL source that no
+surface could resolve, an ICO page size that no scene could express, and path
+geometry with no normalised space — and **each was invisible from the API and
+obvious on first real use.** Charts found all three because a chart is the
+first feature that is mostly drawn: a rectangle can be a percentage and a path
+cannot, so the one shape that could not be expressed was the one nobody had
+drawn yet. Expect the next gap where something is painted rather than placed.
+
+**And a question answered for one consequence of a mechanism has not been
+answered for the others.** A `viewBox` under non-uniform scale was checked for
+its effect on the **pen** — `Path2D::transform` moves geometry and leaves the
+stroke alone, so a line's width is safe. Both of us stopped there. It still
+stretches geometry, which is what a **circle** is: a marker authored as an arc
+in that viewBox comes out an ellipse, by the ratio of the two scales. The pen
+and the circle are distorted by the same thing and only one of them had been
+asked about.
+
+**A test that navigates by position is coupled to every future change in
+shape, and none of that coupling is about the thing it tests.** Adding a
+legend put one wrapper level into a chart's tree, and nine tests broke at once
+— **not one of them wrong about what it asserted, every one of them wrong
+about where to look.** They now find nodes by name through a recursive search,
+which survives a restructure because it never encoded one. `chart.children[0]`
+is a claim about layout that a test about gridlines never meant to make.
 
 **A crate's own tests can name what the crate does not export.** Using the
 surface finds what testing it cannot: a gradient whose argument had no
