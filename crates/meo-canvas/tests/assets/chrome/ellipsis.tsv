@@ -1,0 +1,15 @@
+# Chrome, through `just conformance`. What a line keeps when it does not fit.
+#
+# Measured with `measureText` on the repository's own face, which the page
+# asserts has loaded rather than assuming it. `text-overflow: ellipsis` is not
+# used: Chrome does not expose the string it drew, and the string is the whole
+# question -- a word-boundary rule and a character rule disagree about content,
+# not about width.
+#
+# text	size	width	full width	drawn	drawn width
+"Flower of Paradise"	16	60	106.50	"Flower o…"	57.18
+"Flower of Paradise"	16	90	106.50	"Flower of Par…"	85.07
+"Flower of Paradise"	16	120	106.50	"Flower of Paradise"	106.50
+"Flower of Paradise"	16	150	106.50	"Flower of Paradise"	106.50
+"Antidisestablishmentarianism"	16	90	171.81	"Antidisestabli…"	88.00
+"Flower of Paradise"	22	90	146.43	"Flower of …"	89.98

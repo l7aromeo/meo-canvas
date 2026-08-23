@@ -1,0 +1,123 @@
+# Chrome, through `just conformance`. Where a flex container puts its children.
+#
+# Container 160x80. Three children 24x20, 30x32, 20x44,
+# each sized by a spacer inside it rather than by a height of its own -- so
+# `align-items: stretch` has something to change. An item with its own height is
+# stretched to the height it already had, and a matrix built that way reports one
+# of its five alignments as a duplicate of another.
+#
+# Rectangles are relative to the container and rounded to whole pixels.
+#
+# The last rows are the wrapping cases: SIX children in a 88x56 box,
+# because with three there is nothing to wrap and a `wrap` that never wrapped
+# would agree with `nowrap` on every row of the matrix.
+#
+# justify	align	child	x	y	w	h
+flex-start	flex-start	0	0	0	24	20
+flex-start	flex-start	1	24	0	30	32
+flex-start	flex-start	2	54	0	20	44
+flex-start	flex-end	0	0	60	24	20
+flex-start	flex-end	1	24	48	30	32
+flex-start	flex-end	2	54	36	20	44
+flex-start	center	0	0	30	24	20
+flex-start	center	1	24	24	30	32
+flex-start	center	2	54	18	20	44
+flex-start	stretch	0	0	0	24	80
+flex-start	stretch	1	24	0	30	80
+flex-start	stretch	2	54	0	20	80
+flex-start	baseline	0	0	24	24	20
+flex-start	baseline	1	24	12	30	32
+flex-start	baseline	2	54	0	20	44
+flex-end	flex-start	0	86	0	24	20
+flex-end	flex-start	1	110	0	30	32
+flex-end	flex-start	2	140	0	20	44
+flex-end	flex-end	0	86	60	24	20
+flex-end	flex-end	1	110	48	30	32
+flex-end	flex-end	2	140	36	20	44
+flex-end	center	0	86	30	24	20
+flex-end	center	1	110	24	30	32
+flex-end	center	2	140	18	20	44
+flex-end	stretch	0	86	0	24	80
+flex-end	stretch	1	110	0	30	80
+flex-end	stretch	2	140	0	20	80
+flex-end	baseline	0	86	24	24	20
+flex-end	baseline	1	110	12	30	32
+flex-end	baseline	2	140	0	20	44
+center	flex-start	0	43	0	24	20
+center	flex-start	1	67	0	30	32
+center	flex-start	2	97	0	20	44
+center	flex-end	0	43	60	24	20
+center	flex-end	1	67	48	30	32
+center	flex-end	2	97	36	20	44
+center	center	0	43	30	24	20
+center	center	1	67	24	30	32
+center	center	2	97	18	20	44
+center	stretch	0	43	0	24	80
+center	stretch	1	67	0	30	80
+center	stretch	2	97	0	20	80
+center	baseline	0	43	24	24	20
+center	baseline	1	67	12	30	32
+center	baseline	2	97	0	20	44
+space-between	flex-start	0	0	0	24	20
+space-between	flex-start	1	67	0	30	32
+space-between	flex-start	2	140	0	20	44
+space-between	flex-end	0	0	60	24	20
+space-between	flex-end	1	67	48	30	32
+space-between	flex-end	2	140	36	20	44
+space-between	center	0	0	30	24	20
+space-between	center	1	67	24	30	32
+space-between	center	2	140	18	20	44
+space-between	stretch	0	0	0	24	80
+space-between	stretch	1	67	0	30	80
+space-between	stretch	2	140	0	20	80
+space-between	baseline	0	0	24	24	20
+space-between	baseline	1	67	12	30	32
+space-between	baseline	2	140	0	20	44
+space-around	flex-start	0	14	0	24	20
+space-around	flex-start	1	67	0	30	32
+space-around	flex-start	2	126	0	20	44
+space-around	flex-end	0	14	60	24	20
+space-around	flex-end	1	67	48	30	32
+space-around	flex-end	2	126	36	20	44
+space-around	center	0	14	30	24	20
+space-around	center	1	67	24	30	32
+space-around	center	2	126	18	20	44
+space-around	stretch	0	14	0	24	80
+space-around	stretch	1	67	0	30	80
+space-around	stretch	2	126	0	20	80
+space-around	baseline	0	14	24	24	20
+space-around	baseline	1	67	12	30	32
+space-around	baseline	2	126	0	20	44
+space-evenly	flex-start	0	22	0	24	20
+space-evenly	flex-start	1	67	0	30	32
+space-evenly	flex-start	2	119	0	20	44
+space-evenly	flex-end	0	22	60	24	20
+space-evenly	flex-end	1	67	48	30	32
+space-evenly	flex-end	2	119	36	20	44
+space-evenly	center	0	22	30	24	20
+space-evenly	center	1	67	24	30	32
+space-evenly	center	2	119	18	20	44
+space-evenly	stretch	0	22	0	24	80
+space-evenly	stretch	1	67	0	30	80
+space-evenly	stretch	2	119	0	20	80
+space-evenly	baseline	0	22	24	24	20
+space-evenly	baseline	1	67	12	30	32
+space-evenly	baseline	2	119	0	20	44
+nowrap	six-children	0	0	0	14	56
+nowrap	six-children	1	14	0	18	56
+nowrap	six-children	2	32	0	12	56
+nowrap	six-children	3	44	0	14	56
+nowrap	six-children	4	58	0	18	56
+nowrap	six-children	5	76	0	12	56
+wrap	six-children	0	0	0	24	44
+wrap	six-children	1	24	0	30	44
+wrap	six-children	2	54	0	20	44
+wrap	six-children	3	0	44	24	44
+wrap	six-children	4	24	44	30	44
+wrap	six-children	5	54	44	20	44
+wrap-reverse	six-children	0	0	12	24	44
+wrap-reverse	six-children	1	24	12	30	44
+wrap-reverse	six-children	2	54	12	20	44
+wrap-reverse	six-children	3	0	-32	24	44
+wrap-reverse	six-children	4	24	-32	30	44
+wrap-reverse	six-children	5	54	-32	20	44

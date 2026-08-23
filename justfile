@@ -49,6 +49,7 @@ setup:
     rustup component add rustfmt clippy llvm-tools-preview
     rustup toolchain install {{ fmt_toolchain }} --component rustfmt --component llvm-tools-preview
     cargo install --locked cargo-llvm-cov cargo-machete
+    npx playwright install chromium
     @test -L CLAUDE.md || ln -s AGENTS.md CLAUDE.md
     @echo "ready -- run \`just ci\`"
 
@@ -217,6 +218,25 @@ example: build-js addon
     @diff -rq examples/bun/out examples/rust/out \
       || { echo "error: the two surfaces did not write the same bytes; each line above names a file they disagree on"; exit 1; }
     @echo "both surfaces wrote the same bytes in $(find examples/bun/out -type f | wc -l | tr -d ' ') files"
+
+# Re-measure Chrome and rewrite the conformance tables.
+#
+# **Deliberately not part of `ci`.** The harness produces tables and the gates
+# walk them: `chrome_tables.rs` reads what is checked in and needs no browser,
+# so a clone that never runs this never downloads one. A re-measurement should
+# arrive as a diff someone reads -- if a future Chrome changes an answer, that
+# belongs in a commit rather than in a suite going red on whichever machine
+# updated first.
+#
+# Every number this writes comes from a page that **asserts its font loaded**
+# rather than assuming it, and every sample point is derived from a rectangle
+# the browser reported rather than written down. Both rules exist because the
+# hand-written pages these replace got them wrong.
+[doc("Re-measure Chrome with Playwright and rewrite the conformance tables.")]
+conformance: ensure-deps
+    node packages/meo-canvas/tools/conformance/ellipsis.mjs
+    node packages/meo-canvas/tools/conformance/gradients.mjs
+    node packages/meo-canvas/tools/conformance/flex.mjs
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps

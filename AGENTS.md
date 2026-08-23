@@ -475,7 +475,20 @@ and a tree that mixes them reads as two conventions.
 
 ## The behavioural target
 
-Chrome. Where a question has a CSS answer, the answer is what Chrome does.
+**The browser is the baseline for behaviour. v1 is the baseline for the API.**
+What a property _does_ is what Chrome does with it; which properties _exist_ is
+what `../meo-canvas-old` offers. The two are answered by different sources and
+neither overrides the other in the other's half.
+
+That resolves the case where v1's shape comes from a limitation rather than a
+decision. Its radial gradient is a circle because `ctx.createRadialGradient`
+makes only circles, and CSS's default is an ellipse -- so the property exists
+because v1 has it and behaves as an ellipse because a browser does. It is the
+opposite of the text pipeline, where v1 breaks its own lines _because_ a canvas
+has no paragraph, and doing it v1's way is what makes the behaviour a browser's.
+Ask which of the two a v1 choice is before copying it.
+
+Where a question has a CSS answer, the answer is what Chrome does.
 
 `../meo-canvas-old` is the reference implementation of that target. It was built
 to match Chrome, so where this renderer and that one disagree, that one is
@@ -934,6 +947,35 @@ instrument in proportion to how much of it is failing, and run the reference
 cases through the code before changing the code: the margin-collapsing gap that
 prompted a task and two dispatches did not exist, and seven of fifteen cases
 already matched the browser exactly.
+
+**Every row failing is a sharper trigger than most rows failing.** The first
+ellipsis walker had all six rows disagree and the cause was its own reference
+render, which was given no width and wrapped into the column it was handed --
+three stacked lines' ink read as one line's. It is worth noticing at _all_
+rather than at _most_ for the reason the same walker showed a run later: **the
+rows that agree are what make the rows that disagree trustworthy.** Four of six
+agreeing narrowed two defects to two sentences; six of six failing said only
+that something upstream of every row was wrong.
+
+**A column of a data table is data, not a caption.** The same walker abbreviated
+a long string in its first column so the table would read nicely, and then fed
+that abbreviation to the renderer as the source text. A table read by a machine
+has no room for anything written for a person: the moment one column is for
+reading, some other column's meaning is quietly conditional on it. Write the
+whole value and let the reader scroll.
+
+**The page a thing is measured on is part of the measurement.** The two rules
+above are about the sample point and about what the number is; this one is
+about the **frame** the reading is taken in, and the three are one rule with
+three surfaces. A walker measured a wrapped flex line on a page the same size
+as the box, so thirty-two of the second line's forty-four rows fell off the
+page and a child two-thirds missing read as a child never placed. A fixture
+cell drew three identical children twice, so two lines of identical colours in
+identical columns merged into one bounding box and read as one line. Both
+reported a renderer defect that was not there. Before believing a reading, ask
+what the frame around it could be doing to it: a page that crops, a scene whose
+own cells cannot be told apart, a control rendered at a different size from the
+subject.
 
 **A citation is a measurement, not a label.** A `grep -n` result is evidence that
 a string occurs, not evidence that the line quoted is the line that matters:
