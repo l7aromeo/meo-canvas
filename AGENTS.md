@@ -947,6 +947,95 @@ dash is two dashes meeting, 8.1 against an 8 dash is one dash passing through.
 Before trusting a signature, name the quantity that makes it one, and check the
 case that should _not_ show it does not.
 
+**Choose at least one case that amplifies, and read its gain off the formula
+before anything renders.** A conformance table full of cases with a gain near
+one cannot see a fault smaller than its tolerance -- every row passes and the
+table reports a clean sweep it has not earned. Seventeen blend modes were
+compared against Chrome and thirteen disagreed; eleven of those were off by a
+single unit in one channel, which a tolerance of 1 would have swallowed
+whole. The fault was one unit of rounding in the gradient underneath, and the
+only reason it was visible at all is that `saturation` divides by the
+backdrop's channel spread -- eight units out of 255 at that pixel -- and
+returned it twelve units wide, with `color-dodge` returning it three. **The
+gain is arithmetic, not an observation**: `saturation` divides by a small
+quantity and `hue` multiplies by the same one, which is why the first amplifies
+and the second does not, and both facts are readable from Compositing 1 without
+drawing anything. So the selection rule is: for each measured quantity, ask
+which case's formula magnifies a small error in it, and put that case in.
+Corollary, learnt in the same hour: **when the amplifier fires, suspect the
+shared input before the amplifier.** Thirteen failing modes were not thirteen
+defects.
+
+**A value that depends on a dithered source cannot be pinned across
+renderers.** Dither is a per-pixel offset from a pattern tied to device
+coordinates and to a Skia build, so matching it is not something to attempt --
+and switching ours on would swap one unreproducible offset for another rather
+than converge. It is visible inside a table we already had: `gradient-truth`
+reads `linear 0deg` at 126 and 125 at two points that are analytically
+identical on a vertical ramp, and `180deg` at 130 against 129. The only form of
+the check that can pass is to **measure the source on our own surface and
+compare in its currency** -- which is what `chrome_blend.rs` does, reading our
+own backdrop-only cell and putting Compositing 1's formula through that instead
+of pinning Chrome's outputs. And the amplifier rule has a second edge here:
+**the higher a mode's gain, the more of its row is dither**, so the case that
+is best at finding a fault is also the case least suited to being pinned
+against another renderer. Use it to detect, not to certify.
+
+**A field named for a geometric quantity must not hold an instrument's
+internal one.** The perimeter walk reports `perimeter=662.2` for a box whose
+centreline is 666.2, because the walk takes its extents on pixel _indices_ --
+`width - 1 - inset` -- which is correct for sampling pixel centres and four
+short round a loop. Two readers took that number and predicted mark counts with
+it, and a third of a dash period is enough to move a prediction across a
+rounding boundary. **The fix is the name, not the arithmetic**: `walk-length=`,
+with the geometric figure noted beside it.
+
+The failure that led there is worth more than the rename. A perimeter was
+computed two ways, the two differed by four, and the difference was diagnosed
+from the numbers alone -- an implementation _inferred_ to explain a gap, when
+the file was open and said otherwise two lines from where it was claimed not
+to. **A close-but-wrong agreement is more persuasive than a distant one and
+worth less**: the wrong model reproduced the figure to within 0.6, which is why
+it convinced, and it convinced its way to a proposal to re-run every reading
+that walks along an arc. Before attributing a discrepancy to a mechanism, read
+the mechanism. It is the citation rule pointed at our own tools: **take the
+measurement, then write the label.**
+
+**A difference no larger than a renderer's disagreement with itself is not a
+difference.** Measure the self-disagreement first: it is the resolution floor,
+it needs one surface rather than two, and it costs a single read. A dashed
+corner cost an hour and three hypotheses over one pixel, and the thing that
+ended it was Chrome disagreeing with **itself** -- the same mark reading nine
+pixels wide at `y = 0` and eight at `y = 2`, on a radius where the two
+renderers agree completely. One pixel, which was the entire size of the
+difference under investigation. A between-engine reading of that size always
+leaves room to argue about frames, thresholds and conventions; a
+within-engine one leaves none, which is why it settles what the comparison
+could not. **Take the floor before investigating anything at or beneath it**,
+and where a difference survives, say what the floor was so the reader knows the
+difference cleared it.
+
+Name the hypotheses that died and what killed each, not only the one that
+lived. Three died here -- a shared rasteriser constant, a path measured short
+by conic flattening, and patterns differing inside the corner -- each to a
+measurement rather than an argument. **A reader who meets only the surviving
+explanation will re-derive one of the dead ones**; a reader who meets all three
+will not.
+
+**A count is only as good as the separation under it, and nothing in a count
+shows you the separation.** This is the previous rule applied one level up: a
+signature needs a quantity, so a _count_ of signatures needs the distribution
+those quantities fall in. Counting dashed corner marks longer than `1.15 * dash`
+gave three at width 4, then two after an unrelated fix, and the move looked like
+a regression. The histogram said otherwise -- the marks sat at 10.1 and 10.2
+against a continuous control whose own marks reached 9.0 nine times, so a mark
+near 9 had never carried information and the count had simply lost one of its
+bad members. At width 8 the same measurement separates cleanly: 20.3 and 21.3
+against a control ceiling of 17.0, three empty pixels wide on a dash of 16.
+**Publish the distribution beside any count that decides something**, and where
+two widths disagree in strength, say which one the conclusion rests on rather
+than averaging them into a confidence neither supports.
+
 **When a coincidence-prone reading and a structural signature disagree, the
 signature wins.** Ink spanning a box's straight portion exactly is _sometimes_
 per-side fitting and sometimes a dash boundary landing on a tangent by
@@ -1136,6 +1225,15 @@ file before the number leaves your hands, and re-read a claim against its own
 evidence before it does: a measurement printed and then generalised over is a
 different failure from a measurement never taken, and only the second is
 prevented by measuring.
+
+The rule points at our own reporting as well as at the code, and it costs two
+habits. **Check the exit status**: `just ci | grep -E '^error'` returns
+_grep's_ status, not `just`'s, so "no lines matched" is a pattern match on
+output rather than a passing gate, and a failure phrased outside the pattern
+reads as success. **Quote the recipe names from the justfile**, not from what
+scrolled past -- a chain reported off a terminal is the prefix that happened to
+be visible, which is how six recipes came to be described as not having run
+when they had.
 
 **A crate's own tests can name what the crate does not export.** Using the
 surface finds what testing it cannot: a gradient whose argument had no
