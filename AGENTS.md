@@ -1684,6 +1684,39 @@ The fix moves the pinned bytes, so it lands on both surfaces at once: a
 one-sided change makes the agreement test fail for the right reason at the
 wrong moment, and the next reader diagnoses a port defect.
 
+### Pin the wrong answer when the right one is upstream
+
+taffy resolves a column flex container with an automatic height to **zero**
+when its child has `flex-shrink: 0` and a negative main-axis margin. The
+container disappears, its background with it, while the child lays out
+correctly at the negative offset. Positive margins are right, zero is right,
+`flex-shrink: 1` is right -- **and it is the child's `flex-shrink` that
+triggers it, not the container's**, which is the opposite of what the symptom
+suggests, since the box that vanishes is the container.
+
+Chrome gives the child's outer hypothetical main size in all six rows of that
+table and never lets `flex-shrink` into the answer. **So it is a disagreement
+with the browser, not with a reading of the specification** -- the distinction
+that decided whether to file it, and the reason the measurement was worth
+waiting for rather than asserting CSS from memory.
+
+**A test asserting Chrome's 476 would fail today, and a failing test cannot be
+committed.** So `taffy_negative_margin.rs` asserts what taffy _does_, with
+Chrome's number in the table beside it and the instruction in the failure
+message: when this test fails, the defect is fixed, delete it. **The wrong
+answer, pinned deliberately, is the notification** -- and without it the defect
+is entirely silent, because a caller sees a missing subtree and no error.
+
+**Any v2 caller writing `flex-shrink: 0` with a negative top margin loses the
+whole subtree**, and nothing in the vocabulary hints at it.
+
+Check upstream before writing either the pin or an issue: `main` as well as the
+release, the changelog, and the open issues. Here `main` at `88125ce` still
+had it, the only unreleased negative-margin entry was for block and float
+layout, and the one related issue -- #706, closed -- reports sibling sizing and
+padding and mentions neither `flex-shrink` nor a container resolving to zero.
+**A defect already fixed and unreleased needs a wait, not a pin.**
+
 ### A green row is not coverage of a number the case cannot produce
 
 **The four-kinds rule one level down: not a kind that is missing, but a value
@@ -1750,6 +1783,36 @@ multiply-add**: an idiom each language reaches for by default, where the
 default differs and nothing in either file says which was meant. Where two
 surfaces must agree, the tie-break is part of the specification.
 
+### A repro must be minimal in what it is not testing
+
+Two paint defects were reported against `paint.rs` -- a clipping ancestor that
+painted nothing, and a `zIndex: -1` subtree that never appeared -- with
+narrowed cases and controls for each. **Neither existed.** Both were one wrong
+property in the helper every node in the port was built from: `flexShrink: 0`
+where v1 means `1`.
+
+**The repros reproduced faithfully because they imported the same helper.** They
+varied the margin, the clip, the nesting depth and the ancestor's height, and
+held the wrapper fixed -- so the wrapper was the one thing they could never
+implicate. A case that is minimal in the property under test and unexamined
+everywhere else is not a small version of the bug; **it is the bug plus a
+smaller stage to perform it on.**
+
+**Corrupt a tree at the root and every part of it acquires a plausible local
+cause.** That is what made the investigation feel productive: each render was
+strange in a way that pointed at something real and nearby, and each answer
+survived its own control. The rule that would have caught it: **before
+reporting a defect against shared code, run the repro with every one of your
+own helpers removed** -- the finding either survives being written in the
+library's plain vocabulary or it was yours.
+
+The corroborating evidence is the same shape and worth as little: the second
+surface not reproducing it was read as _a difference between the surfaces_,
+which is a real category and was the wrong one. **When one side cannot
+reproduce what the other sees, the asymmetry is a hypothesis about the
+surfaces and equally a hypothesis about the harness** -- and the harness is the
+cheaper one to eliminate first.
+
 ### A scripted revert needs an assertion that it reverted
 
 Proving a new test catches the bug it was written for means putting the bug
@@ -1806,6 +1869,80 @@ A kind never calling `framed` is **an absent node and needs no ink to see**, so
 a tree assertion is the better instrument here — the JavaScript surface's is
 one, and the renders on the Rust side stay only because they are written and
 passing.
+
+## Porting a v1 component
+
+Six ways a v1 component does not mean in v2 what it says, found by carrying
+`gi-showcase-card.component.ts` across a line at a time. **They are listed with
+what each does when you get it wrong**, because that is what decides how much
+of the port you have to re-check: a type error costs nothing, a value that is
+silently wrong by a factor of the font size costs the whole render.
+
+**1. A bare `Box` runs the other way -- and its shrink is a trap that points
+the wrong direction.** v1's direction is Yoga-defaulted to `column` where v2
+follows CSS and uses `row`, so every container writes its axis out. That half
+is simple.
+
+**The shrink is not, and the obvious reading is backwards.** Yoga defaults
+`flex-shrink` to `0`, so a v1 node looks like it means zero. It does not: v1's
+constructors put CSS's value back, and all four declare `flexShrink: 1` --
+`BoxNode` at `layout.canvas.ts:99`, `ColumnNode` at `:1670`, `RowNode` at
+`:1700`, `TextNode` at `text.canvas.ts:56`, with `GridNode` inheriting through
+`RowNode`. It is applied rather than merely declared: `layout.canvas.ts:267`
+calls `setFlexShrink` whenever the value is defined, and the defaults always
+define it.
+
+**So a v1 node that says nothing about shrinking means `1`, and taffy already
+means `1`.** The faithful port therefore **writes no `flex-shrink` at all** and
+matches v1 by agreeing with the same specification. _Writing `0` is a
+divergence dressed as a reproduction_ -- and it is not quiet. Pinned into a
+wrapper every node passes through, it moved a whole card's geometry and made
+its background stop painting.
+
+**2. `lineHeight` is a different quantity.** v1's is the line box in **pixels**;
+v2's is a **multiple of the em size**. `lineHeight: 24` at 18px is 24 pixels
+there and 432 here. The evidence is v1's own code, in both places that read the
+property -- `text.canvas.ts:585` and `:1198`, each taking `lineHeight` as the
+target line-box height in pixels when it is a positive number, with no ratio
+path anywhere. v2's field says the opposite in as many words: _"Line box height
+as a multiple of the font size"_ (`style/text.rs:254`). The trap inside
+the trap: a component written in pixels may still hold a bare ratio or two
+(this one holds `0.72`), and those are the only values that carry over
+unchanged. _Wrong by a factor of the font size, and it does not look like a
+unit mistake -- it looks like a layout defect._
+
+**3. `ellipsis` changed type**, boolean to the string that gets drawn. _A type
+error, which is the good case._
+
+**4. Edge groups are gone.** v1 spells `padding: { Horizontal: 2, Bottom: 2 }`
+and `border: { Left: 1, Right: 1, Bottom: 1 }`; v2 has only `top`, `right`,
+`bottom` and `left`. **From TypeScript this is caught** -- `tsc` rejects the
+unknown key and suggests the right one. **At runtime it is not**: measured, a
+node given `padding: { Horizontal: 16 }` renders with **no padding at all**,
+identical to a node given none, and nothing is thrown. So the exposure is a
+plain-JavaScript caller or anything that has reached for `as any`, and the rule
+is: _keep the port in TypeScript and the whole class is a compile error;
+leave it and the class is invisible._
+
+**5. `<b>` inside a plain `Text` is markup in v1 and literal text in v2**, which
+has `RichText` for the purpose. _Visible immediately -- the tags draw._
+
+**6. Capitalisation throughout**: `Style.PositionType.Absolute` to
+`'absolute'`, `position: { Top }` to `{ top }`, `borderRadius: { BottomLeft }`
+to `{ bottomLeft }`. _Same as 4 in both halves: a compile error from
+TypeScript, silently dropped at runtime._
+
+**And the method, since the first attempt at this card was tuned by eye and had
+to be thrown away.** The v1 component's own doc says every number in it is the
+geometry Chrome laid out for the template it replaced. **The numbers are
+already the answer**: carry them, do not re-derive them, and when something is
+off measure both renders and say by how much. A card built from a third of the
+source and an impression of the rest is not a port and cannot be corrected into
+one.
+
+**Assets that are not reachable get a hatched plate at exactly the box the real
+image would fill**, never a guess at the layout around them and never nothing.
+_A missing asset must not be readable as a layout defect._
 
 ## Before publishing
 
