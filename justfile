@@ -31,7 +31,61 @@ ensure-deps:
     @test -d node_modules || npm ci --ignore-scripts
 
 # Aggregate: what CI runs. Uses non-fixing variants.
-ci: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example runtime-free unused
+#
+# Refuses to start while another gate is running in this tree, because two of
+# them share `target/llvm-cov-target` and one relinks a test binary while the
+# other executes it. The second sees `signal: 9 (SIGKILL)` or
+# `No such file or directory (os error 2)` from a doctest, both of which read
+# as defects in the code and neither of which points here. It cost two
+# sessions a wrong diagnosis before the pair of symptoms gave it away.
+#
+# A lock rather than a probe at the start: two gates can begin minutes apart
+# and still meet inside `coverage`, so a check that passes at the door proves
+# nothing about the next twenty minutes.
+#
+# `CARGO_TARGET_DIR` is the escape hatch and not the default, for two measured
+# reasons. It is a cold build, so it trades a full workspace rebuild for the
+# wait it avoids. And it does not cover everything: `coverage` writes
+# `--output-path target/lcov.info`, a literal relative path that no target-dir
+# setting moves, so two gates still write one file -- milder by a long way,
+# and not nothing.
+ci:
+    #!/usr/bin/env bash
+    # One shell for the whole recipe, which is what lets the trap outlive the
+    # first command. A per-line shell would release the lock immediately.
+    set -euo pipefail
+    lock="${CARGO_TARGET_DIR:-target}/.gate-lock"
+    # A gate that has run for two hours has not; the number is a bound on
+    # plausibility, not a timeout on the work.
+    stale_after=7200
+    mkdir -p "$(dirname "$lock")"
+    if ! mkdir "$lock" 2>/dev/null; then
+        held=$(cat "$lock/pid" 2>/dev/null || echo "")
+        began=$(cat "$lock/started" 2>/dev/null || echo "0")
+        age=$(( $(date +%s) - began ))
+        # `kill -0` alone is not enough: PIDs are reused, and a recorded one
+        # that now belongs to something unrelated would read as a live gate
+        # forever. The age is what bounds that.
+        if [[ -n "$held" ]] && kill -0 "$held" 2>/dev/null && (( age < stale_after )); then
+            echo "a gate is already running in this tree (pid $held, ${age}s ago)." >&2
+            echo "  wait for it, or build against your own directory:" >&2
+            echo "      CARGO_TARGET_DIR=target-mine just ci" >&2
+            echo "  if you are sure no gate is running, remove the lock:" >&2
+            echo "      rm -rf $lock" >&2
+            exit 1
+        fi
+        echo "clearing $lock, left by pid ${held:-unknown} (${age}s ago, not running)" >&2
+        rm -rf "$lock"
+        mkdir "$lock"
+    fi
+    echo $$ > "$lock/pid"
+    date +%s > "$lock/started"
+    trap 'rm -rf "$lock"' EXIT INT TERM
+    just ci-steps
+
+# The gate itself. Run `ci`, which takes the lock first.
+[private]
+ci-steps: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #

@@ -1000,6 +1000,58 @@ still listed `AGENTS.md` as modified. **An uncommitted file is precisely where
 this guard has no purchase**, because the commit is the thing that makes a
 moment nameable.
 
+**A third mechanism in that family: an artifact replaced underneath a running
+test.** Two `just ci` runs in this tree share one `target/llvm-cov-target`.
+One process relinks a test binary while the other is executing it, and the
+second sees a `SIGKILL` or a missing path depending on which side of the swap
+it lands on:
+
+```
+element::Element::max_lines   Test executable failed (signal: 9 (SIGKILL))
+element::Element::with_style  Couldn't run the test: No such file or directory (os error 2)
+```
+
+**Both read as defects in the code.** A killed doctest looks like a stack
+overflow or a runaway allocation; a missing file looks like a broken build
+script. Neither points anywhere near the real cause, and a plausible wrong
+explanation was to hand -- the machine was under load -- **which is what made
+it worth checking rather than accepting.** `No such file or directory` is not
+something memory pressure produces, and that mismatch is the only thing in
+either report that pointed at the truth.
+
+**A failure's most available explanation is not evidence either.** This one was
+read as memory pressure on a machine that genuinely was under load, and a
+scripted revert that had silently replaced nothing was read as a test that
+could not discriminate. Plausible, available, wrong, twice in one day. It is
+_a test that fails is not evidence about which side is wrong_, one level out:
+**the failure offers an explanation, and the explanation is not the finding.**
+
+**The second symptom is the diagnostic one**, and whoever meets this next will
+most likely have only the first. A lone `SIGKILL` is genuinely ambiguous and an
+environmental story is usually available -- ours was a machine under load, and
+it was accepted once before the pair turned up. One kill _and_ one empty path
+is what a relink underneath a running executable looks like from the two sides
+of the swap.
+
+The discriminator is the same: re-run and see whether the answer changes on its
+own. It changed for both sessions.
+
+**The remedy is `CARGO_TARGET_DIR` per session, with two limits worth stating
+because a written-down remedy gets trusted.** Measured, not assumed: `cargo
+llvm-cov` honours it, and `target/llvm-cov-target` is then untouched, so the
+binary-swap collision does go away. But the `coverage` recipe writes
+`--output-path target/lcov.info`, **a literal relative path that no target-dir
+setting moves**, so two gates still write one file -- a far milder collision,
+written once at the end rather than executed while being relinked, and not
+nothing. And a fresh target directory is **a cold build**, so this is a choice
+between paying a full rebuild and waiting, not a free fix; for a single run,
+waiting is usually cheaper.
+
+Note the tension it sits in, because it is real: each session verifying the
+gate independently rather than reading another's word for it is the right
+discipline, **and it is exactly what puts two `cargo` processes in one target
+directory.**
+
 **A bound satisfied exactly by the worst case cannot see the worst case.**
 `rounding_drift.rs` asserts our edges stay within half a pixel of exact.
 Edge five is **exactly** `0.5` away -- it passes, and it is the one edge where
@@ -1656,6 +1708,37 @@ cannot exhibit a formatting one; a case whose maximum equals every value cannot
 exhibit a scaling one. **The case has to be able to fail before its passing
 means anything** — which is the same demand as "a case that cannot discriminate
 is not a case that agreed", asked of the inputs rather than the assertion.
+
+### Structural coverage is not positional coverage
+
+The chart's byte comparison puts the legend on a different side in each case:
+`left` on the line, `top` on the pie, `bottom` on the doughnut. **`right` is
+byte-checked nowhere.** It takes the same branch as `left` -- both produce a
+`Row` -- so every branch of the frame is covered and one of the four positions
+is not.
+
+That is not a hole to fill so much as a claim to stop making: **"all four
+positions are pinned" is false and "every branch the positions take is pinned"
+is true**, and the two sound alike in a summary. A case named after a value
+covers the branch that value reaches, not the value.
+
+Same family as the entry above: a green row that cannot fail for the thing its
+name implies.
+
+### A function-valued option has one instrument where everything else has three
+
+A chart's numbers are checked three ways -- rendered, tabulated against the
+other surface's arithmetic, and byte-compared between the two ports. **The
+formatters and the `render*Item` hooks reach only the first.** A function has
+no counterpart to encode, so it cannot appear in a byte comparison at all, and
+there is nothing to tabulate.
+
+**Worth stating as a limit of the technique rather than a gap in the work.** No
+amount of care makes a callback byte-comparable; the hole is permanent, and
+knowing its shape is the whole of what can be done about it. What follows in
+practice: a behaviour reachable only through a callback needs its render to
+carry the weight three checks carry elsewhere, and should be written knowing
+that.
 
 ### A language's convenient default is not the other language's
 
