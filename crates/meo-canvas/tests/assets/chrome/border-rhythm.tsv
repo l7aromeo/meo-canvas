@@ -1,0 +1,143 @@
+# Chrome, through `just conformance`. The rhythm of a dashed or dotted border.
+#
+# Box 240x48. The run is read along the TOP border band, at the
+# row named in the `y` column, between the two `x` bounds -- both derived from the
+# rectangle Chrome reported, and both 40 pixels clear of a corner, because CSS
+# Backgrounds 3 §4.4 divides a corner between its two edges and a run that
+# includes one measures the join rather than the rhythm.
+#
+# A pixel is ink below 128 in the red channel. The first and last runs are cut
+# short by the bounds and are not whole periods.
+#
+#
+# The last row is the one case that INCLUDES a corner: read from the box's own
+# left edge outward, with each run tagged `@offset` from that edge and the §4.4
+# division line named. It says whether a side's first dash starts flush at the
+# division, centres the run, or starts mid-gap -- the thing the clearance above
+# removes and the thing a fitting rule needs.
+#
+# style	width	y	x range	threshold	runs
+dashed	1	0	40-200	128	on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:3 on:2 off:3 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:3 on:3 off:2 on:3 off:2 on:3 off:2 on:3 off:1
+dashed	2	1	40-200	128	off:1 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:5 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:5 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:4 on:6 off:2
+dashed	3	1	40-200	128	on:2 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:6 off:3 on:3
+dashed	4	2	40-200	128	on:5 off:4 on:8 off:4 on:8 off:4 on:8 off:4 on:8 off:5 on:8 off:4 on:8 off:4 on:8 off:4 on:8 off:5 on:8 off:4 on:8 off:4 on:8 off:4 on:8 off:4 on:6
+dashed	8	4	40-200	128	on:1 off:9 on:16 off:9 on:16 off:9 on:16 off:8 on:16 off:9 on:16 off:9 on:16 off:9 on:2
+dotted	1	0	40-200	128	off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1 on:1 off:1
+dotted	2	1	40-200	128	on:1 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2 off:2 on:2
+dotted	3	1	40-200	128	off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:3 off:3 on:2
+dotted	4	2	40-200	128	on:3 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:3 off:5 on:3 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:3 off:5 on:3 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:4 off:4 on:3 off:5 on:3 off:1
+dotted	8	4	40-200	128	off:6 on:8 off:8 on:8 off:7 on:8 off:8 on:8 off:7 on:8 off:8 on:8 off:7 on:8 off:8 on:7 off:8 on:8 off:8 on:7 off:8
+dashed-corner-left	2	1	0-60	128	division@2 on:6@0 off:4@6 on:6@10 off:4@16 on:6@20 off:5@26 on:6@31 off:4@37 on:6@41 off:4@47 on:6@51 off:4@57
+dashed-corner-right	2	1	179-239	128	division@2 on:6@0 off:4@6 on:6@10 off:4@16 on:6@20 off:5@26 on:6@31 off:4@37 on:6@41 off:4@47 on:6@51 off:4@57
+dashed-corner-left	4	2	0-60	128	division@4 on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57
+dashed-corner-right	4	2	179-239	128	division@4 on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57
+dashed-right-edge-240	4	237	0-47	128	on:8@0 off:5@8 on:8@13 off:6@21 on:8@27 off:5@35 on:8@40
+dashed-top-far-240	4	2	179-239	128	on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57
+dashed-right-edge-137	4	134	0-47	128	on:8@0 off:5@8 on:8@13 off:6@21 on:8@27 off:5@35 on:8@40
+dashed-top-far-137	4	2	76-136	128	on:8@0 off:4@8 on:8@12 off:3@20 on:8@23 off:4@31 on:8@35 off:4@43 on:8@47 off:4@55 on:2@59
+dashed-radius-1	4	2	0-239	128	straight@1 box=240 straight-length=238 on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57 on:8@61 off:4@69 on:8@73 off:4@81 on:8@85 off:5@93 on:8@98 off:4@106 on:8@110 off:4@118 on:8@122 off:4@130 on:8@134 off:5@142 on:8@147 off:4@155 on:8@159 off:4@167 on:8@171 off:4@179 on:8@183 off:4@191 on:8@195 off:5@203 on:8@208 off:4@216 on:8@220 off:4@228 on:8@232
+dashed-radius-1-span	4	2	1-238	128	first@1 last@238 span=238 straight-length=238
+dashed-radius-1-span	4	2	1-238	200	first@1 last@238 span=238 straight-length=238
+dashed-arc-1-top-left	4	-1	walked along the centreline	128	quarter=-1.6 first-ink@0 on:-1.6
+dashed-arc-1-top-right	4	-1	walked along the centreline	128	quarter=-1.6 first-ink@0 on:-1.6
+dashed-radius-2	4	2	0-239	128	straight@2 box=240 straight-length=236 on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57 on:8@61 off:4@69 on:8@73 off:4@81 on:8@85 off:5@93 on:8@98 off:4@106 on:8@110 off:4@118 on:8@122 off:4@130 on:8@134 off:5@142 on:8@147 off:4@155 on:8@159 off:4@167 on:8@171 off:4@179 on:8@183 off:4@191 on:8@195 off:5@203 on:8@208 off:4@216 on:8@220 off:4@228 on:8@232
+dashed-radius-2-span	4	2	2-237	128	first@2 last@237 span=236 straight-length=236
+dashed-radius-2-span	4	2	2-237	200	first@2 last@237 span=236 straight-length=236
+dashed-arc-2-top-left	4	0	walked along the centreline	128	quarter=0.0 first-ink@0 on:0.0
+dashed-arc-2-top-right	4	0	walked along the centreline	128	quarter=0.0 first-ink@0 on:0.0
+dashed-radius-3	4	2	0-239	128	straight@3 box=240 straight-length=234 on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57 on:8@61 off:4@69 on:8@73 off:4@81 on:8@85 off:5@93 on:8@98 off:4@106 on:8@110 off:4@118 on:8@122 off:4@130 on:8@134 off:5@142 on:8@147 off:4@155 on:8@159 off:4@167 on:8@171 off:4@179 on:8@183 off:4@191 on:8@195 off:5@203 on:8@208 off:4@216 on:8@220 off:4@228 on:8@232
+dashed-radius-3-span	4	2	3-236	128	first@3 last@236 span=234 straight-length=234
+dashed-radius-3-span	4	2	3-236	200	first@3 last@236 span=234 straight-length=234
+dashed-arc-3-top-left	4	1	walked along the centreline	128	quarter=1.6 first-ink@0 on:1.6
+dashed-arc-3-top-right	4	1	walked along the centreline	128	quarter=1.6 first-ink@0 on:1.6
+dashed-radius-4	4	2	0-239	128	straight@4 box=240 straight-length=232 on:8@0 off:4@8 on:8@12 off:4@20 on:8@24 off:5@32 on:8@37 off:4@45 on:8@49 off:4@57 on:8@61 off:4@69 on:8@73 off:4@81 on:8@85 off:5@93 on:8@98 off:4@106 on:8@110 off:4@118 on:8@122 off:4@130 on:8@134 off:5@142 on:8@147 off:4@155 on:8@159 off:4@167 on:8@171 off:4@179 on:8@183 off:4@191 on:8@195 off:5@203 on:8@208 off:4@216 on:8@220 off:4@228 on:8@232
+dashed-radius-4-span	4	2	4-235	128	first@4 last@235 span=232 straight-length=232
+dashed-radius-4-span	4	2	4-235	200	first@4 last@235 span=232 straight-length=232
+dashed-arc-4-top-left	4	2	walked along the centreline	128	quarter=3.1 first-ink@0 on:3.1
+dashed-arc-4-top-right	4	2	walked along the centreline	128	quarter=3.1 first-ink@0 on:3.1
+dashed-radius-5	4	2	0-239	128	straight@5 box=240 straight-length=230 off:5@0 on:8@5 off:4@13 on:8@17 off:4@25 on:8@29 off:4@37 on:8@41 off:4@49 on:8@53 off:4@61 on:8@65 off:4@73 on:8@77 off:4@85 on:8@89 off:4@97 on:8@101 off:4@109 on:8@113 off:4@121 on:8@125 off:4@133 on:8@137 off:5@145 on:8@150 off:4@158 on:8@162 off:4@170 on:8@174 off:4@182 on:8@186 off:4@194 on:8@198 off:4@206 on:8@210 off:4@218 on:8@222 off:4@230 on:5@234 off:1@239
+dashed-radius-5-span	4	2	5-234	128	first@5 last@234 span=230 straight-length=230
+dashed-radius-5-span	4	2	5-234	200	first@5 last@234 span=230 straight-length=230
+dashed-arc-5-top-left	4	3	walked along the centreline	128	quarter=4.7 first-ink@0 on:0.5 off:3.7 on:0.5
+dashed-arc-5-top-right	4	3	walked along the centreline	128	quarter=4.7 first-ink@0 on:4.7
+dashed-radius-6	4	2	0-239	128	straight@6 box=240 straight-length=228 off:6@0 on:8@6 off:4@14 on:8@18 off:4@26 on:8@30 off:4@38 on:8@42 off:4@50 on:8@54 off:4@62 on:8@66 off:4@74 on:8@78 off:4@86 on:8@90 off:4@98 on:8@102 off:4@110 on:8@114 off:4@122 on:8@126 off:4@134 on:8@138 off:4@146 on:8@150 off:4@158 on:8@162 off:4@170 on:8@174 off:4@182 on:8@186 off:4@194 on:8@198 off:4@206 on:8@210 off:4@218 on:8@222 off:4@230 on:5@234 off:1@239
+dashed-radius-6-span	4	2	6-233	128	first@6 last@229 span=224 straight-length=228
+dashed-radius-6-span	4	2	6-233	200	first@6 last@229 span=224 straight-length=228
+dashed-arc-6-top-left	4	4	walked along the centreline	128	quarter=6.3 first-ink@0 on:2.0 off:3.8 on:0.5
+dashed-arc-6-top-right	4	4	walked along the centreline	128	quarter=6.3 first-ink@0.5 off:0.5 on:5.8
+dashed-radius-8	4	2	0-239	128	straight@8 box=240 straight-length=224 off:7@0 on:9@7 off:4@16 on:8@20 off:4@28 on:8@32 off:4@40 on:8@44 off:4@52 on:8@56 off:4@64 on:8@68 off:3@76 on:8@79 off:4@87 on:8@91 off:4@99 on:8@103 off:4@111 on:8@115 off:4@123 on:8@127 off:4@135 on:8@139 off:4@147 on:8@151 off:4@159 on:8@163 off:4@171 on:8@175 off:4@183 on:8@187 off:4@195 on:8@199 off:4@207 on:8@211 off:3@219 on:8@222 off:4@230 on:4@234 off:2@238
+dashed-radius-8-span	4	2	8-231	128	first@8 last@229 span=222 straight-length=224
+dashed-radius-8-span	4	2	8-231	200	first@8 last@230 span=223 straight-length=224
+dashed-arc-8-top-left	4	6	walked along the centreline	128	quarter=9.4 first-ink@0 on:4.4 off:3.6 on:1.5
+dashed-arc-8-top-right	4	6	walked along the centreline	128	quarter=9.4 first-ink@2.6 off:2.6 on:6.8
+dashed-radius-12	4	2	0-239	128	straight@12 box=240 straight-length=216 off:5@0 on:2@5 off:5@7 on:8@12 off:4@20 on:8@24 off:4@32 on:8@36 off:4@44 on:8@48 off:4@56 on:8@60 off:4@68 on:8@72 off:4@80 on:8@84 off:4@92 on:8@96 off:4@104 on:8@108 off:4@116 on:8@120 off:4@128 on:8@132 off:4@140 on:8@144 off:5@152 on:8@157 off:4@165 on:8@169 off:4@177 on:8@181 off:4@189 on:8@193 off:4@201 on:8@205 off:4@213 on:8@217 off:4@225 on:6@229 off:5@235
+dashed-radius-12-span	4	2	12-227	128	first@12 last@224 span=213 straight-length=216
+dashed-radius-12-span	4	2	12-227	200	first@12 last@224 span=213 straight-length=216
+dashed-arc-12-top-left	4	10	walked along the centreline	128	quarter=15.7 first-ink@3.6 off:3.6 on:7.5 off:4.2 on:0.5
+dashed-arc-12-top-right	4	10	walked along the centreline	128	quarter=15.7 first-ink@1.5 off:1.5 on:7.1 off:3.9 on:3.2
+dashed-radius-24	4	2	0-239	128	straight@24 box=240 straight-length=192 off:13@0 on:7@13 off:4@20 on:8@24 off:4@32 on:8@36 off:4@44 on:8@48 off:4@56 on:8@60 off:4@68 on:8@72 off:5@80 on:8@85 off:4@93 on:8@97 off:4@105 on:8@109 off:4@117 on:8@121 off:4@129 on:8@133 off:4@141 on:8@145 off:4@153 on:8@157 off:4@165 on:8@169 off:5@177 on:8@182 off:4@190 on:8@194 off:4@202 on:8@206 off:4@214 on:8@218 off:14@226
+dashed-radius-24-span	4	2	24-215	128	first@24 last@213 span=190 straight-length=192
+dashed-radius-24-span	4	2	24-215	200	first@24 last@213 span=190 straight-length=192
+dashed-arc-24-top-left	4	22	walked along the centreline	128	quarter=34.6 first-ink@0 on:5.6 off:4.3 on:7.5 off:4.6 on:8.1 off:4.0 on:0.5
+dashed-arc-24-top-right	4	22	walked along the centreline	128	quarter=34.6 first-ink@2.5 off:2.5 on:7.3 off:4.5 on:7.7 off:3.9 on:8.2 off:0.5
+branch-sweep	2	1	radius=1	128	span=238 straight-length=238 flush=yes
+branch-sweep	2	1	radius=2	128	span=236 straight-length=236 flush=yes
+branch-sweep	2	1	radius=3	128	span=234 straight-length=234 flush=yes
+branch-sweep	2	1	radius=4	128	span=232 straight-length=232 flush=yes
+branch-sweep	2	1	radius=5	128	span=226 straight-length=230 flush=no
+branch-sweep	2	1	radius=6	128	span=225 straight-length=228 flush=no
+branch-sweep	2	1	radius=7	128	span=224 straight-length=226 flush=no
+branch-sweep	2	1	radius=8	128	span=224 straight-length=224 flush=yes
+branch-sweep	2	1	radius=9	128	span=222 straight-length=222 flush=yes
+branch-sweep	2	1	radius=10	128	span=217 straight-length=220 flush=no
+branch-sweep	2	1	radius=11	128	span=216 straight-length=218 flush=no
+branch-sweep	2	1	radius=12	128	span=215 straight-length=216 flush=no
+branch-sweep	2	1	radius=13	128	span=214 straight-length=214 flush=yes
+branch-sweep	2	1	radius=14	128	span=212 straight-length=212 flush=yes
+branch-sweep	4	2	radius=1	128	span=238 straight-length=238 flush=yes
+branch-sweep	4	2	radius=2	128	span=236 straight-length=236 flush=yes
+branch-sweep	4	2	radius=3	128	span=234 straight-length=234 flush=yes
+branch-sweep	4	2	radius=4	128	span=232 straight-length=232 flush=yes
+branch-sweep	4	2	radius=5	128	span=230 straight-length=230 flush=yes
+branch-sweep	4	2	radius=6	128	span=224 straight-length=228 flush=no
+branch-sweep	4	2	radius=7	128	span=223 straight-length=226 flush=no
+branch-sweep	4	2	radius=8	128	span=222 straight-length=224 flush=no
+branch-sweep	4	2	radius=9	128	span=222 straight-length=222 flush=yes
+branch-sweep	4	2	radius=10	128	span=220 straight-length=220 flush=yes
+branch-sweep	4	2	radius=11	128	span=214 straight-length=218 flush=no
+branch-sweep	4	2	radius=12	128	span=213 straight-length=216 flush=no
+branch-sweep	4	2	radius=13	128	span=212 straight-length=214 flush=no
+branch-sweep	4	2	radius=14	128	span=211 straight-length=212 flush=no
+branch-sweep	8	4	radius=1	128	span=238 straight-length=238 flush=yes
+branch-sweep	8	4	radius=2	128	span=236 straight-length=236 flush=yes
+branch-sweep	8	4	radius=3	128	span=234 straight-length=234 flush=yes
+branch-sweep	8	4	radius=4	128	span=232 straight-length=232 flush=yes
+branch-sweep	8	4	radius=5	128	span=230 straight-length=230 flush=yes
+branch-sweep	8	4	radius=6	128	span=228 straight-length=228 flush=yes
+branch-sweep	8	4	radius=7	128	span=226 straight-length=226 flush=yes
+branch-sweep	8	4	radius=8	128	span=224 straight-length=224 flush=yes
+branch-sweep	8	4	radius=9	128	span=222 straight-length=222 flush=yes
+branch-sweep	8	4	radius=10	128	span=220 straight-length=220 flush=yes
+branch-sweep	8	4	radius=11	128	span=218 straight-length=218 flush=yes
+branch-sweep	8	4	radius=12	128	span=208 straight-length=216 flush=no
+branch-sweep	8	4	radius=13	128	span=208 straight-length=214 flush=no
+branch-sweep	8	4	radius=14	128	span=207 straight-length=212 flush=no
+dashed-perimeter-w4-r0	4	-2	walked clockwise from the top-left tangent	128	box=137x120 perimeter=497.4 marks=41 on:7.6 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:11.8 off:4.0 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:4.0 on:9.0 off:4.0 on:11.9 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:11.9 off:4.0 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:4.0 on:9.0 off:4.0 on:4.3
+dashed-perimeter-w4-r4	4	2	walked clockwise from the top-left tangent	128	box=137x120 perimeter=490.6 marks=41 on:3.5 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:10.2 off:4.0 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:4.0 on:9.0 off:4.0 on:10.1 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:10.1 off:4.0 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:5.0 on:8.0 off:4.0 on:8.0 off:4.0 on:9.0 off:4.0 on:6.6
+dashed-perimeter-w4-r5	4	3	walked clockwise from the top-left tangent	128	box=137x120 perimeter=488.8 marks=42 on:7.6 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.1 off:2.6 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:7.7 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:6.7 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.7 on:0.5
+dashed-perimeter-w4-r6	4	4	walked clockwise from the top-left tangent	128	box=137x120 perimeter=487.1 marks=42 on:7.5 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:7.3 off:3.1 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:7.3 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:7.3 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:7.5 off:3.8 on:0.5
+dashed-perimeter-w4-r8	4	6	walked clockwise from the top-left tangent	128	box=137x120 perimeter=483.7 marks=42 on:7.5 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:7.2 off:3.3 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.1 on:8.4 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.3 on:7.2 off:4.0 on:8.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:3.0 on:7.8 off:3.6 on:1.5
+dashed-perimeter-w4-r12	4	10	walked clockwise from the top-left tangent	128	box=137x120 perimeter=476.8 marks=41 on:7.5 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.1 off:3.5 on:7.1 off:4.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:3.1 on:7.4 off:4.2 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:7.7 off:3.9 on:7.1 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.1 on:7.5 off:4.1 on:0.5
+dashed-perimeter-w4-r24	4	22	walked clockwise from the top-left tangent	128	box=137x120 perimeter=456.2 marks=39 on:7.6 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:5.0 on:7.0 off:4.1 on:8.2 off:4.2 on:7.9 off:4.1 on:8.1 off:3.0 on:9.0 off:3.0 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.1 off:4.0 on:8.1 off:3.8 on:7.6 off:4.0 on:8.1 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.1 on:8.2 off:4.2 on:6.9 off:5.1 on:7.1 off:4.0 on:8.0 off:4.0 on:9.0 off:3.0 on:9.0 off:3.0 on:9.0 off:4.0 on:8.0 off:4.0 on:7.1 off:4.2 on:7.5 off:4.6 on:8.1 off:4.0 on:0.5
+dashed-perimeter-w8-r4	8	0	walked clockwise from the top-left tangent	128	box=137x120 perimeter=478.0 marks=19 on:11.5 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:23.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:23.1 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:23.0 off:10.0 on:16.0 off:10.0 on:15.9 off:10.1 on:16.0 off:10.0 on:11.4
+dashed-perimeter-w8-r6	8	2	walked clockwise from the top-left tangent	128	box=137x120 perimeter=474.6 marks=19 on:9.5 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:22.2 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:22.1 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:22.1 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:12.6
+dashed-perimeter-w8-r7	8	3	walked clockwise from the top-left tangent	128	box=137x120 perimeter=472.8 marks=19 on:8.6 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:21.7 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:21.7 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:21.7 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:13.2
+dashed-perimeter-w8-r8	8	4	walked clockwise from the top-left tangent	128	box=137x120 perimeter=471.1 marks=19 on:7.5 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:21.3 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:21.3 off:8.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.0 off:8.0 on:21.3 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:16.0 off:10.0 on:13.8
+dashed-perimeter-w8-r9	8	5	walked clockwise from the top-left tangent	128	box=137x120 perimeter=469.4 marks=21 on:15.6 off:8.0 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:7.0 on:16.0 off:8.0 on:14.8 off:8.0 on:16.0 off:7.0 on:17.0 off:7.0 on:16.0 off:8.0 on:16.0 off:6.9 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:8.0 on:14.9 off:8.0 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:7.0 on:17.0 off:5.8 on:1.5
+dashed-perimeter-w8-r10	8	6	walked clockwise from the top-left tangent	128	box=137x120 perimeter=467.7 marks=21 on:15.5 off:8.0 on:15.0 off:8.0 on:16.0 off:8.0 on:15.0 off:8.0 on:16.0 off:7.0 on:15.4 off:8.0 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:7.0 on:16.0 off:7.4 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:7.0 on:16.0 off:8.0 on:16.0 off:7.0 on:15.4 off:7.0 on:17.0 off:7.0 on:16.0 off:7.0 on:17.0 off:7.0 on:16.0 off:6.4 on:1.5
+dashed-perimeter-w8-r12	8	8	walked clockwise from the top-left tangent	128	box=137x120 perimeter=464.3 marks=20 on:15.5 off:9.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:16.1 off:8.2 on:16.3 off:8.0 on:16.0 off:8.0 on:17.0 off:8.0 on:16.0 off:9.0 on:14.6 off:9.0 on:16.0 off:8.0 on:16.0 off:9.0 on:16.0 off:9.0 on:16.0 off:8.0 on:15.6 off:8.0 on:16.0 off:9.0 on:16.0 off:8.0 on:17.0 off:8.0 on:16.1 off:7.4 on:1.5
+corner-run	top=4 left=4	6	one pixel inside the outer boundary	128	longest-ink=9.0 dash-top=8 dash-left=8 tangent-at=40.0 arc-ends=47.9 off:0.6 on:6.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.1 off:3.7 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:4.5
+corner-run	top=8 left=8	6	one pixel inside the outer boundary	128	longest-ink=26.8 dash-top=16 dash-left=16 tangent-at=40.0 arc-ends=47.9 off:0.6 on:14.0 off:16.0 on:26.8 off:9.0 on:16.0 off:5.5
+corner-run	top=4 left=8	6	one pixel inside the outer boundary	128	longest-ink=16.0 dash-top=8 dash-left=16 tangent-at=40.0 arc-ends=47.9 off:0.6 on:12.0 off:8.0 on:16.0 off:9.8 on:9.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:4.5
+corner-run	top=4 left=12	6	one pixel inside the outer boundary	128	longest-ink=24.0 dash-top=8 dash-left=24 tangent-at=40.0 arc-ends=47.9 off:8.6 on:24.0 off:13.1 on:0.7 off:1.0 on:8.0 off:4.0 on:8.0 off:4.0 on:8.0 off:4.0 on:4.5
+corner-run	top=12 left=12	6	one pixel inside the outer boundary	128	longest-ink=64.8 dash-top=24 dash-left=24 tangent-at=40.0 arc-ends=47.9 off:0.6 on:64.8 off:12.0 on:10.5

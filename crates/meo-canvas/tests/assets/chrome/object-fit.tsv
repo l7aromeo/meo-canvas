@@ -1,0 +1,20 @@
+# Chrome, through `just conformance`. Where each object-fit rule puts a picture.
+#
+# An <img> of 72x72 on a #f0f0f0 cell, source 
+# `crates/meo-canvas/tests/assets/fit-marks.png` — eight by four, magenta at its
+# own x=0 and cyan at x=7. Those two columns are what separate `fill` from
+# `cover`: both fill the box and differ only in what they CUT, so a symmetric
+# picture reads the same stretched as cropped.
+#
+# `rect` is the bounding box of everything that is not the cell colour, so a
+# letterboxed fit reports the picture rather than the box.
+#
+# `image-rendering: pixelated`, so an eight-pixel-wide source scaled to 72 keeps
+# its columns readable instead of blending them into their neighbours.
+#
+# fit	w	h	rect	magenta	cyan
+fill	72	72	0,0,72,72	magenta	cyan
+contain	72	72	0,18,72,36	magenta	cyan
+cover	72	72	0,0,72,72	-	-
+none	72	72	32,34,8,4	magenta	cyan
+scale-down	72	72	32,34,8,4	magenta	cyan

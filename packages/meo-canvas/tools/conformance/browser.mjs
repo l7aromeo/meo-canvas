@@ -80,6 +80,40 @@ export async function open() {
 }
 
 /**
+ * Waits for every asset on the page to be usable, and throws if one is not.
+ *
+ * **The second half of the font assertion.** A page measured before its image
+ * has decoded reports an empty box, and an empty box reads as a property that
+ * drew nothing — every row failing, which by this project's own rule is a
+ * premise rather than a defect. A font that has not loaded and an image that
+ * has not decoded are the same failure with two spellings, so the harness
+ * waits on both rather than each page remembering to.
+ *
+ * Those are the only two asset kinds here, and by construction rather than by
+ * luck: the CSS is inline, the font is a data URL, and nothing on these pages
+ * fetches anything else. A page that adds a third has to add it here.
+ */
+export async function settle(page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready
+    const images = [...document.images]
+    await Promise.all(
+      images.map(async image => {
+        try {
+          await image.decode()
+        } catch (cause) {
+          throw new Error(`an image on this page never decoded: ${image.src.slice(0, 60)}`, { cause })
+        }
+      }),
+    )
+    const broken = images.filter(image => image.naturalWidth === 0)
+    if (broken.length > 0) {
+      throw new Error(`${broken.length} image(s) decoded to nothing; every measurement from this page would be of an empty box`)
+    }
+  })
+}
+
+/**
  * Writes a table beside the ones the walkers already read.
  *
  * A `.tsv` with a commented header rather than JSON: these are read by eye as

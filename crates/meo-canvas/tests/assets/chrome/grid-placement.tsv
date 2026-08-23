@@ -1,0 +1,36 @@
+# Chrome, through `just conformance`. Where a grid places its items.
+#
+# 120x90, 3 equal columns and 3 equal rows, no gaps.
+# Six items in document order; the second spans all three columns and the fifth
+# spans two rows.
+#
+# THE SPANS ARE THE POINT. The four flows place uniform single-cell items
+# identically, so a table without a spanning item reports `dense` and its
+# non-dense counterpart as the same keyword: `dense` exists only to go back for
+# a hole, and an item that spans is what leaves one.
+#
+# flow	item	x	y	w	h
+row	0	0	0	40	30
+row	1	0	30	120	30
+row	2	0	60	40	30
+row	3	40	60	40	30
+row	4	80	60	40	30
+row	5	0	90	40	0
+column	0	0	0	40	30
+column	1	0	30	120	30
+column	2	0	60	40	30
+column	3	40	0	40	30
+column	4	120	0	0	60
+column	5	120	60	0	30
+row-dense	0	0	0	40	30
+row-dense	1	0	30	120	30
+row-dense	2	40	0	40	30
+row-dense	3	80	0	40	30
+row-dense	4	0	60	40	30
+row-dense	5	40	60	40	30
+column-dense	0	0	0	40	30
+column-dense	1	0	30	120	30
+column-dense	2	0	60	40	30
+column-dense	3	40	0	40	30
+column-dense	4	120	0	0	60
+column-dense	5	40	60	40	30

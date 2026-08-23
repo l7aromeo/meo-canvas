@@ -1,0 +1,52 @@
+# Chrome, through `just conformance`. Every blend mode over one ramp.
+#
+# Cell 56x40 carrying linear-gradient(90deg, #181838, #f0e0a0).
+# Source 36x24 of #4090c0 at 10,8, with
+# `isolation: isolate` on the cell so the blend has the cell as its backdrop
+# rather than the page behind it.
+#
+# Read at two points INSIDE the source, one where the backdrop under it is dark
+# and one where it is light. On a flat backdrop `multiply` and `darken` agree
+# wherever the backdrop is lighter than the source, and `screen` and `lighten`
+# agree wherever it is darker -- the ramp and the two points are what keep those
+# four apart.
+#
+# The `none` row is the cell with NO source drawn, which is what `normal` has to
+# be read against: a mode that drew nothing would otherwise look like one that
+# let the backdrop through.
+#
+# mode	point	x	y	r	g	b
+none	over dark	14	20	80	75	83
+none	over light	42	20	188	176	135
+normal	over dark	14	20	64	144	192
+normal	over light	42	20	64	144	192
+multiply	over dark	14	20	20	42	62
+multiply	over light	42	20	47	99	102
+screen	over dark	14	20	124	177	213
+screen	over light	42	20	205	221	225
+overlay	over dark	14	20	40	85	125
+overlay	over light	42	20	155	186	196
+darken	over dark	14	20	64	75	83
+darken	over light	42	20	64	144	135
+lighten	over dark	14	20	80	144	192
+lighten	over light	42	20	188	176	192
+color-dodge	over dark	14	20	107	172	255
+color-dodge	over light	42	20	251	255	255
+color-burn	over dark	14	20	0	0	27
+color-burn	over light	42	20	0	115	96
+hard-light	over dark	14	20	40	98	170
+hard-light	over light	42	20	94	186	196
+soft-light	over dark	14	20	53	83	115
+soft-light	over light	42	20	163	181	161
+difference	over dark	14	20	16	69	109
+difference	over light	42	20	124	32	57
+exclusion	over dark	14	20	104	135	151
+exclusion	over light	42	20	158	122	123
+hue	over dark	14	20	74	79	82
+hue	over light	42	20	150	183	203
+saturation	over dark	14	20	119	39	167
+saturation	over light	42	20	206	177	78
+color	over dark	14	20	16	96	144
+color	over light	42	20	114	194	242
+luminosity	over dark	14	20	128	123	131
+luminosity	over light	42	20	138	126	85
