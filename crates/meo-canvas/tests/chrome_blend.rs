@@ -67,8 +67,44 @@ const SOURCE_INK: Color = Color::rgb(0x40, 0x90, 0xc0);
 const POINTS: [(&str, usize, usize); 2] =
     [("over dark", 14, 20), ("over light", 42, 20)];
 
-/// Chrome's backdrop at the two points, from `blend-modes.tsv`'s `none` row.
-const CHROME_BACKDROP: [(u8, u8, u8); 2] = [(80, 75, 83), (188, 176, 135)];
+/// Chrome's backdrop at the two points, **read from the table rather than
+/// copied out of it.**
+///
+/// It was two transcribed tuples. That reads identically and is not the same
+/// thing: a transcription is a copy that can drift from the file in silence,
+/// and `blend-modes.tsv` would have been regenerated one day with nothing to
+/// say the constant no longer matched it. It also meant this test *cited* the
+/// table while reading nothing — which satisfies a search for the filename and
+/// leaves the measurement unused.
+fn chrome_backdrop() -> [(u8, u8, u8); 2] {
+    let table = include_str!("assets/chrome/blend-modes.tsv");
+    let mut found = [None, None];
+    for line in table.lines() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.first() != Some(&"none") || fields.len() < 7 {
+            continue;
+        }
+        let at = match fields[1] {
+            "over dark" => 0,
+            "over light" => 1,
+            _ => continue,
+        };
+        let channel = |index: usize| {
+            fields[index].parse().unwrap_or_else(|_| {
+                unreachable!("{:?} is not a channel", fields[index])
+            })
+        };
+        found[at] = Some((channel(4), channel(5), channel(6)));
+    }
+    [
+        found[0].unwrap_or_else(|| {
+            unreachable!("the table has no `none` row over dark")
+        }),
+        found[1].unwrap_or_else(|| {
+            unreachable!("the table has no `none` row over light")
+        }),
+    ]
+}
 
 /// The stops the ramp runs between, `#181838` to `#f0e0a0`.
 const STOPS: [(f64, f64, f64); 2] = [(24.0, 24.0, 56.0), (240.0, 224.0, 160.0)];
@@ -462,7 +498,7 @@ fn the_gradient_under_the_blends_is_the_analytic_ramp() {
         )]
         let nearest = want.map(|channel| channel.round() as u8);
         let got = [ours[index].0, ours[index].1, ours[index].2];
-        let theirs = CHROME_BACKDROP[index];
+        let theirs = chrome_backdrop()[index];
 
         assert_eq!(
             got, nearest,

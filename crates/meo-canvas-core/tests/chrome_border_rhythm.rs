@@ -67,60 +67,121 @@ struct Rhythm {
     gap: f32,
 }
 
-/// Chrome's rhythm at the five widths the harness measured.
+/// Chrome's rhythm at the five widths the harness measured, **read out of the
+/// table rather than copied from it.**
 ///
-/// The jump is the whole point of the table: the ratio is `3w` on and `2w`
-/// off while the border is thin and `2w` on and `1w` off once it is not, so a
-/// single ratio cannot be right at both ends.
+/// It was five transcribed structs, and finding that out is what produced the
+/// only interesting thing in this file. **A transcription is not a copy of the
+/// table — it is an interpretation of it**, and this one had drifted from its
+/// own doc comment: the field said *the gap Chrome holds most of the way
+/// along*, and at width 8 the gap Chrome holds most of the way along is **9**,
+/// while the struct said 8. Eight is the NOMINAL gap; nine is what fitting
+/// leaves on a 240-pixel side. Four of the five widths agree with both
+/// readings and only the widest separates them, which is why it survived.
 ///
-/// **Width 3 decides where the step falls, and it is measured**: `on:6 off:3`
-/// puts it in the *upper* regime, so the boundary is `w < 3` rather than
-/// `w <= 3`. It was a guess for an hour, and this row is what retired it —
-/// the two readings differ by exactly one width, which is the one a reader
-/// would otherwise have to take on trust.
-const CHROME: [Rhythm; 5] = [
-    Rhythm {
-        width: 1.0,
-        ink: 3.0,
-        gap: 2.0,
-    },
-    Rhythm {
-        width: 2.0,
-        ink: 6.0,
-        gap: 4.0,
-    },
-    Rhythm {
-        width: 3.0,
-        ink: 6.0,
-        gap: 3.0,
-    },
-    Rhythm {
-        width: 4.0,
-        ink: 8.0,
-        gap: 4.0,
-    },
-    Rhythm {
-        width: 8.0,
-        ink: 16.0,
-        gap: 8.0,
-    },
-];
+/// So this reads the modal run either side of the window-clipped ends, and the
+/// test below asserts the nominal against `dash_pattern` and the observed
+/// against `fitted_dash`. Two claims that a single hand-written constant was
+/// silently conflating.
+///
+/// The jump is still the point of the table: the ratio is `3w` on and `2w` off
+/// while the border is thin and `2w` on and `1w` off once it is not, so no
+/// single ratio is right at both ends. **Width 3 decides where the step
+/// falls** — `on:6 off:3` puts it in the upper regime, so the boundary is
+/// `w < 3` rather than `w <= 3`.
+fn chrome() -> Vec<Rhythm> {
+    let table =
+        include_str!("../../meo-canvas/tests/assets/chrome/border-rhythm.tsv");
+    let mut out = Vec::new();
+    for line in table.lines() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.first() != Some(&"dashed") || fields.len() < 6 {
+            continue;
+        }
+        let width: f32 = match fields[1].parse() {
+            Ok(width) => width,
+            Err(_) => continue,
+        };
+        // The first and last runs are cut by the reading window and are not
+        // whole periods, so neither votes.
+        let runs: Vec<&str> = fields[5].split_whitespace().collect();
+        let modal = |kind: &str| {
+            let mut counts: Vec<(u32, usize)> = Vec::new();
+            for run in &runs[1..runs.len() - 1] {
+                let Some(value) = run.strip_prefix(kind) else {
+                    continue;
+                };
+                let value: u32 = value
+                    .parse()
+                    .unwrap_or_else(|_| unreachable!("{run} is not a run"));
+                match counts.iter_mut().find(|(seen, _)| *seen == value) {
+                    Some((_, count)) => *count += 1,
+                    None => counts.push((value, 1)),
+                }
+            }
+            counts
+                .into_iter()
+                .max_by_key(|&(_, count)| count)
+                .unwrap_or_else(|| {
+                    unreachable!("no {kind} runs at width {width}")
+                })
+                .0
+        };
+        out.push(Rhythm {
+            width,
+            ink: modal("on:") as f32,
+            gap: modal("off:") as f32,
+        });
+    }
+    assert_eq!(out.len(), 5, "the table should carry five dashed widths");
+    out
+}
+
+/// The box every `dashed` row was read in.
+///
+/// Needed here because the table's runs are **fitted** to that side, and the
+/// nominal pattern is only what fitting starts from.
+const READING_BOX: f32 = 240.0;
 
 #[test]
 fn a_dash_is_the_length_chrome_makes_it() {
-    for row in CHROME {
-        let (ink, gap) = dash_pattern(row.width);
+    for row in chrome() {
+        // The INK is nominal and fitted alike -- the slack goes in the gaps,
+        // never in the dash -- so one assertion covers it.
+        let (ink, nominal_gap) = dash_pattern(row.width);
         assert!(
             (ink - row.ink).abs() < f32::EPSILON,
             "a {}px border dashes {ink} on where Chrome draws {}",
             row.width,
             row.ink
         );
+
+        // **The GAP needs two claims, and the transcribed constant made one.**
+        // `dash_pattern` gives the nominal gap, which is what the ratio rule
+        // predicts; the table records what Chrome actually left, which is the
+        // nominal gap after fitting to a 240-pixel side. They agree at four of
+        // the five widths and differ at 8 -- nominal 8, drawn 9 -- so a single
+        // assertion against a hand-written number was true for the wrong
+        // reason at four widths and quietly wrong at the fifth.
+        // Rounded, because the two quantities are not the same kind: the fit
+        // is continuous — `2.04` at width 1 — and a run in the table is whole
+        // pixels of ink, which is that fit rasterised. Comparing them raw asks
+        // a rasteriser to produce a fraction.
+        let (_, fitted_gap) = fitted_dash(READING_BOX, row.width);
         assert!(
-            (gap - row.gap).abs() < f32::EPSILON,
-            "a {}px border leaves {gap} off where Chrome leaves {}",
+            (fitted_gap.round() - row.gap).abs() < f32::EPSILON,
+            "a {}px border on a {READING_BOX}px side leaves {fitted_gap} off, \
+             rounding to {}, where Chrome leaves {}",
             row.width,
+            fitted_gap.round(),
             row.gap
+        );
+        assert!(
+            nominal_gap <= row.gap,
+            "fitting only ever widens a gap: nominal {nominal_gap} against a \
+             drawn {} at width {}",
+            row.gap,
+            row.width
         );
     }
 }

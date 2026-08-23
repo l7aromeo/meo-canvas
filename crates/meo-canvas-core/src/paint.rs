@@ -73,6 +73,10 @@ const OPAQUE: f32 = 1.0;
 /// Degrees in a full turn, for converting a scene's rotation to radians.
 const DEGREES_PER_TURN: f32 = 360.0;
 
+/// The quarter turn between where CSS starts a conic sweep and where a canvas
+/// does -- twelve o'clock against three.
+const QUARTER_TURN_DEGREES: f32 = 90.0;
+
 /// Everything about a surface that is not its size.
 ///
 /// Resolved values, not the scene's `Option`s: deciding between what a scene
@@ -2071,8 +2075,9 @@ fn stroke_broken_border(
 
         let dotted = matches!(paint.border_style, BorderStyle::Dotted);
         if dotted {
+            // The pattern itself is set per side or per loop below, because
+            // it is fitted to the length it will run along.
             context.set_line_cap(StrokeCap::Round);
-            context.set_line_dash(&[0.0, width * 2.0]);
         } else {
             context.set_line_cap(StrokeCap::Butt);
         }
@@ -2098,11 +2103,14 @@ fn stroke_broken_border(
             // Chrome's loop has no seam: the slack is spread all the way
             // round, so the corner the run starts at is unobservable and this
             // may start wherever the path does.
-            if !dotted {
-                let loop_fit: [f32; 2] =
-                    fitted_loop(perimeter(&centre_paint, centre), width).into();
-                context.set_line_dash(&loop_fit);
+            let around = perimeter(&centre_paint, centre);
+            let loop_fit: [f32; 2] = if dotted {
+                fitted_dot_loop(around, width)
+            } else {
+                fitted_loop(around, width)
             }
+            .into();
+            context.set_line_dash(&loop_fit);
             let drawn = anchored_loop(context, &centre_paint, centre);
             if drawn.is_ok() {
                 context.stroke();
@@ -2148,15 +2156,52 @@ fn stroke_fitted_side(
 ) -> Result<(), Error> {
     let (from, to) =
         straight_run(side.rect, side.centre, side.edge, side.curves);
+    // **A dot is drawn by a round cap, so its ink reaches half a width past
+    // the point the path names.** A dashed run is butt-capped and ends where
+    // it says; a dotted one centred on the corner would put half its first
+    // dot outside the box. So the dotted run is inset by half a width at each
+    // end, which is what makes the ink flush at both -- Chrome reads
+    // `first@0 last@136` on a 137 edge at every measured width.
+    let (from, to) = if side.dotted {
+        inset_ends(from, to, side.width / 2.0)
+    } else {
+        (from, to)
+    };
     let straight = (to.0 - from.0).hypot(to.1 - from.1);
     if straight > 0.0 {
-        if !side.dotted {
-            let fitted: [f32; 2] = fitted_dash(straight, side.width).into();
-            context.set_line_dash(&fitted);
+        if side.dotted {
+            eprintln!(
+                "PROBE edge={} len={straight} from={:?} to={:?} fit={:?}",
+                side.edge,
+                from,
+                to,
+                fitted_dot(straight, side.width)
+            );
         }
+        let fitted: [f32; 2] = if side.dotted {
+            fitted_dot(straight, side.width)
+        } else {
+            fitted_dash(straight, side.width)
+        }
+        .into();
+        context.set_line_dash(&fitted);
         context.begin_path();
         context.move_to(from.0, from.1);
-        context.line_to(to.0, to.1);
+        // **The last dot sits at exactly the path's length, and a dash walker
+        // emits at offsets strictly inside it** -- so the final dot of every
+        // dotted run was dropped. Each corner then carried one dot instead of
+        // two: the edge that *starts* there drew, the edge that ends there did
+        // not. It read as flush only because the neighbouring edge's first dot
+        // stood in for the missing last one.
+        //
+        // A four-thousandth of a pixel is enough to make the offset strictly
+        // interior, and moves no dot anywhere: the positions are multiples of
+        // the period and the period is unchanged.
+        let reach = if side.dotted { straight * 1e-4 } else { 0.0 };
+        context.line_to(
+            (to.0 - from.0).mul_add(1.0 + reach / straight, from.0),
+            (to.1 - from.1).mul_add(1.0 + reach / straight, from.1),
+        );
         context.stroke();
     }
     fill_corner_arcs(context, side)
@@ -2210,6 +2255,102 @@ fn fill_corner_arcs(
         path?;
     }
     Ok(())
+}
+
+/// Pulls both ends of a segment in along its own direction.
+///
+/// Returns it unchanged when it is shorter than twice the inset: there would
+/// be nothing left to draw along, and crossing the ends over would stroke it
+/// backwards.
+fn inset_ends(
+    from: (f32, f32),
+    to: (f32, f32),
+    by: f32,
+) -> ((f32, f32), (f32, f32)) {
+    let span = (to.0 - from.0).hypot(to.1 - from.1);
+    if span <= by * 2.0 {
+        return (from, to);
+    }
+    let step = (by * (to.0 - from.0) / span, by * (to.1 - from.1) / span);
+    (
+        (from.0 + step.0, from.1 + step.1),
+        (to.0 - step.0, to.1 - step.1),
+    )
+}
+
+/// The dot pattern for one side, fitted to that side's own length.
+///
+/// # A dot is drawn by a cap, not by a dash
+///
+/// Dotted is a **zero-length** dash with round caps, so the pattern element
+/// carries no length and the ink is a circle of the border's own diameter.
+/// That is Chrome's, measured: on and off are both exactly `w` at every width
+/// in the table. It also means the fitting arithmetic is not
+/// [`fitted_dash`]'s -- the ink extends half a cap past each end of the run,
+/// so a side of `length` holding `n` dots spans `(n - 1) * period + w`, and
+/// flushness at both ends wants `period = (length - w) / (n - 1)`.
+///
+/// # The count is the general rule, not a dotted one
+///
+/// Chrome takes `(length / w + 1) / 2` to the nearest whole number, measured
+/// across seven edge lengths at five widths. **That is
+/// [`fitted_dash`]'s own count** -- `round((length + gap) / (dash + gap))`
+/// with a nominal pattern of `w` on and `w` off -- so the dashed and dotted
+/// tables were confirming one rule while each was taken to be measuring its
+/// own. Two instruments, two patterns, one answer neither was looking for.
+///
+/// A tie is where that rule is undetermined and Chrome's own answers disagree
+/// with each other, so the fixture for this is a 131- or 137-wide box rather
+/// than the 240 every measured width ties on.
+///
+/// # What is still not Chrome's, measured
+///
+/// A corner now carries a whole dot -- both edges place one there and the two
+/// coincide. **Chrome's corner block is fuller than a dot**: `####` on all
+/// four rows, where an ordinary dot has partial coverage at its four corners
+/// and ours does too. So Chrome is not drawing a disc there at all; the
+/// remaining difference is eight part-covered pixels per corner, and what
+/// fills them is unmeasured.
+///
+/// Worth knowing before chasing it: **a test asserting "the corner holds a
+/// whole dot" passes for both pictures.** The shoulders are the signature --
+/// a disc has partial coverage at its corners and a filled square does not.
+///
+/// `crates/meo-canvas/tests/assets/chrome/dotted-rhythm.tsv`.
+#[must_use]
+pub fn fitted_dot(length: f32, width: f32) -> (f32, f32) {
+    let nominal = (0.0, width * 2.0);
+    if width <= 0.0 || length <= width {
+        return nominal;
+    }
+    // Written as the general count with both terms `w` rather than as
+    // `(length / w + 1) / 2`: the two are the same number and this spelling
+    // says which rule it is.
+    let period = 2.0 * width;
+    let count = ((length + period) / period).round();
+    if count < 2.0 {
+        return nominal;
+    }
+    (0.0, (length / (count - 1.0)).max(0.0))
+}
+
+/// The dot pattern for a closed path, fitted to the whole of it.
+///
+/// **A loop has as many gaps as dots**, because the last gap closes onto the
+/// first dot rather than stopping at a corner -- the same term that separates
+/// [`fitted_loop`] from [`fitted_dash`]. So the count is `round(L / 2w)` and
+/// the period divides the length exactly.
+///
+/// The round cap does not need subtracting here: on a closed path every dot
+/// has a neighbour on both sides, so there is no end for the ink to overhang.
+#[must_use]
+pub fn fitted_dot_loop(length: f32, width: f32) -> (f32, f32) {
+    let nominal = (0.0, width * 2.0);
+    if width <= 0.0 || length <= width * 2.0 {
+        return nominal;
+    }
+    let count = (length / (width * 2.0)).round().max(1.0);
+    (0.0, (length / count).max(0.0))
 }
 
 /// The dash and gap for a closed path, fitted to the whole of it.
@@ -2344,6 +2485,136 @@ fn perimeter(paint: &PaintStyle, rect: Rect) -> f32 {
     let curved: f32 = radii_at(paint).iter().sum();
     let straight = 2.0f32.mul_add(rect.size.width + rect.size.height, 0.0);
     (std::f32::consts::FRAC_PI_2 - 2.0).mul_add(curved, straight)
+}
+
+/// The same ramp, rotated round the sweep by a fraction of a turn.
+///
+/// # Why the stops move and not the angle
+///
+/// **CSS starts a conic sweep at twelve o'clock and a canvas starts it at
+/// three**, so a `from` handed straight to the shader draws the ramp a quarter
+/// turn late -- measured against Chrome as a uniform 270 degrees across every
+/// sample of every conic case. v1 converts the angle
+/// (`gradient.canvas.ts:42`) and this crate did not, so it is a port defect
+/// rather than one we invented.
+///
+/// **The angle cannot carry the correction here.** Skia's sweep takes a start
+/// and an end and **clamps outside them rather than wrapping**: moving the
+/// range to `[from - 90, from + 270]` leaves every pixel past the end reading
+/// the last stop, and moving it to `[from + 270, from + 630]` leaves every
+/// pixel before the start reading the first. Both were measured -- white at
+/// twelve o'clock, then black everywhere. The range has to stay the full turn
+/// it already is.
+///
+/// The local-matrix slot that would rotate the shader is passed `None` by the
+/// binding (`meo-skia-canvas-0.11.0/src/shader.rs:428`) and is not exposed, so
+/// that route is closed too.
+///
+/// So the ramp moves instead of the frame. A stop at `p` is read where the
+/// sweep is at `p`, and we want the colour CSS puts a quarter turn earlier, so
+/// every position shifts by `turns` and wraps.
+///
+/// # The seam
+///
+/// Wrapping splits the ramp, and the pair that straddles `0` would otherwise
+/// interpolate the long way round the circle. A stop is planted at each end
+/// carrying the colour the ramp actually has there, so the seam is a join
+/// rather than a jump.
+fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
+    if stops.is_empty() {
+        return Vec::new();
+    }
+    // The position in the original ramp that becomes the new origin.
+    let origin = (-turns).rem_euclid(1.0);
+    let seam = seam_color(stops, turns);
+
+    // Walked from the new origin rather than shifted in place. **Shifting
+    // collapses the ends**: a ramp's stops at `0` and `1` are the same point
+    // on a circle, so moving both by the same amount lands them together and
+    // destroys the order the ramp is read in -- measured as a picture mirrored
+    // about the vertical, matching Chrome at twelve and six o'clock and
+    // reversed at three and nine.
+    let mut out = Vec::with_capacity(stops.len() + 2);
+    out.push(SkiaGradientStop {
+        position: 0.0,
+        color: seam,
+    });
+    for stop in stops.iter().filter(|stop| stop.position > origin) {
+        out.push(SkiaGradientStop {
+            position: stop.position - origin,
+            color: stop.color,
+        });
+    }
+    for stop in stops.iter().filter(|stop| stop.position <= origin) {
+        out.push(SkiaGradientStop {
+            position: stop.position - origin + 1.0,
+            color: stop.color,
+        });
+    }
+    out.push(SkiaGradientStop {
+        position: 1.0,
+        color: seam,
+    });
+    out
+}
+
+/// The ramp's colour where the rotation wraps it.
+///
+/// `-turns` is the position in the original ramp that lands on the seam, so
+/// this is the ramp read at that point: the two stops it falls between, mixed
+/// by how far along it sits.
+///
+/// **Mixed in the encoded space and not in linear light.** The stops are
+/// stored premultiplied and linear, but the gradient interpolates the way CSS
+/// does, so a seam blended linearly lands in the wrong place -- a quarter of
+/// the way from black to white is `64` encoded and `137` linear, and the
+/// second is what we drew before this converted. The blend has to happen in
+/// whichever space the ramp either side of it is being drawn in.
+fn seam_color(stops: &[SkiaGradientStop], turns: f32) -> RgbaLinear {
+    let at = (-turns).rem_euclid(1.0);
+    let (mut before, mut after) = (stops[0], stops[stops.len() - 1]);
+    for stop in stops {
+        if stop.position <= at {
+            before = *stop;
+        }
+    }
+    for stop in stops.iter().rev() {
+        if stop.position >= at {
+            after = *stop;
+        }
+    }
+    let span = after.position - before.position;
+    if span <= f32::EPSILON {
+        return before.color;
+    }
+    let t = (at - before.position) / span;
+    let blend = |a: f32, b: f32| {
+        encoded((to_encoded(b) - to_encoded(a)).mul_add(t, to_encoded(a)))
+    };
+    RgbaLinear {
+        r: blend(before.color.r, after.color.r),
+        g: blend(before.color.g, after.color.g),
+        b: blend(before.color.b, after.color.b),
+        a: (after.color.a - before.color.a).mul_add(t, before.color.a),
+    }
+}
+
+/// A linear-light channel as sRGB writes it.
+fn to_encoded(linear: f32) -> f32 {
+    if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055_f32.mul_add(linear.powf(1.0 / 2.4), -0.055)
+    }
+}
+
+/// The inverse: an sRGB channel back to linear light.
+fn encoded(value: f32) -> f32 {
+    if value <= 0.040_45 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 /// The four outer radii, scaled the way CSS scales them when two on one side
@@ -3040,13 +3311,36 @@ fn build_gradient(
                 GradientInterpolation::default(),
             )
         }
-        GradientGeometry::Conic { at, from } => Shader::sweep_gradient(
-            place(at),
-            from,
-            from + DEGREES_PER_TURN,
-            &stops,
-            GradientInterpolation::default(),
-        ),
+        GradientGeometry::Conic { at, from } => {
+            // **CSS starts a conic sweep at twelve o'clock and a canvas
+            // starts it at three**, so a `from` handed straight to the shader
+            // draws the ramp a quarter turn late -- measured against Chrome as
+            // a uniform 270 degrees across every sample of every conic case,
+            // with a spread of two bytes that is quantisation rather than
+            // variation.
+            //
+            // v1 converts (`gradient.canvas.ts:42`, `degreesToCanvasAngle`)
+            // and this crate did not, so it is a port defect rather than one
+            // we invented. The turn is applied to the angle handed to the
+            // shader and **not** to `from` itself: a caller's `from` is CSS's,
+            // and reinterpreting it would move every angle they wrote.
+            // **The whole angle goes into the ramp, including `from`.** The
+            // sweep always covers one full turn from Skia's own zero, because
+            // Skia clamps outside its range rather than wrapping: a range of
+            // `[from, from + 360]` leaves every pixel below `from` reading the
+            // first stop, which at `from: 90deg` painted the entire box one
+            // flat colour.
+            Shader::sweep_gradient(
+                place(at),
+                0.0,
+                DEGREES_PER_TURN,
+                &turned(
+                    &stops,
+                    (from - QUARTER_TURN_DEGREES) / DEGREES_PER_TURN,
+                ),
+                GradientInterpolation::default(),
+            )
+        }
     };
     let shader = shader.map_err(|error| Error::Paint(error.to_string()))?;
     Ok((shader, squash))

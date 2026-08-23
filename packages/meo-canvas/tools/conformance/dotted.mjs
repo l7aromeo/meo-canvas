@@ -239,7 +239,9 @@ try {
     // short mark. Sixteen samples per pixel, because four cannot tell two radii
     // apart on a curve.
     if (radius > 0) {
-      const r = radius - width / 2
+      const r = Math.max(0, radius - width / 2)
+      // See `borders.mjs`: below `w/2` the centre path has no arc, and a row
+      // saying so is worth more than a row omitted.
       const centre = [from + radius, Math.round(geometry.top) + radius]
       const quarter = (Math.PI / 2) * r
       const steps = Math.max(1, Math.round(quarter * 16))
@@ -262,7 +264,14 @@ try {
       }
       marks.push(`${ink ? 'on' : 'off'}:${(((steps - start) / steps) * quarter).toFixed(1)}`)
       rows.push(
-        [`dotted-arc-${radius}-top-left`, width, r, 'walked along the centreline', THRESHOLD, `quarter=${quarter.toFixed(1)} ${marks.join(' ')}`].join('\t'),
+        [
+          `dotted-arc-${radius}-top-left`,
+          width,
+          r,
+          'walked along the centreline',
+          THRESHOLD,
+          r > 0 ? `quarter=${quarter.toFixed(1)} ${marks.join(' ')}` : 'quarter=0 no-arc',
+        ].join('\t'),
       )
     }
   }
@@ -294,8 +303,17 @@ try {
     await browser.page.setViewportSize(LOOP_BOX)
     const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...LOOP_BOX } }))
 
+    // **Floored at zero, because the centre path has no arc below `w/2`.**
+    // Unfloored this goes negative -- radius 1 at width 4 is `-1` -- and a
+    // quarter walked at a negative radius traces the arc BACKWARDS, so the
+    // samples land on the far side of the corner. The reading is not a small
+    // number, it is a reading of somewhere else. This is the same precondition
+    // as `height - 2 * radius > 0` on the straight, which was written for the
+    // shape and never turned on the arc: **every length the path model
+    // produces must be positive before the walk, not only the ones the shape
+    // suggested.**
     const inset = width / 2
-    const r = radius - inset
+    const r = Math.max(0, radius - inset)
     const left = Math.round(geometry.left) + inset
     const top = Math.round(geometry.top) + inset
     const right = Math.round(geometry.left) + LOOP_BOX.width - 1 - inset

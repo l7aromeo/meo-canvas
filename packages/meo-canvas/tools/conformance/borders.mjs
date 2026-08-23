@@ -313,7 +313,16 @@ try {
     // corners can be compared to each other. If a single run were fitted to
     // the whole side the two ends would be mirror images, and at radius 12
     // they are not -- 5 to 12 at the left against 217 to 229 at the right.
-    const along = radius - width / 2
+    // **Floored at zero, because the centre path has no arc below `w/2`.**
+    // Unfloored this goes negative -- radius 1 at width 4 is `-1` -- and a
+    // quarter walked at a negative radius traces the arc BACKWARDS, so the
+    // samples land on the far side of the corner. The reading is not a small
+    // number, it is a reading of somewhere else. This is the same precondition
+    // as `height - 2 * radius > 0` on the straight, which was written for the
+    // shape and never turned on the arc: **every length the path model
+    // produces must be positive before the walk, not only the ones the shape
+    // suggested.**
+    const along = Math.max(0, radius - width / 2)
     const quarter = (Math.PI / 2) * along
     const steps = 600
     const walkArc = (cx, cy, from0) => {
@@ -356,7 +365,11 @@ try {
         along,
         'walked along the centreline',
         THRESHOLD,
-        `quarter=${quarter.toFixed(1)} first-ink@${left.first} ${left.runs.join(' ')}`,
+        // `no-arc` rather than a walk of nothing, and rather than skipping the
+        // row: a skipped row is invisible, and the question a later reader asks
+        // is not *what did radius 1 measure* but *was radius 1 covered*. Only an
+        // emitted row answers that.
+        along > 0 ? `quarter=${quarter.toFixed(1)} first-ink@${left.first} ${left.runs.join(' ')}` : 'quarter=0 no-arc',
       ].join('\t'),
     )
     rows.push(
@@ -366,7 +379,7 @@ try {
         along,
         'walked along the centreline',
         THRESHOLD,
-        `quarter=${quarter.toFixed(1)} first-ink@${right.first} ${right.runs.join(' ')}`,
+        along > 0 ? `quarter=${quarter.toFixed(1)} first-ink@${right.first} ${right.runs.join(' ')}` : 'quarter=0 no-arc',
       ].join('\t'),
     )
   }
@@ -475,8 +488,17 @@ try {
 
     // The centreline of the border band: a rounded rect inset by half the
     // width, so its own radius is `radius - width / 2`.
+    // **Floored at zero, because the centre path has no arc below `w/2`.**
+    // Unfloored this goes negative -- radius 1 at width 4 is `-1` -- and a
+    // quarter walked at a negative radius traces the arc BACKWARDS, so the
+    // samples land on the far side of the corner. The reading is not a small
+    // number, it is a reading of somewhere else. This is the same precondition
+    // as `height - 2 * radius > 0` on the straight, which was written for the
+    // shape and never turned on the arc: **every length the path model
+    // produces must be positive before the walk, not only the ones the shape
+    // suggested.**
     const inset = width / 2
-    const r = radius - inset
+    const r = Math.max(0, radius - inset)
     const left = Math.round(geometry.left) + inset
     const top = Math.round(geometry.top) + inset
     const right = Math.round(geometry.left) + tall.width - 1 - inset
@@ -505,6 +527,11 @@ try {
       straight(left, bottom - r, left, top + r),
       arc(left + r, top + r, Math.PI),
     ]
+    // **`walk-length`, not `perimeter`.** The extents are pixel indices, so
+    // this runs one short per axis and four short round a loop against the
+    // geometric centreline -- 494.0 here where the centreline is 498.0. The
+    // `- 1` is right for sampling pixel centres and wrong as a name: two
+    // readers did arithmetic against this field believing it was the geometry.
     const perimeter = path.reduce((sum, part) => sum + part.length, 0)
 
     // Sixteen samples per pixel of path. Four was enough along a straight edge
@@ -550,7 +577,7 @@ try {
         r,
         'walked clockwise from the top-left tangent',
         THRESHOLD,
-        `box=${tall.width}x${tall.height} perimeter=${perimeter.toFixed(1)} marks=${marks} ${runs.join(' ')}`,
+        `box=${tall.width}x${tall.height} walk-length=${perimeter.toFixed(1)} marks=${marks} ${runs.join(' ')}`,
       ].join('\t'),
     )
     const _ = walked
@@ -623,7 +650,9 @@ try {
     // one row inside the band and a 1-wide border reads as blank. The first
     // run of this row reported zero ink for exactly that reason.
     const inset = Math.min(1, Math.min(top, left) / 2)
-    const r = radius - inset
+    // Floored for the reason the other two sites are: a negative radius walks
+    // the far side of the corner rather than a short arc.
+    const r = Math.max(0, radius - inset)
     // Up the left edge to the tangent, round the arc, along the top edge.
     const reach = 40
     const parts = [

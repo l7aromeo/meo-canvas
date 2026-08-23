@@ -1,5 +1,5 @@
 {
   "proves": "linear, radial and conic gradients each render distinctly",
   "checkable": "linear at 45deg runs corner to corner; radial is centred and isotropic; conic sweeps around the centre. The three must not be identical.",
-  "status": "eyeball plus non-identity; the exact stop interpolation is not pinned to a number"
+  "status": "eyeball plus non-identity; the exact stop interpolation is not pinned to a number. Re-accepted after the conic origin was corrected -- CSS starts a conic sweep at twelve o'clock and this crate started it at three, so the conic cell has rotated a quarter turn. THE FIXTURE DID NOT CERTIFY THAT AND COULD NOT: its claims are that the three gradients render distinctly and are not identical, both of which held before and after. The conic origin is adjudicated by Chrome in `chrome_gradients.rs`, which is what caught the defect and what would catch it again."
 }
