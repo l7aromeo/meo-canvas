@@ -927,6 +927,26 @@ smooth, plausible run**, which is the same family as the degenerate shape and
 expensive for the same reason. State the density beside the number, because a
 reader with no density will pick the one that looks sufficient.
 
+**Floor a sample point; round a reported value. They are the same expression
+and different quantities.** A sample point asks _which pixel does this location
+fall in_, and the answer is the floor: `Math.round(0.5)` is 1, so a half-pixel
+inset on a one-pixel band samples the row **outside** it and reports a painted
+border as blank. A box origin from `getBoundingClientRect` is a value the
+browser computed, landing on a device pixel, and rounds -- flooring it shifts
+the window rather than fixing it. In `tools/conformance/borders.mjs` both live
+a few lines apart: `pixel(shot, Math.floor(point[0]), ...)` in every path walk,
+`Math.round(geometry.left)` for every window bound. A later reader tidying up
+will unify them; the comment at each site says why they differ.
+
+**A signature has a quantity attached; a sighting only has a location.** Ink
+present at a dashed border's corner is a sighting, and reading it as the mark of
+per-side fitting inverts the answer: the _continuous_ case has ink there too --
+`on:8.1` at a width whose dash is exactly 8, one ordinary dash crossing the
+corner. What distinguishes the two is length against `2w`: 26.8 against a 16
+dash is two dashes meeting, 8.1 against an 8 dash is one dash passing through.
+Before trusting a signature, name the quantity that makes it one, and check the
+case that should _not_ show it does not.
+
 **When a coincidence-prone reading and a structural signature disagree, the
 signature wins.** Ink spanning a box's straight portion exactly is _sometimes_
 per-side fitting and sometimes a dash boundary landing on a tangent by
