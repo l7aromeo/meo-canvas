@@ -323,8 +323,11 @@ try {
       let first = null
       for (let step = 0; step <= steps; step += 1) {
         const angle = from0 + (step / steps) * (Math.PI / 2)
-        const px = Math.round(cx + along * Math.cos(angle))
-        const py = Math.round(cy + along * Math.sin(angle))
+        // Floored, never rounded: a pixel index is the cell a point falls in,
+        // and `Math.round(0.5)` is 1 -- which put a half-pixel inset one row
+        // off a one-pixel band and reported a painted border as blank.
+        const px = Math.floor(cx + along * Math.cos(angle))
+        const py = Math.floor(cy + along * Math.sin(angle))
         const here = pixel(shot, px, py)[0] < THRESHOLD
         if (ink === null) {
           ink = here
@@ -525,7 +528,7 @@ try {
         }
         rest -= part.length
       }
-      const here = pixel(shot, Math.round(point[0]), Math.round(point[1]))[0] < THRESHOLD
+      const here = pixel(shot, Math.floor(point[0]), Math.floor(point[1]))[0] < THRESHOLD
       if (ink === null) {
         ink = here
         continue
@@ -580,6 +583,13 @@ try {
     // rather than a number, and the first mixed row was only legible because
     // its controls sat beside it.
     [12, 12, 6],
+    // A width-1 row is labelled WEAK in its own output. Its dash is 2, so ink
+    // of 3.0 at a tangent is 1.5x a dash where the classifier wants 1.3x, and
+    // at that width antialiasing moves every quantity: it is a reading at the
+    // edge of what this instrument can resolve. Left in and labelled rather
+    // than dropped -- a weak row labelled weak documents where the instrument
+    // runs out, which is the thing nobody records.
+    //
     // The extreme of the `min` rule rather than another point along it: a
     // ratio of twenty, where the thick side's own geometry is nowhere near its
     // threshold. A rule fitted at ratios of two and three and failing at
@@ -607,6 +617,11 @@ try {
     // Half the thinner border rather than a fixed pixel: at width 1 the band
     // IS the outer pixel, so an inset of one samples past it and finds no ink
     // at all -- an instrument that cannot see the case it was pointed at.
+    //
+    // And the samples are FLOORED to a pixel rather than rounded, because
+    // `Math.round(0.5)` is 1: with a half-pixel inset a rounded sample lands
+    // one row inside the band and a 1-wide border reads as blank. The first
+    // run of this row reported zero ink for exactly that reason.
     const inset = Math.min(1, Math.min(top, left) / 2)
     const r = radius - inset
     // Up the left edge to the tangent, round the arc, along the top edge.
@@ -640,7 +655,7 @@ try {
         }
         rest -= part.length
       }
-      const here = pixel(shot, Math.round(point[0]), Math.round(point[1]))[0] < THRESHOLD
+      const here = pixel(shot, Math.floor(point[0]), Math.floor(point[1]))[0] < THRESHOLD
       if (here) {
         current += total / samples
         longest = Math.max(longest, current)
@@ -666,7 +681,7 @@ try {
         radius,
         'one pixel inside the outer boundary',
         THRESHOLD,
-        `longest-ink=${longest.toFixed(1)} dash-top=${2 * top} dash-left=${2 * left} tangent-at=${reach.toFixed(1)} arc-ends=${(reach + (Math.PI / 2) * r).toFixed(1)} ${runs.join(' ')}`,
+        `${Math.min(top, left) <= 1 ? 'WEAK ' : ''}longest-ink=${longest.toFixed(1)} dash-top=${2 * top} dash-left=${2 * left} tangent-at=${reach.toFixed(1)} arc-ends=${(reach + (Math.PI / 2) * r).toFixed(1)} ${runs.join(' ')}`,
       ].join('\t'),
     )
   }
