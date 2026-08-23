@@ -34,6 +34,23 @@ const POINT_RADIUS: f32 = 4.0;
 
 /// A line chart of `labels` against `datasets`.
 ///
+/// # A dataset that is not as long as the labels
+///
+/// **The data decides how many points there are and the label count decides
+/// their spacing**, so the two disagree visibly when the lengths do. A dataset
+/// with more values than labels draws its extra points **past the right
+/// edge** -- the spacing divisor is `labels - 1`, so value *n* sits at
+/// `n / (labels - 1)` of the plot whether or not that is inside it. One with
+/// fewer simply stops early.
+///
+/// Neither is refused, because neither mis-draws: the picture shows the
+/// mismatch rather than concealing it, which is what separates this from a
+/// negative value.
+///
+/// **This is not what [`crate::chart::bar::bar`] does with the same input.**
+/// A bar chart iterates the labels rather than the data, so its extra values
+/// are dropped and a missing one becomes a zero-height bar.
+///
 /// # Errors
 ///
 /// Returns [`Error::Chart`] for a negative value, as the other kinds do.

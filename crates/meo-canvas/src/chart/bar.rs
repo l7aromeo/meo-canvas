@@ -105,6 +105,18 @@ const VALUE_LIFT: f32 = 5.0;
 
 /// A bar chart of `labels` against `datasets`.
 ///
+/// # A dataset that is not as long as the labels
+///
+/// **The label count decides how many bars there are.** A dataset with more
+/// values than there are labels has the extra ones **dropped**; one with fewer
+/// draws a **zero-height** bar in the empty slot. Neither is refused, because
+/// neither mis-draws: a caller sees the mismatch rather than a chart that lies
+/// about it, which is what separates this from a negative value.
+///
+/// **This is not what [`crate::chart::line::line`] does with the same input.**
+/// A line chart iterates the data rather than the labels, so its extra points
+/// are drawn past the right edge instead of dropped.
+///
 /// # Errors
 ///
 /// Returns [`Error::Chart`] for a negative value, which v1 mis-draws three
