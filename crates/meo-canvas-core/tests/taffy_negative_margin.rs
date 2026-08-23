@@ -2,46 +2,62 @@
 //!
 //! # What is wrong
 //!
-//! **A column flex container with an automatic height resolves to zero when
-//! its child has `flex-shrink: 0` and a negative main-axis margin.** The
-//! container vanishes -- its own background with it -- while the child lays
-//! out correctly at the negative offset. Positive margins are right, a zero
-//! margin is right, and `flex-shrink: 1` is right.
+//! **A negative margin on a non-shrinking flex item is applied as a multiplier
+//! rather than as a length.** A flex container with an automatic main size
+//! resolves to `child x max(0, 1 + margin)` where it should resolve to
+//! `child + margin` -- the two agreeing only when the child is one pixel.
 //!
-//! **It is the child's `flex-shrink` that triggers it, not the container's**,
-//! which is the opposite of what the symptom suggests, since the box that
-//! disappears is the container. Measured both ways round.
+//! ```text
+//! child 500, margin  -0.25   ->  375     Chrome 499.75
+//! child 500, margin  -0.5    ->  250     Chrome 499.5
+//! child 500, margin  -1      ->    0     Chrome 499
+//! child 500, margin -24      ->    0     Chrome 476
+//! child 200, margin  -0.5    ->  100     Chrome 199.5
+//! ```
+//!
+//! **Proportional to the child's own main size**, which is what makes it a
+//! multiply and not a clamp: `500 -> 250`, `200 -> 100`, `80 -> 40`, all at
+//! `-0.5`. Every realistic margin is at or beyond `-1`, so it presents as a
+//! container that collapses to nothing -- which is how it was first described
+//! here, and the description was of the symptom rather than the mechanism.
+//!
+//! # The conditions, each measured rather than assumed
+//!
+//! - **All four main-axis edges.** `margin-top` and `margin-bottom` in a
+//!   column, `margin-left` and `margin-right` in a row. Not top-specific.
+//! - **The child's `flex-shrink: 0` is required.** With `flex-shrink: 1` every
+//!   configuration is correct -- both edges, both axes, nested, with a sibling,
+//!   with an explicit `flex-basis`.
+//! - **The container's own `flex-shrink` is irrelevant**, which is the opposite
+//!   of what the symptom suggests, since the box that vanishes is the
+//!   container.
+//! - **A definite child and a content-sized child behave identically**, so the
+//!   conversion is not reading an explicit size.
+//! - **A percentage margin collapses too** -- consistent with the multiply,
+//!   since a resolved `-5%` of a 903-wide container is `-45.15`, and `1 -
+//!   45.15` is negative before anything is clamped.
+//! - **A definite container height is correct**, and a growing container fills
+//!   its parent in both engines. The defect needs an automatic main size.
 //!
 //! # What the browser does
 //!
 //! Chrome, through the conformance harness's own Playwright rather than a page
-//! written by hand: `display: flex; flex-direction: column; width: 903px;
-//! height: auto`, one child `476x500` with `flex-shrink` and `margin-top`
-//! varied, `getBoundingClientRect().height` on the parent.
+//! written by hand, `getBoundingClientRect()` unrounded: **the container is
+//! the child's outer main size, `child + margin`, in every one of seventeen
+//! rows, and `flex-shrink` never enters it.** Thirteen of those rows disagree
+//! with taffy; three agree (a growing container, a definite height, and a
+//! shrinking child with a sibling); one differs only by rounding.
 //!
-//! | `flex-shrink` | `margin-top` | Chrome | taffy |
-//! |---|---|---|---|
-//! | 0 | -24 | 476 | **0** |
-//! | 1 | -24 | 476 | 476 |
-//! | 0 | 0 | 500 | 500 |
-//! | 1 | 0 | 500 | 500 |
-//! | 0 | 24 | 524 | 524 |
-//! | 1 | 24 | 524 | 524 |
+//! So this is a disagreement with the browser, which is our baseline, and not
+//! with a reading of the specification.
 //!
-//! **Chrome gives the child's outer hypothetical main size in all six rows and
-//! never lets `flex-shrink` into the answer** -- there is no free space
-//! pressure anywhere in the tree, so the shrink axis is not a factor. So this
-//! is a disagreement with the browser, which is our baseline, and not with a
-//! reading of the specification.
+//! # Why the assertions are of the wrong numbers
 //!
-//! # Why the assertion is of the wrong number
-//!
-//! **A test asserting Chrome's 476 would fail today**, and a failing test
+//! **A test asserting Chrome's values would fail today**, and a failing test
 //! cannot be committed. So this pins what taffy actually does, with the right
-//! answer beside it: **the day taffy is fixed, this test fails, and the
-//! failure is the notification.** That is the whole reason it exists -- the
-//! defect is otherwise silent, because a caller sees a missing subtree and no
-//! error at all.
+//! answer beside it: **the day taffy is fixed, this fails, and the failure is
+//! the notification.** That is the whole reason it exists -- the defect is
+//! otherwise silent, because a caller sees a missing subtree and no error.
 //!
 //! Reproduced against taffy `0.13.0` and against `main` at `88125ce`, in
 //! twenty lines of taffy with no code of ours in the picture. Not fixed
@@ -139,14 +155,23 @@ fn the_five_rows_taffy_gets_right_agree_with_chrome() {
 }
 
 #[test]
-fn a_negative_margin_under_a_rigid_child_still_collapses_its_container() {
-    // **Asserting the wrong number on purpose.** Chrome says 476. When this
-    // fails, taffy has been fixed: check the six rows above against the
-    // browser, delete this test, and remove whatever workarounds cite it.
-    let collapsed = container_height(0.0, -24.0);
-    assert!(
-        collapsed.abs() < 0.01,
-        "taffy now gives {collapsed} where it gave 0 -- if this is Chrome's \
-         476, the defect is fixed and this test has done its job"
-    );
+fn a_negative_margin_is_still_applied_as_a_multiplier() {
+    // **Asserting the wrong numbers on purpose.** Chrome's are in the comment
+    // beside each. When one of these fails, taffy has been fixed: check the
+    // table in this file's header against the browser, delete the test, and
+    // remove whatever cites it.
+    for (margin, taffy, chrome) in [
+        (-24.0_f32, 0.0_f32, 476.0_f32),
+        (-1.0, 0.0, 499.0),
+        (-0.5, 250.0, 499.5),
+        (-0.25, 375.0, 499.75),
+    ] {
+        let ours = container_height(0.0, margin);
+        assert!(
+            (ours - taffy).abs() < 0.01,
+            "margin {margin}: taffy now gives {ours} where it gave {taffy} -- \
+             if this is Chrome's {chrome}, the defect is fixed and this test \
+             has done its job"
+        );
+    }
 }

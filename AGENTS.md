@@ -1686,36 +1686,59 @@ wrong moment, and the next reader diagnoses a port defect.
 
 ### Pin the wrong answer when the right one is upstream
 
-taffy resolves a column flex container with an automatic height to **zero**
-when its child has `flex-shrink: 0` and a negative main-axis margin. The
-container disappears, its background with it, while the child lays out
-correctly at the negative offset. Positive margins are right, zero is right,
-`flex-shrink: 1` is right -- **and it is the child's `flex-shrink` that
-triggers it, not the container's**, which is the opposite of what the symptom
-suggests, since the box that vanishes is the container.
+taffy applies a **negative margin on a non-shrinking flex item as a multiplier
+rather than as a length**. A flex container with an automatic main size
+resolves to `child x max(0, 1 + margin)` where it should resolve to
+`child + margin`, and the two agree only when the child is one pixel:
+`-0.25` costs a quarter of the box where it should cost a quarter of a pixel.
+Every realistic margin is at or beyond `-1`, so it presents as a container
+collapsing to nothing.
 
-Chrome gives the child's outer hypothetical main size in all six rows of that
-table and never lets `flex-shrink` into the answer. **So it is a disagreement
-with the browser, not with a reading of the specification** -- the distinction
-that decided whether to file it, and the reason the measurement was worth
-waiting for rather than asserting CSS from memory.
+Chrome gives `child + margin` in all seventeen measured rows and never lets
+`flex-shrink` into the answer. **So it is a disagreement with the browser, not
+with a reading of the specification** -- the distinction that decided whether
+to file it, and the reason the measurement was worth waiting for rather than
+asserting CSS from memory.
 
-**A test asserting Chrome's 476 would fail today, and a failing test cannot be
-committed.** So `taffy_negative_margin.rs` asserts what taffy _does_, with
-Chrome's number in the table beside it and the instruction in the failure
-message: when this test fails, the defect is fixed, delete it. **The wrong
-answer, pinned deliberately, is the notification** -- and without it the defect
-is entirely silent, because a caller sees a missing subtree and no error.
+**A test asserting Chrome's numbers would fail today, and a failing test cannot
+be committed.** So `taffy_negative_margin.rs` asserts what taffy _does_, with
+Chrome's value beside each and the instruction in the failure message: when
+this fails, the defect is fixed, delete it. **The wrong answer, pinned
+deliberately, is the notification** -- and without it the defect is entirely
+silent, because a caller sees a missing subtree and no error.
 
-**Any v2 caller writing `flex-shrink: 0` with a negative top margin loses the
-whole subtree**, and nothing in the vocabulary hints at it.
+**Any v2 caller writing `flex-shrink: 0` with a negative main-axis margin loses
+the whole subtree**, and nothing in the vocabulary hints at it.
 
 Check upstream before writing either the pin or an issue: `main` as well as the
-release, the changelog, and the open issues. Here `main` at `88125ce` still
-had it, the only unreleased negative-margin entry was for block and float
-layout, and the one related issue -- #706, closed -- reports sibling sizing and
-padding and mentions neither `flex-shrink` nor a container resolving to zero.
-**A defect already fixed and unreleased needs a wait, not a pin.**
+release, the changelog, and the open issues. Here `main` at `88125ce` still had
+it, the only unreleased negative-margin entry was for block and float layout,
+and the one related issue -- #706, closed -- reports sibling sizing and padding
+and mentions neither `flex-shrink` nor a container resolving to zero. **A defect
+already fixed and unreleased needs a wait, not a pin.**
+
+### Widening a matrix is the measurement, not the diligence
+
+The first version of the entry above said _a negative **top** margin collapses a
+**column** container_. Both halves were artefacts of the single case anyone had
+looked at. Widening the matrix -- four edges, both axes, the container's own
+properties, a sibling, an explicit basis, and a magnitude sweep -- **did not
+confirm the finding, it replaced it**: not top, not column, not a collapse, and
+proportional to the child's own size, which is what turns a symptom into a
+mechanism a maintainer can go and look at.
+
+**A report of the first version would have been closed as fixed-for-the-wrong-case
+even by someone who acted on it.** So for anything leaving the machine, the
+question is not _have I checked this_ but **is the matrix as wide as the claim**
+-- and every dimension held fixed while another varies is a dimension the
+conclusion silently asserts.
+
+Its companion is the same demand made of the instrument: a row-direction box in
+a column page stretches across the page's cross axis, so the first measurement
+of two of those rows read the **page's** width rather than the child's effect.
+It was caught because `903` was a recognisable number. **A measurement that
+happens to be a number you know is not a check; ask what the case can produce
+before reading what it did.**
 
 ### A green row is not coverage of a number the case cannot produce
 
