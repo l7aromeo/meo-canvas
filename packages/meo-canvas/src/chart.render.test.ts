@@ -322,3 +322,40 @@ describe('these measurements can fail', () => {
     expect(await share('pie')).toBeGreaterThan(await share('doughnut'))
   })
 })
+
+describe('the label strip centres each label in its slot', () => {
+  // **The case that justifies this whole file.** Both surfaces set
+  // `alignItems: 'center'` on a row, where `align-items` is the cross axis —
+  // so the labels centred vertically and sat against their slots' left edges.
+  // Measured before the fix on a 200-wide chart: ink at x 2 and x 102 where
+  // the slot centres are 50 and 150.
+  //
+  // **No byte comparison could see it**, because both surfaces were wrong in
+  // the same way, and no geometry row covers it. A pixel is the only
+  // instrument that could ever have caught it.
+  it.each([['bar' as ChartType], ['line' as ChartType]])('centres a %s chart s labels', async type => {
+    const page = await shot(200, 120, Chart({ type, fontFamily: 'Fixture', data: cartesian, options: { showLabels: true } } as never))
+    // The strip's own band, below the plot, so bar ink cannot be mistaken for
+    // label ink.
+    const dark = (r: number, g: number, b: number) => r < 90 && g < 90 && b < 90
+    const runs: [number, number][] = []
+    let start: number | null = null
+    for (let x = 0; x <= page.width; x += 1) {
+      let ink = false
+      for (let y = page.height - 12; y < page.height && !ink; y += 1) {
+        const [r, g, b, a] = page.at(Math.min(x, page.width - 1), y)
+        ink = x < page.width && a === 255 && dark(r, g, b)
+      }
+      if (ink && start === null) start = x
+      if (!ink && start !== null) {
+        runs.push([start, x - 1])
+        start = null
+      }
+    }
+    expect(runs).toHaveLength(2)
+    // Two labels across 200 put the slot centres at 50 and 150.
+    for (const [slot, [from, to]] of [50, 150].map((centre, index) => [centre, runs[index] as [number, number]] as const)) {
+      expect(Math.abs((from + to) / 2 - slot)).toBeLessThanOrEqual(3)
+    }
+  })
+})

@@ -1437,6 +1437,18 @@ stopped being, nothing watching.** Prose about the architecture is an assertion
 with no assertion mechanism — so either pin it to something that fails, or
 expect it to rot at exactly the rate the code moves.
 
+**On a surface with no background, ask alpha — a colour test cannot tell
+_nothing_ from _black_.** An unpainted pixel is transparent black: `0, 0, 0, 0`.
+A reader that calls anything dark "ink" therefore counts every pixel that was
+never drawn, and a chart's first render passed three assertions against a page
+containing nothing and a fourth for the wrong reason. **This is worse than a
+threshold being slightly off**, which the day produced several of: there the
+two readings are close, and here **absence and the darkest possible ink are the
+same reading.** So test `a === 255` before testing the colour, or give the page
+an explicit background so that "not drawn" has a value of its own. The same
+trap sits behind `Format::Raw`: the buffer is premultiplied RGBA and its
+transparent regions are zero, not white.
+
 **A correct transform of nothing is nothing, and nothing looks like a bug in
 the transform.** Three failures in one day shared a shape: the mechanism was
 right and the input was empty, and the empty result read as a defect in the
@@ -1520,6 +1532,78 @@ Nothing is excluded from the denominator. A file earns an exclusion by being
 generated rather than written, and the rule when one does is that it is named by
 path in the `coverage` recipe, one path at a time, so the list is reviewable in
 a diff. Code this project implements stays in the denominator.
+
+### What only a second implementation can see
+
+The chart port has three checks and they answer three questions. A geometry
+table says the two surfaces compute the same numbers. A render says the numbers
+put ink where the arithmetic claims. A byte comparison says the two surfaces
+_assemble_ those numbers into the same tree. **Nothing but the third can see a
+tree built wrongly out of right numbers**, and it found three of them in one
+run:
+
+- `with_style` **replaces** a style rather than merging it, so
+  `Column::new().with_style(Style::new().width(…))` discards the
+  `flex-direction: column` the constructor just set. Three of the four sites
+  with that shape were `Row::new()`, where the discarded value is the default
+  and nothing changes — **which is why the pattern reads as fine**. Chart code
+  uses the flat `Styled` setters after a container constructor for this reason.
+- `Iterator::max_by_key` returns the **last** maximum; JavaScript's
+  `reduce` with a strictly-greater test keeps the **first**. A five-division
+  axis ties constantly (`1.6`, `1.2`, `0.8`, `0.4` are all three characters),
+  so the two surfaces sized a gutter from different strings.
+- A doc comment described the axis label as pulled up by half its own height
+  and the code never applied the transform. **The prose was the specification
+  and nothing checked it against the code.**
+
+A rendered check would have asked none of these: the first is invisible where
+a degenerate flex line still fills its parent, the second is a few pixels of
+gutter, and the third moves a label by half a line.
+
+### And what only a pixel can
+
+The converse of the byte comparison's strength is its blind spot: **it can only
+see a disagreement, so a mistake both surfaces make identically is invisible to
+it.** Both wrote `align-items: center` on the label strip's per-slot box —
+which is the _cross_ axis, so each label centred vertically and sat against its
+slot's left edge. On a 200-wide chart the two labels inked at x 2 and x 102
+where the slot centres are 50 and 150.
+
+The bytes matched, because both trees were assembled the same wrong way. No
+geometry row covered it, because the slots' own numbers were right and the
+mistake was in what the box did with them. Only ink could say where the label
+landed. **A cross-surface agreement test measures agreement, not correctness**
+— two ports of one misreading agree perfectly.
+
+The fix moves the pinned bytes, so it lands on both surfaces at once: a
+one-sided change makes the agreement test fail for the right reason at the
+wrong moment, and the next reader diagnoses a port defect.
+
+### A language's convenient default is not the other language's
+
+`Iterator::max_by_key` returns the **last** maximum; JavaScript's `reduce` with
+a strictly-greater test keeps the **first**. Neither is wrong and neither
+surface wrote the rule down, so the two agreed until a tie appeared — and a
+five-division axis ties on every chart. **The same family as the fused
+multiply-add**: an idiom each language reaches for by default, where the
+default differs and nothing in either file says which was meant. Where two
+surfaces must agree, the tie-break is part of the specification.
+
+### A scripted revert needs an assertion that it reverted
+
+Proving a new test catches the bug it was written for means putting the bug
+back. Doing that with a scripted string replacement, where the string had since
+been reformatted onto one line by `just fmt`, replaced nothing — and the test
+passed, which read exactly like a test that could not discriminate. **A revert
+script asserts that its target was found**, the same rule as any other
+instrument that can quietly say nothing.
+
+And it needs the file to look changed. Restoring from a copy taken _before_ the
+edit gives the restored file the older copy's timestamp, so cargo judges its
+artifact fresh and the test runs against the binary built from the bug — which
+reads as a fix that did not take. `touch` the file, or restore by writing it
+rather than moving one over it. **The stale-artifact trap, manufactured by the
+revert mechanism itself.**
 
 ## Before publishing
 

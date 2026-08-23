@@ -473,6 +473,19 @@ function barChart(props: ChartProps<'bar'>): SceneNode {
           return Box({
             flexGrow: 1,
             flexBasis: 0,
+            // **`justifyContent`, not `alignItems`.** A slot is a row, and
+            // `align-items` is the CROSS axis — so `alignItems: 'center'`
+            // centres the label vertically and does nothing horizontally,
+            // leaving it against the slot's left edge. v1 draws these with
+            // `textAlign: 'center'` under each point, and Chrome centres text
+            // under a point the same way. Measured before the fix: on a
+            // 200-wide chart the two labels inked at x 2 and x 102 where the
+            // slot centres are 50 and 150.
+            //
+            // **No byte comparison could see this**, because both surfaces had
+            // it wrong in the same way, and no geometry row covers it. Only a
+            // pixel could — which is the case that justifies the render tests.
+            justifyContent: 'center',
             alignItems: 'center',
             children:
               drawn ??
@@ -709,6 +722,19 @@ function lineChart(props: ChartProps<'line'>): SceneNode {
           return Box({
             flexGrow: 1,
             flexBasis: 0,
+            // **`justifyContent`, not `alignItems`.** A slot is a row, and
+            // `align-items` is the CROSS axis — so `alignItems: 'center'`
+            // centres the label vertically and does nothing horizontally,
+            // leaving it against the slot's left edge. v1 draws these with
+            // `textAlign: 'center'` under each point, and Chrome centres text
+            // under a point the same way. Measured before the fix: on a
+            // 200-wide chart the two labels inked at x 2 and x 102 where the
+            // slot centres are 50 and 150.
+            //
+            // **No byte comparison could see this**, because both surfaces had
+            // it wrong in the same way, and no geometry row covers it. Only a
+            // pixel could — which is the case that justifies the render tests.
+            justifyContent: 'center',
             alignItems: 'center',
             children:
               drawn ??

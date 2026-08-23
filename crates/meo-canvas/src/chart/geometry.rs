@@ -207,3 +207,86 @@ pub fn slice_path(start: f64, end: f64, outer: f64, inner: f64) -> String {
         at(inner, start)
     )
 }
+
+/// The space a line plot is drawn in.
+///
+/// A hundred by a hundred **stretched** rather than fitted: a line plot must
+/// fill its box, and `meet` would letterbox it. The numbers are arbitrary --
+/// only the ratios in the path matter, since each axis is scaled onto the node
+/// independently.
+pub const LINE_SPACE: f64 = 100.0;
+
+/// One point of a line series, as fractions of the plot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    /// Distance from the plot's left edge.
+    pub x: f64,
+    /// Distance from the plot's top edge.
+    pub y: f64,
+}
+
+/// Where each point of a line series sits.
+///
+/// **Points span edge to edge where bars are centred in slots.** v1 divides by
+/// `labels - 1` here and by `labels` there, so the first and last points sit
+/// on the plot's edges rather than inset. **A single label has no span to
+/// divide**, so v1 divides by one and the point sits at the left edge.
+#[must_use]
+pub fn line_points(
+    labels: usize,
+    values: &[f64],
+    max_value: f64,
+) -> Vec<Point> {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a label count past 2^53 is not a chart"
+    )]
+    let spacing = if labels > 1 {
+        1.0 / (labels - 1) as f64
+    } else {
+        1.0
+    };
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "as the count above"
+            )]
+            let index = index as f64;
+            Point {
+                x: index * spacing,
+                // A zero maximum has no share to take, and every point sits on
+                // the floor rather than at `NaN` -- the same reason a zero
+                // maximum gives a bar no height.
+                y: if max_value == 0.0 {
+                    1.0
+                } else {
+                    1.0 - value / max_value
+                },
+            }
+        })
+        .collect()
+}
+
+/// One series as SVG path data, in the line plot's own hundred-unit space.
+///
+/// **The string is matched, not the numbers**, for the reason
+/// [`slice_path`] gives.
+#[must_use]
+pub fn line_path(points: &[Point]) -> String {
+    points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let command = if index == 0 { "M" } else { "L" };
+            format!(
+                "{command} {:.4} {:.4}",
+                point.x * LINE_SPACE,
+                point.y * LINE_SPACE
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}

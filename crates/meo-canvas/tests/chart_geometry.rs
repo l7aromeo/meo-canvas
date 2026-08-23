@@ -20,8 +20,8 @@
 //! same either way.
 
 use meo_canvas::chart::geometry::{
-    BAR_GROUP_SPACING, Bar, GRID_DIVISIONS, bar_layout, grid_lines,
-    series_color, slice_angles, slice_path,
+    BAR_GROUP_SPACING, Bar, GRID_DIVISIONS, bar_layout, grid_lines, line_path,
+    line_points, series_color, slice_angles, slice_path,
 };
 
 /// The rows, generated from `chart.ts`.
@@ -172,4 +172,51 @@ fn parse_values(text: &str) -> Vec<f64> {
         .filter(|piece| !piece.is_empty())
         .map(|piece| piece.trim().parse().unwrap_or(0.0))
         .collect()
+}
+
+/// `labels [values] max` as the three things a line row carries.
+fn line_case(args: &str) -> (usize, Vec<f64>, f64) {
+    let open = args.find('[').unwrap_or(0);
+    let close = args.rfind(']').unwrap_or(0);
+    (
+        args[..open].trim().parse().unwrap_or(0),
+        parse_values(&args[open..=close]),
+        args[close + 1..].trim().parse().unwrap_or(0.0),
+    )
+}
+
+#[test]
+fn line_points_span_the_plot_the_way_the_other_surface_spans_it() {
+    let mut checked = 0;
+    for (args, expected) in rows("linePoints") {
+        let (labels, values, max) = line_case(args);
+        let ours = line_points(labels, &values, max)
+            .into_iter()
+            .map(|point| format!("{:.9},{:.9}", point.x, point.y))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(ours, expected, "linePoints({args})");
+        checked += 1;
+    }
+    assert!(checked >= 5, "only {checked} line-point rows");
+}
+
+#[test]
+fn a_line_is_the_same_path_string_on_both_surfaces() {
+    for (args, expected) in rows("linePath") {
+        let (labels, values, max) = line_case(args);
+        let ours = line_path(&line_points(labels, &values, max));
+        assert_eq!(ours, expected, "linePath({args})");
+    }
+}
+
+#[test]
+fn a_single_label_puts_its_point_at_the_left_edge() {
+    // The case that divides by `labels - 1` everywhere else and would divide
+    // by zero here. v1 divides by one instead, so the point sits at the left
+    // edge rather than at `NaN` -- and a chart of one reading is a real thing
+    // to ask for.
+    let points = line_points(1, &[5.0], 5.0);
+    assert_eq!(points.len(), 1);
+    assert!(points[0].x.abs() < f64::EPSILON, "x is {}", points[0].x);
 }

@@ -84,6 +84,30 @@ impl Element {
     /// wants to layer styles composes them before calling this — and a merge
     /// would make the order of two calls significant in a way the chain does
     /// not suggest.
+    ///
+    /// # What it replaces includes what the constructor set
+    ///
+    /// [`Column::new`] is `Box` plus `flex-direction: column`, and a
+    /// `with_style` that does not restate the direction **discards it** —
+    /// leaving a row. The same is true of [`Grid::new`]'s `display` and of
+    /// every other constructor that sets a property.
+    ///
+    /// ```
+    /// use meo_canvas::{Column, FlexDirection, Style, Styled, pct};
+    ///
+    /// // Lays its children out in a ROW: the style replaced the direction.
+    /// let lost = Column::new().with_style(Style::new().width(pct(100.0)));
+    ///
+    /// // Either restate it, or use the flat setters, which do not replace.
+    /// let kept = Column::new()
+    ///     .with_style(Style::new().width(pct(100.0)))
+    ///     .flex_direction(FlexDirection::Column);
+    /// let simpler = Column::new().width(pct(100.0));
+    /// ```
+    ///
+    /// **`Row::new()` is the benign case** — `FlexDirection::Row` is the
+    /// default, so discarding it changes nothing, which is what lets the
+    /// shape read as fine wherever it appears.
     #[must_use]
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
@@ -637,6 +661,32 @@ impl Element {
     ) -> Self {
         if let NodeKind::Path { view_box, .. } = &mut self.kind {
             *view_box = view;
+        }
+        self
+    }
+
+    /// Whether a path with a `view_box` may be stretched to fill its node.
+    ///
+    /// SVG's `preserveAspectRatio`, and only its `none` value: `false` is the
+    /// default `xMidYMid meet`, which fits the drawing without distorting it,
+    /// and `true` scales each axis independently so it fills the node exactly.
+    ///
+    /// **It does not distort the pen**, for the reason
+    /// [`view_box`](Self::view_box) gives -- so a circle authored in a
+    /// stretched box comes out an ellipse while its stroke stays even.
+    ///
+    /// ```
+    /// use meo_canvas::Path;
+    ///
+    /// // A line plot fills its box rather than being letterboxed into it.
+    /// let plot = Path::d("M 0 100 L 100 0")
+    ///     .view_box(Some((0.0, 0.0, 100.0, 100.0)))
+    ///     .stretch(true);
+    /// ```
+    #[must_use]
+    pub const fn stretch(mut self, stretched: bool) -> Self {
+        if let NodeKind::Path { stretch, .. } = &mut self.kind {
+            *stretch = stretched;
         }
         self
     }

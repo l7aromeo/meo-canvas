@@ -403,6 +403,21 @@ describe('the legend', () => {
     expect(chart.children?.map(child => child.name)).toEqual(order)
   })
 
+  // `legend` and `framed` are shared by all four kinds, so they cannot draw
+  // wrongly for one of them — but a kind can fail to **call** them, and every
+  // other test in this block asks a bar. One line per kind is the only thing
+  // that can see it.
+  it.each([
+    ['bar', cartesian],
+    ['line', cartesian],
+    ['pie', pie],
+    ['doughnut', pie],
+  ] as const)('reaches a %s chart at all', (type, data) => {
+    const chart = Chart({ type, data, options: { showLegend: true } } as never)
+    expect(find(chart, 'legend')).toBeDefined()
+    expect(findAll(chart, name => name.startsWith('legend item')).length).toBeGreaterThan(0)
+  })
+
   it('wraps across rows when it is not upright', () => {
     const chart = Chart({ type: 'bar', data: cartesian, options: { showLegend: true, legendPosition: 'bottom' } })
     expect(find(chart, 'legend')?.style?.flexWrap).toBe('wrap')

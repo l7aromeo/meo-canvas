@@ -14,13 +14,17 @@
               Agreement is the objective here, as in `chart::geometry`."
 )]
 
-use meo_canvas_scene::style::{Dimension, paint::Color};
+use meo_canvas_scene::{
+    Length,
+    style::{Dimension, effect::Transform, paint::Color},
+};
 
 use crate::{
-    Align, Box as BoxElement, Column, Element, Error, Overflow, PositionType,
-    Row, Style, Text,
-    chart::geometry::{
-        Bar, GRID_DIVISIONS, bar_layout, grid_lines, series_color,
+    Align, Box as BoxElement, Column, Element, Error, Justify, Overflow,
+    PositionType, Row, Style, Styled, Text,
+    chart::{
+        frame::{LegendPosition, framed, legend},
+        geometry::{Bar, GRID_DIVISIONS, bar_layout, grid_lines, series_color},
     },
     pct, px,
     unit::sides,
@@ -47,7 +51,18 @@ pub struct Grid {
 }
 
 /// What every chart understands, as v1 spells it.
+///
+/// **Four `show_` flags, because v1 and the TypeScript surface have four.**
+/// Grouping them into an enum or a bitflag would make a caller port their
+/// options object rather than spell it, and the two surfaces would then name
+/// the same switch differently -- which is the thing the byte comparison is
+/// there to catch.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "an option bag mirroring the other surface's, one field per \
+              switch it has"
+)]
 pub struct Options {
     /// Draw the strip of labels under the plot.
     pub show_labels: bool,
@@ -55,6 +70,10 @@ pub struct Options {
     pub show_values: bool,
     /// Draw the y-axis gutter.
     pub show_y_axis: bool,
+    /// Draw the legend.
+    pub show_legend: bool,
+    /// Which side the legend sits on. Below the plot when unset, as v1 does.
+    pub legend_position: LegendPosition,
     /// The grid behind the plot.
     pub grid: Grid,
     /// Point size for the labels under the plot.
@@ -114,13 +133,17 @@ pub fn bar(
         body.push(label_strip(labels, options));
     }
 
-    Ok(Column::new()
-        .name("bar chart")
-        .with_style(Style::new().width(pct(100.0)).height(pct(100.0)))
-        .children([Column::new()
-            .name("body")
-            .with_style(Style::new().flex_grow(1.0))
-            .children(body)]))
+    Ok(framed(
+        options,
+        // Flat setters rather than `with_style`, which replaces the whole
+        // style and would discard the `flex-direction: column` that
+        // `Column::new` just set -- laying the body and the label strip out
+        // side by side. Caught by the cross-surface byte comparison, which is
+        // the only one of the three checks that could see it.
+        Column::new().name("body").flex_grow(1.0).children(body),
+        legend(options, &series_labels(datasets)),
+        "bar chart",
+    ))
 }
 
 /// One bar, placed by percentage and anchored to the plot's floor.
@@ -195,7 +218,7 @@ fn value_label(value: f64, options: &Options) -> Element {
 }
 
 /// The strip of labels under the plot, one equal share each.
-fn label_strip(labels: &[String], options: &Options) -> Element {
+pub(crate) fn label_strip(labels: &[String], options: &Options) -> Element {
     Row::new().name("labels").children(
         labels
             .iter()
@@ -205,6 +228,15 @@ fn label_strip(labels: &[String], options: &Options) -> Element {
                         Style::new()
                             .flex_grow(1.0)
                             .flex_basis(Dimension::Points(0.0))
+                            // **`justify_content` is the one that centres a
+                            // label under its slot.** The strip is a row, so
+                            // `align_items` is the cross axis and centres it
+                            // vertically -- which is what both surfaces had,
+                            // and it left every label against the left edge
+                            // of its slot where v1 draws it centred. Neither
+                            // the byte comparison nor a geometry row could
+                            // see it: the two surfaces made the same mistake.
+                            .justify_content(Justify::Center)
                             .align_items(Align::Center),
                     )
                     .children([text(
@@ -230,7 +262,11 @@ fn label_strip(labels: &[String], options: &Options) -> Element {
 /// widest label, which sets the width and draws nothing, and the visible
 /// labels absolutely positioned at their gridline fractions and pulled up by
 /// half their own height.
-fn plot_area(options: &Options, max_value: f64, bars: Vec<Element>) -> Element {
+pub(crate) fn plot_area(
+    options: &Options,
+    max_value: f64,
+    bars: Vec<Element>,
+) -> Element {
     let mut inside = grid(options);
     inside.extend(bars);
     let plot = BoxElement::new()
@@ -256,9 +292,20 @@ fn plot_area(options: &Options, max_value: f64, bars: Vec<Element>) -> Element {
     // one thing a builder cannot do. A proportional face can make a shorter
     // string wider -- `111` against `00` -- so this is a heuristic, and the
     // sizer is why it only has to be close.
+    // **The first of the widest, not the last.** `max_by_key` returns the
+    // last maximum where the TypeScript side's scan keeps the first, and a
+    // five-division axis ties constantly -- `1.6`, `1.2`, `0.8` and `0.4` are
+    // all three characters. The two surfaces then size the gutter from
+    // different strings, which a proportional face makes a different width.
+    // Found by the byte comparison; no rendered check would have asked.
     let widest = labels
         .iter()
-        .max_by_key(|label| label.chars().count())
+        .fold(None::<&String>, |best, label| match best {
+            Some(held) if held.chars().count() >= label.chars().count() => {
+                Some(held)
+            }
+            _ => Some(label),
+        })
         .cloned()
         .unwrap_or_default();
     let colour = options.y_axis_color.or(options.axis_color);
@@ -291,7 +338,15 @@ fn plot_area(options: &Options, max_value: f64, bars: Vec<Element>) -> Element {
                             None,
                             None,
                             Some(px(0.0)),
-                        )),
+                        ))
+                        // Pulled up by half its own height, so the label
+                        // centres on its gridline rather than hanging from
+                        // it. The doc above always said this and the code did
+                        // not -- the byte comparison is what noticed.
+                        .transform(Transform {
+                            translate_y: Length::Percent(-0.5),
+                            ..Transform::default()
+                        }),
                 )
                 .children([text(
                     label,
@@ -302,16 +357,13 @@ fn plot_area(options: &Options, max_value: f64, bars: Vec<Element>) -> Element {
         );
     }
 
-    Row::new()
-        .name("plot area")
-        .with_style(Style::new().flex_grow(1.0))
-        .children([
-            Column::new()
-                .name("y axis")
-                .with_style(Style::new().position_type(PositionType::Relative))
-                .children(gutter),
-            plot,
-        ])
+    Row::new().name("plot area").flex_grow(1.0).children([
+        Column::new()
+            .name("y axis")
+            .position_type(PositionType::Relative)
+            .children(gutter),
+        plot,
+    ])
 }
 
 /// The gridlines behind the plot, or nothing.
@@ -352,7 +404,7 @@ fn grid(options: &Options) -> Vec<Element> {
 }
 
 /// A piece of chart text in the chart's own family, size and colour.
-fn text(
+pub(crate) fn text(
     content: &str,
     options: &Options,
     size: Option<f32>,
@@ -373,4 +425,23 @@ fn format_number(value: f64) -> String {
     let rounded = (value * 100.0).round() / 100.0;
     let text = format!("{rounded}");
     text
+}
+
+/// What the legend calls each series, and in what colour.
+///
+/// **Shared by the two cartesian kinds**, which name their series the same
+/// way: `Series 1`, `Series 2` and so on where a dataset gives no label.
+pub(crate) fn series_labels(datasets: &[Dataset]) -> Vec<(String, String)> {
+    datasets
+        .iter()
+        .enumerate()
+        .map(|(index, set)| {
+            (
+                set.label
+                    .clone()
+                    .unwrap_or_else(|| format!("Series {}", index + 1)),
+                series_color(index, set.color.as_deref()),
+            )
+        })
+        .collect()
 }
