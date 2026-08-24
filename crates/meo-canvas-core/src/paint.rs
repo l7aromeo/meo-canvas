@@ -4332,6 +4332,21 @@ mod tests {
         /// cell** -- no cell reaches 7, which is what a doubled composite
         /// would give. One mark at one alpha, not two halves.
         ///
+        /// # The digit scale, because two conventions read as two renderers
+        ///
+        /// **Every grid here is `round(alpha * 9 / 255)`, and so is this
+        /// printer.** It was `alpha * 9 / 255` truncated for one afternoon,
+        /// and against the same rounded grids ours read `.489984.` where
+        /// Chrome read `.599995.` -- a whole cell out at every rim pixel,
+        /// from a renderer that agreed exactly. **Truncation loses a digit
+        /// wherever coverage is just under a step**, which at a mark's
+        /// antialiased rim is most of it.
+        ///
+        /// So: compare a grid only against one written in the same
+        /// convention, and say which convention it is. `254` is `9` here and
+        /// `8` under truncation, and nothing in the picture says which you
+        /// are looking at.
+        ///
         /// `cargo test -p meo-canvas-core --lib corner_grid -- --ignored
         /// --nocapture`
         #[test]
