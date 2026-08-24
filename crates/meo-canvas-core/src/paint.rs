@@ -4552,135 +4552,155 @@ mod tests {
         fn arc_walk() {
             for (radius, width) in [(8.0_f32, 4.0_f32), (6.0, 4.0), (5.0, 4.0)]
             {
-                let mut scene = Scene::new(Size::new(240.0, 48.0));
-                if let Some(root) = scene.get_mut(NodeId::ROOT) {
-                    root.paint.background_color = Color::rgb(255, 255, 255);
-                }
-                let id = scene
-                    .push(NodeId::ROOT, Node::new(NodeKind::Box))
-                    .unwrap_or_else(|error| unreachable!("{error}"));
-                if let Some(node) = scene.get_mut(id) {
-                    node.layout.size =
-                        (Dimension::Points(240.0), Dimension::Points(48.0));
-                    node.layout.border = Sides::all(width);
-                    node.paint.background_color = Color::rgb(255, 255, 255);
-                    node.paint.border_color_all = Color::rgb(0, 0, 0);
-                    node.paint.border_style = BorderStyle::Dashed;
-                    node.paint.border_radius = Corners::all(radius);
-                }
-                let (stride, pixels) = render(&scene);
+                let (stride, pixels) = dashed_box(radius, width);
+                let (quarter, first, runs) =
+                    walk_quarter(&pixels, stride, radius, width);
+                eprintln!(
+                    "r{radius} w{width}  quarter={quarter:.1} \
+                     first-ink@{first}  {}",
+                    runs.join(" ")
+                );
+                eprintln!(
+                    "        straight  {}",
+                    straight_runs(&pixels, stride, radius, width).join(" ")
+                );
+            }
+        }
 
-                let along = (radius - width / 2.0).max(0.0);
-                let quarter = std::f32::consts::FRAC_PI_2 * along;
-                let (cx, cy) = (radius, radius);
-                let steps = 600_i32;
-                let mut runs: Vec<String> = Vec::new();
-                let mut ink: Option<bool> = None;
-                let mut start = 0_i32;
-                let mut first: Option<String> = None;
-                for step in 0..=steps {
-                    #[expect(
-                        clippy::cast_precision_loss,
-                        reason = "six hundred steps"
-                    )]
-                    let fraction = step as f32 / steps as f32;
-                    let angle = std::f32::consts::PI
-                        + fraction * std::f32::consts::FRAC_PI_2;
-                    #[expect(
-                        clippy::cast_possible_truncation,
-                        clippy::cast_sign_loss,
-                        reason = "inside a 240x48 page"
-                    )]
-                    let (px, py) = (
-                        along.mul_add(angle.cos(), cx).floor() as usize,
-                        along.mul_add(angle.sin(), cy).floor() as usize,
-                    );
-                    let here = pixels[((py * stride) + px) * 4] < 128;
-                    let Some(was) = ink else {
-                        ink = Some(here);
-                        if here {
-                            first = Some("0".to_owned());
-                        }
-                        continue;
-                    };
-                    if here != was {
-                        #[expect(
-                            clippy::cast_precision_loss,
-                            reason = "six hundred steps"
-                        )]
-                        let length =
-                            ((step - start) as f32 / steps as f32) * quarter;
-                        runs.push(format!(
-                            "{}:{length:.1}",
-                            if was { "on" } else { "off" }
-                        ));
-                        if here && first.is_none() {
-                            #[expect(
-                                clippy::cast_precision_loss,
-                                reason = "six hundred steps"
-                            )]
-                            let at = (step as f32 / steps as f32) * quarter;
-                            first = Some(format!("{at:.1}"));
-                        }
-                        ink = Some(here);
-                        start = step;
-                    }
-                }
+        /// A dashed box with a radius, on white, as `(stride, RGBA)`.
+        fn dashed_box(radius: f32, width: f32) -> (usize, Vec<u8>) {
+            let mut scene = Scene::new(Size::new(240.0, 48.0));
+            if let Some(root) = scene.get_mut(NodeId::ROOT) {
+                root.paint.background_color = Color::rgb(255, 255, 255);
+            }
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(240.0), Dimension::Points(48.0));
+                node.layout.border = Sides::all(width);
+                node.paint.background_color = Color::rgb(255, 255, 255);
+                node.paint.border_color_all = Color::rgb(0, 0, 0);
+                node.paint.border_style = BorderStyle::Dashed;
+                node.paint.border_radius = Corners::all(radius);
+            }
+            render(&scene)
+        }
+
+        /// The top-left quarter's runs, from the LEFT tangent to the top.
+        ///
+        /// Returns `(quarter length, where ink starts, the runs)`.
+        fn walk_quarter(
+            pixels: &[u8],
+            stride: usize,
+            radius: f32,
+            width: f32,
+        ) -> (f32, String, Vec<String>) {
+            let along = (radius - width / 2.0).max(0.0);
+            let quarter = std::f32::consts::FRAC_PI_2 * along;
+            let steps = 600_i32;
+            let mut runs: Vec<String> = Vec::new();
+            let mut ink: Option<bool> = None;
+            let mut start = 0_i32;
+            let mut first: Option<String> = None;
+            let length = |from: i32, to: i32| {
                 #[expect(
                     clippy::cast_precision_loss,
                     reason = "six hundred steps"
                 )]
-                let tail = ((steps - start) as f32 / steps as f32) * quarter;
-                runs.push(format!(
-                    "{}:{tail:.1}",
-                    if ink == Some(true) { "on" } else { "off" }
-                ));
-                eprintln!(
-                    "r{radius} w{width}  quarter={quarter:.1} \
-                     first-ink@{}  {}",
-                    first.unwrap_or_else(|| "-".to_owned()),
-                    runs.join(" ")
-                );
-
-                // **The same box's straight run, for the comparison that
-                // needs no browser.** If the arc and the side disagree here,
-                // the disagreement is inside one renderer and cannot be a
-                // window, a threshold or a convention.
+                let span = (to - from) as f32 / steps as f32;
+                span * quarter
+            };
+            for step in 0..=steps {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "six hundred steps"
+                )]
+                let fraction = step as f32 / steps as f32;
+                let angle = fraction
+                    .mul_add(std::f32::consts::FRAC_PI_2, std::f32::consts::PI);
                 #[expect(
                     clippy::cast_possible_truncation,
                     clippy::cast_sign_loss,
-                    reason = "a radius and width of a few pixels"
+                    reason = "inside a 240x48 page"
                 )]
-                let (from, to, row) = (
-                    radius as usize,
-                    240 - radius as usize,
-                    (width / 2.0) as usize,
+                let (px, py) = (
+                    along.mul_add(angle.cos(), radius).floor() as usize,
+                    along.mul_add(angle.sin(), radius).floor() as usize,
                 );
-                let mut side: Vec<String> = Vec::new();
-                let mut lit = pixels[((row * stride) + from) * 4] < 128;
-                let mut run_start = from;
-                for x in from..to {
-                    let here = pixels[((row * stride) + x) * 4] < 128;
-                    if here != lit {
-                        side.push(format!(
-                            "{}:{}",
-                            if lit { "on" } else { "off" },
-                            x - run_start
-                        ));
-                        lit = here;
-                        run_start = x;
+                let here = pixels[((py * stride) + px) * 4] < 128;
+                let Some(was) = ink else {
+                    ink = Some(here);
+                    if here {
+                        first = Some("0".to_owned());
                     }
+                    continue;
+                };
+                if here != was {
+                    runs.push(format!(
+                        "{}:{:.1}",
+                        if was { "on" } else { "off" },
+                        length(start, step)
+                    ));
+                    if here && first.is_none() {
+                        first = Some(format!("{:.1}", length(0, step)));
+                    }
+                    ink = Some(here);
+                    start = step;
                 }
-                side.push(format!(
-                    "{}:{}",
-                    if lit { "on" } else { "off" },
-                    to - run_start
-                ));
-                eprintln!(
-                    "        straight  {}",
-                    side[..9.min(side.len())].join(" ")
-                );
             }
+            runs.push(format!(
+                "{}:{:.1}",
+                if ink == Some(true) { "on" } else { "off" },
+                length(start, steps)
+            ));
+            (quarter, first.unwrap_or_else(|| "-".to_owned()), runs)
+        }
+
+        /// The same box's straight run, for the comparison that needs no
+        /// browser.
+        ///
+        /// If the arc and the side disagree here, the disagreement is inside
+        /// one renderer and cannot be a window, a threshold or a convention.
+        fn straight_runs(
+            pixels: &[u8],
+            stride: usize,
+            radius: f32,
+            width: f32,
+        ) -> Vec<String> {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a radius and width of a few pixels"
+            )]
+            let (from, to, row) = (
+                radius as usize,
+                240 - radius as usize,
+                (width / 2.0) as usize,
+            );
+            let mut runs: Vec<String> = Vec::new();
+            let mut lit = pixels[((row * stride) + from) * 4] < 128;
+            let mut start = from;
+            for x in from..to {
+                let here = pixels[((row * stride) + x) * 4] < 128;
+                if here != lit {
+                    runs.push(format!(
+                        "{}:{}",
+                        if lit { "on" } else { "off" },
+                        x - start
+                    ));
+                    lit = here;
+                    start = x;
+                }
+            }
+            runs.push(format!(
+                "{}:{}",
+                if lit { "on" } else { "off" },
+                to - start
+            ));
+            runs.truncate(9);
+            runs
         }
 
         /// Prints the curved corner of a dashed border, against Chrome's.
