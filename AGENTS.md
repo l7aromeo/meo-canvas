@@ -940,6 +940,22 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**Point an instrument at a known value before trusting it on an unknown one.**
+Four instruments produced confident wrong answers in a single day: two colour
+detectors that measured their own thresholds, a line-box marker that grew the
+box it was measuring, and a grep over a truncated log that reported no tests had
+run. **Care did not separate them and neither did plausibility** -- "no tests
+ran" looked wrong enough to check twice, "the strip is 246 tall" did not, and a
+plausibility check passes exactly the instruments that are subtly wrong.
+
+What works is cheap and mechanical: **run the instrument over values already
+known and check it reproduces them.** The line-box table is the worked example.
+Measuring `line-height: 1` meant measuring three rows that were already pinned;
+the marker reproduced two and gave `11.0` where the third says `8.0`, which
+exposed the marker rather than the pin. **The table validated the measurer
+before the measurer extended the table.** Without those three rows the fourth
+would have been a plausible number from a broken instrument.
+
 **A measurement taken through a boundary that truncates it reports the
 boundary, and it reports it as a success.** The showcase card was measured at
 `903 x 679` against a reference's `679.5` and read as agreement to within half a
