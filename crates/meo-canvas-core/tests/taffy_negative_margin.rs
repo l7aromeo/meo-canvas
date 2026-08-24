@@ -59,19 +59,37 @@
 //! the notification.** That is the whole reason it exists -- the defect is
 //! otherwise silent, because a caller sees a missing subtree and no error.
 //!
-//! Reproduced against taffy `0.13.0` and against `main` at `88125ce`, in
-//! twenty lines of taffy with no code of ours in the picture. Not fixed
-//! upstream: the changelog's only unreleased negative-margin entry is for
-//! block and float layout, and issue #706 -- negative margins in flexbox,
-//! closed -- reports sibling sizing and padding, mentions neither
-//! `flex-shrink` nor a container resolving to zero.
+//! Reproduced against taffy `0.13.0` in twenty lines of taffy with no code of
+//! ours in the picture.
 //!
-//! **Filed upstream as <https://github.com/DioxusLabs/taffy/issues/1151>.**
-//! The report carries this mechanism, the six conditions above, and a
-//! fourteen-row table against Chrome. It is the other half of this test: the
-//! test notices the fix, the issue asks for it. When the issue closes, check
-//! that this test fails before deleting it -- a close for any other reason
-//! leaves the defect here.
+//! # Upstream: filed, fixed, and not yet released
+//!
+//! **Filed as <https://github.com/DioxusLabs/taffy/issues/1151>, closed, and
+//! fixed by PR #1152** -- *Fix intrinsic flex sizing with negative margins*,
+//! merged as `7d31807` (branch head `d680af5`).
+//!
+//! **The fix moves one `max`.** Two expressions were meant to be the same
+//! quantity and were not: the divisor read
+//! `max(1, flex_shrink * inner_flex_basis)` while the multiplier that undoes
+//! it read `max(1, flex_shrink) * inner_flex_basis`. At `flex_shrink: 0` that
+//! is a divide by `1` against a multiply by the basis, so the margin comes
+//! back scaled by the item's size. The PR makes the divisor
+//! `max(1, flex_shrink) * inner_flex_basis`, matching the multiplier.
+//!
+//! **The expression named in the fix is the one that was removed, so which
+//! side of the `max` the product sits on is the entire bug** -- an earlier
+//! draft of this comment had it the other way round and read as though taffy
+//! had adopted the defect.
+//!
+//! It carries a second change we did not report: with a zero inner flex basis
+//! the corrected divisor yields a negative-infinite fraction, and `0 * -inf`
+//! is `NaN`, so the multiplier is guarded at zero to hold the intrinsic
+//! container size a WPT tentative test depends on.
+//!
+//! **We are on `0.13.0` and the fix is not in it**, so every pin below still
+//! holds. **They fail on the upgrade, which is the point** -- and the earlier
+//! instruction stands with a sharper reason now: a close is not a release, so
+//! check that this test actually fails before deleting it.
 
 use taffy::prelude::{
     AvailableSpace, Display, FlexDirection, Rect, Size, Style, TaffyTree, auto,
@@ -81,6 +99,10 @@ use taffy::prelude::{
 /// The container's resolved height for one `flex-shrink` and one margin.
 fn container_height(shrink: f32, top: f32) -> f32 {
     let mut tree: TaffyTree<()> = TaffyTree::new();
+    // **Without this a fractional row proves nothing**: taffy rounds layout to
+    // whole pixels by default, so Chrome's 499.5 and taffy's 500 would read as
+    // one number and the case would agree by being unable to disagree.
+    tree.disable_rounding();
     let child = tree
         .new_leaf(Style {
             size: Size {
@@ -179,6 +201,120 @@ fn a_negative_margin_is_still_applied_as_a_multiplier() {
             "margin {margin}: taffy now gives {ours} where it gave {taffy} -- \
              if this is Chrome's {chrome}, the defect is fixed and this test \
              has done its job"
+        );
+    }
+}
+
+/// The container's height with a **growing** child.
+///
+/// Separate from [`container_height`] because it measures a different defect:
+/// the same tree with `flex_grow` added.
+fn grown_container_height(grow: f32, shrink: f32, top: f32) -> f32 {
+    let mut tree: TaffyTree<()> = TaffyTree::new();
+    tree.disable_rounding();
+    let child = tree
+        .new_leaf(Style {
+            size: Size {
+                width: length(476.0),
+                height: length(500.0),
+            },
+            flex_grow: grow,
+            flex_shrink: shrink,
+            margin: Rect {
+                left: length(0.0),
+                right: length(0.0),
+                top: length(top),
+                bottom: length(0.0),
+            },
+            ..Style::default()
+        })
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let container = tree
+        .new_with_children(
+            Style {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                size: Size {
+                    width: length(903.0),
+                    height: auto(),
+                },
+                ..Style::default()
+            },
+            &[child],
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    tree.compute_layout(
+        container,
+        Size {
+            width: AvailableSpace::Definite(903.0),
+            height: AvailableSpace::MaxContent,
+        },
+    )
+    .unwrap_or_else(|error| unreachable!("{error}"));
+    tree.layout(container)
+        .unwrap_or_else(|error| unreachable!("{error}"))
+        .size
+        .height
+}
+
+#[test]
+fn a_growing_child_has_its_negative_margin_ignored_instead() {
+    // **A second defect, and not the one above.** With `flex-grow: 1` the
+    // negative margin is dropped rather than over-applied: the container comes
+    // out the child's size, margin excluded.
+    //
+    // Two properties separate it from the multiply, and both are why it earns
+    // its own pin rather than a row in the other test:
+    //
+    // - **It does not scale with the margin.** `-24` and `-0.5` both give 500,
+    //   where proportionality was the multiply's entire signature.
+    // - **`flex-shrink` is irrelevant.** The `shrink: 1` row is correct
+    //   *without* grow and wrong *with* it, so this is not the same trigger
+    //   wearing another hat.
+    //
+    // **Chrome measured by MC Main today through Playwright**: parent
+    // `display: flex; flex-direction: column; width: 903px; height: auto;
+    // align-items: flex-start`, child `476x500`, reading the parent's
+    // `getBoundingClientRect().height`. **The taffy values are this test's
+    // own**, and MC Main measured the same on released `0.13.0` and on PR head
+    // `d680af5` -- identical on both, so **this is pre-existing and not a
+    // regression from #1152**.
+    //
+    // **Not filed upstream.**
+    for (grow, shrink, margin, taffy, chrome) in [
+        (1.0_f32, 0.0_f32, -24.0_f32, 500.0_f32, 476.0_f32),
+        (1.0, 0.0, -0.5, 500.0, 499.5),
+        (1.0, 1.0, -24.0, 500.0, 476.0),
+    ] {
+        let ours = grown_container_height(grow, shrink, margin);
+        assert!(
+            (ours - taffy).abs() < 0.01,
+            "grow {grow}, shrink {shrink}, margin {margin}: taffy now gives \
+             {ours} where it gave {taffy} -- if this is Chrome's {chrome}, the \
+             defect is fixed and this test has done its job"
+        );
+    }
+}
+
+#[test]
+fn the_same_rows_without_growing_are_not_wrong() {
+    // The control. Each row above has a counterpart here that taffy gets
+    // right, so the grow rows cannot be explained by the margin being wrong in
+    // this tree generally. **The `shrink: 1` pair is the sharp one**: correct
+    // without grow, wrong with it.
+    //
+    // Chrome's `child + margin` in every row, which is the rule MC Main's
+    // seventeen-row table found and which these three sit inside.
+    for (shrink, margin, chrome) in [
+        (1.0_f32, -24.0_f32, 476.0_f32),
+        (1.0, -0.5, 499.5),
+        (1.0, 0.0, 500.0),
+    ] {
+        let ours = grown_container_height(0.0, shrink, margin);
+        assert!(
+            (ours - chrome).abs() < 0.01,
+            "grow 0, shrink {shrink}, margin {margin}: taffy {ours}, Chrome \
+             {chrome} -- this row is supposed to agree"
         );
     }
 }
