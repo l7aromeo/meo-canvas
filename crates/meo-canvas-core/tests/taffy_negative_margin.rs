@@ -61,10 +61,17 @@
 //!
 //! Reproduced against taffy `0.13.0` and against `main` at `88125ce`, in
 //! twenty lines of taffy with no code of ours in the picture. Not fixed
-//! upstream and not filed: the changelog's only unreleased negative-margin
-//! entry is for block and float layout, and issue #706 -- negative margins in
-//! flexbox, closed -- reports sibling sizing and padding, mentions neither
+//! upstream: the changelog's only unreleased negative-margin entry is for
+//! block and float layout, and issue #706 -- negative margins in flexbox,
+//! closed -- reports sibling sizing and padding, mentions neither
 //! `flex-shrink` nor a container resolving to zero.
+//!
+//! **Filed upstream as <https://github.com/DioxusLabs/taffy/issues/1151>.**
+//! The report carries this mechanism, the six conditions above, and a
+//! fourteen-row table against Chrome. It is the other half of this test: the
+//! test notices the fix, the issue asks for it. When the issue closes, check
+//! that this test fails before deleting it -- a close for any other reason
+//! leaves the defect here.
 
 use taffy::prelude::{
     AvailableSpace, Display, FlexDirection, Rect, Size, Style, TaffyTree, auto,
