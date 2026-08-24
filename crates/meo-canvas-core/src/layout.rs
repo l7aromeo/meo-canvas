@@ -185,9 +185,11 @@ where
                 baselines.insert(node, baseline);
             }
 
+            // Measured text is a used length like any other, so it enters
+            // the grid at the same boundary the styled lengths do.
             taffy::Size {
-                width: measured.size.width,
-                height: measured.size.height,
+                width: snapped(measured.size.width),
+                height: snapped(measured.size.height),
             }
         },
     )
@@ -598,10 +600,14 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
             bottom: to_length(layout.padding.bottom),
         },
         border: taffy::Rect {
-            left: taffy::LengthPercentage::length(layout.border.left),
-            right: taffy::LengthPercentage::length(layout.border.right),
-            top: taffy::LengthPercentage::length(layout.border.top),
-            bottom: taffy::LengthPercentage::length(layout.border.bottom),
+            left: taffy::LengthPercentage::length(snapped(layout.border.left)),
+            right: taffy::LengthPercentage::length(snapped(
+                layout.border.right,
+            )),
+            top: taffy::LengthPercentage::length(snapped(layout.border.top)),
+            bottom: taffy::LengthPercentage::length(snapped(
+                layout.border.bottom,
+            )),
         },
 
         align_items: layout.align_items.map(to_align_items),
@@ -708,7 +714,7 @@ const fn to_overflow(overflow: Overflow) -> taffy::Overflow {
 /// browser draws: a static child given `top: 30px; left: 30px` sits at its flow
 /// position in a block, a flex and a grid container alike -- the container's
 /// layout mode does not enter into it, which is why this reads only the child.
-const fn to_taffy_inset(
+fn to_taffy_inset(
     layout: &LayoutStyle,
 ) -> taffy::Rect<taffy::LengthPercentageAuto> {
     if matches!(layout.position_type, PositionType::Static) {
@@ -822,28 +828,69 @@ const fn to_justify(justify: Justify) -> taffy::JustifyContent {
     }
 }
 
-const fn to_length(length: Length) -> taffy::LengthPercentage {
+/// Chrome's layout grid: a length is held in sixty-fourths of a pixel.
+///
+/// # Why the snap happens here rather than at the end
+///
+/// **Chrome snaps a used length into this grid once and then accumulates the
+/// snapped values exactly.** We accumulated the exact values and rounded the
+/// total, and the two part company only when an accumulated coordinate lands
+/// on a half: five boxes of `10.3` sum to exactly `51.5` and a tie rounds up,
+/// where Chrome snaps to `10.296875` first, reaches `51.484375`, and rounds
+/// down. **Chrome never sees the tie, because the snap has already nudged the
+/// value below it.**
+///
+/// So the fix is not to round differently at the end -- that only moves which
+/// inputs are wrong -- but to **snap before accumulating, so the tie never
+/// forms.**
+///
+/// # Floor rather than round
+///
+/// `10.3 x 64` is `659.2`, and Chrome's `10.296875` is `659 / 64`. Floor and
+/// round agree there and part on a value whose sixty-fourths land at or past a
+/// half; the browser's own conversion is `LayoutUnit`, which truncates toward
+/// negative infinity. **Every case measured against Chrome so far agrees with
+/// the floor**, and a value that would tell them apart is named in
+/// `rounding_drift.rs` as the thing to measure if this is ever in doubt.
+const LAYOUT_GRID: f32 = 64.0;
+
+/// One length, snapped into [`LAYOUT_GRID`].
+///
+/// Percentages are not snapped: they resolve against a containing block this
+/// stage has not computed yet, and Chrome snaps the **resolved** value.
+/// Snapping the fraction would quantise a ratio rather than a length.
+fn snapped(points: f32) -> f32 {
+    if points.is_finite() {
+        (points * LAYOUT_GRID).floor() / LAYOUT_GRID
+    } else {
+        points
+    }
+}
+
+fn to_length(length: Length) -> taffy::LengthPercentage {
     match length {
-        Length::Points(points) => taffy::LengthPercentage::length(points),
+        Length::Points(points) => {
+            taffy::LengthPercentage::length(snapped(points))
+        }
         Length::Percent(fraction) => taffy::LengthPercentage::percent(fraction),
     }
 }
 
-const fn to_dimension(dimension: Dimension) -> taffy::Dimension {
+fn to_dimension(dimension: Dimension) -> taffy::Dimension {
     match dimension {
         Dimension::Auto => taffy::Dimension::auto(),
-        Dimension::Points(points) => taffy::Dimension::length(points),
+        Dimension::Points(points) => taffy::Dimension::length(snapped(points)),
         Dimension::Percent(fraction) => taffy::Dimension::percent(fraction),
     }
 }
 
 /// A margin, where `auto` is CSS's free-space-absorbing margin rather than an
 /// absent value.
-const fn to_margin(dimension: Dimension) -> taffy::LengthPercentageAuto {
+fn to_margin(dimension: Dimension) -> taffy::LengthPercentageAuto {
     match dimension {
         Dimension::Auto => taffy::LengthPercentageAuto::auto(),
         Dimension::Points(points) => {
-            taffy::LengthPercentageAuto::length(points)
+            taffy::LengthPercentageAuto::length(snapped(points))
         }
         Dimension::Percent(fraction) => {
             taffy::LengthPercentageAuto::percent(fraction)
@@ -853,11 +900,11 @@ const fn to_margin(dimension: Dimension) -> taffy::LengthPercentageAuto {
 
 /// One `inset` edge, where absence is `auto` -- the edge taffy is free to place
 /// rather than an edge pinned at zero.
-const fn to_inset(inset: Option<Length>) -> taffy::LengthPercentageAuto {
+fn to_inset(inset: Option<Length>) -> taffy::LengthPercentageAuto {
     match inset {
         None => taffy::LengthPercentageAuto::auto(),
         Some(Length::Points(points)) => {
-            taffy::LengthPercentageAuto::length(points)
+            taffy::LengthPercentageAuto::length(snapped(points))
         }
         Some(Length::Percent(fraction)) => {
             taffy::LengthPercentageAuto::percent(fraction)
@@ -918,6 +965,57 @@ fn to_placement(placement: GridPlacement) -> taffy::Line<taffy::GridPlacement> {
 
 #[cfg(test)]
 mod tests {
+    use super::snapped;
+
+    /// Chrome's grid: sixty-fourths of a CSS pixel.
+    const GRID: f32 = 64.0;
+
+    #[test]
+    fn a_length_is_truncated_into_sixty_fourths_rather_than_rounded() {
+        // **Here rather than in `tests/rounding_drift.rs` because the snap is
+        // the only place the fractional grid is observable, and it is not
+        // public.** taffy rounds the solved tree to whole pixels, so nothing
+        // outside this crate can read a sixty-fourth back: a box of
+        // `10.0234375` is `10` in a `LayoutResult` and `10.015625` in
+        // `getBoundingClientRect`, and **those are not the same measurement**
+        // -- a painted edge against a layout rect. Asserting one against the
+        // other reads exactly like a defect and is a category error.
+        //
+        // Chrome measured by MC Main through Playwright,
+        // `getBoundingClientRect().height` on a single box, `box-sizing:
+        // border-box`, margins and padding zeroed.
+        //
+        // **`10.0234375` is the row that settles the rule**: exactly `641.5`
+        // sixty-fourths, an exact tie, and Chrome takes `641`. Not half-up,
+        // not half-even -- **truncation, which no rounding mode reproduces.**
+        // One row excluding every mode at once.
+        //
+        // `7.999` floors to `7.984375` where any rounding gives a clean `8`,
+        // so a reader who suspects the snap is cosmetic can see that it is
+        // not. The last three agree under either rule and are here as the
+        // control: they are what the accumulation tests in `rounding_drift`
+        // rest on, and **they cannot tell floor from round**, which is why
+        // the three above them exist.
+        for (length, chrome) in [
+            (10.008_f32, 10.0_f32),
+            (10.023_437_5, 10.015_625),
+            (7.999, 7.984_375),
+            (10.02, 10.015_625),
+            (3.3, 3.296_875),
+            (10.3, 10.296_875),
+        ] {
+            let ours = snapped(length);
+            assert!(
+                (ours - chrome).abs() < f32::EPSILON,
+                "{length} snaps to {ours} where Chrome makes it {chrome}"
+            );
+            assert!(
+                (ours * GRID).fract().abs() < f32::EPSILON,
+                "{ours} is not a whole number of sixty-fourths"
+            );
+        }
+    }
+
     use meo_canvas_scene::{
         Point, Scene, Sides, Size,
         node::{Node, NodeId},

@@ -1,36 +1,61 @@
-//! Whether whole-pixel layout rounding accumulates down a stack.
+//! Where our layout edges land, against Chrome's, down a stack.
 //!
-//! # The question
+//! # What this used to be, and why it changed
 //!
-//! taffy rounds every box to whole pixels; **Chrome rounds none.** It works in
-//! sixty-fourths of a pixel, floors each line box into that grid and sums, and
-//! never rounds the total -- `16px x 1.4` over three lines is `67.171875`
-//! against our `67`. So any box with a fractional computed size is a whole
-//! pixel here and a sixty-fourth there.
-//!
-//! The worry that follows is accumulation: **a column of ten fractional boxes
-//! drifting a little further from Chrome at every step**, until the bottom of
-//! the stack is somewhere visibly wrong.
-//!
-//! # It does not accumulate, and the reason is the formula
-//!
-//! `round_layout` (`taffy-0.13.0/src/compute/mod.rs:219`) does not round a
-//! box's *size*. It rounds the **cumulative absolute coordinate** of each edge
-//! and takes the difference:
+//! It asked whether whole-pixel rounding **accumulates**. It does not:
+//! `round_layout` (`taffy-0.13.0/src/compute/mod.rs:219`) rounds the
+//! **cumulative absolute coordinate** of each edge and takes the difference,
 //!
 //! ```text
 //! size.height = round(cumulative_y + height) - round(cumulative_y)
 //! ```
 //!
-//! So every edge in the tree lands on `round(its exact position)`, **and an
-//! edge that is the rounding of an exact value is within half a pixel of it by
-//! definition** -- at depth one and at depth a thousand. The per-box heights
-//! wobble between `floor` and `ceil` of the exact height, and the wobble is
-//! what *keeps* the edges true rather than what accumulates.
+//! so every edge is `round(its exact position)` and is within half a pixel of
+//! it by definition, at depth one and at depth a thousand. **The per-box
+//! heights wobble and the wobble is what keeps the edges true.** That answer
+//! still holds and the last test here still asserts it.
 //!
-//! **The individual boxes are what look wrong; the stack is what stays
-//! right.** That is the opposite of the intuition the question started from,
-//! and it is why this file measures the bottom edge rather than the heights.
+//! **What changed is that half a pixel was not good enough.** Chrome's layout
+//! is fractional: it snaps a used length into sixty-fourths of a pixel and
+//! accumulates the snapped values exactly. We accumulated the exact values, so
+//! wherever a running coordinate landed on a half we rounded up and Chrome --
+//! having already been nudged below the half by the snap -- rounded down. One
+//! whole CSS pixel, at that edge and nowhere else.
+//!
+//! `layout::snapped` now puts every length into the same grid before anything
+//! accumulates, **so the tie never forms**, and this file pins the result
+//! against the browser rather than against a tolerance.
+//!
+//! # Chrome floors, and one row proves it is truncation
+//!
+//! Measured by MC Main through Playwright: `getBoundingClientRect().height` on
+//! a single box of the stated height and on a column of five, `box-sizing:
+//! border-box`, margins and padding zeroed.
+//!
+//! | height | floor | round | Chrome | x5 | |
+//! |---|---|---|---|---|---|
+//! | `10.008` | `10` | `10.015625` | `10` | `50` | floor |
+//! | `10.0234375` | `10.015625` | `10.03125` | `10.015625` | `50.078125` | floor |
+//! | `7.999` | `7.984375` | `8` | `7.984375` | `39.921875` | floor |
+//! | `10.02` | `10.015625` | `10.015625` | `10.015625` | `50.078125` | agree |
+//! | `3.3` | `3.296875` | `3.296875` | `3.296875` | `16.484375` | agree |
+//! | `10.3` | `10.296875` | `10.296875` | `10.296875` | `51.484375` | agree |
+//!
+//! **`10.0234375` is the row that settles it**, and it settles more than the
+//! question asked. It is exactly `641.5` sixty-fourths -- a tie -- and Chrome
+//! takes `641`. So it is not floor against round-half-up, and not banker's
+//! either: **it is truncation, and no rounding mode reproduces it.**
+//!
+//! Those rows are asserted in `layout.rs`'s own test module rather than here,
+//! **because the snap is the only place the grid is observable and it is not
+//! public.** taffy rounds the solved tree to whole pixels, so nothing this
+//! file can reach carries a sixty-fourth: a box of `10.0234375` is `10` here
+//! and `10.015625` in `getBoundingClientRect`, and **those are not the same
+//! measurement** -- a painted edge against a layout rect. This file asserts
+//! the painted edges, which is the comparison that holds.
+//!
+//! The `x5` column is not decoration: it shows the snapped value accumulating
+//! five times with no second rounding, which is the property the fix rests on.
 
 use meo_canvas_core::{
     layout,
@@ -47,8 +72,8 @@ use meo_canvas_scene::{
 /// box rounds down and a naive sum of rounded heights would fall behind fast.
 const STEP: f32 = 10.3;
 
-/// The bottom edge of a stack of `count` boxes each `STEP` tall.
-fn stack_bottom(count: usize) -> f32 {
+/// The bottom edge of a stack of `count` boxes each `step` tall.
+fn stack_bottom(step: f32, count: usize) -> f32 {
     let mut scene = Scene::new(Size::new(50.0, 4000.0));
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
         page.layout.flex_direction = FlexDirection::Column;
@@ -60,7 +85,7 @@ fn stack_bottom(count: usize) -> f32 {
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(last) {
             node.layout.size =
-                (Dimension::Points(50.0), Dimension::Points(STEP));
+                (Dimension::Points(50.0), Dimension::Points(step));
         }
     }
 
@@ -78,56 +103,53 @@ fn stack_bottom(count: usize) -> f32 {
 }
 
 #[test]
-fn a_stack_of_fractional_boxes_does_not_drift() {
-    // The claim, at four depths: the bottom of the stack is the rounding of
-    // where it exactly belongs, so the error is bounded by half a pixel and
-    // does not grow with the count.
-    for count in [1_usize, 2, 10, 100] {
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a hundred boxes is exactly representable"
-        )]
-        let exact = STEP * count as f32;
-        let ours = stack_bottom(count);
+fn every_edge_of_a_fractional_stack_is_chromes() {
+    // **Values, not a tolerance.** The tolerance this file used to assert --
+    // half a pixel -- was satisfied exactly by the one edge that was wrong,
+    // and satisfied identically by the right answer once it was fixed: with
+    // an exact position of 51.5, both 52 and 51 are half a pixel away. **An
+    // assertion on a magnitude cannot tell a defect from its fix when the two
+    // sit the same distance from the truth.**
+    //
+    // Chrome, from the table above: 10.3 snaps to 10.296875, and five of them
+    // reach 51.484375, which rounds to 51. Before the snap we summed 51.5
+    // exactly and a tie rounds up, giving 52.
+    let chrome = [10, 21, 31, 41, 51, 62, 72, 82];
+    for (index, want) in chrome.into_iter().enumerate() {
+        let count = index + 1;
+        let ours = stack_bottom(STEP, count);
         assert!(
-            (ours - exact).abs() <= 0.5,
-            "at depth {count} the stack ends at {ours} where exactly {exact} \
-             is right -- the rounding is accumulating"
+            (ours - f64::from(want) as f32).abs() < f32::EPSILON,
+            "edge {count} is at {ours} where Chrome puts it at {want}"
         );
     }
 }
 
 #[test]
-fn the_worst_edge_is_pinned_rather_than_bounded() {
-    // **A bound satisfied exactly by the worst case cannot see the worst
-    // case.** The assertion above allows half a pixel and edge five is
-    // exactly half a pixel out -- it passes, and it is the one edge where we
-    // disagree with Chrome by a whole pixel. So the worst case is pinned as a
-    // value here: a change that moves it fails in either direction, where the
-    // inequality only fails in one and only past the point that matters.
+fn five_snapped_boxes_accumulate_without_a_second_rounding() {
+    // The `x5` column, and the property the fix rests on: snap once, then
+    // add. **Our edge is Chrome's fraction rounded**, because taffy rounds the
+    // tree and Chrome's paint rounds each edge too -- the comparison is
+    // painted edge against painted edge, which is the one place the two are
+    // the same measurement.
     //
-    // Why that edge: five boxes of 10.3 sum to exactly 51.5, and a tie rounds
-    // up. Chrome snaps the length into sixty-fourths first, reaches 51.484375
-    // and rounds down -- **it never sees a tie, because the snap has already
-    // nudged the value below it.**
-    let mut worst = (0_usize, 0.0_f32);
-    for count in 1..=8_usize {
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "eight boxes is exactly representable"
-        )]
-        let exact = STEP * count as f32;
-        let error = (stack_bottom(count) - exact).abs();
-        if error > worst.1 {
-            worst = (count, error);
-        }
+    // A second rounding anywhere inside the accumulation would show here as a
+    // whole pixel.
+    for (height, chrome_five) in [
+        (10.008_f32, 50.0_f32),
+        (10.023_437_5, 50.078_125),
+        (7.999, 39.921_875),
+        (3.3, 16.484_375),
+        (STEP, 51.484_375),
+    ] {
+        let ours = stack_bottom(height, 5);
+        let rounded = chrome_five.round();
+        assert!(
+            (ours - rounded).abs() < f32::EPSILON,
+            "five boxes of {height} reach {ours} where Chrome's \
+             {chrome_five} rounds to {rounded}"
+        );
     }
-    assert_eq!(worst.0, 5, "the tie moved off edge five, to {}", worst.0);
-    assert!(
-        (worst.1 - 0.5).abs() < f32::EPSILON,
-        "the worst edge is {} out rather than exactly half a pixel",
-        worst.1
-    );
 }
 
 #[test]

@@ -504,8 +504,9 @@ question exists because a released signature said otherwise. And test it on
 where the fallback and a real baseline differ -- **a fixture that passes before
 and after an upgrade has not tested the upgrade.**
 
-**Whole-pixel rounding against Chrome's sixty-fourths: measured, characterised,
-not opened.**
+**Whole-pixel rounding against Chrome's sixty-fourths: closed.** Kept in full
+because the measurement is what makes the fix checkable, and because two of the
+three candidate fixes were wrong for reasons worth not re-deriving.
 
 **Layout and paint are different stages and the claim differs between them.**
 Chrome's _layout_ is fractional -- it snaps a length into sixty-fourths once and
@@ -536,17 +537,31 @@ below it.** Six of the seven edges agree to the integer. In `f32` the
 representation error cancels rather than pushing past the boundary, so the tie
 is real in our arithmetic and not an artefact of checking it in doubles.
 
-**The fix, named so nobody starts from the wrong one: snap each length into
-sixty-fourths before accumulating**, so the tie never forms. **Not** _round
-differently_ -- rounding is not where the two part -- and **not** _disable
-taffy's rounding_, which was costed twice and was wrong both times: turning it
-off makes adjacent boxes meet on fractions and antialias against each other,
-trading a bounded difference for a visible one at every shared edge.
+**The fix, and it is in: snap each length into sixty-fourths before
+accumulating**, so the tie never forms. **Not** _round differently_ -- rounding
+is not where the two part -- and **not** _disable taffy's rounding_, which was
+costed twice and was wrong both times: turning it off makes adjacent boxes meet
+on fractions and antialias against each other, trading a bounded difference for
+a visible one at every shared edge.
 
-**Unknowns, stated rather than discovered later**: it is a quantisation applied
-to every length entering layout; percentages and `auto` are unconsidered; and it
-moves every fixture in the tree. A third option nobody has costed is to **solve
-in device pixels and paint 1:1**, which puts the rounding on the device grid and
+**Chrome truncates rather than rounds, and that is measured rather than
+assumed.** `floor(x * 64) / 64`, applied at every boundary where a length enters
+taffy -- sizes, min and max, flex basis, margins, insets, padding, borders, gaps,
+and the measured text size, which is a used length like any other. The value
+that settles it is `10.0234375`: exactly `641.5` sixty-fourths, an exact tie, and
+Chrome takes `641`. **A tie excludes every rounding mode at once** where
+`10.008` and `7.999` each exclude only one. All eight edges of the `10.3` stack
+now agree, edge five having been `52` against Chrome's `51`.
+
+**Percentages are deliberately not snapped**: they resolve against a containing
+block this stage has not computed, and Chrome snaps the _resolved_ value, so
+snapping the fraction would quantise a ratio.
+
+**What the unknowns turned out to be.** Percentages are answered above. **It
+moved no fixture at all** -- 517 passed with nothing changed -- and that is not
+the reassurance it reads as: the pin watching this very edge was sign-blind, so
+the tree could not see the fix. See the entry below. A third option nobody has
+costed is to **solve in device pixels and paint 1:1**, which puts the rounding on the device grid and
 keeps the seam-free property. `LAYOUT_SCALE`'s note argues against solving at a
 device scale because paint would round a second time; **that rules out the
 version where both happen**, and which one its author meant is not recorded.
@@ -924,6 +939,34 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 ### What a check can and cannot see
 
 Each of these cost a bug or most of a day to learn.
+
+**A comparison between two different kinds of number fails, and the failure
+reads as a defect.** This file already says layout and paint are different
+stages. The trap is what happens when you forget: a test asserting our box
+against Chrome's `getBoundingClientRect` compares a **painted edge** to a
+**layout rect**, and it fails. For a minute that reads as the snap not working,
+because a failing assertion that is really a category error looks exactly like a
+failing assertion. taffy rounds the solved tree to whole pixels, so a
+`LayoutResult` cannot carry a sixty-fourth at all -- the snap is observable only
+at the snap. **Before believing a failure, check that the two sides are the same
+kind of measurement.**
+
+**A test that needs a private item made public is asking the wrong question of
+the wrong layer.** `snapped` was made `pub` so an integration test could reach
+it, and `lib.rs` has `pub mod layout`, so that was not a testing affordance --
+it was permanent public API of a published crate, decided as a side effect of
+writing a test. The crate's own `#[cfg(test)] mod tests` could already see it.
+Moving the test inward cost nothing and the public surface was unchanged.
+**Widening a surface is a decision that deserves its own argument**, and the
+argument is never "a test needed a door".
+
+**A type is a claim that the code cannot contradict.** `renderLegendItem` was
+declared in `BaseChartOptions` and read nowhere -- two occurrences, a doc
+mention and the declaration. A caller could pass it and it silently did nothing.
+A doc comment describing a transform the code never applies can be caught by
+reading the two together; **a declared option with no reader has nothing to read
+against it**, so nothing but a second implementation honouring it could find it.
+This is the strongest argument for the two-surface rule in the file.
 
 **An assertion on a magnitude cannot tell a defect from its fix when both sit
 the same distance from the truth.** `rounding_drift.rs` was written to watch the
