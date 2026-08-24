@@ -940,6 +940,22 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**When two of your own instruments disagree, run the doubted one over the
+reference, where the answer is known.** Our straight run read `on:8 off:4` and
+our arc read `off:3.1` on the same box in the same renderer -- an internal
+disagreement, but read by two different instruments: a pixel scan along a row
+against a six-hundred-step walk with each sample floored to a pixel. **A walk
+could plausibly under-report a gap for reasons having nothing to do with what
+was drawn.** What settled it was running the same walk over Chrome: it
+reproduces a gap of 4 as `4.1`, `4.2`, `4.7` when the renderer draws 4, so it
+does not systematically shrink gaps, so ours reading `3.1` is the drawing.
+
+**That is the reference calibrating the comparison rather than being compared
+against**, and it is the same rule as measuring already-pinned rows before
+extending a table -- the known value simply happened to live in the other
+engine. A second renderer is worth having for this on days when it agrees with
+us about everything.
+
 **Point an instrument at a known value before trusting it on an unknown one.**
 Four instruments produced confident wrong answers in a single day: two colour
 detectors that measured their own thresholds, a line-box marker that grew the
