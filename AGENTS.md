@@ -940,6 +940,22 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**A check has to be as wide as the claim it supports, and "wide" has more than
+one axis.** Two gates went red in one evening on commits whose verification had
+been called sufficient, and the two gaps were different in kind. **`cargo test
+--lib` compiles `cfg(test)` code without linting it** -- clippy reaches test code
+only with `--all-targets` -- so a green test run says nothing about whether a
+test module lints. And **`cargo clippy --workspace --all-targets` stops at the
+workspace edge**: `examples/rust` is its own workspace, so `lint-check` runs a
+second invocation with `--manifest-path examples/rust/Cargo.toml`, and only the
+gate runs both.
+
+The second one also falsified the sentence it was committed under. A public API
+break was recorded as reaching "no consumer" because nothing is published --
+**but `examples/rust` exists precisely to be a consumer of the published
+surface**, which its own manifest says. The repository had arranged to catch the
+mistake and the claim talked past the arrangement.
+
 **A `want` column in a repro is arithmetic until somebody measures it.** A
 fifty-line reproduction printed `want 68.0` beside eight configurations, and
 that number was its author's expectation derived from the spec. It became a
