@@ -168,6 +168,26 @@ const CASES = [
       }),
   },
   {
+    // **The fourth frame branch, and the only one nothing compared.** `left`,
+    // `top` and `bottom` each ride on a kind above; `right` rode on nothing,
+    // and bar carries no legend at all. Deliberately the **same** chart as the
+    // line case with one property changed, so a disagreement here is the
+    // branch and cannot be the data.
+    //
+    // Verified to render before it was pinned, rather than pinned because it
+    // was missing: with no legend the plot spans 216px, and with the legend
+    // `left` or `right` it spans 176 either way -- symmetric, and the legend
+    // takes its side. It was uncovered, not broken.
+    kind: 'line-legend-right',
+    mark: 'point 0.0',
+    chart: () =>
+      Chart({
+        type: 'line',
+        data: CARTESIAN,
+        options: { ...EVERY_OPTION, legendPosition: 'right' },
+      }),
+  },
+  {
     kind: 'pie',
     mark: 'slice 0',
     chart: () =>

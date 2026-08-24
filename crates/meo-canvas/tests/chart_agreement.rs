@@ -159,6 +159,11 @@ const THEIR_PIE: &str = include_str!("assets/chart/pie-bytes.txt");
 /// As [`THEIR_LINE`], for the doughnut.
 const THEIR_DOUGHNUT: &str = include_str!("assets/chart/doughnut-bytes.txt");
 
+/// The same line chart with the legend on the right, which is the one frame
+/// branch no other case reaches.
+const THEIR_LINE_RIGHT: &str =
+    include_str!("assets/chart/line-legend-right-bytes.txt");
+
 /// Every option switched on, and a legend on a stated side.
 ///
 /// **A default is a branch neither surface takes**, so a case that leaves one
@@ -265,26 +270,60 @@ fn agrees(name: &str, ours: &[u8], theirs: &str) {
     );
 }
 
+/// The three labels and two series both cartesian cases draw.
+///
+/// Shared rather than written twice, because the legend-position case exists to
+/// isolate **one property**: if the data could differ, a disagreement there
+/// would have two possible causes and the case would stop being about the
+/// branch.
+fn cartesian() -> ([String; 3], [Dataset; 2]) {
+    (
+        ["a".to_owned(), "b".to_owned(), "c".to_owned()],
+        [
+            Dataset {
+                label: Some("Sales".to_owned()),
+                color: Some("#3366cc".to_owned()),
+                data: vec![1.0, 3.0, 2.0],
+            },
+            Dataset {
+                label: None,
+                color: None,
+                data: vec![3.0, 1.0, 2.0],
+            },
+        ],
+    )
+}
+
 #[test]
 fn both_surfaces_encode_the_same_line_chart() {
-    let labels = ["a".to_owned(), "b".to_owned(), "c".to_owned()];
-    let datasets = [
-        Dataset {
-            label: Some("Sales".to_owned()),
-            color: Some("#3366cc".to_owned()),
-            data: vec![1.0, 3.0, 2.0],
-        },
-        Dataset {
-            label: None,
-            color: None,
-            data: vec![3.0, 1.0, 2.0],
-        },
-    ];
+    let (labels, datasets) = cartesian();
     let chart = line(&labels, &datasets, &everything(LegendPosition::Left))
         .unwrap_or_else(|error| {
             unreachable!("the chart did not build: {error}")
         });
     agrees("line chart", &encoded(chart), THEIR_LINE);
+}
+
+/// The fourth frame branch, which nothing compared until this case.
+///
+/// `framed` sends `Left` and `Right` down its `Row` arm and `Top` and `Bottom`
+/// down its `Column` arm, and picks the child order from the same match. Three
+/// of the four positions ride on a kind above; **`Right` rode on nothing**, and
+/// the bar case carries no legend at all.
+///
+/// **Checked to render before it was pinned.** On the TypeScript surface a
+/// 240-wide bar chart's plot spans 216px with no legend and 176px with the
+/// legend at either `left` or `right` -- the same width both ways, with the
+/// legend taking its own side. So the branch was uncovered rather than broken,
+/// and this is a test rather than a fix wearing one.
+#[test]
+fn both_surfaces_encode_the_same_line_chart_with_the_legend_on_the_right() {
+    let (labels, datasets) = cartesian();
+    let chart = line(&labels, &datasets, &everything(LegendPosition::Right))
+        .unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    agrees("line chart", &encoded(chart), THEIR_LINE_RIGHT);
 }
 
 #[test]
