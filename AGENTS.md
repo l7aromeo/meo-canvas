@@ -940,6 +940,25 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**When a comparison changes a container, check whether it changed the children
+too.** A grid holding five cards measured 32 taller than "the same cards in a
+flex row" -- and the row version had also wrapped each card in a `div`. Two
+things changed and the difference was attributed to the one under suspicion. A
+plain wrapper inside the **grid** turned out to fix it just as well, so the
+container was never the variable. **Three separate comparisons failed this way
+in one day**, and each time the arithmetic closed anyway, which is what made
+them survive.
+
+**Reduce from the top when reducing from the bottom keeps failing.** Six
+minimal cases were built to reproduce that 32 and none did -- fixed heights,
+content heights, wrapping text, the container's own `overflow`, border, radius
+and shadow, the grid alone, the grid with the real children. Each failure costs
+a build and says only that one candidate is not sufficient **alone**, so a
+combination can hide from any number of them. **Deleting from a known
+reproduction cannot**: every deletion either preserves the symptom, proving the
+removed part irrelevant, or destroys it, naming a participant. Bottom-up
+searches a space; top-down bisects one.
+
 **When two of your own instruments disagree, run the doubted one over the
 reference, where the answer is known.** Our straight run read `on:8 off:4` and
 our arc read `off:3.1` on the same box in the same renderer -- an internal
