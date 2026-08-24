@@ -1898,6 +1898,115 @@ fn clip_to_edge(
     context.clip(SkiaFillRule::NonZero);
 }
 
+/// Clips to one edge's **territory** rather than to its wedge.
+///
+/// # What differs from [`clip_to_edge`], and why it is a second function
+///
+/// The wedge splits every corner down its mitre so each edge paints its own
+/// half. **This gives each corner to exactly one edge**: an edge owns the
+/// corner it starts at and gives away the one it ends at, so a corner mark is
+/// stroked once rather than as two halves that overlap.
+///
+/// The two are separate because the divided case must not move. Chrome's
+/// two-colour corner reads `0.753` on the diagonal -- two half-covered
+/// antialiased halves -- and that is the right answer wherever the edges
+/// differ. Only a corner between edges that agree reaches this.
+///
+/// # The shape
+///
+/// A rectangle rather than a wedge: from the **outer** line of the previous
+/// side, across this side's own run, to the **inner** line of the next side.
+///
+/// ```text
+/// wedge                     territory
+/// +--------------+          +--------------+
+/// |\            /|          |              |
+/// | \          / |          |              |
+/// +--+--------+--+          +-----------+--+
+/// ```
+///
+/// Drawn once, the mark is exact at any opacity: two halves composite to
+/// `1 - (1 - a)^2` and one mark is `a`. Chrome draws it once at every alpha,
+/// measured at `0.502` for `rgba(0, 0, 0, .5)`.
+fn clip_to_owned_edge(
+    context: &mut Context2D,
+    edge: usize,
+    outer: [(f32, f32); 4],
+    widths: Sides<f32>,
+) {
+    let next = (edge + 1) % outer.len();
+    let (start, end) = (outer[edge], outer[next]);
+    let span = (end.0 - start.0).hypot(end.1 - start.1);
+    if span <= 0.0 {
+        return;
+    }
+    let along = ((end.0 - start.0) / span, (end.1 - start.1) / span);
+    // Into the box, which for a rectangle in this rotation is the previous
+    // side's own direction reversed -- so the owned corner's boundary lies on
+    // that side's outer line and the whole corner square falls inside.
+    let inward = (-along.1, along.0);
+    let widest = widths
+        .top
+        .max(widths.right)
+        .max(widths.bottom)
+        .max(widths.left);
+    // Past the inner edge of the widest side, so the clip never cuts the
+    // stroke it is meant to contain.
+    let depth = widest + 1.0;
+    // The corner this edge gives away: pulled back along its own run by the
+    // next side's width, which is where that side's territory begins.
+    //
+    // **Unless that side draws nothing.** Chrome fills a corner square from
+    // whichever edge is drawn -- measured both ways round, `border-top` alone
+    // and `border-left` alone each fill the whole square with no diagonal --
+    // so handing the corner to an edge of zero width would leave it to
+    // nobody. The start-corner convention only decides between two edges that
+    // both draw.
+    let given = [widths.top, widths.right, widths.bottom, widths.left][next];
+    let handover = if given > 0.0 {
+        (
+            along.0.mul_add(-given, end.0),
+            along.1.mul_add(-given, end.1),
+        )
+    } else {
+        (along.0.mul_add(depth, end.0), along.1.mul_add(depth, end.1))
+    };
+    let deep = |point: (f32, f32)| {
+        (
+            inward.0.mul_add(depth, point.0),
+            inward.1.mul_add(depth, point.1),
+        )
+    };
+    // **The only boundary that may cut anything is the handover.** A clip is
+    // antialiased, so an edge of it lying exactly on the mark's tangent eats
+    // the rim: bounding the territory at the box's outer line dropped the
+    // corner's first row from `5` to `3` against Chrome. So the other three
+    // sides are pushed clear -- outward past the outer line, and back past
+    // the owned corner -- and the rectangle cuts only where this edge's
+    // territory actually ends.
+    let clear = |point: (f32, f32), back: f32| {
+        (
+            along.0.mul_add(back, inward.0.mul_add(-depth, point.0)),
+            along.1.mul_add(back, inward.1.mul_add(-depth, point.1)),
+        )
+    };
+    let outside_start = clear(start, -depth);
+    let outside_handover = clear(handover, 0.0);
+    let far_handover = deep(handover);
+    let far_start = deep((
+        along.0.mul_add(-depth, start.0),
+        along.1.mul_add(-depth, start.1),
+    ));
+
+    context.begin_path();
+    context.move_to(outside_start.0, outside_start.1);
+    context.line_to(outside_handover.0, outside_handover.1);
+    context.line_to(far_handover.0, far_handover.1);
+    context.line_to(far_start.0, far_start.1);
+    context.close_path();
+    context.clip(SkiaFillRule::NonZero);
+}
+
 /// The dash and the gap a dashed border of this width is drawn with.
 ///
 /// **Two regimes, measured in Chrome rather than derived**, at widths 1, 2, 4
@@ -2067,8 +2176,7 @@ fn stroke_broken_border(
     // translucent colour. Chrome draws it once at every opacity, so a
     // translucent square corner is still wrong -- see `#27`, where the mark
     // becomes owned by one edge rather than drawn by both.
-    let undivided =
-        per_side && uniform_edges(paint, widths) && opaque_edges(paint);
+    let undivided = per_side && uniform_edges(paint, widths);
 
     for (edge, (width, colour)) in [
         (widths.top, edge_colors.top),
@@ -2093,7 +2201,9 @@ fn stroke_broken_border(
         // it.** Chrome's own two-colour corner reads `0.753` on the same
         // diagonal, so there the seam is the right answer and removing it
         // would be a second defect rather than a fix.
-        if !undivided {
+        if undivided {
+            clip_to_owned_edge(context, edge, outer_corners, widths);
+        } else {
             clip_to_edge(
                 context,
                 edge,
@@ -2183,27 +2293,6 @@ fn uniform_edges(paint: &PaintStyle, widths: Sides<f32>) -> bool {
         width.to_bits() == first_width.to_bits()
             && colour.unwrap_or(paint.border_color_all) == first
     })
-}
-
-/// Whether every border colour in play is fully opaque.
-///
-/// **Only the per-side branch asks.** There both sides of a corner draw its
-/// mark and it lands on itself: at full opacity that is the same pixel twice
-/// and the result is exact, but through a translucent colour it composites
-/// with itself -- `1 - (1 - a)^2` rather than `a`. Chrome draws the mark once
-/// at every opacity, measured at `0.502` for `rgba(0, 0, 0, .5)`, so doubling
-/// it would be a new defect where leaving the corner divided is the old one.
-///
-/// **Only the per-side branch reaches this**, because the loop branch keeps
-/// its division: a curved corner's diagonal is partial in Chrome by geometry
-/// rather than by seam.
-fn opaque_edges(paint: &PaintStyle) -> bool {
-    let sides = paint.border_color;
-    paint.border_color_all.a == u8::MAX
-        && [sides.top, sides.right, sides.bottom, sides.left]
-            .into_iter()
-            .flatten()
-            .all(|colour| colour.a == u8::MAX)
 }
 
 /// One side of a box that is dashed side by side, and the geometry the two
@@ -4096,6 +4185,63 @@ mod tests {
 
         use crate::{ImageFormat, Renderer, encode::EncodeOptions};
 
+        /// The corner's top-left 8x8, as alpha digits.
+        fn grid(colour: Color) -> Vec<String> {
+            let mut scene = Scene::new(Size::new(60.0, 60.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(60.0), Dimension::Points(60.0));
+                node.layout.border = Sides::all(8.0);
+                node.paint.border_style = BorderStyle::Dotted;
+                node.paint.border_color_all = colour;
+            }
+            let (stride, pixels) = render(&scene);
+            (0..8)
+                .map(|y| {
+                    (0..8)
+                        .map(|x| {
+                            let alpha =
+                                u32::from(pixels[(((y * stride) + x) * 4) + 3]);
+                            // **Rounded, not truncated.** The grid this is
+                            // compared against rounds, and a digit scale read
+                            // one way against a grid written the other differs
+                            // by one at the rim for no reason at all -- two
+                            // conventions, read as two renderers.
+                            if alpha == 0 {
+                                '.'
+                            } else {
+                                char::from(
+                                    b'0' + u8::try_from(
+                                        (alpha * 9 + 127) / 255,
+                                    )
+                                    .unwrap_or(9),
+                                )
+                            }
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+
+        /// Coverage down the corner's diagonal for one colour.
+        fn diagonal_at(colour: Color) -> Vec<f64> {
+            let mut scene = Scene::new(Size::new(60.0, 60.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(60.0), Dimension::Points(60.0));
+                node.layout.border = Sides::all(8.0);
+                node.paint.border_style = BorderStyle::Dotted;
+                node.paint.border_color_all = colour;
+            }
+            read_diagonal(&scene)
+        }
+
         /// Coverage down the corner's diagonal, `(1, 1)` to `(5, 5)`.
         fn diagonal(two_colour: bool, style: BorderStyle) -> Vec<f64> {
             let mut scene = Scene::new(Size::new(60.0, 60.0));
@@ -4123,6 +4269,16 @@ mod tests {
 
         /// Renders one scene and reads the corner diagonal out of it.
         fn read_diagonal(scene: &Scene) -> Vec<f64> {
+            let (stride, pixels) = render(scene);
+            (1..6)
+                .map(|n| {
+                    f64::from(pixels[(((n * stride) + n) * 4) + 3]) / 255.0
+                })
+                .collect()
+        }
+
+        /// One render, as `(stride, RGBA bytes)`.
+        fn render(scene: &Scene) -> (usize, Vec<u8>) {
             let mut renderer = Renderer::new();
             // The two rasterisers do not agree to the byte, and this reads
             // bytes.
@@ -4146,12 +4302,50 @@ mod tests {
             let info = reader
                 .next_frame(&mut pixels)
                 .unwrap_or_else(|error| unreachable!("{error}"));
-            let stride = info.width as usize;
-            (1..6)
-                .map(|n| {
-                    f64::from(pixels[(((n * stride) + n) * 4) + 3]) / 255.0
-                })
-                .collect()
+            pixels.truncate(info.buffer_size());
+            (info.width as usize, pixels)
+        }
+
+        /// Prints the corner as a grid of alpha digits, for eyes.
+        ///
+        /// **A single cell cannot tell a mark drawn in the right dash phase
+        /// from one drawn in the wrong phase at the same coverage.** The
+        /// assertions below read the diagonal; this reads the whole 8x8, and
+        /// it is what a change to the corner's geometry should be compared
+        /// against before and after.
+        ///
+        /// Chrome's own, measured by MC Main -- 60x60, `border: 8px dotted`,
+        /// opaque beside `rgba(0, 0, 0, 0.5)`:
+        ///
+        /// ```text
+        /// .599995.        .245542.
+        /// 59999994        25555552
+        /// 99999999        45555554
+        /// 99999999        45555554
+        /// 99999999        45555554
+        /// 99999999        45555554
+        /// 59999994        25555552
+        /// .599994.        .245442.
+        /// ```
+        ///
+        /// **The translucent grid is the opaque one at half alpha, cell for
+        /// cell** -- no cell reaches 7, which is what a doubled composite
+        /// would give. One mark at one alpha, not two halves.
+        ///
+        /// `cargo test -p meo-canvas-core --lib corner_grid -- --ignored
+        /// --nocapture`
+        #[test]
+        #[ignore = "prints a grid rather than asserting one"]
+        fn corner_grid() {
+            for (name, colour) in [
+                ("opaque", Color::rgb(0, 0, 0)),
+                ("half", Color::rgba(0, 0, 0, 128)),
+            ] {
+                eprintln!("--- {name} ---");
+                for row in grid(colour) {
+                    eprintln!("  {row}");
+                }
+            }
         }
 
         #[test]
@@ -4165,6 +4359,89 @@ mod tests {
                         "{style:?}: the diagonal is {alpha:.3} at {index}, \
                          where Chrome is 1.000 -- the corner is being \
                          divided between two edges that agree"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn a_translucent_corner_is_one_mark_at_one_alpha() {
+            // **The reading that ownership exists for.** Divided, both edges
+            // draw the corner mark and it composites with itself:
+            // `1 - (1 - a)^2`, so a half-alpha border came out at three
+            // quarters down the middle of its own mark. Owned by one edge it
+            // is drawn once and the mark is the source alpha.
+            //
+            // Chrome measured by MC Main: `0.502` for `rgba(0, 0, 0, .5)` on
+            // a square corner, and its whole 8x8 grid is the opaque grid at
+            // half alpha, cell for cell -- **no cell reaches the doubled
+            // value anywhere.**
+            //
+            // Read inside the mark rather than at its rim: the rim is where
+            // our dot and Chrome's differ in size, which is a separate
+            // difference this test is not about.
+            let alpha = diagonal_at(Color::rgba(0, 0, 0, 128));
+            for (index, value) in alpha.into_iter().enumerate().take(4).skip(2)
+            {
+                assert!(
+                    (value - 0.502).abs() < 0.03,
+                    "the diagonal is {value:.3} at {index}, where Chrome is \
+                     0.502 -- a translucent corner is being drawn twice"
+                );
+            }
+        }
+
+        #[test]
+        fn one_drawn_edge_takes_the_whole_corner_square() {
+            // **Both orientations, because a rule that names the drawn edge
+            // in one and not the other would pass a single test.** With only
+            // the top border drawn the corner belongs to no neighbour; with
+            // only the left border drawn the same square belongs to no
+            // neighbour from the other side. Chrome fills it solid either
+            // way, measured by MC Main at `240x48`: ten rows of `9` under
+            // `border-top` alone, ten columns of `9` beside `border-left`
+            // alone, and **no diagonal in either.**
+            //
+            // **This pins agreement, not a fix.** The start-corner
+            // convention would hand such a corner to an edge that draws
+            // nothing -- but the handover is pulled back by *the neighbour's
+            // width*, so a neighbour of zero width pulls it back by nothing
+            // and the corner stays inside the drawn edge's territory. It was
+            // already right, measured before the branch below it existed:
+            // replacing that branch with the unconditional form leaves this
+            // test green.
+            //
+            // So the branch states the rule and this states the behaviour.
+            // **Neither is the other's guard**, and a reader should not read
+            // a passing run here as evidence that the branch works.
+            for (top, left) in [(8.0_f32, 0.0_f32), (0.0, 8.0)] {
+                let mut scene = Scene::new(Size::new(60.0, 60.0));
+                let id = scene
+                    .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                if let Some(node) = scene.get_mut(id) {
+                    node.layout.size =
+                        (Dimension::Points(60.0), Dimension::Points(60.0));
+                    node.layout.border = Sides {
+                        top,
+                        right: 0.0,
+                        bottom: 0.0,
+                        left,
+                    };
+                    node.paint.border_style = BorderStyle::Dashed;
+                    node.paint.border_color_all = Color::rgb(0, 0, 0);
+                }
+                let (stride, pixels) = render(&scene);
+                let inside = |x: usize, y: usize| {
+                    f64::from(pixels[(((y * stride) + x) * 4) + 3]) / 255.0
+                };
+                for (x, y) in [(2_usize, 2_usize), (5, 5), (2, 5), (5, 2)] {
+                    let alpha = inside(x, y);
+                    assert!(
+                        alpha > 0.97,
+                        "top {top}, left {left}: ({x}, {y}) is {alpha:.3} \
+                         where Chrome is solid -- the corner was handed to an \
+                         edge that draws nothing"
                     );
                 }
             }
