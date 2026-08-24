@@ -2054,6 +2054,21 @@ fn stroke_broken_border(
     let edge_colors = paint.border_color;
     let curves = fitted_radii(paint, rect);
     let per_side = fits_per_side(curves, widths);
+    // **Only a square corner.** Where the corner is a straight mitre the
+    // division buys nothing between edges that agree and costs a seam down
+    // the diagonal, so it goes. Where the corner is a curve it is not a seam
+    // at all: the band crosses the diagonal obliquely and Chrome reads
+    // `0.325 0.412 0.439` there, partial by geometry. Removing the division
+    // on the curve drove ours from `0.753` to `1.000` -- **further from
+    // Chrome, not nearer** -- so the loop branch keeps it.
+    //
+    // Opaque only: undivided, both sides draw the corner mark and it lands on
+    // itself, which is exact at full opacity and doubles through a
+    // translucent colour. Chrome draws it once at every opacity, so a
+    // translucent square corner is still wrong -- see `#27`, where the mark
+    // becomes owned by one edge rather than drawn by both.
+    let undivided =
+        per_side && uniform_edges(paint, widths) && opaque_edges(paint);
 
     for (edge, (width, colour)) in [
         (widths.top, edge_colors.top),
@@ -2068,14 +2083,26 @@ fn stroke_broken_border(
             continue;
         }
         context.save();
-        clip_to_edge(
-            context,
-            edge,
-            outer_corners,
-            divisions,
-            radii_at(paint),
-            widths,
-        );
+        // **A corner between two matching edges is not divided**, because
+        // dividing it is what puts a seam down its diagonal: both edges draw
+        // the mark, each clipped to its own half, and two antialiased halves
+        // composite to `1 - (1 - 0.5)^2` rather than to one -- measured at
+        // `0.753` here against Chrome's `1.000`.
+        //
+        // **Where the edges differ the division stays, and the seam with
+        // it.** Chrome's own two-colour corner reads `0.753` on the same
+        // diagonal, so there the seam is the right answer and removing it
+        // would be a second defect rather than a fix.
+        if !undivided {
+            clip_to_edge(
+                context,
+                edge,
+                outer_corners,
+                divisions,
+                radii_at(paint),
+                widths,
+            );
+        }
 
         context.set_line_width(width);
         context.set_stroke_style(to_skia_color(
@@ -2130,6 +2157,53 @@ fn stroke_broken_border(
         path?;
     }
     Ok(())
+}
+
+/// Whether every edge that is drawn shares one colour and one width.
+///
+/// **The condition for leaving a corner undivided.** A division exists to give
+/// each edge its own paint over its own half of the corner; where the two
+/// halves would be painted identically it buys nothing and costs the seam.
+///
+/// A zero-width edge is skipped by the caller and so cannot disagree: a box
+/// with a border on two sides is uniform if those two match.
+fn uniform_edges(paint: &PaintStyle, widths: Sides<f32>) -> bool {
+    let sides = [
+        (widths.top, paint.border_color.top),
+        (widths.right, paint.border_color.right),
+        (widths.bottom, paint.border_color.bottom),
+        (widths.left, paint.border_color.left),
+    ];
+    let mut drawn = sides.into_iter().filter(|(width, _)| *width > 0.0);
+    let Some((first_width, first_colour)) = drawn.next() else {
+        return true;
+    };
+    let first = first_colour.unwrap_or(paint.border_color_all);
+    drawn.all(|(width, colour)| {
+        width.to_bits() == first_width.to_bits()
+            && colour.unwrap_or(paint.border_color_all) == first
+    })
+}
+
+/// Whether every border colour in play is fully opaque.
+///
+/// **Only the per-side branch asks.** There both sides of a corner draw its
+/// mark and it lands on itself: at full opacity that is the same pixel twice
+/// and the result is exact, but through a translucent colour it composites
+/// with itself -- `1 - (1 - a)^2` rather than `a`. Chrome draws the mark once
+/// at every opacity, measured at `0.502` for `rgba(0, 0, 0, .5)`, so doubling
+/// it would be a new defect where leaving the corner divided is the old one.
+///
+/// **Only the per-side branch reaches this**, because the loop branch keeps
+/// its division: a curved corner's diagonal is partial in Chrome by geometry
+/// rather than by seam.
+fn opaque_edges(paint: &PaintStyle) -> bool {
+    let sides = paint.border_color;
+    paint.border_color_all.a == u8::MAX
+        && [sides.top, sides.right, sides.bottom, sides.left]
+            .into_iter()
+            .flatten()
+            .all(|colour| colour.a == u8::MAX)
 }
 
 /// One side of a box that is dashed side by side, and the geometry the two
@@ -3984,6 +4058,137 @@ fn draw_mask(
 
 #[cfg(test)]
 mod tests {
+
+    /// The corner a broken border turns, against Chrome's own alphas.
+    ///
+    /// # The seam, and when it is correct
+    ///
+    /// Each edge of a dashed or dotted border is clipped to its half of the
+    /// corner and strokes through it, so **both edges draw the corner mark and
+    /// each draws half of it.** Two antialiased halves composite source-over
+    /// to `1 - (1 - 0.5)^2`, not to one: a light diagonal down the corner.
+    ///
+    /// **Chrome has that seam too -- exactly when the two edges differ.** Its
+    /// two-colour corner reads `0.753` on the diagonal, ours reads `0.753`,
+    /// and there the seam is the right answer. Its one-colour corner reads
+    /// `1.000` and ours read `0.753`, which was the defect: **a division that
+    /// buys nothing, because both halves would be painted identically.**
+    ///
+    /// So the rule is not *remove the seam* but **do not divide a corner whose
+    /// two edges agree**. Both readings are pinned here, because a fix that
+    /// removed the seam everywhere would pass a test that only checked the
+    /// first.
+    ///
+    /// Chrome measured by MC Main: dotted border, width 8, box 60x60,
+    /// `border-top-color: #ff0000; border-left-color: #0000ff` for the
+    /// two-colour case, through `foreignObject` to canvas and `getImageData`.
+    /// Ours are read from a transparent page, so the alpha channel is the
+    /// coverage with nothing composited under it.
+    mod corner_seam {
+        use meo_canvas_scene::{
+            Scene, Sides, Size,
+            node::{Node, NodeId, NodeKind},
+            style::{
+                Dimension,
+                paint::{BorderStyle, Color},
+            },
+        };
+
+        use crate::{ImageFormat, Renderer, encode::EncodeOptions};
+
+        /// Coverage down the corner's diagonal, `(1, 1)` to `(5, 5)`.
+        fn diagonal(two_colour: bool, style: BorderStyle) -> Vec<f64> {
+            let mut scene = Scene::new(Size::new(60.0, 60.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(60.0), Dimension::Points(60.0));
+                node.layout.border = Sides::all(8.0);
+                node.paint.border_style = style;
+                if two_colour {
+                    node.paint.border_color = Sides {
+                        top: Some(Color::rgb(255, 0, 0)),
+                        right: Some(Color::rgb(255, 0, 0)),
+                        bottom: Some(Color::rgb(0, 0, 255)),
+                        left: Some(Color::rgb(0, 0, 255)),
+                    };
+                } else {
+                    node.paint.border_color_all = Color::rgb(0, 0, 0);
+                }
+            }
+            read_diagonal(&scene)
+        }
+
+        /// Renders one scene and reads the corner diagonal out of it.
+        fn read_diagonal(scene: &Scene) -> Vec<f64> {
+            let mut renderer = Renderer::new();
+            // The two rasterisers do not agree to the byte, and this reads
+            // bytes.
+            renderer.set_gpu(false);
+            let png = renderer
+                .render_to_buffer(
+                    scene,
+                    ImageFormat::Png,
+                    &EncodeOptions::default(),
+                )
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
+            decoder.set_transformations(
+                png::Transformations::normalize_to_color8()
+                    | png::Transformations::ALPHA,
+            );
+            let mut reader = decoder
+                .read_info()
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let mut pixels = vec![0; reader.output_buffer_size().unwrap_or(0)];
+            let info = reader
+                .next_frame(&mut pixels)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let stride = info.width as usize;
+            (1..6)
+                .map(|n| {
+                    f64::from(pixels[(((n * stride) + n) * 4) + 3]) / 255.0
+                })
+                .collect()
+        }
+
+        #[test]
+        fn a_corner_between_matching_edges_is_solid() {
+            for style in [BorderStyle::Dotted, BorderStyle::Dashed] {
+                for (index, alpha) in
+                    diagonal(false, style).into_iter().enumerate()
+                {
+                    assert!(
+                        (alpha - 1.0).abs() < 0.02,
+                        "{style:?}: the diagonal is {alpha:.3} at {index}, \
+                         where Chrome is 1.000 -- the corner is being \
+                         divided between two edges that agree"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn a_corner_between_differing_edges_keeps_chromes_seam() {
+            // **The half of this that a naive fix breaks.** Removing the
+            // division everywhere would make this 1.000 and disagree with
+            // Chrome in the other direction.
+            for style in [BorderStyle::Dotted, BorderStyle::Dashed] {
+                for (index, alpha) in
+                    diagonal(true, style).into_iter().enumerate().skip(1)
+                {
+                    assert!(
+                        (alpha - 0.753).abs() < 0.02,
+                        "{style:?}: the diagonal is {alpha:.3} at {index}, \
+                         where Chrome is 0.753 -- two differing edges each \
+                         paint half of this corner and the seam is real"
+                    );
+                }
+            }
+        }
+    }
 
     /// The transform a `viewBox` produces, checked against SVG's own rule.
     ///
