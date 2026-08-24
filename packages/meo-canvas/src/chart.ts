@@ -273,14 +273,22 @@ export type LegendPosition = 'top' | 'bottom' | 'left' | 'right'
  */
 function legend(
   options: BaseChartOptions | undefined,
-  entries: readonly { label: string; color: string }[],
+  entries: readonly { label: string; color: string; source: ChartDataset | PieChartDataPoint }[],
   fontFamily: string | undefined,
 ): SceneNode | undefined {
   if (!options?.showLegend || entries.length === 0) return undefined
 
   const upright = options.legendPosition === 'left' || options.legendPosition === 'right'
-  const items = entries.map((entry, index) =>
-    Row({
+  const items = entries.map((entry, index) => {
+    // **`renderLegendItem` was declared in `BaseChartOptions` and read
+    // nowhere.** A caller could pass it and it silently did nothing, which is
+    // the same shape as a doc comment describing a transform the code never
+    // applied. Found by giving the Rust surface the option and byte-comparing:
+    // the two trees differed at the legend because one honoured the hatch and
+    // the other ignored it.
+    const drawn = options.renderLegendItem?.({ item: entry.source, index, color: entry.color })
+    if (drawn) return drawn
+    return Row({
       alignItems: 'center',
       gap: LEGEND_GAP,
       margin: upright ? { bottom: LEGEND_GAP } : { right: LEGEND_PADDING },
@@ -293,8 +301,8 @@ function legend(
           color: options.labelColor ?? '#000000',
         }),
       ],
-    }),
-  )
+    })
+  })
 
   return upright ? Column({ name: 'legend', children: items }) : Row({ flexWrap: 'wrap', name: 'legend', children: items })
 }
@@ -512,6 +520,9 @@ function barChart(props: ChartProps<'bar'>): SceneNode {
       datasets.map((dataset, index) => ({
         label: dataset.label ?? `Series ${index + 1}`,
         color: seriesColor(index, dataset.color),
+        // The row carries what it stands for, so a legend hatch can be handed
+        // the series rather than the two strings drawn from it.
+        source: dataset,
       })),
       props.fontFamily,
     ),
@@ -652,6 +663,7 @@ function pieChart(props: ChartProps<'pie' | 'doughnut'>, innerFraction: number):
         // the series name.
         label: `${point.label} (${point.value})`,
         color: seriesColor(index, point.color),
+        source: point,
       })),
       props.fontFamily,
     ),
@@ -802,6 +814,9 @@ function lineChart(props: ChartProps<'line'>): SceneNode {
       datasets.map((dataset, index) => ({
         label: dataset.label ?? `Series ${index + 1}`,
         color: seriesColor(index, dataset.color),
+        // The row carries what it stands for, so a legend hatch can be handed
+        // the series rather than the two strings drawn from it.
+        source: dataset,
       })),
       props.fontFamily,
     ),

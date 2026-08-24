@@ -11,7 +11,10 @@ use meo_canvas_scene::style::{Dimension, paint::Color};
 
 use crate::{
     Align, Box as BoxElement, Column, Element, FlexWrap, Row, Style, Styled,
-    Text, chart::bar::Options, hex_rgb, pct, px, unit::sides,
+    Text,
+    chart::bar::{LegendEntry, LegendItem, Options},
+    hex_rgb, pct, px,
+    unit::sides,
 };
 
 /// v1's swatch: a fifteen-pixel square of the series colour.
@@ -58,7 +61,7 @@ impl LegendPosition {
 /// invisible sibling that still takes a gap.
 pub(crate) fn legend(
     options: &Options,
-    entries: &[(String, String)],
+    entries: &[(String, String, LegendEntry<'_>)],
 ) -> Option<Element> {
     if !options.show_legend || entries.is_empty() {
         return None;
@@ -67,7 +70,22 @@ pub(crate) fn legend(
     let items: Vec<Element> = entries
         .iter()
         .enumerate()
-        .map(|(index, (label, colour))| {
+        .map(|(index, (label, colour, source))| {
+            // A caller drawing the row themselves still gets the resolved
+            // colour, because the palette fallback happened before this point
+            // and they cannot recompute it.
+            if let Some(draw) = options.render_legend_item.as_ref()
+                && let Some(drawn) = draw(LegendItem {
+                    item: match source {
+                        LegendEntry::Series(set) => LegendEntry::Series(set),
+                        LegendEntry::Slice(slice) => LegendEntry::Slice(slice),
+                    },
+                    index,
+                    color: colour,
+                })
+            {
+                return drawn;
+            }
             let spacing = if upright {
                 sides(
                     Dimension::Points(0.0),

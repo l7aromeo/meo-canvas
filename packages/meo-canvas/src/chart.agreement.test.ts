@@ -188,6 +188,41 @@ const CASES = [
       }),
   },
   {
+    // **The five function-valued options, which neither suite reached.** A
+    // function cannot be encoded, so what is compared is its *effect*: the
+    // same formatter and the same hatch on both surfaces must produce the
+    // same tree.
+    //
+    // The two formatters round before they stringify. `3` and `2.4` are not
+    // the risk -- **`Display` and JavaScript's number-to-string part company**
+    // at the ends of the range, and a y-axis division is exactly the kind of
+    // value that arrives as `2.4000000000000004`. Rounding first keeps the
+    // languages' spelling rules out of a comparison that is about the hook.
+    //
+    // Every hatch takes its index into the node it returns, so a case that
+    // called them in the wrong order, or called one of them once, would not
+    // encode to the same bytes as one that did not.
+    kind: 'hatches',
+    mark: 'bar 0.0',
+    chart: () =>
+      Chart({
+        type: 'bar',
+        data: CARTESIAN,
+        options: {
+          ...EVERY_OPTION,
+          legendPosition: 'bottom',
+          xAxisLabelFormatter: (label: string, index: number) => `${label}#${index}`,
+          yAxisLabelFormatter: (value: number) => `$${Math.round(value)}`,
+          renderLabelItem: ({ index }: { item: string; index: number }) =>
+            Box({ width: 4 + index, height: 4, backgroundColor: '#ff0000', name: `hatch label ${index}` }),
+          renderValueItem: ({ index, datasetIndex }: { item: number; index: number; datasetIndex: number }) =>
+            Box({ width: 3, height: 3, backgroundColor: '#00ff00', name: `hatch value ${index}.${datasetIndex}` }),
+          renderLegendItem: ({ index, color }: { index: number; color: string }) =>
+            Box({ width: 6, height: 6, backgroundColor: color, name: `hatch legend ${index}` }),
+        } as never,
+      }),
+  },
+  {
     kind: 'pie',
     mark: 'slice 0',
     chart: () =>

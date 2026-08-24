@@ -26,7 +26,7 @@ use meo_canvas::{
         bar::{Dataset, Options, bar},
         frame::LegendPosition,
         line::line,
-        pie::{Slice, pie},
+        pie::{Slice, doughnut, pie},
     },
 };
 
@@ -188,8 +188,20 @@ fn four_slices(inner: f64) -> Element {
             color: None,
         })
         .collect();
-    pie(&slices, inner, &Options::default())
-        .unwrap_or_else(|error| unreachable!("{error}"))
+    // The hole is an option now rather than an argument, and the two kinds are
+    // two functions -- `pie` has no hole and `doughnut` reads the option.
+    if inner > 0.0 {
+        doughnut(
+            &slices,
+            &Options {
+                inner_fraction: Some(inner),
+                ..Options::default()
+            },
+        )
+    } else {
+        pie(&slices, &Options::default())
+    }
+    .unwrap_or_else(|error| unreachable!("{error}"))
 }
 
 /// How much of a small disc at the plot's centre is drawn.
@@ -690,13 +702,25 @@ fn every_kind_frames_its_own_legend() {
     for (kind, plain, legended) in [
         (
             "pie",
-            pie(&slices(), 0.0, &Options::default()),
-            pie(&slices(), 0.0, &with_legend),
+            pie(&slices(), &Options::default()),
+            pie(&slices(), &with_legend),
         ),
         (
             "doughnut",
-            pie(&slices(), 0.5, &Options::default()),
-            pie(&slices(), 0.5, &with_legend),
+            doughnut(
+                &slices(),
+                &Options {
+                    inner_fraction: Some(0.5),
+                    ..Options::default()
+                },
+            ),
+            doughnut(
+                &slices(),
+                &Options {
+                    inner_fraction: Some(0.5),
+                    ..with_legend.clone()
+                },
+            ),
         ),
         (
             "line",

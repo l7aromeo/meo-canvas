@@ -14,6 +14,8 @@
               Agreement is the objective here, as in `chart::geometry`."
 )]
 
+use std::rc::Rc;
+
 use meo_canvas_scene::{
     Length,
     style::{Dimension, effect::Transform, paint::Color},
@@ -50,6 +52,96 @@ pub struct Grid {
     pub color: Option<String>,
 }
 
+/// What a label hatch is handed.
+///
+/// **A struct rather than positional arguments, because TypeScript's is a
+/// named object** -- `{ item, index }` -- and matching it shape for shape is
+/// what lets the two surfaces be read against each other. It also makes a
+/// later field non-breaking on both sides.
+#[derive(Debug)]
+pub struct LabelItem<'a> {
+    /// The label being drawn.
+    pub item: &'a str,
+    /// Which slot it sits in.
+    pub index: usize,
+}
+
+/// What a value hatch is handed.
+///
+/// **The two `usize`s are the reason this is a struct and not a tuple.**
+/// Positionally, `index` and `dataset_index` are adjacent and identically
+/// typed, so a caller who swaps them gets no error, no warning and a chart
+/// that is quietly wrong. v1 uses a named object at exactly this signature.
+#[derive(Debug)]
+pub struct ValueItem {
+    /// The value being drawn.
+    pub item: f64,
+    /// Which slot along the axis it belongs to.
+    pub index: usize,
+    /// Which series it belongs to.
+    pub dataset_index: usize,
+}
+
+/// The thing a legend row stands for.
+///
+/// **TypeScript spells this `ChartDataset | PieChartDataPoint`, and Rust has no
+/// untagged union.** So a TypeScript caller can write one function that ducks
+/// across both and a Rust caller must match. That asymmetry is forced by the
+/// languages rather than chosen here, and it cannot be removed.
+#[derive(Debug)]
+pub enum LegendEntry<'a> {
+    /// A cartesian chart's series.
+    Series(&'a Dataset),
+    /// A pie or doughnut's slice.
+    Slice(&'a crate::chart::pie::Slice),
+}
+
+/// What a legend hatch is handed.
+#[derive(Debug)]
+pub struct LegendItem<'a> {
+    /// The series or slice this row stands for.
+    pub item: LegendEntry<'a>,
+    /// Its position in the legend.
+    pub index: usize,
+    /// The colour drawn in its swatch, resolved from the palette if the
+    /// caller gave none.
+    pub color: &'a str,
+}
+
+/// Draws the label under a slot yourself.
+///
+/// **`Rc` rather than `Arc`, deliberately.** The only two spellings without a
+/// `Send + Sync` bound on the closure are `Rc<dyn Fn>` and `Arc<dyn Fn>`, and
+/// **they are equally un-`Send`** -- `Arc<T>: Send` requires `T: Send + Sync`
+/// -- so `Arc` here would pay for atomics that nothing can use. Keeping
+/// `Options: Send + Sync` would mean bounding every closure, which rejects one
+/// capturing `Rc` data to buy a capability the scene cannot exercise: taffy's
+/// tree is neither `Send` nor `Sync` and is built and consumed on one thread.
+///
+/// **The cost is real and named here rather than discovered**: `Options` was
+/// `Send + Sync` before these fields and is not now.
+///
+/// `Rc` rather than `Box` because `Options` is `Clone`, and rather than a
+/// borrow because a lifetime on `Options` would infect every caller and
+/// anything that stores one.
+pub type LabelHatch = Rc<dyn Fn(LabelItem<'_>) -> Option<Element>>;
+
+/// Draws the value against a bar yourself. See [`LabelHatch`] for why `Rc`.
+pub type ValueHatch = Rc<dyn Fn(ValueItem) -> Option<Element>>;
+
+/// Draws one legend row yourself. See [`LabelHatch`] for why `Rc`.
+pub type LegendHatch = Rc<dyn Fn(LegendItem<'_>) -> Option<Element>>;
+
+/// Formats a category label before it is drawn, as v1 does, index included.
+pub type XAxisFormatter = Rc<dyn Fn(&str, usize) -> String>;
+
+/// Formats a y-axis value before it is drawn.
+pub type YAxisFormatter = Rc<dyn Fn(f64) -> String>;
+
+/// v1's `outerRadius * (innerRadius ?? 0.6)`, and the default both surfaces
+/// now share.
+pub const DEFAULT_INNER_FRACTION: f64 = 0.6;
+
 /// What every chart understands, as v1 spells it.
 ///
 /// **Four `show_` flags, because v1 and the TypeScript surface have four.**
@@ -57,7 +149,7 @@ pub struct Grid {
 /// options object rather than spell it, and the two surfaces would then name
 /// the same switch differently -- which is the thing the byte comparison is
 /// there to catch.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "an option bag mirroring the other surface's, one field per \
@@ -92,6 +184,77 @@ pub struct Options {
     pub axis_color: Option<Color>,
     /// The family every piece of chart text is set in.
     pub font_family: Option<String>,
+    /// A doughnut's hole, as a fraction of its outer radius.
+    ///
+    /// **Moved here from a positional argument on
+    /// [`crate::chart::pie::pie`]**, where TypeScript has always had it as an
+    /// option. It defaulted to nothing on this surface and to `0.6` on the
+    /// other, so a caller who said nothing got a pie here and a doughnut
+    /// there -- and both agreement suites passed `0.6` explicitly, which is a
+    /// test written around the gap rather than one that could see it.
+    pub inner_fraction: Option<f64>,
+    /// Draw the label under each slot yourself.
+    ///
+    /// The returned node is **placed** -- centred in the slot by ordinary
+    /// layout -- rather than measured and drawn detached, which is v1's
+    /// contract as the other surface has it.
+    pub render_label_item: Option<LabelHatch>,
+    /// Draw the value against each bar yourself. Placed, as above.
+    pub render_value_item: Option<ValueHatch>,
+    /// Draw each legend row yourself. Placed, as above.
+    pub render_legend_item: Option<LegendHatch>,
+    /// Format a category label before it is drawn.
+    pub x_axis_label_formatter: Option<XAxisFormatter>,
+    /// Format a y-axis value before it is drawn.
+    pub y_axis_label_formatter: Option<YAxisFormatter>,
+}
+
+/// Written by hand because a closure has no useful `Debug`.
+///
+/// **Presence rather than identity**: what a reader can act on is whether a
+/// hatch is set, and nothing can be printed about which one it is.
+impl core::fmt::Debug for Options {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        /// `Some(..)` or `None`, without claiming to know what the closure is.
+        const fn hatch<T>(value: Option<&T>) -> &'static str {
+            if value.is_some() {
+                "Some(<fn>)"
+            } else {
+                "None"
+            }
+        }
+        f.debug_struct("Options")
+            .field("show_labels", &self.show_labels)
+            .field("show_values", &self.show_values)
+            .field("show_y_axis", &self.show_y_axis)
+            .field("show_legend", &self.show_legend)
+            .field("legend_position", &self.legend_position)
+            .field("grid", &self.grid)
+            .field("label_font_size", &self.label_font_size)
+            .field("value_font_size", &self.value_font_size)
+            .field("y_axis_font_size", &self.y_axis_font_size)
+            .field("label_color", &self.label_color)
+            .field("value_color", &self.value_color)
+            .field("y_axis_color", &self.y_axis_color)
+            .field("axis_color", &self.axis_color)
+            .field("font_family", &self.font_family)
+            .field("inner_fraction", &self.inner_fraction)
+            .field("render_label_item", &hatch(self.render_label_item.as_ref()))
+            .field("render_value_item", &hatch(self.render_value_item.as_ref()))
+            .field(
+                "render_legend_item",
+                &hatch(self.render_legend_item.as_ref()),
+            )
+            .field(
+                "x_axis_label_formatter",
+                &hatch(self.x_axis_label_formatter.as_ref()),
+            )
+            .field(
+                "y_axis_label_formatter",
+                &hatch(self.y_axis_label_formatter.as_ref()),
+            )
+            .finish()
+    }
 }
 
 /// v1's default gridline colour.
@@ -192,13 +355,25 @@ fn one_bar(
                 ),
         );
     if options.show_values {
-        drawn = drawn.children([value_label(value, options)]);
+        drawn = drawn.children([value_label(value, index, dataset, options)]);
     }
     drawn
 }
 
 /// A value sitting five pixels above its bar, centred on it.
-fn value_label(value: f64, options: &Options) -> Element {
+fn value_label(
+    value: f64,
+    index: usize,
+    dataset_index: usize,
+    options: &Options,
+) -> Element {
+    let drawn = options.render_value_item.as_ref().and_then(|draw| {
+        draw(ValueItem {
+            item: value,
+            index,
+            dataset_index,
+        })
+    });
     BoxElement::new()
         .with_style(
             Style::new()
@@ -217,12 +392,14 @@ fn value_label(value: f64, options: &Options) -> Element {
                 ))
                 .align_items(Align::Center),
         )
-        .children([text(
-            &format_number(value),
-            options,
-            options.value_font_size,
-            options.value_color,
-        )])
+        .children([drawn.unwrap_or_else(|| {
+            text(
+                &format_number(value),
+                options,
+                options.value_font_size,
+                options.value_color,
+            )
+        })])
 }
 
 /// The strip of labels under the plot, one equal share each.
@@ -230,7 +407,26 @@ pub(crate) fn label_strip(labels: &[String], options: &Options) -> Element {
     Row::new().name("labels").children(
         labels
             .iter()
-            .map(|label| {
+            .enumerate()
+            .map(|(index, label)| {
+                // **The hatch is handed the RAW label and the formatter
+                // feeds only the fallback text.** I wrote it the other way
+                // round first -- format, then hand the formatted string to the
+                // hatch -- which reads as the more sensible pipeline and is
+                // not what the other surface does: `renderLabelItem?.({ item:
+                // label, index })` takes `label`, and `shown` is computed
+                // beside it for the `drawn ?? Text(shown)` fallback. A caller
+                // supplying both gets the unformatted label here, and matching
+                // that is the whole point of the comparison.
+                let drawn = options
+                    .render_label_item
+                    .as_ref()
+                    .and_then(|draw| draw(LabelItem { item: label, index }));
+                let shown =
+                    options.x_axis_label_formatter.as_ref().map_or_else(
+                        || label.clone(),
+                        |format| format(label, index),
+                    );
                 BoxElement::new()
                     .with_style(
                         Style::new()
@@ -247,12 +443,14 @@ pub(crate) fn label_strip(labels: &[String], options: &Options) -> Element {
                             .justify_content(Justify::Center)
                             .align_items(Align::Center),
                     )
-                    .children([text(
-                        label,
-                        options,
-                        options.label_font_size,
-                        options.label_color,
-                    )])
+                    .children([drawn.unwrap_or_else(|| {
+                        text(
+                            &shown,
+                            options,
+                            options.label_font_size,
+                            options.label_color,
+                        )
+                    })])
             })
             .collect::<Vec<_>>(),
     )
@@ -294,7 +492,13 @@ pub(crate) fn plot_area(
     // and the last is zero.
     let labels: Vec<String> = grid_lines(GRID_DIVISIONS)
         .into_iter()
-        .map(|fraction| format_number(max_value - max_value * fraction))
+        .map(|fraction| {
+            let value = max_value - max_value * fraction;
+            options
+                .y_axis_label_formatter
+                .as_ref()
+                .map_or_else(|| format_number(value), |format| format(value))
+        })
         .collect();
     // The widest by character count rather than by measurement, which is the
     // one thing a builder cannot do. A proportional face can make a shorter
@@ -428,7 +632,9 @@ fn format_number(value: f64) -> String {
 ///
 /// **Shared by the two cartesian kinds**, which name their series the same
 /// way: `Series 1`, `Series 2` and so on where a dataset gives no label.
-pub(crate) fn series_labels(datasets: &[Dataset]) -> Vec<(String, String)> {
+pub(crate) fn series_labels(
+    datasets: &[Dataset],
+) -> Vec<(String, String, LegendEntry<'_>)> {
     datasets
         .iter()
         .enumerate()
@@ -438,6 +644,9 @@ pub(crate) fn series_labels(datasets: &[Dataset]) -> Vec<(String, String)> {
                     .clone()
                     .unwrap_or_else(|| format!("Series {}", index + 1)),
                 series_color(index, set.color.as_deref()),
+                // The row carries what it stands for, so a legend hatch can be
+                // handed the series rather than the two strings drawn from it.
+                LegendEntry::Series(set),
             )
         })
         .collect()

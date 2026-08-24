@@ -29,7 +29,7 @@ use meo_canvas_scene::{Length, node::PathPaint, style::effect::Transform};
 use crate::{
     Box as BoxElement, Element, Error, Path, PositionType, Style, Text,
     chart::{
-        bar::Options,
+        bar::{DEFAULT_INNER_FRACTION, LabelItem, LegendEntry, Options},
         frame::{framed, legend},
         geometry::{series_color, slice_angles},
     },
@@ -74,7 +74,40 @@ pub struct Slice {
 ///
 /// Returns [`Error::Chart`] for a negative value, as the bar chart does and
 /// for the same reason.
-pub fn pie(
+pub fn pie(slices: &[Slice], options: &Options) -> Result<Element, Error> {
+    // A pie has no hole, and `inner_fraction` is a doughnut's option -- the
+    // other surface passes a literal `0` down this path and reads the option
+    // only down the other one.
+    wedges(slices, 0.0, options)
+}
+
+/// A doughnut: a pie with a hole of [`Options::inner_fraction`].
+///
+/// **Split from [`pie`] because the default belongs to one kind and not the
+/// other.** `inner_fraction` moved out of a positional argument and into
+/// `Options`, and defaulting it inside a single shared function would have
+/// turned every pie into a doughnut. The other surface has the same shape: its
+/// `pie` passes a literal `0` and its `doughnut` reads
+/// `innerRadius ?? 0.6`.
+///
+/// **The default is why this matters rather than being a tidy-up.** This
+/// surface had no default at all, so a caller who said nothing got a pie here
+/// and a doughnut there -- and both agreement suites passed `0.6` explicitly,
+/// which is a test written around the gap rather than one that could see it.
+///
+/// # Errors
+///
+/// As [`pie`].
+pub fn doughnut(slices: &[Slice], options: &Options) -> Result<Element, Error> {
+    wedges(
+        slices,
+        options.inner_fraction.unwrap_or(DEFAULT_INNER_FRACTION),
+        options,
+    )
+}
+
+/// What both kinds draw, given the hole they differ by.
+fn wedges(
     slices: &[Slice],
     inner_fraction: f64,
     options: &Options,
@@ -156,6 +189,7 @@ pub fn pie(
                     (
                         format!("{} ({})", slice.label, slice.value),
                         series_color(index, slice.color.as_deref()),
+                        LegendEntry::Slice(slice),
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -207,9 +241,17 @@ fn slice_label(
                     ..Transform::default()
                 }),
         )
-        .children([Text::new(label).with_style(
-            Style::new()
-                .font_size(options.label_font_size.unwrap_or(12.0))
-                .color(options.label_color.unwrap_or(hex_rgb(0x00_00_00))),
-        )])
+        .children([options
+            .render_label_item
+            .as_ref()
+            .and_then(|draw| draw(LabelItem { item: label, index }))
+            .unwrap_or_else(|| {
+                Text::new(label).with_style(
+                    Style::new()
+                        .font_size(options.label_font_size.unwrap_or(12.0))
+                        .color(
+                            options.label_color.unwrap_or(hex_rgb(0x00_00_00)),
+                        ),
+                )
+            })])
 }

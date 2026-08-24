@@ -24,15 +24,17 @@
 //! bytes are committed; both sides assert against them; a deliberate change is
 //! `UPDATE_CHART_BYTES=1 npx vitest run chart.agreement`.
 
+use std::rc::Rc;
+
 use meo_canvas::{
-    Element, Root,
+    Box as BoxElement, Element, Root, Style,
     chart::{
-        bar::{Dataset, Grid, Options, bar},
+        bar::{Dataset, Grid, LabelItem, LegendItem, Options, ValueItem, bar},
         frame::LegendPosition,
         line::line,
-        pie::{Slice, pie},
+        pie::{Slice, doughnut, pie},
     },
-    hex_rgb,
+    hex_rgb, px,
     scene::codec,
 };
 
@@ -161,6 +163,9 @@ const THEIR_DOUGHNUT: &str = include_str!("assets/chart/doughnut-bytes.txt");
 
 /// The same line chart with the legend on the right, which is the one frame
 /// branch no other case reaches.
+/// The five function-valued options, whose effect is what gets compared.
+const THEIR_HATCHES: &str = include_str!("assets/chart/hatches-bytes.txt");
+
 const THEIR_LINE_RIGHT: &str =
     include_str!("assets/chart/line-legend-right-bytes.txt");
 
@@ -328,7 +333,7 @@ fn both_surfaces_encode_the_same_line_chart_with_the_legend_on_the_right() {
 
 #[test]
 fn both_surfaces_encode_the_same_pie() {
-    let chart = pie(&three_slices(), 0.0, &everything(LegendPosition::Top))
+    let chart = pie(&three_slices(), &everything(LegendPosition::Top))
         .unwrap_or_else(|error| {
             unreachable!("the chart did not build: {error}")
         });
@@ -339,9 +344,85 @@ fn both_surfaces_encode_the_same_pie() {
 fn both_surfaces_encode_the_same_doughnut() {
     // v1's `chartOptions?.innerRadius ?? 0.6`, which is what the TypeScript
     // surface passes and what my own builder has no default for.
-    let chart = pie(&three_slices(), 0.6, &everything(LegendPosition::Bottom))
+    // **No `0.6` here any more, and that is the point.** The suites used to
+    // pass it explicitly on this side, which meant they agreed about a number
+    // they were both being told rather than about a default only one surface
+    // had. `doughnut` now carries v1's default itself.
+    let chart = doughnut(&three_slices(), &everything(LegendPosition::Bottom))
         .unwrap_or_else(|error| {
             unreachable!("the chart did not build: {error}")
         });
     agrees("doughnut chart", &encoded(chart), THEIR_DOUGHNUT);
+}
+
+/// The five hooks, compared by what they build rather than by what they are.
+///
+/// **A function cannot be encoded**, so this pins their *effect*: the same
+/// formatter and the same hatch on both surfaces must produce the same tree.
+/// Each hatch takes its index into the node it returns, so calling them in the
+/// wrong order, or calling one of them once, encodes differently.
+///
+/// The formatters round before they stringify. A y-axis division arrives as
+/// something like `2.4000000000000004`, and `Display` and JavaScript's
+/// number-to-string part company on exactly that kind of value -- rounding
+/// first keeps the languages' spelling rules out of a comparison that is about
+/// the hook.
+#[test]
+fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
+    let (labels, datasets) = cartesian();
+    let options = Options {
+        x_axis_label_formatter: Some(Rc::new(|label: &str, index: usize| {
+            format!("{label}#{index}")
+        })),
+        y_axis_label_formatter: Some(Rc::new(|value: f64| {
+            format!("${}", value.round())
+        })),
+        render_label_item: Some(Rc::new(|item: LabelItem<'_>| {
+            Some(
+                BoxElement::new()
+                    .name(format!("hatch label {}", item.index))
+                    .with_style(
+                        Style::new()
+                            .width(px(4.0 + item.index as f32))
+                            .height(px(4.0))
+                            .background_color(hex_rgb(0xff_00_00)),
+                    ),
+            )
+        })),
+        render_value_item: Some(Rc::new(|item: ValueItem| {
+            Some(
+                BoxElement::new()
+                    .name(format!(
+                        "hatch value {}.{}",
+                        item.index, item.dataset_index
+                    ))
+                    .with_style(
+                        Style::new()
+                            .width(px(3.0))
+                            .height(px(3.0))
+                            .background_color(hex_rgb(0x00_ff_00)),
+                    ),
+            )
+        })),
+        render_legend_item: Some(Rc::new(|item: LegendItem<'_>| {
+            Some(
+                BoxElement::new()
+                    .name(format!("hatch legend {}", item.index))
+                    .with_style(
+                        Style::new()
+                            .width(px(6.0))
+                            .height(px(6.0))
+                            .background_color(
+                                meo_canvas_core::parse_color(item.color)
+                                    .unwrap_or(hex_rgb(0x00_00_00)),
+                            ),
+                    ),
+            )
+        })),
+        ..everything(LegendPosition::Bottom)
+    };
+    let chart = bar(&labels, &datasets, &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    agrees("bar chart", &encoded(chart), THEIR_HATCHES);
 }
