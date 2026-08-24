@@ -2007,6 +2007,35 @@ fn clip_to_owned_edge(
     context.clip(SkiaFillRule::NonZero);
 }
 
+/// The width at and above which a dotted mark is a circle.
+///
+/// **Below it Chrome draws a square**, measured by MC Main at every width
+/// from one to seven, as total ink over one window:
+///
+/// ```text
+/// width 1   3.000   three 1x1 marks, each exactly 1.000   square
+/// width 2   4.000   2x2, no rim                           square
+/// width 3   9.000   3x3, no rim                           square
+/// width 4  11.988   rimmed, pi r^2 = 12.57                circle
+/// width 5  19.831   pi r^2 = 19.63                        circle
+/// width 7  39.604   pi r^2 = 38.48                        circle
+/// ```
+///
+/// **The squares are exact integers with no antialiasing anywhere.** A circle
+/// cannot produce an integer at any subpixel position, so `9.000` over a 3x3
+/// with no rim settles the shape without an argument about it. Ours drew a
+/// disc at every width -- `2.984` at width 2, which is π short a little
+/// antialiasing, and exactly what CSS Backgrounds 3 describes. **Chrome does
+/// not do what the specification says below four pixels**, and this follows
+/// Chrome, as everything else here does.
+///
+/// **Fractional widths are unmeasured.** Whether the rule is *below four* or
+/// *below some fractional threshold* is not known, and this constant assumes
+/// the first: a 3.5-pixel border squares here. A single Chrome reading at
+/// 3.5 settles it, and `crates/meo-canvas-core/src/paint.rs` is where the
+/// answer goes when it exists.
+const ROUND_DOT_WIDTH: f32 = 4.0;
+
 /// The dash and the gap a dashed border of this width is drawn with.
 ///
 /// **Two regimes, measured in Chrome rather than derived**, at widths 1, 2, 4
@@ -2223,7 +2252,17 @@ fn stroke_broken_border(
         if dotted {
             // The pattern itself is set per side or per loop below, because
             // it is fitted to the length it will run along.
-            context.set_line_cap(StrokeCap::Round);
+            //
+            // **A dot below `ROUND_DOT_WIDTH` is a square, not a circle**,
+            // because Chrome's is. The dash is zero-length, so the cap *is*
+            // the mark: a round cap draws a disc of the border's width and a
+            // square cap draws a square of it, at the same place and with the
+            // same rhythm.
+            context.set_line_cap(if width < ROUND_DOT_WIDTH {
+                StrokeCap::Square
+            } else {
+                StrokeCap::Round
+            });
         } else {
             context.set_line_cap(StrokeCap::Butt);
         }
@@ -4185,6 +4224,84 @@ mod tests {
 
         use crate::{ImageFormat, Renderer, encode::EncodeOptions};
 
+        /// One ordinary dot from the middle of a straight top run.
+        ///
+        /// Returns a window two pixels clear of the mark on every side, so
+        /// its rim and the blank beside it are both in the reading.
+        fn dot(width: f32) -> (usize, f64, Vec<String>) {
+            let mut scene = Scene::new(Size::new(240.0, 48.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(240.0), Dimension::Points(48.0));
+                node.layout.border = Sides::all(width);
+                node.paint.border_style = BorderStyle::Dotted;
+                node.paint.border_color_all = Color::rgb(0, 0, 0);
+            }
+            let (stride, pixels) = render(&scene);
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a border width of two to sixteen pixels"
+            )]
+            let band = width as usize;
+            let alpha = |x: usize, y: usize| {
+                u32::from(pixels[(((y * stride) + x) * 4) + 3])
+            };
+            // The first mark whose left edge is past the middle, so the
+            // window is far from both corners whatever the fitted rhythm is.
+            // The middle row of the band, not its far edge: `band` itself is
+            // the first row *outside* a border of that width, where every
+            // scan reads blank and the search finds nothing it is looking
+            // for.
+            let middle = (band / 2).max(1);
+            // **At Chrome's threshold, not at any ink at all.** A run
+            // pattern is read at alpha 0.5; scanning for `> 0` stops on the
+            // antialiased fringe a column early, which shifts the whole
+            // window and pulls the previous mark's tail into the sum. That
+            // cost a `6.008` against Chrome's `4.000` and read as a rhythm
+            // disagreement.
+            let lit = |x: usize| alpha(x, middle) >= 128;
+            let mut left = 120;
+            while left < 200 && lit(left) {
+                left += 1;
+            }
+            while left < 200 && !lit(left) {
+                left += 1;
+            }
+            let start = left.saturating_sub(2);
+            let mut ink = 0.0;
+            for y in 0..band + 3 {
+                // `start - 2` through `start + w + 1` inclusive, which is the
+                // window the grids this is compared against use.
+                for x in start..start + band + 4 {
+                    ink += f64::from(alpha(x, y)) / 255.0;
+                }
+            }
+            let rows: Vec<String> = (0..band + 3)
+                .map(|y| {
+                    (start..start + band + 4)
+                        .map(|x| {
+                            let value = alpha(x, y);
+                            if value == 0 {
+                                '.'
+                            } else {
+                                char::from(
+                                    b'0' + u8::try_from(
+                                        (value * 9 + 127) / 255,
+                                    )
+                                    .unwrap_or(9),
+                                )
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            (left, ink, rows)
+        }
+
         /// The corner's top-left 8x8, as alpha digits.
         fn grid(colour: Color) -> Vec<String> {
             let mut scene = Scene::new(Size::new(60.0, 60.0));
@@ -4349,6 +4466,101 @@ mod tests {
         ///
         /// `cargo test -p meo-canvas-core --lib corner_grid -- --ignored
         /// --nocapture`
+        #[test]
+        fn a_dots_ink_is_chromes_from_four_pixels_up() {
+            // **The reading that killed "our dot is smaller".** Total ink over
+            // one window, against Chrome measured by MC Main at the same
+            // anchor: two columns before the mark, ending `w + 1` after it
+            // starts.
+            //
+            // The inference that our mark was undersized came from the corner
+            // grid, whose rim was two digits light -- **and a corner mark
+            // carries corner geometry.** On a straight run the marks are the
+            // same size to within four hundredths of an ink unit out of two
+            // hundred. **That inference is refuted, and it is pinned here so
+            // it cannot be reopened from the corner grid**, which is still
+            // there and still suggests it.
+            //
+            // What remains is a sub-pixel horizontal offset: same size, same
+            // ink, coverage distributed a little differently between
+            // neighbouring pixels.
+            for (width, chrome) in
+                [(4.0_f32, 11.988_f64), (8.0, 51.996), (16.0, 198.722)]
+            {
+                let (_, ink, _) = dot(width);
+                assert!(
+                    (ink - chrome).abs() < 0.1,
+                    "width {width}: our dot is {ink:.3} of ink against \
+                     Chrome's {chrome:.3}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_dot_squares_below_four_pixels_and_rounds_at_four() {
+            // **Both sides of the boundary, because a fix that squares
+            // everything passes a test that only checks the small side.**
+            //
+            // Discriminated by area rather than by looking: a square of width
+            // `w` is `w^2` of ink and a circle inscribed in it is `pi/4` of
+            // that, about `0.785 w^2`. At three those are `9` and `7.07`; at
+            // four, `16` and `12.57`. **Nothing else about the mark has to be
+            // agreed for the two to be told apart.**
+            //
+            // Chrome measured by MC Main at every width from one to seven:
+            // exact integers with no antialiasing at 1, 2 and 3 -- `3.000`,
+            // `4.000`, `9.000` -- and rimmed circles from 4. **An integer is
+            // the proof: a circle cannot produce one at any subpixel
+            // position.**
+            let (_, three, _) = dot(3.0);
+            assert!(
+                three > 8.5,
+                "a 3-pixel dot is {three:.3} of ink, nearer a circle's 7.07 \
+                 than a square's 9 -- Chrome squares below four"
+            );
+            let (_, four, _) = dot(4.0);
+            assert!(
+                four < 13.5,
+                "a 4-pixel dot is {four:.3} of ink, nearer a square's 16 \
+                 than a circle's 12.57 -- Chrome rounds from four"
+            );
+        }
+
+        /// Prints an ordinary dot from a straight run, at four widths.
+        ///
+        /// **Away from every corner**, so no corner rule is in the reading:
+        /// the dot nearest the middle of a 240-wide top edge. The corner
+        /// grids answer where a mark goes; this answers **how big it is**.
+        ///
+        /// Why four widths rather than one: **a diameter wrong by a constant
+        /// and one wrong by a ratio are the same picture at a single width.**
+        /// CSS Backgrounds 3 makes a dot a circle of the border's width, so
+        /// the candidates are an inset of a fixed fraction of a pixel against
+        /// a scale just under one, and only a spread of widths separates
+        /// them.
+        ///
+        /// Digits are `round(alpha * 9 / 255)`, as everything else here.
+        ///
+        /// `cargo test -p meo-canvas-core --lib dot_grid -- --ignored
+        /// --nocapture`
+        #[test]
+        #[ignore = "prints a grid rather than asserting one"]
+        fn dot_grid() {
+            for width in [2.0_f32, 4.0, 8.0, 16.0] {
+                let (start, ink, rows) = dot(width);
+                // **Total ink separates a displaced mark from a smaller
+                // one.** An offset moves coverage between pixels and keeps
+                // the sum; a diameter error changes it. Neither grid answers
+                // that by eye.
+                eprintln!(
+                    "--- width {width}, starts x={start}, total ink {ink:.3}"
+                );
+                for row in rows {
+                    eprintln!("  {row}");
+                }
+            }
+        }
+
         #[test]
         #[ignore = "prints a grid rather than asserting one"]
         fn corner_grid() {
