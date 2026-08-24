@@ -8,8 +8,8 @@
 //! cannot express -- its text style carries a colour and no stroke width.
 
 use meo_canvas::{
-    Box as BoxNode, Element, FlexDirection, Root, Styled, Text, TextAlign,
-    TextDecoration, hex_rgb, px,
+    Box as BoxNode, Element, FlexDirection, LineHeight, Root, Styled, Text,
+    TextAlign, TextDecoration, hex_rgb, px,
 };
 use meo_canvas_examples::{FONT, FORMATS, draw_with_fonts};
 
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let right = column(vec![
         line(WORDS).text_align(TextAlign::Center),
         line(WORDS).text_align(TextAlign::Right),
-        line(WORDS).line_height(2.0),
+        line(WORDS).line_height(LineHeight::Number(2.0)),
         // Markup: the parser turns the tags into runs, so the bold word is one
         // segment and the coloured one another.
         line("plain <b>bold</b> <color=#dc2828>red</color>"),
@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .paint_order(meo_canvas::scene::PaintOrder::Stroke),
         // Where a short line sits in the space its height leaves.
         line(WORDS)
-            .line_height(2.0)
+            .line_height(LineHeight::Number(2.0))
             .vertical_align(meo_canvas::scene::VerticalAlign::Bottom),
     ]);
 
