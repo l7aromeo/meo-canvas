@@ -940,6 +940,40 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**A measurement taken through a boundary that truncates it reports the
+boundary, and it reports it as a success.** The showcase card was measured at
+`903 x 679` against a reference's `679.5` and read as agreement to within half a
+pixel. The `Root` was 700 tall and clipping the card: on a 1000-tall page the
+card is `810`, so the real difference was a hundred and thirty pixels rather
+than ten. **The clipped number was more convincing than the true one**, because a
+boundary is a clean value and agreement against it looks tight. An entire
+conclusion -- "only the font metrics remain" -- rested on it, was repeated as
+established, and was an artifact.
+
+**Some properties need a count, not a pattern.** Two separate people converting
+`lineHeight` call sites by regex, hours apart, each silently missed a subset:
+one missed nested-brace objects and converted 5 of about 25; the other matched
+`lineHeight: 1,` and missed twelve sites spelled `lineHeight: 1 }`. The second
+then measured the patch and nearly filed a real defect as a rounding error.
+**Count the sites first, then assert the edit touched that many.** The general
+rule is to check an edit landed before measuring what it did; the specific one
+is that this property's call sites are spelled inconsistently enough that any
+pattern over them misses some.
+
+**A trailing `echo` hides the exit status of the thing you care about.** A
+backgrounded gate reported `completed (exit code 0)` while the run had exited
+`101`: the wrapper reports the status of the whole shell line, and the line
+ended in an `echo`, which always succeeds. **Do not put anything after the
+command whose status matters**, and grep the output for your own marker rather
+than trusting the notification.
+
+**A quiet tree is a window someone has to be told to keep, not a state to be
+read once.** Two lanes were told in the same round that the tree was still and
+that a file-editing task could start. The gate then read `paint.rs` in a
+half-written moment and failed to compile a symbol that exists. **Declaring the
+window is the supervisor's job**: the other lane must be asked to hold edits,
+not merely to hold gates, and told when it may resume.
+
 **A comparison between two different kinds of number fails, and the failure
 reads as a defect.** This file already says layout and paint are different
 stages. The trap is what happens when you forget: a test asserting our box
