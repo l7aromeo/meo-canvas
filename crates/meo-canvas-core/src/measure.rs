@@ -33,8 +33,8 @@ use std::collections::HashMap;
 use meo_canvas_scene::style::{
     effect::TextShadow,
     text::{
-        FontStyle, ParagraphStyle, Spacing, TextAlign, TextDecoration,
-        TextSegment,
+        FontStyle, LineHeight, ParagraphStyle, Spacing, TextAlign,
+        TextDecoration, TextSegment,
     },
 };
 use meo_canvas_scene::{
@@ -560,9 +560,24 @@ fn skia_style(
         // takes a multiplier and spells "use the face's metrics" as `1.0`, so
         // `None` converts to exactly that. The bug was carrying Skia's
         // spelling further in than Skia.
-        line_height_multiplier: style
-            .line_height
-            .unwrap_or(ResolvedText::NORMAL_LINE_HEIGHT),
+        // **Skia takes a multiplier, so a length divides here and nowhere
+        // else.** That is the whole cost of storing what the author wrote: a
+        // caller's `24px` used to be divided by the font size at every call
+        // site that wanted to write one, and now it is divided once, at the
+        // boundary that actually needs a ratio.
+        //
+        // `None` is CSS's `normal` and Skia spells that `1.0` -- the sentinel
+        // is correct here and was wrong upstream of it.
+        line_height_multiplier: match style.line_height {
+            Some(LineHeight::Number(multiple)) => multiple,
+            Some(LineHeight::Length(pixels)) if style.size > 0.0 => {
+                pixels / style.size
+            }
+            Some(LineHeight::Percent(share)) => share,
+            Some(LineHeight::Length(_)) | None => {
+                ResolvedText::NORMAL_LINE_HEIGHT
+            }
+        },
         letter_spacing: spacing_pixels(style.letter_spacing, style.size),
         word_spacing: spacing_pixels(style.word_spacing, style.size),
         max_lines: paragraph.max_lines.map(|lines| lines as usize),

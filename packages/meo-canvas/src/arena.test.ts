@@ -120,6 +120,7 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
   Dimension: input => tagged(input, ['auto', 'points', 'percent'], 'Dimension'),
   TrackSize: input => tagged(input, ['auto', 'points', 'percent', 'fraction'], 'TrackSize'),
   Spacing: input => tagged(input, ['normal', 'points', 'em'], 'Spacing'),
+  LineHeight: input => tagged(input, ['number', 'length', 'percent'], 'LineHeight'),
   GridPlacement: input => ({ start: read(input, 'Option<i16>'), span: read(input, 'Option<u16>') }),
   GradientStop: input => ({ offset: f32(input), color: color(input) }),
   BackgroundSize: input => {
@@ -537,7 +538,9 @@ const PROBES: Readonly<Record<string, Style>> = {
   justify_content: { justifyContent: 'flex-end' },
   letter_spacing: { letterSpacing: 0.25 },
   line_gap: { lineGap: 0.25 },
-  line_height: { lineHeight: 0.25 },
+  // The generator's probe for this slot is a LENGTH, so the JavaScript one
+  // has to be too: `0.25` is a NUMBER and encodes a different tag.
+  line_height: { lineHeight: '0.25px' },
   margin: { margin: 0.25 },
   max_size: { maxWidth: 0.25, maxHeight: 0.25 },
   min_size: { minWidth: 0.25, minHeight: 0.25 },

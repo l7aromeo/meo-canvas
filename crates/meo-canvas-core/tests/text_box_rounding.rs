@@ -74,7 +74,11 @@ use meo_canvas_core::{
 use meo_canvas_scene::{
     Scene, Size,
     node::{Node, NodeId, NodeKind},
-    style::{Dimension, layout::FlexDirection, text::TextSegment},
+    style::{
+        Dimension,
+        layout::FlexDirection,
+        text::{LineHeight, TextSegment},
+    },
 };
 
 /// The face the fixtures register.
@@ -121,7 +125,7 @@ fn solve(text: &str, width: f32) -> (f32, f32, f32) {
     if let Some(node) = scene.get_mut(paragraph) {
         node.text.font_family = Some(FONT.0.to_owned());
         node.text.font_size = Some(SIZE);
-        node.text.line_height = Some(LINE_HEIGHT);
+        node.text.line_height = Some(LineHeight::Number(LINE_HEIGHT));
     }
     let sibling = scene
         .push(column, Node::new(NodeKind::Box))
@@ -263,7 +267,7 @@ fn row_height(text: &str) -> f32 {
     if let Some(node) = scene.get_mut(paragraph) {
         node.text.font_family = Some(FONT.0.to_owned());
         node.text.font_size = Some(SIZE);
-        node.text.line_height = Some(1.0);
+        node.text.line_height = Some(LineHeight::Number(1.0));
     }
 
     let fonts = Fonts::new();

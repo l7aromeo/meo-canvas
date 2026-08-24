@@ -49,9 +49,9 @@ use meo_canvas::{
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
         BorderStyle, BoxShadow, Color, Dimension, FillRule, Gradient,
-        GradientGeometry, GradientStop, ImageSource, Length, LinearDirection,
-        Mask, MaskShape, PaintOrder, TextAlign, TextDecoration, TextShadow,
-        TextStroke, Transform, VerticalAlign,
+        GradientGeometry, GradientStop, ImageSource, Length, LineHeight,
+        LinearDirection, Mask, MaskShape, PaintOrder, TextAlign,
+        TextDecoration, TextShadow, TextStroke, Transform, VerticalAlign,
     },
     sides,
 };
@@ -771,11 +771,13 @@ fn glyph_paint_cases() -> Vec<Case> {
             property: "vertical_align",
             with: || {
                 line()
-                    .line_height(2.0)
+                    .line_height(LineHeight::Number(2.0))
                     .height(px(60.0))
                     .vertical_align(VerticalAlign::Bottom)
             },
-            without: || line().line_height(2.0).height(px(60.0)),
+            without: || {
+                line().line_height(LineHeight::Number(2.0)).height(px(60.0))
+            },
             effect: Effect::Draws,
         },
         // Space **between** line boxes, so the subject needs two lines: on one

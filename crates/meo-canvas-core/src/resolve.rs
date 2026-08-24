@@ -53,7 +53,7 @@ use meo_canvas_scene::{
         effect::Mask,
         paint::Color,
         text::{
-            FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
+            FontStyle, FontVariant, FontWeight, LineHeight, Spacing, TextAlign,
             TextDecoration, TextStroke, TextStyle, VerticalAlign,
         },
     },
@@ -203,14 +203,21 @@ pub struct ResolvedText {
     pub text_stroke: Option<TextStroke>,
     /// Which of fill and stroke is drawn on top.
     pub paint_order: PaintOrder,
-    /// Line box height as a multiple of the font size, or `None` for the
-    /// face's own -- CSS's `normal`.
+    /// How tall a line box is, or `None` for the face's own -- CSS's
+    /// `normal`.
     ///
     /// **An `Option` because `1.0` is a value a caller can ask for.** A line
     /// box exactly one em tall is legal CSS and is not `normal`; carrying the
     /// two as one `f32` made them the same number, and every
     /// `line-height: 1` in a document silently became the face's metrics.
-    pub line_height: Option<f32>,
+    ///
+    /// **Never [`LineHeight::Percent`].** A percentage resolves against the
+    /// font size of the element that declared it, and [`Self::inherit`] does
+    /// that as it merges -- so what descends is a length and nothing here
+    /// resolves one late. A [`LineHeight::Number`] is deliberately *not*
+    /// resolved there: it is recomputed by whoever inherits it, against their
+    /// own size.
+    pub line_height: Option<LineHeight>,
     /// Extra space added to every line box, in logical pixels.
     pub line_gap: f32,
     /// Space between glyphs.
@@ -257,12 +264,16 @@ impl ResolvedText {
     /// difference between "said nothing" and "said the initial value".
     #[must_use]
     pub fn inherit(&self, overlay: &TextStyle) -> Self {
+        // Hoisted out of the literal because the line-height arm below needs
+        // it: a percentage resolves against **the declaring element's own**
+        // font size, which is this one and not the parent's.
+        let size = overlay.font_size.unwrap_or(self.size);
         Self {
             family: overlay
                 .font_family
                 .clone()
                 .unwrap_or_else(|| self.family.clone()),
-            size: overlay.font_size.unwrap_or(self.size),
+            size,
             weight: overlay.font_weight.unwrap_or(self.weight),
             style: overlay.font_style.unwrap_or(self.style),
             color: overlay.color.unwrap_or(self.color),
@@ -276,7 +287,24 @@ impl ResolvedText {
             // `.or`, not `unwrap_or`: the latter turns an absent value
             // into the number `1.0`, and from there an explicit `1.0` and an
             // inherited `normal` are indistinguishable.
-            line_height: overlay.line_height.or(self.line_height),
+            //
+            // **A percentage resolves here and a number does not**, which is
+            // the whole of CSS's rule and the one asymmetry in this merge. A
+            // percentage is a share of the declaring element's own size, so
+            // the length it becomes is what descends; a number descends as a
+            // number and is recomputed against each inheritor's size.
+            //
+            // Both mistakes pass every test that only declares: resolve a
+            // percentage late and a 32px child reads 48 where Chrome says 24;
+            // resolve a number early and the same child reads 24 where Chrome
+            // says 48.
+            line_height: match overlay.line_height {
+                Some(LineHeight::Percent(share)) => {
+                    Some(LineHeight::Length(share * size))
+                }
+                Some(stated) => Some(stated),
+                None => self.line_height,
+            },
             line_gap: overlay.line_gap.unwrap_or(self.line_gap),
             letter_spacing: overlay
                 .letter_spacing
@@ -685,8 +713,123 @@ pub(crate) mod tests {
         },
     };
 
-    use super::{Fonts, Resolved, ResolvedText, is_local};
+    use super::{Fonts, LineHeight, Resolved, ResolvedText, is_local};
     use crate::Error;
+
+    /// Chrome's four kinds, declared and inherited, measured by MC Main.
+    ///
+    /// A parent at `16px` declares; a child at `32px` inherits and states
+    /// nothing of its own.
+    ///
+    /// ```text
+    ///                  declared at 16   inherited by the 32px child
+    /// number 1.5             24                    48
+    /// length 24px            24                    24
+    /// percent 150%           24                    24
+    /// ```
+    ///
+    /// **The declared column cannot tell the three apart** -- every one of
+    /// them is 24 at 16px. Only the inherited column separates them, and it
+    /// separates them in two directions: a percentage resolved late reads 48
+    /// where Chrome says 24, and a number resolved early reads 24 where
+    /// Chrome says 48. **Two opposite mistakes, each invisible to a test that
+    /// only declares.**
+    ///
+    /// `normal` is not here. It is face-dependent -- Chrome gives 25 and 48
+    /// for Poppins against 24 and 47 for Oswald -- and it is its own task.
+    fn inherited(declared: LineHeight) -> Option<LineHeight> {
+        let parent = ResolvedText {
+            size: 16.0,
+            line_height: None,
+            ..ResolvedText::initial()
+        };
+        let declaring = parent.inherit(&TextStyle {
+            line_height: Some(declared),
+            ..TextStyle::default()
+        });
+        let child = declaring.inherit(&TextStyle {
+            font_size: Some(32.0),
+            ..TextStyle::default()
+        });
+        child.line_height
+    }
+
+    /// The pixels a line box of that height comes to at `size`.
+    fn pixels(height: Option<LineHeight>, size: f32) -> Option<f32> {
+        crate::lines::Metrics::of(&ResolvedText {
+            size,
+            line_height: height,
+            ..ResolvedText::initial()
+        })
+        .line_height
+    }
+
+    #[test]
+    fn a_percentage_resolves_where_it_is_declared() {
+        // 150% of the DECLARING element's 16px is 24, and 24 is what
+        // descends. Chrome: 24, not 48.
+        assert_eq!(
+            inherited(LineHeight::Percent(1.5)),
+            Some(LineHeight::Length(24.0))
+        );
+        assert_eq!(
+            pixels(inherited(LineHeight::Percent(1.5)), 32.0),
+            Some(24.0)
+        );
+    }
+
+    #[test]
+    fn a_number_is_recomputed_by_whoever_inherits_it() {
+        // The number descends as a number, so the 32px child gets 48 rather
+        // than the 24 the parent would have had.
+        assert_eq!(
+            inherited(LineHeight::Number(1.5)),
+            Some(LineHeight::Number(1.5))
+        );
+        assert_eq!(
+            pixels(inherited(LineHeight::Number(1.5)), 32.0),
+            Some(48.0)
+        );
+    }
+
+    #[test]
+    fn a_length_descends_unchanged() {
+        assert_eq!(
+            inherited(LineHeight::Length(24.0)),
+            Some(LineHeight::Length(24.0))
+        );
+        assert_eq!(
+            pixels(inherited(LineHeight::Length(24.0)), 32.0),
+            Some(24.0)
+        );
+    }
+
+    #[test]
+    fn the_declared_column_cannot_tell_the_three_apart() {
+        // **The control, and the reason the tests above read the child.** All
+        // three are 24 at the element that declares them, so a suite that
+        // stopped here would pass with the percentage and the number resolved
+        // at either end.
+        for declared in [
+            LineHeight::Number(1.5),
+            LineHeight::Length(24.0),
+            LineHeight::Percent(1.5),
+        ] {
+            let resolved = ResolvedText {
+                size: 16.0,
+                ..ResolvedText::initial()
+            }
+            .inherit(&TextStyle {
+                line_height: Some(declared),
+                ..TextStyle::default()
+            });
+            assert_eq!(
+                pixels(resolved.line_height, 16.0),
+                Some(24.0),
+                "{declared:?} is not 24 at the element that declares it"
+            );
+        }
+    }
 
     /// A 4x2 opaque red PNG, written byte by byte rather than committed as a
     /// file. Seventy-five bytes is smaller than the smallest fixture worth

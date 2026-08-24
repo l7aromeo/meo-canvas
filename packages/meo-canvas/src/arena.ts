@@ -66,6 +66,7 @@ import type {
   GradientStop,
   GridPlacement,
   Length,
+  LineHeight,
   Mask,
   Sides,
   Spacing,
@@ -555,6 +556,39 @@ function writeSpacing(out: ArenaWriter, value: Spacing): void {
   }
   out.enum(2)
   out.f32(em)
+}
+
+/**
+ * Writes a line height: a tag, then the value.
+ *
+ * CSS's four kinds and the three the scene stores. `normal` is the absence of
+ * a value and never reaches here — the caller writes nothing at all, and the
+ * `optional` wrapper around this writes the absent marker.
+ *
+ * **A percentage is written as a percentage and resolved in the core**, at the
+ * element that declares it, because that is where its own font size is known.
+ * A number is not resolved there: it descends as a number and each inheritor
+ * recomputes it against its own size. Measured in Chrome, a 16px parent
+ * declaring for a 32px child: `1.5` inherits as 48, `150%` inherits as 24.
+ */
+function writeLineHeight(out: ArenaWriter, value: LineHeight): void {
+  if (typeof value === 'number') {
+    out.enum(0)
+    out.f32(value)
+    return
+  }
+  const pixels = suffixed(value, 'px')
+  if (pixels !== undefined) {
+    out.enum(1)
+    out.f32(pixels)
+    return
+  }
+  const share = percentage(value)
+  if (share === undefined) {
+    throw new TypeError(`${JSON.stringify(value)} is not a line height; write a number, '…px' or '…%', or leave it out for 'normal'`)
+  }
+  out.enum(2)
+  out.f32(share)
 }
 
 /**
@@ -1172,7 +1206,7 @@ const TEXT_PROPERTIES: readonly Property[] = [
     keys: ['paintOrder'],
     write: (out, style) => out.optional(style.paintOrder, value => out.enum(variant(PAINT_ORDER, value, 'paintOrder'))),
   },
-  { index: 9, rust: 'line_height', keys: ['lineHeight'], write: (out, style) => out.optional(style.lineHeight, height => out.f32(height)) },
+  { index: 9, rust: 'line_height', keys: ['lineHeight'], write: (out, style) => out.optional(style.lineHeight, height => writeLineHeight(out, height)) },
   { index: 10, rust: 'line_gap', keys: ['lineGap'], write: (out, style) => out.optional(style.lineGap, gap => out.f32(gap)) },
   { index: 11, rust: 'letter_spacing', keys: ['letterSpacing'], write: (out, style) => out.optional(style.letterSpacing, value => writeSpacing(out, value)) },
   { index: 12, rust: 'word_spacing', keys: ['wordSpacing'], write: (out, style) => out.optional(style.wordSpacing, value => writeSpacing(out, value)) },

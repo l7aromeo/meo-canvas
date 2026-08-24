@@ -174,8 +174,8 @@ pub use meo_canvas_scene::style::{
         ObjectFit,
     },
     text::{
-        FontStyle, FontVariant, FontWeight, TextAlign, TextDecoration,
-        VerticalAlign,
+        FontStyle, FontVariant, FontWeight, LineHeight, TextAlign,
+        TextDecoration, VerticalAlign,
     },
 };
 /// The style keywords, at the crate root.
@@ -227,8 +227,8 @@ pub mod scene {
                 GradientStop, LinearDirection, ObjectFit, PaintStyle,
             },
             text::{
-                FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
-                TextAlign, TextDecoration, TextStroke, TextStyle,
+                FontStyle, FontVariant, FontWeight, LineHeight, ParagraphStyle,
+                Spacing, TextAlign, TextDecoration, TextStroke, TextStyle,
                 VerticalAlign,
             },
         },

@@ -96,7 +96,7 @@
 //! text     := opt<str>(family) opt<f32>(size) opt<u16>(weight) opt<enum>(style)
 //!             opt<color> opt<enum>(align) opt<enum>(decoration)
 //!             opt<enum>(vertical_align) opt<enum>(paint_order)
-//!             opt<f32>(line_height) opt<f32>(line_gap)
+//!             opt<LineHeight>(line_height) opt<f32>(line_gap)
 //!             opt<spacing>(letter) opt<spacing>(word)
 //!             opt<list<enum>>(font_variant) opt<stroke>
 //! stroke   := f32(width) color
@@ -405,9 +405,9 @@ mod tests {
                 GradientStop, LinearDirection, ObjectFit, PaintStyle,
             },
             text::{
-                FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
-                TextAlign, TextDecoration, TextSegment, TextStroke, TextStyle,
-                VerticalAlign,
+                FontStyle, FontVariant, FontWeight, LineHeight, ParagraphStyle,
+                Spacing, TextAlign, TextDecoration, TextSegment, TextStroke,
+                TextStyle, VerticalAlign,
             },
         },
         surface::{ColorSpace, ColorType},
@@ -555,7 +555,7 @@ mod tests {
             text_decoration: Some(TextDecoration::LineThrough),
             vertical_align: Some(VerticalAlign::Middle),
             paint_order: Some(PaintOrder::Stroke),
-            line_height: Some(1.4),
+            line_height: Some(LineHeight::Length(24.0)),
             line_gap: Some(2.0),
             letter_spacing: Some(Spacing::Em(0.05)),
             word_spacing: Some(Spacing::Points(3.0)),

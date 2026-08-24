@@ -217,6 +217,48 @@ pub enum Spacing {
     Em(f32),
 }
 
+/// How tall a line box is, in the four spellings CSS gives it.
+///
+/// # Three variants for four kinds
+///
+/// `normal` is the **absence** of a stated value and is spelled `None` where
+/// this appears, which is what `Option` has meant here since the line-height
+/// sentinel: an explicit `1.0` and an inherited `normal` are different things
+/// and were once indistinguishable.
+///
+/// # Why a percentage is here and not in the resolved form
+///
+/// **This is what the author wrote; resolution is where it stops being that.**
+/// A percentage resolves against the font size of the element that *declares*
+/// it, and the resulting **length** is what descendants inherit -- so
+/// `crates/meo-canvas-core/src/resolve.rs` turns a `Percent` into a `Length`
+/// as it merges, and nothing downstream ever sees one.
+///
+/// A [`Number`](Self::Number) is not resolved there, and the difference is the
+/// whole of CSS's rule. Measured in Chrome, a parent at `16px` declaring for a
+/// child at `32px`:
+///
+/// ```text
+///                declared   inherited by a 32px child
+/// number 1.5       24              48   <- recomputed against the child
+/// length 24px      24              24
+/// percent 150%     24              24   <- resolved at the parent, not 48
+/// ```
+///
+/// **Both mistakes are invisible to a test that only declares.** Resolve a
+/// percentage late and the third row reads 48; resolve a number early and the
+/// first reads 24. Every directly-declared row passes either way.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineHeight {
+    /// A multiple of the font size, recomputed by whoever inherits it.
+    Number(f32),
+    /// An absolute height in logical pixels.
+    Length(f32),
+    /// A share of the declaring element's own font size, as a fraction --
+    /// `1.5` is CSS's `150%`. Never survives resolution.
+    Percent(f32),
+}
+
 /// An outline drawn around glyphs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextStroke {
@@ -250,8 +292,8 @@ pub struct TextStyle {
     pub vertical_align: Option<VerticalAlign>,
     /// Which of fill and stroke is drawn on top.
     pub paint_order: Option<PaintOrder>,
-    /// Line box height as a multiple of the font size.
-    pub line_height: Option<f32>,
+    /// How tall a line box is. `None` is CSS's `normal`.
+    pub line_height: Option<LineHeight>,
     /// Extra space added to every line box, in logical pixels.
     pub line_gap: Option<f32>,
     /// Space between glyphs.

@@ -37,7 +37,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use meo_canvas_scene::style::text::{
-    FontStyle, FontVariant, ParagraphStyle, Spacing, TextSegment,
+    FontStyle, FontVariant, LineHeight, ParagraphStyle, Spacing, TextSegment,
 };
 use meo_skia_canvas::{
     Canvas, CanvasOptions, Font, FontFeature, FontStretch, FontVariantCaps,
@@ -525,12 +525,31 @@ impl Metrics {
             // document got the face's metrics instead -- twenty of them in
             // one card, six pixels apiece.
             //
-            // The zero-and-below guard stays: a non-positive multiple has no
+            // The zero-and-below guard stays: a non-positive height has no
             // line box to give and is not what this change is about.
-            line_height: base
-                .line_height
-                .filter(|multiple| *multiple > 0.0)
-                .map(|multiple| multiple * base.size),
+            //
+            // **This is where a stated height becomes pixels, and it is the
+            // only place a number is multiplied.** A length is already
+            // pixels; a number is a multiple of *this* element's size, which
+            // is why it survives resolution unresolved. A percentage cannot
+            // arrive -- `ResolvedText` never holds one.
+            line_height: match base.line_height {
+                Some(LineHeight::Number(multiple)) if multiple > 0.0 => {
+                    Some(multiple * base.size)
+                }
+                Some(LineHeight::Length(pixels)) if pixels > 0.0 => {
+                    Some(pixels)
+                }
+                Some(LineHeight::Percent(share)) => {
+                    // Resolution turns every percentage into a length, so
+                    // one here is a scene that skipped it rather than a value
+                    // to interpret. Treated as the length it would have been
+                    // against this element's size, which is the same answer
+                    // resolution would have produced.
+                    (share > 0.0).then_some(share * base.size)
+                }
+                _ => None,
+            },
             line_gap: base.line_gap,
         }
     }
@@ -1051,7 +1070,7 @@ pub fn layout(
 #[cfg(test)]
 mod tests {
     use meo_canvas_scene::style::text::{
-        ParagraphStyle, Spacing, TextSegment, TextStyle,
+        LineHeight, ParagraphStyle, Spacing, TextSegment, TextStyle,
     };
     use meo_skia_canvas::TextEngine;
 
@@ -1163,7 +1182,7 @@ mod tests {
             let base = ResolvedText {
                 family: TEST_FAMILY.to_owned(),
                 size: case.size,
-                line_height: Some(case.line_height),
+                line_height: Some(LineHeight::Number(case.line_height)),
                 letter_spacing: Spacing::Points(case.letter_spacing),
                 ..ResolvedText::initial()
             };
@@ -1416,7 +1435,7 @@ mod tests {
         let mut measurer = TextMeasurer::new();
         let mut base = style();
         // Half the face's own, so the box is shorter than the content.
-        base.line_height = Some(0.5);
+        base.line_height = Some(LineHeight::Number(0.5));
         let metrics = Metrics::of(&base);
         let block = layout(
             &mut measurer,

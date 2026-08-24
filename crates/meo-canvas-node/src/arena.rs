@@ -763,7 +763,7 @@ arena_group! {
         6 => text_decoration: Option<meo_canvas_scene::style::text::TextDecoration>,
         7 => vertical_align: Option<meo_canvas_scene::style::text::VerticalAlign>,
         8 => paint_order: Option<meo_canvas_scene::style::PaintOrder>,
-        9 => line_height: Option<f32>,
+        9 => line_height: Option<meo_canvas_scene::style::text::LineHeight>,
         10 => line_gap: Option<f32>,
         11 => letter_spacing: Option<meo_canvas_scene::style::text::Spacing>,
         12 => word_spacing: Option<meo_canvas_scene::style::text::Spacing>,

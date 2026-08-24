@@ -71,9 +71,9 @@ use meo_canvas_scene::{
             GradientStop, LinearDirection, ObjectFit,
         },
         text::{
-            FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing,
-            TextAlign, TextDecoration, TextSegment, TextStroke, TextStyle,
-            VerticalAlign,
+            FontStyle, FontVariant, FontWeight, LineHeight, ParagraphStyle,
+            Spacing, TextAlign, TextDecoration, TextSegment, TextStroke,
+            TextStyle, VerticalAlign,
         },
     },
 };
@@ -401,6 +401,11 @@ json_tagged!(Length {
 json_tagged!(Dimension {
     Self::Auto => "auto";
     Self::Points(v) => "points", v;
+    Self::Percent(v) => "percent", v;
+});
+json_tagged!(LineHeight {
+    Self::Number(v) => "number", v;
+    Self::Length(v) => "length", v;
     Self::Percent(v) => "percent", v;
 });
 json_tagged!(TrackSize {

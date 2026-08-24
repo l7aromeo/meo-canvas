@@ -50,6 +50,15 @@ export type Dimension = Length | 'auto'
  */
 export type Spacing = number | `${number}px` | `${number}em` | 'normal'
 
+/**
+ * How tall a line box is, in CSS's three stated spellings.
+ *
+ * `normal` is the fourth kind and is not here: it is the absence of a value,
+ * written by leaving `lineHeight` out. An explicit `1` is a line box exactly
+ * one em tall and is a different thing.
+ */
+export type LineHeight = number | `${number}px` | `${number}%`
+
 /** One value on every edge, or each edge named. */
 export type Sides<T> =
   | T
@@ -588,8 +597,16 @@ export interface Style {
   readonly verticalAlign?: VerticalAlign
   /** Which of a glyph's fill and stroke is on top. Inherits. */
   readonly paintOrder?: PaintOrder
-  /** Line box height as a multiple of the em size. Inherits. */
-  readonly lineHeight?: number
+  /**
+   * How tall a line box is. Inherits.
+   *
+   * A number is a multiple of the font size and is recomputed by whoever
+   * inherits it; `'24px'` is an absolute height and descends unchanged;
+   * `'150%'` is a share of **this** element's size, resolved here and
+   * inherited as the length it comes to. Leaving it out is CSS's `normal`,
+   * which is not the same as `1`.
+   */
+  readonly lineHeight?: LineHeight
   /** Extra space between lines, in pixels. Inherits. */
   readonly lineGap?: number
   /** Space added between characters. Inherits. */

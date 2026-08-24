@@ -14,7 +14,7 @@
 use meo_canvas_core::color::parse_color;
 use meo_canvas_scene::{
     geometry::{Corners, Sides},
-    style::{Dimension, Length, paint::Color},
+    style::{Dimension, Length, paint::Color, text::LineHeight},
 };
 
 use super::{ArenaError, Reader};
@@ -200,6 +200,27 @@ impl ArenaValue for Length {
             found => Err(ArenaError::UnknownTag {
                 slot,
                 what: "Length",
+                found: f64::from(found),
+            }),
+        }
+    }
+}
+
+impl ArenaValue for LineHeight {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let slot = input.offset();
+        let tag = input.tag()?;
+        let value = f32::read(input)?;
+        match tag {
+            // Two slots wide, like `Dimension` and for the same reason: the
+            // writer emits a pair unconditionally rather than branching, and
+            // a fixed width is what lets a reader skip what it does not know.
+            0 => Ok(Self::Number(value)),
+            1 => Ok(Self::Length(value)),
+            2 => Ok(Self::Percent(value)),
+            found => Err(ArenaError::UnknownTag {
+                slot,
+                what: "LineHeight",
                 found: f64::from(found),
             }),
         }

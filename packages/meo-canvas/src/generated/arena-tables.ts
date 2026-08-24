@@ -93,7 +93,7 @@ export const TEXT: readonly ArenaProperty[] = [
   { index: 6, name: "text_decoration", type: "Option<meo_canvas_scene::style::text::TextDecoration>" },
   { index: 7, name: "vertical_align", type: "Option<meo_canvas_scene::style::text::VerticalAlign>" },
   { index: 8, name: "paint_order", type: "Option<meo_canvas_scene::style::PaintOrder>" },
-  { index: 9, name: "line_height", type: "Option<f32>" },
+  { index: 9, name: "line_height", type: "Option<meo_canvas_scene::style::text::LineHeight>" },
   { index: 10, name: "line_gap", type: "Option<f32>" },
   { index: 11, name: "letter_spacing", type: "Option<meo_canvas_scene::style::text::Spacing>" },
   { index: 12, name: "word_spacing", type: "Option<meo_canvas_scene::style::text::Spacing>" },

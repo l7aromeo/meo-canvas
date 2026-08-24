@@ -195,6 +195,7 @@ export type {
   GradientDirection,
   GradientRamp,
   GradientStop,
+  LineHeight,
   Mask,
   MaskShape,
   Sides,

@@ -54,7 +54,7 @@ use meo_canvas_scene::{
             ObjectFit, PaintStyle,
         },
         text::{
-            FontStyle, FontVariant, FontWeight, Spacing, TextAlign,
+            FontStyle, FontVariant, FontWeight, LineHeight, Spacing, TextAlign,
             TextDecoration, TextStroke, TextStyle, VerticalAlign,
         },
     },
@@ -198,8 +198,8 @@ pub struct Style {
     pub vertical_align: Option<VerticalAlign>,
     /// Which of a glyph's fill and stroke is on top. Inherits.
     pub paint_order: Option<PaintOrder>,
-    /// Line box height as a multiple of the em size. Inherits.
-    pub line_height: Option<f32>,
+    /// How tall a line box is. `None` is CSS's `normal`. Inherits.
+    pub line_height: Option<LineHeight>,
     /// Extra space between lines, in pixels. Inherits.
     pub line_gap: Option<f32>,
     /// OpenType features applied to the run. Inherits.
@@ -658,8 +658,23 @@ properties! {
         /// ```
     owned font_variant: font_variant, Vec<FontVariant>;
 
-        /// Line box height as a multiple of the em size.
-    plain line_height: line_height, f32;
+        /// How tall a line box is, in any of CSS's three stated spellings.
+        ///
+        /// ```
+        /// use meo_canvas::{LineHeight, Style};
+        ///
+        /// // A multiple of the font size, recomputed by whoever inherits it.
+        /// const LOOSE: Style = Style::new().line_height(LineHeight::Number(1.4));
+        /// // An absolute height, which descends unchanged.
+        /// const FIXED: Style = Style::new().line_height(LineHeight::Length(24.0));
+        /// // A share of THIS element's size, resolved here and inherited as
+        /// // the length it comes to.
+        /// const HALF: Style = Style::new().line_height(LineHeight::Percent(1.5));
+        /// ```
+        ///
+        /// **Saying nothing is CSS's `normal`** and is not the same as
+        /// `Number(1.0)`, which is a line box exactly one em tall.
+    plain line_height: line_height, LineHeight;
 
         /// Extra space between lines, in pixels.
     plain line_gap: line_gap, f32;
@@ -1207,7 +1222,7 @@ mod tests {
             Overflow,
         },
         paint::PaintStyle,
-        text::{FontStyle, FontWeight, Spacing, TextStyle},
+        text::{FontStyle, FontWeight, LineHeight, Spacing, TextStyle},
     };
 
     use super::Style;
@@ -1375,7 +1390,7 @@ mod tests {
             .font_size(24.0)
             .bold()
             .italic()
-            .line_height(1.4)
+            .line_height(LineHeight::Number(1.4))
             .letter_spacing(px(-0.5))
             .word_spacing(pct(10.0))
             .into_parts();
@@ -1384,7 +1399,7 @@ mod tests {
         assert_eq!(text.font_size, Some(24.0));
         assert_eq!(text.font_weight, Some(FontWeight::BOLD));
         assert_eq!(text.font_style, Some(FontStyle::Italic));
-        assert_eq!(text.line_height, Some(1.4));
+        assert_eq!(text.line_height, Some(LineHeight::Number(1.4)));
         assert_eq!(text.letter_spacing, Some(Spacing::Points(-0.5)));
         // A percentage of the font size is what CSS's `em` means here.
         assert_eq!(text.word_spacing, Some(Spacing::Em(0.1)));

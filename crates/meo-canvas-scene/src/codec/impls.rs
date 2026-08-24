@@ -29,8 +29,8 @@ use crate::{
             GradientKind, GradientStop, LinearDirection, PaintStyle,
         },
         text::{
-            FontWeight, ParagraphStyle, Spacing, TextSegment, TextStroke,
-            TextStyle,
+            FontWeight, LineHeight, ParagraphStyle, Spacing, TextSegment,
+            TextStroke, TextStyle,
         },
     },
 };
@@ -206,6 +206,35 @@ impl Wire for Length {
         match input.u8()? {
             TAG_FIRST => Ok(Self::Points(input.f32()?)),
             1 => Ok(Self::Percent(input.f32()?)),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
+    }
+}
+
+impl Wire for LineHeight {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::Number(value) => {
+                out.u8(TAG_FIRST);
+                out.f32(*value);
+            }
+            Self::Length(value) => {
+                out.u8(1);
+                out.f32(*value);
+            }
+            Self::Percent(value) => {
+                out.u8(2);
+                out.f32(*value);
+            }
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            TAG_FIRST => Ok(Self::Number(input.f32()?)),
+            1 => Ok(Self::Length(input.f32()?)),
+            2 => Ok(Self::Percent(input.f32()?)),
             tag => Err(CodecError::UnknownTag { offset, tag }),
         }
     }

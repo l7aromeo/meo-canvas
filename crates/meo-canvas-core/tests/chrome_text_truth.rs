@@ -34,7 +34,9 @@ use meo_canvas_core::{
     lines::{METRICS_STRING, Metrics, RunStyle, TextMeasurer, layout},
     resolve::{Fonts, ResolvedText},
 };
-use meo_canvas_scene::style::text::{ParagraphStyle, TextSegment, TextStyle};
+use meo_canvas_scene::style::text::{
+    LineHeight, ParagraphStyle, TextSegment, TextStyle,
+};
 
 /// The face the fixtures register, and the one Chrome was asked about.
 const FONT: (&str, &str) =
@@ -267,7 +269,7 @@ fn a_line_box_places_its_baseline_where_chrome_does() {
     }];
 
     for (multiple, box_height, baseline) in CHROME_LINE_BOXES {
-        base.line_height = multiple;
+        base.line_height = multiple.map(LineHeight::Number);
         let block = layout(
             &mut measurer,
             &base,
@@ -312,7 +314,7 @@ fn a_multiple_and_a_length_are_the_same_line_box() {
         style: TextStyle::default(),
     }];
 
-    base.line_height = Some(2.0);
+    base.line_height = Some(LineHeight::Number(2.0));
     let doubled = layout(
         &mut measurer,
         &base,
