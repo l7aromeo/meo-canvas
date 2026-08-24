@@ -2178,15 +2178,6 @@ fn stroke_fitted_side(
     };
     let straight = (to.0 - from.0).hypot(to.1 - from.1);
     if straight > 0.0 {
-        if side.dotted {
-            eprintln!(
-                "PROBE edge={} len={straight} from={:?} to={:?} fit={:?}",
-                side.edge,
-                from,
-                to,
-                fitted_dot(straight, side.width)
-            );
-        }
         let fitted: [f32; 2] = if side.dotted {
             fitted_dot(straight, side.width)
         } else {
@@ -3993,6 +3984,7 @@ fn draw_mask(
 
 #[cfg(test)]
 mod tests {
+
     /// The transform a `viewBox` produces, checked against SVG's own rule.
     ///
     /// Verified against a render before these were written: a `0 0 10 10` box
