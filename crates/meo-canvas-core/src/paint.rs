@@ -4214,7 +4214,7 @@ mod tests {
     /// coverage with nothing composited under it.
     mod corner_seam {
         use meo_canvas_scene::{
-            Scene, Sides, Size,
+            Corners, Scene, Sides, Size,
             node::{Node, NodeId, NodeKind},
             style::{
                 Dimension,
@@ -4524,6 +4524,233 @@ mod tests {
                 "a 4-pixel dot is {four:.3} of ink, nearer a square's 16 \
                  than a circle's 12.57 -- Chrome rounds from four"
             );
+        }
+
+        /// Walks our top-left quarter arc the way the Chrome table walks it.
+        ///
+        /// **Zero is the LEFT tangent**, sweeping through the diagonal to the
+        /// top -- `walkArc(cx, cy, Math.PI)` in
+        /// `packages/meo-canvas/tools/conformance/borders.mjs`, which starts
+        /// at angle π and adds a quarter turn. Read the other way round every
+        /// run below is mirrored and the comparison is of two different
+        /// walks.
+        ///
+        /// Radius, sampling and threshold all follow that generator: the
+        /// centre path's radius is `radius - width / 2`, six hundred steps,
+        /// each sample **floored** to a pixel, ink is red below 128 on white.
+        ///
+        /// Chrome at `radius 8, width 4`, `border-rhythm.tsv` line 71:
+        ///
+        /// ```text
+        /// quarter=9.4  first-ink@0  on:4.4 off:4.1 on:1.0
+        /// ```
+        ///
+        /// `cargo test -p meo-canvas-core --lib arc_walk -- --ignored
+        /// --nocapture`
+        #[test]
+        #[ignore = "prints a walk rather than asserting one"]
+        fn arc_walk() {
+            for (radius, width) in [(8.0_f32, 4.0_f32), (6.0, 4.0), (5.0, 4.0)]
+            {
+                let mut scene = Scene::new(Size::new(240.0, 48.0));
+                if let Some(root) = scene.get_mut(NodeId::ROOT) {
+                    root.paint.background_color = Color::rgb(255, 255, 255);
+                }
+                let id = scene
+                    .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                if let Some(node) = scene.get_mut(id) {
+                    node.layout.size =
+                        (Dimension::Points(240.0), Dimension::Points(48.0));
+                    node.layout.border = Sides::all(width);
+                    node.paint.background_color = Color::rgb(255, 255, 255);
+                    node.paint.border_color_all = Color::rgb(0, 0, 0);
+                    node.paint.border_style = BorderStyle::Dashed;
+                    node.paint.border_radius = Corners::all(radius);
+                }
+                let (stride, pixels) = render(&scene);
+
+                let along = (radius - width / 2.0).max(0.0);
+                let quarter = std::f32::consts::FRAC_PI_2 * along;
+                let (cx, cy) = (radius, radius);
+                let steps = 600_i32;
+                let mut runs: Vec<String> = Vec::new();
+                let mut ink: Option<bool> = None;
+                let mut start = 0_i32;
+                let mut first: Option<String> = None;
+                for step in 0..=steps {
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "six hundred steps"
+                    )]
+                    let fraction = step as f32 / steps as f32;
+                    let angle = std::f32::consts::PI
+                        + fraction * std::f32::consts::FRAC_PI_2;
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "inside a 240x48 page"
+                    )]
+                    let (px, py) = (
+                        along.mul_add(angle.cos(), cx).floor() as usize,
+                        along.mul_add(angle.sin(), cy).floor() as usize,
+                    );
+                    let here = pixels[((py * stride) + px) * 4] < 128;
+                    let Some(was) = ink else {
+                        ink = Some(here);
+                        if here {
+                            first = Some("0".to_owned());
+                        }
+                        continue;
+                    };
+                    if here != was {
+                        #[expect(
+                            clippy::cast_precision_loss,
+                            reason = "six hundred steps"
+                        )]
+                        let length =
+                            ((step - start) as f32 / steps as f32) * quarter;
+                        runs.push(format!(
+                            "{}:{length:.1}",
+                            if was { "on" } else { "off" }
+                        ));
+                        if here && first.is_none() {
+                            #[expect(
+                                clippy::cast_precision_loss,
+                                reason = "six hundred steps"
+                            )]
+                            let at = (step as f32 / steps as f32) * quarter;
+                            first = Some(format!("{at:.1}"));
+                        }
+                        ink = Some(here);
+                        start = step;
+                    }
+                }
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "six hundred steps"
+                )]
+                let tail = ((steps - start) as f32 / steps as f32) * quarter;
+                runs.push(format!(
+                    "{}:{tail:.1}",
+                    if ink == Some(true) { "on" } else { "off" }
+                ));
+                eprintln!(
+                    "r{radius} w{width}  quarter={quarter:.1} \
+                     first-ink@{}  {}",
+                    first.unwrap_or_else(|| "-".to_owned()),
+                    runs.join(" ")
+                );
+
+                // **The same box's straight run, for the comparison that
+                // needs no browser.** If the arc and the side disagree here,
+                // the disagreement is inside one renderer and cannot be a
+                // window, a threshold or a convention.
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a radius and width of a few pixels"
+                )]
+                let (from, to, row) = (
+                    radius as usize,
+                    240 - radius as usize,
+                    (width / 2.0) as usize,
+                );
+                let mut side: Vec<String> = Vec::new();
+                let mut lit = pixels[((row * stride) + from) * 4] < 128;
+                let mut run_start = from;
+                for x in from..to {
+                    let here = pixels[((row * stride) + x) * 4] < 128;
+                    if here != lit {
+                        side.push(format!(
+                            "{}:{}",
+                            if lit { "on" } else { "off" },
+                            x - run_start
+                        ));
+                        lit = here;
+                        run_start = x;
+                    }
+                }
+                side.push(format!(
+                    "{}:{}",
+                    if lit { "on" } else { "off" },
+                    to - run_start
+                ));
+                eprintln!(
+                    "        straight  {}",
+                    side[..9.min(side.len())].join(" ")
+                );
+            }
+        }
+
+        /// Prints the curved corner of a dashed border, against Chrome's.
+        ///
+        /// The `borders-dashed-radius` case: `240x48`, `border: 4px dashed`,
+        /// `border-radius: 8px`, top-left. **Chrome, measured by MC Main:**
+        ///
+        /// ```text
+        /// .......79
+        /// .......79
+        /// .23....69
+        /// .594...59
+        /// 29994..0.
+        /// 59996....
+        /// 79992....
+        /// 89991....
+        /// 9999.....
+        /// ```
+        ///
+        /// **The diagonal numbers that opened this -- `0.635 0.753 0.753`
+        /// against Chrome's `0.325 0.412 0.439` -- are not a coverage
+        /// difference.** Widened to sixteen columns the grids show why:
+        /// Chrome's arc carries a **gap** across the diagonal, blank from
+        /// column 0 to 6 in its first four rows, and ours carries a **mark**
+        /// there. Comparing alphas at those cells reads our ink against the
+        /// fringe of their gap.
+        ///
+        /// So the question is the dash phase around the arc, not the band's
+        /// thickness, and *twice the coverage* was an artefact of sampling a
+        /// mark against a gap. **Both engines put marks on the vertical part
+        /// of the corner and only one puts one on the diagonal.**
+        ///
+        /// `cargo test -p meo-canvas-core --lib curve_grid -- --ignored
+        /// --nocapture`
+        #[test]
+        #[ignore = "prints a grid rather than asserting one"]
+        fn curve_grid() {
+            let mut scene = Scene::new(Size::new(240.0, 48.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(240.0), Dimension::Points(48.0));
+                node.layout.border = Sides::all(4.0);
+                node.paint.border_style = BorderStyle::Dashed;
+                node.paint.border_color_all = Color::rgb(0, 0, 0);
+                node.paint.border_radius = Corners::all(8.0);
+            }
+            let (stride, pixels) = render(&scene);
+            let mut ink = 0.0;
+            for y in 0..16_usize {
+                let row: String = (0..16)
+                    .map(|x| {
+                        let alpha =
+                            u32::from(pixels[(((y * stride) + x) * 4) + 3]);
+                        ink += f64::from(alpha) / 255.0;
+                        if alpha == 0 {
+                            '.'
+                        } else {
+                            char::from(
+                                b'0' + u8::try_from((alpha * 9 + 127) / 255)
+                                    .unwrap_or(9),
+                            )
+                        }
+                    })
+                    .collect();
+                eprintln!("  {row}");
+            }
+            eprintln!("  total ink {ink:.3}");
         }
 
         /// Prints an ordinary dot from a straight run, at four widths.
