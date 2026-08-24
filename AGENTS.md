@@ -940,6 +940,23 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**A `want` column in a repro is arithmetic until somebody measures it.** A
+fifty-line reproduction printed `want 68.0` beside eight configurations, and
+that number was its author's expectation derived from the spec. It became a
+measurement only when the same eight shapes were built as HTML and Chrome
+answered 68 for all of them. **A reader meeting the file cold cannot tell those
+two apart**, so the file itself has to say which it is -- an expectation that
+reads as a measurement is the most portable kind of wrong, because the repro is
+the artifact that gets pasted somewhere its author is not.
+
+**Measure a defect against the fix branch before describing it in terms of that
+fix.** Three negative-margin defects sit in one region of taffy and one of them
+is fixed and merged. Two of the other two would have been written up as
+"probably related to #1152" on the strength of sharing a symptom -- until the
+repro was run against `main` and came back identical, which turns "an unfixed
+corner of a known bug" into "a separate live defect". **Sharing a region and a
+symptom is not evidence of sharing a cause**, and the check costs one build.
+
 **When a comparison changes a container, check whether it changed the children
 too.** A grid holding five cards measured 32 taller than "the same cards in a
 flex row" -- and the row version had also wrapped each card in a `div`. Two
