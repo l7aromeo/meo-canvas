@@ -188,8 +188,8 @@ where
             // Measured text is a used length like any other, so it enters
             // the grid at the same boundary the styled lengths do.
             taffy::Size {
-                width: snapped(measured.size.width),
-                height: snapped(measured.size.height),
+                width: contains(measured.size.width),
+                height: contains(measured.size.height),
             }
         },
     )
@@ -859,6 +859,21 @@ const LAYOUT_GRID: f32 = 64.0;
 /// Percentages are not snapped: they resolve against a containing block this
 /// stage has not computed yet, and Chrome snaps the **resolved** value.
 /// Snapping the fraction would quantise a ratio rather than a length.
+/// A measured content size, snapped **outward** onto [`LAYOUT_GRID`].
+///
+/// **A styled length is a request and a measured size is a claim.** Flooring a
+/// request is right -- Chrome's `LayoutUnit` truncates and every case measured
+/// against it agrees. Flooring a *measurement* says the content fits in a box
+/// it does not fit in, by up to a sixty-fourth of a pixel, and the next pass
+/// re-measures at that width and wraps the last word out of the line.
+fn contains(points: f32) -> f32 {
+    if points.is_finite() {
+        (points * LAYOUT_GRID).ceil() / LAYOUT_GRID
+    } else {
+        points
+    }
+}
+
 fn snapped(points: f32) -> f32 {
     if points.is_finite() {
         (points * LAYOUT_GRID).floor() / LAYOUT_GRID

@@ -230,3 +230,92 @@ fn a_fractional_total_rounds_once_at_the_end() {
         );
     }
 }
+
+/// A text in a flex **row**, whose height says whether it wrapped.
+///
+/// The row is wide enough for the whole phrase several times over, so any
+/// second line is the renderer's doing rather than the container's.
+fn row_height(text: &str) -> f32 {
+    let mut scene = Scene::new(Size::new(400.0, 200.0));
+    if let Some(page) = scene.get_mut(NodeId::ROOT) {
+        page.layout.flex_direction = FlexDirection::Column;
+    }
+    let row = scene
+        .push(NodeId::ROOT, Node::new(NodeKind::Box))
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    if let Some(node) = scene.get_mut(row) {
+        node.layout.size = (Dimension::Points(400.0), Dimension::Auto);
+        node.layout.flex_direction = FlexDirection::Row;
+    }
+    let paragraph = scene
+        .push(
+            row,
+            Node::new(NodeKind::Text {
+                segments: vec![TextSegment {
+                    text: text.to_owned(),
+                    style: meo_canvas_scene::style::text::TextStyle::default(),
+                }],
+                paragraph:
+                    meo_canvas_scene::style::text::ParagraphStyle::default(),
+            }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    if let Some(node) = scene.get_mut(paragraph) {
+        node.text.font_family = Some(FONT.0.to_owned());
+        node.text.font_size = Some(SIZE);
+        node.text.line_height = Some(1.0);
+    }
+
+    let fonts = Fonts::new();
+    fonts.register_path(FONT.0, FONT.1).unwrap_or_else(|error| {
+        unreachable!("the face did not register: {error}")
+    });
+    let resolved = Resolved::new(&scene, &fonts)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let solved = layout::solve(&scene, NodeId::ROOT, &mut measurer)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    solved
+        .get(row)
+        .unwrap_or_else(|| unreachable!("no rectangle for the row"))
+        .size
+        .height
+}
+
+/// A phrase in a roomy row stays on one line, and a single word proves the
+/// check can tell them apart.
+///
+/// # The defect
+///
+/// A measured content width was snapped into sixty-fourths with the same
+/// **floor** the styled lengths use. A styled length is a request and
+/// truncating one is right -- Chrome's `LayoutUnit` does. A measurement is a
+/// claim, and truncating it says the content fits in a box up to a
+/// sixty-fourth narrower than the content is. A flex item's base size is its
+/// max-content contribution, so the item was then sized to that shortfall and
+/// re-measured at it, and **the last word fell off the line**.
+///
+/// It needed a space to fall at, which is why the one-word case was always
+/// right and why nothing in the tree caught it: every text in a row here
+/// either carries `max_lines` or has nowhere to break. Chrome keeps all of
+/// these on one line.
+///
+/// **The single-word row is the control.** Without it this passes on a
+/// renderer that never wraps anything at all.
+#[test]
+fn a_phrase_in_a_roomy_row_does_not_wrap() {
+    let one_word = row_height("CRITRate");
+    assert!(
+        (one_word - SIZE).abs() < 0.01,
+        "a single word should be one line of {SIZE}, not {one_word}"
+    );
+    for phrase in ["CRIT Rate", "CRIT Rate Bonus", "Energy Recharge"] {
+        let height = row_height(phrase);
+        assert!(
+            (height - one_word).abs() < 0.01,
+            "{phrase:?} wrapped in a 400-wide row: {height} against \
+             {one_word} for one word"
+        );
+    }
+}
