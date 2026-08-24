@@ -203,8 +203,14 @@ pub struct ResolvedText {
     pub text_stroke: Option<TextStroke>,
     /// Which of fill and stroke is drawn on top.
     pub paint_order: PaintOrder,
-    /// Line box height as a multiple of the font size.
-    pub line_height: f32,
+    /// Line box height as a multiple of the font size, or `None` for the
+    /// face's own -- CSS's `normal`.
+    ///
+    /// **An `Option` because `1.0` is a value a caller can ask for.** A line
+    /// box exactly one em tall is legal CSS and is not `normal`; carrying the
+    /// two as one `f32` made them the same number, and every
+    /// `line-height: 1` in a document silently became the face's metrics.
+    pub line_height: Option<f32>,
     /// Extra space added to every line box, in logical pixels.
     pub line_gap: f32,
     /// Space between glyphs.
@@ -237,7 +243,7 @@ impl ResolvedText {
             vertical_align: VerticalAlign::Top,
             text_stroke: None,
             paint_order: PaintOrder::Fill,
-            line_height: Self::NORMAL_LINE_HEIGHT,
+            line_height: None,
             line_gap: 0.0,
             letter_spacing: Spacing::Normal,
             word_spacing: Spacing::Normal,
@@ -267,7 +273,10 @@ impl ResolvedText {
                 .unwrap_or(self.vertical_align),
             text_stroke: overlay.text_stroke.or(self.text_stroke),
             paint_order: overlay.paint_order.unwrap_or(self.paint_order),
-            line_height: overlay.line_height.unwrap_or(self.line_height),
+            // `.or`, not `unwrap_or`: the latter turns an absent value
+            // into the number `1.0`, and from there an explicit `1.0` and an
+            // inherited `normal` are indistinguishable.
+            line_height: overlay.line_height.or(self.line_height),
             line_gap: overlay.line_gap.unwrap_or(self.line_gap),
             letter_spacing: overlay
                 .letter_spacing
@@ -937,10 +946,7 @@ pub(crate) mod tests {
         );
         assert_eq!(initial.weight, FontWeight::NORMAL);
         assert_eq!(initial.color, Color::BLACK);
-        assert!(
-            (initial.line_height - ResolvedText::NORMAL_LINE_HEIGHT).abs()
-                < f32::EPSILON
-        );
+        assert!(initial.line_height.is_none());
         assert!(initial.font_variant.is_empty());
 
         // An overlay that sets nothing changes nothing.

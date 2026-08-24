@@ -212,8 +212,34 @@ fn a_space_is_as_wide_as_chrome_makes_it() {
 /// thing it measured, in one column while the other stayed clean. The box
 /// height here is 8; the baseline is 11, and the baseline is what was in
 /// question.
-const CHROME_LINE_BOXES: [(f32, f32, f32); 3] =
-    [(1.0, 24.0, 19.0), (2.0, 32.0, 23.0), (0.5, 8.0, 11.0)];
+/// **The first row was labelled `1.0` and is Chrome's `normal`.** At a 16px
+/// font `line-height: 1` is a 16px box; this row pins 24.0, which is the
+/// face's own metrics. The label was the sentinel leaking into the measured
+/// data -- while `1.0` meant "the face's own" everywhere in this crate,
+/// recording `normal` under that spelling was invisible. It is `None` now,
+/// which is what was actually measured.
+///
+/// **`Some(1.0)` is a real `line-height: 1` and it is measured, not derived.**
+/// It became expressible only when the sentinel went, so nothing could have
+/// pinned it before.
+///
+/// It is also what the leading model predicts -- `19 + (16 - 24) / 2 = 15` --
+/// so **this row confirms the model rather than constraining it.** Said
+/// plainly because 16.0 and 15.0 are exactly the numbers the arithmetic makes
+/// obvious, and a reader who assumes they were derived would be right about
+/// the value and wrong about where it came from.
+///
+/// The measurement reproduced the three rows above it before it was trusted
+/// with the fourth, and its first attempt did not: a zero-height marker at the
+/// baseline **grew a tight line box to contain itself**, reading 11.0 for the
+/// `0.5` row's 8.0. **An instrument that cannot reproduce known values cannot
+/// be trusted on unknown ones**, and the known rows are what caught it.
+const CHROME_LINE_BOXES: [(Option<f32>, f32, f32); 4] = [
+    (None, 24.0, 19.0),
+    (Some(1.0), 16.0, 15.0),
+    (Some(2.0), 32.0, 23.0),
+    (Some(0.5), 8.0, 11.0),
+];
 
 /// A line box is the face's metrics with the leading split above and below.
 ///
@@ -253,12 +279,13 @@ fn a_line_box_places_its_baseline_where_chrome_does() {
         let line = &block.lines[0];
         assert!(
             (line.height - box_height).abs() < 0.01,
-            "line-height {multiple}: a box of {} is not Chrome's {box_height}",
+            "line-height {multiple:?}: a box of {} is not Chrome's \
+             {box_height}",
             line.height
         );
         assert!(
             (line.baseline_from_top() - baseline).abs() < 0.01,
-            "line-height {multiple}: a baseline at {} is not Chrome's \
+            "line-height {multiple:?}: a baseline at {} is not Chrome's \
              {baseline}",
             line.baseline_from_top()
         );
@@ -285,7 +312,7 @@ fn a_multiple_and_a_length_are_the_same_line_box() {
         style: TextStyle::default(),
     }];
 
-    base.line_height = 2.0;
+    base.line_height = Some(2.0);
     let doubled = layout(
         &mut measurer,
         &base,
@@ -300,7 +327,10 @@ fn a_multiple_and_a_length_are_the_same_line_box() {
     // holds the size and varies nothing else.
     assert!((doubled.lines[0].height - 32.0).abs() < 0.01);
 
-    base.line_height = 1.0;
+    // `None`, not `Some(1.0)`. This asked for the face's own metrics and
+    // spelled it with the sentinel; `Some(1.0)` now means a box of exactly one
+    // em, which is a different request and a different number.
+    base.line_height = None;
     let natural = layout(
         &mut measurer,
         &base,

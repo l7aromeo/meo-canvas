@@ -556,7 +556,13 @@ fn skia_style(
                 blur_sigma: shadow.blur / 2.0,
             })
             .collect(),
-        line_height_multiplier: style.line_height,
+        // **The sentinel is correct here and wrong upstream of it.** Skia
+        // takes a multiplier and spells "use the face's metrics" as `1.0`, so
+        // `None` converts to exactly that. The bug was carrying Skia's
+        // spelling further in than Skia.
+        line_height_multiplier: style
+            .line_height
+            .unwrap_or(ResolvedText::NORMAL_LINE_HEIGHT),
         letter_spacing: spacing_pixels(style.letter_spacing, style.size),
         word_spacing: spacing_pixels(style.word_spacing, style.size),
         max_lines: paragraph.max_lines.map(|lines| lines as usize),

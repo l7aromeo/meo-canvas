@@ -518,17 +518,19 @@ impl Metrics {
         Self {
             letter_spacing: spacing_pixels(base.letter_spacing, base.size),
             word_spacing: spacing_pixels(base.word_spacing, base.size),
-            // Until the field is a `Length`, a multiplier is the only spelling
-            // the scene has: `line_height` is a factor of the font size and
-            // `1.0` is "the face's own", which is the value the resolver uses
-            // for CSS's `normal`.
-            line_height: if base.line_height > 0.0
-                && (base.line_height - 1.0).abs() > f32::EPSILON
-            {
-                Some(base.line_height * base.size)
-            } else {
-                None
-            },
+            // `None` is CSS's `normal`, and it arrives as `None` rather
+            // than as a magic number: **`1.0` is a line box exactly one em
+            // tall, which a caller can legitimately ask for.** This used to
+            // exclude it as a sentinel, so every `line-height: 1` in a
+            // document got the face's metrics instead -- twenty of them in
+            // one card, six pixels apiece.
+            //
+            // The zero-and-below guard stays: a non-positive multiple has no
+            // line box to give and is not what this change is about.
+            line_height: base
+                .line_height
+                .filter(|multiple| *multiple > 0.0)
+                .map(|multiple| multiple * base.size),
             line_gap: base.line_gap,
         }
     }
@@ -1161,7 +1163,7 @@ mod tests {
             let base = ResolvedText {
                 family: TEST_FAMILY.to_owned(),
                 size: case.size,
-                line_height: case.line_height,
+                line_height: Some(case.line_height),
                 letter_spacing: Spacing::Points(case.letter_spacing),
                 ..ResolvedText::initial()
             };
@@ -1414,7 +1416,7 @@ mod tests {
         let mut measurer = TextMeasurer::new();
         let mut base = style();
         // Half the face's own, so the box is shorter than the content.
-        base.line_height = 0.5;
+        base.line_height = Some(0.5);
         let metrics = Metrics::of(&base);
         let block = layout(
             &mut measurer,
