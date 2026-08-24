@@ -925,6 +925,44 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 Each of these cost a bug or most of a day to learn.
 
+**An assertion on a magnitude cannot tell a defect from its fix when both sit
+the same distance from the truth.** `rounding_drift.rs` was written to watch the
+edge that comes out a pixel wrong, and it asserts that the worst
+`|stack_bottom(n) - exact|` is exactly `0.5`. Edge five was `52` where Chrome
+gives `51`, and the exact value is `51.5`: `|52 - 51.5|` and `|51 - 51.5|` are
+both `0.5`. **So the pin passed before the fix and passed after it, and the whole
+workspace reported 517 passed with nothing moved -- on a change that moved the
+very number the test exists to watch.** The absolute value discards the sign,
+and the sign was the entire content.
+
+This is the rule about a pin having to be seen to fail, arriving from the other
+direction. There, a pin that never fails is untested. Here, the pin **can** fail
+-- it just cannot fail for the reason it was written. **Assert the value, not the
+distance from the value**, whenever the direction of an error is what
+distinguishes wrong from right.
+
+The reporting matters as much as the finding. The run was green and the honest
+headline was _no pin moved, and one of them should have_.
+
+**Deleting a scratch file straight after using it is sufficient against a
+snapshot and useless against a walk.** A probe named `zz_edges.rs` lived in
+`crates/meo-canvas-core/tests/` for about a minute, and another session's
+`just ci` failed with ``file `crates/meo-canvas-core/tests/zz_edges.rs` does not
+exist``. Cargo auto-discovers `tests/*.rs` as test targets and `cargo fmt`
+enumerates targets and then opens them, so a file present for the first step and
+gone for the second breaks the run in a way a file that simply stays never
+would. **Probes belong in the scratchpad**, and the reason is not tidiness: being
+outside a `tests/` directory is what keeps them invisible to target discovery.
+
+**A whole-tree gate cannot attribute a failure while another lane holds
+uncommitted work.** The file split stops two workers editing the same file; it
+does nothing about a process that reads everything. A gate run while a colleague
+has seventy-seven uncommitted lines of shared layout arithmetic open reports a
+failure that belongs to either of them, with nothing in the output to say which.
+**Targeted checks are the signal while another lane is live**; the full gate runs
+when the tree is quiet. Same lesson as the gate lock, in a place the lock does
+not reach.
+
 **Where a v1 API rests on a TypeScript type-level construct, the JavaScript
 surface carries it and the Rust surface carries what the language expresses
 instead.** v1's `parallel` takes a record of named members and returns a record
