@@ -297,14 +297,55 @@ impl<'resolved> SceneMeasurer<'resolved> {
         else {
             return None;
         };
-        Some(lines::layout(
+        let laid = lines::layout(
             &mut self.text,
             style,
             segments,
             width,
             paragraph,
             Metrics::of(style),
-        ))
+        );
+
+        // **A box sized from this text's own measurement must not break it.**
+        //
+        // taffy rounds a rect to whole pixels, deliberately -- `rounding_drift`
+        // has why, and turning it off makes adjacent boxes antialias against
+        // each other at every shared edge. But the paint pass then re-flows the
+        // paragraph at that rounded width, and a natural width of `43.43`
+        // arrives as `43`: the break falls at the space and the second line
+        // spills out of a box that is one line tall.
+        //
+        // Measured, Poppins 12 at weight 500: `Max HP` is `43.43` and wraps,
+        // `Elemental Mastery` is exactly `112.0` and does not, `ATK` is `22.73`
+        // and rounds **up** to `23` and does not. **Rounding down wraps and
+        // rounding up fits**, and because taffy rounds cumulative coordinates
+        // the same string wraps or not depending on what sits above it.
+        //
+        // So: when one more pixel would have been enough, the box was rounded
+        // down from this paragraph's own width and the break is an artefact.
+        // When it would not, the box is genuinely narrower than the text and
+        // the break is real -- `Elemental Mastery` in a 43-pixel box still
+        // wraps, because 112 is nowhere near 44.
+        //
+        // The cost is one extra wrap, only for paragraphs that broke, and the
+        // shaping underneath is cached. What it trades away: a box deliberately
+        // a fraction narrower than its text now overflows by that fraction
+        // instead of breaking, which is invisible where a spurious line break
+        // is not.
+        if laid.lines.len() > 1 && width.is_finite() {
+            let loose = lines::layout(
+                &mut self.text,
+                style,
+                segments,
+                f32::INFINITY,
+                paragraph,
+                Metrics::of(style),
+            );
+            if loose.width - width < 1.0 {
+                return Some(loose);
+            }
+        }
+        Some(laid)
     }
 
     /// The width of one inter-word space in a node's own face.
