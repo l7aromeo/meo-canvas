@@ -38,7 +38,7 @@
 use std::collections::HashMap;
 
 use meo_canvas_scene::{
-    Rect, Scene, Size,
+    Rect, Scene, Sides, Size,
     node::NodeId,
     style::{
         Dimension, Length,
@@ -280,7 +280,9 @@ fn bottom_align_reversed_wraps(
             Length::Points(points) => points,
             Length::Percent(fraction) => fraction * rect.size.width,
         };
-        let inset = node.layout.border.bottom + padding;
+        // The used width, as everywhere else: this inset has to agree with
+        // the room taffy reserved, or the stack lands on the wrong edge.
+        let inset = used_border_width(node.layout.border.bottom) + padding;
         let content_bottom = rect.bottom() - inset;
         let shift = content_bottom - bottom;
         if shift >= 0.0 {
@@ -599,15 +601,16 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
             top: to_length(layout.padding.top),
             bottom: to_length(layout.padding.bottom),
         },
-        border: taffy::Rect {
-            left: taffy::LengthPercentage::length(snapped(layout.border.left)),
-            right: taffy::LengthPercentage::length(snapped(
-                layout.border.right,
-            )),
-            top: taffy::LengthPercentage::length(snapped(layout.border.top)),
-            bottom: taffy::LengthPercentage::length(snapped(
-                layout.border.bottom,
-            )),
+        // `snapped` is gone rather than composed: a used border width is a
+        // whole number and a whole number is already on the grid.
+        border: {
+            let used = used_border(layout.border);
+            taffy::Rect {
+                left: taffy::LengthPercentage::length(used.left),
+                right: taffy::LengthPercentage::length(used.right),
+                top: taffy::LengthPercentage::length(used.top),
+                bottom: taffy::LengthPercentage::length(used.bottom),
+            }
         },
 
         align_items: layout.align_items.map(to_align_items),
@@ -899,6 +902,47 @@ fn to_dimension(dimension: Dimension) -> taffy::Dimension {
     }
 }
 
+/// A border width as CSS *uses* it, which is not what the author wrote.
+///
+/// **Chrome resolves a border width to an integer at used-value time**, and
+/// layout sees the resolved value rather than the declared one:
+/// `getComputedStyle` reports the integer and the border box grows by the
+/// integer, so `border: 3.5px` and `border: 3px` render identically. Measured
+/// across `0.1`, `0.4`, `0.5`, `0.9`, `1.4`, `1.5`, `1.6`, `2.5`, `3.4`,
+/// `3.5`, `3.6` and `3.9`, at **both** device scales with the same answers --
+/// so it is a CSS-pixel rule and not a device-pixel one.
+///
+/// **It floors rather than rounds.** `1.6` gives `1` and `3.9` gives `3`,
+/// which no rounding mode produces; `2.5` gives `2` and `3.5` gives `3`, where
+/// half-to-even would give `2` and `4`.
+///
+/// **The minimum is the part that would bite.** Chrome draws a `0.1px` border
+/// as `1px`, so a bare `floor` makes every hairline vanish -- a visible
+/// regression rather than a subtle one, which is why the `0.1` row is pinned
+/// beside the `3.5` one.
+///
+/// **Derived rather than stored.** The scene keeps what the author wrote, as
+/// it does for a percentage line height. This is the one place the used value
+/// is computed, and both readers -- layout here and the painter -- go through
+/// it, so the two cannot drift apart.
+pub(crate) fn used_border(border: Sides<f32>) -> Sides<f32> {
+    Sides {
+        left: used_border_width(border.left),
+        right: used_border_width(border.right),
+        top: used_border_width(border.top),
+        bottom: used_border_width(border.bottom),
+    }
+}
+
+/// One edge of [`used_border`].
+fn used_border_width(width: f32) -> f32 {
+    if width <= 0.0 {
+        0.0
+    } else {
+        width.floor().max(1.0)
+    }
+}
+
 /// A margin, where `auto` is CSS's free-space-absorbing margin rather than an
 /// absent value.
 fn to_margin(dimension: Dimension) -> taffy::LengthPercentageAuto {
@@ -1168,6 +1212,66 @@ mod tests {
             solved_root.size,
             Size::new(40.0, 20.0),
             "a stated root size is the root's size, not the scene's"
+        );
+    }
+
+    #[test]
+    fn a_used_border_width_floors_but_never_to_nothing() {
+        // Chrome, measured directly at dpr 1 and dpr 2 with identical answers.
+        // The hairline row comes FIRST because it is the one a bare `floor`
+        // breaks: `0.1px` is a visible border in a browser and nothing here.
+        for (declared, used) in [
+            (0.1_f32, 1.0_f32),
+            (0.4, 1.0),
+            (0.5, 1.0),
+            (0.9, 1.0),
+            (1.4, 1.0),
+            (1.5, 1.0),
+            (1.6, 1.0),
+            (2.5, 2.0),
+            (3.4, 3.0),
+            (3.5, 3.0),
+            (3.6, 3.0),
+            (3.9, 3.0),
+            // Not a browser reading: nothing declared is nothing drawn, and a
+            // minimum that applied here would put a border on every box.
+            (0.0, 0.0),
+        ] {
+            assert!(
+                (super::used_border_width(declared) - used).abs()
+                    < f32::EPSILON,
+                "{declared} is used as {}, and Chrome uses it as {used}",
+                super::used_border_width(declared)
+            );
+        }
+    }
+
+    #[test]
+    fn a_fractional_border_is_used_as_the_integer_chrome_uses() {
+        // Chrome resolves a border width to an integer at used-value time and
+        // LAYOUT sees it: `getComputedStyle` reports the integer and the
+        // border box grows by the integer, so `3.5px` and `3px` render
+        // identically. Measured at dpr 1 and dpr 2 with the same answer, so it
+        // is a CSS-pixel rule rather than a device-pixel one.
+        //
+        // A 20-tall content box inside a 3.5 border is 27 in Chrome, not 27.5.
+        let (mut scene, page) = scene_with_page(100.0, 60.0);
+        let root = scene
+            .get_mut(page)
+            .unwrap_or_else(|| unreachable!("the page root was just created"));
+        root.layout.size = (Dimension::Points(40.0), Dimension::Points(20.0));
+        root.layout.box_sizing = BoxSizing::ContentBox;
+        root.layout.border = Sides::all(3.5);
+
+        let result = solved(&scene, page);
+        let solved_root = result
+            .get(page)
+            .unwrap_or_else(|| unreachable!("the page root is laid out"));
+
+        assert_eq!(
+            solved_root.size,
+            Size::new(46.0, 26.0),
+            "a 3.5 border is used as 3, so the box grows by 6 and not by 7"
         );
     }
 

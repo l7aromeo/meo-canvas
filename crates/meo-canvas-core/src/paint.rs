@@ -56,7 +56,7 @@ use meo_skia_canvas::{
 
 use crate::{
     Error,
-    layout::{LayoutResult, is_containing_block},
+    layout::{LayoutResult, is_containing_block, used_border},
     lines::{Line, Metrics, Run, RunStyle, line_width},
     measure::SceneMeasurer,
     resolve::{DecodedImage, Resolved, ResolvedText},
@@ -1249,7 +1249,9 @@ fn gap_count(line: &Line) -> usize {
 
 /// The rectangle a node's own content sits in: inside its border and padding.
 fn content_box(node: &Node, rect: Rect) -> Rect {
-    let border = node.layout.border;
+    // The used width, not the declared one, so the content box starts where
+    // layout reserved room for it.
+    let border = used_border(node.layout.border);
     let padding = &node.layout.padding;
     let left = border.left + resolve_length(padding.left, rect.size.width);
     let right = border.right + resolve_length(padding.right, rect.size.width);
@@ -1737,7 +1739,8 @@ fn draw_border(
     rect: Rect,
 ) -> Result<(), Error> {
     let paint = &node.paint;
-    let widths = node.layout.border;
+    // As `content_box`: the painter draws the width layout reserved.
+    let widths = used_border(node.layout.border);
     if widths.top <= 0.0
         && widths.right <= 0.0
         && widths.bottom <= 0.0
