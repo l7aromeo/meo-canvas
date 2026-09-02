@@ -2,51 +2,38 @@
 //!
 //! # What is wrong
 //!
-//! **A negative margin on a non-shrinking flex item is applied as a multiplier
-//! rather than as a length.** A flex container with an automatic main size
-//! resolves to `child x max(0, 1 + margin)` where it should resolve to
-//! `child + margin` -- the two agreeing only when the child is one pixel.
+//! **A negative margin on a *growing* flex item is dropped rather than
+//! applied.** A flex container with an automatic main size resolves to the
+//! child's size with the margin excluded, where it should resolve to
+//! `child + margin`.
 //!
 //! ```text
-//! child 500, margin  -0.25   ->  375     Chrome 499.75
-//! child 500, margin  -0.5    ->  250     Chrome 499.5
-//! child 500, margin  -1      ->    0     Chrome 499
-//! child 500, margin -24      ->    0     Chrome 476
-//! child 200, margin  -0.5    ->  100     Chrome 199.5
+//! child 500, grow 1, margin  -0.5   ->  500     Chrome 499.5
+//! child 500, grow 1, margin -24     ->  500     Chrome 476
 //! ```
 //!
-//! **Proportional to the child's own main size**, which is what makes it a
-//! multiply and not a clamp: `500 -> 250`, `200 -> 100`, `80 -> 40`, all at
-//! `-0.5`. Every realistic margin is at or beyond `-1`, so it presents as a
-//! container that collapses to nothing -- which is how it was first described
-//! here, and the description was of the symptom rather than the mechanism.
+//! **It does not scale with the margin**, which is what separates it from the
+//! multiply that shares this region of taffy: `-24` and `-0.5` give the same
+//! 500. And **`flex-shrink` is irrelevant** -- the `shrink: 1` row is correct
+//! without grow and wrong with it, so this is not another trigger for the same
+//! mechanism.
 //!
 //! # The conditions, each measured rather than assumed
 //!
 //! - **All four main-axis edges.** `margin-top` and `margin-bottom` in a
 //!   column, `margin-left` and `margin-right` in a row. Not top-specific.
-//! - **The child's `flex-shrink: 0` is required.** With `flex-shrink: 1` every
-//!   configuration is correct -- both edges, both axes, nested, with a sibling,
-//!   with an explicit `flex-basis`.
+//! - **A definite container height is correct.** The defect needs an automatic
+//!   main size.
 //! - **The container's own `flex-shrink` is irrelevant**, which is the opposite
-//!   of what the symptom suggests, since the box that vanishes is the
+//!   of what the symptom suggests, since the box that comes out wrong is the
 //!   container.
-//! - **A definite child and a content-sized child behave identically**, so the
-//!   conversion is not reading an explicit size.
-//! - **A percentage margin collapses too** -- consistent with the multiply,
-//!   since a resolved `-5%` of a 903-wide container is `-45.15`, and `1 -
-//!   45.15` is negative before anything is clamped.
-//! - **A definite container height is correct**, and a growing container fills
-//!   its parent in both engines. The defect needs an automatic main size.
 //!
 //! # What the browser does
 //!
 //! Chrome, through the conformance harness's own Playwright rather than a page
 //! written by hand, `getBoundingClientRect()` unrounded: **the container is
 //! the child's outer main size, `child + margin`, in every one of seventeen
-//! rows, and `flex-shrink` never enters it.** Thirteen of those rows disagree
-//! with taffy; three agree (a growing container, a definite height, and a
-//! shrinking child with a sibling); one differs only by rounding.
+//! rows, and `flex-shrink` never enters it.**
 //!
 //! So this is a disagreement with the browser, which is our baseline, and not
 //! with a reading of the specification.
@@ -57,39 +44,31 @@
 //! cannot be committed. So this pins what taffy actually does, with the right
 //! answer beside it: **the day taffy is fixed, this fails, and the failure is
 //! the notification.** That is the whole reason it exists -- the defect is
-//! otherwise silent, because a caller sees a missing subtree and no error.
+//! otherwise silent, because a caller sees a box of the wrong height and no
+//! error.
 //!
-//! Reproduced against taffy `0.13.0` in twenty lines of taffy with no code of
-//! ours in the picture.
+//! Reproduced against taffy `0.14.0` in twenty lines of taffy with no code of
+//! ours in the picture. **Not filed upstream.**
 //!
-//! # Upstream: filed, fixed, and not yet released
+//! # The neighbouring defect, and why `0.14` is the floor
 //!
-//! **Filed as <https://github.com/DioxusLabs/taffy/issues/1151>, closed, and
-//! fixed by PR #1152** -- *Fix intrinsic flex sizing with negative margins*,
-//! merged as `7d31807` (branch head `d680af5`).
+//! One region of taffy holds two of these. The other is
+//! <https://github.com/DioxusLabs/taffy/issues/1151>, *intrinsic flex sizing
+//! with negative margins*: a negative margin on a **non-shrinking** item
+//! applied as `child x max(0, 1 + margin)` instead of `child + margin`. It is
+//! fixed by PR #1152 and released in `0.14.0`, which `Cargo.toml` requires,
+//! so [`the_rows_taffy_gets_right_agree_with_chrome`] asserts Chrome's numbers
+//! for those rows rather than taffy's.
 //!
 //! **The fix moves one `max`.** Two expressions were meant to be the same
-//! quantity and were not: the divisor read
-//! `max(1, flex_shrink * inner_flex_basis)` while the multiplier that undoes
-//! it read `max(1, flex_shrink) * inner_flex_basis`. At `flex_shrink: 0` that
-//! is a divide by `1` against a multiply by the basis, so the margin comes
-//! back scaled by the item's size. The PR makes the divisor
-//! `max(1, flex_shrink) * inner_flex_basis`, matching the multiplier.
+//! quantity: the divisor read `max(1, flex_shrink * inner_flex_basis)` while
+//! the multiplier that undoes it read `max(1, flex_shrink) * inner_flex_basis`.
+//! At `flex_shrink: 0` that is a divide by `1` against a multiply by the basis,
+//! so the margin comes back scaled by the item's size.
 //!
-//! **The expression named in the fix is the one that was removed, so which
-//! side of the `max` the product sits on is the entire bug** -- an earlier
-//! draft of this comment had it the other way round and read as though taffy
-//! had adopted the defect.
-//!
-//! It carries a second change we did not report: with a zero inner flex basis
-//! the corrected divisor yields a negative-infinite fraction, and `0 * -inf`
-//! is `NaN`, so the multiplier is guarded at zero to hold the intrinsic
-//! container size a WPT tentative test depends on.
-//!
-//! **We are on `0.13.0` and the fix is not in it**, so every pin below still
-//! holds. **They fail on the upgrade, which is the point** -- and the earlier
-//! instruction stands with a sharper reason now: a close is not a release, so
-//! check that this test actually fails before deleting it.
+//! **Sharing a region and a symptom is not evidence of sharing a cause**, and
+//! the two here are the proof: the growing case reproduces identically on
+//! `0.13.0`, on #1152's branch head `d680af5`, and on released `0.14.0`.
 
 use taffy::prelude::{
     AvailableSpace, Display, FlexDirection, Rect, Size, Style, TaffyTree, auto,
@@ -163,44 +142,30 @@ fn container_height(shrink: f32, top: f32) -> f32 {
 }
 
 #[test]
-fn the_five_rows_taffy_gets_right_agree_with_chrome() {
-    // The control, and the reason the sixth row is a defect rather than a
+fn the_rows_taffy_gets_right_agree_with_chrome() {
+    // The control, and the reason the growing rows are a defect rather than a
     // convention: taffy and Chrome agree everywhere else in the table, so the
     // one disagreement cannot be explained by the two engines meaning
     // different things by these properties.
+    //
+    // The four fractional rows are the ones #1152 fixes, so they are also the
+    // check that `Cargo.toml`'s floor is doing its job: on `0.13.0` they read
+    // 375, 250, 0 and 0.
     for (shrink, top, chrome) in [
         (1.0_f32, -24.0_f32, 476.0_f32),
         (0.0, 0.0, 500.0),
         (1.0, 0.0, 500.0),
         (0.0, 24.0, 524.0),
         (1.0, 24.0, 524.0),
+        (0.0, -0.25, 499.75),
+        (0.0, -0.5, 499.5),
+        (0.0, -1.0, 499.0),
+        (0.0, -24.0, 476.0),
     ] {
         let ours = container_height(shrink, top);
         assert!(
             (ours - chrome).abs() < 0.01,
             "shrink {shrink}, margin {top}: taffy {ours}, Chrome {chrome}"
-        );
-    }
-}
-
-#[test]
-fn a_negative_margin_is_still_applied_as_a_multiplier() {
-    // **Asserting the wrong numbers on purpose.** Chrome's are in the comment
-    // beside each. When one of these fails, taffy has been fixed: check the
-    // table in this file's header against the browser, delete the test, and
-    // remove whatever cites it.
-    for (margin, taffy, chrome) in [
-        (-24.0_f32, 0.0_f32, 476.0_f32),
-        (-1.0, 0.0, 499.0),
-        (-0.5, 250.0, 499.5),
-        (-0.25, 375.0, 499.75),
-    ] {
-        let ours = container_height(0.0, margin);
-        assert!(
-            (ours - taffy).abs() < 0.01,
-            "margin {margin}: taffy now gives {ours} where it gave {taffy} -- \
-             if this is Chrome's {chrome}, the defect is fixed and this test \
-             has done its job"
         );
     }
 }

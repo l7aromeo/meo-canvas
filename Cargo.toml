@@ -35,10 +35,15 @@ meo-skia-canvas = { version = "0.11", default-features = false }
 # Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
 # `*const ()` handle the caller resolves, so it adds a surface with no
 # implementation behind it. It is also not what makes `TaffyTree` `!Send` --
-# `CompactLengthInner.tagged_ptr` (taffy-0.13.0/src/style/compact_length.rs:62)
+# `CompactLengthInner.tagged_ptr` (taffy-0.14.0/src/style/compact_length.rs:64)
 # is the ungated representation of every length, and a build with `calc`
 # removed fails `assert_send::<TaffyTree<()>>()` identically.
-taffy = { version = "0.13", default-features = false, features = [
+#
+# `flexbox_balance` is off for the same reason `calc` is: it adds the
+# `balance` and `balance-reverse` values of css-flexbox-2 to `FlexWrap`, and
+# Chrome ships neither, so it would be surface with no behavioural target
+# behind it.
+taffy = { version = "0.14", default-features = false, features = [
     "flexbox",
     "grid",
     "block_layout",

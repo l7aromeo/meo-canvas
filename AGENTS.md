@@ -492,17 +492,27 @@ Where a question has a CSS answer, the answer is what Chrome does.
 
 ### Three questions answered and closed
 
-**Baselines from measured text: fixed upstream, unreleased.** taffy 0.13's
-measure closure returns `Size<f32>`, so a text leaf has nowhere to report a
-baseline and `align-items: baseline` falls back to the box's bottom edge. The
-maintainers' own changelog has the measure function returning `LayoutOutput`
-instead, **explicitly so measure functions can set baselines** -- so there is
-nothing to file and nothing to work around. **When a release carries it,
-confirm the _released_ signature rather than the changelog**: this whole
-question exists because a released signature said otherwise. And test it on
-`align-items: baseline` over mixed font sizes, which is the only arrangement
-where the fallback and a real baseline differ -- **a fixture that passes before
-and after an upgrade has not tested the upgrade.**
+**Baselines from measured text: released upstream, not yet routed through.**
+taffy 0.14's measure function returns a whole `LayoutOutput` rather than a
+`Size<f32>` (`taffy-0.14.0/src/tree/taffy_tree.rs:904`), so a text leaf has a
+field to report a baseline in. `layout.rs` leaves it at `Baselines::NONE`, so
+`align-items: baseline` still falls back to the box's bottom edge and the
+measured baseline reaches paint only. **The remaining work is a Chrome
+measurement, not a workaround.**
+
+**Confirm the _released_ signature rather than the changelog.** This question
+was open for a release longer than the changelog implied, and it is
+`compute_leaf_layout` that misleads: the low-level helper still takes a
+`Size<f32>` closure in 0.14, so reading the helper says the fix did not ship
+while reading `TaffyTree` says it did. **Read the function the code actually
+calls.**
+
+Test it on `align-items: baseline` over mixed font **sizes**, which is the only
+arrangement where the fallback and a real baseline differ -- **a fixture that
+passes before and after the change has not tested it.** `flex-alignment.tsv`'s
+eighteen `baseline` rows do not qualify: their children are spacer boxes with
+no text, whose baseline in Chrome _is_ the bottom margin edge, so both answers
+coincide.
 
 **Whole-pixel rounding against Chrome's sixty-fourths: closed.** Kept in full
 because the measurement is what makes the fix checkable, and because two of the
@@ -1885,18 +1895,15 @@ wrong moment, and the next reader diagnoses a port defect.
 
 ### Pin the wrong answer when the right one is upstream
 
-taffy applies a **negative margin on a non-shrinking flex item as a multiplier
-rather than as a length**. A flex container with an automatic main size
-resolves to `child x max(0, 1 + margin)` where it should resolve to
-`child + margin`, and the two agree only when the child is one pixel:
-`-0.25` costs a quarter of the box where it should cost a quarter of a pixel.
-Every realistic margin is at or beyond `-1`, so it presents as a container
-collapsing to nothing.
+taffy **drops a negative margin on a growing flex item**. A flex container with
+an automatic main size resolves to the child's size with the margin excluded
+where it should resolve to `child + margin`, and it does not scale with the
+margin: `-24` and `-0.5` both leave a 500-tall child in a 500-tall container.
 
 Chrome gives `child + margin` in all seventeen measured rows and never lets
 `flex-shrink` into the answer. **So it is a disagreement with the browser, not
-with a reading of the specification** -- the distinction that decided whether
-to file it, and the reason the measurement was worth waiting for rather than
+with a reading of the specification** -- the distinction that decides whether
+to file it, and the reason the measurement is worth waiting for rather than
 asserting CSS from memory.
 
 **A test asserting Chrome's numbers would fail today, and a failing test cannot
@@ -1904,17 +1911,24 @@ be committed.** So `taffy_negative_margin.rs` asserts what taffy _does_, with
 Chrome's value beside each and the instruction in the failure message: when
 this fails, the defect is fixed, delete it. **The wrong answer, pinned
 deliberately, is the notification** -- and without it the defect is entirely
-silent, because a caller sees a missing subtree and no error.
+silent, because a caller sees a box of the wrong height and no error.
 
-**Any v2 caller writing `flex-shrink: 0` with a negative main-axis margin loses
-the whole subtree**, and nothing in the vocabulary hints at it.
+**Any v2 caller writing `flex-grow` with a negative main-axis margin gets the
+margin ignored**, and nothing in the vocabulary hints at it.
+
+The pin is also what reads a release. One region of taffy holds two of these,
+and the second -- a negative margin on a **non-shrinking** item applied as
+`child x max(0, 1 + margin)` -- is issue #1151, fixed by PR #1152 and released
+in `0.14.0`. Its rows were pinned the same way, so the upgrade that carried the
+fix arrived as a failing assertion naming the browser's number, which is the
+only form of notification a silent defect has. Those rows now assert Chrome and
+double as the check that the version floor holds.
 
 Check upstream before writing either the pin or an issue: `main` as well as the
-release, the changelog, and the open issues. Here `main` at `88125ce` still had
-it, the only unreleased negative-margin entry was for block and float layout,
-and the one related issue -- #706, closed -- reports sibling sizing and padding
-and mentions neither `flex-shrink` nor a container resolving to zero. **A defect
-already fixed and unreleased needs a wait, not a pin.**
+release, the changelog, and the open issues. **A defect already fixed and
+unreleased needs a wait, not a pin** -- and a wait needs a date to end: read the
+_released_ signature, since a changelog entry and a merged branch are neither of
+them a crate a build can resolve.
 
 ### Widening a matrix is the measurement, not the diligence
 

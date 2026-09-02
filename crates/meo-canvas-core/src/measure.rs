@@ -6,23 +6,29 @@
 //! which is Skia's paragraph layout; for images it is the decoded bitmap's
 //! intrinsic size scaled to fit.
 //!
-//! # The baseline goes to paint, not to taffy
+//! # The baseline goes to paint, and not yet to taffy
 //!
-//! [`MeasuredLeaf`] carries a `first_baseline`, so a measurer does report one.
-//! What cannot receive it is taffy's high-level tree: `compute_leaf_layout`
-//! returns `first_baselines: Point::NONE`
-//! (`taffy-0.13.0/src/compute/leaf.rs:102`) for every node sized by a measure
-//! closure, and only the low-level `LayoutPartialTree` API lets a caller build
-//! the `LayoutOutput` that would carry one. Yoga's `YGNodeSetBaselineFunc` has
-//! no counterpart at this level.
+//! **This section describes what runs; routing the baseline into taffy is the
+//! part that is not built.**
+//!
+//! [`MeasuredLeaf`] carries a `first_baseline`, so a measurer does report one,
+//! and taffy 0.14 hands the whole `LayoutOutput` to the measure function
+//! (`taffy-0.14.0/src/tree/taffy_tree.rs:904`), which is the field that would
+//! carry it. [`crate::layout`] builds that output through `compute_leaf_layout`
+//! and leaves its `baselines` at taffy's `Baselines::NONE`.
 //!
 //! The consequence is worth stating exactly, because it is visible: taffy reads
 //! a missing baseline as the node's own height
-//! (`taffy-0.13.0/src/compute/flexbox.rs:1524`), so a row of measured text
+//! (`taffy-0.14.0/src/compute/flexbox.rs:1921`), so a row of measured text
 //! aligned `baseline` lines up on the bottom edges of the runs rather than on
-//! their baselines. The measured baseline still reaches the paint pass through
+//! their baselines. The measured baseline reaches the paint pass through
 //! [`MeasuredLeaf::first_baseline`], which is what lets glyphs sit correctly
 //! inside a box layout placed by some other rule.
+//!
+//! Filling the field needs Chrome's numbers for `align-items: baseline` over
+//! mixed font sizes first: that is the only arrangement where the fallback and
+//! a real baseline differ, so it is the only one that can tell the change from
+//! no change.
 
 use std::collections::HashMap;
 

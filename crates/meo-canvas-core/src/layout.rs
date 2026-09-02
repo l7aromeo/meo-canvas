@@ -4,7 +4,7 @@
 //! The taffy tree is built here, used here and dropped here. It never appears
 //! in a public signature and never crosses a thread, because it cannot: every
 //! length taffy stores is a tagged `*const ()`
-//! (`taffy-0.13.0/src/style/compact_length.rs:62`), which makes `taffy::Style`,
+//! (`taffy-0.14.0/src/style/compact_length.rs:64`), which makes `taffy::Style`,
 //! and therefore `TaffyTree`, `!Send` and `!Sync` regardless of feature
 //! selection -- a build with `calc` removed fails `assert_send` identically.
 //! Confining the tree to one function is what keeps that fact from spreading
@@ -160,37 +160,59 @@ where
     };
 
     // Baselines are collected during the solve because this closure is the only
-    // place they exist: taffy takes the size and drops the rest of what the
-    // measurer returned.
+    // place a measurer runs. They travel to paint rather than into the
+    // `LayoutOutput` below; `crate::measure`'s module documentation says what
+    // that costs and what filling the field would need first.
     let mut baselines: HashMap<NodeId, f32> = HashMap::new();
 
     tree.compute_layout_with_measure(
         root,
         available,
-        |known, space, _taffy_node, context, _style| {
+        |inputs, _taffy_node, context, style| {
             // A node with no context is a container taffy sizes from its
             // children; only the leaves built with `new_leaf_with_context`
             // reach the measurer.
-            let Some(&node) = context.map(|context| &*context) else {
-                return taffy::Size::ZERO;
-            };
+            let node = context.map(|context| *context);
 
-            let measured = measure.measure(
-                node,
-                (known.width, known.height),
-                (to_available(space.width), to_available(space.height)),
-            );
+            // `compute_leaf_layout` turns a measured extent into the leaf's
+            // full result: it applies the node's own padding, border, box
+            // sizing, aspect ratio and min-max clamps, and reports the
+            // scrollable overflow. taffy hands the whole `LayoutOutput` to
+            // this closure and builds none of it, so calling the helper is
+            // what keeps a measured leaf sized the way every other leaf in
+            // the tree is.
+            //
+            // The calc resolver answers zero because `calc` is off: with no
+            // way to build a `calc` length, nothing can reach the resolver
+            // and any value it returned would be unobservable.
+            taffy::compute_leaf_layout(
+                inputs,
+                style,
+                |_, _| 0.0,
+                |known, space| {
+                    let Some(node) = node else {
+                        return taffy::Size::ZERO;
+                    };
 
-            if let Some(baseline) = measured.first_baseline {
-                baselines.insert(node, baseline);
-            }
+                    let measured = measure.measure(
+                        node,
+                        (known.width, known.height),
+                        (to_available(space.width), to_available(space.height)),
+                    );
 
-            // Measured text is a used length like any other, so it enters
-            // the grid at the same boundary the styled lengths do.
-            taffy::Size {
-                width: contains(measured.size.width),
-                height: contains(measured.size.height),
-            }
+                    if let Some(baseline) = measured.first_baseline {
+                        baselines.insert(node, baseline);
+                    }
+
+                    // Measured text is a used length like any other, so it
+                    // enters the grid at the same boundary the styled lengths
+                    // do.
+                    taffy::Size {
+                        width: contains(measured.size.width),
+                        height: contains(measured.size.height),
+                    }
+                },
+            )
         },
     )
     .map_err(|error| Error::Layout(error.to_string()))?;
@@ -580,20 +602,20 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
             height: to_dimension(layout.size.1),
         },
         min_size: taffy::Size {
-            width: to_dimension(layout.min_size.0),
-            height: to_dimension(layout.min_size.1),
+            width: to_auto_length(layout.min_size.0),
+            height: to_auto_length(layout.min_size.1),
         },
         max_size: taffy::Size {
-            width: to_dimension(layout.max_size.0),
-            height: to_dimension(layout.max_size.1),
+            width: to_auto_length(layout.max_size.0),
+            height: to_auto_length(layout.max_size.1),
         },
         aspect_ratio: layout.aspect_ratio,
 
         margin: taffy::Rect {
-            left: to_margin(layout.margin.left),
-            right: to_margin(layout.margin.right),
-            top: to_margin(layout.margin.top),
-            bottom: to_margin(layout.margin.bottom),
+            left: to_auto_length(layout.margin.left),
+            right: to_auto_length(layout.margin.right),
+            top: to_auto_length(layout.margin.top),
+            bottom: to_auto_length(layout.margin.bottom),
         },
         padding: taffy::Rect {
             left: to_length(layout.padding.left),
@@ -943,9 +965,12 @@ fn used_border_width(width: f32) -> f32 {
     }
 }
 
-/// A margin, where `auto` is CSS's free-space-absorbing margin rather than an
-/// absent value.
-fn to_margin(dimension: Dimension) -> taffy::LengthPercentageAuto {
+/// A length for the three fields taffy spells `LengthPercentageAuto`, where
+/// `auto` means something different in each: a margin that absorbs free space,
+/// the automatic minimum size a flex item takes from its content, and the
+/// absence of a maximum. All three are the scene's `Dimension::Auto`, and the
+/// field decides which one it is.
+fn to_auto_length(dimension: Dimension) -> taffy::LengthPercentageAuto {
     match dimension {
         Dimension::Auto => taffy::LengthPercentageAuto::auto(),
         Dimension::Points(points) => {
@@ -1830,15 +1855,15 @@ mod tests {
     #[test]
     fn an_auto_margin_is_cshs_free_space_margin_and_an_absent_inset_is_auto() {
         assert_eq!(
-            super::to_margin(Dimension::Auto),
+            super::to_auto_length(Dimension::Auto),
             taffy::LengthPercentageAuto::auto()
         );
         assert_eq!(
-            super::to_margin(Dimension::Points(3.0)),
+            super::to_auto_length(Dimension::Points(3.0)),
             taffy::LengthPercentageAuto::length(3.0)
         );
         assert_eq!(
-            super::to_margin(Dimension::Percent(0.1)),
+            super::to_auto_length(Dimension::Percent(0.1)),
             taffy::LengthPercentageAuto::percent(0.1)
         );
 
