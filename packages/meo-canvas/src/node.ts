@@ -41,11 +41,13 @@ export interface TextSegment {
   /**
    * Styling for this run alone, overriding the node's.
    *
-   * `Style | undefined` rather than optional, so a segment has the same shape
-   * whether it is styled or not — the same reason {@link SceneNode} carries
-   * every key.
+   * Optional, because a caller writes these by hand and most runs in a rich
+   * text are unstyled — requiring `style: undefined` on each of them is a word
+   * per run that says nothing. {@link SceneNode} carries every key for the
+   * opposite reason: it is built by this module and read by the encoder, and a
+   * fixed shape is what lets that be a field read rather than a lookup.
    */
-  readonly style: Style | undefined
+  readonly style?: Style | undefined
 }
 
 /**

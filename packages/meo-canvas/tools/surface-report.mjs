@@ -131,7 +131,14 @@ export function interfaces(source, label) {
     if (depth !== 0) {
       throw new Error(`${label}: interface ${name} never closes — the scan lost its place, and everything after it is wrong`)
     }
-    const props = [...body.join('').matchAll(/^\s*(?:readonly\s+)?([A-Za-z][A-Za-z0-9]*)\??\s*:/gm)].map(match => match[1])
+    // The `?` is captured rather than skipped. Discarding it made this report
+    // blind to the one axis `RootProps.height` changed on: v1 derives a height
+    // from content when it is omitted and v2 requires it, and a comparison that
+    // asks only whether a prop *exists* sees no difference at all. `required`
+    // below is what asks the other question.
+    const matched = [...body.join('').matchAll(/^\s*(?:readonly\s+)?([A-Za-z][A-Za-z0-9]*)(\??)\s*:/gm)]
+    const props = matched.map(match => match[1])
+    props.required = new Set(matched.filter(match => match[2] === '').map(match => match[1]))
     found.set(name, props)
   }
   return found
@@ -240,6 +247,21 @@ function main() {
     console.log(`${name.padEnd(28)} ${mark}`)
     if (absent.length > 0) console.log(`${' '.repeat(30)}absent: ${absent.join(', ')}`)
   }
+
+  // Present on both surfaces and required on only one. A caller feels this the
+  // way they feel a missing prop -- their code does not compile -- and the
+  // section above cannot report it, because the prop is right there.
+  console.log('')
+  let stricter = 0
+  for (const [name, props] of [...v2.entries()].sort()) {
+    const theirs = v1.get(name)
+    if (theirs === undefined) continue
+    const newlyRequired = [...props.required].filter(prop => theirs.includes(prop) && !theirs.required.has(prop))
+    if (newlyRequired.length === 0) continue
+    stricter += 1
+    console.log(`${name.padEnd(28)} required in v2, optional in v1: ${newlyRequired.join(', ')}`)
+  }
+  if (stricter === 0) console.log('nothing v1 leaves optional is required in v2')
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main()
