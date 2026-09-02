@@ -227,6 +227,58 @@ fmt-check: ensure-deps
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
 
+# The addon, optimised, where a release takes it from.
+#
+# `addon` builds debug because that is what a working loop wants; a 51 MB
+# binary shipped to anyone is built with optimisation or it is a different
+# product. Both write to the same path, so whichever ran last is what the
+# TypeScript surface loads -- which is the point of the in-tree path winning
+# over an installed platform package.
+[doc("Build the native addon in release mode.")]
+addon-release:
+    cargo build --release -p meo-canvas-node --features "{{ host_features }}"
+    @cp target/release/{{ lib_name }} {{ addon_path }}
+    @echo "built {{ addon_path }} (release)"
+
+# Everything a release publishes, packed and installable, for this host only.
+#
+# Two tarballs, because that is what npm resolves at install time: the platform
+# package holding the binary, and the main package that names it in
+# `optionalDependencies`. Packing only the main one produces something that
+# installs and then cannot render, which is the failure this recipe exists to
+# make impossible to reach by accident.
+#
+# Host only, deliberately. Cross-compiling the addon is the release workflow's
+# job on one runner per target; here the question is whether the packaging is
+# right, and one target answers it.
+[doc("Pack the installable tarballs for this host into release/.")]
+pack: ensure-deps build-js addon-release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf release
+    mkdir -p release/npm
+    suffix="{{ if os() == "macos" { "darwin-arm64" } else { "linux-x64-gnu" } }}"
+    node packages/meo-canvas/tools/stage-platform-package.mjs \
+        "${suffix}" {{ addon_path }} release/npm
+    npm pack --pack-destination "$PWD/release" ./release/npm/"${suffix}" >/dev/null
+    npm pack --pack-destination "$PWD/release" ./packages/meo-canvas >/dev/null
+    echo ""
+    ls -lh release/*.tgz | awk '{print $9, $5}'
+    echo ""
+    echo "Install both, platform package first:"
+    echo "  npm install $PWD/release/l7aromeo-meo-canvas-${suffix}-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
+    echo "  npm install $PWD/release/l7aromeo-meo-canvas-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
+
+# Install what `pack` produced into a throwaway project and render with it.
+#
+# Packing is not installing. `npm pack` lists what is in the tarball and says
+# nothing about whether a consumer can reach it -- `exports` can name a path the
+# `files` allowlist dropped, and a platform package's `main` can name a binary
+# that is not there. Both pack cleanly and fail at the first import.
+[doc("Install the packed tarballs elsewhere and render with them.")]
+verify-pack: pack
+    node packages/meo-canvas/tools/verify-package.mjs release
+
 # The consumer projects: typecheck them against the built package, run every
 # example in both, and compare every file the two of them wrote.
 #
@@ -264,6 +316,13 @@ build-js: ensure-deps
 # built from the tree as it stands.
 [doc("Run every example on both surfaces and compare every byte they wrote.")]
 example: build-js addon
+    # The example resolves the package by name, so its own `node_modules` has
+    # to exist before anything typechecks against it. It is gitignored, so a
+    # fresh clone has none -- which is how this recipe passed for weeks on a
+    # machine that happened to have one and would have failed on the first CI
+    # run. `--frozen-lockfile` so the example installs what `bun.lock` names
+    # rather than resolving afresh and reporting on a tree nobody committed.
+    cd examples/bun && bun install --frozen-lockfile
     ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
     rm -rf examples/bun/out examples/rust/out
     cd examples/bun && for source in src/*.ts; do [ "$source" = "src/write.ts" ] && continue; bun run "$source"; done
@@ -594,9 +653,28 @@ unused:
 # A bench is an instrument, not a gate: it answers "what is this worth" rather
 # than "is this correct", and a number that varies with the machine cannot fail
 # a build honestly. The golden fixtures are what say a change moved no pixels.
-[doc("Measure render timings against the release profile.")]
-bench:
+[doc("Benchmark both surfaces: criterion, then throughput and memory.")]
+bench: bench-rust bench-js
+
+# The pipeline's own timings, in Rust, through criterion.
+[doc("Benchmark the core pipeline (criterion).")]
+bench-rust:
     cargo bench -p meo-canvas-core
+
+# What a long-lived Node process holding the addon costs, in time and memory.
+#
+# A different question from `bench-rust` rather than the same one twice:
+# criterion times a function, and this asks whether a process that has rendered
+# a few thousand scenes settles back to where it started. `--expose-gc` is what
+# separates "retained" from "not collected yet" -- without it the idle reading
+# measures when V8 felt like running, and the harness says so in its output
+# rather than reporting the number as if it meant something.
+#
+# Runs the release addon: a debug build's numbers describe a binary nobody
+# ships, and reporting them as performance is worse than not measuring.
+[doc("Benchmark the Node surface: throughput, rss, heap, peak, idle.")]
+bench-js: ensure-deps build-js addon-release
+    node --expose-gc packages/meo-canvas/tools/bench.mjs
 
 # Remove all build output.
 clean:

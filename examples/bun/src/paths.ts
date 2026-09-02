@@ -9,7 +9,7 @@
  * could not spell until `PathPaint` grew its third arm.
  */
 
-import { Box, Path, Root, type SceneNode } from 'meo-canvas'
+import { Box, Path, Root, type SceneNode } from '@l7aromeo/meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

@@ -8,7 +8,7 @@
  * the Rust half until `Style` grew a setter for it.
  */
 
-import { Box, Root, type Gradient, type GradientStop, type SceneNode } from 'meo-canvas'
+import { Box, Root, type Gradient, type GradientStop, type SceneNode } from '@l7aromeo/meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

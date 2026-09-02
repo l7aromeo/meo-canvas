@@ -11,10 +11,20 @@ What that buys you is that a scene of any size costs one crossing, and that the 
 ## Installation
 
 ```text
-npm install meo-canvas
+npm install @l7aromeo/meo-canvas
 ```
 
 Requires Node 22 or newer. The package is ESM only.
+
+**The scope is deliberate.** The unscoped `meo-canvas` is the 9.x line, and npm
+resolves one directory per package name, so the two can only be installed beside
+each other under two names. Nothing here replaces 9.x until you replace it.
+
+The renderer itself is a native addon of about 51 MB, and it is **not** in this
+package. One package per platform carries one binary, named in
+`optionalDependencies` with its own `os` and `cpu`, so an install downloads the
+one it can run and skips the rest. Nothing is fetched by a postinstall script,
+which is what keeps offline and `--ignore-scripts` installs working.
 
 ## Usage
 

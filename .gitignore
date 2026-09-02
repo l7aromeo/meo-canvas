@@ -46,6 +46,10 @@
 !/packages/**/*.ts
 !/packages/**/*.js
 !/packages/**/*.mjs
+# `*.ts` does not cover `*.d.mts`, and one of them is what lets a typechecked
+# file import a `.mjs` tool. Ignored, a fresh clone fails `just typecheck` on a
+# module that is right there.
+!/packages/**/*.d.mts
 
 # The vendored tree carries the licence of the project it came from. MIT asks
 # for the notice to travel with a substantial portion of the code, and the
@@ -108,3 +112,6 @@ node_modules/
 dist/
 examples/*/out/
 .cargo/
+# What `just pack` writes: two tarballs and the staged platform package, one of
+# them a 51 MB binary. A release is built from a commit, never committed.
+release/

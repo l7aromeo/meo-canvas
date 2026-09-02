@@ -11,7 +11,7 @@
  * is a thing worth knowing rather than a thing to avoid asking.
  */
 
-import { Box, Root, Text, type PageInfo, type SceneNode } from 'meo-canvas'
+import { Box, Root, Text, type PageInfo, type SceneNode } from '@l7aromeo/meo-canvas'
 
 import { FORMATS, PAGED_FORMATS, draw } from './write.js'
 

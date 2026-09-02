@@ -5,7 +5,7 @@
  * cover one another. A box that fails to move is a colour that fails to appear.
  */
 
-import { Box, Root, type Children, type SceneNode } from 'meo-canvas'
+import { Box, Root, type Children, type SceneNode } from '@l7aromeo/meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

@@ -9,7 +9,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import type { Canvas, Format } from 'meo-canvas'
+import type { Canvas, Format } from '@l7aromeo/meo-canvas'
 
 /**
  * The formats every example writes.

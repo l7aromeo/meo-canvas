@@ -1,0 +1,227 @@
+name: release
+
+# A dry run and a real publish look identical in the Actions list unless the run
+# says which it is.
+run-name: >-
+  ${{ inputs.dry_run && 'release — DRY RUN (nothing is published)' || 'release — publish' }}
+
+# Manual only. Nothing publishes on a push, because a push is how code arrives
+# and publishing is a decision about code that already arrived. `just release`
+# is what a person runs; this is what it triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and pack every target, validate the publish, but do not publish"
+        type: boolean
+        default: true
+
+# `id-token: write` is what lets npm mint a provenance attestation from the
+# workflow's own identity, so no long-lived token is stored anywhere.
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The target list lives in `tools/stage-platform-package.mjs` and is read here
+  # rather than restated, so a target added there builds without touching this
+  # file. `src/addon.test.ts` asserts that list against the two other places a
+  # target is named; this is the third consumer and the only one that cannot be
+  # checked by a unit test.
+  targets:
+    name: targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+
+      - name: Read the targets, the version and the dist-tag
+        id: read
+        run: |
+          echo "matrix=$(node packages/meo-canvas/tools/stage-platform-package.mjs --matrix)" >> "$GITHUB_OUTPUT"
+          version=$(node -p "require('./packages/meo-canvas/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # A version carrying a prerelease part goes to `next`, never to
+          # `latest`. This is what makes an alpha safe to cut: `npm install`
+          # resolves `latest`, and a semver range never matches a prerelease,
+          # so nobody reaches it without asking for it by name.
+          case "$version" in
+            *-*) tag=next ;;
+            *)   tag=latest ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publishing $version to dist-tag $tag"
+
+  # One runner per target, each building only its own binary. Cross-compiling
+  # Skia is a different problem from building it, and a runner per target buys
+  # the answer without solving it.
+  build:
+    name: build ${{ matrix.suffix }}
+    needs: targets
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # Every target reports. Cancelling the set on one failure hides whether
+      # the fault is one platform or the code.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: "1.58.0"
+
+      - name: Read the pinned toolchain
+        id: toolchain
+        run: echo "channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-${{ matrix.suffix }}
+          cache-bin: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install the JavaScript dependencies
+        run: npm ci --ignore-scripts
+
+      # `just pack` builds the release addon, builds `dist`, stages the platform
+      # package for this host and packs both tarballs. The same recipe a person
+      # runs locally, so a release cannot take a path nobody has walked.
+      - name: Build and pack
+        run: just pack
+
+      # The addon has to load from the packed platform package before that
+      # package is worth publishing. Rendering is the check — a `require` that
+      # resolves proves the file is present, not that it runs.
+      - name: Install the tarballs somewhere else and render
+        run: just verify-pack
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tarballs-${{ matrix.suffix }}
+          path: release/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish
+    needs: [targets, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          # Tells npm which registry to mint an OIDC credential for.
+          registry-url: https://registry.npmjs.org
+
+      # The npm bundled with Node LTS can predate OIDC support, in which case
+      # publishing falls back to looking for a token and fails.
+      - name: Use an npm that supports OIDC
+        run: npm install -g npm@latest
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: tarballs-*
+          merge-multiple: true
+
+      # Every target's build must have produced its platform tarball. Publishing
+      # a main package whose `optionalDependencies` name a package that was
+      # never built leaves an install that resolves nothing on that platform,
+      # and `fail-fast: false` means one target can fail while the rest succeed.
+      - name: Check every target produced a tarball
+        env:
+          VERSION: ${{ needs.targets.outputs.version }}
+          MATRIX: ${{ needs.targets.outputs.matrix }}
+        run: |
+          missing=0
+          for suffix in $(echo "$MATRIX" | node -e "
+            let raw = ''
+            process.stdin.on('data', chunk => { raw += chunk })
+            process.stdin.on('end', () => process.stdout.write(JSON.parse(raw).include.map(entry => entry.suffix).join(' ')))
+          "); do
+            file="artifacts/l7aromeo-meo-canvas-${suffix}-${VERSION}.tgz"
+            if [ ! -f "$file" ]; then
+              echo "missing $file"
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
+
+      # Platform packages first, main package last. The main package pins each
+      # one at an exact version, so publishing it first points at versions that
+      # do not exist yet and every install in that window fails.
+      - name: Publish the platform packages
+        env:
+          TAG: ${{ needs.targets.outputs.tag }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          for file in artifacts/l7aromeo-meo-canvas-*-*.tgz; do
+            case "$file" in
+              # The main package's own tarball has no target suffix. Skipping it
+              # by name rather than by position, because a glob's order is not a
+              # promise.
+              artifacts/l7aromeo-meo-canvas-${{ needs.targets.outputs.version }}.tgz) continue ;;
+            esac
+            echo "==> $file"
+            if [ "$DRY" = "true" ]; then
+              npm publish --dry-run --access public --tag "$TAG" "$file"
+            else
+              npm publish --provenance --access public --tag "$TAG" "$file"
+            fi
+          done
+
+      - name: Publish the main package
+        env:
+          TAG: ${{ needs.targets.outputs.tag }}
+          VERSION: ${{ needs.targets.outputs.version }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          file="artifacts/l7aromeo-meo-canvas-${VERSION}.tgz"
+          test -f "$file"
+          if [ "$DRY" = "true" ]; then
+            npm publish --dry-run --access public --tag "$TAG" "$file"
+          else
+            npm publish --provenance --access public --tag "$TAG" "$file"
+          fi
+
+      - name: Say what happened
+        env:
+          TAG: ${{ needs.targets.outputs.tag }}
+          VERSION: ${{ needs.targets.outputs.version }}
+        run: |
+          {
+            echo "### ${{ inputs.dry_run && 'Dry run' || 'Published' }} \`@l7aromeo/meo-canvas@${VERSION}\`"
+            echo ""
+            echo "dist-tag: \`${TAG}\`"
+            if [ "${TAG}" = "next" ]; then
+              echo ""
+              echo "\`npm install @l7aromeo/meo-canvas\` does not resolve this; ask for it by name:"
+              echo ""
+              echo "\`\`\`"
+              echo "npm install @l7aromeo/meo-canvas@${VERSION}"
+              echo "\`\`\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

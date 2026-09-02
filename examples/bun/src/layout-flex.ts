@@ -6,7 +6,7 @@
  * its neighbours; a prettier scene would hide it.
  */
 
-import { Box, Root, Row, type Children, type SceneNode } from 'meo-canvas'
+import { Box, Root, Row, type Children, type SceneNode } from '@l7aromeo/meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

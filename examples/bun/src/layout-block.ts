@@ -12,7 +12,7 @@
  * the parent's background covered it.
  */
 
-import { Box, Root, type Children, type SceneNode } from 'meo-canvas'
+import { Box, Root, type Children, type SceneNode } from '@l7aromeo/meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

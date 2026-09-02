@@ -2228,6 +2228,69 @@ What that pass found, kept here because each is a shape rather than an incident:
 **The repository the workspace manifest names exists**, and this clone has no
 remote pointing at it. A push has to add one deliberately.
 
+## Releasing
+
+The npm package is **`@l7aromeo/meo-canvas`**, and the scope is load-bearing
+rather than decorative: the unscoped `meo-canvas` is the 9.x line, npm resolves
+one directory per package name, and two majors can only be installed beside each
+other under two names. The cargo crate keeps the unscoped `meo-canvas` and
+versions independently — npm continues v1's lineage at 10.x, the crate starts
+fresh at 0.1.0.
+
+### The addon does not ship inside the package
+
+It is ~51 MB. One package per target carries one binary, named in
+`optionalDependencies` with its own `os`, `cpu` and, where the platform has a
+choice, `libc`, so an install downloads the one it can run. A postinstall
+script that downloads was the alternative and was refused: it needs the network
+at install time, and breaks offline installs, locked-down CI and
+`--ignore-scripts`.
+
+`resolveAddon` looks in three places in order — `MEO_CANVAS_ADDON`, the
+`.node` beside the package in a working tree, then the platform package — and a
+failure names all three. A checkout therefore tests what it just built rather
+than what npm resolved, which is why `just addon` needs no reinstall to take
+effect.
+
+### A target is named three times, and a test asserts all three agree
+
+`TARGETS` in `tools/stage-platform-package.mjs` is what a release **builds**,
+`optionalDependencies` is what an install **fetches**, and `PLATFORM_PACKAGES`
+in `src/addon.ts` is what a process **resolves**. `src/addon.test.ts` checks
+them against each other, because any two agreeing while the third does not is a
+separate silent failure: built and pinned but unresolved renders nothing with
+the binary on disk; pinned and resolved but unbuilt fails every install; built
+and resolved but unpinned works only in a checkout, which is where it would be
+tested. The release workflow reads the same list rather than restating it.
+
+**Only targets CI actually builds are named.** A key in that table is a promise
+`npm install` has to keep, and the READMEs' own audit is what this rule comes
+from. A host with no entry gets a message naming its own triple; a musl host is
+told the build is glibc rather than being handed a link error.
+
+### Packing is not installing
+
+`npm pack` reports what is in the tarball and says nothing about whether a
+consumer can reach it: `exports` can name a path the `files` allowlist dropped,
+and a platform package's `main` can name a binary that is not there. Both pack
+cleanly and fail at the first import. `just verify-pack` installs the tarballs
+into a directory that is not this repository and renders through them.
+
+### What triggers a publish
+
+`release.yml`, and only `workflow_dispatch` — nothing publishes on a push,
+because a push is how code arrives and publishing is a decision about code that
+already arrived. Its `dry_run` input defaults to **true**.
+
+**Any version containing a hyphen goes to the `next` dist-tag**, never `latest`.
+That is what makes a prerelease safe to cut by construction rather than by
+remembering a flag: `npm install` resolves `latest`, and a semver range never
+matches a prerelease, so nobody reaches it without naming it.
+
+**Platform packages publish before the main package**, which pins them at an
+exact version. The other order points at versions that do not exist yet, and
+every install in that window fails.
+
 ## Dependencies
 
 Every dependency is on its latest stable release.

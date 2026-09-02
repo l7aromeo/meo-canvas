@@ -89,6 +89,29 @@ jobs:
           node-version: lts/*
           cache: npm
 
+      # Insurance, not a known requirement. `skia-bindings` downloads a prebuilt
+      # Skia for a target-and-feature-set string and only builds from source
+      # when no asset matches -- verified on macOS, where the log says
+      # "DOWNLOAD AND INSTALL SUCCEEDED". rust-skia publishes vulkan builds for
+      # x86_64-unknown-linux-gnu, but whether one matches the exact feature set
+      # this workspace asks for is not knowable until a Linux run says so, and
+      # the fallback needs a build toolchain. Ten seconds of apt against a
+      # twenty-minute failure at the far end of the job.
+      #
+      # If a Linux run reports the download succeeding, this step is dead weight
+      # and should go.
+      - name: Install what a Skia source build would need, if it comes to that
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+
+      # `just ci` runs the examples, and the JavaScript half of them runs under
+      # bun rather than node -- it is a consumer of the published package and
+      # is written the way one would be. Without this the gate fails at
+      # `bun: command not found` on a runner, however green it is locally.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.0"
+
       # `npm ci` rather than `npm install`: it installs exactly what the
       # lockfile names and fails when the lockfile and package.json disagree,
       # which is what a check job wants to hear about.

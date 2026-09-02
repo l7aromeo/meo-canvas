@@ -14,8 +14,8 @@
 
 import { writeFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 
+import { resolveAddon } from './addon.js'
 import { encodeScene, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
 import { Box, type Children, type SceneNode } from './node.js'
@@ -225,12 +225,7 @@ type Addon = NativeRenderer
 
 /** The built addon, or an error naming what is missing. */
 function load(): Addon {
-  let module: Partial<Addon>
-  try {
-    module = createRequire(import.meta.url)('../meo-canvas.node') as Partial<Addon>
-  } catch (cause) {
-    throw new Error('the addon is not built; run `just addon`', { cause })
-  }
+  const module = resolveAddon<Partial<Addon>>()
   if (typeof module.paint !== 'function') {
     throw new TypeError(
       'the addon exports no `paint`. `Root` needs a painted surface that is retained until it is released — `render` returns encoded bytes, so every format would repaint the scene and the sync methods could not exist at all.',
