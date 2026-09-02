@@ -2294,6 +2294,35 @@ that `.height(120).min_height(90)` stays 120.
 
 ## Releasing
 
+### The targets, and the one that is missing on purpose
+
+    linux-x64-gnu     linux-arm64-gnu
+    linux-x64-musl    linux-arm64-musl
+    darwin-arm64      win32-x64
+
+**`darwin-x64` is excluded because Apple stopped supporting Intel**, and
+because it would need `macos-13`, the last Intel runner image, which GitHub is
+retiring. Building it would mean owning a target we lose on someone else's
+timetable rather than our own. `meo-skia-canvas` reached the same conclusion
+independently and ships no Intel Mac build either. Note that `darwin-arm64`
+covers every Apple Silicon machine, so the exclusion reaches only pre-2020
+hardware, and reaches it as a named refusal rather than a crash.
+
+`win32-arm64` is not excluded, only unbuilt: it waits on whether a hosted
+Windows arm64 runner exists.
+
+**The rule the set comes from is the user's**: everything within our control,
+and whatever is not gets named as such rather than left as a silent gap. A
+target absent because a runner is being retired is outside our control. A target
+absent because building it is work is not.
+
+**Adding a target is one row in `TARGETS` and nothing else.** That is the
+architecture the `TARGETS` → build matrix → `optionalDependencies` →
+`PLATFORM_PACKAGES` → ABI floors chain exists to provide, and it went untested
+for as long as there were two targets -- **two is the number at which a list and
+a hardcoded pair cannot be told apart**. Anywhere a second edit is needed, that
+is a defect in the chain rather than a step in the task.
+
 The npm package is **`meo-canvas`**, unscoped, continuing v1's lineage at 10.x.
 The cargo crate is `meo-canvas` too and versions independently, starting fresh
 at 0.1.0.
