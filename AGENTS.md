@@ -1916,8 +1916,21 @@ this fails, the defect is fixed, delete it. **The wrong answer, pinned
 deliberately, is the notification** -- and without it the defect is entirely
 silent, because a caller sees a box of the wrong height and no error.
 
+A second is live beside it and has a different trigger: **a grid item with
+`overflow: hidden` makes an ancestor's height ignore a negative margin**, one
+configuration of eight, where flex, `overflow: visible` and a bare wrapper are
+all correct. `overflow: hidden` inflates the item's flex basis to its
+max-content size and the margin vanishes into the same floor.
+
 **Any v2 caller writing `flex-grow` with a negative main-axis margin gets the
-margin ignored**, and nothing in the vocabulary hints at it.
+margin ignored, and any caller clipping a grid item above one gets a container
+too tall**, and nothing in the vocabulary hints at either.
+
+**Both are filed, both are fixed on `main`, and neither is in a release** --
+issues #1162 and #1163, closed by PR #1164, merged as `adef6dd`, which is two
+commits ahead of the `v0.14.0` tag. A close is not a release and a merge is not
+one either; the pins stay until a version we can resolve carries the fix, and
+the release that does will fail them.
 
 The pin is also what reads a release. One region of taffy holds two of these,
 and the second -- a negative margin on a **non-shrinking** item applied as
