@@ -104,6 +104,18 @@ jobs:
           key: release-${{ matrix.suffix }}
           cache-bin: true
 
+      # `libaom-sys` configures libaom with cmake, and libaom assembles its hot
+      # paths on x86 rather than compiling them -- so it raises a FATAL_ERROR
+      # when it can find neither nasm nor yasm. `meo-skia-canvas` installs the
+      # same pair in its own build image for the same reason.
+      #
+      # This is not a guess: the first Linux release build failed with
+      # `failed to run custom build command for libaom-sys` and
+      # `C Compiler test pie_check failed` out of `aom_configure.cmake`.
+      - name: Install what libaom needs
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: lts/*

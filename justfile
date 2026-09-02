@@ -279,6 +279,121 @@ pack: ensure-deps build-js addon-release
 verify-pack: pack
     node packages/meo-canvas/tools/verify-package.mjs release
 
+# Bump the npm package's version, and the platform packages it pins with it.
+#
+# `bump` is handed to `npm version`, so anything it accepts works:
+#
+#   just bump-npm prerelease     10.0.0-alpha.3 -> 10.0.0-alpha.4
+#   just bump-npm minor          10.0.0-alpha.3 -> 10.1.0
+#   just bump-npm premajor --preid rc
+#
+# Variadic, because `just` splits on whitespace and a single-parameter recipe
+# takes only the first word -- `--preid` would then be read as another recipe.
+#
+# Separate from publishing on purpose. A bump is a commit and a publish is a
+# workflow; joining them means a publish that fails for any reason leaves a
+# version bumped in the history with nothing on the registry under it, and the
+# next attempt has to decide whether to bump again.
+#
+# `optionalDependencies` is rewritten alongside, because the main package pins
+# each platform package at its exact version and `src/addon.test.ts` asserts
+# that they agree. A bump that moved only one of them fails that test rather
+# than shipping a package whose binaries cannot be resolved.
+[doc("Bump the npm version and the platform pins with it.")]
+bump-npm *bump="prerelease": ensure-deps
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd packages/meo-canvas
+    npm version --no-git-tag-version {{ bump }} >/dev/null
+    node -e '
+      const fs = require("fs")
+      const p = "./package.json"
+      const d = JSON.parse(fs.readFileSync(p, "utf8"))
+      for (const name of Object.keys(d.optionalDependencies ?? {})) d.optionalDependencies[name] = d.version
+      fs.writeFileSync(p, JSON.stringify(d, null, 2) + "\n")
+      process.stderr.write(`${d.name}@${d.version}\n`)
+    '
+
+# The repository the release workflow runs in.
+#
+# Named rather than left to `gh`'s default, because a clone with more than one
+# remote has no default repository and `gh` fails on it. meo-skia-canvas learnt
+# that the expensive way: a release failed *after* its tag was pushed, leaving
+# the tag up with no release under it.
+release_repo := "l7aromeo/meo-canvas"
+
+# The branch a release is cut from. Not `main`: `main` on that remote is v1's,
+# and it is v1's semantic-release branch, so a push there publishes
+# `meo-canvas@latest`. This line is the difference between shipping v10 and
+# replacing v9.
+release_branch := "v10"
+
+# Rehearse a release without publishing anything.
+#
+# Runs the whole workflow -- the target matrix, an addon per platform, the pack,
+# and the install-and-render check -- and stops short of the registry. This is
+# what to run after any change to the workflow, and it is not optional: the
+# first run of `release.yml` failed both builds on a YAML quoting mistake that
+# no local check could see, because the workflow is the only thing that reads
+# it.
+[doc("Rehearse an npm release. Builds and validates; publishes nothing.")]
+release-npm-dry: (_release_npm "true")
+
+# Publish to npm.
+#
+# A version carrying a hyphen goes to the `next` dist-tag and a bare one goes to
+# `latest`; the recipe prints which before it starts, because that is the
+# difference between a prerelease nobody resolves by accident and the version
+# every `npm install` picks up.
+[doc("Publish to npm. A prerelease goes to `next`, a release to `latest`.")]
+release-npm: (_release_npm "false")
+
+# The body both spellings share.
+[private]
+_release_npm dry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo "error: the working tree is not clean; a release is cut from a commit" >&2
+        exit 1
+    fi
+
+    branch=$(git branch --show-current)
+    if [[ "${branch}" != "{{ release_branch }}" ]]; then
+        echo "error: on branch ${branch}, and a release is cut from {{ release_branch }}" >&2
+        exit 1
+    fi
+
+    # An unpushed commit means the workflow would build a tree nobody can see,
+    # and the version it publishes would not be the version in this checkout.
+    if [[ -n "$(git log --oneline "origin/{{ release_branch }}..HEAD" 2>/dev/null)" ]]; then
+        echo "error: unpushed commits; the workflow builds what the remote has" >&2
+        git --no-pager log --oneline "origin/{{ release_branch }}..HEAD" >&2
+        exit 1
+    fi
+
+    version=$(node -p "require('./packages/meo-canvas/package.json').version")
+    case "${version}" in
+        *-*) tag=next ;;
+        *)   tag=latest ;;
+    esac
+
+    if [[ "{{ dry }}" == "true" ]]; then
+        echo "==> rehearsing ${version} (would go to dist-tag ${tag}); nothing is published"
+    else
+        echo "==> publishing ${version} to dist-tag ${tag}"
+        if [[ "${tag}" == "latest" ]]; then
+            echo "    this is the version every \`npm install\` resolves"
+        fi
+    fi
+
+    gh workflow run release.yml -R "{{ release_repo }}" --ref "{{ release_branch }}" -f dry_run={{ dry }}
+    sleep 10
+    run=$(gh run list -R "{{ release_repo }}" --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+    echo "==> https://github.com/{{ release_repo }}/actions/runs/${run}"
+    gh run watch "${run}" -R "{{ release_repo }}" --exit-status --interval 20
+
 # The consumer projects: typecheck them against the built package, run every
 # example in both, and compare every file the two of them wrote.
 #
