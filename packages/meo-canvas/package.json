@@ -51,6 +51,8 @@
   },
   "optionalDependencies": {
     "meo-canvas-darwin-arm64": "10.0.0-alpha.3",
-    "meo-canvas-linux-x64-gnu": "10.0.0-alpha.3"
+    "meo-canvas-linux-arm64-gnu": "10.0.0-alpha.3",
+    "meo-canvas-linux-x64-gnu": "10.0.0-alpha.3",
+    "meo-canvas-win32-x64": "10.0.0-alpha.3"
   }
 }

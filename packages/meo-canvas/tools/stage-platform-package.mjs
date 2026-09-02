@@ -41,6 +41,26 @@ export const TARGETS = {
     runner: 'ubuntu-latest',
     floors: { glibc: '2.35', glibcxx: '3.4.30' },
   },
+  'linux-arm64-gnu': {
+    os: ['linux'],
+    cpu: ['arm64'],
+    libc: ['glibc'],
+    rust: 'aarch64-unknown-linux-gnu',
+    runner: 'ubuntu-24.04-arm',
+    // **Inherited from the x64 build and not yet measured on this one.** The
+    // floors are a property of an artefact, and no arm64 artefact exists yet.
+    // Declaring the sibling's numbers rather than omitting the key is the
+    // honest option of the two available: an absent `floors` means "no ELF
+    // floor to check here", which is true of darwin and win32 and false of
+    // this. If the arm64 artefact's real floors are higher, the release's
+    // assertion fails and names the symbol, which is the correction arriving
+    // through the mechanism built for it.
+    floors: { glibc: '2.35', glibcxx: '3.4.30' },
+  },
+  // No `floors`: the floors are ELF symbol versions, and a PE binary has none.
+  // Windows links DirectWrite rather than fontconfig and freetype, so the
+  // acceptance harness loads it on the runner rather than in a container.
+  'win32-x64': { os: ['win32'], cpu: ['x64'], rust: 'x86_64-pc-windows-msvc', runner: 'windows-latest' },
 }
 
 /**

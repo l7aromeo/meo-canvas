@@ -33,7 +33,9 @@ import { createRequire } from 'node:module'
  */
 export const PLATFORM_PACKAGES: Readonly<Record<string, string>> = {
   'darwin-arm64': 'meo-canvas-darwin-arm64',
+  'linux-arm64': 'meo-canvas-linux-arm64-gnu',
   'linux-x64': 'meo-canvas-linux-x64-gnu',
+  'win32-x64': 'meo-canvas-win32-x64',
 }
 
 /** The environment variable that overrides every other path. */
