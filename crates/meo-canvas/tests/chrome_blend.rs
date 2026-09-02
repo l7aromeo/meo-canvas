@@ -175,8 +175,32 @@ fn cell(mode: Option<BlendMode>) -> Element {
     }
 }
 
-/// Renders one cell and reads it at both sample points.
-fn read(mode: Option<BlendMode>) -> [(u8, u8, u8); 2] {
+/// How many pixels each sample point covers.
+///
+/// **Two, because the output oscillates with period two and one pixel cannot
+/// see it.** Read at a single pixel, `exclusion` over the dark point sits
+/// `+0.99` from the formula on macOS and `-1.01` on Linux -- against a formula
+/// value of `150.01`, the two platforms draw `151` and `149` and **neither
+/// draws the `150` it rounds to**. Sampling the neighbouring pixels shows why:
+/// the error runs `+0.97, -0.02, +0.99, 0.00, -0.99, +0.02` across six
+/// consecutive columns, so a point reading measures where in that pattern the
+/// sample happened to land rather than whether the blend is right.
+///
+/// The residual against the formula is `+1, 0, +1, 0, -1, 0` on consecutive
+/// pixels -- the size and shape of an ordered dither, which this file already
+/// names as the reason Chrome's gradient sits a unit low in green. **Left as
+/// an observation rather than a mechanism**: the drawn values in that region
+/// take only odd integers, which a dither does not by itself explain, and the
+/// Skia path has not been read. The fix does not depend on the cause.
+///
+/// Averaging over a full period cancels a period-two displacement by
+/// construction. Moving the sample to where the oscillation is null would not:
+/// that is fitting to the phase, which is what `TOLERANCE` already did at this
+/// pixel on one platform.
+const PERIOD: usize = 2;
+
+/// Renders one cell and reads a period-wide window at both sample points.
+fn read(mode: Option<BlendMode>) -> [[(u8, u8, u8); PERIOD]; 2] {
     let mut renderer = Renderer::new();
     // Off for the reason every other pixel-reading test turns it off: two
     // rasterisers do not agree to the byte, and this reads exact colours.
@@ -196,13 +220,15 @@ fn read(mode: Option<BlendMode>) -> [(u8, u8, u8); 2] {
     });
 
     POINTS.map(|(_, x, y)| {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "the cell is a whole number of pixels, written above"
-        )]
-        let at = (y * (CELL.0 as usize) + x) * 4;
-        (bytes[at], bytes[at + 1], bytes[at + 2])
+        std::array::from_fn(|step| {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "the cell is a whole number of pixels, written above"
+            )]
+            let at = (y * (CELL.0 as usize) + x + step) * 4;
+            (bytes[at], bytes[at + 1], bytes[at + 2])
+        })
     })
 }
 
@@ -359,18 +385,28 @@ fn expected(mode: &str, backdrop: (u8, u8, u8)) -> (f64, f64, f64) {
 
 /// How far a channel may sit from the formula before it is a defect.
 ///
-/// **One unit, and it is load-bearing for exactly one mode.** Thirty of the
-/// thirty-two readings land within `0.49`; `exclusion` lands at `0.99` over
-/// the dark point and `0.78` over the light one, which is a separation rather
-/// than a tail and is not something to bury under a round number.
+/// **One unit, and nothing needs the whole of it any more.** Every reading now
+/// lands within `0.49` on this machine, `exclusion` included.
 ///
-/// It is not ours. Chrome's own `exclusion` rows, put through the same formula
-/// over Chrome's own backdrop, are off by `0.99` and `0.78` — the same two
-/// numbers to both decimals. Chrome rasterises with Skia and so do we, so this
-/// is one implementation's rounding of `Cb + Cs - 2·Cb·Cs` showing up twice,
-/// not a defect either of us has. The row is left inside the tolerance and
-/// named here rather than pinned, because a pin would claim we differ from
-/// Chrome and we do not.
+/// It used to be load-bearing for exactly that mode: point-sampled,
+/// `exclusion` sat at `0.99` over the dark point and `0.78` over the light
+/// one, and the separation read as one implementation's rounding of
+/// `Cb + Cs - 2·Cb·Cs` — Chrome's own rows were off by the same two numbers to
+/// both decimals, so it looked like Skia's arithmetic showing up twice.
+///
+/// **That reading was wrong, and the first Linux run is what showed it.** The
+/// pixel sitting `+0.99` from the formula on macOS sits `-1.01` on Linux:
+/// `151` and `149` against a formula value of `150.01`, with neither platform
+/// drawing the `150` it rounds to. It was never rounding. It was a period-two
+/// oscillation across the pixel grid, and both that `0.99` and Chrome's
+/// matching number were samples of the same wave rather than evidence about
+/// arithmetic. See [`PERIOD`]: averaging over a period cancels it and takes the
+/// worst reading to `0.49`.
+///
+/// **Deliberately not tightened to match.** `0.49` is this machine's number,
+/// and fitting the bound to it would repeat exactly the mistake being undone
+/// here — a tolerance shaped by whichever platform happened to measure it.
+/// Tightening wants a Linux number beside this one first.
 ///
 /// A tolerance of one on *pinned Chrome outputs* would have passed eleven
 /// modes carrying a real fault — which is what happened before this walker
@@ -396,12 +432,28 @@ fn every_blend_mode_follows_its_formula() {
         let mut apart = false;
 
         for (index, (point, _, _)) in POINTS.iter().enumerate() {
-            let want = expected(name, ours[index]);
-            let got = drawn[index];
+            // **The expectation is averaged per pixel, not computed from an
+            // averaged backdrop.** The blend functions are not linear in the
+            // backdrop, so `mean(f(b))` and `f(mean(b))` are different numbers
+            // and only the first is what the window actually drew.
+            let mean = |of: &dyn Fn(usize) -> (f64, f64, f64)| {
+                let sum = (0..PERIOD).fold((0.0, 0.0, 0.0), |acc, step| {
+                    let one = of(step);
+                    (acc.0 + one.0, acc.1 + one.1, acc.2 + one.2)
+                });
+                #[expect(clippy::cast_precision_loss, reason = "PERIOD is 2")]
+                let count = PERIOD as f64;
+                (sum.0 / count, sum.1 / count, sum.2 / count)
+            };
+            let want = mean(&|step| expected(name, ours[index][step]));
+            let got = mean(&|step| {
+                let pixel = drawn[index][step];
+                (f64::from(pixel.0), f64::from(pixel.1), f64::from(pixel.2))
+            });
             let off = [
-                (f64::from(got.0) - want.0).abs(),
-                (f64::from(got.1) - want.1).abs(),
-                (f64::from(got.2) - want.2).abs(),
+                (got.0 - want.0).abs(),
+                (got.1 - want.1).abs(),
+                (got.2 - want.2).abs(),
             ];
             let furthest = off[0].max(off[1]).max(off[2]);
             if furthest > worst.0 {
@@ -413,8 +465,9 @@ fn every_blend_mode_follows_its_formula() {
                 apart = true;
                 wrong.push(format!(
                     "{name} {point}: over our own backdrop {:?} the formula \
-                     gives ({:.2}, {:.2}, {:.2}) and we drew {got:?}",
-                    ours[index], want.0, want.1, want.2
+                     gives ({:.2}, {:.2}, {:.2}) and we drew ({:.2}, {:.2}, \
+                     {:.2}), each a mean over {PERIOD} pixels",
+                    ours[index], want.0, want.1, want.2, got.0, got.1, got.2
                 ));
             }
         }
@@ -471,7 +524,15 @@ fn every_blend_mode_follows_its_formula() {
 fn the_gradient_under_the_blends_is_the_analytic_ramp() {
     let ours = read(None);
 
-    for (index, (point, x, _)) in POINTS.iter().enumerate() {
+    // Every pixel of the window the blend rows average over, not just its
+    // first: the backdrop under a mean has to be analytic everywhere the mean
+    // reaches, or the blend rows are averaging over a ramp that is only right
+    // where this row looked.
+    for ((index, (point, x, _)), step) in POINTS
+        .iter()
+        .enumerate()
+        .flat_map(|point| (0..PERIOD).map(move |step| (point, step)))
+    {
         // The pixel *centre*, not its corner: a gradient is sampled where the
         // pixel is, and reading it at the integer coordinate shifts the whole
         // ramp by half a step.
@@ -479,7 +540,7 @@ fn the_gradient_under_the_blends_is_the_analytic_ramp() {
             clippy::cast_precision_loss,
             reason = "a coordinate on a 56-pixel cell is exact in an f64"
         )]
-        let along = (*x as f64 + 0.5) / f64::from(CELL.0);
+        let along = ((*x + step) as f64 + 0.5) / f64::from(CELL.0);
         let want = [0, 1, 2].map(|channel| {
             let (from, to) = (STOPS[0], STOPS[1]);
             let (from, to) = match channel {
@@ -498,15 +559,16 @@ fn the_gradient_under_the_blends_is_the_analytic_ramp() {
             reason = "a rounded channel of a ramp between two bytes is a byte"
         )]
         let nearest = want.map(|channel| channel.round() as u8);
-        let got = [ours[index].0, ours[index].1, ours[index].2];
+        let got: [u8; 3] = ours[index][step].into();
         let theirs = chrome_backdrop()[index];
 
         assert_eq!(
             got, nearest,
-            "{point}: the ramp is analytically ({:.2}, {:.2}, {:.2}), which \
-             rounds to {nearest:?}, and we drew {got:?}. Chrome draws \
-             {theirs:?} here -- but Chrome is not the reference for this row, \
-             the arithmetic is, because Chrome dithers and we do not",
+            "{point} +{step}: the ramp is analytically ({:.2}, {:.2}, {:.2}), \
+             which rounds to {nearest:?}, and we drew {got:?}. Chrome draws \
+             {theirs:?} at the sample point -- but Chrome is not the reference \
+             for this row, the arithmetic is, because Chrome dithers and we do \
+             not",
             want[0], want[1], want[2]
         );
     }

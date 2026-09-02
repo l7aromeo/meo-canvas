@@ -48,6 +48,9 @@ const PROBE = resolve(HERE, 'probe')
 /** The staging directory a container mounts. Set once a Linux run starts. */
 let mount
 
+/** What the artefact needs that a bare image of its libc does not carry. */
+let extra
+
 /**
  * The libraries whose absence is the point, checked before the load is read.
  *
@@ -121,10 +124,32 @@ const LINUX_IMAGES = {
     { image: 'amazonlinux:2023', why: 'glibc 2.34 — the AWS Lambda runtime' },
     { image: 'almalinux:8', why: 'glibc 2.28 — the oldest tier worth claiming' },
   ],
-  musl: [
-    { image: 'node:22-alpine', why: 'the control — ships the font libraries', control: true },
-    { image: 'alpine:3.20', why: 'the musl baseline the package name promises' },
-  ],
+  // **The musl rows make a narrower claim than the glibc ones, and it is not
+  // the claim a reader assumes.** They say the addon loads on the Alpine image
+  // people deploy into -- not that it needs nothing but musl.
+  //
+  // Bare `alpine:3.20` cannot be used, and the reason is worth stating because
+  // it is the very thing the narrowing gives up. There is no mountable musl
+  // node: nodejs.org publishes glibc builds only, and the node copied out of
+  // `node:22-alpine` will not run on a bare image --
+  // `Error relocating: _ZNSt7__cxx117collateIcE2idE: symbol not found`, because
+  // `node:22-alpine` installs `libstdc++` and the bare image does not carry it.
+  // Installing it would put a package manager back on the one image that exists
+  // to show what a bare musl host has, which is the Node 10 failure again.
+  //
+  // What the narrowing loses -- seeing the addon need something a bare Alpine
+  // lacks -- is recovered by `requirements`, which reads the artefact's own
+  // `NEEDED` list instead of loading it. A property of the binary needs no
+  // container to run it.
+  //
+  // **There is no control row here, and that is a real gap rather than an
+  // oversight.** A control has to ship the font libraries, and `node:22-alpine`
+  // ships neither -- measured, not assumed -- which is what makes it a genuine
+  // row instead. The only way to build one would be to `apk add` them into an
+  // image, and an installed control is a row about our setup. So a musl run
+  // that comes back failing cannot distinguish a binary that loads nowhere from
+  // a harness that is broken, where a glibc run can.
+  musl: [{ image: 'node:22-alpine', why: 'the Alpine image people deploy into, and it ships neither font library' }],
 }
 
 /** The docker `--platform` value for a target suffix's architecture. */
@@ -236,6 +261,68 @@ export function decide(rows) {
   if (broken.length > 0) return { ok: false, why: `${broken.length} image(s) cannot load this binary`, broken }
   if (unasked.length > 0) return { ok: false, why: `${unasked.length} image(s) could not be asked`, unasked }
   return { ok: true, why: `${answered.length} image(s) load it with no font packages installed` }
+}
+
+/**
+ * What a bare image of each libc carries, and so what an artefact may ask for.
+ *
+ * Not a policy: these are the sonames present in `alpine:3.20` and in the
+ * oldest glibc tier the package name claims. Anything else in an artefact's
+ * `NEEDED` list is a library the consumer has to install, which the package
+ * name does not tell them to.
+ */
+const CARRIED = {
+  musl: ['libc.musl-x86_64.so.1', 'libc.musl-aarch64.so.1', 'ld-musl-x86_64.so.1', 'ld-musl-aarch64.so.1'],
+  gnu: [
+    'libc.so.6',
+    'libm.so.6',
+    'libdl.so.2',
+    'libpthread.so.0',
+    'librt.so.1',
+    'libgcc_s.so.1',
+    'libstdc++.so.6',
+    'libz.so.1',
+    'ld-linux-x86-64.so.2',
+    'ld-linux-aarch64.so.1',
+  ],
+}
+
+/**
+ * The shared libraries an artefact demands, read from the artefact itself.
+ *
+ * **This is what recovers the claim the musl rows give up.** Those rows load in
+ * `node:22-alpine` rather than a bare image, so they cannot see the addon
+ * needing something a bare Alpine lacks -- and `libstdc++` is exactly that
+ * something. A `NEEDED` list is a property of the binary, so reading it needs
+ * no container at all and no node inside one: the load test asks the realistic
+ * image, this asks the artefact, and neither stands in for the other.
+ *
+ * The same split as the release's ABI floors against this file. The floor is a
+ * diagnostic that names a symbol; the load is the gate. Here the requirement
+ * list is the diagnostic and the load is still the gate -- a library named here
+ * and present everywhere is fine, and one absent from the load's image is
+ * caught by the load whether or not this notices it.
+ */
+async function requirements(addon, libc) {
+  // `objdump -p` over `ldd`: `ldd` reports what resolves on the machine running
+  // it, so in any environment that has the libraries it reports success about a
+  // question nobody asked. The `NEEDED` entries are in the file.
+  const read = await run('objdump', ['-p', addon], { maxBuffer: 8 << 20 }).catch(error => ({ stdout: '', error }))
+  if (read.error !== undefined) return { ok: undefined, detail: `objdump could not read it: ${read.error.message}` }
+
+  const needed = [...read.stdout.matchAll(/^\s*NEEDED\s+(\S+)/gm)].map(match => match[1])
+  if (needed.length === 0) return { ok: undefined, detail: 'no NEEDED entries; not an ELF this can read' }
+
+  const carried = CARRIED[libc] ?? []
+  const extra = needed.filter(name => !carried.includes(name))
+  return {
+    ok: extra.length === 0,
+    detail:
+      extra.length === 0
+        ? `${needed.length} libraries, all carried by a bare ${libc} image`
+        : `needs ${extra.join(', ')}, which a bare ${libc} image does not carry`,
+    needed,
+  }
 }
 
 /**
@@ -371,6 +458,17 @@ async function main() {
     }
 
     process.stderr.write(`loading ${addon} for ${suffix}\n${'-'.repeat(78)}\n`)
+
+    // Read before anything is loaded, because it is about the artefact rather
+    // than about any image, and because a `NEEDED` a bare image lacks explains
+    // a load failure that follows rather than being explained by it.
+    const needs = await requirements(addon, libc)
+    const verdict = needs.ok === undefined ? 'UNREADABLE' : needs.ok ? 'CARRIED' : 'EXTRA'
+    process.stderr.write(`${'requirements'.padEnd(20)} ${verdict.padEnd(12)} ${''.padEnd(10)} ${needs.detail}\n`)
+    // A finding rather than a failure of the run: the load rows decide, and
+    // this says which library to look at when they fail.
+    if (needs.ok === false) extra = needs.detail
+
     for (const target of LINUX_IMAGES[libc]) {
       const result = await probe(name, target, platform)
       rows.push({ ...target, ...result })
@@ -416,6 +514,10 @@ async function main() {
     for (const row of broken) process.stderr.write(`  ${row.image} (${row.why}): ${row.detail}\n`)
     process.exit(1)
   }
+
+  // Said after the rows, so a green run still carries it: every image tested may
+  // happen to have the library and the next consumer's may not.
+  if (extra !== undefined) process.stderr.write(`the artefact ${extra}\n`)
 
   process.stderr.write(`${answered.length} image(s) load it with no font packages installed. This is what makes the package name honest.\n`)
   process.exit(unasked.length > 0 ? 1 : 0)
