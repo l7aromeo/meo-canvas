@@ -49,6 +49,10 @@ use meo_canvas_scene::{
         },
     },
 };
+// The one trait imported from taffy rather than named through it:
+// resolving a `LengthPercentage` against its containing block is a method,
+// and a method needs its trait in scope.
+use taffy::ResolveOrZero as _;
 
 use crate::{
     Error,
@@ -160,9 +164,9 @@ where
     };
 
     // Baselines are collected during the solve because this closure is the only
-    // place a measurer runs. They travel to paint rather than into the
-    // `LayoutOutput` below; `crate::measure`'s module documentation says what
-    // that costs and what filling the field would need first.
+    // place a measurer runs. They go two ways from here: into taffy's
+    // `LayoutOutput`, which is what `align-items: baseline` reads, and into the
+    // result, which is what places glyphs at paint time.
     let mut baselines: HashMap<NodeId, f32> = HashMap::new();
 
     tree.compute_layout_with_measure(
@@ -185,7 +189,8 @@ where
             // The calc resolver answers zero because `calc` is off: with no
             // way to build a `calc` length, nothing can reach the resolver
             // and any value it returned would be unobservable.
-            taffy::compute_leaf_layout(
+            let mut first_baseline = None;
+            let mut output = taffy::compute_leaf_layout(
                 inputs,
                 style,
                 |_, _| 0.0,
@@ -202,6 +207,7 @@ where
 
                     if let Some(baseline) = measured.first_baseline {
                         baselines.insert(node, baseline);
+                        first_baseline = Some(baseline);
                     }
 
                     // Measured text is a used length like any other, so it
@@ -212,7 +218,29 @@ where
                         height: contains(measured.size.height),
                     }
                 },
-            )
+            );
+
+            // A measurer works in the content box, and CSS measures a flex
+            // item's baseline from its **border box**, so the leaf's own top
+            // padding and border are part of the answer. Text with padding
+            // aligns a hair low without this, which is the kind of wrong that
+            // reads as a font metric.
+            //
+            // Percentages resolve against the containing block's inline size
+            // in both edges, which is CSS's rule rather than a simplification.
+            output.baselines =
+                taffy::Baselines::from_first(first_baseline.map(|baseline| {
+                    let top = style
+                        .padding
+                        .top
+                        .resolve_or_zero(inputs.parent_size.width, |_, _| 0.0)
+                        + style.border.top.resolve_or_zero(
+                            inputs.parent_size.width,
+                            |_, _| 0.0,
+                        );
+                    baseline + top
+                }));
+            output
         },
     )
     .map_err(|error| Error::Layout(error.to_string()))?;

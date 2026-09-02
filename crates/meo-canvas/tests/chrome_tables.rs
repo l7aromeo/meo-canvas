@@ -1189,16 +1189,15 @@ const FLEX_BOX: (f32, f32) = (160.0, 80.0);
 /// **Empty: all thirty cases agree**, baseline included — and that last part
 /// is worth reading carefully rather than as good news.
 ///
-/// I pinned `baseline` here before running it, expecting the defect
-/// `fixtures/baseline-alignment` pins: taffy discards a **measured leaf's**
-/// baseline and reads the missing value as the leaf's height. These children
-/// are boxes with no text in them, and a box's baseline *is* its bottom margin
-/// edge — in Chrome as much as here — so the defect cannot appear in this
-/// matrix at all. The rows agreeing says our flex alignment is right; it says
-/// nothing about baselines, and a reader who took thirty green rows as
-/// covering `Align::Baseline` would be wrong.
+/// **The `baseline` rows here cannot fail on a baseline.** These children are
+/// boxes with no text in them, and a box's baseline *is* its bottom margin
+/// edge — in Chrome as much as here — so `baseline` and `flex-end` ask this
+/// matrix the same question and get one answer. The rows agreeing says our
+/// flex alignment is right; it says nothing about baselines, and a reader who
+/// took thirty green rows as covering `Align::Baseline` would be wrong.
 ///
-/// The text case is a fixture, where it belongs, and it is still red.
+/// The case that does discriminate is `fixtures/baseline-alignment`, where a
+/// measured text leaf reports a baseline of its own.
 const KNOWN_FLEX: &[&str] = &[];
 
 /// The `Justify` a table's name asks for.

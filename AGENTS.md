@@ -492,27 +492,30 @@ Where a question has a CSS answer, the answer is what Chrome does.
 
 ### Three questions answered and closed
 
-**Baselines from measured text: released upstream, not yet routed through.**
-taffy 0.14's measure function returns a whole `LayoutOutput` rather than a
-`Size<f32>` (`taffy-0.14.0/src/tree/taffy_tree.rs:904`), so a text leaf has a
-field to report a baseline in. `layout.rs` leaves it at `Baselines::NONE`, so
-`align-items: baseline` still falls back to the box's bottom edge and the
-measured baseline reaches paint only. **The remaining work is a Chrome
-measurement, not a workaround.**
+**Baselines from measured text: carried.** taffy 0.14's measure function
+returns a whole `LayoutOutput` rather than a `Size<f32>`
+(`taffy-0.14.0/src/tree/taffy_tree.rs:904`), so `layout.rs` reports a text
+leaf's baseline in it, offset by the leaf's own top padding and border because
+CSS measures a flex item's baseline from its border box.
 
-**Confirm the _released_ signature rather than the changelog.** This question
-was open for a release longer than the changelog implied, and it is
-`compute_leaf_layout` that misleads: the low-level helper still takes a
-`Size<f32>` closure in 0.14, so reading the helper says the fix did not ship
-while reading `TaffyTree` says it did. **Read the function the code actually
-calls.**
+**Confirm the _released_ signature rather than the changelog**, and confirm the
+function the code actually calls. `compute_leaf_layout` misleads here: the
+low-level helper still takes a `Size<f32>` closure in 0.14, so reading the
+helper says the fix did not ship while reading `TaffyTree` says it did. One
+release was spent waiting on a changelog entry; the second reading is what ends
+a wait.
 
-Test it on `align-items: baseline` over mixed font **sizes**, which is the only
-arrangement where the fallback and a real baseline differ -- **a fixture that
-passes before and after the change has not tested it.** `flex-alignment.tsv`'s
-eighteen `baseline` rows do not qualify: their children are spacer boxes with
-no text, whose baseline in Chrome _is_ the bottom margin edge, so both answers
-coincide.
+**The arrangement that can see it is `align-items: baseline` over mixed font
+sizes, and nothing else is** -- taffy reads a missing baseline as the node's own
+height, so a row of boxes with no text agrees with itself either way.
+`flex-alignment.tsv`'s eighteen `baseline` rows are exactly that and stayed
+green through the change; `fixtures/baseline-alignment` is the scene that moved.
+**A check that passes before and after has not tested the change.**
+
+And what it pins is the **sign**. Chrome's ink bottoms increase with font size
+because aligned baselines let a larger descender hang lower; aligning box
+bottoms makes them decrease. A fix that narrowed the spread while leaving the
+order inverted would pass "the baselines should be level" and fail this.
 
 **Whole-pixel rounding against Chrome's sixty-fourths: closed.** Kept in full
 because the measurement is what makes the fix checkable, and because two of the

@@ -6,29 +6,27 @@
 //! which is Skia's paragraph layout; for images it is the decoded bitmap's
 //! intrinsic size scaled to fit.
 //!
-//! # The baseline goes to paint, and not yet to taffy
+//! # The baseline goes two ways
 //!
-//! **This section describes what runs; routing the baseline into taffy is the
-//! part that is not built.**
+//! [`MeasuredLeaf`] carries a `first_baseline`, and it is read twice.
+//! [`crate::layout`] puts it in the `LayoutOutput` it hands taffy
+//! (`taffy-0.14.0/src/tree/taffy_tree.rs:904`), which is what
+//! `align-items: baseline` reads, and keeps it in
+//! [`crate::layout::LayoutResult`] for the paint pass, which is what lets
+//! glyphs sit correctly inside a box placed by some other rule.
 //!
-//! [`MeasuredLeaf`] carries a `first_baseline`, so a measurer does report one,
-//! and taffy 0.14 hands the whole `LayoutOutput` to the measure function
-//! (`taffy-0.14.0/src/tree/taffy_tree.rs:904`), which is the field that would
-//! carry it. [`crate::layout`] builds that output through `compute_leaf_layout`
-//! and leaves its `baselines` at taffy's `Baselines::NONE`.
+//! The first of those is worth stating exactly, because the failure it avoids
+//! is visible rather than subtle: taffy reads a *missing* baseline as the
+//! node's own height (`taffy-0.14.0/src/compute/flexbox.rs:1921`), so a row of
+//! measured text with no baseline reported lines up on the bottom edges of the
+//! runs, and the largest text then sits highest — the trend inverted, not
+//! merely offset.
 //!
-//! The consequence is worth stating exactly, because it is visible: taffy reads
-//! a missing baseline as the node's own height
-//! (`taffy-0.14.0/src/compute/flexbox.rs:1921`), so a row of measured text
-//! aligned `baseline` lines up on the bottom edges of the runs rather than on
-//! their baselines. The measured baseline reaches the paint pass through
-//! [`MeasuredLeaf::first_baseline`], which is what lets glyphs sit correctly
-//! inside a box layout placed by some other rule.
-//!
-//! Filling the field needs Chrome's numbers for `align-items: baseline` over
-//! mixed font sizes first: that is the only arrangement where the fallback and
-//! a real baseline differ, so it is the only one that can tell the change from
-//! no change.
+//! The arrangement that tells the two apart is `align-items: baseline` over
+//! mixed font **sizes**, and nothing else does:
+//! `fixtures/baseline-alignment` is that scene, measured against Chrome. A row
+//! of boxes with no text agrees with itself either way, because a box's
+//! baseline *is* its bottom margin edge.
 
 use std::collections::HashMap;
 
