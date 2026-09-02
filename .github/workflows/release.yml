@@ -318,10 +318,15 @@ jobs:
               artifacts/${{ needs.targets.outputs.prefix }}-${{ needs.targets.outputs.version }}.tgz) continue ;;
             esac
             echo "==> $file"
+            # `./` is not decoration. npm reads a bare relative path as a git
+            # shorthand, so `artifacts/x.tgz` becomes `github:artifacts/x.tgz`
+            # and fails with `EALLOWGIT: Refusing to fetch`. Only a rehearsal
+            # that got past the build could find this, which is why the build
+            # being red for two rounds hid it.
             if [ "$DRY" = "true" ]; then
-              npm publish --dry-run --access public --tag "$TAG" "$file"
+              npm publish --dry-run --access public --tag "$TAG" "./$file"
             else
-              npm publish --provenance --access public --tag "$TAG" "$file"
+              npm publish --provenance --access public --tag "$TAG" "./$file"
             fi
           done
 
@@ -334,10 +339,12 @@ jobs:
         run: |
           file="artifacts/${PREFIX}-${VERSION}.tgz"
           test -f "$file"
+          # `./` for the reason the platform step gives: a bare relative path
+          # is a git shorthand to npm.
           if [ "$DRY" = "true" ]; then
-            npm publish --dry-run --access public --tag "$TAG" "$file"
+            npm publish --dry-run --access public --tag "$TAG" "./$file"
           else
-            npm publish --provenance --access public --tag "$TAG" "$file"
+            npm publish --provenance --access public --tag "$TAG" "./$file"
           fi
 
       # Tag and release AFTER the registry has accepted everything, never before.
