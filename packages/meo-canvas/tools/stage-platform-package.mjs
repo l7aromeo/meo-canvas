@@ -33,8 +33,40 @@ const PACKAGE = resolve(HERE, '../package.json')
  */
 export const TARGETS = {
   'darwin-arm64': { os: ['darwin'], cpu: ['arm64'], rust: 'aarch64-apple-darwin', runner: 'macos-latest' },
-  'linux-x64-gnu': { os: ['linux'], cpu: ['x64'], libc: ['glibc'], rust: 'x86_64-unknown-linux-gnu', runner: 'ubuntu-latest' },
+  'linux-x64-gnu': {
+    os: ['linux'],
+    cpu: ['x64'],
+    libc: ['glibc'],
+    rust: 'x86_64-unknown-linux-gnu',
+    runner: 'ubuntu-latest',
+    floors: { glibc: '2.35', glibcxx: '3.4.30' },
+  },
 }
+
+/**
+ * The ELF symbol floors a target's artefact currently has.
+ *
+ * **This is a diagnostic, not a gate, and the difference is structural.** The
+ * release workflow asserts the built binary does not exceed these, which
+ * catches versioned drift early and names the symbol that moved -- worth having,
+ * and much better than discovering a floor rose and hunting for why. What it
+ * cannot do is establish that the artefact loads: an *unversioned* symbol has no
+ * tag to compare, and a binary reporting `GLIBCXX_3.4.21`, under every ceiling,
+ * still failed to load on `undefined symbol: _M_replace_cold`. Only loading it
+ * decides that, which is what `tools/acceptance.mjs` is for.
+ *
+ * These are the numbers the artefact has **today**, not the ones we want. They
+ * are declared so a rise is noticed, and they are expected to be edited down as
+ * the build moves to an older base image -- a gate that is expected to be red
+ * teaches people to ignore it, so the declaration tracks reality and tightens
+ * behind it.
+ *
+ * A target with no ELF floors carries no `floors` key at all rather than a null:
+ * darwin has none, and neither will win32. Absent means "nothing here to
+ * check", which the asserting step reports rather than skipping silently, since
+ * an unchecked target that prints nothing is indistinguishable from one that
+ * passed.
+ */
 
 /** The manifest a platform package ships, derived from the main one. */
 export function manifest(suffix, version) {
@@ -51,6 +83,10 @@ export function manifest(suffix, version) {
     os: target.os,
     cpu: target.cpu,
     ...(target.libc === undefined ? {} : { libc: target.libc }),
+    // Carried into the platform package so `resolveAddon` can read it when the
+    // binary beside it will not load: **a manifest stays readable when the
+    // `.node` does not**, which is exactly the moment the numbers are wanted.
+    ...(target.floors === undefined ? {} : { meoCanvas: { floors: target.floors } }),
     // The binary is the whole package, and `main` is what makes
     // `require('meo-canvas-darwin-arm64')` resolve to it rather than to a
     // directory with no entry point.

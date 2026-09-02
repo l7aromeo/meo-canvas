@@ -1837,6 +1837,46 @@ generated rather than written, and the rule when one does is that it is named by
 path in the `coverage` recipe, one path at a time, so the list is reviewable in
 a diff. Code this project implements stays in the denominator.
 
+**A green result produced by the check breaking its own precondition is worse
+than a red one.** The acceptance harness loads a built addon in stock base
+images to prove it needs no font packages -- and four of the five images
+(`debian:12-slim`, `rockylinux:9`, `amazonlinux:2023`, `almalinux:8`) ship no
+Node at all, so the harness has to put one there first. The obvious way,
+`dnf install nodejs` or `apt install nodejs`, can pull `libfontconfig` and
+`libfreetype` in as transitive dependencies: **the check would install exactly
+what it exists to prove is absent**, then report a clean load on an image where
+a real consumer fails at `dlopen`. So Node arrives as a distro-independent
+binary, and the harness asserts `libfontconfig.so.1` and `libfreetype.so.6` are
+still missing after Node is in place and before the probe runs. That assertion
+is the harness testing the artefact rather than testing itself, and it is worth
+more than the probe it guards.
+
+The direction is what makes this shape dangerous rather than merely wrong. A
+check that breaks and goes red gets fixed that afternoon. A check that breaks
+its own premise and goes **green** is indistinguishable from the thing working,
+and it keeps that way until a user reports what the check was built to catch.
+
+This repository has now met that shape four times, and the common thread is a
+check that quietly repaired the condition it was meant to fail on:
+
+- **The doc-example generator rewrote the specifier it should have refused.**
+  `PACKAGE_SPECIFIER` is rewritten to a local path before the examples compile,
+  so an example naming a package nobody can install compiled green -- the
+  rewrite repaired it out of sight. It read `meo-canvas` for a while after the
+  package was scoped, and the gate never once complained.
+- **An exclusive claim was defended against the wrong axis.** The npm README
+  said the animation helpers were the only JavaScript that runs; `Chart` runs
+  too. It does not _draw_, which is the axis the sentence beside it defends, and
+  that is what made the wrong claim read as safe.
+- **A scripted revert silently replaced nothing**, and the suite that then
+  passed read exactly like a test that could not discriminate. The check had
+  been handed an unchanged tree and reported on it faithfully.
+
+The question that catches all four is not "does this check pass" but **"what
+would make this check pass while the thing it tests is broken"** -- and if the
+answer is anything the check does to its own environment, that step needs an
+assertion of its own.
+
 ### What only a second implementation can see
 
 The chart port has three checks and they answer three questions. A geometry
