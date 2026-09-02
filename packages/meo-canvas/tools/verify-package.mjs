@@ -46,7 +46,7 @@ try {
   execFileSync('npm', ['install', '--silent', '--no-audit', '--no-fund', ...tarballs], { cwd: project, stdio: 'inherit' })
 
   const script = `
-import { Box, Root } from '@l7aromeo/meo-canvas'
+import { Box, Root } from 'meo-canvas'
 const canvas = await Root({
   width: 120,
   height: 60,

@@ -5,7 +5,7 @@
  * a colour in the wrong place, rather than as a size a reader has to measure.
  */
 
-import { Box, Grid, Root, type SceneNode } from '@l7aromeo/meo-canvas'
+import { Box, Grid, Root, type SceneNode } from 'meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

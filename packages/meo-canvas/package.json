@@ -1,5 +1,5 @@
 {
-  "name": "@l7aromeo/meo-canvas",
+  "name": "meo-canvas",
   "version": "10.0.0-alpha.3",
   "description": "Declarative 2D scene rendering on Skia with CSS flexbox, grid and block layout.",
   "keywords": [
@@ -48,7 +48,7 @@
     "@types/node": "^26.2.0"
   },
   "optionalDependencies": {
-    "@l7aromeo/meo-canvas-darwin-arm64": "10.0.0-alpha.3",
-    "@l7aromeo/meo-canvas-linux-x64-gnu": "10.0.0-alpha.3"
+    "meo-canvas-darwin-arm64": "10.0.0-alpha.3",
+    "meo-canvas-linux-x64-gnu": "10.0.0-alpha.3"
   }
 }

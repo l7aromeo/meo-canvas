@@ -25,8 +25,8 @@ import { createRequire } from 'node:module'
  * what keeps that from being a link error at first render.
  */
 export const PLATFORM_PACKAGES: Readonly<Record<string, string>> = {
-  'darwin-arm64': '@l7aromeo/meo-canvas-darwin-arm64',
-  'linux-x64': '@l7aromeo/meo-canvas-linux-x64-gnu',
+  'darwin-arm64': 'meo-canvas-darwin-arm64',
+  'linux-x64': 'meo-canvas-linux-x64-gnu',
 }
 
 /** The environment variable that overrides every other path. */

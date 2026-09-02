@@ -52,8 +52,8 @@ export function manifest(suffix, version) {
     cpu: target.cpu,
     ...(target.libc === undefined ? {} : { libc: target.libc }),
     // The binary is the whole package, and `main` is what makes
-    // `require('@l7aromeo/meo-canvas-darwin-arm64')` resolve to it rather than
-    // to a directory with no entry point.
+    // `require('meo-canvas-darwin-arm64')` resolve to it rather than to a
+    // directory with no entry point.
     main: 'meo-canvas.node',
     files: ['meo-canvas.node'],
   }

@@ -11,7 +11,7 @@
 
 import { readFile } from 'node:fs/promises'
 
-import { Box, Image, Root, type SceneNode } from '@l7aromeo/meo-canvas'
+import { Box, Image, Root, type SceneNode } from 'meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

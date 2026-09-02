@@ -2294,12 +2294,26 @@ that `.height(120).min_height(90)` stays 120.
 
 ## Releasing
 
-The npm package is **`@l7aromeo/meo-canvas`**, and the scope is load-bearing
-rather than decorative: the unscoped `meo-canvas` is the 9.x line, npm resolves
-one directory per package name, and two majors can only be installed beside each
-other under two names. The cargo crate keeps the unscoped `meo-canvas` and
-versions independently — npm continues v1's lineage at 10.x, the crate starts
-fresh at 0.1.0.
+The npm package is **`meo-canvas`**, unscoped, continuing v1's lineage at 10.x.
+The cargo crate is `meo-canvas` too and versions independently, starting fresh
+at 0.1.0.
+
+It was published as `@l7aromeo/meo-canvas` for a while, to let v10 be installed
+beside `meo-canvas@9`. That requirement was real; the scope was the wrong answer
+to it. It came from installing local tarballs, where npm takes the name from
+`package.json` and two packages of one name cannot coexist — but from a registry
+that constraint does not exist. An alias lets the consumer choose the local
+name, so coexistence is their decision rather than a scope we bake into the
+published one:
+
+```text
+npm install meo-canvas-v10@npm:meo-canvas@next
+```
+
+Renaming the package renames the tarballs with it. `npm pack` derives the
+filename from `name`, so the artefacts are `meo-canvas-<version>.tgz` and
+`meo-canvas-<suffix>-<version>.tgz`; anything globbing for them — `just pack`,
+and the release workflow — spells them without a scope prefix.
 
 ### The addon does not ship inside the package
 
@@ -2350,6 +2364,21 @@ already arrived. Its `dry_run` input defaults to **true**.
 That is what makes a prerelease safe to cut by construction rather than by
 remembering a flag: `npm install` resolves `latest`, and a semver range never
 matches a prerelease, so nobody reaches it without naming it.
+
+**The tag and the release come last, after the registry has accepted
+everything.** A tag pushed first and a publish that then fails leaves a tag with
+no release under it and a version number that can never be reissued;
+`meo-skia-canvas` carries that scar from a `gh` call that failed for an
+unrelated reason once its tag was already up. Tagging last means a failed
+publish leaves the tree as it was.
+
+**The release notes are the commit subjects, verbatim, and not a
+conventional-commit parse.** 26 of the last 40 subjects here carry no
+`feat:`/`fix:` prefix, so a parser would drop two thirds of the history --
+including the changes someone took the trouble to name in a sentence, which are
+the ones worth reading. The subjects in this repository are written as one-line
+summaries of what changed and why. The log is the release note; reformatting it
+only loses information.
 
 **Platform packages publish before the main package**, which pins them at an
 exact version. The other order points at versions that do not exist yet, and

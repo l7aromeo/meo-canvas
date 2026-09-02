@@ -18,8 +18,11 @@ on:
 
 # `id-token: write` is what lets npm mint a provenance attestation from the
 # workflow's own identity, so no long-lived token is stored anywhere.
+# `contents: write` is what lets the publish job tag the commit it published and
+# open a release under that tag. Without it nothing on GitHub records which
+# commit a version on the registry was built from.
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 env:
@@ -38,6 +41,8 @@ jobs:
       matrix: ${{ steps.read.outputs.matrix }}
       version: ${{ steps.read.outputs.version }}
       tag: ${{ steps.read.outputs.tag }}
+      name: ${{ steps.read.outputs.name }}
+      prefix: ${{ steps.read.outputs.prefix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -51,6 +56,16 @@ jobs:
           echo "matrix=$(node packages/meo-canvas/tools/stage-platform-package.mjs --matrix)" >> "$GITHUB_OUTPUT"
           version=$(node -p "require('./packages/meo-canvas/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # The package name, and the prefix `npm pack` builds a filename from:
+          # it drops a leading `@` and turns `/` into `-`, so `@scope/thing`
+          # packs as `scope-thing-1.0.0.tgz` and `thing` as `thing-1.0.0.tgz`.
+          # Derived rather than written down, because it WAS written down, in
+          # seven places, and a rename then made every glob below match nothing
+          # while every local check stayed green.
+          name=$(node -p "require('./packages/meo-canvas/package.json').name")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "prefix=$(node -p "require('./packages/meo-canvas/package.json').name.replace(/^@/, '').replace('/', '-')")" >> "$GITHUB_OUTPUT"
           # A version carrying a prerelease part goes to `next`, never to
           # `latest`. This is what makes an alpha safe to cut: `npm install`
           # resolves `latest`, and a semver range never matches a prerelease,
@@ -176,6 +191,7 @@ jobs:
         env:
           VERSION: ${{ needs.targets.outputs.version }}
           MATRIX: ${{ needs.targets.outputs.matrix }}
+          PREFIX: ${{ needs.targets.outputs.prefix }}
         run: |
           missing=0
           for suffix in $(echo "$MATRIX" | node -e "
@@ -183,7 +199,7 @@ jobs:
             process.stdin.on('data', chunk => { raw += chunk })
             process.stdin.on('end', () => process.stdout.write(JSON.parse(raw).include.map(entry => entry.suffix).join(' ')))
           "); do
-            file="artifacts/l7aromeo-meo-canvas-${suffix}-${VERSION}.tgz"
+            file="artifacts/${PREFIX}-${suffix}-${VERSION}.tgz"
             if [ ! -f "$file" ]; then
               echo "missing $file"
               missing=1
@@ -198,13 +214,14 @@ jobs:
         env:
           TAG: ${{ needs.targets.outputs.tag }}
           DRY: ${{ inputs.dry_run }}
+          PREFIX: ${{ needs.targets.outputs.prefix }}
         run: |
-          for file in artifacts/l7aromeo-meo-canvas-*-*.tgz; do
+          for file in artifacts/"${PREFIX}"-*-*.tgz; do
             case "$file" in
               # The main package's own tarball has no target suffix. Skipping it
               # by name rather than by position, because a glob's order is not a
               # promise.
-              artifacts/l7aromeo-meo-canvas-${{ needs.targets.outputs.version }}.tgz) continue ;;
+              artifacts/${{ needs.targets.outputs.prefix }}-${{ needs.targets.outputs.version }}.tgz) continue ;;
             esac
             echo "==> $file"
             if [ "$DRY" = "true" ]; then
@@ -219,8 +236,9 @@ jobs:
           TAG: ${{ needs.targets.outputs.tag }}
           VERSION: ${{ needs.targets.outputs.version }}
           DRY: ${{ inputs.dry_run }}
+          PREFIX: ${{ needs.targets.outputs.prefix }}
         run: |
-          file="artifacts/l7aromeo-meo-canvas-${VERSION}.tgz"
+          file="artifacts/${PREFIX}-${VERSION}.tgz"
           test -f "$file"
           if [ "$DRY" = "true" ]; then
             npm publish --dry-run --access public --tag "$TAG" "$file"
@@ -228,21 +246,85 @@ jobs:
             npm publish --provenance --access public --tag "$TAG" "$file"
           fi
 
+      # Tag and release AFTER the registry has accepted everything, never before.
+      # A tag pushed first and a publish that then fails leaves a tag with no
+      # release under it and a version number that can never be reissued --
+      # `meo-skia-canvas` has that scar, from a `gh` call that failed for an
+      # unrelated reason once the tag was already up. Tagging last means a
+      # failed publish leaves the tree exactly as it was.
+      - name: Tag the commit and open a release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.targets.outputs.version }}
+          TAG: ${{ needs.targets.outputs.tag }}
+          NAME: ${{ needs.targets.outputs.name }}
+        run: |
+          set -euo pipefail
+          git_tag="v${VERSION}"
+
+          # The notes are the commit subjects since the last tag, verbatim.
+          #
+          # Not a conventional-commit parser: 26 of the last 40 subjects here
+          # carry no `feat:`/`fix:` prefix, so a parser would silently drop two
+          # thirds of the history -- including the changes that matter most,
+          # which are the ones someone took the trouble to name in a sentence.
+          # The subjects in this repository are already written as one-line
+          # summaries of what changed and why, so the log is the release note
+          # and reformatting it only loses information.
+          previous=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          if [ -n "$previous" ]; then
+            range="${previous}..HEAD"
+            echo "notes cover ${range}"
+          else
+            range="HEAD"
+            echo "no previous tag; notes cover the whole history"
+          fi
+
+          {
+            echo "\`npm install ${NAME}@${VERSION}\`"
+            echo ""
+            if [ "${TAG}" = "next" ]; then
+              echo "Published to the \`next\` dist-tag, so a plain \`npm install ${NAME}\` does not resolve it."
+              echo ""
+            fi
+            echo "## Changes"
+            echo ""
+            git log --no-merges --format='- %s' "${range}"
+          } > notes.md
+
+          git tag -a "${git_tag}" -m "${NAME} ${VERSION}"
+          git push origin "${git_tag}"
+
+          # `--prerelease` on the same rule the dist-tag uses, so a version that
+          # npm keeps off `latest` is a version GitHub keeps off `latest` too and
+          # the two cannot disagree about what is a prerelease.
+          prerelease=""
+          case "${VERSION}" in *-*) prerelease="--prerelease" ;; esac
+
+          gh release create "${git_tag}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${NAME} ${VERSION}" \
+            --notes-file notes.md \
+            ${prerelease} \
+            artifacts/*.tgz
+
       - name: Say what happened
         env:
           TAG: ${{ needs.targets.outputs.tag }}
           VERSION: ${{ needs.targets.outputs.version }}
+          NAME: ${{ needs.targets.outputs.name }}
         run: |
           {
-            echo "### ${{ inputs.dry_run && 'Dry run' || 'Published' }} \`@l7aromeo/meo-canvas@${VERSION}\`"
+            echo "### ${{ inputs.dry_run && 'Dry run' || 'Published' }} \`${NAME}@${VERSION}\`"
             echo ""
             echo "dist-tag: \`${TAG}\`"
             if [ "${TAG}" = "next" ]; then
               echo ""
-              echo "\`npm install @l7aromeo/meo-canvas\` does not resolve this; ask for it by name:"
+              echo "\`npm install ${NAME}\` does not resolve this; ask for it by name:"
               echo ""
               echo "\`\`\`"
-              echo "npm install @l7aromeo/meo-canvas@${VERSION}"
+              echo "npm install ${NAME}@${VERSION}"
               echo "\`\`\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

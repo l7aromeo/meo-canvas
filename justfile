@@ -266,8 +266,8 @@ pack: ensure-deps build-js addon-release
     ls -lh release/*.tgz | awk '{print $9, $5}'
     echo ""
     echo "Install both, platform package first:"
-    echo "  npm install $PWD/release/l7aromeo-meo-canvas-${suffix}-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
-    echo "  npm install $PWD/release/l7aromeo-meo-canvas-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
+    echo "  npm install $PWD/release/meo-canvas-${suffix}-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
+    echo "  npm install $PWD/release/meo-canvas-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
 
 # Install what `pack` produced into a throwaway project and render with it.
 #

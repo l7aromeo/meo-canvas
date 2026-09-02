@@ -7,7 +7,7 @@ meo-canvas turns a declarative scene description into a rendered image, laying i
 The same core does the work either way you reach it.
 
 - **Rust** — `meo-canvas`, a library crate. Build a scene, render it, encode it.
-- **Node.js** — `@l7aromeo/meo-canvas`, a native addon over the same core. The binary ships in a package of its own per platform, so an install downloads the one it can run.
+- **Node.js** — `meo-canvas`, a native addon over the same core. The binary ships in a package of its own per platform, so an install downloads the one it can run.
 
 Layout, text shaping, painting and encoding all happen in Rust. The Node surface describes a scene and asks for pixels; nothing is drawn in JavaScript.
 
@@ -47,12 +47,17 @@ cargo add meo-canvas
 Node.js:
 
 ```text
-npm install @l7aromeo/meo-canvas
+npm install meo-canvas
 ```
 
-The scope is what lets this be installed beside the 9.x line, which holds the
-unscoped `meo-canvas` name: npm resolves one directory per package name, so two
-majors can only coexist under two names.
+This continues v1's lineage: 10.x is the same `meo-canvas` name the 9.x line
+holds. npm resolves one directory per package name, so installing both majors
+at once is done with an alias, and the consumer picks the local name rather
+than us picking it for them:
+
+```text
+npm install meo-canvas-v10@npm:meo-canvas@next
+```
 
 ## Usage
 

@@ -316,7 +316,7 @@ async function pages(props: RootProps): Promise<readonly SceneNode[]> {
  * Paints a scene and returns the canvas.
  *
  * ```ts
- * import { Root, Row, Text } from '@l7aromeo/meo-canvas'
+ * import { Root, Row, Text } from 'meo-canvas'
  *
  * const canvas = await Root({
  *   width: 520,

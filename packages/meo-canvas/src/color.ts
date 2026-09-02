@@ -64,7 +64,7 @@ function loaded(): ColorAddon {
  *
  * @example
  * ```ts
- * import { formatColor, mixColor, parseColor } from '@l7aromeo/meo-canvas'
+ * import { formatColor, mixColor, parseColor } from 'meo-canvas'
  *
  * const from = parseColor('#f2aa4c')
  * const to = parseColor('rebeccapurple')

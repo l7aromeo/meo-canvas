@@ -9,7 +9,7 @@
  * its text style carries a colour and no stroke width.
  */
 
-import { Box, RichText, Root, Text, type SceneNode } from '@l7aromeo/meo-canvas'
+import { Box, RichText, Root, Text, type SceneNode } from 'meo-canvas'
 
 import { FORMATS, draw } from './write.js'
 

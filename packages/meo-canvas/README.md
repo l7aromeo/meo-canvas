@@ -24,7 +24,7 @@ What that buys you is that a scene of any size costs one crossing, and that the 
 ## Installation
 
 ```text
-npm install @l7aromeo/meo-canvas
+npm install meo-canvas
 ```
 
 Requires Node 22 or newer. The package is ESM only.

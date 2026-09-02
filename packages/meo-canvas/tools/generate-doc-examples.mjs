@@ -37,9 +37,12 @@ const TARGET = process.argv[2] ? resolve(process.argv[2]) : CHECKED_IN
  * {@link LOCAL_SPECIFIER} before the examples are compiled, so a specifier that
  * did not match would leave the example naming a package nobody can install
  * while the gate stayed green -- the rewrite repairs it out of sight. It read
- * `meo-canvas` for a while after the package was scoped, which is exactly that.
+ * `meo-canvas` for a while after the package was scoped to
+ * `@l7aromeo/meo-canvas`, which is exactly that; the package is unscoped again
+ * and this is the name it publishes under, so the two agree once more. Whatever
+ * `packages/meo-canvas/package.json` calls the package, this matches it.
  */
-const PACKAGE_SPECIFIER = '@l7aromeo/meo-canvas'
+const PACKAGE_SPECIFIER = 'meo-canvas'
 
 /** Where the generated file must import from instead. */
 const LOCAL_SPECIFIER = '../index.js'
