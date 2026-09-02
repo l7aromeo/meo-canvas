@@ -85,7 +85,7 @@ ci:
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -573,6 +573,11 @@ typecheck: ensure-deps
 doc-examples:
     node packages/meo-canvas/tools/generate-doc-examples.mjs
 
+# Rewrite the two places a target is named that are not `TARGETS`.
+[doc("Regenerate PLATFORM_PACKAGES and optionalDependencies from TARGETS.")]
+platform-packages:
+    node packages/meo-canvas/tools/generate-platform-packages.mjs
+
 # Fails when the checked-in examples no longer match the doc comments.
 #
 # Regenerates to a disposable path and diffs, for the reason
@@ -585,6 +590,17 @@ doc-examples-check:
     @node packages/meo-canvas/tools/generate-doc-examples.mjs target/doc-examples.check.ts
     @diff -u packages/meo-canvas/src/generated/doc-examples.ts target/doc-examples.check.ts \
       || { echo "error: the extracted doc examples are stale; run \`just doc-examples\` and commit the result"; exit 1; }
+
+# **This replaces the test that asserted the three lists agreed.** A generated
+# file plus an equality assertion between it and its source is one mechanism
+# written twice, and a reader cannot tell which is authoritative.
+platform-packages-check:
+    @mkdir -p target/platform-packages
+    @node packages/meo-canvas/tools/generate-platform-packages.mjs target/platform-packages
+    @diff -u packages/meo-canvas/src/generated/platform-packages.ts target/platform-packages/platform-packages.ts \
+      || { echo "error: PLATFORM_PACKAGES is stale; run \`just platform-packages\` and commit the result"; exit 1; }
+    @diff -u packages/meo-canvas/package.json target/platform-packages/package.json \
+      || { echo "error: optionalDependencies is stale; run \`just platform-packages\` and commit the result"; exit 1; }
 
 # The JavaScript suite.
 #

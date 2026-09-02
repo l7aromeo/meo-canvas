@@ -1,21 +1,18 @@
-// The three lists that describe which platforms a release carries, asserted
-// against each other.
+// What the platform lists must *be*, now that they can no longer disagree.
 //
-// A target is named in three places and each has a different job: `TARGETS` in
-// `tools/stage-platform-package.mjs` is what a release *builds*,
-// `optionalDependencies` is what an install *fetches*, and `PLATFORM_PACKAGES`
-// in `addon.ts` is what a running process *resolves*. Any two agreeing while
-// the third does not is a failure nothing else here can see:
+// `optionalDependencies` and `PLATFORM_PACKAGES` are generated from `TARGETS`
+// by `just platform-packages`, and `just platform-packages-check` fails on a
+// difference. So the assertions this file used to carry — that the three lists
+// agreed — are gone, replaced by that check: **a generated file plus an
+// equality test against its source is one mechanism written twice**, and a
+// reader cannot tell which is authoritative.
 //
-// - built and pinned but not resolved — the binary installs and `require`
-//   never looks for it, so every render fails with the addon on disk
-// - pinned and resolved but not built — `npm install` fails on a package that
-//   was never published, and a version bump is what surfaces it
-// - built and resolved but not pinned — nothing installs it, and it works only
-//   in a checkout, which is exactly where it would be tested
-//
-// Both directions, because a list that only reports additions goes stale
-// silently when a target is dropped.
+// What remains is the half generation does not answer. A generator can produce
+// a list faithfully derived from `TARGETS` and still wrong: keys that drop the
+// libc, a caret range where an exact pin is required, a package named for one
+// platform under a host key for another. Those are properties of the content
+// rather than of how it is maintained, and no amount of regenerating settles
+// them.
 
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -33,16 +30,7 @@ const PACKAGE = JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8'
   optionalDependencies?: Record<string, string>
 }
 
-/** The package names a release builds, derived from the suffixes. */
-const built = Object.keys(TARGETS)
-  .map(suffix => `${PACKAGE.name}-${suffix}`)
-  .sort()
-
 describe('the platform target lists', () => {
-  it('builds exactly what the manifest pins', () => {
-    expect(Object.keys(PACKAGE.optionalDependencies ?? {}).sort()).toEqual(built)
-  })
-
   it('pins every platform package at the main package version', () => {
     // An exact pin rather than a range: the binary and the JavaScript that
     // calls it are one artefact cut at one commit, and a range would let a
@@ -50,10 +38,6 @@ describe('the platform target lists', () => {
     for (const [name, range] of Object.entries(PACKAGE.optionalDependencies ?? {})) {
       expect(range, `${name} is not pinned to the main package version`).toBe(PACKAGE.version)
     }
-  })
-
-  it('resolves exactly what it builds', () => {
-    expect([...new Set(Object.values(PLATFORM_PACKAGES))].sort()).toEqual(built)
   })
 
   it('maps each host onto a package for its own platform', () => {

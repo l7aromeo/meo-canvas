@@ -8,18 +8,17 @@
  * network at install time and breaks every offline and locked-down install.
  *
  * **Only targets that CI actually builds appear here.** A key in
- * {@link PLATFORM_PACKAGES} is a promise that `npm install` can keep, so this
- * table and `TARGETS` in `tools/stage-platform-package.mjs` are one list
- * written twice; `src/addon.test.ts` asserts them against each other and
- * against `optionalDependencies`, and `.github/workflows/release.yml` reads
- * the matrix from `TARGETS` rather than restating it. A platform absent from
- * the table gets a message naming its own triple rather than a
- * module-not-found for a package that was never published.
+ * {@link PLATFORM_PACKAGES} is a promise that `npm install` can keep, and it is
+ * kept by construction rather than by agreement: `TARGETS` in
+ * `tools/stage-platform-package.mjs` is the one declaration, and both this list
+ * and `optionalDependencies` are generated from it by `just platform-packages`.
+ * `.github/workflows/release.yml` reads its matrix from the same place. A
+ * platform absent from the table gets a message naming its own triple rather
+ * than a module-not-found for a package that was never published.
  *
- * Both halves of that sentence used to name things that do not exist -- a
- * `.github/workflows/build.yml` and a `just platform-targets` -- which is the
- * worst place for a dangling pointer, since this is the comment that explains
- * how the target list stays honest.
+ * It was three hand-maintained lists with a test asserting they agreed, which
+ * reported drift rather than preventing it -- adding two targets meant editing
+ * three files and being told about the two you forgot.
  */
 
 import { createRequire } from 'node:module'
@@ -27,23 +26,15 @@ import { createRequire } from 'node:module'
 /**
  * The platform packages, keyed by the triple {@link target} derives.
  *
- * **The key carries the C library on Linux, and that is what publishing musl
- * changed.** While `linux-x64-gnu` was the only Linux build, `linux-x64` named
- * it unambiguously. With a musl build too, one `platform-arch` has two answers
- * and the key has to say which -- so {@link target} appends the libc on Linux
- * and the keys here are exactly the suffixes `TARGETS` builds. A host key with
- * two answers would have been the other way to write this; making the key more
- * specific keeps one answer per key, which is what lets `addon.test.ts` go on
- * comparing these lists by equality.
+ * Generated from `TARGETS` rather than written here -- see
+ * `generated/platform-packages.ts` for why the list arrives as a committed
+ * file instead of an import, and `tools/generate-platform-packages.mjs` for
+ * what writes it. Re-exported so this module stays the one place a caller asks
+ * about platforms.
  */
-export const PLATFORM_PACKAGES: Readonly<Record<string, string>> = {
-  'darwin-arm64': 'meo-canvas-darwin-arm64',
-  'linux-arm64-gnu': 'meo-canvas-linux-arm64-gnu',
-  'linux-arm64-musl': 'meo-canvas-linux-arm64-musl',
-  'linux-x64-gnu': 'meo-canvas-linux-x64-gnu',
-  'linux-x64-musl': 'meo-canvas-linux-x64-musl',
-  'win32-x64': 'meo-canvas-win32-x64',
-}
+import { PLATFORM_PACKAGES } from './generated/platform-packages.js'
+
+export { PLATFORM_PACKAGES }
 
 /** The environment variable that overrides every other path. */
 const OVERRIDE = 'MEO_CANVAS_ADDON'
