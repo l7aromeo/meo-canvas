@@ -240,6 +240,92 @@ addon-release:
     @cp target/release/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }} (release)"
 
+# The Linux addon, built inside the image the release builds it in.
+#
+# **A Linux artefact is a property of its build base, not of the source.** Built
+# on `ubuntu-latest` the addon demanded glibc 2.35 and failed to load on five of
+# the six images a release claims; built in `containers/Dockerfile.glibc` it
+# demands 2.28 and loads on all six. Nothing in the tree changed between those
+# two runs. So the base belongs in the recipe, where a person can run it, rather
+# than only in a workflow nobody executes locally.
+#
+# The `.node` lands where `addon-release` leaves it, so everything downstream --
+# packing, the floor check, the acceptance harness -- reads one path and does
+# not care which of the two built it.
+#
+# `target/container/` rather than `target/`, because the container builds as
+# root and three different libcs would otherwise write `libmeo_canvas_node.so`
+# to the same place: a host build, a glibc build and a musl build are three
+# artefacts with one filename. `--target` is passed for the same reason, so the
+# triple is in the path rather than implied by whatever the container's host
+# triple happens to be.
+#
+# `vulkan` is written here rather than taken from `host_features`, which is
+# `metal` on macOS: this recipe builds a Linux artefact whichever machine drives
+# it, and inheriting the driving host's feature would be wrong exactly when it
+# is convenient.
+[doc("Build a Linux addon inside its release container.")]
+addon-container suffix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    triple=$(node -e "
+      import('./packages/meo-canvas/tools/stage-platform-package.mjs').then(module => {
+        const target = module.TARGETS['{{ suffix }}']
+        if (target === undefined) {
+          process.stderr.write('no target named {{ suffix }}\n')
+          process.exit(1)
+        }
+        process.stdout.write(target.rust)
+      })
+    ")
+
+    # The base image is chosen here and passed in, because the two families
+    # differ by libc and the two architectures differ only by the tag. A
+    # `Dockerfile` per architecture would be four files agreeing about
+    # everything except one word.
+    case "{{ suffix }}" in
+        *-gnu)  family=glibc; base=quay.io/pypa/manylinux_2_28 ;;
+        *-musl) family=musl;  base=quay.io/pypa/musllinux_1_2 ;;
+        *) echo "error: {{ suffix }} is not a Linux target, so it has no build image" >&2; exit 1 ;;
+    esac
+    # libaom assembles its hot paths on x86 and uses NEON intrinsics on aarch64,
+    # so the assembler is a build argument rather than a line in the image.
+    case "{{ suffix }}" in
+        linux-x64-*)   base="${base}_x86_64";  assembler=nasm ;;
+        linux-arm64-*) base="${base}_aarch64"; assembler= ;;
+    esac
+
+    # A pinned `FROM` would build an x86_64 image on the arm64 runner and fail
+    # somewhere far from the cause, so this refuses rather than guesses. It is a
+    # gate and not a warning: the arm64 half of the matrix cannot be built until
+    # the image takes its base as an argument.
+    dockerfile="containers/Dockerfile.${family}"
+    grep -q '^ARG BASE' "$dockerfile" || {
+        echo "error: ${dockerfile} pins its base image, so ${base} cannot be built from it" >&2
+        echo "       The matrix carries both architectures; the image needs 'ARG BASE' and 'FROM \${BASE}'." >&2
+        exit 1
+    }
+
+    tag="meo-canvas-build:{{ suffix }}"
+    docker build \
+        --build-arg BASE="$base" \
+        --build-arg ASSEMBLER="$assembler" \
+        -f "$dockerfile" -t "$tag" containers/
+
+    # The registry is mounted rather than re-downloaded, so a cache on the host
+    # -- the runner's, or a person's own -- reaches the build inside.
+    mkdir -p "$HOME/.cargo/registry"
+    docker run --rm \
+        -v "$PWD":/src -w /src \
+        -v "$HOME/.cargo/registry":/root/.cargo/registry \
+        -e CARGO_TARGET_DIR=/src/target/container \
+        "$tag" \
+        cargo build --release -p meo-canvas-node --target "$triple" --features vulkan
+
+    cp "target/container/${triple}/release/libmeo_canvas_node.so" {{ addon_path }}
+    echo "built {{ addon_path }} in ${tag}"
+
 # Everything a release publishes, packed and installable, for this host only.
 #
 # Two tarballs, because that is what npm resolves at install time: the platform
@@ -250,29 +336,50 @@ addon-release:
 #
 # Host only, deliberately. Cross-compiling the addon is the release workflow's
 # job on one runner per target; here the question is whether the packaging is
-# right, and one target answers it.
+# right, and one target answers it. `pack-container` is the Linux spelling,
+# where the build base is part of the answer.
+#
+# The suffix is derived from `TARGETS` by matching this host's os, cpu and libc,
+# never written down. It was a two-branch ternary on `os()` that ignored
+# architecture and had no Windows branch, so packing on an arm64 Linux box
+# staged an arm64 binary into a package named `linux-x64-gnu` declaring
+# `cpu: ["x64"]` -- and packed it cleanly, for npm to install on machines that
+# cannot load it. A wrong artefact from a green command.
 [doc("Pack the installable tarballs for this host into release/.")]
 pack: ensure-deps build-js addon-release
     #!/usr/bin/env bash
     set -euo pipefail
+    just _pack-tarballs "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)"
+
+# The same pack, from an addon built in its release container.
+#
+# The suffix is named rather than derived, and that is the whole difference:
+# `--host` reports the machine running the command, which on an x64 glibc runner
+# is `linux-x64-gnu` **whichever image built the binary**. Deriving it here would
+# stage a musl artefact into a package declaring `libc: ["glibc"]`, pack it
+# cleanly, and hand npm a binary it installs onto machines that cannot load it
+# -- the arm64 mistake above, in a second dimension.
+[doc("Build a Linux addon in its release container and pack it.")]
+pack-container suffix: ensure-deps build-js (addon-container suffix) (_pack-tarballs suffix)
+
+# The packing itself, for whatever addon is at `addon_path` under whatever name
+# it is given. Both spellings above end here, so there is one description of
+# what a release artefact is.
+[private]
+_pack-tarballs suffix:
+    #!/usr/bin/env bash
+    set -euo pipefail
     rm -rf release
     mkdir -p release/npm
-    # Derived from `TARGETS` by matching this host's os, cpu and libc, never
-    # written down here. It was a two-branch ternary on `os()` that ignored
-    # architecture and had no Windows branch, so packing on an arm64 Linux box
-    # staged an arm64 binary into a package named `linux-x64-gnu` declaring
-    # `cpu: ["x64"]` -- and packed it cleanly, for npm to install on machines
-    # that cannot load it. A wrong artefact from a green command.
-    suffix=$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)
     node packages/meo-canvas/tools/stage-platform-package.mjs \
-        "${suffix}" {{ addon_path }} release/npm
-    npm pack --pack-destination "$PWD/release" ./release/npm/"${suffix}" >/dev/null
+        "{{ suffix }}" {{ addon_path }} release/npm
+    npm pack --pack-destination "$PWD/release" ./release/npm/"{{ suffix }}" >/dev/null
     npm pack --pack-destination "$PWD/release" ./packages/meo-canvas >/dev/null
     echo ""
     ls -lh release/*.tgz | awk '{print $9, $5}'
     echo ""
     echo "Install both, platform package first:"
-    echo "  npm install $PWD/release/meo-canvas-${suffix}-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
+    echo "  npm install $PWD/release/meo-canvas-{{ suffix }}-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
     echo "  npm install $PWD/release/meo-canvas-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
 
 # Install what `pack` produced into a throwaway project and render with it.
@@ -281,9 +388,40 @@ pack: ensure-deps build-js addon-release
 # nothing about whether a consumer can reach it -- `exports` can name a path the
 # `files` allowlist dropped, and a platform package's `main` can name a binary
 # that is not there. Both pack cleanly and fail at the first import.
-[doc("Install the packed tarballs elsewhere and render with them.")]
-verify-pack: pack
+[doc("Pack for this host, then install the tarballs elsewhere and render.")]
+verify-pack: pack verify-packed
+
+# The same check against tarballs that are already in `release/`.
+#
+# Separate because a container build must not be followed by a host rebuild:
+# `verify-pack` would re-run `pack`, which builds the addon here and overwrites
+# the artefact the container produced -- so the thing verified would not be the
+# thing published.
+#
+# **This runs the addon on the machine driving it**, so it answers for a target
+# whose libc is the host's and for no other. A musl artefact cannot be loaded on
+# a glibc runner at all; `acceptance` is what decides for those.
+[doc("Install the tarballs already in release/ and render with them.")]
+verify-packed:
     node packages/meo-canvas/tools/verify-package.mjs release
+
+# What the built addon demands of a machine, against what its target promises.
+#
+# A diagnostic and not a gate -- an unversioned symbol has no version to
+# compare, which is how a binary under every ceiling still failed to load on
+# `_M_replace_cold`. `acceptance` is the gate.
+[doc("Check the built addon demands no more than its target declares.")]
+abi-floor suffix:
+    node packages/meo-canvas/tools/check-abi-floor.mjs {{ suffix }} {{ addon_path }}
+
+# Load the built addon on the images its target claims, with nothing installed.
+#
+# The gate for the Linux targets, and for the musl pair the only evidence there
+# is: no glibc floor exists to check, so `abi-floor` has nothing to say about
+# them.
+[doc("Load the built addon on the images its target claims.")]
+acceptance suffix:
+    node packages/meo-canvas/tools/acceptance.mjs {{ suffix }} {{ addon_path }}
 
 # Bump the npm package's version, and the platform packages it pins with it.
 #

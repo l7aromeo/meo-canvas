@@ -119,51 +119,17 @@ jobs:
           key: release-${{ matrix.suffix }}
           cache-bin: true
 
-      # Two native dependencies this runner does not carry, failing at two
-      # different stages. Neither is a guess; both were read off a failure.
+      # **No system libraries are installed for the Linux builds, and that is the
+      # change rather than an omission.** cmake, nasm and the font development
+      # packages used to be installed here, because the addon was built on the
+      # runner. It is now built in `containers/Dockerfile.{glibc,musl}`, which
+      # carries all of them and links freetype and fontconfig statically -- so
+      # the runner needs none of it either to build or to load the result.
       #
-      # **cmake and nasm, for libaom.** `libaom-sys` configures libaom with
-      # cmake, and libaom assembles its hot paths on x86 rather than compiling
-      # them -- so it raises a FATAL_ERROR when it can find neither nasm nor
-      # yasm. The first Linux release build failed with `failed to run custom
-      # build command for libaom-sys` and `C Compiler test pie_check failed` out
-      # of `aom_configure.cmake`. `meo-skia-canvas` installs the same pair in
-      # its own build image for the same reason.
-      #
-      # **The font libraries, for Skia, and these fail at link:**
-      # `rust-lld: error: unable to find library -lfreetype`, and the same for
-      # `-lfontconfig`.
-      #
-      # Skia is built here WITHOUT `embed-freetype` -- `meo-skia-canvas` puts it
-      # behind a `freetype` feature this workspace does not enable -- so
-      # `rust-skia` links the system copies instead. Its `linux.rs` probes
-      # pkg-config for `freetype2` and `fontconfig` and **falls back to the bare
-      # library names when the probe fails** rather than reporting anything
-      # (`skia-bindings-0.99.0/build_support/platform/linux.rs:37-41` and
-      # `:84-98`). So a runner with the runtime libraries but no `.pc` files and
-      # no `.so` symlinks gets `-lfreetype` on the link line with nothing to
-      # resolve it, and the first thing that mentions freetype is the linker.
-      #
-      # Measured in an `ubuntu:24.04` container rather than reasoned about:
-      # without these packages pkg-config finds neither, and `libfreetype.so`
-      # and `libfontconfig.so` -- the names the linker looks for -- are both
-      # absent. With them, pkg-config reports freetype2 26.1.20 and fontconfig
-      # 2.15.0 and the link line is built from the probe instead of the
-      # fallback.
-      #
-      # `libfontconfig1-dev` depends on `libfreetype-dev`, so naming one would
-      # pull the other. Both are named because the build needs both, and a
-      # dependency edge between two packages is not a promise about either.
-      # `pkg-config` is on the runner image already; it is named for the same
-      # reason -- this step should not depend on what the image happens to
-      # carry.
-      - name: Install what the native build needs
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake nasm \
-            pkg-config libfontconfig1-dev libfreetype-dev
+      # The Rust toolchain below is likewise not what compiles the Linux addon;
+      # the container pins its own. It stays because `rust-cache` populates
+      # `~/.cargo/registry`, which `addon-container` mounts into the build, and
+      # because macOS and Windows do build on the runner.
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -177,36 +143,31 @@ jobs:
       # package for this host and packs both tarballs. The same recipe a person
       # runs locally, so a release cannot take a path nobody has walked.
       - name: Build and pack
+        if: runner.os != 'Linux'
         run: just pack
 
-      # What the binary we just built actually demands of a machine, printed
-      # rather than asserted.
+      # Linux builds in a container, and the reason is measured rather than
+      # cautious: the same source built on `ubuntu-latest` demanded glibc 2.35
+      # and failed to load on five of the six images this package claims, and
+      # built in `containers/Dockerfile.glibc` demands 2.28 and loads on all
+      # six. **A Linux artefact is a property of its build base.**
       #
-      # **This step does not decide anything and cannot fail the build**, and
-      # that is deliberate: the numbers are not known yet, and a ceiling
-      # invented before the first measurement is a guess with an error message
-      # attached. What it produces is the input to that decision.
-      #
-      # The question it answers is not "did it link" -- `just pack` already
-      # answered that -- but **where the result runs**. `linux-x64-gnu` and the
-      # `libc: ["glibc"]` field in the platform package name every glibc Linux
-      # on x64, and npm has no way to say a glibc *version*, so package
-      # selection cannot narrow that claim at install time. A binary built on
-      # `ubuntu-latest` inherits that runner's glibc as a floor: a symbol
-      # version above a machine's own fails at `dlopen`, and it fails hard
-      # rather than degrading.
-      #
-      # Measured in an `ubuntu:24.04` container, that runner is glibc 2.39.
-      # For scale, and each of these is below it: Ubuntu 22.04 is 2.35, Debian
-      # 12 is 2.36, RHEL 9 and Amazon Linux 2023 are both 2.34, Ubuntu 20.04 is
-      # 2.31. `meo-skia-canvas` shipped binaries needing 2.35 for the life of a
-      # fork and they could not load on any of the last three; see its
-      # `containers/Dockerfile.glibc` and its issue #7.
+      # `pack-container` is passed the suffix rather than deriving it, because
+      # the runner cannot tell you which image built the binary: on this x64
+      # glibc runner `--host` answers `linux-x64-gnu` for a musl build too.
+      - name: Build in the release image and pack
+        if: runner.os == 'Linux'
+        run: just pack-container ${{ matrix.suffix }}
+
+      # What the binary must find at load, printed for a reader. The floors it
+      # demands are no longer printed here: they are asserted by the next step,
+      # and a number printed in one place and checked in another is a number
+      # that can disagree with itself.
       #
       # A missing read is not a pass. If the binary cannot be parsed at all the
-      # step says so loudly, because "no versions found" and "no versions
-      # needed" print the same way and only one of them is good news.
-      - name: Say what the Linux binary demands
+      # step says so loudly, because "nothing needed" and "nothing read" print
+      # the same way and only one of them is good news.
+      - name: Say what the Linux binary must find
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
@@ -216,34 +177,76 @@ jobs:
           # would have run `just pack` a second time to build its own error.
           test -f "$SO" || { echo '::error::the addon is not where the pack step leaves it'; exit 1; }
 
+          # Read and checked BEFORE the summary block, not inside it. A `{ ... }
+          # group on the left of a pipe is a subshell, so an `exit 1` in there
+          # ends the subshell and leaves the pipeline reporting `tee`'s success
+          # -- a step that announces a failed measurement and then passes.
+          needed=$(objdump -p "$SO" | grep NEEDED | sed 's/^ */  /') || true
+          test -n "$needed" || {
+            echo '::error::nothing was read from the addon; this measurement failed, do not read a pass into it'
+            exit 1
+          }
+
           {
-            echo '### What `linux-x64-gnu` demands'
+            echo "### What \`${{ matrix.suffix }}\` must find at load"
             echo
             echo '```'
-            echo "built on: $(. /etc/os-release && echo "$PRETTY_NAME"), $(ldd --version | head -1)"
-            echo
-            echo 'shared objects it must find at load:'
-            objdump -p "$SO" | grep NEEDED | sed 's/^ */  /'
-            echo
-            refs=$(objdump -p "$SO" | sed -n '/Version References/,/^$/p')
-            if [ -z "$refs" ]; then
-              echo '  NO VERSION REFERENCES READ -- this measurement failed, do not read a pass into it'
-            else
-              echo 'highest symbol version demanded, per library:'
-              printf '%s\n' "$refs" | grep -oE '[A-Z_]+_[0-9][0-9.]*' \
-                | sed -E 's/_[0-9][0-9.]*$//' | sort -u | while read -r fam; do
-                  hi=$(printf '%s\n' "$refs" | grep -oE "${fam}_[0-9][0-9.]*" | sed "s/${fam}_//" | sort -V | tail -1)
-                  echo "  ${fam}_${hi}"
-                done
-            fi
+            printf '%s\n' "$needed"
             echo '```'
+            echo
+            echo 'Neither fontconfig nor freetype should appear above: the container links them statically.'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # **This one decides.** It compares what the artefact demands against the
+      # `floors` its target declares in `TARGETS`, and fails when the artefact
+      # asks for more -- a build base that moved, or a dependency that started
+      # using a newer symbol.
+      #
+      # It is a script rather than an inline block so it runs locally, and so a
+      # second Linux family is not a second copy of the logic.
+      #
+      # **What it cannot catch is a floor declared too high**, which fails
+      # nothing and quietly tells consumers to expect a newer machine than they
+      # need -- exactly the drift that sat unnoticed for three commits after the
+      # container lowered the real numbers. So it prints the measured value
+      # beside the declared one whether or not it exceeds. Reading them is part
+      # of reading a release.
+      - name: Check the ABI floors have not drifted
+        if: runner.os == 'Linux'
+        run: just abi-floor ${{ matrix.suffix }}
+
+      # And this is the gate. A ceiling compares version tags, and **an
+      # unversioned symbol has none**: a binary reporting `GLIBCXX_3.4.21`,
+      # under every ceiling above, still failed to load on `_M_replace_cold`, a
+      # GCC 12 symbol carrying no version at all. Only loading it settles that.
+      #
+      # Nothing is installed into any image, because the point is what a
+      # consumer gets and a consumer running `node:22-slim` has no fontconfig.
+      #
+      # For the musl pair this is the whole of the evidence -- musl does not
+      # version its symbols, so the step above has nothing to compare and says
+      # so rather than passing silently.
+      - name: Load it on the images this target claims
+        if: runner.os == 'Linux'
+        run: just acceptance ${{ matrix.suffix }}
 
       # The addon has to load from the packed platform package before that
       # package is worth publishing. Rendering is the check — a `require` that
       # resolves proves the file is present, not that it runs.
+      #
+      # `verify-packed` and not `verify-pack`: the latter re-runs `pack`, which
+      # builds the addon on the runner and would overwrite the one the container
+      # produced. The artefact verified has to be the artefact published.
+      #
+      # **Skipped for musl, because it runs on the runner and the runner is
+      # glibc.** A musl `.so` cannot be loaded there at all, so the step would
+      # report a packaging fault about a packaging arrangement that is fine. The
+      # acceptance step above is what answers for those targets, on Alpine; what
+      # is lost is the check that `exports` and `files` line up, and that is the
+      # same arrangement the four non-musl targets exercise on the same commit.
       - name: Install the tarballs somewhere else and render
-        run: just verify-pack
+        if: ${{ !contains(matrix.suffix, 'musl') }}
+        run: just verify-packed
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
