@@ -1,0 +1,15 @@
+# What Chrome reports as an element’s intrinsic width, by truncation.
+# Written by packages/meo-canvas/tools/conformance/mincontent.mjs.
+# text	size	variant	min-content	max-content
+"HP"	12	plain	12.50	12.50
+"HP"	12	nowrap	12.50	12.50
+"HP"	12	ellipsis	12.50	12.50
+"HP"	12	clamp	12.50	12.50
+"Flower of Paradise"	16	plain	49.91	106.50
+"Flower of Paradise"	16	nowrap	106.50	106.50
+"Flower of Paradise"	16	ellipsis	106.50	106.50
+"Flower of Paradise"	16	clamp	49.91	106.50
+"Antidisestablishmentarianism"	16	plain	171.81	171.81
+"Antidisestablishmentarianism"	16	nowrap	171.81	171.81
+"Antidisestablishmentarianism"	16	ellipsis	171.81	171.81
+"Antidisestablishmentarianism"	16	clamp	171.81	171.81

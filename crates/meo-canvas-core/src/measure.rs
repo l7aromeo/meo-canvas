@@ -37,13 +37,13 @@ use std::collections::HashMap;
 use meo_canvas_scene::style::{
     effect::TextShadow,
     text::{
-        FontStyle, LineHeight, ParagraphStyle, Spacing, TextAlign,
-        TextDecoration, TextSegment,
+        FontStyle, LineHeight, Spacing, TextAlign, TextDecoration, TextSegment,
     },
 };
 use meo_canvas_scene::{
     Size,
     node::{NodeId, NodeKind},
+    style::text::ParagraphStyle,
 };
 #[cfg(test)]
 use meo_skia_canvas::{
@@ -126,6 +126,20 @@ pub enum Available {
     MinContent,
     /// The extent the content takes when nothing constrains it.
     MaxContent,
+}
+
+/// Whether a layout applies the paragraph's `max_lines` and ellipsis.
+///
+/// A `bool` at the call site reads as `laid(node, width, false)`, which says
+/// nothing about which half is which. The two questions this distinguishes --
+/// what the text *is* and what is *drawn* of it -- are far enough apart to be
+/// worth naming.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Truncate {
+    /// Apply them. The used value: what the paint pass draws.
+    Yes,
+    /// Ignore them. The intrinsic value: what the content can do.
+    No,
 }
 
 /// Answers the layout pass's questions about how large a leaf is.
@@ -292,6 +306,34 @@ impl<'resolved> SceneMeasurer<'resolved> {
     /// carried over from the wrong question is the defect that made the old
     /// painter lay every paragraph out a second time.
     pub(crate) fn block(&mut self, node: NodeId, width: f32) -> Option<Block> {
+        self.laid(node, width, Truncate::Yes)
+    }
+
+    /// Lays a text node out at `width`, with or without its truncation.
+    ///
+    /// # Why the caller chooses
+    ///
+    /// Because `max_lines` and the ellipsis are **used-value** behaviour: they
+    /// say what is drawn once the width is already settled, and CSS Sizing 3
+    /// §5.1 derives an intrinsic size from the content alone. Applying them
+    /// while answering `MinContent` makes the answer circular -- the marker is
+    /// laid out at a width of zero, the run comes back as `…`, and the
+    /// paragraph reports the marker's width as the narrowest it can be.
+    ///
+    /// That is not a flexbox defect downstream of here. Flexbox 1 §4.5 floors
+    /// a flex item at exactly what this function reports, so the item shrank
+    /// precisely to the minimum it was handed. Measured in Chrome
+    /// (`crates/meo-canvas/tests/assets/chrome/min-content.tsv`):
+    /// `-webkit-line-clamp: 1` leaves `Flower of Paradise` at its plain
+    /// min-content of 49.91, and `text-overflow: ellipsis` matches its own
+    /// `nowrap` control at 106.50 rather than dropping below it. **Neither
+    /// truncation lowers an intrinsic width.**
+    fn laid(
+        &mut self,
+        node: NodeId,
+        width: f32,
+        truncate: Truncate,
+    ) -> Option<Block> {
         let style = self.resolved.text(node)?;
         let scene_node = self.resolved.scene.get(node)?;
         let NodeKind::Text {
@@ -300,6 +342,15 @@ impl<'resolved> SceneMeasurer<'resolved> {
         } = &scene_node.kind
         else {
             return None;
+        };
+        // A truncation-free view of the same paragraph. Cloned rather than
+        // threaded through `lines::layout` as a flag because the truncation is
+        // *the whole of* what a paragraph style carries: an empty one is the
+        // untruncated question, exactly.
+        let untruncated = ParagraphStyle::default();
+        let paragraph = match truncate {
+            Truncate::Yes => paragraph,
+            Truncate::No => &untruncated,
         };
         let laid = lines::layout(
             &mut self.text,
@@ -400,11 +451,27 @@ impl<'resolved> SceneMeasurer<'resolved> {
             (None, Available::MaxContent) => f32::INFINITY,
         };
 
-        let Some(loose) = self.block(node, f32::INFINITY) else {
+        // **An intrinsic question is answered from the content alone.**
+        // `MinContent` and `MaxContent` ask what this text *can* do, and a
+        // clamp describes what is drawn once that is already decided -- so
+        // answering them through the truncation reports the marker's width as
+        // the narrowest a paragraph can be, and flexbox then floors the item
+        // there. See `laid`, and the Chrome table it names.
+        let truncate = if known.0.is_none()
+            && matches!(
+                available.0,
+                Available::MinContent | Available::MaxContent
+            ) {
+            Truncate::No
+        } else {
+            Truncate::Yes
+        };
+
+        let Some(loose) = self.laid(node, f32::INFINITY, truncate) else {
             return MeasuredLeaf::EMPTY;
         };
         let block = if budget < loose.width {
-            self.block(node, budget).unwrap_or(loose)
+            self.laid(node, budget, truncate).unwrap_or(loose)
         } else {
             loose
         };
