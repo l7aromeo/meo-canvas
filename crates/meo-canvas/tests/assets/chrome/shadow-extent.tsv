@@ -1,0 +1,75 @@
+# Chrome, through `just conformance`. How far an outer box-shadow reaches.
+#
+# Cell 160x160 of #fff carrying a 50x50 box of #fff at
+# 55,55. The box is white on a white page, so it is invisible and
+# every pixel that is not white is shadow ink -- no box edge and no antialiased
+# rim to subtract before the scan starts.
+#
+# Each row is an ink span: the furthest whole step outside the border edge that
+# still carries ink, where ink is any channel at least 6/255 off white.
+# `-1` means the first step outside the box was already clear.
+#
+# The four sides are read from their midpoints, where no corner reaches. The two
+# diagonals leave from the corner POINT, which is the only ray a border-radius
+# can move: a rounded corner pulls the shadow's corner in with it.
+#
+# A span, not a colour: two rasterisers do not agree on a Gaussian's bytes and
+# do agree closely on where it has faded out. Compare these with a tolerance,
+# and read the `none` row first -- if it is not -1 everywhere, the instrument is
+# the suspect and not the renderer.
+#
+# case	ray	steps
+none	left	-1
+none	right	-1
+none	up	-1
+none	down	-1
+none	corner up-left	-1
+none	corner down-right	-1
+hard	left	-1
+hard	right	-1
+hard	up	-1
+hard	down	-1
+hard	corner up-left	-1
+hard	corner down-right	-1
+offset	left	-1
+offset	right	8
+offset	up	-1
+offset	down	4
+offset	corner up-left	-1
+offset	corner down-right	4
+blur	left	12
+blur	right	12
+blur	up	12
+blur	down	12
+blur	corner up-left	7
+blur	corner down-right	7
+spread	left	6
+spread	right	6
+spread	up	6
+spread	down	6
+spread	corner up-left	6
+spread	corner down-right	6
+blur-spread	left	12
+blur-spread	right	12
+blur-spread	up	12
+blur-spread	down	12
+blur-spread	corner up-left	8
+blur-spread	corner down-right	8
+radius-spread	left	6
+radius-spread	right	6
+radius-spread	up	6
+radius-spread	down	6
+radius-spread	corner up-left	-1
+radius-spread	corner down-right	-1
+radius-blur	left	9
+radius-blur	right	9
+radius-blur	up	9
+radius-blur	down	9
+radius-blur	corner up-left	1
+radius-blur	corner down-right	1
+alpha	left	-1
+alpha	right	-1
+alpha	up	-1
+alpha	down	20
+alpha	corner up-left	-1
+alpha	corner down-right	-1

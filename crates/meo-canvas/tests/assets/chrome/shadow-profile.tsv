@@ -1,0 +1,83 @@
+# Chrome, through `just conformance`. The shape of a box-shadow's blur.
+#
+# The companion to `shadow-extent.tsv`, from the SAME rendered cells, so the
+# two cannot disagree about the scene they describe -- one walker renders each
+# case once and reads it twice.
+#
+# An extent says where a Gaussian has faded out and nothing about its shape on
+# the way there: a blur with the right reach and the wrong falloff passes every
+# span row. These rows are that shape.
+#
+# Read straight DOWN from the midpoint of the bottom edge, one pixel per step,
+# on the same white-box-on-white-page cell the spans use. No corner and no
+# offset reaches this ray, so the ramp is the blur's own falloff.
+#
+# Compare with a tolerance. Two engines that agree on sigma still differ by a
+# few units through the middle of the ramp, which is where a Gaussian is
+# steepest and where a one-pixel disagreement about the edge shows largest.
+#
+# case	ray	step	r	g	b
+blur	down	1	135	135	135
+blur	down	2	151	151	151
+blur	down	3	166	166	166
+blur	down	4	181	181	181
+blur	down	5	194	194	194
+blur	down	6	206	206	206
+blur	down	7	217	217	217
+blur	down	8	226	226	226
+blur	down	9	233	233	233
+blur	down	10	239	239	239
+blur	down	11	244	244	244
+blur	down	12	248	248	248
+blur	down	13	250	250	250
+blur	down	14	252	252	252
+blur	down	15	253	253	253
+blur	down	16	254	254	254
+blur-spread	down	1	50	50	50
+blur-spread	down	2	70	70	70
+blur-spread	down	3	92	92	92
+blur-spread	down	4	115	115	115
+blur-spread	down	5	139	139	139
+blur-spread	down	6	162	162	162
+blur-spread	down	7	184	184	184
+blur-spread	down	8	204	204	204
+blur-spread	down	9	219	219	219
+blur-spread	down	10	232	232	232
+blur-spread	down	11	241	241	241
+blur-spread	down	12	247	247	247
+blur-spread	down	13	251	251	251
+blur-spread	down	14	253	253	253
+blur-spread	down	15	254	254	254
+blur-spread	down	16	254	254	254
+radius-blur	down	1	138	138	138
+radius-blur	down	2	159	159	159
+radius-blur	down	3	179	179	179
+radius-blur	down	4	197	197	197
+radius-blur	down	5	213	213	213
+radius-blur	down	6	226	226	226
+radius-blur	down	7	235	235	235
+radius-blur	down	8	243	243	243
+radius-blur	down	9	248	248	248
+radius-blur	down	10	252	252	252
+radius-blur	down	11	254	254	254
+radius-blur	down	12	255	255	255
+radius-blur	down	13	255	255	255
+radius-blur	down	14	255	255	255
+radius-blur	down	15	255	255	255
+radius-blur	down	16	255	255	255
+alpha	down	1	127	127	127
+alpha	down	2	127	127	127
+alpha	down	3	127	127	127
+alpha	down	4	127	127	127
+alpha	down	5	127	127	127
+alpha	down	6	127	127	127
+alpha	down	7	127	127	127
+alpha	down	8	127	127	127
+alpha	down	9	127	127	127
+alpha	down	10	127	127	127
+alpha	down	11	127	127	127
+alpha	down	12	127	127	127
+alpha	down	13	127	127	127
+alpha	down	14	127	127	127
+alpha	down	15	127	127	127
+alpha	down	16	127	127	127

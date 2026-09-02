@@ -57,7 +57,25 @@ const PROBES = [
   ['inside', BOX.left + BOX.width / 2, BOX.top + BOX.height / 2],
   ['inside top', BOX.left + BOX.width / 2, BOX.top + 2],
   ['below', BOX.left + BOX.width / 2, BOX.top + BOX.height + 2],
+  // Where two shadows offset to the right land on each other. Off the box, so
+  // the colour there is the one that ended up ON TOP and nothing else.
+  ['beside', BOX.left + BOX.width + 5, BOX.top + BOX.height / 2],
+  // The inside mirror of `beside`: where two INSET shadows offset to the right
+  // land on each other, which is the band along the left inner edge.
+  ['inside left', BOX.left + 3, BOX.top + BOX.height / 2],
 ]
+
+/**
+ * Two shadows in the same place in the two orders.
+ *
+ * Identical geometry and different colours, so the `beside` probe reads which
+ * one is on top and nothing else. CSS Backgrounds 3 §7.1: a list of shadows is
+ * painted **front to back**, so the FIRST one written is the one on top -- the
+ * opposite of the order a loop that draws them in sequence produces.
+ */
+const RED = 'rgb(220, 40, 40)'
+const BLUE = 'rgb(40, 60, 220)'
+const PAIR = offset => `${offset} 0 0 0`
 
 /** Each case: the background it fills with, and the shadow it casts. */
 const CASES = [
@@ -66,6 +84,10 @@ const CASES = [
   ['translucent', 'inset', `inset ${SHADOW}`],
   ['opaque', 'none', 'none'],
   ['opaque', 'outer', SHADOW],
+  ['opaque', 'red then blue', `${PAIR('10px')} ${RED}, ${PAIR('10px')} ${BLUE}`],
+  ['opaque', 'blue then red', `${PAIR('10px')} ${BLUE}, ${PAIR('10px')} ${RED}`],
+  ['opaque', 'inset red then blue', `inset ${PAIR('10px')} ${RED}, inset ${PAIR('10px')} ${BLUE}`],
+  ['opaque', 'inset blue then red', `inset ${PAIR('10px')} ${BLUE}, inset ${PAIR('10px')} ${RED}`],
 ]
 
 const browser = await open()
@@ -116,6 +138,13 @@ try {
     '#',
     '# `below` is outside the box, in the outer shadow ink. It is what separates a',
     '# shadow that is correctly clipped from one that is not drawn at all.',
+    '#',
+    '# The last two cases are one node carrying TWO hard shadows in the same place,',
+    '# written in the two orders. CSS Backgrounds 3 §7.1 paints a shadow list front',
+    '# to back, so the FIRST one written is the one on top -- the opposite of what a',
+    '# loop drawing them in sequence produces. `beside` is the probe that reads it,',
+    '# and `inside left` reads the same question for the inset arm, whose ink lands',
+    '# along the opposite edge from the one it is offset towards.',
     '#',
     '# background\tshadow\tpoint\tx\ty\tr\tg\tb',
   ]

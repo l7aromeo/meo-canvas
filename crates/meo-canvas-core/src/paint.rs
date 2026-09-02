@@ -52,6 +52,7 @@ use meo_skia_canvas::{
     RgbaLinear, Shader, StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
     TextBaseline as SkiaTextBaseline, TextDecoration as SkiaTextDecoration,
     TextDecorationStyle as SkiaDecorationStyle,
+    filter::{BlurStyle, MaskFilter},
 };
 
 use crate::{
@@ -894,10 +895,14 @@ fn paint_box(
 ) -> Result<(), Error> {
     let paint = &node.paint;
     // Outer shadows first, and **clipped out of the border box** rather than
-    // merely covered by it -- see `draw_box_shadow`. Order still matters
-    // between two of them: an earlier shadow paints over a later one, which is
-    // the order CSS lists them in.
-    for shadow in node.effects.box_shadows.iter().filter(|s| !s.inset) {
+    // merely covered by it -- see `draw_box_shadow`.
+    //
+    // Reversed, because CSS Backgrounds and Borders 3 §7.1 paints a shadow
+    // list **front to back**: the first one written is the one on top, so it
+    // has to be drawn last. Drawn in list order the last one won instead.
+    // Measured: `10px 0 0 red, 10px 0 0 blue` reads red beside the box in
+    // Chrome and read blue here.
+    for shadow in node.effects.box_shadows.iter().rev().filter(|s| !s.inset) {
         draw_box_shadow(context, paint, rect, shadow)?;
     }
 
@@ -918,7 +923,10 @@ fn paint_box(
     // CSS puts them. Drawn with the outer ones they were painted **and then
     // covered by the very background they fall on**, which is why the arm
     // looked unimplemented from the outside.
-    for shadow in node.effects.box_shadows.iter().filter(|s| s.inset) {
+    // Reversed for the same reason as the outer ones above, and measured the
+    // same way: two inset shadows offset right land their ink on the left
+    // inner edge, and Chrome shows the first-written colour there.
+    for shadow in node.effects.box_shadows.iter().rev().filter(|s| s.inset) {
         draw_box_shadow(context, paint, rect, shadow)?;
     }
 
@@ -3343,11 +3351,42 @@ fn ring_path(
 
 /// Draws one box shadow.
 ///
-/// Skia's shadow is a property of the paint rather than a separate draw, so
-/// the shadow is produced by filling the box again with the shadow configured.
-/// The fill is the shadow's own colour and **not** transparent, because a
-/// transparent fill casts nothing to blur; what keeps that solid copy off the
-/// canvas is the clip, not the colour.
+/// # Drawn as a shape, not as a property of a fill
+///
+/// The obvious way is Skia's own shadow: set `shadow_blur`, `shadow_color` and
+/// `shadow_offset`, then fill the box. It draws the blurred copy correctly and
+/// then draws **the box itself** in whatever the fill style is -- and the fill
+/// cannot be transparent, because the shadow is derived from the drawn shape's
+/// own alpha and a transparent shape casts nothing. So that route always
+/// leaves a solid silhouette of the box on the canvas in the shadow's colour.
+///
+/// While every background was opaque the silhouette was invisible, covered by
+/// the background painted next. A translucent one showed it: a
+/// `rgba(0,0,0,0.5)` box over `#b01020` read `33, 3, 6` where Chrome reads
+/// `88, 8, 16`, the second coat of half-alpha black that
+/// `1 - (1-0.5)^2 = 0.75` describes.
+///
+/// Clipping the silhouette away gets most of it and cannot get all of it: its
+/// antialiased rim straddles the border contour, the clip feathers across the
+/// same pixels, and the two coverages multiply instead of cancelling. Measured
+/// on the `box-shadow` fixture, on the top-left contour of a card whose shadow
+/// is offset 6,6 with no blur -- where CSS puts nothing at all -- that left 14
+/// units of 255 behind, down from 23 with no clip.
+///
+/// Nor can the silhouette be moved out of the way. Drawing the source past the
+/// clip and paying the distance back through the shadow's offset is the
+/// standard trick and it fails here: **Skia clips the source before it blurs
+/// it**, so a source outside the clip blurs from almost nothing. Measured,
+/// that turned a 10px-blur card's ink from 137 to 226 against a 250 page.
+///
+/// So the shadow is drawn as what it is: the border box, moved by the offset
+/// and grown by the spread, filled in the shadow's colour through a Gaussian
+/// mask blur. There is no silhouette to remove because none is made, and the
+/// rim probe reads zero rather than fourteen.
+///
+/// The clip stays, and now says only what CSS Backgrounds and Borders 3 §7.1.1
+/// says: an outer shadow is drawn outside the border edge only, so a
+/// translucent background cannot reveal the part that falls beneath it.
 fn draw_box_shadow(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -3357,64 +3396,89 @@ fn draw_box_shadow(
     if shadow.inset {
         return draw_inset_box_shadow(context, paint, rect, shadow);
     }
+    if shadow.color.is_invisible() {
+        return Ok(());
+    }
+
+    let spread = shadow.spread;
+    let shape = Rect::new(
+        meo_canvas_scene::Point::new(
+            rect.origin.x - spread + shadow.offset_x,
+            rect.origin.y - spread + shadow.offset_y,
+        ),
+        Size::new(
+            spread.mul_add(2.0, rect.size.width).max(0.0),
+            spread.mul_add(2.0, rect.size.height).max(0.0),
+        ),
+    );
+    if shape.size.width <= 0.0 || shape.size.height <= 0.0 {
+        // Shrunk to nothing by a negative spread. Skia would draw an empty
+        // path harmlessly, but a blur of nothing is still a blur pass.
+        return Ok(());
+    }
+
     context.save();
     let result = (|| -> Result<(), Error> {
-        // Everything but the box: CSS Backgrounds and Borders 3 §7.1.1 draws
-        // an outer shadow outside the border edge **only**.
-        //
-        // Painting it beneath the box and letting the background cover it is
-        // the same picture wherever that background is opaque, which is every
-        // fixture this had -- and wrong the moment one is translucent, where
-        // the box takes a second coat of the shadow's own colour. Half-alpha
-        // black over half-alpha black is `1 - (1-0.5)^2 = 0.75`: measured, a
-        // `rgba(0,0,0,0.5)` box over `#b01020` read `33, 3, 6` against
-        // Chrome's `88, 8, 16`.
-        //
-        // The clip also carries the fill. This draws the shadow by filling the
-        // spread box **in the shadow's colour** with Skia's shadow set, so the
-        // solid copy of the box is painted too; without the clip it is that
-        // copy, not the blur, that the background composites over.
-        //
-        // # What the clip does not reach
-        //
-        // The silhouette's own **antialiased rim**, which straddles the border
-        // contour rather than sitting inside it. The clip feathers across the
-        // same pixels, so the two coverages multiply instead of cancelling and
-        // a fraction of the shadow's alpha survives there -- ink in a
-        // direction the shadow may not even point. Measured on the
-        // `box-shadow` fixture, on the top-left contour of a card whose shadow
-        // is offset 6,6 with no blur, where nothing may fall at all: 23 units
-        // of 255 before this clip and 14 after it.
-        //
-        // It is not fixed by moving the source out of the clip and paying the
-        // distance back through the shadow's offset, which is the obvious
-        // trick: **Skia clips the source before it blurs it**, so a source
-        // outside the clip blurs from almost nothing. Measured, that turned a
-        // 10px-blur card's ink from 137 to 226 against a 250 page -- the
-        // shadow all but gone. Removing the rim needs the shadow drawn as its
-        // own shape rather than as a property of a fill.
         clip_outside_box(context, paint, rect, shadow_reach(rect, shadow))?;
 
-        context.set_shadow_blur(shadow.blur);
-        context.set_shadow_color(to_skia_color(shadow.color));
-        context.set_shadow_offset(shadow.offset_x, shadow.offset_y);
+        // Sigma is exactly half the blur radius -- CSS Backgrounds and Borders
+        // 3 §7.1.1, and the same halving `meo-skia-canvas` applies to its own
+        // `shadow_blur` (`context/mod.rs:1634`). Taking the same route to the
+        // same number is what keeps this rewrite from moving the blur while it
+        // moves the silhouette.
+        //
+        // A mask blur rather than an image filter: the shape is one flat
+        // colour, so blurring its coverage and blurring its pixels give the
+        // same answer, and the mask is the cheaper of the two. Skipped
+        // entirely at zero, where Skia declines to build one.
+        if shadow.blur > 0.0 {
+            let blur =
+                MaskFilter::blur(BlurStyle::Normal, shadow.blur * 0.5, true)
+                    .map_err(|error| Error::Paint(error.to_string()))?;
+            context.set_mask_filter(Some(&blur));
+        }
         context.set_fill_style(to_skia_color(shadow.color));
 
-        let spread = shadow.spread;
-        let spread_rect = Rect::new(
-            meo_canvas_scene::Point::new(
-                rect.origin.x - spread,
-                rect.origin.y - spread,
-            ),
-            Size::new(
-                spread.mul_add(2.0, rect.size.width),
-                spread.mul_add(2.0, rect.size.height),
-            ),
+        let path = contour(shape, spread_radii(paint, spread))?;
+        context.fill_path(
+            &path.build(SkiaFillRule::NonZero),
+            SkiaFillRule::NonZero,
         );
-        fill_box(context, paint, spread_rect)
+        Ok(())
     })();
     context.restore();
     result
+}
+
+/// The corner radii of an outer shadow's shape, once the spread is applied.
+///
+/// CSS Backgrounds and Borders 3 §7.1.1 grows each radius by the spread and
+/// floors it at zero -- **except that a square corner stays square**, which is
+/// the part a reading of "grow every radius" gets wrong.
+///
+/// Measured, and the two rules are told apart by one ray. A square 50x50 box
+/// with `0 0 0 6px` carries ink 6 steps out along the corner diagonal in
+/// Chrome, which is a right angle at the spread box's own corner; a radius
+/// grown to 6 would have curved that corner away and read less. A box with
+/// `border-radius: 16px` and the same spread reads `-1` on that ray -- no ink
+/// even one step out -- which only a radius of 22 produces. Both rows are in
+/// `shadow-extent.tsv`.
+fn spread_radii(paint: &PaintStyle, spread: f32) -> [(f32, f32); 4] {
+    let grow = |radius: f32| {
+        if radius > 0.0 {
+            let grown = (radius + spread).max(0.0);
+            (grown, grown)
+        } else {
+            (0.0, 0.0)
+        }
+    };
+    let radii = paint.border_radius;
+    [
+        grow(radii.top_left),
+        grow(radii.top_right),
+        grow(radii.bottom_right),
+        grow(radii.bottom_left),
+    ]
 }
 
 /// Clips to everything **outside** `rect`'s box, out to `margin`.

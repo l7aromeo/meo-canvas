@@ -19,19 +19,56 @@
 # `below` is outside the box, in the outer shadow ink. It is what separates a
 # shadow that is correctly clipped from one that is not drawn at all.
 #
+# The last two cases are one node carrying TWO hard shadows in the same place,
+# written in the two orders. CSS Backgrounds 3 §7.1 paints a shadow list front
+# to back, so the FIRST one written is the one on top -- the opposite of what a
+# loop drawing them in sequence produces. `beside` is the probe that reads it,
+# and `inside left` reads the same question for the inset arm, whose ink lands
+# along the opposite edge from the one it is offset towards.
+#
 # background	shadow	point	x	y	r	g	b
 translucent	none	inside	40	40	88	8	16
 translucent	none	inside top	40	22	88	8	16
 translucent	none	below	40	62	176	16	32
+translucent	none	beside	65	40	176	16	32
+translucent	none	inside left	23	40	88	8	16
 translucent	outer	inside	40	40	88	8	16
 translucent	outer	inside top	40	22	88	8	16
 translucent	outer	below	40	62	169	15	30
+translucent	outer	beside	65	40	176	16	32
+translucent	outer	inside left	23	40	88	8	16
 translucent	inset	inside	40	40	88	8	16
 translucent	inset	inside top	40	22	85	7	15
 translucent	inset	below	40	62	176	16	32
+translucent	inset	beside	65	40	176	16	32
+translucent	inset	inside left	23	40	88	8	16
 opaque	none	inside	40	40	108	15	19
 opaque	none	inside top	40	22	108	15	19
 opaque	none	below	40	62	176	16	32
+opaque	none	beside	65	40	176	16	32
+opaque	none	inside left	23	40	108	15	19
 opaque	outer	inside	40	40	108	15	19
 opaque	outer	inside top	40	22	108	15	19
 opaque	outer	below	40	62	169	15	30
+opaque	outer	beside	65	40	176	16	32
+opaque	outer	inside left	23	40	108	15	19
+opaque	red then blue	inside	40	40	108	15	19
+opaque	red then blue	inside top	40	22	108	15	19
+opaque	red then blue	below	40	62	176	16	32
+opaque	red then blue	beside	65	40	220	40	40
+opaque	red then blue	inside left	23	40	108	15	19
+opaque	blue then red	inside	40	40	108	15	19
+opaque	blue then red	inside top	40	22	108	15	19
+opaque	blue then red	below	40	62	176	16	32
+opaque	blue then red	beside	65	40	40	60	220
+opaque	blue then red	inside left	23	40	108	15	19
+opaque	inset red then blue	inside	40	40	108	15	19
+opaque	inset red then blue	inside top	40	22	108	15	19
+opaque	inset red then blue	below	40	62	176	16	32
+opaque	inset red then blue	beside	65	40	176	16	32
+opaque	inset red then blue	inside left	23	40	220	40	40
+opaque	inset blue then red	inside	40	40	108	15	19
+opaque	inset blue then red	inside top	40	22	108	15	19
+opaque	inset blue then red	below	40	62	176	16	32
+opaque	inset blue then red	beside	65	40	176	16	32
+opaque	inset blue then red	inside left	23	40	40	60	220
