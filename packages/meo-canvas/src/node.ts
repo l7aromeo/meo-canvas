@@ -238,20 +238,84 @@ export interface ParagraphOptions {
   /** How many lines to draw before the text is truncated. Unset draws them all. */
   readonly maxLines?: number
   /**
-   * What a truncated last line ends with.
+   * What a truncated last line ends with, **resolved**.
    *
    * Only read when {@link ParagraphOptions.maxLines} truncates something. Unset
    * truncates without a marker.
+   *
+   * A caller writes {@link ParagraphProps.ellipsis}, which also takes a
+   * boolean; by the time it reaches a node it is the marker itself or nothing.
+   * The scene carries what will be drawn rather than which spelling asked for
+   * it, because no measurer, line-breaker or painter reads the difference.
    */
   readonly ellipsis?: string
 }
 
+/**
+ * The marker a truncated line ends with when the caller writes `true`.
+ *
+ * U+2026 HORIZONTAL ELLIPSIS, one glyph rather than three full stops.
+ *
+ * **Measured rather than assumed.** Chrome's `text-overflow: ellipsis` was read
+ * in Helvetica at 40px — deliberately not the repository's own Oswald, where
+ * `…` and `...` rasterise to identical ink runs with advances 0.36px apart and
+ * cannot tell the two answers apart. Chrome's marker has its three dots 10px
+ * apart across a 31px span, which is exactly a literal `…`; three full stops
+ * sit 7px apart across 26px. v1 draws the same character for `ellipsis: true`
+ * (`src/canvas/text.canvas.ts:1244`), so the API reference and the behavioural
+ * one agree.
+ *
+ * The Rust surface spells the same thing `scene::DEFAULT_ELLIPSIS`, which is
+ * that language's idiom for it — Rust has no boolean-or-string union worth
+ * having.
+ */
+export const DEFAULT_ELLIPSIS = '\u2026'
+
+/**
+ * What a caller may write for a paragraph, before a boolean is resolved.
+ *
+ * Held apart from {@link ParagraphOptions} because the two are different
+ * questions: this is the spelling a caller is allowed, that is what the node
+ * ends up carrying.
+ */
+export interface ParagraphProps {
+  /** How many lines to draw before the text is truncated. Unset draws them all. */
+  readonly maxLines?: number
+  /**
+   * What a truncated last line ends with.
+   *
+   * `true` uses {@link DEFAULT_ELLIPSIS}, the character CSS uses. A string
+   * replaces it — a longer one simply leaves the text less room. `false`, an
+   * empty string and leaving it unset all truncate without a marker.
+   *
+   * The boolean is v1's spelling (`canvas.type.ts:1543`) and `false` is v1's
+   * own applied default, so a ported script that wrote the default explicitly
+   * keeps working. Both booleans threw before this took them: the value crossed
+   * TypeScript unchecked and the arena refused it at the far end.
+   */
+  readonly ellipsis?: boolean | string
+}
+
 /** What a text node accepts beyond its content: its style, flat. */
 export type TextProps = Style &
-  ParagraphOptions & {
+  ParagraphProps & {
     /** A name carried through for diagnostics. */
     readonly name?: string
   }
+
+/**
+ * The marker `ellipsis` asks for, or `undefined` for no marker at all.
+ *
+ * An empty string is `undefined` rather than an empty marker because the two
+ * draw the same picture, and because v1 reached that answer through a
+ * truthiness guard — a caller who wrote `ellipsis: ''` there got no marker and
+ * gets none here.
+ */
+function markerOf(ellipsis: boolean | string | undefined): string | undefined {
+  if (ellipsis === true) return DEFAULT_ELLIPSIS
+  if (ellipsis === false || ellipsis === undefined || ellipsis === '') return undefined
+  return ellipsis
+}
 
 /**
  * The paragraph properties of `props`, or `undefined` when it sets neither.
@@ -259,13 +323,18 @@ export type TextProps = Style &
  * Each key is added only when it has a value, rather than written as
  * `undefined`: `exactOptionalPropertyTypes` is on, and an explicit `undefined`
  * is a different thing from an absent key to every reader here.
+ *
+ * `undefined` when nothing survives, which is not the same test as the one on
+ * the way in: `ellipsis: false` is a value the caller wrote and resolves to no
+ * marker, so a paragraph built from it alone would otherwise be an empty object
+ * where an absent one is what every other path produces.
  */
 function paragraphOf(props: TextProps): ParagraphOptions | undefined {
-  if (props.maxLines === undefined && props.ellipsis === undefined) return undefined
   const paragraph: { maxLines?: number; ellipsis?: string } = {}
   if (props.maxLines !== undefined) paragraph.maxLines = props.maxLines
-  if (props.ellipsis !== undefined) paragraph.ellipsis = props.ellipsis
-  return paragraph
+  const marker = markerOf(props.ellipsis)
+  if (marker !== undefined) paragraph.ellipsis = marker
+  return paragraph.maxLines === undefined && paragraph.ellipsis === undefined ? undefined : paragraph
 }
 
 /**

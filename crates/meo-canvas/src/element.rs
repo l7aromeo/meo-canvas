@@ -613,7 +613,19 @@ impl Element {
     /// What a truncated last line ends with.
     ///
     /// Only drawn when [`Element::max_lines`] truncates something. Unset
-    /// truncates without a marker.
+    /// truncates without a marker, and so does an empty one.
+    ///
+    /// [`DEFAULT_ELLIPSIS`](crate::scene::DEFAULT_ELLIPSIS) is the marker CSS
+    /// uses, so a caller who wants the ordinary one need not know the code
+    /// point. It is what the JavaScript surface's `ellipsis: true` resolves to.
+    ///
+    /// ```
+    /// use meo_canvas::{Text, scene::DEFAULT_ELLIPSIS};
+    ///
+    /// let excerpt = Text::new("a long paragraph")
+    ///     .max_lines(2)
+    ///     .ellipsis(DEFAULT_ELLIPSIS);
+    /// ```
     #[must_use]
     pub fn ellipsis(mut self, marker: impl Into<String>) -> Self {
         if let NodeKind::Text { paragraph, .. } = &mut self.kind {

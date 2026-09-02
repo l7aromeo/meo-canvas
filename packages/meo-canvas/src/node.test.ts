@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { Box, Column, Grid, Image, NODE_KEYS, Path, RichText, Row, Text, type SceneNode } from './node.js'
+import { Box, Column, DEFAULT_ELLIPSIS, Grid, Image, NODE_KEYS, Path, RichText, Row, Text, type SceneNode } from './node.js'
 import type { Style } from './style.js'
 
 /** One of every factory, for the checks that must hold across all of them. */
@@ -185,6 +185,45 @@ describe('text', () => {
     const node = Text('x', { maxLines: 2, ellipsis: '...', fontSize: 12 })
     expect(node.paragraph).toEqual({ maxLines: 2, ellipsis: '...' })
     expect(Text('x').paragraph).toBeUndefined()
+  })
+
+  it('resolves every spelling of `ellipsis` to the marker or to nothing', () => {
+    // v1 types this `boolean | string` (`canvas.type.ts:1543`) and a ported
+    // script writes `true`. Both booleans used to cross TypeScript unchecked
+    // and be refused by the arena at the far end, which is a throw naming a
+    // slot index rather than the property.
+    //
+    // `false` matters as much as `true`: it is v1's own applied default
+    // (`text.canvas.ts:207`), so the caller most likely to have written it is
+    // exactly the caller migrating.
+    //
+    // The node carries the resolved marker, never the boolean -- the scene
+    // holds what will be drawn, and no measurer, line-breaker or painter reads
+    // which spelling asked for it.
+    expect(Text('x', { maxLines: 1, ellipsis: true }).paragraph).toEqual({ maxLines: 1, ellipsis: DEFAULT_ELLIPSIS })
+    expect(Text('x', { maxLines: 1, ellipsis: false }).paragraph).toEqual({ maxLines: 1 })
+    expect(Text('x', { maxLines: 1, ellipsis: '—' }).paragraph).toEqual({ maxLines: 1, ellipsis: '—' })
+    // An empty marker and no marker draw the same picture, which is where v1's
+    // truthiness guard landed and where a caller who wrote `''` still lands.
+    expect(Text('x', { maxLines: 1, ellipsis: '' }).paragraph).toEqual({ maxLines: 1 })
+  })
+
+  it('has no paragraph when the only thing written resolves to nothing', () => {
+    // `ellipsis: false` is a value the caller wrote and resolves to no marker,
+    // so the test on the way in cannot be the test on the way out: an early
+    // return keyed on `undefined` would leave an empty object here where every
+    // other path produces an absent one.
+    expect(Text('x', { ellipsis: false }).paragraph).toBeUndefined()
+    expect(Text('x', { ellipsis: '' }).paragraph).toBeUndefined()
+  })
+
+  it('spells the default marker as the character CSS uses', () => {
+    // Measured in Chrome rather than picked: `text-overflow: ellipsis` in
+    // Helvetica at 40px draws three dots 10px apart across 31px, which is a
+    // literal U+2026; three full stops sit 7px apart across 26px. v1 draws the
+    // same character for `ellipsis: true` (`text.canvas.ts:1244`).
+    expect(DEFAULT_ELLIPSIS).toBe('\u2026')
+    expect(DEFAULT_ELLIPSIS).not.toBe('...')
   })
 
   it('carries one segment per run when the runs differ', () => {

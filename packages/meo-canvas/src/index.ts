@@ -208,7 +208,7 @@ export type {
   VerticalAlign,
 } from './style.js'
 
-export { Box, Column, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
+export { Box, Column, DEFAULT_ELLIPSIS, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
 export type {
   Child,
   Children,
@@ -217,6 +217,7 @@ export type {
   ImageSource,
   NodeKind,
   ParagraphOptions,
+  ParagraphProps,
   PathProps,
   SceneNode,
   TextProps,

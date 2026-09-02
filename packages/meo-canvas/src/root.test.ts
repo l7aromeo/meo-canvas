@@ -22,7 +22,7 @@ const PAGE_COUNT = 2 + 4 + 3
 function fakeRenderer() {
   const painted: { slots: Float64Array; values: readonly SideValue[]; fonts: unknown }[] = []
   const native: NativeCanvas = {
-    encode: () => new Uint8Array([1]),
+    encode: () => Buffer.from([1]),
     release: () => undefined,
     gpu: true,
     engine: 'cpu',

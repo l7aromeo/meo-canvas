@@ -227,9 +227,9 @@ pub mod scene {
                 GradientStop, LinearDirection, ObjectFit, PaintStyle,
             },
             text::{
-                FontStyle, FontVariant, FontWeight, LineHeight, ParagraphStyle,
-                Spacing, TextAlign, TextDecoration, TextStroke, TextStyle,
-                VerticalAlign,
+                DEFAULT_ELLIPSIS, FontStyle, FontVariant, FontWeight,
+                LineHeight, ParagraphStyle, Spacing, TextAlign, TextDecoration,
+                TextStroke, TextStyle, VerticalAlign,
             },
         },
     };

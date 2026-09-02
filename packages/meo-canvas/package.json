@@ -44,6 +44,9 @@
     "LICENSE",
     "README.md"
   ],
+  "dependencies": {
+    "@types/node": "^26.2.0"
+  },
   "optionalDependencies": {
     "@l7aromeo/meo-canvas-darwin-arm64": "10.0.0-alpha.3",
     "@l7aromeo/meo-canvas-linux-x64-gnu": "10.0.0-alpha.3"

@@ -962,6 +962,23 @@ break was recorded as reaching "no consumer" because nothing is published --
 surface**, which its own manifest says. The repository had arranged to catch the
 mistake and the claim talked past the arrangement.
 
+**A boundary that names its own internals when a caller makes a mistake teaches
+nothing.** Writing `ellipsis: true` from plain JavaScript throws `side value 2 is
+neither a string nor a Buffer`. That message names a slot index in the arena's
+side table: it does not name the property, the node, or the value the caller
+wrote, and there is no way to get from it to `ellipsis` except by reading this
+repository's encoder. The same message answers `fontFamily: 42` and `color: 42`,
+differing only in the index. **The refusal is correct and the diagnosis is
+useless**, which is the worst combination for the caller most likely to hit it --
+someone porting a script, whose type checker is not in the way.
+
+The other half is worse: `maxLines: '1'` is accepted with no complaint at all.
+So the boundary rejects some wrong types opaquely and admits others in silence,
+and a caller cannot tell from the outside which kind of mistake they made. The
+arena writer's `text(value: string)` takes its argument on trust, and TypeScript
+is the only thing checking it -- which means it is checked exactly for the
+callers who did not need checking.
+
 **A `want` column in a repro is arithmetic until somebody measures it.** A
 fifty-line reproduction printed `want 68.0` beside eight configurations, and
 that number was its author's expectation derived from the spec. It became a
@@ -2117,8 +2134,11 @@ passing.
 
 ## Porting a v1 component
 
-Six ways a v1 component does not mean in v2 what it says, found by carrying
-`gi-showcase-card.component.ts` across a line at a time. **They are listed with
+Six ways a v1 component did not mean in v2 what it says, found by carrying
+`gi-showcase-card.component.ts` across a line at a time. **One of them is now
+closed**, and it is kept in place rather than deleted: a porter who has read an
+older copy of this list needs to be told the hazard went away, and the reason it
+was a hazard is the part worth keeping. **They are listed with
 what each does when you get it wrong**, because that is what decides how much
 of the port you have to re-check: a type error costs nothing, a value that is
 silently wrong by a factor of the font size costs the whole render.
@@ -2156,8 +2176,25 @@ the trap: a component written in pixels may still hold a bare ratio or two
 unchanged. _Wrong by a factor of the font size, and it does not look like a
 unit mistake -- it looks like a layout defect._
 
-**3. `ellipsis` changed type**, boolean to the string that gets drawn. _A type
-error, which is the good case._
+**3. `ellipsis` no longer changes type -- this hazard is closed.** It read
+"boolean to the string that gets drawn, a type error, which is the good case",
+and it was neither closed nor quite the good case. From TypeScript `true` was a
+type error; from plain JavaScript or through an `as any` it crossed unchecked
+and the arena refused it at the far end with `side value 2 is neither a string
+nor a Buffer` -- a throw naming a slot index, which is the boundary problem
+recorded above.
+
+v2 now takes v1's `boolean | string` on both surfaces. `true` draws U+2026, the
+character CSS uses and the one v1 draws (`text.canvas.ts:1244`), measured in
+Chrome rather than assumed; `false`, `''` and leaving it out all truncate
+without a marker, which is where v1's truthiness guard landed. **`false` is the
+one to notice**: it is v1's own applied default (`text.canvas.ts:207`), so the
+caller most likely to have written it explicitly is the one migrating.
+
+The scene still carries a resolved `Option<String>` -- the boolean is resolved
+at the edge, because no measurer, line-breaker or painter reads which spelling
+asked for the marker. A Rust caller writes `scene::DEFAULT_ELLIPSIS` for the
+same thing; the two surfaces hold one capability in two idioms.
 
 **4. Edge groups are gone.** v1 spells `padding: { Horizontal: 2, Bottom: 2 }`
 and `border: { Left: 1, Right: 1, Bottom: 1 }`; v2 has only `top`, `right`,

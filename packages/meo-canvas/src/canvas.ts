@@ -59,8 +59,16 @@ export interface EncodeOptions {
  * {@link Canvas} is what decides which calls a caller awaits.
  */
 export interface NativeCanvas {
-  /** Encodes the painted pages and returns the bytes. */
-  encode(format: Format, options: EncodeOptions): Uint8Array
+  /**
+   * Encodes the painted pages and returns the bytes.
+   *
+   * A Node `Buffer`, which is what the addon hands back: it builds the result
+   * with Neon's `JsBuffer::from_slice` (`crates/meo-canvas-node/src/lib.rs:485`).
+   * A caller supplying their own native surface for a test may return any
+   * `Buffer`; a plain `Uint8Array` would be a different value from the one this
+   * package ships.
+   */
+  encode(format: Format, options: EncodeOptions): Buffer
   /** Frees the Skia surface. Calling it twice is not an error. */
   release(): void
   /** Whether the GPU was asked for. */
@@ -128,8 +136,12 @@ export class Canvas {
     this.#writeFileSync = writeFileSync
   }
 
-  /** Encodes the canvas and resolves with the bytes. */
-  async toBuffer(format: Format = 'png', options: EncodeOptions = {}): Promise<Uint8Array> {
+  /**
+   * Encodes the canvas and resolves with the bytes.
+   *
+   * See {@link Canvas.toBufferSync} for why the type is `Buffer`.
+   */
+  async toBuffer(format: Format = 'png', options: EncodeOptions = {}): Promise<Buffer> {
     return this.toBufferSync(format, options)
   }
 
@@ -139,8 +151,22 @@ export class Canvas {
    * The same call without the `await`. Encoding is CPU work with no I/O, so
    * there is nothing for the asynchronous form to overlap with — it exists
    * because v1's did and a ported script should keep working.
+   *
+   * # Why `Buffer` and not `Uint8Array`
+   *
+   * **Because a `Buffer` is what already came back.** The addon returns a
+   * Neon `JsBuffer` and always has; the declaration said `Uint8Array`, which
+   * was a false statement about the value. `Buffer` extends `Uint8Array`, so
+   * this narrows the type without changing a byte, and every caller that
+   * wanted either is satisfied.
+   *
+   * **It is not a fix for sharp.** sharp accepts a plain `Uint8Array` — its
+   * `SharpInput` names the type, and 0.34.5, 0.35.3 and 0.35.4 each read one
+   * back to `png 410x140` when measured. Whatever a caller hit handing this to
+   * sharp, this was not it, and the type being honest is worth having on its
+   * own.
    */
-  toBufferSync(format: Format = 'png', options: EncodeOptions = {}): Uint8Array {
+  toBufferSync(format: Format = 'png', options: EncodeOptions = {}): Buffer {
     this.#assertLive()
     return this.#native.encode(format, options)
   }

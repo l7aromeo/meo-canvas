@@ -9,7 +9,7 @@
 
 use meo_canvas::{
     Box as BoxNode, Element, FlexDirection, LineHeight, Root, Styled, Text,
-    TextAlign, TextDecoration, hex_rgb, px,
+    TextAlign, TextDecoration, hex_rgb, px, scene::DEFAULT_ELLIPSIS,
 };
 use meo_canvas_examples::{FONT, FORMATS, draw_with_fonts};
 
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A paragraph clamped to one line, with what replaces the rest.
         line("this line is far too long to fit in the width it is given")
             .max_lines(1)
-            .ellipsis("…"),
+            .ellipsis(DEFAULT_ELLIPSIS),
         // A shadow and a stroke, which are paint rather than layout.
         line(WORDS).text_shadow(vec![meo_canvas::scene::TextShadow {
             offset_x: 2.0,

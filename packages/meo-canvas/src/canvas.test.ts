@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Canvas, type EncodeOptions, type Format, type NativeCanvas } from './canvas.js'
 
 /** A native surface that records what it was asked for and returns its bytes. */
-function fake(bytes = new Uint8Array([1, 2, 3])) {
+function fake(bytes = Buffer.from([1, 2, 3])) {
   const calls: { format: Format; options: EncodeOptions }[] = []
   let released = 0
   const native: NativeCanvas = {
@@ -94,7 +94,7 @@ describe('writing a file', () => {
 
 describe('data urls', () => {
   it('carries the format’s media type and base64 bytes', () => {
-    const { canvas } = canvasOver(fake(new Uint8Array([0, 16, 131])).native)
+    const { canvas } = canvasOver(fake(Buffer.from([0, 16, 131])).native)
 
     expect(canvas.toURLSync('png')).toBe('data:image/png;base64,ABCD')
   })
@@ -102,14 +102,14 @@ describe('data urls', () => {
   it('resolves with the same url as the blocking form', async () => {
     // The awaited form exists because v1's did. There is no I/O in an encode,
     // so it is the same call without the `await` and this says so.
-    const { canvas } = canvasOver(fake(new Uint8Array([0, 16, 131])).native)
+    const { canvas } = canvasOver(fake(Buffer.from([0, 16, 131])).native)
 
     await expect(canvas.toURL()).resolves.toBe(canvas.toURLSync('png'))
   })
 
   it('pads a length that is not a multiple of three', () => {
-    const one = canvasOver(fake(new Uint8Array([77])).native).canvas
-    const two = canvasOver(fake(new Uint8Array([77, 97])).native).canvas
+    const one = canvasOver(fake(Buffer.from([77])).native).canvas
+    const two = canvasOver(fake(Buffer.from([77, 97])).native).canvas
 
     expect(one.toURLSync('png').endsWith('TQ==')).toBe(true)
     expect(two.toURLSync('png').endsWith('TWE=')).toBe(true)
@@ -119,7 +119,7 @@ describe('data urls', () => {
     // Base64 is written by hand in `canvas.ts` rather than taken from
     // `Buffer`, so it is worth checking against an encoder that did not come
     // from this package. `btoa` is the platform's, and needs no dependency.
-    const bytes = new Uint8Array([0, 1, 2, 250, 251, 252, 253])
+    const bytes = Buffer.from([0, 1, 2, 250, 251, 252, 253])
     const { canvas } = canvasOver(fake(bytes).native)
 
     const mine = canvas.toURLSync('raw').split(',')[1]
@@ -217,7 +217,7 @@ describe('the surface v1 had', () => {
     const { canvas } = canvasOver(surface.native)
 
     for (const format of formats) {
-      await expect(canvas[format]).resolves.toEqual(new Uint8Array([1, 2, 3]))
+      await expect(canvas[format]).resolves.toEqual(Buffer.from([1, 2, 3]))
     }
     expect(surface.calls.map(call => call.format)).toEqual([...formats])
   })

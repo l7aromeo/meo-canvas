@@ -325,22 +325,77 @@ pub struct TextSegment {
     pub style: TextStyle,
 }
 
+/// The marker a truncated line ends with when the caller does not name one.
+///
+/// U+2026 HORIZONTAL ELLIPSIS, one glyph rather than three full stops.
+///
+/// **Measured rather than assumed.** Chrome's `text-overflow: ellipsis` was
+/// read in Helvetica at 40px -- deliberately not the repository's own Oswald,
+/// where `…` and `...` rasterise to identical ink runs with advances 0.36px
+/// apart and cannot tell the two answers apart. The marker Chrome drew has its
+/// three dots 10px apart across a 31px span, which is exactly a literal `…`;
+/// three full stops sit 7px apart across 26px. Advances 40.00 against 33.34.
+///
+/// v1 draws the same character for `ellipsis: true`
+/// (`src/canvas/text.canvas.ts:1244`), so the API reference and the
+/// behavioural one agree and there was nothing to choose between.
+///
+/// It is a constant rather than a variant of an enum because **nothing
+/// downstream reads the difference**: a marker named by default and the same
+/// marker written out reach the measurer, the line-breaker and the painter as
+/// the same string, so a scene that recorded which one the caller wrote would
+/// carry a distinction only to round-trip it. The JavaScript surface spells the
+/// same thing `ellipsis: true`, which is that language's idiom for it.
+pub const DEFAULT_ELLIPSIS: &str = "\u{2026}";
+
 /// Paragraph-level properties, which do not inherit.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ParagraphStyle {
     /// Maximum lines before the text is truncated. `None` means unlimited.
     pub max_lines: Option<u32>,
     /// String appended to a truncated last line. `None` truncates without a
-    /// marker.
+    /// marker, and so does `Some("")` -- an empty marker and no marker are the
+    /// same picture, which is what v1's truthiness guard produced and what a
+    /// caller writing `ellipsis: ''` still gets.
+    ///
+    /// [`DEFAULT_ELLIPSIS`] is what to write for the marker CSS uses.
     pub ellipsis: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        FontStyle, FontVariant, FontWeight, ParagraphStyle, Spacing, TextAlign,
-        TextDecoration, TextStyle, VerticalAlign,
+        DEFAULT_ELLIPSIS, FontStyle, FontVariant, FontWeight, ParagraphStyle,
+        Spacing, TextAlign, TextDecoration, TextStyle, VerticalAlign,
     };
+
+    /// The default marker is the one character CSS names, not three stops.
+    ///
+    /// Measured in Chrome rather than picked -- see [`DEFAULT_ELLIPSIS`]. The
+    /// second assertion is the one worth having: the two look alike in prose
+    /// and in several faces, and the whole reason this constant exists is that
+    /// they are different characters with different advances.
+    #[test]
+    fn the_default_marker_is_one_horizontal_ellipsis() {
+        assert_eq!(DEFAULT_ELLIPSIS, "\u{2026}");
+        assert_eq!(DEFAULT_ELLIPSIS.chars().count(), 1);
+        assert_ne!(DEFAULT_ELLIPSIS, "...");
+    }
+
+    /// The marker is a value the paragraph carries, not a mode it is put in.
+    ///
+    /// The JavaScript surface spells the same thing `ellipsis: true` and
+    /// resolves it before the scene is built, so both surfaces reach the
+    /// painter with an identical [`ParagraphStyle`]. This is the Rust half of
+    /// that sentence.
+    #[test]
+    fn the_default_marker_is_what_a_paragraph_carries() {
+        let paragraph = ParagraphStyle {
+            max_lines: Some(1),
+            ellipsis: Some(DEFAULT_ELLIPSIS.to_owned()),
+        };
+        assert_eq!(paragraph.ellipsis.as_deref(), Some("\u{2026}"));
+    }
 
     #[test]
     fn font_weight_clamps_to_the_css_range() {

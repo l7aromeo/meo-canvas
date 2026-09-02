@@ -67,7 +67,7 @@ const canvas = await Root({
         },
       ),
       // A paragraph clamped to one line, with what replaces the rest.
-      line('this line is far too long to fit in the width it is given', { maxLines: 1, ellipsis: '…' }),
+      line('this line is far too long to fit in the width it is given', { maxLines: 1, ellipsis: true }),
       // A shadow and a stroke, which are paint rather than layout.
       line(WORDS, { textShadow: { offsetX: 2, offsetY: 2, blur: 2, color: '#1414288c' } }),
       line(WORDS, { fontSize: 20, color: '#ffffff', textStroke: { width: 1, color: '#14141e' } }),
