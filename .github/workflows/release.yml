@@ -28,6 +28,16 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+# Every `run:` block here is bash -- `set -euo pipefail`, `test -f`, `$(...)`,
+# `grep | cut`. On `windows-latest` the default shell is PowerShell, so the
+# first such step failed with the toolchain unread and the Windows target has
+# never built once. Declared for the whole workflow rather than on that step,
+# because the next Windows-only failure would be the next step someone wrote in
+# bash without thinking about it -- which is every step in this file.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # The target list lives in `tools/stage-platform-package.mjs` and is read here
   # rather than restated, so a target added there builds without touching this
