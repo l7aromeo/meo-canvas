@@ -82,9 +82,18 @@ jobs:
         with:
           just-version: "1.58.0"
 
+      # A block scalar, and the quoting is the reason. Written on one line this
+      # needed `cut -d'\"'`, where YAML keeps the backslash literal and hands
+      # `cut` a two-character delimiter -- so the step succeeded, wrote nothing,
+      # and the toolchain action failed three steps later with `'toolchain' is
+      # a required input`. The failure named the consumer and not the producer.
       - name: Read the pinned toolchain
         id: toolchain
-        run: echo "channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
+          test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "toolchain $channel"
 
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
