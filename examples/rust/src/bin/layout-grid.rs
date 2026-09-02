@@ -83,7 +83,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cell(blue).size(px(30.0), px(20.0)),
         ]);
 
-    let root = Root::new(400.0, 200.0)
+    let root = Root::new(400.0)
+        .height(200.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)

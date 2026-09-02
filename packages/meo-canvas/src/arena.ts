@@ -281,11 +281,14 @@ export interface SurfaceOptions {
 }
 
 /** Writes the header every arena opens with, and the page count. */
-function writeHeader(out: ArenaWriter, width: number, height: number, scale: number, surface: SurfaceOptions, pages: number): void {
+function writeHeader(out: ArenaWriter, width: number, height: number, contentHeight: boolean, scale: number, surface: SurfaceOptions, pages: number): void {
   out.slot(MAGIC)
   out.slot(VERSION)
   out.f32(width)
   out.f32(height)
+  // Beside the height it qualifies: set, the height above is a floor and the
+  // page is as tall as what is in it.
+  out.slot(contentHeight ? 1 : 0)
   out.f32(scale)
 
   // The surface block, between the geometry and the pages. Slots inserted
@@ -1479,13 +1482,14 @@ export function encodeScene(
   pages: readonly SceneNode[],
   width: number,
   height: number,
+  contentHeight: boolean,
   scale: number,
   surface: SurfaceOptions = {},
   fetched?: ReadonlyMap<string, Uint8Array>,
 ): Arena {
   const out = new ArenaWriter()
   out.fetched = fetched
-  writeHeader(out, width, height, scale, surface, pages.length)
+  writeHeader(out, width, height, contentHeight, scale, surface, pages.length)
   for (const page of pages) writeNode(out, page)
   return out.finish()
 }

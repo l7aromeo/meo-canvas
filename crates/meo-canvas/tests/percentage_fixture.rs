@@ -55,7 +55,8 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
     // 200 x 120, so a quarter of the width is fifty pixels and a quarter of the
     // height is thirty. Both are whole numbers of pixels, so a disagreement is
     // never a rounding argument.
-    let scene = Root::new(200.0, 120.0)
+    let scene = Root::new(200.0)
+        .height(120.0)
         .background_color(hex_rgb(0x10_10_14))
         // Stacked, so each bar has the full width to be a percentage of. A row
         // would make every measurement a share of what the siblings left over,

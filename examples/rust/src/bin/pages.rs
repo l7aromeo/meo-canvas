@@ -29,7 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .chain(PAGED_FORMATS.iter().copied())
         .collect();
 
-    let root = Root::new(200.0, 120.0)
+    let root = Root::new(200.0)
+        .height(120.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .fps(12.0)
         .pages(12)

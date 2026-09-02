@@ -182,7 +182,8 @@ fn read(mode: Option<BlendMode>) -> [(u8, u8, u8); 2] {
     // rasterisers do not agree to the byte, and this reads exact colours.
     renderer.set_gpu(false);
 
-    let mut canvas = Root::new(CELL.0, CELL.1)
+    let mut canvas = Root::new(CELL.0)
+        .height(CELL.1)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .children(cell(mode))

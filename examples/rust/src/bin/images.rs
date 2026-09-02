@@ -31,7 +31,8 @@ fn fitted(fit: ObjectFit) -> Element {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read(STRIP)?;
 
-    let root = Root::new(400.0, 168.0)
+    let root = Root::new(400.0)
+        .height(168.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)

@@ -10,7 +10,8 @@
 //! use meo_canvas::{Format, Renderer, Root, Row, Styled, Text, hex, px};
 //!
 //! let renderer = Renderer::new();
-//! let mut canvas = Root::new(520.0, 180.0)
+//! let mut canvas = Root::new(520.0)
+//!     .height(180.0)
 //!     .background_color(hex("#101014"))
 //!     .children(Row::new().padding(px(24.0)).children(Text::new("Ukasyah")))
 //!     .render(&renderer)?;
@@ -202,8 +203,11 @@ impl fmt::Debug for Content {
 pub struct Root {
     /// Width in logical pixels.
     width: f32,
-    /// Height in logical pixels.
+    /// Height in logical pixels, or the floor when [`Root::content_height`] is
+    /// what set it.
     height: f32,
+    /// Whether the height comes from the content rather than from the caller.
+    content_height: bool,
     /// Device-pixel multiplier applied at paint time.
     scale: f32,
     /// The page root's own style.
@@ -242,16 +246,25 @@ impl Root {
     /// deliberately: a canvas size is device-independent pixels, and a
     /// percentage of nothing has no meaning.
     ///
-    /// The height is required, where v1 derives it from the content when it is
-    /// left out. The renderer gives a page root the scene's extent on any axis
-    /// left automatic, so there is no content-sizing pass for a page — a height
-    /// derived from content is something this surface cannot honour yet rather
-    /// than something it declines to.
+    /// **The height is optional and comes from the content when not set**, the
+    /// same as leaving `height` out on the JavaScript surface. Add one with
+    /// [`Root::height`], or a lower bound with [`Root::min_height`].
+    ///
+    /// Rust has no optional argument, and a second constructor taking two
+    /// numbers would make the caller pick a spelling before knowing there was
+    /// a choice. `Root` configures everything else -- scale, name, gpu -- by
+    /// chaining, so the height does too, and the two surfaces then say the
+    /// same thing: a width is required and a height is not.
+    ///
+    /// There is no matching form for the width. Text breaks into lines against
+    /// a width, so a width has to be known before anything can be measured,
+    /// while a height is a result of that measuring.
     #[must_use]
-    pub const fn new(width: f32, height: f32) -> Self {
+    pub const fn new(width: f32) -> Self {
         Self {
             width,
-            height,
+            height: 0.0,
+            content_height: true,
             scale: Self::DEFAULT_SCALE,
             style: Style::new(),
             name: None,
@@ -263,6 +276,26 @@ impl Root {
             duration: None,
             fps: Self::DEFAULT_FPS,
         }
+    }
+
+    /// Fixes the canvas height, instead of taking it from the content.
+    #[must_use]
+    pub const fn height(mut self, height: f32) -> Self {
+        self.height = height;
+        self.content_height = false;
+        self
+    }
+
+    /// The least the canvas may be while its height comes from its content.
+    ///
+    /// Does nothing once [`Root::height`] has fixed a height: a floor under a
+    /// number that is already stated has nothing to raise.
+    #[must_use]
+    pub const fn min_height(mut self, floor: f32) -> Self {
+        if self.content_height {
+            self.height = floor;
+        }
+        self
     }
 
     /// The device-pixel multiplier.
@@ -420,6 +453,7 @@ impl Root {
         let (count, fps) = self.sequence().map_err(BuildError::Sequence)?;
 
         let mut scene = Scene::new(Size::new(self.width, self.height));
+        scene.content_height = self.content_height;
         scene.scale = self.scale;
         scene.gpu = self.gpu;
         scene.color_type = self.color_type;
@@ -709,7 +743,8 @@ mod tests {
         std::fs::create_dir_all(&dir)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        let mut canvas = Root::new(8.0, 4.0)
+        let mut canvas = Root::new(8.0)
+            .height(4.0)
             .children(BoxNode::new())
             .render(&Renderer::new())
             .unwrap_or_else(|error| unreachable!("{error}"));
@@ -751,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_root_takes_its_size_and_defaults_the_scale() {
-        let scene = scene_of(Root::new(120.0, 60.0));
+        let scene = scene_of(Root::new(120.0).height(60.0));
 
         assert_eq!(scene.size.width.to_bits(), 120.0_f32.to_bits());
         assert_eq!(scene.size.height.to_bits(), 60.0_f32.to_bits());
@@ -762,7 +797,7 @@ mod tests {
     fn the_scale_reaches_the_scene_without_moving_the_layout() {
         // Layout always solves at one, so this changes resolution and nothing
         // about where things sit.
-        let scene = scene_of(Root::new(10.0, 10.0).scale(3.0));
+        let scene = scene_of(Root::new(10.0).height(10.0).scale(3.0));
 
         assert_eq!(scene.scale.to_bits(), 3.0_f32.to_bits());
     }
@@ -773,7 +808,8 @@ mod tests {
         // paint a box the size of the content instead, which is the bug this
         // shape exists to make impossible.
         let scene = scene_of(
-            Root::new(10.0, 10.0)
+            Root::new(10.0)
+                .height(10.0)
                 .background_color(hex_rgb(0x10_10_14))
                 .children(Row::new()),
         );
@@ -787,11 +823,13 @@ mod tests {
 
     #[test]
     fn children_take_one_or_many_and_skip_what_did_not_render() {
-        let one = scene_of(Root::new(10.0, 10.0).children(Row::new()));
+        let one = scene_of(Root::new(10.0).height(10.0).children(Row::new()));
         let many = scene_of(
-            Root::new(10.0, 10.0).children([Row::new(), Column::new()]),
+            Root::new(10.0)
+                .height(10.0)
+                .children([Row::new(), Column::new()]),
         );
-        let conditional = scene_of(Root::new(10.0, 10.0).children([
+        let conditional = scene_of(Root::new(10.0).height(10.0).children([
             Some(Row::new()),
             None,
             Some(Column::new()),
@@ -813,10 +851,10 @@ mod tests {
     fn a_flat_setter_writes_the_same_field_the_style_does() {
         // The trait's whole claim: one list of properties, two places they can
         // be written, and no chance of the two drifting apart.
-        let scene = scene_of(
-            Root::new(10.0, 10.0)
-                .children(Row::new().gap(px(4.0)).padding(crate::all(px(8.0)))),
-        );
+        let scene =
+            scene_of(Root::new(10.0).height(10.0).children(
+                Row::new().gap(px(4.0)).padding(crate::all(px(8.0))),
+            ));
         let root = scene
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the scene has no root"));
@@ -836,7 +874,8 @@ mod tests {
         // Not a style property: the scene keeps it on the node beside the kind
         // and nothing inherits it, so it does not go through `properties!`.
         let scene = scene_of(
-            Root::new(10.0, 10.0)
+            Root::new(10.0)
+                .height(10.0)
                 .name("page")
                 .children(Row::new().name("card")),
         );
@@ -853,7 +892,7 @@ mod tests {
 
     #[test]
     fn a_name_is_absent_when_none_was_given() {
-        let scene = scene_of(Root::new(10.0, 10.0).children(Row::new()));
+        let scene = scene_of(Root::new(10.0).height(10.0).children(Row::new()));
         let root = scene
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the scene has no root"));
@@ -866,9 +905,10 @@ mod tests {
         // Absent is not `false`: the renderer decides when the caller said
         // nothing, and a default written here would take that decision away
         // from a renderer someone deliberately set to CPU.
-        let silent = scene_of(Root::new(10.0, 10.0));
+        let silent = scene_of(Root::new(10.0).height(10.0));
         let stated = scene_of(
-            Root::new(10.0, 10.0)
+            Root::new(10.0)
+                .height(10.0)
                 .gpu(false)
                 .color_type(ColorType::F32)
                 .color_space(ColorSpace::DisplayP3),
@@ -903,12 +943,14 @@ mod tests {
                 .background_color(hex_rgb(0xff_ff_ff))
         };
 
-        let mut on = Root::new(200.0, 80.0)
+        let mut on = Root::new(200.0)
+            .height(80.0)
             .gpu(true)
             .children(rounded())
             .render(&renderer)
             .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut off = Root::new(200.0, 80.0)
+        let mut off = Root::new(200.0)
+            .height(80.0)
             .gpu(false)
             .children(rounded())
             .render(&renderer)
@@ -937,9 +979,9 @@ mod tests {
     #[test]
     fn a_page_builder_runs_once_per_page() {
         let scene =
-            scene_of(Root::new(10.0, 10.0).pages(3).page_builder(|page| {
-                Text::new(format!("page {}", page.index))
-            }));
+            scene_of(Root::new(10.0).height(10.0).pages(3).page_builder(
+                |page| Text::new(format!("page {}", page.index)),
+            ));
 
         assert_eq!(scene.pages.len(), 3);
     }
@@ -949,7 +991,8 @@ mod tests {
         // `ceil(duration * fps)`, as v1 derives it: a fraction of a page is
         // still a page that has to be drawn.
         let scene = scene_of(
-            Root::new(10.0, 10.0)
+            Root::new(10.0)
+                .height(10.0)
                 .duration(0.1)
                 .fps(24.0)
                 .page_builder(|_| Row::new()),
@@ -981,19 +1024,23 @@ mod tests {
 
     #[test]
     fn a_sequence_that_contradicts_itself_is_refused() {
-        let both = Root::new(10.0, 10.0)
+        let both = Root::new(10.0)
+            .height(10.0)
             .pages(2)
             .duration(1.0)
             .page_builder(|_| Row::new())
             .into_scene();
-        let builder_alone = Root::new(10.0, 10.0)
+        let builder_alone = Root::new(10.0)
+            .height(10.0)
             .page_builder(|_| Row::new())
             .into_scene();
-        let length_alone = Root::new(10.0, 10.0)
+        let length_alone = Root::new(10.0)
+            .height(10.0)
             .pages(2)
             .children(Row::new())
             .into_scene();
-        let none = Root::new(10.0, 10.0)
+        let none = Root::new(10.0)
+            .height(10.0)
             .pages(0)
             .page_builder(|_| Row::new())
             .into_scene();
@@ -1019,7 +1066,8 @@ mod tests {
     #[test]
     fn a_canvas_encodes_twice_from_one_paint() {
         let renderer = Renderer::new();
-        let mut canvas = Root::new(8.0, 4.0)
+        let mut canvas = Root::new(8.0)
+            .height(4.0)
             .background_color(hex_rgb(0x10_10_14))
             .render(&renderer)
             .unwrap_or_else(|error| unreachable!("{error}"));
@@ -1043,7 +1091,8 @@ mod tests {
         // refused rather than defaulted: a typo would otherwise produce
         // a file whose name lies about its contents.
         let renderer = Renderer::new();
-        let mut canvas = Root::new(4.0, 4.0)
+        let mut canvas = Root::new(4.0)
+            .height(4.0)
             .render(&renderer)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
@@ -1076,7 +1125,8 @@ mod tests {
     #[test]
     fn a_data_url_carries_the_format_and_the_bytes() {
         let renderer = Renderer::new();
-        let mut canvas = Root::new(4.0, 4.0)
+        let mut canvas = Root::new(4.0)
+            .height(4.0)
             .render(&renderer)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
@@ -1093,7 +1143,7 @@ mod tests {
     #[test]
     fn a_page_root_holds_the_tree_rather_than_wrapping_it() {
         let scene =
-            scene_of(Root::new(10.0, 10.0).children(
+            scene_of(Root::new(10.0).height(10.0).children(
                 Row::new().children([Text::new("a"), Text::new("b")]),
             ));
         let root = scene

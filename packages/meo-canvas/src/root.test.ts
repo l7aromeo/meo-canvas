@@ -16,7 +16,7 @@ import { Root, type PageInfo, type RootDependencies, type RootProps } from './ro
  * time the failure was five assertions reading one slot too early, which reads
  * as five bugs rather than as one moved field.
  */
-const PAGE_COUNT = 2 + 3 + 3
+const PAGE_COUNT = 2 + 4 + 3
 
 /** A renderer that records what it was handed and paints nothing. */
 function fakeRenderer() {
@@ -56,17 +56,41 @@ describe('the canvas Root describes', () => {
   it('carries the size and the scale it was given', async () => {
     const { slots } = await arenaFor({ width: 520, height: 180, scale: 2 })
 
-    // Magic, version, width, height, scale, then the three surface
-    // discriminants, then the page count. `PAGE_COUNT` names the last of those
-    // so a header change moves one constant rather than every index here.
-    expect([...slots.slice(2, 5)]).toEqual([520, 180, 2])
+    // Magic, version, width, height, the content-height flag, scale, then the
+    // three surface discriminants, then the page count. `PAGE_COUNT` names the
+    // last of those so a header change moves one constant rather than every
+    // index here.
+    expect([...slots.slice(2, 6)]).toEqual([520, 180, 0, 2])
     expect(slots[PAGE_COUNT]).toBe(1)
   })
 
   it('defaults the scale to one', async () => {
     const { slots } = await arenaFor({ width: 10, height: 10 })
 
-    expect(slots[4]).toBe(1)
+    expect(slots[5]).toBe(1)
+  })
+
+  it('asks for a content height when no height is given', async () => {
+    // The flag and the floor are one answer, so both are read. A caller who
+    // states neither gets "as tall as the content, and at least nothing".
+    const { slots } = await arenaFor({ width: 520 })
+
+    expect([...slots.slice(2, 6)]).toEqual([520, 0, 1, 1])
+  })
+
+  it('takes a stated minHeight as the floor of a content height', async () => {
+    const { slots } = await arenaFor({ width: 520, minHeight: 90 })
+
+    expect([...slots.slice(2, 6)]).toEqual([520, 90, 1, 1])
+  })
+
+  it('does not ask for a content height when a height is given', async () => {
+    // The control. A stated height must not set the flag, or the height would
+    // become a floor and a page would grow past what the caller asked for --
+    // which is the one failure this pair exists to catch.
+    const { slots } = await arenaFor({ width: 520, height: 180 })
+
+    expect([...slots.slice(2, 6)]).toEqual([520, 180, 0, 1])
   })
 
   it('says nothing about the surface unless the caller does', async () => {
@@ -76,7 +100,7 @@ describe('the canvas Root describes', () => {
     // away from it silently.
     const { slots } = await arenaFor({ width: 10, height: 10 })
 
-    expect([...slots.slice(5, 8)]).toEqual([0, 0, 0])
+    expect([...slots.slice(6, 9)]).toEqual([0, 0, 0])
     expect(slots[PAGE_COUNT]).toBe(1)
   })
 
@@ -95,7 +119,7 @@ describe('the canvas Root describes', () => {
 
     // Present flag, value, three times over — `gpu` false, `'RGBAF32'` which is
     // the scene's `F32` at 2, and `'display-p3'` which is `DisplayP3`, also 2.
-    expect([...slots.slice(5, 11)]).toEqual([1, 0, 1, 2, 1, 2])
+    expect([...slots.slice(6, 12)]).toEqual([1, 0, 1, 2, 1, 2])
   })
 
   it('passes the families through to be registered', async () => {

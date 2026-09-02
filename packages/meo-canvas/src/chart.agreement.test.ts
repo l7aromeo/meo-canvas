@@ -255,7 +255,7 @@ function encode(chart: ReturnType<typeof Chart>): { hex: string; names: readonly
   // short and every byte after the count would shift. **The first run differed
   // by exactly that node and by a font family set on one side only: both were
   // the harness, neither was an implementation.**
-  const arena = encodeScene([Box({ children: chart })], 200, 120, 1)
+  const arena = encodeScene([Box({ children: chart })], 200, 120, false, 1)
   const values = arena.values.map(value => (typeof value === 'string' ? value : Buffer.from(value)))
   return {
     hex: addon().sceneBytes(arena.slots, values).toString('hex'),

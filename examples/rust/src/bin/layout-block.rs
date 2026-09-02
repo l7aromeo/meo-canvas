@@ -62,7 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The three panels are `Display::Block`. Their children drew nothing when
     // this was written -- painted before their own parent, and covered by its
     // background -- and they draw now.
-    let root = Root::new(400.0, 110.0)
+    let root = Root::new(400.0)
+        .height(110.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Row)

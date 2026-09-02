@@ -70,7 +70,8 @@ fn drawn(fit: ObjectFit) -> ([u32; 4], bool, bool) {
     // rasterisers do not agree to the byte.
     renderer.set_gpu(false);
 
-    let mut canvas = Root::new(CELL, CELL)
+    let mut canvas = Root::new(CELL)
+        .height(CELL)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .align_items(Align::Center)

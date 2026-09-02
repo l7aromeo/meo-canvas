@@ -61,7 +61,8 @@ fn scenes() -> Vec<(&'static str, Scene)> {
 /// `z_index` on the first is what puts it on top despite coming first in paint
 /// order, and the negative top margin is what makes them overlap at all.
 fn block_stacking() -> Scene {
-    Root::new(100.0, 60.0)
+    Root::new(100.0)
+        .height(60.0)
         .display(Display::Block)
         .background_color(hex_rgb(0xff_ff_ff))
         .children([
@@ -84,7 +85,8 @@ fn block_stacking() -> Scene {
 /// `inset`, and the two fixtures together say that the difference is only in
 /// what the offsets do.
 fn block_stacking_relative() -> Scene {
-    Root::new(100.0, 60.0)
+    Root::new(100.0)
+        .height(60.0)
         .display(Display::Block)
         .background_color(hex_rgb(0xff_ff_ff))
         .children([
@@ -118,7 +120,8 @@ fn borders_per_edge() -> Scene {
             .border_radius_corners(radius)
     };
 
-    Root::new(440.0, 120.0)
+    Root::new(440.0)
+        .height(120.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -174,7 +177,8 @@ fn box_shadow() -> Scene {
     };
     let ink = Color::rgba(20, 20, 40, 110);
 
-    Root::new(410.0, 140.0)
+    Root::new(410.0)
+        .height(140.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .justify_content(Justify::SpaceEvenly)
@@ -236,7 +240,8 @@ fn z_order() -> Scene {
             .background_color(background)
     };
 
-    Root::new(220.0, 140.0)
+    Root::new(220.0)
+        .height(140.0)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .children([
@@ -262,7 +267,8 @@ fn overflow_clip() -> Scene {
             .background_color(Color::rgba(220, 60, 60, 200))
     };
 
-    Root::new(300.0, 120.0)
+    Root::new(300.0)
+        .height(120.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::FlexStart)
@@ -330,7 +336,8 @@ fn object_fit() -> Scene {
             )
     };
 
-    Root::new(420.0, 110.0)
+    Root::new(420.0)
+        .height(110.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -376,7 +383,8 @@ fn gradients() -> Scene {
         })
     };
 
-    Root::new(330.0, 120.0)
+    Root::new(330.0)
+        .height(120.0)
         .padding(px(8.0))
         .align_items(Align::Center)
         .gap_xy(px(0.0), px(8.0))
@@ -409,7 +417,8 @@ fn text_descenders() -> Scene {
             .color(hex_rgb(0x14_14_1e))
     };
 
-    Root::new(320.0, 140.0)
+    Root::new(320.0)
+        .height(140.0)
         .position_type(PositionType::Relative)
         .padding(px(10.0))
         .flex_direction(FlexDirection::Column)
@@ -447,7 +456,7 @@ fn baseline_alignment() -> Scene {
             .children([word(14.0), word(22.0), word(34.0)])
     };
 
-    Root::new(360.0, 190.0)
+    Root::new(360.0).height(190.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)
@@ -505,7 +514,7 @@ fn stacking_hoist() -> Scene {
             .children(child())
     };
 
-    Root::new(200.0, 72.0)
+    Root::new(200.0).height(72.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -579,7 +588,7 @@ fn mask_kinds() -> Scene {
         ],
     };
 
-    Root::new(392.0, 56.0)
+    Root::new(392.0).height(56.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -664,7 +673,8 @@ fn backdrop_filter() -> Scene {
         }
     };
 
-    Root::new(264.0, 72.0)
+    Root::new(264.0)
+        .height(72.0)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .name("panel 0 filters nothing and is the control. See notes.json.")
@@ -722,7 +732,8 @@ fn vertical_align() -> Scene {
             )
     };
 
-    Root::new(280.0, 88.0)
+    Root::new(280.0)
+        .height(88.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -792,7 +803,7 @@ fn background_tiling() -> Scene {
         Dimension::Points(13.0),
     );
 
-    Root::new(392.0, 56.0)
+    Root::new(392.0).height(56.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -865,7 +876,8 @@ fn borders_square() -> Scene {
             .background_color(hex_rgb(0xdc_28_28))
     };
 
-    Root::new(200.0, 72.0)
+    Root::new(200.0)
+        .height(72.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .align_items(Align::Center)
@@ -960,7 +972,8 @@ fn gradient_as_paint() -> Scene {
             .size(px(72.0), px(48.0))
     };
 
-    Root::new(328.0, 128.0)
+    Root::new(328.0)
+        .height(128.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)
@@ -1102,7 +1115,7 @@ fn gradient_linear() -> Scene {
             .children(children)
     };
 
-    Root::new(392.0, 136.0)
+    Root::new(392.0).height(136.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)
@@ -1217,7 +1230,8 @@ fn blend_modes() -> Scene {
             .children(children)
     };
 
-    Root::new(382.0, 148.0)
+    Root::new(382.0)
+        .height(148.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)
@@ -1311,7 +1325,7 @@ fn flex_alignment() -> Scene {
             .children(children())
     };
 
-    Root::new(392.0, 136.0)
+    Root::new(392.0).height(136.0)
         .position_type(PositionType::Relative)
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)
@@ -1378,7 +1392,8 @@ fn flex_alignment() -> Scene {
 /// corners while they were wrong, twice, because it was accepted from our own
 /// render.
 fn borders_dashed_square() -> Scene {
-    Root::new(240.0, 48.0)
+    Root::new(240.0)
+        .height(48.0)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .name("a dashed square border. Chrome's runs are in notes.json.")
@@ -1406,7 +1421,8 @@ fn borders_dashed_square() -> Scene {
 /// the control -- **the pair is the point**, because either picture alone is
 /// just a dashed box and only the two together say that the behaviour changes.
 fn borders_dashed_radius() -> Scene {
-    Root::new(240.0, 48.0)
+    Root::new(240.0)
+        .height(48.0)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .name("a dashed border above the radius threshold. See notes.json.")

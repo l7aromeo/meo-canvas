@@ -213,18 +213,32 @@ impl Default for Renderer {
 /// for half of something, and the only thing it could be half of is the page.
 /// A root that says nothing has no opinion about how big its page should be.
 ///
-/// Nothing in this repository sets a definite root size today -- 61 `Root::new`
-/// sites, none of them -- so this changes no existing output. `pin_page_root`
-/// already keeps a stated root size through layout, which is the other half of
-/// why this is safe and is asserted in `layout.rs` rather than reasoned about.
-fn page_size(scene: &Scene, page: NodeId) -> Size {
+/// # The height escapes the circle, and only the height
+///
+/// [`Scene::content_height`] asks for a page as tall as what is in it, and the
+/// argument above does not forbid it. Solving needs a **width** before anything
+/// can be measured, because that is what text breaks its lines against; the
+/// height is a result of that measuring rather than an input to it. So the
+/// solved root rectangle is passed in here, and the caller has run layout
+/// before allocating a surface.
+///
+/// `scene.size.height` is the floor in that case, not the height. A caller who
+/// leaves it at zero gets the content's own height.
+fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
     let stated = |dimension, fallback| match dimension {
         Dimension::Points(value) => value,
         Dimension::Auto | Dimension::Percent(_) => fallback,
     };
     scene.get(page).map_or(scene.size, |root| Size {
         width: stated(root.layout.size.0, scene.size.width),
-        height: stated(root.layout.size.1, scene.size.height),
+        height: if scene.content_height && root.layout.size.1 == Dimension::Auto
+        {
+            solved.get(page).map_or(scene.size.height, |rect| {
+                rect.size.height.max(scene.size.height)
+            })
+        } else {
+            stated(root.layout.size.1, scene.size.height)
+        },
     })
 }
 
@@ -344,22 +358,37 @@ impl Renderer {
 
         let resolved = Resolved::new(scene, &self.fonts)?;
         let mut measurer = SceneMeasurer::prepare(&resolved, &self.fonts)?;
-        let mut surface = Surface::new(
-            page_size(scene, scene.pages[0]),
-            scene.scale,
-            self.surface_for(scene),
-        )?;
 
-        for (index, &page) in scene.pages.iter().enumerate() {
-            // The first page is the one `Surface::new` created; beginning a
-            // page for it would leave a blank sheet ahead of the drawing.
-            if index > 0 {
-                surface.begin_page(page_size(scene, page))?;
-            }
+        // **Solve, then allocate.** A page whose height comes from its content
+        // does not have one until layout has run, so the surface cannot be
+        // created before the first solve -- which is why it starts as `None`
+        // and the first page is what brings it into being. Every page after
+        // that begins on the surface the first one made.
+        let mut surface: Option<Surface> = None;
+
+        for &page in &scene.pages {
             let solved = layout::solve(scene, page, &mut measurer)?;
-            paint::draw(&mut surface, &resolved, &solved, &mut measurer)?;
+            let size = page_size(scene, page, &solved);
+            let surface = match surface {
+                Some(ref mut existing) => {
+                    existing.begin_page(size)?;
+                    existing
+                }
+                None => surface.insert(Surface::new(
+                    size,
+                    scene.scale,
+                    self.surface_for(scene),
+                )?),
+            };
+            paint::draw(surface, &resolved, &solved, &mut measurer)?;
         }
 
+        // `validate` rejects a scene with no pages, so the loop ran at least
+        // once and the surface exists. Unwrapping on that is a claim about a
+        // check twenty lines up; asking again costs nothing and cannot rot.
+        let surface = surface.ok_or_else(|| {
+            Error::Layout("a validated scene produced no page".to_owned())
+        })?;
         Ok(RenderedCanvas { surface })
     }
 

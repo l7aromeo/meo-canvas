@@ -149,7 +149,8 @@ fn drawn(geometry: GradientGeometry) -> Vec<u8> {
     // rasterisers do not agree to the byte, and this reads exact colours.
     renderer.set_gpu(false);
 
-    let mut canvas = Root::new(BOX.0, BOX.1)
+    let mut canvas = Root::new(BOX.0)
+        .height(BOX.1)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .children(

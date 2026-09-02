@@ -75,7 +75,8 @@ fn dashed(pattern: &[f32], offset: f32) -> Element {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = Root::new(360.0, 300.0)
+    let root = Root::new(360.0)
+        .height(300.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)

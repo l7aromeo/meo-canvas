@@ -13,7 +13,7 @@ Layout, text shaping, painting and encoding all happen in Rust. The Node surface
 
 ## What it renders
 
-- **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps and absolute positioning.
+- **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps and absolute positioning. A canvas takes its height from its content unless one is given; a width is always stated, because text breaks its lines against it.
 - **Text** — shaped by Skia and broken into lines here, with per-span styling, letter and word spacing, decorations, line clamping and ellipsis.
 - **Images** — from a file or a buffer, with object-fit and object-position placement. A URL is resolved to bytes by the Node surface before rendering, and by the Rust crate or the CLI only when built with the optional `net` feature; without it a URL is an error and no HTTP stack is linked.
 - **Paths** — arbitrary shapes from SVG path data, filled and stroked, with an optional `viewBox` so a path scales to the box that holds it.

@@ -45,10 +45,10 @@
 //! ## Composites
 //!
 //! ```text
-//! scene    := "MCSC" u16(version) f32 f32 f32
+//! scene    := "MCSC" u16(version) f32 f32 bool f32
 //!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
 //!             list<u32>(pages) list<node>
-//!             ^magic         ^1   ^w  ^h  ^scale
+//!             ^magic         ^1   ^w  ^h  ^ch  ^scale
 //!
 //! node     := kind layout paint text effects list<u32>(children) opt<str>(name)
 //!
@@ -158,7 +158,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -305,6 +305,9 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     writer.u16(VERSION);
     writer.f32(scene.size.width);
     writer.f32(scene.size.height);
+    // Beside the height it qualifies, because the two are one answer: the
+    // height is a floor when this is set and the height itself when it is not.
+    writer.bool(scene.content_height);
     writer.f32(scene.scale);
     // The surface's own description, after the geometry and before the pages.
     // Optional to the byte, because a scene that says nothing about the
@@ -343,6 +346,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
 
     let width = input.f32()?;
     let height = input.f32()?;
+    let content_height = input.bool()?;
     let scale = input.f32()?;
     let gpu: Option<bool> = input.opt()?;
     let color_type: Option<ColorType> = input.opt()?;
@@ -365,6 +369,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
 
     let scene = Scene {
         size: crate::Size::new(width, height),
+        content_height,
         scale,
         gpu,
         color_type,
@@ -413,9 +418,10 @@ mod tests {
         surface::{ColorSpace, ColorType},
     };
 
-    /// Byte offset of the surface block, which follows magic, version and the
-    /// three geometry floats.
-    const SURFACE_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 4;
+    /// Byte offset of the surface block, which follows magic, version, the
+    /// three geometry floats and the one byte saying whether the height is a
+    /// floor or the height itself.
+    const SURFACE_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 1 + 4;
 
     /// Bytes the surface block occupies when all three fields are absent: one
     /// discriminant each, and no payload behind any of them.

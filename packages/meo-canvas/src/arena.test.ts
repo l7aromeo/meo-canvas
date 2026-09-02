@@ -389,6 +389,8 @@ function readPayload(input: Cursor, kind: string): unknown {
 interface DecodedArena {
   /** The page size and the scale it was written at. */
   readonly size: readonly [number, number]
+  /** Whether the height above is a floor rather than the page's height. */
+  readonly contentHeight: boolean
   /** The device pixel ratio. */
   readonly scale: number
   /** What the scene asked of the surface, where it asked anything. */
@@ -405,6 +407,9 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
   expect(slot(input)).toBe(VERSION)
 
   const size: [number, number] = [f32(input), f32(input)]
+  // Beside the height it qualifies: set, the height above is a floor and the
+  // page is as tall as its content.
+  const contentHeight = slot(input) === 1
   const scale = f32(input)
 
   // The surface block, between the geometry and the pages. Three optionals,
@@ -423,7 +428,7 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
   // The check that turns a writer emitting the wrong number of slots from a
   // comparison failure into a structural one.
   expect(input.at, 'the arena has slots past the end of the scene').toBe(slots.length)
-  return { size, scale, surface, pages }
+  return { size, contentHeight, scale, surface, pages }
 }
 
 /** One case of the fixture: where the property sits, and what Rust wrote for it. */
@@ -640,7 +645,7 @@ describe('the property tables', () => {
 
 /** Encodes one box carrying `style`, and reads it back. */
 function roundTrip(style: Style): DecodedNode {
-  const arena = encodeScene([Box(style)], SIZE[0], SIZE[1], SCALE)
+  const arena = encodeScene([Box(style)], SIZE[0], SIZE[1], false, SCALE)
   const decoded = decode(arena.slots, arena.values)
 
   expect(decoded.size).toEqual(SIZE)
@@ -688,7 +693,7 @@ describe('the arena', () => {
   })
 
   it('writes children in the order they were given', () => {
-    const arena = encodeScene([Box({ name: 'root', children: [Box({ name: 'first' }), Box({ name: 'second' })] })], SIZE[0], SIZE[1], SCALE)
+    const arena = encodeScene([Box({ name: 'root', children: [Box({ name: 'first' }), Box({ name: 'second' })] })], SIZE[0], SIZE[1], false, SCALE)
     const page = decode(arena.slots, arena.values).pages[0]
 
     expect(page?.name).toBe('root')
@@ -699,7 +704,7 @@ describe('the arena', () => {
     // A font family repeats on every text node of a document, and each
     // duplicate is one more value the addon reads out of V8 -- which is the
     // cost this format exists to avoid.
-    const arena = encodeScene([Box({ children: [Box({ fontFamily: 'Inter' }), Box({ fontFamily: 'Inter' })] })], SIZE[0], SIZE[1], SCALE)
+    const arena = encodeScene([Box({ children: [Box({ fontFamily: 'Inter' }), Box({ fontFamily: 'Inter' })] })], SIZE[0], SIZE[1], false, SCALE)
 
     expect(arena.values).toEqual(['Inter'])
   })
@@ -845,7 +850,7 @@ describe('a mask slot', () => {
 
 /** Encodes one page and reads it back, without asserting the header. */
 function page(node: SceneNode): DecodedNode {
-  const arena = encodeScene([node], SIZE[0], SIZE[1], SCALE)
+  const arena = encodeScene([node], SIZE[0], SIZE[1], false, SCALE)
   const decoded = decode(arena.slots, arena.values).pages[0]
   if (decoded === undefined) throw new Error('the arena decoded to no page')
   return decoded
@@ -941,7 +946,7 @@ describe('an image node', () => {
 
   it('carries bytes through the side values rather than the slots', () => {
     const bytes = new Uint8Array([1, 2, 3])
-    const arena = encodeScene([Image({ src: { bytes } })], SIZE[0], SIZE[1], SCALE)
+    const arena = encodeScene([Image({ src: { bytes } })], SIZE[0], SIZE[1], false, SCALE)
 
     expect(arena.values).toEqual([bytes])
     expect(decode(arena.slots, arena.values).pages[0]?.payload).toMatchObject({ source: { tag: 'bytes', value: [1, 2, 3] } })
@@ -1290,7 +1295,7 @@ describe('the shorthands', () => {
 
 describe('a scene', () => {
   it('carries every page it was given', () => {
-    const arena = encodeScene([Box({ name: 'one' }), Box({ name: 'two' })], SIZE[0], SIZE[1], SCALE)
+    const arena = encodeScene([Box({ name: 'one' }), Box({ name: 'two' })], SIZE[0], SIZE[1], false, SCALE)
     const decoded = decode(arena.slots, arena.values)
 
     expect(decoded.pages.map(each => each.name)).toEqual(['one', 'two'])
@@ -1591,7 +1596,7 @@ function sideValue(value: SideValue): string | Buffer {
 
 /** The bytes the addon writes for a scene whose one page is `node`. */
 function bytesOf(node: SceneNode): string {
-  const arena = encodeScene([node], SIZE[0], SIZE[1], SCALE)
+  const arena = encodeScene([node], SIZE[0], SIZE[1], false, SCALE)
   return addon().sceneBytes(arena.slots, arena.values.map(sideValue)).toString('base64')
 }
 
@@ -1635,7 +1640,7 @@ describe('the bytes Rust writes for the same scene', () => {
       { text: 'two', style: { fontWeight: 'bold' } },
     ])
 
-    expect(encodeScene([markup], SIZE[0], SIZE[1], SCALE).slots).not.toEqual(encodeScene([runs], SIZE[0], SIZE[1], SCALE).slots)
+    expect(encodeScene([markup], SIZE[0], SIZE[1], false, SCALE).slots).not.toEqual(encodeScene([runs], SIZE[0], SIZE[1], false, SCALE).slots)
     expect(bytesOf(markup)).toBe(bytesOf(runs))
   })
 

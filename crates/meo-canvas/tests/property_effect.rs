@@ -853,7 +853,8 @@ fn pixels(subject: Element) -> Vec<u8> {
             unreachable!("the font did not register: {error}")
         });
 
-    let mut canvas = Root::new(72.0, 72.0)
+    let mut canvas = Root::new(72.0)
+        .height(72.0)
         .background_color(hex_rgb(0xee_ee_f2))
         .children(subject)
         .render(&renderer)

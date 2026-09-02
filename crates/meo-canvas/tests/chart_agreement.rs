@@ -81,7 +81,8 @@ fn ours() -> Vec<u8> {
     let chart = bar(&labels, &datasets, &options).unwrap_or_else(|error| {
         unreachable!("the chart did not build: {error}")
     });
-    let scene = Root::new(200.0, 120.0)
+    let scene = Root::new(200.0)
+        .height(120.0)
         .children(chart)
         .into_scene()
         .unwrap_or_else(|error| {
@@ -227,7 +228,8 @@ fn three_slices() -> Vec<Slice> {
 
 /// One chart, encoded as a page the way `ours` does.
 fn encoded(chart: Element) -> Vec<u8> {
-    let scene = Root::new(200.0, 120.0)
+    let scene = Root::new(200.0)
+        .height(120.0)
         .children(chart)
         .into_scene()
         .unwrap_or_else(|error| {

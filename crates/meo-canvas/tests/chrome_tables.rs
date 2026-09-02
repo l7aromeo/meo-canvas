@@ -131,7 +131,8 @@ fn render_on(size: (f32, f32), child: Element, page: Color) -> Pixels {
     // not agree to the byte, and this reads exact colours.
     renderer.set_gpu(false);
 
-    let mut canvas = Root::new(size.0, size.1)
+    let mut canvas = Root::new(size.0)
+        .height(size.1)
         .position_type(PositionType::Relative)
         .background_color(page)
         .children(child)
@@ -1079,7 +1080,8 @@ fn ink_width(text: &str, size: f32, width: Option<f32>) -> Option<f32> {
         None => line.width(px(380.0)),
     };
 
-    let mut canvas = Root::new(400.0, 80.0)
+    let mut canvas = Root::new(400.0)
+        .height(80.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .children(line)
         .render(&renderer)

@@ -123,7 +123,20 @@ pub use surface::{ColorSpace, ColorType};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scene {
     /// Surface dimensions in logical pixels, before `scale` is applied.
+    ///
+    /// When [`Scene::content_height`] is set, `size.height` is a **floor**
+    /// rather than the height: the page is as tall as its content, and at
+    /// least this tall. Zero is the ordinary value there, and asks for the
+    /// content's own height with nothing added.
     pub size: Size,
+    /// Whether the page height comes from what is in it.
+    ///
+    /// A caller who states a height gets that height. A caller who does not
+    /// has no way to know one -- the content decides it -- and this is how the
+    /// scene says so. Width is never derived this way: text cannot break into
+    /// lines without knowing its room, so a width is a question the caller has
+    /// to answer.
+    pub content_height: bool,
     /// Device-pixel multiplier.
     ///
     /// Layout solves at scale 1 and the scale is applied at paint time, so a
@@ -160,6 +173,9 @@ impl Scene {
     pub fn new(size: Size) -> Self {
         Self {
             size,
+            // A stated size is a stated size. `Scene::new` takes one, so the
+            // caller has already answered the question this flag asks.
+            content_height: false,
             scale: Self::DEFAULT_SCALE,
             // Absent rather than defaulted: a scene that says nothing about the
             // surface is a scene that lets the renderer decide, which is not

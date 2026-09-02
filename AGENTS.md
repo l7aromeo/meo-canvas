@@ -2228,6 +2228,33 @@ What that pass found, kept here because each is a shape rather than an incident:
 **The repository the workspace manifest names exists**, and this clone has no
 remote pointing at it. A push has to add one deliberately.
 
+## A page as tall as its content
+
+`Scene::content_height` asks for it, and `size.height` becomes the **floor**
+rather than the height -- so no field is ever meaningless, and "at least this
+tall" is expressible rather than a second flag.
+
+**Solve, then allocate.** The surface used to be created from `page_size` before
+any layout ran, which is why a derived height was impossible rather than merely
+absent: there was nowhere for the answer to go. `render` now solves each page,
+computes its size from the solved root, and brings the surface into being on the
+first page.
+
+**The circularity argument covers the width and stops there.** Solving needs a
+width before anything can be measured, because that is what text breaks its
+lines against. A height is a consequence of that measuring, so `MaxContent` on
+the height axis is not circular. The two surfaces therefore agree that a width is
+required and a height is not, and the Rust one says so by chaining
+(`Root::new(w).height(h)`) because Rust has no optional argument and `Root`
+configures everything else the same way.
+
+**What the pinning tests are for.** `content_height.rs` in the core reads the
+**encoded PNG's own header**, because layout could resolve any height at all and
+still be painted onto a sheet of the stated size -- which is exactly what used to
+happen. `content_height_surface.rs` in the surface crate checks the other half:
+that the default a caller reaches by writing the least is the derived one, and
+that `.height(120).min_height(90)` stays 120.
+
 ## Releasing
 
 The npm package is **`@l7aromeo/meo-canvas`**, and the scope is load-bearing

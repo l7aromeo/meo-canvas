@@ -151,7 +151,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 4.0;
+pub const VERSION: f64 = 5.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -812,6 +812,9 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
 
     let width = f32::read(&mut input)?;
     let height = f32::read(&mut input)?;
+    // Beside the height it qualifies: set, the height is a floor and the page
+    // is as tall as its content.
+    let content_height = bool::read(&mut input)?;
     let scale = f32::read(&mut input)?;
     // The surface's own description, between the geometry and the pages. Slots
     // inserted rather than appended, which is why `VERSION` moved to 2: an
@@ -823,6 +826,7 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
     let page_count = input.count()?;
     let mut scene = Scene {
         size: Size::new(width, height),
+        content_height,
         scale,
         gpu,
         color_type,
@@ -1023,6 +1027,10 @@ mod tests {
                 VERSION,
                 f64::from(size.width),
                 f64::from(size.height),
+                // The content-height flag, off: these headers state a size,
+                // and a test that stated one and then asked for the content's
+                // height would be describing two different scenes.
+                0.0,
                 f64::from(scale),
             ]);
             self.slots.extend_from_slice(surface);
@@ -1065,10 +1073,11 @@ mod tests {
     /// The simplest complete arena: one page, one empty container, no name,
     /// no children.
     /// Slot index of the page count in a header whose surface says nothing:
-    /// magic, version, three geometry floats and three absent surface
+    /// magic, version, four geometry slots -- width, height, the
+    /// content-height flag and scale -- and three absent surface
     /// discriminants. Named rather than written as a number at each use, so a
     /// header change moves one line instead of three.
-    const PAGE_COUNT_SLOT: usize = 2 + 3 + 3;
+    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3;
 
     /// Slot index of the first node's tag, one past the page count.
     const FIRST_TAG_SLOT: usize = PAGE_COUNT_SLOT + 1;

@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let blue = 0x28_50_dc;
     let green = 0x28_8c_3c;
 
-    let root = Root::new(400.0, 372.0)
+    let root = Root::new(400.0)
+        .height(372.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)

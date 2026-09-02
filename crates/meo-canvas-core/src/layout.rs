@@ -156,11 +156,19 @@ where
     }
     pin_page_root(scene, page, root, &mut tree)?;
 
+    // A content height is solved rather than stated, so the height axis is
+    // offered `MaxContent` instead of a number. The circularity that stops a
+    // *width* being derived this way does not reach the height: text breaks
+    // into lines against the width, so the width has to be known before
+    // anything can be measured, while the height is only ever a consequence of
+    // that measuring.
     let available = taffy::Size {
         width: taffy::AvailableSpace::Definite(scene.size.width * LAYOUT_SCALE),
-        height: taffy::AvailableSpace::Definite(
-            scene.size.height * LAYOUT_SCALE,
-        ),
+        height: if scene.content_height {
+            taffy::AvailableSpace::MaxContent
+        } else {
+            taffy::AvailableSpace::Definite(scene.size.height * LAYOUT_SCALE)
+        },
     };
 
     // Baselines are collected during the solve because this closure is the only
@@ -380,8 +388,18 @@ fn pin_page_root(
             taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
     }
     if style.size.height.is_auto() {
-        style.size.height =
-            taffy::Dimension::length(scene.size.height * LAYOUT_SCALE);
+        if scene.content_height {
+            // Left automatic on purpose: pinning it here is exactly what makes
+            // a page the height it was told rather than the height of what is
+            // in it. `size.height` becomes the floor instead, which is what a
+            // caller asking for "at least this tall" means.
+            style.min_size.height = taffy::LengthPercentageAuto::length(
+                scene.size.height * LAYOUT_SCALE,
+            );
+        } else {
+            style.size.height =
+                taffy::Dimension::length(scene.size.height * LAYOUT_SCALE);
+        }
     }
 
     tree.set_style(root, style)

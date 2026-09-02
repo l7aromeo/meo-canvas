@@ -96,7 +96,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .vertical_align(meo_canvas::scene::VerticalAlign::Bottom),
     ]);
 
-    let root = Root::new(400.0, 300.0)
+    let root = Root::new(400.0)
+        .height(300.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .gap(px(6.0))

@@ -34,7 +34,8 @@ fn render(view: Option<(f32, f32, f32, f32)>, size: (f32, f32)) -> Vec<u8> {
     // rasterisers do not agree to the byte.
     renderer.set_gpu(false);
 
-    let mut canvas = Root::new(PAGE.0, PAGE.1)
+    let mut canvas = Root::new(PAGE.0)
+        .height(PAGE.1)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .children(

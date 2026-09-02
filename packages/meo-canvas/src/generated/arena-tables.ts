@@ -7,7 +7,7 @@
 export const MAGIC = 1296649810
 
 /** The revision a writer of this table emits. */
-export const VERSION = 4
+export const VERSION = 5
 
 /**
  * Bits one mask slot holds.

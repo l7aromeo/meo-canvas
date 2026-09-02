@@ -76,7 +76,8 @@ fn row(children: Vec<Element>) -> Element {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = Root::new(408.0, 568.0)
+    let root = Root::new(408.0)
+        .height(568.0)
         .background_color(hex_rgb(0xff_ff_ff))
         .padding(px(8.0))
         .flex_direction(FlexDirection::Column)

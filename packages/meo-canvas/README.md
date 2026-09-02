@@ -2,6 +2,19 @@
 
 Server-side image generation for Node. Describe a layout the way you would describe a page — boxes, rows, text, images, paths, charts — and get back encoded bytes.
 
+## The canvas is as tall as what is in it
+
+`height` is optional. Leave it out and the page is the height of its content,
+the way it is in 9.x; `minHeight` is the floor when you want "at least this
+tall". A width is always stated, and cannot be otherwise: text breaks into lines
+against a width, so a width has to be known before anything can be measured.
+
+```js
+Root({ width: 520, children }) // as tall as the content
+Root({ width: 520, minHeight: 200, children }) // ...and at least 200
+Root({ width: 520, height: 180, children }) // exactly 180
+```
+
 ## Nothing is drawn in JavaScript
 
 This package is a thin surface over a native addon. Your calls describe a scene; layout, text shaping, painting and encoding all happen in Rust, and the whole description crosses into it once per render rather than once per drawing call.

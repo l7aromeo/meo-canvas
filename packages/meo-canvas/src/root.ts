@@ -108,15 +108,16 @@ export type RootProps = Style & {
   /** The canvas width in pixels. Text cannot wrap without knowing its room. */
   readonly width: number
   /**
-   * The canvas height in pixels.
+   * The canvas height in pixels, or omitted for the height of the content.
    *
-   * Required, where v1 derives it from the content when it is left out. The
-   * renderer has no content-sizing pass for a page root — it gives the root the
-   * scene's extent on any axis left automatic — so a height derived from
-   * content is not something this surface can honour yet rather than something
-   * it chooses not to. Making it optional later takes nothing away.
+   * Width has no such form and cannot: text breaks into lines against a width,
+   * so a width has to be known before anything can be measured. A height is a
+   * result of that measuring, which is why only this one can be left out.
+   *
+   * `minHeight` on the same props is the floor when this is omitted, so a page
+   * can be "as tall as its content, and at least this tall".
    */
-  readonly height: number
+  readonly height?: number
   /** Device pixel ratio. */
   readonly scale?: number
   /** Font files to register for this render. */
@@ -340,7 +341,12 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   // The tree is built **once**, not once per encode: a page builder is a
   // caller's function and may fetch, count or otherwise refuse to be run twice.
   const tree = await pages(props)
-  let arena = encodeScene(tree, props.width, props.height, scale, surface)
+  // A height that was not given is a height the content decides. The floor
+  // travels in the same field, because a stated `minHeight` is what "at least
+  // this tall" means and the renderer reads it as the page's minimum.
+  const contentHeight = props.height === undefined
+  const height = props.height ?? (typeof props.minHeight === 'number' ? props.minHeight : 0)
+  let arena = encodeScene(tree, props.width, height, contentHeight, scale, surface)
 
   // **Fetched here, at the surface, and only bytes cross the wire.**
   //
@@ -374,7 +380,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
         fetched.set(url, new Uint8Array(await response.arrayBuffer()))
       }),
     )
-    arena = encodeScene(tree, props.width, props.height, scale, surface, fetched)
+    arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched)
   }
 
   const native = dependencies.renderer.paint(arena.slots, arena.values, {
