@@ -63,14 +63,32 @@ jobs:
       # build does and needs the same system libraries present.
       #
       # `cmake` and `nasm` are libaom's, for the reason `release.yml` states at
-      # its own copy of this step. `libfontconfig1-dev` and `libfreetype6-dev`
-      # are Skia's: the Linux addon build fails at link with
-      # `unable to find library -lfreetype` and `-lfontconfig` without them.
+      # its own copy of this step. The list is the one MEASURED against a build
+      # in an `ubuntu:24.04` container, not the one reasoned from the error.
+      #
+      # **`pkg-config` is the load-bearing one and the easiest to omit.** Skia
+      # is built without `embed-freetype`, so `rust-skia` links the system
+      # copies -- and `skia-bindings`' `build_support/platform/linux.rs:37-41`
+      # probes pkg-config and **falls back to bare library names when the probe
+      # fails, silently**. Without `pkg-config` the probe does not complain, it
+      # just stops producing a link line, and the failure surfaces as
+      # `unable to find library -lfreetype`, which points at freetype rather
+      # than at the missing prober.
+      #
+      # `libfreetype-dev` rather than `libfreetype6-dev`: the first is what was
+      # installed and observed to work on 24.04.
+      #
+      # **These are BUILD packages and not runtime ones.** A consumer running
+      # what this builds needs `libfontconfig1 libfreetype6` on Debian, or
+      # `fontconfig freetype` on EL -- see the crate README. Building with only
+      # the set below and then failing at load reads as a broken crate rather
+      # than a missing system library.
       - name: Install what the verification build needs
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            cmake nasm libfontconfig1-dev libfreetype6-dev
+            cmake nasm \
+            pkg-config libfontconfig1-dev libfreetype-dev
 
       # **The rehearsal always runs, including on a real publish.**
       #

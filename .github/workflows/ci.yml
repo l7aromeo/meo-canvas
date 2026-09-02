@@ -102,7 +102,11 @@ jobs:
       # failed to test.
       - name: Install what libaom needs
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake nasm \
+            pkg-config libfontconfig1-dev libfreetype-dev
 
       # `just ci` runs the examples, and the JavaScript half of them runs under
       # bun rather than node -- it is a consumer of the published package and
