@@ -30,8 +30,16 @@ const CHECKED_IN = resolve(HERE, '../src/generated/doc-examples.ts')
 // on whether a file is untracked, written or staged.
 const TARGET = process.argv[2] ? resolve(process.argv[2]) : CHECKED_IN
 
-/** How an example spells this package when importing from it. */
-const PACKAGE_SPECIFIER = 'meo-canvas'
+/**
+ * How an example spells this package when importing from it.
+ *
+ * The real published name, and it has to be: this is rewritten to
+ * {@link LOCAL_SPECIFIER} before the examples are compiled, so a specifier that
+ * did not match would leave the example naming a package nobody can install
+ * while the gate stayed green -- the rewrite repairs it out of sight. It read
+ * `meo-canvas` for a while after the package was scoped, which is exactly that.
+ */
+const PACKAGE_SPECIFIER = '@l7aromeo/meo-canvas'
 
 /** Where the generated file must import from instead. */
 const LOCAL_SPECIFIER = '../index.js'

@@ -7,8 +7,16 @@
 // compiles nothing inside a comment, so without this an example may name a
 // property that no longer exists and every check stays green.
 
-import { Image, Path, Root, Row, Text } from '../index.js'
+import { Image, Path, Root, Row, Text, formatColor, mixColor, parseColor } from '../index.js'
 import type { Gradient } from '../index.js'
+
+/** `color.ts, parseColor`. */
+export async function example_parseColor(): Promise<void> {
+
+  const from = parseColor('#f2aa4c')
+  const to = parseColor('rebeccapurple')
+  if (from && to) formatColor(mixColor(from, to, 0.5))
+}
 
 /** `node.ts`. */
 export async function example_node(): Promise<void> {

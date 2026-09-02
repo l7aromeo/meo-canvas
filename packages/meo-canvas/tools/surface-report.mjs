@@ -42,7 +42,7 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const V1 = resolve(HERE, '../../../../meo-canvas-old')
@@ -50,6 +50,22 @@ const V1_TYPES = join(V1, 'src/canvas/canvas.type.ts')
 
 /** v2's prop surface, in the files that declare it. */
 const V2_SRC = resolve(HERE, '../src')
+
+/**
+ * Where v1 keeps the helpers it exports as functions rather than as types, and
+ * v2's public entry point.
+ *
+ * The prop tables above compare `canvas.type.ts`, which holds interfaces and no
+ * functions -- so an exported *function* was invisible to this report for as
+ * long as it existed. `parseColor` and `isColor` were missing from v2's public
+ * surface the whole time and every run said `all`. Comparing what each package
+ * actually exports is the other half, and it is read from v2's built entry
+ * point rather than parsed, because a re-export chain is what a caller resolves
+ * and a regex over `index.ts` is a second guess at it.
+ */
+const V1_INDEX = join(V1, 'src/index.ts')
+const V1_ANIMATE = join(V1, 'src/animate')
+const V2_DIST = resolve(HERE, '../dist/index.js')
 
 /**
  * Sources deliberately outside the comparison, each with its reason.
@@ -144,6 +160,57 @@ export function interfaces(source, label) {
   return found
 }
 
+/**
+ * The functions each package exports, compared by name.
+ *
+ * v1's are harvested from its own sources; v2's are read from the built entry
+ * point, so what is reported is what a caller gets after every re-export has
+ * resolved. A missing `dist` is said rather than counted as an empty surface --
+ * "v2 exports nothing" and "nobody ran the build" look identical otherwise, and
+ * only one of them is a finding.
+ */
+async function reportExports() {
+  console.log('')
+  const harvest = file => [...readFileSync(file, 'utf8').matchAll(/^export (?:function|const) ([A-Za-z_]\w*)/gm)].map(match => match[1])
+
+  const theirs = new Set()
+  for (const file of [
+    V1_INDEX,
+    ...readdirSync(V1_ANIMATE)
+      .filter(name => name.endsWith('.ts'))
+      .map(name => join(V1_ANIMATE, name)),
+  ]) {
+    try {
+      for (const name of harvest(file)) theirs.add(name)
+    } catch {
+      // A file v1 no longer has is not this report's problem to raise.
+    }
+  }
+  // v1 re-exports these from `index.ts` without declaring them there.
+  for (const match of readFileSync(V1_INDEX, 'utf8').matchAll(/^export \{([^}]*)\}/gm)) {
+    for (const name of match[1].split(',')) {
+      const bare = name
+        .trim()
+        .split(/\s+as\s+/)
+        .pop()
+        ?.trim()
+      if (bare !== undefined && bare !== '' && !bare.startsWith('type ')) theirs.add(bare)
+    }
+  }
+
+  let ours
+  try {
+    ours = new Set(Object.keys(await import(pathToFileURL(V2_DIST).href)))
+  } catch {
+    console.log('exported functions      NOT COMPARED -- no dist; run `just build-js` first')
+    return
+  }
+
+  const absent = [...theirs].filter(name => !ours.has(name)).sort()
+  console.log(`exported names          v1 ${theirs.size}, v2 ${ours.size}`)
+  if (absent.length > 0) console.log(`${' '.repeat(24)}absent from v2: ${absent.join(', ')}`)
+}
+
 /** v1's tag and commit, so the report can be regenerated comparably. */
 function provenance() {
   const git = args => execFileSync('git', ['-C', V1, ...args], { encoding: 'utf8' }).trim()
@@ -198,7 +265,7 @@ function proveTheScanWorks() {
   }
 }
 
-function main() {
+async function main() {
   proveTheScanWorks()
 
   let v1Source
@@ -251,6 +318,8 @@ function main() {
   // Present on both surfaces and required on only one. A caller feels this the
   // way they feel a missing prop -- their code does not compile -- and the
   // section above cannot report it, because the prop is right there.
+  await reportExports()
+
   console.log('')
   let stricter = 0
   for (const [name, props] of [...v2.entries()].sort()) {
@@ -264,4 +333,4 @@ function main() {
   if (stricter === 0) console.log('nothing v1 leaves optional is required in v2')
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main()
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main()

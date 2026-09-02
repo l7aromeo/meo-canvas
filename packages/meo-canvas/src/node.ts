@@ -8,7 +8,7 @@
  * pre-order.
  *
  * ```ts
- * import { Row, Text } from 'meo-canvas'
+ * import { Row, Text } from '@l7aromeo/meo-canvas'
  *
  * const card = Row({
  *   gap: 16,
@@ -275,7 +275,7 @@ function paragraphOf(props: TextProps): ParagraphOptions | undefined {
  * forgotten — a `Text` with no text is not a thing worth being able to write.
  *
  * ```ts
- * import { Text } from 'meo-canvas'
+ * import { Text } from '@l7aromeo/meo-canvas'
  *
  * const name = Text('Ukasyah', { fontSize: 24 })
  * ```
@@ -311,7 +311,7 @@ export type ImageProps = Style & {
  * A raster image.
  *
  * ```ts
- * import { Image } from 'meo-canvas'
+ * import { Image } from '@l7aromeo/meo-canvas'
  *
  * const avatar = Image({ src: 'avatar.png', width: 64, height: 64, objectFit: 'cover' })
  * ```
@@ -409,7 +409,7 @@ export type PathProps = Style & {
  * An arbitrary shape from SVG path data.
  *
  * ```ts
- * import { Path } from 'meo-canvas'
+ * import { Path } from '@l7aromeo/meo-canvas'
  *
  * const tick = Path({ d: 'M2 8 L6 12 L14 3' })
  * ```

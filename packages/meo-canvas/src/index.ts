@@ -229,6 +229,12 @@ export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOpti
 export { Canvas } from './canvas.js'
 export type { EncodeOptions, Format, NativeCanvas, WriteFile, WriteFileSync } from './canvas.js'
 
+// The way into the colour helpers below. `mixColor` takes an `Rgba` and
+// `formatColor` writes one back out, so without a parse a caller holding a
+// string -- which is every caller, since a string is what the renderer takes --
+// has nothing to hand them.
+export { isColor, parseColor } from './color.js'
+
 export {
   EASING_NAMES,
   assertSpringHasNoRange,

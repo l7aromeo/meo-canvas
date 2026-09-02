@@ -307,7 +307,7 @@ export type GradientRamp =
  * value nothing looks at.
  *
  * ```ts
- * import type { Gradient } from 'meo-canvas'
+ * import type { Gradient } from '@l7aromeo/meo-canvas'
  *
  * const fade: Gradient = { type: 'linear', direction: 'to-bottom', colors: ['#101014', 'transparent'] }
  * const dial: Gradient = { type: 'conic', from: 90, stops: [{ offset: 0, color: '#f0c' }] }
