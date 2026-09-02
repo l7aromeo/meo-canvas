@@ -893,8 +893,10 @@ fn paint_box(
     rect: Rect,
 ) -> Result<(), Error> {
     let paint = &node.paint;
-    // Outer shadows first, under everything: they fall outside the box, so the
-    // background about to be painted cannot reach them.
+    // Outer shadows first, and **clipped out of the border box** rather than
+    // merely covered by it -- see `draw_box_shadow`. Order still matters
+    // between two of them: an earlier shadow paints over a later one, which is
+    // the order CSS lists them in.
     for shadow in node.effects.box_shadows.iter().filter(|s| !s.inset) {
         draw_box_shadow(context, paint, rect, shadow)?;
     }
@@ -3230,11 +3232,7 @@ fn draw_inset_box_shadow(
 
         // Far enough out that the surround's own edges cannot reach the clip
         // even at the largest offset and blur.
-        let margin = shadow.blur.mul_add(3.0, spread.abs())
-            + shadow.offset_x.abs()
-            + shadow.offset_y.abs()
-            + rect.size.width
-            + rect.size.height;
+        let margin = shadow_reach(rect, shadow);
         let surround = Rect::new(
             meo_canvas_scene::Point::new(
                 rect.origin.x - margin,
@@ -3346,8 +3344,10 @@ fn ring_path(
 /// Draws one box shadow.
 ///
 /// Skia's shadow is a property of the paint rather than a separate draw, so
-/// the shadow is produced by filling the box again with the shadow configured
-/// and the fill itself transparent where the box is about to be painted over.
+/// the shadow is produced by filling the box again with the shadow configured.
+/// The fill is the shadow's own colour and **not** transparent, because a
+/// transparent fill casts nothing to blur; what keeps that solid copy off the
+/// canvas is the clip, not the colour.
 fn draw_box_shadow(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -3358,25 +3358,131 @@ fn draw_box_shadow(
         return draw_inset_box_shadow(context, paint, rect, shadow);
     }
     context.save();
-    context.set_shadow_blur(shadow.blur);
-    context.set_shadow_color(to_skia_color(shadow.color));
-    context.set_shadow_offset(shadow.offset_x, shadow.offset_y);
-    context.set_fill_style(to_skia_color(shadow.color));
+    let result = (|| -> Result<(), Error> {
+        // Everything but the box: CSS Backgrounds and Borders 3 §7.1.1 draws
+        // an outer shadow outside the border edge **only**.
+        //
+        // Painting it beneath the box and letting the background cover it is
+        // the same picture wherever that background is opaque, which is every
+        // fixture this had -- and wrong the moment one is translucent, where
+        // the box takes a second coat of the shadow's own colour. Half-alpha
+        // black over half-alpha black is `1 - (1-0.5)^2 = 0.75`: measured, a
+        // `rgba(0,0,0,0.5)` box over `#b01020` read `33, 3, 6` against
+        // Chrome's `88, 8, 16`.
+        //
+        // The clip also carries the fill. This draws the shadow by filling the
+        // spread box **in the shadow's colour** with Skia's shadow set, so the
+        // solid copy of the box is painted too; without the clip it is that
+        // copy, not the blur, that the background composites over.
+        //
+        // # What the clip does not reach
+        //
+        // The silhouette's own **antialiased rim**, which straddles the border
+        // contour rather than sitting inside it. The clip feathers across the
+        // same pixels, so the two coverages multiply instead of cancelling and
+        // a fraction of the shadow's alpha survives there -- ink in a
+        // direction the shadow may not even point. Measured on the
+        // `box-shadow` fixture, on the top-left contour of a card whose shadow
+        // is offset 6,6 with no blur, where nothing may fall at all: 23 units
+        // of 255 before this clip and 14 after it.
+        //
+        // It is not fixed by moving the source out of the clip and paying the
+        // distance back through the shadow's offset, which is the obvious
+        // trick: **Skia clips the source before it blurs it**, so a source
+        // outside the clip blurs from almost nothing. Measured, that turned a
+        // 10px-blur card's ink from 137 to 226 against a 250 page -- the
+        // shadow all but gone. Removing the rim needs the shadow drawn as its
+        // own shape rather than as a property of a fill.
+        clip_outside_box(context, paint, rect, shadow_reach(rect, shadow))?;
 
-    let spread = shadow.spread;
-    let spread_rect = Rect::new(
-        meo_canvas_scene::Point::new(
-            rect.origin.x - spread,
-            rect.origin.y - spread,
-        ),
-        Size::new(
-            spread.mul_add(2.0, rect.size.width),
-            spread.mul_add(2.0, rect.size.height),
-        ),
-    );
-    let result = fill_box(context, paint, spread_rect);
+        context.set_shadow_blur(shadow.blur);
+        context.set_shadow_color(to_skia_color(shadow.color));
+        context.set_shadow_offset(shadow.offset_x, shadow.offset_y);
+        context.set_fill_style(to_skia_color(shadow.color));
+
+        let spread = shadow.spread;
+        let spread_rect = Rect::new(
+            meo_canvas_scene::Point::new(
+                rect.origin.x - spread,
+                rect.origin.y - spread,
+            ),
+            Size::new(
+                spread.mul_add(2.0, rect.size.width),
+                spread.mul_add(2.0, rect.size.height),
+            ),
+        );
+        fill_box(context, paint, spread_rect)
+    })();
     context.restore();
     result
+}
+
+/// Clips to everything **outside** `rect`'s box, out to `margin`.
+///
+/// The complement of [`clip_to_box`], and built the way
+/// [`draw_inset_box_shadow`] builds its hole: a surround rectangle and the
+/// box's own contour in one path, filled by the even-odd rule, so the box is
+/// the hole. There is no difference-clip on this binding, and this is the
+/// shape that stands in for one.
+///
+/// `margin` is how far past the box the surround reaches, and has to clear
+/// everything the shadow can paint -- [`shadow_reach`] is that distance. A
+/// clip that stopped nearer would cut the ink rather than the box.
+fn clip_outside_box(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    rect: Rect,
+    margin: f32,
+) -> Result<(), Error> {
+    let surround = Rect::new(
+        meo_canvas_scene::Point::new(
+            rect.origin.x - margin,
+            rect.origin.y - margin,
+        ),
+        Size::new(
+            margin.mul_add(2.0, rect.size.width),
+            margin.mul_add(2.0, rect.size.height),
+        ),
+    );
+
+    let mut outside = contour(surround, [(0.0, 0.0); 4])?;
+    let radii = paint.border_radius;
+    let hole = contour(
+        rect,
+        [
+            (radii.top_left, radii.top_left),
+            (radii.top_right, radii.top_right),
+            (radii.bottom_right, radii.bottom_right),
+            (radii.bottom_left, radii.bottom_left),
+        ],
+    )?;
+    // `Path2D::add_path` appends a subpath; building the second contour on the
+    // *context* extends the first instead, and the joined self-intersecting
+    // shape is what `ring_path` documents at length. Built that way this clip
+    // came out empty and the shadow vanished outright -- which the `below`
+    // probe caught, and no interior probe could have.
+    outside.add_path(&hole.build(SkiaFillRule::EvenOdd));
+    context.clip_path(
+        &outside.build(SkiaFillRule::EvenOdd),
+        SkiaFillRule::EvenOdd,
+    );
+    Ok(())
+}
+
+/// How far from `rect`'s edge a shadow's ink can reach.
+///
+/// Blur, spread and offset, plus the box itself so the figure is an
+/// over-estimate rather than an exact bound -- the callers want a margin they
+/// cannot be caught short by, not a tight one. Three times the blur is where a
+/// Gaussian is spent, which is what the inset path already used and is kept
+/// here so the two agree by construction rather than by two edits landing
+/// together.
+fn shadow_reach(rect: Rect, shadow: &BoxShadow) -> f32 {
+    shadow.blur.mul_add(3.0, shadow.spread.abs())
+        + shadow.offset_x.abs()
+        + shadow.offset_y.abs()
+        + rect.size.width
+        + rect.size.height
 }
 
 /// Sets the fill or stroke source for a painted path.

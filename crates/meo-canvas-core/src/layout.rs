@@ -1206,10 +1206,25 @@ mod tests {
     /// unbreakable piece -- so a test exercises the same path a real measurer
     /// takes. Deterministic per [`Measure`]'s contract: the answer is a pure
     /// function of `available` and nothing is carried between calls.
+    ///
+    /// # Why `min` is a field rather than a zero
+    ///
+    /// It returned `0.0` for `MinContent` while this doc comment said
+    /// "longest unbreakable piece", and the two disagreed for as long as
+    /// nothing asked. That is worse than a wrong line: flexbox floors an item
+    /// at exactly this answer (CSS Flexbox 1 §4.5), so a mock that reports
+    /// zero says an item may always be squeezed to nothing -- and a reader
+    /// who came here to learn the rule would have found the wrong one written
+    /// down, and read a real paragraph collapsing to its ellipsis as
+    /// correct-by-design. `crates/meo-canvas-core/tests/chrome_min_content.rs`
+    /// is the measured version of the rule.
     #[derive(Debug, Clone, Copy)]
     struct Wrapping {
         /// The width the content takes with nothing constraining it.
         natural: f32,
+        /// The narrowest it goes without overflowing: its longest unbreakable
+        /// piece. Never zero, and never more than `natural`.
+        min: f32,
         /// The height it reports at any width, which keeps the arithmetic in
         /// the assertions about width alone.
         height: f32,
@@ -1223,8 +1238,12 @@ mod tests {
             available: (Available, Available),
         ) -> MeasuredLeaf {
             let width = match available.0 {
-                Available::Definite(extent) => self.natural.min(extent),
-                Available::MinContent => 0.0,
+                // Offered less than the longest piece, a real run does not
+                // shed it -- the word overflows and the reported width stays.
+                Available::Definite(extent) => {
+                    self.natural.min(extent).max(self.min)
+                }
+                Available::MinContent => self.min,
                 Available::MaxContent => self.natural,
             };
             MeasuredLeaf::sized(Size::new(width, self.height))
@@ -1420,6 +1439,7 @@ mod tests {
             page,
             &mut Wrapping {
                 natural: 50.0,
+                min: 12.0,
                 height: 10.0,
             },
         )
@@ -1455,6 +1475,7 @@ mod tests {
             page,
             &mut Wrapping {
                 natural: 50.0,
+                min: 12.0,
                 height: 10.0,
             },
         )
@@ -1464,6 +1485,47 @@ mod tests {
             .unwrap_or_else(|| unreachable!("the leaf is laid out"));
 
         assert_eq!(rect.size, Size::new(30.0, 10.0));
+    }
+
+    #[test]
+    fn a_leaf_does_not_shrink_below_its_min_content_width() {
+        // The half `a_leaf_wider_than_its_container_shrinks_to_it` cannot
+        // see. That test shrinks 50 into 30 and passes just as well if the
+        // floor is zero, because 30 is above it either way. Here the
+        // container is narrower than the leaf's longest unbreakable piece, so
+        // the automatic minimum size (CSS Flexbox 1 §4.5) is the only thing
+        // deciding the answer: the item keeps its 12 and overflows the 8 it
+        // was offered.
+        //
+        // This is the arrangement that made a real paragraph collapse to its
+        // ellipsis -- the item shrank correctly to a minimum that was itself
+        // wrong. A mock reporting zero here would call that behaviour right.
+        let (mut scene, page) = scene_with_page(8.0, 60.0);
+        let leaf = scene
+            .push(page, Node::container())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        scene
+            .get_mut(page)
+            .unwrap_or_else(|| unreachable!("the page root was just created"))
+            .layout
+            .align_items = Some(Align::FlexStart);
+
+        let result = solve(
+            &scene,
+            page,
+            &mut Wrapping {
+                natural: 50.0,
+                min: 12.0,
+                height: 10.0,
+            },
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        let rect = result
+            .get(leaf)
+            .unwrap_or_else(|| unreachable!("the leaf is laid out"));
+
+        assert_eq!(rect.size, Size::new(12.0, 10.0));
     }
 
     #[test]

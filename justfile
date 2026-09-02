@@ -353,8 +353,10 @@ conformance: ensure-deps
     node packages/meo-canvas/tools/conformance/borders.mjs
     node packages/meo-canvas/tools/conformance/dotted.mjs
     node packages/meo-canvas/tools/conformance/blend.mjs
+    node packages/meo-canvas/tools/conformance/boxshadow.mjs
     node packages/meo-canvas/tools/conformance/objectfit.mjs
     node packages/meo-canvas/tools/conformance/grid.mjs
+    node packages/meo-canvas/tools/conformance/mincontent.mjs
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps

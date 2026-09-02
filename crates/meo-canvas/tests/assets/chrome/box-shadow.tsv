@@ -1,0 +1,37 @@
+# Chrome, through `just conformance`. Where an outer box-shadow may land.
+#
+# Cell 80x80 of #b01020, carrying a 40x40 box at
+# 20,20. Backgrounds: translucent rgba(0, 0, 0, 0.5),
+# opaque rgb(108, 15, 19) -- the colour the translucent one composites to over
+# the page, so the two agree wherever nothing is wrong.
+# Shadow: 0 1px 2px rgba(0, 0, 0, 0.5), and the same again with `inset`.
+#
+# CSS Backgrounds and Borders 3 §7.1.1: an outer shadow is drawn outside the
+# border edge ONLY. The border box is clipped out of it, so the two `inside`
+# probes read the same with the shadow as without it -- on the TRANSLUCENT
+# background as well, which is the row that discriminates. Painting the shadow
+# beneath the box instead gives the translucent case a second coat of the
+# shadow colour: `1 - (1-0.5)^2 = 0.75` rather than 0.5.
+#
+# The opaque rows pin nothing about the clip and are here to say so: both
+# implementations agree under a background that hides whatever is beneath it.
+#
+# `below` is outside the box, in the outer shadow ink. It is what separates a
+# shadow that is correctly clipped from one that is not drawn at all.
+#
+# background	shadow	point	x	y	r	g	b
+translucent	none	inside	40	40	88	8	16
+translucent	none	inside top	40	22	88	8	16
+translucent	none	below	40	62	176	16	32
+translucent	outer	inside	40	40	88	8	16
+translucent	outer	inside top	40	22	88	8	16
+translucent	outer	below	40	62	169	15	30
+translucent	inset	inside	40	40	88	8	16
+translucent	inset	inside top	40	22	85	7	15
+translucent	inset	below	40	62	176	16	32
+opaque	none	inside	40	40	108	15	19
+opaque	none	inside top	40	22	108	15	19
+opaque	none	below	40	62	176	16	32
+opaque	outer	inside	40	40	108	15	19
+opaque	outer	inside top	40	22	108	15	19
+opaque	outer	below	40	62	169	15	30
