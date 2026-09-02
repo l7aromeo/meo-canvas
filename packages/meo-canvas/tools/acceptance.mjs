@@ -30,8 +30,16 @@
 //   answered    the probe ran and the binary either loaded or did not
 //   softened    the probe ran on a host that is not the host we meant to test
 //   unasked     the question could not be put at all
+//   ambiguous   it was asked, and the answer could not be read
 //
-// Only `answered` rows can fail the run. A `softened` row is not a pass.
+// A `softened` row is not a pass. `ambiguous` fails the run without claiming
+// which side is at fault, and it exists because the alternatives are both
+// wrong: output that cannot be parsed was read as a binary that does not load,
+// which is the miscategorisation this whole file guards against -- the escaping
+// fault that produced six unreadable rows would have printed "6 images cannot
+// load this binary" about a binary with nothing wrong with it. Reading it as
+// machinery instead would be the opposite error, since a segfault inside
+// `dlopen` also prints nothing. It is genuinely both, so it says so.
 
 import { execFile } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
@@ -225,7 +233,7 @@ export function classify(out) {
       ? { status: 'FAILS', detail: 'loaded but registered no exports' }
       : verdict.startsWith('FAILS')
         ? { status: 'FAILS', detail: verdict.slice(6) }
-        : { status: 'UNREADABLE', detail: lines[lines.length - 1] || 'no output at all' }
+        : { kind: 'ambiguous', status: 'UNREADABLE', detail: lines[lines.length - 1] || 'no output at all' }
 
   if (found !== '') {
     // Either the image ships them or the install pulled them in. The
@@ -253,12 +261,15 @@ export function decide(rows) {
   const answered = rows.filter(row => row.kind === 'answered')
   const broken = answered.filter(row => !row.loaded)
   const unasked = rows.filter(row => row.kind === 'unasked')
+  const ambiguous = rows.filter(row => row.kind === 'ambiguous')
   const control = rows.find(row => row.control)
 
   if (answered.length === 0) return { ok: false, why: 'no image could be asked the question; this is a broken harness, not a passing binary' }
   if (control !== undefined && control.loaded !== true)
     return { ok: false, why: `the control ${control.image} did not load it, so every other row is uninformative` }
   if (broken.length > 0) return { ok: false, why: `${broken.length} image(s) cannot load this binary`, broken }
+  if (ambiguous.length > 0)
+    return { ok: false, why: `${ambiguous.length} image(s) answered something this could not read; that is not a verdict either way`, ambiguous }
   if (unasked.length > 0) return { ok: false, why: `${unasked.length} image(s) could not be asked`, unasked }
   return { ok: true, why: `${answered.length} image(s) load it with no font packages installed` }
 }
@@ -397,7 +408,7 @@ async function inPlace(addon) {
     if (verdict.startsWith('LOADS')) return { kind: 'answered', status: 'LOADS', detail: `${verdict.split(' ')[1]} exports on ${where}`, loaded: true }
     if (verdict === 'REGISTERED_NOTHING') return { kind: 'answered', status: 'FAILS', detail: `loaded but registered no exports on ${where}`, loaded: false }
     if (verdict.startsWith('FAILS')) return { kind: 'answered', status: 'FAILS', detail: `${verdict.slice(6)} — on ${where}`, loaded: false }
-    return { kind: 'answered', status: 'UNREADABLE', detail: `${verdict || 'no output at all'} — on ${where}`, loaded: false }
+    return { kind: 'ambiguous', status: 'UNREADABLE', detail: `${verdict || 'no output at all'} — on ${where}`, loaded: false }
   } catch (error) {
     // The probe could not be started at all, which is this harness failing to
     // ask rather than the binary failing to load.

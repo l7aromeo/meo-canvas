@@ -10,14 +10,16 @@
 /** What one row of a run turned out to be. */
 export interface Row {
   /**
-   * Which of the three kinds of answer this is.
+   * Which of the four kinds of answer this is.
    *
-   * `answered` is the only kind that can fail a run. `softened` means the probe
-   * ran somewhere that is not the host we meant to test -- a machine that has
-   * the font libraries says nothing about one that does not -- and `unasked`
-   * means the question could not be put at all.
+   * `softened` means the probe ran somewhere that is not the host we meant to
+   * test -- a machine that has the font libraries says nothing about one that
+   * does not -- and `unasked` means the question could not be put at all.
+   * `ambiguous` is asked-and-unreadable: it fails a run without claiming which
+   * side is at fault, because output that cannot be parsed is equally a
+   * mangled probe and a segfault inside `dlopen`.
    */
-  readonly kind: 'answered' | 'softened' | 'unasked'
+  readonly kind: 'answered' | 'softened' | 'unasked' | 'ambiguous'
   readonly status?: string
   readonly detail?: string
   /** Whether the binary loaded. Absent where the probe never ran. */

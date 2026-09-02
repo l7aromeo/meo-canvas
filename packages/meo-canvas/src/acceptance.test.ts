@@ -45,10 +45,21 @@ describe('reading one container', () => {
     expect(classify('NO_NODE')).toMatchObject({ kind: 'unasked', status: 'NO_NODE' })
   })
 
-  it('treats output it cannot parse as unreadable rather than as a pass', () => {
+  it('treats output it cannot parse as ambiguous, not as a binary that failed', () => {
     // The shape that produced six false failures once: the probe was mangled
-    // and every row came back like this. It must never read as `loaded`.
-    expect(classify('PRESENT \nsh: syntax error near unexpected token')).toMatchObject({ status: 'UNREADABLE', loaded: false })
+    // and every row came back like this. It must never read as `loaded` — and
+    // it must not read as `answered` either, which would report a harness
+    // fault as "this image cannot load the binary". A segfault inside `dlopen`
+    // also prints nothing, so neither side owns this outcome.
+    expect(classify('PRESENT \nsh: syntax error near unexpected token')).toMatchObject({
+      kind: 'ambiguous',
+      status: 'UNREADABLE',
+      loaded: false,
+    })
+  })
+
+  it('treats no output at all the same way', () => {
+    expect(classify('')).toMatchObject({ kind: 'ambiguous', status: 'UNREADABLE' })
   })
 })
 
@@ -85,6 +96,17 @@ describe('the verdict over a run', () => {
     // and every other row's failure says nothing beyond that.
     const dead: Row = { kind: 'softened', loaded: false, control: true, image: 'node:22' }
     expect(decide([dead, answeredFail]).why).toContain('uninformative')
+  })
+
+  it('fails an unreadable row without calling it a binary failure', () => {
+    // Both halves matter. It must fail the run — an answer nobody could read
+    // is not a pass — and the reason must not claim the binary is at fault,
+    // because that is the sentence a reader acts on.
+    const unreadable: Row = { kind: 'ambiguous', image: 'rockylinux:9', loaded: false }
+    const verdict = decide([control, answeredPass, unreadable])
+    expect(verdict.ok).toBe(false)
+    expect(verdict.why).not.toMatch(/cannot load this binary/)
+    expect(verdict.why).toMatch(/could not read/)
   })
 
   it('does not pass a run that left an image unasked', () => {
