@@ -1,9 +1,21 @@
 name: ci
 
+# `v10` is here and not only `main`, and the omission was not cosmetic: v10 is
+# developed on its own branch because `main` on this remote is v1's, so for the
+# life of that branch **this gate could not run at all** -- not "had not", could
+# not. Every host-dependent defect was structurally invisible, and one shipped:
+# `target()` returned `linux-x64-glibc` where every key spells `gnu`, which no
+# test on a darwin machine can reach and which broke the primary Linux target
+# outright.
+#
+# `workflow_dispatch` so it can be asked for without a push, which is what you
+# want when the question is "does this pass on Linux" rather than "did my commit
+# break something".
 on:
   push:
-    branches: [main]
+    branches: [main, v10]
   pull_request:
+  workflow_dispatch:
 
 # A push onto a branch with a run already going cancels that run: the older
 # result describes code nobody has any more.
