@@ -1,0 +1,188 @@
+name: crates-io
+
+# A dry run and a real publish look identical in the Actions list unless the run
+# says which it is.
+run-name: >-
+  ${{ inputs.dry_run && 'crates.io — DRY RUN (nothing is published)' || 'crates.io — publish' }}
+
+# Manual only, for the same reason `release.yml` is: a push is how code arrives,
+# and publishing is a decision about code that already arrived. `just
+# release-crate` is what a person runs; this is what it triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Package and verify every crate, but publish nothing"
+        type: boolean
+        default: true
+
+# `contents: write` is what lets the job tag the commit it published. crates.io
+# has no provenance attestation to mint, so unlike the npm workflow there is no
+# `id-token: write` here -- see the note on authentication below.
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, because the release notes below are `git log`
+          # over the range since the last tag and a shallow clone has neither
+          # the tags nor the commits.
+          fetch-depth: 0
+
+      # The same block-scalar read `release.yml` uses, and for the same reason:
+      # written on one line this needs `cut -d'\"'`, where YAML keeps the
+      # backslash literal and the step succeeds while writing nothing.
+      - name: Read the pinned toolchain
+        id: toolchain
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
+          test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "toolchain $channel"
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: crates-io
+
+      # `cargo publish` does not merely upload a tarball: it unpacks each one
+      # into `target/package/` and **builds it**. Three of the four crates reach
+      # `meo-skia-canvas`, so this job compiles the same native chain the addon
+      # build does and needs the same system libraries present.
+      #
+      # `cmake` and `nasm` are libaom's, for the reason `release.yml` states at
+      # its own copy of this step. `libfontconfig1-dev` and `libfreetype6-dev`
+      # are Skia's: the Linux addon build fails at link with
+      # `unable to find library -lfreetype` and `-lfontconfig` without them.
+      - name: Install what the verification build needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            cmake nasm libfontconfig1-dev libfreetype6-dev
+
+      # **The rehearsal always runs, including on a real publish.**
+      #
+      # `--workspace` is what makes this safe, and it is not the same thing as
+      # four `cargo publish` calls in a loop. Cargo packages and verifies EVERY
+      # member before it uploads ANY of them, resolving each crate's internal
+      # dependencies against a temporary registry it builds from the packaged
+      # tarballs (`target/package/tmp-registry`) rather than against the paths
+      # in the working tree. Two things follow:
+      #
+      # 1. It computes the dependency order itself -- scene, core, canvas, cli
+      #    -- so the order is not written down here to drift.
+      # 2. A crate that fails to build fails before the first upload. That is
+      #    the failure this whole file is shaped around: crates.io has no
+      #    unpublish, only yank, and a yanked version still resolves for
+      #    existing lockfiles, so a half-published version can never be
+      #    reissued.
+      #
+      # A loop of per-crate publishes cannot do either. It also cannot be
+      # rehearsed at all before the first release: `cargo publish --dry-run -p
+      # meo-canvas-core` fails with `no matching package named
+      # meo-canvas-scene found` on a workspace where nothing is on the registry
+      # yet, because per-crate verification resolves internal dependencies
+      # through crates.io. `--workspace` is the only spelling that can be
+      # practised before it is used.
+      - name: Package and verify every crate
+        run: cargo publish --workspace --dry-run
+
+      # `meo-canvas-node` is absent from both this step and the one above
+      # without being named: it carries `publish = false`, so `--workspace`
+      # skips it. Excluding it here as well would be a second place to keep in
+      # step with the manifest.
+      - name: Publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          # crates.io has no OIDC path for a crate that does not exist yet --
+          # Trusted Publishing is configured per crate, on a crate already
+          # published -- so the first release needs a token. Once all four
+          # exist, this can become `rust-lang/crates-io-auth-action` and the
+          # secret can be deleted, which is the arrangement the npm job already
+          # has and the one this repository prefers.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          test -n "${CARGO_REGISTRY_TOKEN}" || {
+            echo "::error::CARGO_REGISTRY_TOKEN is not set; nothing was published"
+            exit 1
+          }
+          cargo publish --workspace
+
+      # Tag AFTER the registry has accepted everything, never before. A tag
+      # pushed first and a publish that then fails leaves a tag with no release
+      # under it and a version that can never be reissued -- `meo-skia-canvas`
+      # has that scar. Tagging last means a failed publish leaves the tree
+      # exactly as it was.
+      #
+      # **The prefix is `crates-v`, not `v`.** `release.yml` owns `v*` for the
+      # npm lineage and derives its release notes from
+      # `git describe --tags --match 'v*'`. A crates tag named `v0.1.0` would
+      # match that pattern, become the "previous tag" for the next npm release,
+      # and silently truncate its notes to the commits since a tag from the
+      # other lineage. The two version lines are independent -- npm continues
+      # v1 at 10.x, the crates start fresh at 0.1.0 -- so their tags have to be
+      # too.
+      - name: Tag the commit and open a release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # `jq` rather than `node`: this job never sets Node up, and a step
+          # that happens to work because the runner image ships one is a step
+          # that breaks when the image changes. The four crates share a version
+          # through `version.workspace`, so any one of them answers for all.
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "meo-canvas") | .version')
+          test -n "$version" || { echo "::error::could not read the crate version"; exit 1; }
+          git_tag="crates-v${version}"
+
+          # The commit subjects since the last crates tag, verbatim, on the
+          # same reasoning `release.yml` gives: the subjects here are already
+          # written as one-line summaries, so a conventional-commit parser
+          # would drop most of the history rather than organise it.
+          previous=$(git describe --tags --abbrev=0 --match 'crates-v*' 2>/dev/null || true)
+          if [ -n "$previous" ]; then
+            range="${previous}..HEAD"
+            echo "notes cover ${range}"
+          else
+            range="HEAD"
+            echo "no previous crates tag; notes cover the whole history"
+          fi
+
+          {
+            echo "\`cargo add meo-canvas@${version}\`"
+            echo ""
+            echo "Published: \`meo-canvas-scene\`, \`meo-canvas-core\`, \`meo-canvas\`, \`meo-canvas-cli\`, all at ${version}."
+            echo ""
+            echo "## Changes"
+            echo ""
+            git log --no-merges --format='- %s' "${range}"
+          } > notes.md
+
+          git tag -a "${git_tag}" -m "crates ${version}"
+          git push origin "${git_tag}"
+
+          # `--prerelease` on the same rule cargo uses to decide a version is a
+          # prerelease: a hyphen in the version string.
+          case "${version}" in
+            *-*) prerelease=--prerelease ;;
+            *)   prerelease= ;;
+          esac
+          # shellcheck disable=SC2086
+          gh release create "${git_tag}" \
+            --title "crates ${version}" \
+            --notes-file notes.md \
+            ${prerelease}

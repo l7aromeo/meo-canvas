@@ -394,6 +394,80 @@ _release_npm dry:
     echo "==> https://github.com/{{ release_repo }}/actions/runs/${run}"
     gh run watch "${run}" -R "{{ release_repo }}" --exit-status --interval 20
 
+# Rehearse a crates.io release without publishing anything.
+#
+# Runs the whole workflow -- the toolchain, the system libraries the
+# verification build needs, and `cargo publish --workspace --dry-run` -- and
+# stops short of the registry. Worth running after any change to the workflow
+# for the reason the npm rehearsal exists: the workflow is the only thing that
+# reads its own YAML, and the first run of `release.yml` failed on a quoting
+# mistake no local check could see.
+[doc("Rehearse a crates.io release. Packages and verifies; publishes nothing.")]
+release-crate-dry: (_release_crate "true")
+
+# Publish the four crates to crates.io.
+#
+# `meo-canvas-scene`, `meo-canvas-core`, `meo-canvas` and `meo-canvas-cli`, in
+# the order cargo derives from the dependency graph. `meo-canvas-node` carries
+# `publish = false` and is skipped without being named.
+#
+# **This is the irreversible one.** crates.io has no unpublish: a version can be
+# yanked, but a yank still resolves for any lockfile that already names it, so a
+# version number is spent the moment it is accepted. The recipe prints what it
+# is about to do and the workflow verifies every crate before it uploads any.
+[doc("Publish every publishable crate to crates.io. Not reversible.")]
+release-crate: (_release_crate "false")
+
+# The body both spellings share.
+#
+# The same four guards as `_release_npm`, deliberately: a release is cut from a
+# commit that the remote has, on the release branch, from a clean tree. The
+# version is read from cargo's own metadata rather than from a manifest by hand,
+# because the four crates inherit `version.workspace` and the workspace root is
+# a virtual manifest with no package of its own to read.
+[private]
+_release_crate dry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo "error: the working tree is not clean; a release is cut from a commit" >&2
+        exit 1
+    fi
+
+    branch=$(git branch --show-current)
+    if [[ "${branch}" != "{{ release_branch }}" ]]; then
+        echo "error: on branch ${branch}, and a release is cut from {{ release_branch }}" >&2
+        exit 1
+    fi
+
+    # An unpushed commit means the workflow would build a tree nobody can see,
+    # and the version it publishes would not be the version in this checkout.
+    if [[ -n "$(git log --oneline "origin/{{ release_branch }}..HEAD" 2>/dev/null)" ]]; then
+        echo "error: unpushed commits; the workflow builds what the remote has" >&2
+        git --no-pager log --oneline "origin/{{ release_branch }}..HEAD" >&2
+        exit 1
+    fi
+
+    version=$(cargo metadata --format-version 1 --no-deps --manifest-path crates/meo-canvas/Cargo.toml         | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).packages.find(p => p.name === 'meo-canvas').version")
+
+    if [[ "{{ dry }}" == "true" ]]; then
+        echo "==> rehearsing ${version}; nothing is published"
+    else
+        echo "==> publishing ${version} to crates.io"
+        echo "    meo-canvas-scene, meo-canvas-core, meo-canvas, meo-canvas-cli"
+        # Said out loud because it is the one difference from npm that matters:
+        # npm lets a version be unpublished within 72 hours, crates.io never
+        # does. A wrong number here is spent permanently.
+        echo "    crates.io has no unpublish; this version number is spent either way"
+    fi
+
+    gh workflow run crates-io.yml -R "{{ release_repo }}" --ref "{{ release_branch }}" -f dry_run={{ dry }}
+    sleep 10
+    run=$(gh run list -R "{{ release_repo }}" --workflow=crates-io.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+    echo "==> https://github.com/{{ release_repo }}/actions/runs/${run}"
+    gh run watch "${run}" -R "{{ release_repo }}" --exit-status --interval 20
+
 # The consumer projects: typecheck them against the built package, run every
 # example in both, and compare every file the two of them wrote.
 #
