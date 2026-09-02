@@ -105,6 +105,13 @@
 # -- CI ---------------------------------------------------------------------
 !/.github/workflows/*.yml
 
+# The build images the Linux addons are compiled in. Named by extension rather
+# than by filename because there is one per libc family and the second arrives
+# with musl -- a per-file allow would have to be edited to add a target, which
+# is the cost this repository is trying not to pay.
+!/containers/Dockerfile.*
+!/containers/*.sh
+
 # -- Build output and local configuration -----------------------------------
 # Re-ignored after the allows so git prunes them instead of walking every entry
 # to discover each one is ignored. `!*/` above otherwise makes it descend into

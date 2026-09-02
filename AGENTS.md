@@ -962,6 +962,59 @@ break was recorded as reaching "no consumer" because nothing is published --
 surface**, which its own manifest says. The repository had arranged to catch the
 mistake and the claim talked past the arrangement.
 
+**With no agreeing rows, the instrument is the suspect -- and a control you
+already know the answer for is what tells you.** The conformance harness has
+said this since it was written: _the rows that agree are what make the rows that
+disagree trustworthy_, and a suite that is uniformly wrong looks exactly like a
+renderer with one defect per row. It arrived from a new direction while a
+Linux acceptance harness was being written, and the direction is worth having.
+
+That harness loads the built `.node` on six images and reports which can run it.
+Its first version put the loader in `node -e` with the script escaped into the
+shell command. **Every row came back unreadable -- including `node:22`, which
+was known to load.** The escaping mangled the script, node died on a syntax
+error, and the harness reported six failures for a binary that had one. Nothing
+in the output distinguished that from a binary that runs nowhere.
+
+The only thing that separated them was a row whose answer was already known. So
+`node:22` stays in the list permanently, labelled as the control: it ships
+fontconfig, so it proves nothing about portability and it is not part of the
+pass criterion -- **its entire job is to fail when the harness is broken rather
+than when the binary is.** A harness with no such row can report a catastrophe
+and a typo identically.
+
+The same run taught the second half. Once the control was reading correctly it
+showed that `node:22` had been a _soft pass_ all along in an earlier table: it
+loads because that image happens to carry the libraries whose absence is the
+whole question. A row can be green, honest, and still prove nothing -- which is
+why the harness now checks the libraries are genuinely absent before it trusts
+a load, and reports `SOFTENED` rather than a pass when they are not.
+
+**A check that reads a proxy for the property can be confidently wrong about
+which thing is broken.** The same lesson one layer down, and it cost an hour of
+build time.
+
+Three static archives had to be position-independent, because the addon they go
+into is a shared object. The check written for it counted `R_X86_64_32`
+relocations with `readelf` — a reasonable-looking proxy, since that relocation
+is exactly what makes an archive unusable in a shared object. **It reported the
+two good archives as broken and the broken one as clean.** meson builds with
+debug info by default and `.rela.debug_*` is full of absolute 32-bit
+relocations that are perfectly legal in a shared object, so the archive with
+20931 of them was fine and the two with far fewer were the ones the linker
+would refuse.
+
+It was caught only because it disagreed with a real link error that named a
+different library. Nothing about the check itself looked wrong.
+
+The replacement asks the linker: `ld -shared --unresolved-symbols=ignore-all
+--whole-archive`. If `ld` accepts the archive it can go in the addon, which is
+the only property anyone wanted to know. **This is the ceiling-versus-gate rule
+at a different layer** — the relocation count was ceiling-shaped, and it failed
+the way ceilings fail: quietly, confidently, and about the wrong thing. Where
+something will later be decided by a tool, ask that tool now rather than
+reading a number that correlates with its answer.
+
 **A boundary that names its own internals when a caller makes a mistake teaches
 nothing.** Writing `ellipsis: true` from plain JavaScript throws `side value 2 is
 neither a string nor a Buffer`. That message names a slot index in the arena's
