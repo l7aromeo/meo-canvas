@@ -1930,6 +1930,20 @@ would make this check pass while the thing it tests is broken"** -- and if the
 answer is anything the check does to its own environment, that step needs an
 assertion of its own.
 
+**A test that passes either side of the behaviour it covers is not covering
+it.** Twelve tests survived a change to how _every_ unreadable row in the
+acceptance harness is reported — because they asserted the row's `status` and
+never its `kind`, and the kind is the thing that decides what the reader is
+told. `UNREADABLE` moved from "this image cannot load the binary" to "this is
+not a verdict either way", and the suite could not tell the difference. The
+check for this costs one run: **change the behaviour deliberately and confirm
+the test fails.** If it does not, the test is describing something adjacent to
+what you meant.
+
+It is the same shape as the `flex-alignment` rows that agreed under both rules
+and the box-shadow fixture whose spacer children could not discriminate: in each
+the assertion was true, stayed true, and was true of the wrong thing.
+
 ### What only a second implementation can see
 
 The chart port has three checks and they answer three questions. A geometry

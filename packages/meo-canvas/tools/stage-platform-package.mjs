@@ -39,7 +39,13 @@ export const TARGETS = {
     libc: ['glibc'],
     rust: 'x86_64-unknown-linux-gnu',
     runner: 'ubuntu-latest',
-    floors: { glibc: '2.35', glibcxx: '3.4.30' },
+    // Measured on the artefact the `manylinux_2_28` image produces, which is
+    // what these have to track. They were `2.35`/`3.4.30` from the
+    // `ubuntu-latest` build and stayed there after the container landed: a
+    // floor declared *above* what the artefact demands fails nothing, it
+    // under-promises quietly and tells a consumer to expect a newer machine
+    // than they need.
+    floors: { glibc: '2.28', glibcxx: '3.4.21' },
   },
   'linux-arm64-gnu': {
     os: ['linux'],
@@ -55,7 +61,7 @@ export const TARGETS = {
     // this. If the arm64 artefact's real floors are higher, the release's
     // assertion fails and names the symbol, which is the correction arriving
     // through the mechanism built for it.
-    floors: { glibc: '2.35', glibcxx: '3.4.30' },
+    floors: { glibc: '2.28', glibcxx: '3.4.21' },
   },
   // The musl pair carry no `floors`, and the reason differs from win32's. A
   // musl binary links no glibc at all, so a glibc floor is not merely unknown
