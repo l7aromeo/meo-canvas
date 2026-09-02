@@ -15,13 +15,13 @@ Layout, text shaping, painting and encoding all happen in Rust. The Node surface
 
 - **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps and absolute positioning.
 - **Text** — shaped by Skia and broken into lines here, with per-span styling, letter and word spacing, decorations, line clamping and ellipsis.
-- **Images** — from a file or a buffer, with object-fit and object-position placement. The Node surface and the CLI resolve a URL to bytes before rendering; the renderer itself performs no network I/O.
+- **Images** — from a file or a buffer, with object-fit and object-position placement. A URL is resolved to bytes by the Node surface before rendering, and by the Rust crate or the CLI only when built with the optional `net` feature; without it a URL is an error and no HTTP stack is linked.
 - **Paths** — arbitrary shapes from SVG path data, filled and stroked, with an optional `viewBox` so a path scales to the box that holds it.
 - **Charts** — bar, line, pie and doughnut.
 - **Effects** — gradients, masks, shadows, opacity groups, blend modes and CSS filters.
 - **Export** — PNG, JPEG, WebP, AVIF, TIFF, BMP, ICO, SVG, PDF, GIF, APNG and raw pixels.
 
-Multi-page renders produce frames for GIF and APNG, sheets for PDF and TIFF, and sizes for ICO.
+Multi-page renders produce frames for GIF, APNG, WebP and AVIF, sheets for PDF and TIFF, and sizes for ICO — and ICO is the only one whose pages may differ in size.
 
 ## What it computes
 

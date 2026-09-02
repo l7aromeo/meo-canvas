@@ -22,10 +22,19 @@ This section holds usage examples. It is empty while the API they would show is 
 
 ## What runs in JavaScript
 
-The animation helpers, and only those: easings, springs, interpolation and
-colour. They compute values rather than drawing them, and the value goes into a
-scene like any other number. **The colour parser is the renderer's own**, reached
-through the addon, so a string that renders is a string that animates.
+Two things, and both compute rather than draw.
+
+**The animation helpers**: easings, springs, interpolation and colour. The value
+they produce goes into a scene like any other number. **The colour parser is the
+renderer's own**, reached through the addon, so a string that renders is a
+string that animates.
+
+**`Chart`**, which turns data into boxes and paths — bar widths, slice angles,
+gridline positions, the line series' own path data. It emits a scene node and
+nothing else; the layout and the drawing of what it emits happen in Rust like
+everything else. The Rust crate has its own chart rather than a call into this
+one, and the two are checked against each other by encoding the same chart and
+comparing bytes.
 
 ## Types
 

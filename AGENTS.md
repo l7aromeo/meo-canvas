@@ -111,38 +111,31 @@ format in already knows it.
 One pass, no re-entry into caller code.
 
 **resolve** registers fonts, decodes images, and inherits text styles down the
-tree. This is the only stage that performs I/O, and the I/O is local: an
-`ImageSource::Url` is refused with `Error::UnresolvedSource`, because the core
-performs no network access. Resolving a URL to bytes is the job of whichever
-surface has a fetcher.
+tree. This is the only stage that performs I/O, and **whether that I/O leaves
+the machine is a build-time decision**: without the `net` feature -- the default
+-- an `ImageSource::Url` is refused with `Error::UnresolvedSource` and no HTTP
+stack is linked, and a surface with a fetcher resolves the URL to bytes before
+handing the scene over. With `net` on, the core fetches it through a blocking
+client. The rule that does not bend either way is the runtime: `ureq` brings
+none.
 
-**measure** builds one Skia `Paragraph` per text node, which the next stage
-re-lays-out at different widths. Re-layout reuses run parsing, font resolution
-and glyph shaping — see `meo-skia-canvas/src/text.rs:1409-1419` — so the work a
-rebuild would repeat happens once per text node. How much that saves against
-rebuilding is unmeasured; a criterion bench belongs here before the claim
-becomes a number.
+**measure** shapes each text node and breaks it into lines, in `crate::lines`.
+Skia's `Paragraph` is not on this path: `measure.rs`'s `build_paragraph` is
+`#[cfg(test)]` and exists for the comparison report those tests run. Breaking
+lines here is what makes the text behave like a browser's, since a canvas has no
+paragraph -- see "The behavioural target".
 
-**layout** solves the tree with taffy. Text leaves answer taffy's measure
-closure from their prepared paragraph. `AvailableSpace::MinContent` and
-`MaxContent` are answered by `min_intrinsic_width()` and `max_intrinsic_width()`
-without an additional layout — a `Paragraph` exists only post-layout, since
-`ParagraphBuilder::build` lays it out at construction.
+**layout** solves the tree with taffy, and text leaves answer its measure
+closure by laying out at the offered width. The two intrinsic questions are the
+same call with a different budget: `MinContent` lays out at zero and `MaxContent`
+at infinity (`measure.rs:399-400`), so neither needs an API of its own.
 
-Baseline alignment on measured text is wrong today, and wrong in a way that
-looks nearly right. The measurer reports a baseline — `MeasuredLeaf` carries one
-— but taffy's high-level tree has nowhere to receive it: a measure-function leaf
-reports `first_baselines: Point::NONE` (`taffy-0.13.0/src/compute/leaf.rs:102`)
-and the flexbox solver reads a missing baseline as the node's own height
-(`src/compute/flexbox.rs:1522`). A row of text aligned `baseline` therefore
-lines up on the bottom edges of its runs, which differs from true baseline
-alignment by the descender depth, so two runs at different sizes sit subtly
-wrong rather than obviously so. In a column direction taffy does not attempt
-baseline alignment at all.
-
-Correcting it means either the low-level `LayoutPartialTree` API, where a caller
-constructs the `LayoutOutput` and its `Baselines` itself, or a post-pass that
-shifts baseline-aligned children using the baselines already measured.
+A measured leaf reports its baseline in the `LayoutOutput` it builds, offset by
+its own top padding and border, because CSS measures a flex item's baseline from
+its border box. taffy reads a _missing_ baseline as the node's own height
+(`taffy-0.14.0/src/compute/flexbox.rs:1921`), which is what a row of text would
+degenerate to without this. **In a column direction taffy does not attempt
+baseline alignment at all**, and neither does its grid.
 
 **paint** walks the solved tree in z-order and draws through
 `meo-skia-canvas`'s `Context2D`. No drawing call crosses a language boundary:
@@ -2198,39 +2191,60 @@ _A missing asset must not be readable as a layout defect._
 
 ## Before publishing
 
-This document and the three README files describe the design. Some of what they say is true of
-the architecture and not yet of any code, which is fine while nothing is
-published and false the moment something is.
+This document and the seven README files describe the design, and a sentence
+true of the architecture but not of the code is fine while nothing is published
+and false the moment something is.
 
-Re-read every capability claim against what runs, and cut or qualify whatever
-does not hold. The sentences that need checking are the ones asserting where
-work happens, what formats encode, and what a surface accepts — "layout, text
-shaping, painting and encoding all happen in Rust" is the shape of the problem.
+**Every capability claim has been read against what runs**, and the sentences
+that were wrong were the ones the rule predicts: where work happens, what
+formats encode, and what a surface accepts.
 
-AGENTS.md is the likeliest of them to be ahead of the code, because being ahead
-is what it is for: a section describing something unbuilt says so at its top,
-and that marker comes off in the change that builds it.
+What that pass found, kept here because each is a shape rather than an incident:
 
-The same applies to `repository` in the workspace manifest, which names a remote
-that has to exist before `cargo publish` will accept it.
+- **A claim outlived the constraint that made it true.** "The core performs no
+  network access" was written before the `net` feature and survived it in three
+  places, including the dependency table, which credited the feature to the CLI
+  alone.
+- **A claim outlived the code it described.** The pipeline said measure builds a
+  Skia `Paragraph` per text node and that layout answers the intrinsic widths
+  from `min_intrinsic_width()`. That path is `#[cfg(test)]` now; lines are
+  broken in `crate::lines` and the intrinsic questions are the same call at a
+  budget of zero and of infinity.
+- **A document contradicted itself across two sections.** One said baseline
+  alignment on measured text was wrong and unfixable through `TaffyTree`; the
+  other said it was carried. Fixing a defect means finding every sentence about
+  it, and prose has no compiler to say where they are.
+- **A list was right about its members and wrong about its bounds.** "Frames for
+  GIF and APNG" omitted WebP and AVIF, which animate too and say so in
+  `ImageFormat`'s own documentation.
+- **An exclusive claim was made against the wrong axis.** The npm README said
+  the animation helpers were the only JavaScript that runs. `Chart` runs too --
+  it computes bar widths, slice angles and path data. It does not _draw_, which
+  is the axis the sentence beside it defends, and that is what made the wrong
+  one read as safe.
+- **A runnable line was never run.** The CLI README's example named `scene.mcsc`
+  where every scene in the repository is `.mcs`.
+
+**The repository the workspace manifest names exists**, and this clone has no
+remote pointing at it. A push has to add one deliberately.
 
 ## Dependencies
 
 Every dependency is on its latest stable release.
 
-|                   |      |                                                             |
-| ----------------- | ---- | ----------------------------------------------------------- |
-| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`.   |
-| `taffy`           | 0.13 | Flexbox, CSS grid, block layout. Without `calc`.            |
-| `neon`            | 1.1  | Node addon.                                                 |
-| `clap`            | 4.6  | CLI.                                                        |
-| `thiserror`       | 2.0  | Error types.                                                |
-| `ureq`            | 3.4  | Remote images, behind the CLI's optional `net` feature.     |
-| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing. |
+|                   |      |                                                                                   |
+| ----------------- | ---- | --------------------------------------------------------------------------------- |
+| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`.                         |
+| `taffy`           | 0.13 | Flexbox, CSS grid, block layout. Without `calc`.                                  |
+| `neon`            | 1.1  | Node addon.                                                                       |
+| `clap`            | 4.6  | CLI.                                                                              |
+| `thiserror`       | 2.0  | Error types.                                                                      |
+| `ureq`            | 3.4  | Remote images, behind the optional `net` feature the core and the CLI each carry. |
+| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing.                       |
 
-The core performs no network I/O and requires no async runtime. It accepts bytes
-or a reader, so a Rust caller with no runtime and the CLI are served by the same
-code.
+The core requires no async runtime, and performs no network I/O unless built
+with `net`. It accepts bytes or a reader, so a Rust caller with no runtime and
+the CLI are served by the same code.
 
 `taffy::TaffyTree` is neither `Send` nor `Sync`: taffy represents every length
 as a tagged pointer, so `Style` itself holds a `*const ()`. No feature set
