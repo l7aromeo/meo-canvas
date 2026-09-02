@@ -35,14 +35,19 @@
 # at gcc-toolset's headers. Starting from manylinux the default compiler is
 # already GCC 14, so that entire chain is unnecessary here. Their reasoning was
 # right for their starting point and does not transfer.
-FROM quay.io/pypa/manylinux_2_28_x86_64
+# The base is an `ARG` so one file serves both architectures. The x86_64 and
+# aarch64 manylinux images are the same distribution at the same glibc, and
+# nothing in this layer is architecture-specific except the assembler below.
+ARG BASE=quay.io/pypa/manylinux_2_28_x86_64
+FROM ${BASE}
 
 # What the base does not carry.
 #
 # `nasm` is for libaom, which assembles its hot paths on x86 rather than
 # compiling them and raises a FATAL_ERROR when it can find neither nasm nor
-# yasm. **It is x86-only**: on aarch64 libaom uses NEON intrinsics and needs no
-# assembler at all.
+# yasm. **It is x86-only, measured rather than assumed**: `libaom-sys` builds
+# on aarch64 in this image with no assembler installed at all, because libaom
+# uses NEON intrinsics there and compiles them rather than assembling them.
 #
 # It is an `ARG` rather than a second Dockerfile, and that is the whole reason
 # it is one: adding a target should cost a row in `TARGETS` and nothing else,
@@ -93,7 +98,34 @@ RUN bash /opt/install-fontlibs.sh && rm -f /opt/install-fontlibs.sh
 # undefined references -- measured, `XML_GetCurrentLineNumber` first.
 ENV PKG_CONFIG_ALL_STATIC=1
 
-# libstdc++ absorbed rather than depended on, and **the linker is the trap**.
+# libstdc++ pinned to an old baseline, and **the linker is the trap**.
+#
+# # What `-static-libstdc++` does here, measured rather than assumed
+#
+# This comment said "absorbed rather than depended on", and the artefact says
+# otherwise: `NEEDED libstdc++.so.6`, and 53 C++ symbols resolved from it at
+# load. Both halves of that were worth measuring rather than softening.
+#
+# The flag is doing most of the work. **396 `std::` symbols are defined in the
+# binary's own `.text`** -- linked in from `libstdc++.a` rather than looked up.
+#
+# It cannot remove the dependency, because it is not the only thing on the link
+# line asking for libstdc++. `rust-skia` emits `cargo:rustc-link-lib=stdc++`
+# unconditionally -- its `link_libraries` opens with `vec!["stdc++"]`
+# (`build_support/platform/linux.rs:37`) -- so rustc puts `-lstdc++` in the
+# dynamic section regardless of what the compiler driver was told. The static
+# archive satisfies what it reaches first and the shared object answers the
+# rest.
+#
+# **What the flag buys is the version of the residue, and that is the whole
+# point.** What is left is old: the newest thing required is GLIBCXX_3.4.21,
+# which is GCC 5.1's C++11 string and stream ABI -- `std::__cxx11::
+# basic_stringstream`, `basic_stringbuf`, `getline`, `locale::name`. A GCC 14
+# link without this flag would demand far newer, and 3.4.21 sits under
+# AlmaLinux 8's own 3.4.25, which is the oldest platform this image targets.
+#
+# So: **static where it reaches, dynamic to a 2015 baseline.** Every image in
+# the acceptance table carries a libstdc++ newer than that.
 #
 # # `g++` here, where `meo-skia-canvas` uses `clang++`, and that is not a
 # # simplification of their design

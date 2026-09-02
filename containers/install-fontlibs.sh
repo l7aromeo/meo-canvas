@@ -49,10 +49,11 @@ export CFLAGS="${CFLAGS:-} -fPIC"
 # a library we did not know was carrying one.
 #
 # `lib64` because that is where EL puts 64-bit libraries and what the linker
-# and pkg-config search without being told. The musl sibling of this image is
-# Alpine, which uses `lib` for everything, so that value moves with the base.
+# and pkg-config search without being told. **Alpine uses `lib` for everything**,
+# so the musl sibling of this image passes `LIBDIR=lib` and the rest of this
+# script is shared between the two families unchanged.
 PREFIX=/usr
-LIBDIR=lib64
+LIBDIR="${LIBDIR:-lib64}"
 mkdir -p "$PREFIX" /opt/src
 cd /opt/src
 

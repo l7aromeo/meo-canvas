@@ -1,0 +1,100 @@
+# The image the musl Linux addons are built in.
+#
+# The sibling of `Dockerfile.glibc`, and **the reason it is a separate file is
+# not the font libraries** -- those are built by the same script, with one
+# variable changed. It is that almost everything around them differs: a
+# different package manager, a different libc, and an ABI story that does not
+# apply at all.
+#
+# # What does not carry over from the glibc image
+#
+# **There is no glibc floor here and there cannot be.** musl does not version
+# its symbols, so the ceiling apparatus in `check-abi-floor.mjs` has nothing to
+# compare and the musl targets carry no `floors` key in `TARGETS` -- absent
+# rather than null, because "no ELF floor exists for this libc" is a different
+# statement from "unchecked". The acceptance test is the whole of the evidence
+# for these targets, which makes it more load-bearing here than on glibc, not
+# less.
+#
+# **The base is Alpine, so `lib` rather than `lib64`.** `install-fontlibs.sh`
+# takes that as `LIBDIR` and is otherwise identical between the two families.
+#
+# `musllinux_1_2_x86_64` is PyPA's, the same reasoning as the glibc image:
+# Alpine 3.22 with gcc, g++ and a current cmake already present, maintained by
+# people shipping portable native binaries for a living.
+# Same reasoning as the glibc image: one file, both architectures.
+ARG BASE=quay.io/pypa/musllinux_1_2_x86_64
+FROM ${BASE}
+
+# apk rather than dnf, and the package names differ from EL's.
+#
+# `nasm` is x86-only for the same reason as in the glibc image, and the claim
+# was measured there: `libaom-sys` builds on aarch64 with no assembler present,
+# because libaom compiles NEON intrinsics rather than assembling them. Same
+# `ARG`, same reason -- adding a target should not fork this file.
+ARG ASSEMBLER=nasm
+RUN apk add --no-cache \
+      ${ASSEMBLER} gperf ninja-build meson bash curl tar xz \
+      linux-headers musl-dev python3 perl \
+      gn
+
+# **Skia's own build tools have to come from Alpine, not from skia-bindings.**
+#
+# `skia-bindings` downloads a prebuilt `gn` and falls back to a bundled one when
+# the download fails. Both are glibc x86_64 binaries, so on musl the download
+# 404s and the fallback cannot run at all:
+#
+#   DOWNLOAD AND INSTALL FAILED: curl error code: "22" ... 404
+#   rosetta error: failed to open elf at /lib64/ld-linux-x86-64.so.2
+#
+# The build then panics inside `config.rs:350` with an empty message, because
+# the assert prints gn's stdout and gn never started. **The failure names
+# neither gn nor musl** -- the only readable line is a missing glibc loader,
+# reached through a tool nobody asked to download.
+#
+# Alpine packages both, so they are installed above and skia-bindings is pointed
+# at them. `meo-skia-canvas` does the same, for the same reason.
+ENV GN_EXE=gn \
+    SKIA_GN_COMMAND=/usr/bin/gn \
+    SKIA_NINJA_COMMAND=/usr/bin/ninja
+
+# Identical to the glibc image apart from where Alpine puts libraries.
+#
+# The static font libraries matter more here rather than less: an Alpine image
+# is chosen for being small, so it is even less likely to carry fontconfig than
+# the slim Debian images that already did not.
+COPY install-fontlibs.sh /opt/install-fontlibs.sh
+RUN LIBDIR=lib bash /opt/install-fontlibs.sh && rm -f /opt/install-fontlibs.sh
+
+ENV PKG_CONFIG_ALL_STATIC=1
+
+# The same flag and the same trap as the glibc image: rustc links through `cc`,
+# which drops `-static-libstdc++` without a word, so the linker is pointed at
+# `g++` to make it a C++ link.
+#
+# What it buys differs. On glibc it pins the residue to an old GLIBCXX baseline
+# so the binary loads on RHEL 8. Here there is no such baseline to reach for --
+# Alpine has one libstdc++ and no version skew across releases -- so the value
+# is simply that less of it has to be present at runtime.
+# `-crt-static` is the musl-specific half, and without it there is no addon at
+# all. Rust's musl targets default to `crt-static`, which produces a
+# statically-linked *executable* and **cannot produce a `cdylib`**:
+#
+#   error: cannot produce cdylib for `meo-canvas-node` as the target
+#          `x86_64-unknown-linux-musl` does not support these crate types
+#
+# A Node addon is a shared object by definition, so the default is simply wrong
+# for this artefact. Turning it off makes musl behave like every other target
+# here: a dynamically linked `.so` against the system libc, which on Alpine is
+# musl and is present by construction.
+#
+# This is the clearest example of why musl is a second instance of this work
+# rather than a variant of the glibc image. Nothing in the glibc build has an
+# equivalent, and no amount of care over there would have surfaced it.
+ENV RUSTFLAGS="-C linker=g++ -C link-arg=-static-libstdc++ -C target-feature=-crt-static"
+
+ARG RUST=1.98.0
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "$RUST"
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /src
