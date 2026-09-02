@@ -40,6 +40,12 @@
 !/packages/*/tsconfig*.json
 !/packages/*/README.md
 
+# `cargo package` can only carry files under the crate's own directory, so a
+# root LICENSE reaches no published crate. Each one gets a copy: a crate that
+# declares `license = "MIT"` and ships no licence text is making a claim it does
+# not carry, and `cargo package --list` said all four did exactly that.
+!/crates/*/LICENSE
+
 # The package manifest's `files` list names LICENSE, so the tarball npm
 # publishes carries one rather than claiming MIT with nothing to show.
 !/packages/*/LICENSE
