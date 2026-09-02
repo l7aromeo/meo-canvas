@@ -25,16 +25,23 @@
 import { createRequire } from 'node:module'
 
 /**
- * The platform packages, keyed by the triple this module derives.
+ * The platform packages, keyed by the triple {@link target} derives.
  *
- * `linux-x64` maps to a glibc build and says so in the package name, because a
- * musl host resolving it would load a binary it cannot run. {@link libc} is
- * what keeps that from being a link error at first render.
+ * **The key carries the C library on Linux, and that is what publishing musl
+ * changed.** While `linux-x64-gnu` was the only Linux build, `linux-x64` named
+ * it unambiguously. With a musl build too, one `platform-arch` has two answers
+ * and the key has to say which -- so {@link target} appends the libc on Linux
+ * and the keys here are exactly the suffixes `TARGETS` builds. A host key with
+ * two answers would have been the other way to write this; making the key more
+ * specific keeps one answer per key, which is what lets `addon.test.ts` go on
+ * comparing these lists by equality.
  */
 export const PLATFORM_PACKAGES: Readonly<Record<string, string>> = {
   'darwin-arm64': 'meo-canvas-darwin-arm64',
-  'linux-arm64': 'meo-canvas-linux-arm64-gnu',
-  'linux-x64': 'meo-canvas-linux-x64-gnu',
+  'linux-arm64-gnu': 'meo-canvas-linux-arm64-gnu',
+  'linux-arm64-musl': 'meo-canvas-linux-arm64-musl',
+  'linux-x64-gnu': 'meo-canvas-linux-x64-gnu',
+  'linux-x64-musl': 'meo-canvas-linux-x64-musl',
   'win32-x64': 'meo-canvas-win32-x64',
 }
 
@@ -69,9 +76,19 @@ function libc(): { readonly family: 'glibc' | 'musl'; readonly version?: string 
   return version === undefined ? { family: 'musl' } : { family: 'glibc', version }
 }
 
-/** The triple used to look a package up, and to name the host in an error. */
+/**
+ * The triple used to look a package up, and to name the host in an error.
+ *
+ * `platform-arch` everywhere except Linux, where the C library is part of the
+ * identity: a glibc binary and a musl one are different artefacts for the same
+ * `linux-x64`, and a host that cannot say which it is cannot be given the right
+ * one. Off Linux the question does not arise and the suffix stays two parts,
+ * matching the names in {@link PLATFORM_PACKAGES}.
+ */
 export function target(): string {
-  return `${process.platform}-${process.arch}`
+  const host = `${process.platform}-${process.arch}`
+  const family = libc()?.family
+  return family === undefined ? host : `${host}-${family}`
 }
 
 /**
@@ -201,15 +218,13 @@ export function resolveAddon<T>(): T {
   const platformPackage = PLATFORM_PACKAGES[host]
   if (platformPackage === undefined) {
     throw new Error(
-      `no prebuilt addon is published for ${host}${libc()?.family === 'musl' ? ' (musl)' : ''}. ` +
+      // `host` already carries the libc on Linux, so a musl host with no build
+      // reads as `linux-x64-musl` rather than needing the family bolted on.
+      // It used to say `(musl)` here and then refuse every musl host a few
+      // lines below, which was correct only while no musl build existed.
+      `no prebuilt addon is published for ${host}. ` +
         `The published targets are ${Object.keys(PLATFORM_PACKAGES).join(', ')}. ` +
         `Build one with \`just addon\`, or point ${OVERRIDE} at a binary you built.`,
-    )
-  }
-
-  if (libc()?.family === 'musl') {
-    throw new Error(
-      `${platformPackage} is a glibc build and this host is musl. ` + `Build one with \`just addon\`, or point ${OVERRIDE} at a binary you built.`,
     )
   }
 

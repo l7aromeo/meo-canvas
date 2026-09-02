@@ -57,10 +57,61 @@ export const TARGETS = {
     // through the mechanism built for it.
     floors: { glibc: '2.35', glibcxx: '3.4.30' },
   },
+  // The musl pair carry no `floors`, and the reason differs from win32's. A
+  // musl binary links no glibc at all, so a glibc floor is not merely unknown
+  // here, it does not exist. Whether a GLIBCXX floor applies is unmeasured --
+  // no musl artefact exists yet -- and deliberately left absent rather than
+  // guessed: `tools/acceptance.mjs` is what decides whether these load, and a
+  // floor invented here would be a claim the assertion would happily confirm
+  // against itself.
+  'linux-x64-musl': { os: ['linux'], cpu: ['x64'], libc: ['musl'], rust: 'x86_64-unknown-linux-musl', runner: 'ubuntu-latest' },
+  'linux-arm64-musl': { os: ['linux'], cpu: ['arm64'], libc: ['musl'], rust: 'aarch64-unknown-linux-musl', runner: 'ubuntu-24.04-arm' },
   // No `floors`: the floors are ELF symbol versions, and a PE binary has none.
   // Windows links DirectWrite rather than fontconfig and freetype, so the
   // acceptance harness loads it on the runner rather than in a container.
   'win32-x64': { os: ['win32'], cpu: ['x64'], rust: 'x86_64-pc-windows-msvc', runner: 'windows-latest' },
+}
+
+/**
+ * Which C library this process runs against, on Linux.
+ *
+ * The same check `src/addon.ts` makes and for the same reason -- Node reports
+ * `glibcVersionRuntime` only on a glibc host -- duplicated here because this
+ * tool is run by `just` and by the workflow with plain `node`, and cannot
+ * import the shipped surface.
+ */
+function hostLibc() {
+  if (process.platform !== 'linux') return undefined
+  return process.report?.getReport()?.header?.glibcVersionRuntime === undefined ? 'musl' : 'glibc'
+}
+
+/**
+ * The target suffix for the machine this is running on.
+ *
+ * **Derived by matching the host against `TARGETS`, never written down.** The
+ * `pack` recipe used to pick a suffix with a two-branch ternary on `os()`,
+ * which ignored architecture and had no Windows branch -- so packing on an
+ * arm64 Linux host staged an arm64 binary into a package named
+ * `linux-x64-gnu`, declaring `cpu: ["x64"]`, and packed it cleanly. A wrong
+ * artefact from a green command, and npm would then install it on machines
+ * that cannot load it.
+ *
+ * Refuses rather than guessing when the host matches no target: packing an
+ * artefact under a name that describes a different machine is the failure this
+ * exists to prevent, and having no name at all is the safe end of it.
+ */
+export function hostSuffix() {
+  const arch = process.arch
+  const libc = hostLibc()
+  const found = Object.entries(TARGETS).find(
+    ([, spec]) => spec.os.includes(process.platform) && spec.cpu.includes(arch) && (spec.libc === undefined || spec.libc.includes(libc)),
+  )
+  if (found === undefined) {
+    throw new Error(
+      `no target matches this host (${process.platform}-${arch}${libc === undefined ? '' : `-${libc}`}); known: ${Object.keys(TARGETS).join(', ')}`,
+    )
+  }
+  return found[0]
 }
 
 /**
@@ -134,6 +185,12 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
   // The release workflow needs the same list as a job matrix, and deriving it
   // here is what keeps the workflow from being a fourth place a target is
   // named. One line of JSON on stdout, which is what `$GITHUB_OUTPUT` takes.
+  // The host's own suffix, so `just pack` asks rather than deciding. See
+  // `hostSuffix` for what the ternary this replaces got wrong.
+  if (suffix === '--host') {
+    process.stdout.write(`${hostSuffix()}\n`)
+    process.exit(0)
+  }
   if (suffix === '--matrix') {
     process.stdout.write(
       `${JSON.stringify({

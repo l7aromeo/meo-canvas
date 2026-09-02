@@ -16,10 +16,20 @@ export interface Target {
   readonly rust: string
   /** The GitHub runner that builds it. */
   readonly runner: string
+  /**
+   * The ELF symbol floors this target's artefact currently has.
+   *
+   * Absent where there are none to check: darwin and win32 have no ELF, and a
+   * musl build links no glibc at all.
+   */
+  readonly floors?: { readonly glibc?: string; readonly glibcxx?: string }
 }
 
 /** Every target a release carries, keyed by the package-name suffix. */
 export declare const TARGETS: Readonly<Record<string, Target>>
+
+/** The target suffix for the machine this is running on, matched against `TARGETS`. */
+export declare function hostSuffix(): string
 
 /** The manifest a platform package ships, derived from the main one. */
 export declare function manifest(suffix: string, version: string): Record<string, unknown>

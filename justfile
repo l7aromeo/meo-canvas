@@ -257,7 +257,13 @@ pack: ensure-deps build-js addon-release
     set -euo pipefail
     rm -rf release
     mkdir -p release/npm
-    suffix="{{ if os() == "macos" { "darwin-arm64" } else { "linux-x64-gnu" } }}"
+    # Derived from `TARGETS` by matching this host's os, cpu and libc, never
+    # written down here. It was a two-branch ternary on `os()` that ignored
+    # architecture and had no Windows branch, so packing on an arm64 Linux box
+    # staged an arm64 binary into a package named `linux-x64-gnu` declaring
+    # `cpu: ["x64"]` -- and packed it cleanly, for npm to install on machines
+    # that cannot load it. A wrong artefact from a green command.
+    suffix=$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)
     node packages/meo-canvas/tools/stage-platform-package.mjs \
         "${suffix}" {{ addon_path }} release/npm
     npm pack --pack-destination "$PWD/release" ./release/npm/"${suffix}" >/dev/null

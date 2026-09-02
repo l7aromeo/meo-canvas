@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { PLATFORM_PACKAGES, target } from './addon.js'
-import { TARGETS } from '../tools/stage-platform-package.mjs'
+import { TARGETS, hostSuffix } from '../tools/stage-platform-package.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PACKAGE = JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8')) as {
@@ -64,6 +64,31 @@ describe('the platform target lists', () => {
       const platform = host.split('-')[0] as string
       expect(name.startsWith(`${PACKAGE.name}-${platform}`), `${host} resolves ${name}`).toBe(true)
     }
+  })
+
+  it('keys the resolver by the same suffix the builder uses', () => {
+    // The invariant publishing musl introduced. `linux-x64` named one build
+    // unambiguously while there was one; with a glibc and a musl build it names
+    // two, so the host key carries the libc and these keys are exactly the
+    // suffixes `TARGETS` builds. Comparing the values alone would not catch a
+    // key that drifted from its suffix, and a key that no `target()` can ever
+    // return resolves nothing while looking correct.
+    expect(Object.keys(PLATFORM_PACKAGES).sort()).toEqual(Object.keys(TARGETS).sort())
+  })
+
+  it('distinguishes the two Linux C libraries, which is why the key grew', () => {
+    // The pair that would collide under the old `platform-arch` key. If these
+    // ever resolve to the same package, a musl host loads a glibc binary and
+    // fails at first render rather than at install.
+    expect(PLATFORM_PACKAGES['linux-x64-gnu']).not.toBe(PLATFORM_PACKAGES['linux-x64-musl'])
+    expect(PLATFORM_PACKAGES['linux-arm64-gnu']).not.toBe(PLATFORM_PACKAGES['linux-arm64-musl'])
+  })
+
+  it('derives this host a suffix that the release actually builds', () => {
+    // `just pack` asks for this rather than deciding with a ternary, so a
+    // suffix it cannot find in `TARGETS` would stage a package under a name
+    // nothing publishes.
+    expect(Object.keys(TARGETS)).toContain(hostSuffix())
   })
 
   it('names this host, so the suite runs where a release is built', () => {
