@@ -64,12 +64,43 @@ let mount
  */
 const MUST_BE_ABSENT = ['libfontconfig.so.1', 'libfreetype.so.6']
 
-/** How to get a `node` onto an image that has none. */
-const INSTALL = {
-  apt: 'apt-get update >/dev/null 2>&1 && apt-get install -y nodejs >/dev/null 2>&1',
-  dnf: 'dnf -y install nodejs >/dev/null 2>&1 || yum -y install nodejs >/dev/null 2>&1',
-  apk: 'apk add --no-cache nodejs >/dev/null 2>&1',
-}
+/**
+ * How a `node` gets onto an image that has none: **mounted, never installed.**
+ *
+ * An official Node build is unpacked once into the staging directory and
+ * mounted read-only beside the addon, so no package manager runs inside any
+ * image under test. Two false failures came from the other ways.
+ *
+ * `dnf install nodejs` on AlmaLinux 8 installs **Node 10**, which predates the
+ * N-API level this addon is built against, so the load failed with `undefined
+ * symbol: napi_check_object_type_tag`. That reads exactly like an ABI failure
+ * of our binary and is nothing of the kind -- the same binary loads on the same
+ * image under Node 22. **A harness that reports the age of a distribution's
+ * package as a defect in the artefact is worse than none.**
+ *
+ * Downloading node inside each image failed differently again: `debian:12-slim`
+ * has no `curl` and `amazonlinux:2023` has no `tar`, and installing those puts
+ * a package manager back in the loop -- which is how `fontconfig` arrives
+ * without being asked for, installing exactly what this exists to prove is
+ * absent.
+ *
+ * Mounting removes the whole class. Nothing is added to any image, so what the
+ * addon finds is what a consumer's image actually contains. It also makes
+ * {@link MUST_BE_ABSENT} a question about the image alone rather than about the
+ * image plus our setup -- the check is still made, because an image that ships
+ * the libraries is still a row that proves nothing about one that does not.
+ *
+ * The official build rather than the one in `node:22-slim`: that one is linked
+ * against Debian 12's glibc and would not run on `almalinux:8`, which is the
+ * oldest tier and the whole point of testing there.
+ */
+const NODE_BIN = '/probe/node/bin'
+
+/** The Node build mounted into every image. Pinned; nothing resolves "latest". */
+const NODE_VERSION = process.env['MEO_CANVAS_ACCEPTANCE_NODE'] ?? '22.12.0'
+
+/** Node's own name for an architecture, which is not always `process.arch`'s. */
+const NODE_ARCH = { x64: 'x64', arm64: 'arm64' }
 
 /**
  * The images each Linux target is answerable for.
@@ -85,14 +116,14 @@ const LINUX_IMAGES = {
   gnu: [
     { image: 'node:22', why: 'the control — ships the font libraries', control: true },
     { image: 'node:22-slim', why: 'the commonest way to deploy a Node app' },
-    { image: 'debian:12-slim', why: 'glibc 2.36, comfortably above the floor', install: 'apt' },
-    { image: 'rockylinux:9', why: 'glibc 2.34, GLIBCXX 3.4.29 — the RHEL 9 tier', install: 'dnf' },
-    { image: 'amazonlinux:2023', why: 'glibc 2.34 — the AWS Lambda runtime', install: 'dnf' },
-    { image: 'almalinux:8', why: 'glibc 2.28 — the oldest tier worth claiming', install: 'dnf' },
+    { image: 'debian:12-slim', why: 'glibc 2.36, comfortably above the floor' },
+    { image: 'rockylinux:9', why: 'glibc 2.34, GLIBCXX 3.4.29 — the RHEL 9 tier' },
+    { image: 'amazonlinux:2023', why: 'glibc 2.34 — the AWS Lambda runtime' },
+    { image: 'almalinux:8', why: 'glibc 2.28 — the oldest tier worth claiming' },
   ],
   musl: [
     { image: 'node:22-alpine', why: 'the control — ships the font libraries', control: true },
-    { image: 'alpine:3.20', why: 'the musl baseline the package name promises', install: 'apk' },
+    { image: 'alpine:3.20', why: 'the musl baseline the package name promises' },
   ],
 }
 
@@ -123,7 +154,7 @@ async function docker(args, timeout = 600_000) {
  * libraries never actually loaded the binary, so it could not show the binary
  * was not inert. Both facts are gathered every time and combined afterwards.
  */
-async function probe(addonName, { image, install }, platform) {
+async function probe(addonName, { image }, platform) {
   // The pull is its own step so a registry failure is reported as one. Rolled
   // into `docker run`, it prints on the same stream as the load and reads
   // exactly like a binary that would not load.
@@ -132,7 +163,7 @@ async function probe(addonName, { image, install }, platform) {
 
   const present = MUST_BE_ABSENT.map(lib => `ls /usr/lib*/${lib} /usr/lib/*/${lib} /lib/*/${lib} /lib64/${lib} 2>/dev/null | head -1`).join('; ')
   const script = [
-    install ? `${INSTALL[install]}; ` : '',
+    `export PATH=${NODE_BIN}:$PATH; `,
     'command -v node >/dev/null || { echo NO_NODE; exit 0; }; ',
     // Braces around the group with the pipe outside them. Written as
     // `$(ls ...; ls ... | tr)` the pipe binds to the LAST command only, so one
@@ -157,7 +188,7 @@ async function probe(addonName, { image, install }, platform) {
  */
 export function classify(out) {
   const lines = out.split('\n').filter(Boolean)
-  if (lines.includes('NO_NODE')) return { kind: 'unasked', status: 'NO_NODE', detail: 'no node, and installing one did not work' }
+  if (lines.includes('NO_NODE')) return { kind: 'unasked', status: 'NO_NODE', detail: 'the mounted node did not run in this image' }
 
   const found = (lines.find(line => line.startsWith('PRESENT')) ?? '').slice(8).trim()
   const verdict = lines[lines.length - 1] ?? ''
@@ -205,6 +236,60 @@ export function decide(rows) {
   if (broken.length > 0) return { ok: false, why: `${broken.length} image(s) cannot load this binary`, broken }
   if (unasked.length > 0) return { ok: false, why: `${unasked.length} image(s) could not be asked`, unasked }
   return { ok: true, why: `${answered.length} image(s) load it with no font packages installed` }
+}
+
+/**
+ * The official Node build for `arch`, unpacked and ready to mount.
+ *
+ * Cached between runs under the system temp directory: it is tens of megabytes
+ * and every image in a run mounts the same one.
+ *
+ * **The checksum is verified before anything is unpacked.** This downloads an
+ * executable and then runs it inside six containers, and taking it on trust
+ * because the URL looks right is the kind of shortcut that is invisible until
+ * it is not. `SHASUMS256.txt` comes from the same release directory and the
+ * archive's digest is checked against the line naming it.
+ */
+async function stageNode(arch, into) {
+  const { createHash } = await import('node:crypto')
+  const { cpSync, existsSync: cached, mkdirSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+
+  const name = NODE_ARCH[arch]
+  if (name === undefined) throw new Error(`no Node build is named for ${arch}`)
+  const archive = `node-v${NODE_VERSION}-linux-${name}.tar.xz`
+  const base = `https://nodejs.org/dist/v${NODE_VERSION}`
+  const cache = resolve(tmpdir(), `meo-canvas-node-${NODE_VERSION}-${name}`)
+
+  if (!cached(resolve(cache, 'bin/node'))) {
+    mkdirSync(cache, { recursive: true })
+    const [tarball, sums] = await Promise.all([
+      fetch(`${base}/${archive}`).then(async response => {
+        if (!response.ok) throw new Error(`${base}/${archive} answered ${response.status}`)
+        return Buffer.from(await response.arrayBuffer())
+      }),
+      fetch(`${base}/SHASUMS256.txt`).then(async response => {
+        if (!response.ok) throw new Error(`${base}/SHASUMS256.txt answered ${response.status}`)
+        return response.text()
+      }),
+    ])
+
+    const expected = sums
+      .split('\n')
+      .map(line => line.trim().split(/\s+/))
+      .find(([, file]) => file === archive)?.[0]
+    if (expected === undefined) throw new Error(`SHASUMS256.txt for v${NODE_VERSION} does not name ${archive}`)
+    const actual = createHash('sha256').update(tarball).digest('hex')
+    if (actual !== expected) throw new Error(`${archive} hashed ${actual}, and its release says ${expected}`)
+
+    const staged = resolve(cache, archive)
+    writeFileSync(staged, tarball)
+    // `--strip-components=1` because the tarball's top level is the versioned
+    // directory name, and the mount path must not carry a version.
+    await run('tar', ['-xJf', staged, '-C', cache, '--strip-components=1'], { timeout: 300_000 })
+  }
+
+  cpSync(cache, resolve(into, 'node'), { recursive: true })
 }
 
 /**
@@ -275,6 +360,15 @@ async function main() {
     mount = mkdtempSync(resolve(tmpdir(), 'meo-canvas-acceptance-'))
     copyFileSync(resolve(PROBE, 'load.js'), resolve(mount, 'load.js'))
     copyFileSync(addon, resolve(mount, name))
+    // Before any container starts, so a Node that could not be fetched reads as
+    // this harness failing to ask rather than as six images failing to load.
+    try {
+      await stageNode(arch, mount)
+    } catch (error) {
+      process.stderr.write(`could not stage a node to mount: ${error.message}\n`)
+      process.stderr.write('this is the harness failing to ask the question, not a binary that does not load\n')
+      process.exit(2)
+    }
 
     process.stderr.write(`loading ${addon} for ${suffix}\n${'-'.repeat(78)}\n`)
     for (const target of LINUX_IMAGES[libc]) {
