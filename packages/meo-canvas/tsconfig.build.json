@@ -6,6 +6,13 @@
   "compilerOptions": {
     "noEmit": false,
     "declaration": true,
+    // Both map kinds resolve because `src` ships beside `dist` -- see the
+    // `files` list, which carries it and excludes `*.test.ts`. Emitting maps
+    // without the sources they name is the one combination to avoid: every map
+    // then points at `../src/*.ts`, which would not be in the tarball, so a
+    // debugger following a stack frame and an editor following a declaration
+    // map to a definition both land on nothing. `inlineSources` fixes only the
+    // first of those -- TypeScript does not inline sources into `.d.ts.map`.
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",

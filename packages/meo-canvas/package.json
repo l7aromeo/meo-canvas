@@ -40,6 +40,8 @@
   },
   "files": [
     "dist",
+    "src",
+    "!src/**/*.test.ts",
     "package.json",
     "LICENSE",
     "README.md"
