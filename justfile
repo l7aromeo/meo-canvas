@@ -183,6 +183,11 @@ test:
 # Excluding this one file puts the same tree at 91.65%, which is the number that
 # describes the Rust code someone can actually write a test for.
 #
+# The pattern accepts either separator, because llvm-cov matches it against the
+# path the compiler reports and on Windows that is `meo-canvas-node\src\lib.rs`.
+# Written with `/` alone it excluded the file on Linux and macOS and nothing on
+# Windows, where the floor then failed for a reason the other two did not have.
+#
 # **What this gives up, stated rather than buried:** those 500 regions are now
 # measured by nothing. They are *exercised* -- thoroughly, by the JavaScript
 # suite -- but `just coverage-js` measures TypeScript, not these Rust regions.
@@ -192,7 +197,7 @@ test:
 [doc("Measure coverage and fail below the 90% floor.")]
 coverage:
     cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests \
-      --ignore-filename-regex 'meo-canvas-node/src/lib\.rs$' \
+      --ignore-filename-regex 'meo-canvas-node[/\\]src[/\\]lib\.rs$' \
       --fail-under-lines 90 --fail-under-regions 90 \
       --lcov --output-path target/lcov.info
 

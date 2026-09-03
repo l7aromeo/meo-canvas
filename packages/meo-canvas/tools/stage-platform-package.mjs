@@ -76,6 +76,13 @@ export const TARGETS = {
   // Windows links DirectWrite rather than fontconfig and freetype, so the
   // acceptance harness loads it on the runner rather than in a container.
   'win32-x64': { os: ['win32'], cpu: ['x64'], rust: 'x86_64-pc-windows-msvc', runner: 'windows-latest' },
+  // The seventh target, and the one `meo-skia-canvas` builds that this did not.
+  // No `floors` for the same reason as x64. `rust-skia` publishes no prebuilt
+  // Skia for this triple -- `build_support/platform/windows.rs` names only
+  // `x86_64` and `i686` -- so unlike every other Windows or glibc build this
+  // one compiles Skia from source on the runner, which is what makes it slow
+  // and what makes it need a C++ toolchain the x64 job never asked for.
+  'win32-arm64': { os: ['win32'], cpu: ['arm64'], rust: 'aarch64-pc-windows-msvc', runner: 'windows-11-arm' },
 }
 
 /**
