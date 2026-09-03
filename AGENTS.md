@@ -2311,6 +2311,33 @@ exhibit a scaling one. **The case has to be able to fail before its passing
 means anything** — which is the same demand as "a case that cannot discriminate
 is not a case that agreed", asked of the inputs rather than the assertion.
 
+### A table whose inputs all zero a parameter cannot see a rule about that parameter
+
+Four times in one audit of the animation helpers (3 and 4 September 2026),
+and every time the shape was the same. The spring floor: every pinned spring
+ran 0→1, so a floor of `from` and a floor of literal zero were the same number,
+and only `from: 5` at `t = -0.5` told them apart. `Track::duration`: every
+pinned track had `delay: 0`, so Rust excluding the delay and JavaScript
+including it agreed on every row, and the one duration row compared was
+reported "same" — right about that input, wrong about the rule. A first
+`sequence` probe that passed no stagger and concluded stagger was ignored.
+And `parseColor`'s alpha: the colour block tested `formatColor` from an
+object, where alpha never passes through the parser, and `mixColor` on opaque
+colours, so alpha other than 1 through the parser was the parameter no row
+varied — and then of the six alpha rows finally added, `0.25`, `0.5` and `0.75`
+passed because they are exact in binary32 and only `0.1`, `0.33` and `0.9`
+failed.
+
+More rows at the same inputs do not help. Different inputs do. When a table is
+generated, every parameter the helper takes gets rows where it is non-zero,
+non-default and, where the domain allows, outside the range the tables
+otherwise sample: non-zero `delay` and `stagger` together and separately,
+non-zero `from`, `t` outside 0..1, counts of 0, 1, 2, 3 and a fraction, alpha
+values that are not exact in binary32 and alphas written as hex bytes. A row
+count that matches the generator's is necessary and not sufficient — one table
+silently lost three rows because `#` is the comment character and a hex colour
+begins with one, and it was the row census, not the values, that found it.
+
 ### Structural coverage is not positional coverage
 
 The chart's byte comparison puts the legend on a different side in each case:
