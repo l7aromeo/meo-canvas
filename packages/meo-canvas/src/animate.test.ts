@@ -22,6 +22,7 @@ import {
   steps,
   track,
   type EasingName,
+  type Sampled,
 } from './animate.js'
 // `parseColor` and `isColor` live in `color.ts`, not `animate.ts` -- the two
 // colour halves are split across modules even though both are exported.
@@ -353,74 +354,109 @@ describe('the divergences the tables record rather than assert', () => {
   })
 })
 
-describe('track, sequence and parallel against v1', () => {
-  // Taken by running v1 at `v9.0.2` / `890eed2`, as above. `sequence at 3.2`
-  // is inside the trailing hold, and `parallel.duration` is the longer member
-  // — two boundary rules that a mid-motion sample would not reach.
+describe('track, sequence and parallel against their vector tables', () => {
+  // These three were the last helpers pinned inline. The tables came from v1
+  // at the same tag by the same method as the rest, so the numbers below are
+  // the ones the Rust walker reads -- one file, two surfaces, rather than two
+  // independent claims about the same reference.
+
   const page = (time: number) => ({ time })
 
-  it('a track samples where v1 samples', () => {
-    const eased = track({ from: 0, to: 100, duration: 1, ease: 'outCubic' })
-    expect(eased.at(page(0.25))).toBe(57.8125)
-    expect(eased.duration).toBe(1)
-    expect(eased.totalDuration(3)).toBe(1)
+  /** The `motion` column: an easing name, or a spring's four numbers. */
+  const motionOf = (spec: string): Partial<Parameters<typeof track>[0]> => {
+    if (!spec.startsWith('spring:')) return { ease: spec as EasingName }
+    const [stiffness = 0, damping = 0, mass = 1, velocity = 0] = spec.slice('spring:'.length).split(':').map(Number)
+    return { spring: { stiffness, damping, mass, velocity } }
+  }
+
+  /** A field that may be absent, spelled `-`. */
+  const maybe = (value: string): number | undefined => (value === '-' ? undefined : Number(value))
+
+  /** Asks one motion the question a row names. */
+  const answer = (motion: Sampled<number>, row: string[], kind: number): number => {
+    if (text(row, kind) === 'at') return motion.at(page(num(row, kind + 1)), num(row, kind + 2))
+    if (text(row, kind) === 'duration') return motion.duration
+    return motion.totalDuration(num(row, kind + 3))
+  }
+
+  it('a track answers where v1 answers', () => {
+    let compared = 0
+    for (const row of rows('track.tsv')) {
+      const duration = maybe(text(row, 2))
+      const spec = {
+        from: num(row, 0),
+        to: num(row, 1),
+        // Spread rather than assigned: `exactOptionalPropertyTypes` makes an
+        // explicit `undefined` a different thing from an absent key, and a
+        // spring track has no duration of its own to give.
+        ...(duration === undefined ? {} : { duration }),
+        delay: num(row, 3),
+        stagger: num(row, 4),
+        ...motionOf(text(row, 5)),
+      }
+      // `js-only` is the fractional count, which Rust's `usize` cannot take.
+      // It is walked here precisely because this is the surface that can.
+      const ours = answer(track<number>(spec as Parameters<typeof track<number>>[0]), row, 7)
+      expect(String(ours), `a track ${row.slice(0, 8).join(' ')}`).toBe(text(row, 11))
+      compared += 1
+    }
+    expect(compared).toBe(132)
   })
 
-  it('a spring track takes its duration from the physics', () => {
-    const sprung = track({ from: 0, to: 10, spring: { stiffness: 100, damping: 20 } })
-    expect(sprung.at(page(0.3))).toBe(8.008517265285441)
-    expect(sprung.duration).toBe(0.7458333333333319)
+  it('a sequence answers where v1 answers', () => {
+    for (const row of rows('sequence.tsv')) {
+      const steps = text(row, 3)
+        .split(';')
+        .map(leg => {
+          const [to, duration, hold, motion] = leg.split(':')
+          const seconds = maybe(duration ?? '-')
+          return {
+            to: Number(to),
+            ...(seconds === undefined ? {} : { duration: seconds }),
+            hold: Number(hold),
+            ease: motion as EasingName,
+          }
+        })
+      const ours = answer(sequence<number>({ from: num(row, 0), delay: num(row, 1), stagger: num(row, 2), steps }), row, 5)
+      expect(String(ours), `a sequence ${row.slice(0, 6).join(' ')}`).toBe(text(row, 9))
+    }
   })
 
-  it('a stagger offsets by index and lengthens the total', () => {
-    const staggered = track({ from: 0, to: 5, duration: 1, delay: 0.5, stagger: 0.25 })
-    expect(staggered.at(page(1.0), 1)).toBe(1.25)
-    expect(staggered.totalDuration(3)).toBe(2)
-  })
-
-  it('a sequence holds at a step and excludes the trailing hold from its length', () => {
-    const steps = sequence({
-      from: 0,
-      steps: [
-        { to: 10, duration: 1 },
-        { to: 30, duration: 2, hold: 0.5 },
-        { to: 0, duration: 1 },
-      ],
-    })
-    expect(steps.at(page(0.5))).toBe(5)
-    expect(steps.at(page(1.5))).toBe(15)
-    // Inside the hold after step two: the value rests at `to` rather than
-    // starting the next leg early.
-    expect(steps.at(page(3.2))).toBe(30)
-    expect(steps.duration).toBe(4.5)
-  })
-
-  it('a parallel group samples every member and is as long as the longest', () => {
-    const group = parallel({
-      x: track({ from: 0, to: 100, duration: 1, ease: 'outCubic' }),
-      y: sequence({ from: 0, steps: [{ to: 4, duration: 2 }] }),
-    })
-    expect(group.at(page(0.25))).toEqual({ x: 57.8125, y: 0.5 })
-    expect(group.duration).toBe(2)
+  it('a group answers where v1 answers', () => {
+    // The member vocabulary `parallel.tsv` declares in its header. `C` is the
+    // discriminating one: with A and B alone, `totalDuration` answers 2
+    // whether or not the count reaches the members.
+    const member = (letter: string) => {
+      if (letter === 'A') return track({ from: 0, to: 100, duration: 1, ease: 'outCubic' })
+      if (letter === 'B') return sequence({ from: 0, steps: [{ to: 4, duration: 2 }] })
+      return track({ from: 0, to: 5, duration: 1, stagger: 1 })
+    }
+    for (const row of rows('parallel.tsv')) {
+      const names = text(row, 0).split(';')
+      const group = parallel(Object.fromEntries(names.map(letter => [letter, member(letter)])))
+      // One member per row rather than a record: the group's value is an
+      // object here and a `Vec` in declaration order in Rust, and a row
+      // holding a record literal would assume one of them.
+      const ours =
+        text(row, 2) === 'at'
+          ? (group.at(page(num(row, 3)), num(row, 4)) as Record<string, number>)[text(row, 6)]
+          : text(row, 2) === 'duration'
+            ? group.duration
+            : group.totalDuration(num(row, 5))
+      expect(String(ours), `a group ${row.slice(0, 7).join(' ')}`).toBe(text(row, 7))
+    }
   })
 
   it('refuses the configurations v1 refuses', () => {
+    // Refusals stay inline for the reason they always have: a `throws`
+    // contract is not a vector, and nothing about it comes from v1.
     expect(() => track({ from: 0, to: 1, duration: 1, ease: 'linear', spring: {} })).toThrow(/not both/)
     expect(() => track({ from: 0, to: 1 })).toThrow(/needs a `duration`/)
     expect(() => track({ from: 0, to: 1, duration: 1, delay: -1 })).toThrow(/delay cannot be negative/)
     expect(() => track({ from: 0, to: 1, spring: { from: 0 } })).toThrow(/cannot carry them/)
     expect(() => sequence({ from: 0, steps: [] })).toThrow(/at least one step/)
     expect(() => parallel({})).toThrow(/at least one member/)
-  })
-
-  it('mix and interpolate handle numbers and arrays', () => {
-    expect(mix(0, 10, 0.5)).toBe(5)
-    expect(mix([0, 10], [10, 20], 0.5)).toEqual([5, 15])
     expect(() => mix([0], [0, 1], 0.5)).toThrow(/same length/)
-    expect(interpolate(0.25, [0, 0.5, 1], [0, 100, 0])).toBe(50)
-    // Holds outside the declared range rather than extrapolating.
-    expect(interpolate(-1, [0, 1], [3, 9])).toBe(3)
-    expect(interpolate(2, [0, 1], [3, 9])).toBe(9)
     expect(() => interpolate(0, [0], [1])).toThrow(/at least two stops/)
     expect(() => interpolate(0, [1, 0], [1, 2])).toThrow(/ascending order/)
   })
