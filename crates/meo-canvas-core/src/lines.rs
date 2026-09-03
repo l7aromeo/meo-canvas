@@ -1504,6 +1504,85 @@ mod tests {
         assert!(one.height.mul_add(-2.0, two.height - 10.0).abs() < 0.001);
     }
 
+    /// What `wrapped_lines` and `truncated` report, in each of the four shapes.
+    ///
+    /// **They exist because `lines.len()` cannot answer either question after
+    /// the fact**, and the rescue in [`crate::measure`] needs both: a box
+    /// rounded down from the text's own width breaks a paragraph that fitted,
+    /// and whether that shows as a dropped line or as a marker on a single line
+    /// depends only on whether the text has a space in it.
+    ///
+    /// The third row is the one worth having. A word with no break opportunity
+    /// never raises the line count, so it reaches the marker through the
+    /// overflow trigger rather than the `max_lines` one -- and a fix reading
+    /// only the line count repaired the spaced case and left this one broken.
+    #[test]
+    fn a_block_reports_what_the_wrap_did_before_max_lines_touched_it() {
+        let mut measurer = TextMeasurer::new();
+        let base = style();
+        let metrics = Metrics::of(&base);
+        let clamp = |lines| ParagraphStyle {
+            max_lines: Some(lines),
+            ellipsis: Some("\u{2026}".to_owned()),
+        };
+
+        // Neither wrapped nor truncated: the plain case, and the row that makes
+        // the others mean something.
+        let whole = layout(
+            &mut measurer,
+            &base,
+            &plain("a b"),
+            1000.0,
+            &ParagraphStyle::default(),
+            metrics,
+        );
+        assert_eq!(whole.wrapped_lines, 1);
+        assert!(!whole.truncated);
+
+        // Wrapped, nothing dropped: `wrapped_lines` counts what the wrap did
+        // even when `max_lines` is absent.
+        let wrapped = layout(
+            &mut measurer,
+            &base,
+            &plain("Hxgp quick brown fox"),
+            90.0,
+            &ParagraphStyle::default(),
+            metrics,
+        );
+        assert!(wrapped.wrapped_lines > 1, "the text was meant to wrap");
+        assert!(!wrapped.truncated);
+
+        // Wrapped and truncated: one line survives, and `lines.len()` is now 1
+        // -- which is exactly the reading that made the rescue skip this case.
+        let clamped = layout(
+            &mut measurer,
+            &base,
+            &plain("Hxgp quick brown fox"),
+            90.0,
+            &clamp(1),
+            metrics,
+        );
+        assert_eq!(clamped.lines.len(), 1);
+        assert!(clamped.wrapped_lines > 1, "the wrap still broke it");
+        assert!(clamped.truncated);
+
+        // A single word too wide to break: the marker arrives through the
+        // overflow trigger, and the line count never rises at all.
+        let unbreakable = layout(
+            &mut measurer,
+            &base,
+            &plain("Hxgpquickbrownfox"),
+            40.0,
+            &clamp(1),
+            metrics,
+        );
+        assert_eq!(unbreakable.wrapped_lines, 1, "there is nowhere to break");
+        assert!(
+            unbreakable.truncated,
+            "a line too wide for its box is truncated even though nothing wrapped"
+        );
+    }
+
     #[test]
     fn max_lines_drops_the_lines_beyond_it() {
         let mut measurer = TextMeasurer::new();

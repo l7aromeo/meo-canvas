@@ -763,6 +763,58 @@ mod tests {
         (scene, leaf)
     }
 
+    /// The rescue takes a break that one more pixel would have prevented, and
+    /// leaves a break that is real.
+    ///
+    /// taffy rounds a rect as `round(x + w) - round(x)`, so a paragraph can be
+    /// handed a box a fraction narrower than the width it was measured at. The
+    /// break that follows is an artefact of the rounding rather than a decision
+    /// about the text, and the paint pass re-lays the paragraph loose when one
+    /// pixel would have covered the difference.
+    ///
+    /// **Both halves are asserted because the guard is what stops the rescue
+    /// running away.** Without the second row a rescue that reached for every
+    /// paragraph -- and so stopped truncating anything -- would pass.
+    #[test]
+    fn a_break_within_a_pixel_of_fitting_is_undone_and_a_real_one_is_not() {
+        let (scene, leaf) = text_scene("ab cd");
+        let fonts = test_fonts();
+        let resolved = Resolved::new(&scene, &fonts)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let natural = measurer
+            .measure(
+                leaf,
+                (None, None),
+                (Available::MaxContent, Available::MaxContent),
+            )
+            .size
+            .width;
+
+        // A hair under its own width: the rounding case, and the whole
+        // paragraph comes back on one line.
+        let pinched = measurer
+            .block(leaf, natural - 0.5)
+            .unwrap_or_else(|| unreachable!("the leaf is text"));
+        assert_eq!(
+            pinched.lines.len(),
+            1,
+            "a box half a pixel short is a rounded box, not a narrower one"
+        );
+
+        // Genuinely narrower, by more than the guard allows: the break stands.
+        let narrow = measurer
+            .block(leaf, natural / 2.0)
+            .unwrap_or_else(|| unreachable!("the leaf is text"));
+        assert!(
+            narrow.lines.len() > 1,
+            "a box half the width of the text really is too narrow, and the \
+             rescue must not reach that far"
+        );
+    }
+
     #[test]
     fn a_text_leaf_measures_wider_unwrapped_than_wrapped() {
         let (scene, leaf) = text_scene("the quick brown fox jumps over it");

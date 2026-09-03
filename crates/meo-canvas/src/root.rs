@@ -996,15 +996,42 @@ mod tests {
             .to_buffer(Format::Png)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        if cfg!(any(feature = "metal", feature = "vulkan")) {
+        // **What actually happened, not what was compiled in.**
+        //
+        // This branched on `cfg!(any(feature = "metal", feature = "vulkan"))`,
+        // and that is a different question. A feature says a backend was built;
+        // it says nothing about a *device*. A headless Linux runner compiles
+        // Vulkan, finds no device, correctly falls back to the CPU -- and the
+        // two renders then agree to the byte, which the old assertion called a
+        // failure. It passed on macOS only because a Metal device is always
+        // there.
+        //
+        // The other direction is worse and quieter: **on Linux this test had
+        // never once verified that the GPU path differs**, because the GPU path
+        // had never run there. It is still not verified there, and now it says
+        // so rather than pretending otherwise -- the `else` arm below is
+        // reached on any machine without a device, and asserts the fallback was
+        // clean rather than asserting anything about the GPU.
+        // The one thing a feature flag *can* say, kept as an assertion rather
+        // than a comment: with no backend compiled there is nothing to fall
+        // back from, so the outcome is not in doubt. It is the direction the
+        // old test had right, and it costs nothing to keep.
+        if !cfg!(any(feature = "metal", feature = "vulkan")) {
+            assert_eq!(
+                on.engine(),
+                "cpu",
+                "no GPU backend is compiled in, so no render can have used one"
+            );
+        }
+        if on.engine() == "gpu" {
             assert_ne!(
                 with, without,
-                "a GPU backend is compiled in, so the two rasterisers should not agree to the byte"
+                "a GPU device drew one of these, so the two rasterisers should not agree to the byte"
             );
         } else {
             assert_eq!(
                 with, without,
-                "no GPU backend is compiled in, so both renders are the CPU's"
+                "no GPU device was used, so both renders are the CPU's and must match"
             );
         }
     }
