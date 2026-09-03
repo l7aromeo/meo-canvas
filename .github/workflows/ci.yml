@@ -165,11 +165,13 @@ jobs:
 
       - run: just ci
 
-      # Whether an ordinary addon survives vitest's threads pool. Windows only,
-      # because that is where the instrumented one segfaults, and
-      # `continue-on-error` because the answer is unknown: a red mark here is a
-      # finding to act on rather than a gate to satisfy. See `just threads-probe`.
+      # An ordinary addon under vitest's threads pool, on the platform where the
+      # *instrumented* one segfaults. It ran once without gating to answer which
+      # of the two was at fault; it passed on 4 September 2026, so the crash is
+      # the profiling runtime and not the addon, and `worker_threads` -- how a
+      # server keeps a render off its event loop -- works on Windows. It gates
+      # from here, because that is a property we now claim. See
+      # `just threads-probe`.
       - name: Does an ordinary addon survive worker threads?
         if: runner.os == 'Windows'
-        continue-on-error: true
         run: just threads-probe
