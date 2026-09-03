@@ -48,7 +48,7 @@ neither can grow a capability the other cannot reach.
   - [Local iteration against meo-skia-canvas](#local-iteration-against-meo-skia-canvas)
   - [CLAUDE.md](#claude-md)
 - [Testing](#testing)
-  - [Coverage: the floor, the file it does not count, and who runs it](#coverage-the-floor-the-file-it-does-not-count-and-who-runs-it)
+  - [Coverage: two floors, two reports, and who runs it](#coverage-two-floors-two-reports-and-who-runs-it)
   - [What a check can and cannot see](#what-a-check-can-and-cannot-see)
   - [What only a second implementation can see](#what-only-a-second-implementation-can-see)
   - [And what only a pixel can](#and-what-only-a-pixel-can)
@@ -1129,20 +1129,69 @@ the family `Fixture` and refuses a scene naming any other, pins the scale, and
 turns `gpu` off. The platform's installed faces answer `has_family` too, so a
 fixture asking for Helvetica would pass here and differ on any other machine.
 
-### Coverage: the floor, the file it does not count, and who runs it
+### Coverage: two floors, two reports, and who runs it
 
-`just coverage` fails below 90% regions and lines, on the pinned nightly so
-branches are measured at all. One file is excluded from the denominator and the
-recipe says why at length: `meo-canvas-node/src/lib.rs`, the Neon boundary, is
-500 regions that no Rust test can execute because every function in it is
-called by V8 and by nothing else. It measured 4.80%, and with it counted the
-workspace sat at 90.06% -- six regions of margin -- and then fell to 89.92% with
-the **identical** 2,536 missed regions when a well-tested deletion shrank the
-denominator. A floor a deletion can breach is not measuring what it claims.
-Excluded, the same tree is 91.65%. What that gives up is stated in the recipe
-rather than buried: those 500 regions are exercised by the JavaScript suite and
-measured by nothing, and the honest fix is to instrument the addon while that
-suite runs. Until someone does, it is an exclusion with a known hole.
+`just coverage` measures two things and fails on either. The workspace floor is
+90% of regions and lines, on the pinned nightly so branches are measured at all.
+The second floor is 60% of regions on `meo-canvas-node/src/lib.rs` alone, the
+Neon boundary, which the workspace number still excludes.
+
+**Why the boundary is excluded from the workspace number.** Its 499 regions are
+called by V8 and by nothing else, so no Rust test can execute them: from a Rust
+caller the file measures 4.81% and always will. Counted in, the workspace sat at
+90.06% -- six regions of margin -- and then fell to 89.92% with the **identical**
+2,536 missed regions when a well-tested deletion shrank the denominator. A floor
+that a well-tested deletion can breach is not measuring what it claims. Excluded,
+the same tree is 91.69%.
+
+**Why it is no longer a hole.** The boundary is now measured, by the suite that
+actually calls it: the JavaScript tests run against an instrumented addon, and
+`lib.rs` comes out at 64.13% of regions, 68.00% of lines, 57.89% of functions.
+Raising that means writing JavaScript that reaches the error arms, not writing
+Rust.
+
+**Why two reports rather than one number.** `cargo llvm-cov` merges every
+`.profraw` under its target directory, the JavaScript run's included, into one
+`.profdata` -- and its `report` still puts `lib.rs` at 4.81%, because `report`
+has no `--object` flag and never includes the crate's `cdylib`. The same
+profdata read against the `.node` puts the same file at 64.13%. Same evidence,
+two answers, and the wrong one is the one that looks ordinary. There is no flag
+that fixes this; the route to a single number is upstream. So the recipe reports
+twice: once through cargo for the workspace, once through the toolchain's own
+`llvm-cov` for the artefact cargo cannot see.
+
+**The second report names a source, not the object.** The `.node` links the core
+and scene crates into itself, so a report over the artefact totals 45% -- a
+number about layout and Skia wearing the boundary's label. `lib.rs` alone is the
+file the recipe exists for.
+
+**A measurement apparatus can fail in a way that looks precisely like the thing
+it measures being absent.** Three of the four ways to instrument this reported
+that the JavaScript suite never touches the addon, and it touches it constantly.
+vitest's default `forks` pool loads the instrumented addon in worker processes
+that never flush a profile, so all 15 test files write no `.profraw` at all --
+indistinguishable from a suite that never loads the addon. Continuous mode
+(`%c`) is worse: it writes files whose counters are all zero, and they merge
+cleanly and report 0.00% across the workspace. `--pool=threads` is therefore not
+a performance choice, and it belongs on that invocation only, not in
+`vitest.config.mts`. This is the same failure as "A table whose inputs all zero
+a parameter cannot see a rule about that parameter", one level up: there the
+inputs could not see the rule, here the instrument could not see the execution.
+Both are silent, and both look like a clean result.
+
+**Two plumbing traps, both commented where they bite**, because each fails as a
+clean report followed by a floor failure with no floor in it. `find ... | head -1`
+under `pipefail` kills `find` with SIGPIPE the moment `head` is satisfied, and
+`set -e` ends the recipe right after the Rust half printed its result; use
+`-print -quit`. And `llvm-cov show-env` exports a dozen `CARGO_LLVM_COV_*`
+variables, one of which makes a later `report` exit non-zero **after** printing a
+clean result; the build and copy happen in a subshell so none of them leak.
+
+**The addon is left instrumented** when the recipe finishes, deliberately -- the
+suite already looks in the in-tree path, and `MEO_CANVAS_ADDON` cannot be used
+as the harness because that variable is the subject of `addon.resolve.test.ts`,
+where an ambient value fails 9 of its 12 tests. Anything run afterwards works on
+that binary, correctly but slower. `just addon` puts an ordinary one back.
 
 `just coverage` writes `target/llvm-cov-target`, so two sessions running it in
 one checkout collide. The rule: per change, each session runs the stateless
@@ -2084,8 +2133,10 @@ Coverage is measured with `cargo-llvm-cov` on the pinned nightly, because
 is the same toolchain `fmt` uses, so the pin is one date to move rather than
 two.
 
-The floor is 90% on lines and regions, which are the only dimensions the tool
-can fail on — there is no `--fail-under-branches`. Branch percentages reach the
+The workspace floor is 90% on lines and regions, which are the only dimensions
+the tool can fail on — there is no `--fail-under-branches`. The boundary's own
+floor of 60% is enforced by the recipe's arithmetic instead, because that half
+is not `cargo llvm-cov` and has no `--fail-under` of any kind. Branch percentages reach the
 report and `target/lcov.info` for reading; regions is what refuses a merge. A
 region is a span with its own arm count, so an untaken arm still lands in the
 number that gates.
@@ -2093,10 +2144,13 @@ number that gates.
 Source-based coverage instruments Rust only, so Skia is linked but never
 instrumented and its lines never enter the denominator.
 
-Nothing is excluded from the denominator. A file earns an exclusion by being
-generated rather than written, and the rule when one does is that it is named by
-path in the `coverage` recipe, one path at a time, so the list is reviewable in
-a diff. Code this project implements stays in the denominator.
+One file is excluded from the workspace denominator, and it is named by path in
+the `coverage` recipe rather than by a pattern, one path at a time, so the list
+is reviewable in a diff. `meo-canvas-node/src/lib.rs` earns it by being callable
+only from V8 -- not by being generated -- and the exclusion is paid for by a
+second floor that measures it from the suite that does call it. Everything else
+this project implements stays in the denominator. See "Coverage: two floors, two
+reports, and who runs it".
 
 **A green result produced by the check breaking its own precondition is worse
 than a red one.** The acceptance harness loads a built addon in stock base
