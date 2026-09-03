@@ -1,0 +1,119 @@
+name: fixtures
+
+# Renders the golden fixtures on a platform this machine is not, and uploads
+# what it produced.
+#
+# **A golden is a property of the architecture that drew it.** macOS on arm64,
+# Linux on x86_64 and Windows on x86_64 rasterise anti-aliased edges
+# differently, so `tests/fixtures.rs` compares against `expected.<os>-<arch>.png`
+# where one exists and `expected.png` otherwise. `just fixtures-linux` makes the
+# Linux set in the release container; there is no equivalent for Windows on a
+# developer's Mac, and this is it.
+#
+# Manual only. It writes nothing to the branch: it uploads an artifact, and a
+# person looks at the images before committing them. A workflow that pushed
+# accepted goldens would be a workflow that can turn a rendering regression into
+# a commit without anyone seeing it.
+run-name: >-
+  fixtures — accept on ${{ inputs.os }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: "The runner to render on"
+        type: choice
+        options: [windows-latest, ubuntu-latest, macos-latest]
+        default: windows-latest
+      names:
+        description: "Space-separated fixture names, or empty to only report which differ"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Every `run:` here is bash, and `windows-latest` defaults to PowerShell.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  accept:
+    name: accept on ${{ inputs.os }}
+    runs-on: ${{ inputs.os }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: "1.58.0"
+
+      - name: Read the pinned toolchain
+        id: toolchain
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
+          test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: fixtures-${{ inputs.os }}
+
+      # The same two the CI job installs, and for the same reasons: libaom
+      # assembles its hot paths on x86, and Skia links the system font
+      # libraries on Linux.
+      - name: Install what the build needs
+        run: |
+          case "${{ runner.os }}" in
+            Linux)
+              sudo apt-get update
+              sudo apt-get install -y cmake nasm pkg-config libfontconfig1-dev libfreetype-dev
+              ;;
+            Windows)
+              choco install nasm --no-progress -y
+              echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
+              ;;
+          esac
+
+      # No `--features`, because this has to reproduce the run that fails. `just
+      # test` renders the fixtures first under a bare `cargo test --workspace`
+      # and again with the host's GPU feature, and it is the bare pass whose
+      # comparison CI reports. Accepting from a different build than the one
+      # being checked would pin a picture the gate never produces.
+      - name: Report which fixtures differ
+        id: report
+        continue-on-error: true
+        run: cargo test -p meo-canvas-core --test fixtures -- --nocapture
+
+      # One name at a time, which is what `MEO_FIXTURE_ACCEPT` allows and why:
+      # accepting a whole set in one command is how a regression becomes a
+      # commit. The loop is here so a person still names each fixture.
+      - name: Accept the named fixtures
+        if: ${{ inputs.names != '' }}
+        run: |
+          set -euo pipefail
+          for name in ${{ inputs.names }}; do
+            echo "==> $name"
+            MEO_FIXTURE_ACCEPT="$name" cargo test -p meo-canvas-core --test fixtures
+          done
+
+      # Both the accepted goldens and the `actual`/`expected`/`diff` triples the
+      # harness writes on a mismatch, so a reviewer can look at what changed
+      # rather than take the run's word for it.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fixtures-${{ inputs.os }}
+          path: |
+            fixtures/**/expected.*.png
+            target/fixtures/**
+          if-no-files-found: error
+          retention-days: 7
