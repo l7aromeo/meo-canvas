@@ -28,7 +28,7 @@ This crate links Skia, so building it on Linux needs freetype and fontconfig
 development packages plus `pkg-config`, and `cmake` and `nasm` for libaom — the
 same set [`meo-canvas-core`] documents.
 
-The binary the npm package *ships* needs none of them: it is built in a
+The binary the npm package _ships_ needs none of them: it is built in a
 container that links the font libraries statically, so an installed
 `meo-canvas` addon loads on a stock `node:22-slim` with no font packages at all.
 That is a property of the release image rather than of this crate, and building
