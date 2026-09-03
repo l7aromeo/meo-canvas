@@ -1,0 +1,169 @@
+# Ground truth for track(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/track.js`).
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# the four original tables name, and verified rather than assumed: the
+# generator was first run against those tables and reproduced all 612 of their
+# rows exactly.
+#
+# Neither surface may be written from the other: a misreading of v1 that
+# reaches both looks like agreement. Both are written against this, and this
+# came from v1 running.
+#
+# Values are shortest-round-trip decimals, compared exactly. `-` is a column
+# the row does not use; it is not a value.
+#
+# # Why delay and stagger vary separately as well as together
+#
+# The divergence this table exists to prevent hid behind zeros:
+# `Track::duration` excluded the delay where JavaScript included it, and
+# every row anyone had compared used `delay: 0`, where the two rules agree.
+# So there are rows with delay alone, stagger alone, both, and neither.
+#
+# `totalDuration` is swept over counts 0, 1, 2, 3 and 10. Count 0 behaves
+# as count 1 rather than collapsing, which only a zero row can show.
+#
+# The `surface` column marks the fractional count `js-only`: Rust's
+# `total_duration` takes a `usize` and cannot express 2.5. That is a
+# recorded shape difference rather than a defect -- a count of items is an
+# integer, and JavaScript accepting 2.5 is what a JavaScript number does.
+#
+# `motion` is an easing name, or `spring:stiffness:damping:mass:velocity`.
+# A spring track carries `-` for duration: it takes its length from the
+# physics.
+#
+# rows: 132
+#
+# from	to	duration	delay	stagger	motion	surface	kind	t	index	count	value
+0	100	1	0	0	outCubic	both	at	0	0	-	0
+0	100	1	0	0	outCubic	both	at	0	1	-	0
+0	100	1	0	0	outCubic	both	at	0	2	-	0
+0	100	1	0	0	outCubic	both	at	0.25	0	-	57.8125
+0	100	1	0	0	outCubic	both	at	0.25	1	-	57.8125
+0	100	1	0	0	outCubic	both	at	0.25	2	-	57.8125
+0	100	1	0	0	outCubic	both	at	0.75	0	-	98.4375
+0	100	1	0	0	outCubic	both	at	0.75	1	-	98.4375
+0	100	1	0	0	outCubic	both	at	0.75	2	-	98.4375
+0	100	1	0	0	outCubic	both	at	1	0	-	100
+0	100	1	0	0	outCubic	both	at	1	1	-	100
+0	100	1	0	0	outCubic	both	at	1	2	-	100
+0	100	1	0	0	outCubic	both	at	2	0	-	100
+0	100	1	0	0	outCubic	both	at	2	1	-	100
+0	100	1	0	0	outCubic	both	at	2	2	-	100
+0	100	1	0	0	outCubic	both	duration	-	-	-	1
+0	100	1	0	0	outCubic	both	totalDuration	-	-	0	1
+0	100	1	0	0	outCubic	both	totalDuration	-	-	1	1
+0	100	1	0	0	outCubic	both	totalDuration	-	-	2	1
+0	100	1	0	0	outCubic	both	totalDuration	-	-	3	1
+0	100	1	0	0	outCubic	both	totalDuration	-	-	10	1
+0	100	1	0	0	outCubic	js-only	totalDuration	-	-	2.5	1
+0	5	1	0.5	0	linear	both	at	0	0	-	0
+0	5	1	0.5	0	linear	both	at	0	1	-	0
+0	5	1	0.5	0	linear	both	at	0	2	-	0
+0	5	1	0.5	0	linear	both	at	0.25	0	-	0
+0	5	1	0.5	0	linear	both	at	0.25	1	-	0
+0	5	1	0.5	0	linear	both	at	0.25	2	-	0
+0	5	1	0.5	0	linear	both	at	0.75	0	-	1.25
+0	5	1	0.5	0	linear	both	at	0.75	1	-	1.25
+0	5	1	0.5	0	linear	both	at	0.75	2	-	1.25
+0	5	1	0.5	0	linear	both	at	1	0	-	2.5
+0	5	1	0.5	0	linear	both	at	1	1	-	2.5
+0	5	1	0.5	0	linear	both	at	1	2	-	2.5
+0	5	1	0.5	0	linear	both	at	2	0	-	5
+0	5	1	0.5	0	linear	both	at	2	1	-	5
+0	5	1	0.5	0	linear	both	at	2	2	-	5
+0	5	1	0.5	0	linear	both	duration	-	-	-	1.5
+0	5	1	0.5	0	linear	both	totalDuration	-	-	0	1.5
+0	5	1	0.5	0	linear	both	totalDuration	-	-	1	1.5
+0	5	1	0.5	0	linear	both	totalDuration	-	-	2	1.5
+0	5	1	0.5	0	linear	both	totalDuration	-	-	3	1.5
+0	5	1	0.5	0	linear	both	totalDuration	-	-	10	1.5
+0	5	1	0.5	0	linear	js-only	totalDuration	-	-	2.5	1.5
+0	5	1	0	0.25	linear	both	at	0	0	-	0
+0	5	1	0	0.25	linear	both	at	0	1	-	0
+0	5	1	0	0.25	linear	both	at	0	2	-	0
+0	5	1	0	0.25	linear	both	at	0.25	0	-	1.25
+0	5	1	0	0.25	linear	both	at	0.25	1	-	0
+0	5	1	0	0.25	linear	both	at	0.25	2	-	0
+0	5	1	0	0.25	linear	both	at	0.75	0	-	3.75
+0	5	1	0	0.25	linear	both	at	0.75	1	-	2.5
+0	5	1	0	0.25	linear	both	at	0.75	2	-	1.25
+0	5	1	0	0.25	linear	both	at	1	0	-	5
+0	5	1	0	0.25	linear	both	at	1	1	-	3.75
+0	5	1	0	0.25	linear	both	at	1	2	-	2.5
+0	5	1	0	0.25	linear	both	at	2	0	-	5
+0	5	1	0	0.25	linear	both	at	2	1	-	5
+0	5	1	0	0.25	linear	both	at	2	2	-	5
+0	5	1	0	0.25	linear	both	duration	-	-	-	1
+0	5	1	0	0.25	linear	both	totalDuration	-	-	0	1
+0	5	1	0	0.25	linear	both	totalDuration	-	-	1	1
+0	5	1	0	0.25	linear	both	totalDuration	-	-	2	1.25
+0	5	1	0	0.25	linear	both	totalDuration	-	-	3	1.5
+0	5	1	0	0.25	linear	both	totalDuration	-	-	10	3.25
+0	5	1	0	0.25	linear	js-only	totalDuration	-	-	2.5	1.375
+0	5	1	0.5	0.25	linear	both	at	0	0	-	0
+0	5	1	0.5	0.25	linear	both	at	0	1	-	0
+0	5	1	0.5	0.25	linear	both	at	0	2	-	0
+0	5	1	0.5	0.25	linear	both	at	0.25	0	-	0
+0	5	1	0.5	0.25	linear	both	at	0.25	1	-	0
+0	5	1	0.5	0.25	linear	both	at	0.25	2	-	0
+0	5	1	0.5	0.25	linear	both	at	0.75	0	-	1.25
+0	5	1	0.5	0.25	linear	both	at	0.75	1	-	0
+0	5	1	0.5	0.25	linear	both	at	0.75	2	-	0
+0	5	1	0.5	0.25	linear	both	at	1	0	-	2.5
+0	5	1	0.5	0.25	linear	both	at	1	1	-	1.25
+0	5	1	0.5	0.25	linear	both	at	1	2	-	0
+0	5	1	0.5	0.25	linear	both	at	2	0	-	5
+0	5	1	0.5	0.25	linear	both	at	2	1	-	5
+0	5	1	0.5	0.25	linear	both	at	2	2	-	5
+0	5	1	0.5	0.25	linear	both	duration	-	-	-	1.5
+0	5	1	0.5	0.25	linear	both	totalDuration	-	-	0	1.5
+0	5	1	0.5	0.25	linear	both	totalDuration	-	-	1	1.5
+0	5	1	0.5	0.25	linear	both	totalDuration	-	-	2	1.75
+0	5	1	0.5	0.25	linear	both	totalDuration	-	-	3	2
+0	5	1	0.5	0.25	linear	both	totalDuration	-	-	10	3.75
+0	5	1	0.5	0.25	linear	js-only	totalDuration	-	-	2.5	1.875
+10	-10	2	0.25	1	inOutQuad	both	at	0	0	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0	1	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0	2	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0.25	0	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0.25	1	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0.25	2	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0.75	0	-	7.5
+10	-10	2	0.25	1	inOutQuad	both	at	0.75	1	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	0.75	2	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	1	0	-	4.375
+10	-10	2	0.25	1	inOutQuad	both	at	1	1	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	1	2	-	10
+10	-10	2	0.25	1	inOutQuad	both	at	2	0	-	-9.375
+10	-10	2	0.25	1	inOutQuad	both	at	2	1	-	4.375
+10	-10	2	0.25	1	inOutQuad	both	at	2	2	-	10
+10	-10	2	0.25	1	inOutQuad	both	duration	-	-	-	2.25
+10	-10	2	0.25	1	inOutQuad	both	totalDuration	-	-	0	2.25
+10	-10	2	0.25	1	inOutQuad	both	totalDuration	-	-	1	2.25
+10	-10	2	0.25	1	inOutQuad	both	totalDuration	-	-	2	3.25
+10	-10	2	0.25	1	inOutQuad	both	totalDuration	-	-	3	4.25
+10	-10	2	0.25	1	inOutQuad	both	totalDuration	-	-	10	11.25
+10	-10	2	0.25	1	inOutQuad	js-only	totalDuration	-	-	2.5	3.75
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0	0	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0	1	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0	2	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0.25	0	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0.25	1	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0.25	2	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0.75	0	-	7.127025048163542
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0.75	1	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	0.75	2	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	1	0	-	9.595723180054872
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	1	1	-	7.127025048163542
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	1	2	-	0
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	2	0	-	10
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	2	1	-	10
+0	10	-	0.5	0.25	spring:100:20:1:0	both	at	2	2	-	10
+0	10	-	0.5	0.25	spring:100:20:1:0	both	duration	-	-	-	1.2458333333333318
+0	10	-	0.5	0.25	spring:100:20:1:0	both	totalDuration	-	-	0	1.2458333333333318
+0	10	-	0.5	0.25	spring:100:20:1:0	both	totalDuration	-	-	1	1.2458333333333318
+0	10	-	0.5	0.25	spring:100:20:1:0	both	totalDuration	-	-	2	1.4958333333333318
+0	10	-	0.5	0.25	spring:100:20:1:0	both	totalDuration	-	-	3	1.7458333333333318
+0	10	-	0.5	0.25	spring:100:20:1:0	both	totalDuration	-	-	10	3.495833333333332
+0	10	-	0.5	0.25	spring:100:20:1:0	js-only	totalDuration	-	-	2.5	1.6208333333333318

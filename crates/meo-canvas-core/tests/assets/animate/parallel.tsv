@@ -1,0 +1,163 @@
+# Ground truth for parallel(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/parallel.js`).
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# the four original tables name, and verified rather than assumed: the
+# generator was first run against those tables and reproduced all 612 of their
+# rows exactly.
+#
+# Neither surface may be written from the other: a misreading of v1 that
+# reaches both looks like agreement. Both are written against this, and this
+# came from v1 running.
+#
+# Values are shortest-round-trip decimals, compared exactly. `-` is a column
+# the row does not use; it is not a value.
+#
+# # The members are declared here and rows name them by letter
+#
+# An inline encoding of a nested group is unreadable and needs a parser on
+# both sides. A fixed vocabulary needs neither: each walker builds these
+# three and looks them up.
+#
+#   A = track     from 0 to 100  duration 1  ease outCubic
+#   B = sequence  from 0  steps 4:2:0:linear
+#   C = track     from 0 to 5    duration 1  stagger 1
+#
+# **C is the discriminating member.** With A (duration 1, no stagger) and
+# B (duration 2), `totalDuration` gives 2 whether or not the count reaches
+# the members. With C's stagger of 1 it gives 3 at count 3 and 5 at count
+# 5 -- so an implementation that ignores the count answers 2 and is caught.
+#
+# Every member also appears **alone**, so a member built differently on one
+# surface is caught directly rather than as a group disagreement whose
+# cause is a guess.
+#
+# `at` rows carry one member per row rather than a record: the group's
+# value is a JavaScript object and a Rust `Vec` in declaration order, and
+# a row holding a record literal would assume one of them.
+#
+# rows: 122
+#
+# members	surface	kind	t	index	count	key	value
+A	both	at	0	0	-	A	0
+A	both	at	0	1	-	A	0
+A	both	at	0.25	0	-	A	57.8125
+A	both	at	0.25	1	-	A	57.8125
+A	both	at	1	0	-	A	100
+A	both	at	1	1	-	A	100
+A	both	at	2.5	0	-	A	100
+A	both	at	2.5	1	-	A	100
+A	both	duration	-	-	-	-	1
+A	both	totalDuration	-	-	0	-	1
+A	both	totalDuration	-	-	1	-	1
+A	both	totalDuration	-	-	2	-	1
+A	both	totalDuration	-	-	3	-	1
+A	both	totalDuration	-	-	5	-	1
+A	both	totalDuration	-	-	10	-	1
+B	both	at	0	0	-	B	0
+B	both	at	0	1	-	B	0
+B	both	at	0.25	0	-	B	0.5
+B	both	at	0.25	1	-	B	0.5
+B	both	at	1	0	-	B	2
+B	both	at	1	1	-	B	2
+B	both	at	2.5	0	-	B	4
+B	both	at	2.5	1	-	B	4
+B	both	duration	-	-	-	-	2
+B	both	totalDuration	-	-	0	-	2
+B	both	totalDuration	-	-	1	-	2
+B	both	totalDuration	-	-	2	-	2
+B	both	totalDuration	-	-	3	-	2
+B	both	totalDuration	-	-	5	-	2
+B	both	totalDuration	-	-	10	-	2
+C	both	at	0	0	-	C	0
+C	both	at	0	1	-	C	0
+C	both	at	0.25	0	-	C	1.25
+C	both	at	0.25	1	-	C	0
+C	both	at	1	0	-	C	5
+C	both	at	1	1	-	C	0
+C	both	at	2.5	0	-	C	5
+C	both	at	2.5	1	-	C	5
+C	both	duration	-	-	-	-	1
+C	both	totalDuration	-	-	0	-	1
+C	both	totalDuration	-	-	1	-	1
+C	both	totalDuration	-	-	2	-	2
+C	both	totalDuration	-	-	3	-	3
+C	both	totalDuration	-	-	5	-	5
+C	both	totalDuration	-	-	10	-	10
+A;B	both	at	0	0	-	A	0
+A;B	both	at	0	0	-	B	0
+A;B	both	at	0	1	-	A	0
+A;B	both	at	0	1	-	B	0
+A;B	both	at	0.25	0	-	A	57.8125
+A;B	both	at	0.25	0	-	B	0.5
+A;B	both	at	0.25	1	-	A	57.8125
+A;B	both	at	0.25	1	-	B	0.5
+A;B	both	at	1	0	-	A	100
+A;B	both	at	1	0	-	B	2
+A;B	both	at	1	1	-	A	100
+A;B	both	at	1	1	-	B	2
+A;B	both	at	2.5	0	-	A	100
+A;B	both	at	2.5	0	-	B	4
+A;B	both	at	2.5	1	-	A	100
+A;B	both	at	2.5	1	-	B	4
+A;B	both	duration	-	-	-	-	2
+A;B	both	totalDuration	-	-	0	-	2
+A;B	both	totalDuration	-	-	1	-	2
+A;B	both	totalDuration	-	-	2	-	2
+A;B	both	totalDuration	-	-	3	-	2
+A;B	both	totalDuration	-	-	5	-	2
+A;B	both	totalDuration	-	-	10	-	2
+A;C	both	at	0	0	-	A	0
+A;C	both	at	0	0	-	C	0
+A;C	both	at	0	1	-	A	0
+A;C	both	at	0	1	-	C	0
+A;C	both	at	0.25	0	-	A	57.8125
+A;C	both	at	0.25	0	-	C	1.25
+A;C	both	at	0.25	1	-	A	57.8125
+A;C	both	at	0.25	1	-	C	0
+A;C	both	at	1	0	-	A	100
+A;C	both	at	1	0	-	C	5
+A;C	both	at	1	1	-	A	100
+A;C	both	at	1	1	-	C	0
+A;C	both	at	2.5	0	-	A	100
+A;C	both	at	2.5	0	-	C	5
+A;C	both	at	2.5	1	-	A	100
+A;C	both	at	2.5	1	-	C	5
+A;C	both	duration	-	-	-	-	1
+A;C	both	totalDuration	-	-	0	-	1
+A;C	both	totalDuration	-	-	1	-	1
+A;C	both	totalDuration	-	-	2	-	2
+A;C	both	totalDuration	-	-	3	-	3
+A;C	both	totalDuration	-	-	5	-	5
+A;C	both	totalDuration	-	-	10	-	10
+A;B;C	both	at	0	0	-	A	0
+A;B;C	both	at	0	0	-	B	0
+A;B;C	both	at	0	0	-	C	0
+A;B;C	both	at	0	1	-	A	0
+A;B;C	both	at	0	1	-	B	0
+A;B;C	both	at	0	1	-	C	0
+A;B;C	both	at	0.25	0	-	A	57.8125
+A;B;C	both	at	0.25	0	-	B	0.5
+A;B;C	both	at	0.25	0	-	C	1.25
+A;B;C	both	at	0.25	1	-	A	57.8125
+A;B;C	both	at	0.25	1	-	B	0.5
+A;B;C	both	at	0.25	1	-	C	0
+A;B;C	both	at	1	0	-	A	100
+A;B;C	both	at	1	0	-	B	2
+A;B;C	both	at	1	0	-	C	5
+A;B;C	both	at	1	1	-	A	100
+A;B;C	both	at	1	1	-	B	2
+A;B;C	both	at	1	1	-	C	0
+A;B;C	both	at	2.5	0	-	A	100
+A;B;C	both	at	2.5	0	-	B	4
+A;B;C	both	at	2.5	0	-	C	5
+A;B;C	both	at	2.5	1	-	A	100
+A;B;C	both	at	2.5	1	-	B	4
+A;B;C	both	at	2.5	1	-	C	5
+A;B;C	both	duration	-	-	-	-	2
+A;B;C	both	totalDuration	-	-	0	-	2
+A;B;C	both	totalDuration	-	-	1	-	2
+A;B;C	both	totalDuration	-	-	2	-	2
+A;B;C	both	totalDuration	-	-	3	-	3
+A;B;C	both	totalDuration	-	-	5	-	5
+A;B;C	both	totalDuration	-	-	10	-	10

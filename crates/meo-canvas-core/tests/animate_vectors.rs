@@ -49,8 +49,12 @@ use meo_canvas_core::{
     animate::{
         color::{Rgba, mix},
         easing::{Easing, cubic_bezier, steps},
+        group::{Member, Parallel},
         interpolate::{Animatable, keyframes, map_range},
-        spring::Spring,
+        sampled::Sampled,
+        sequence::{Sequence, Step},
+        spring::{Shape, Spring},
+        track::{Motion, Track},
     },
     color::parse_channels,
 };
@@ -558,4 +562,214 @@ fn a_colour_mixes_where_v1_mixes() {
     // Mostly divergent by design; assert the agreeing rows were reached rather
     // than all skipped.
     assert_eq!((compared, skipped), (7, 8));
+}
+
+/// The `motion` column: an easing name, or a spring's four numbers.
+fn motion_of(text: &str) -> Motion {
+    text.strip_prefix("spring:").map_or_else(
+        || Motion::Ease(easing_named(text)),
+        |shape| {
+            let n: Vec<f64> = shape
+                .split(':')
+                .map(|v| v.parse().unwrap_or_else(|e| unreachable!("{e}")))
+                .collect();
+            Motion::Spring(Shape {
+                stiffness: n[0],
+                damping: n[1],
+                mass: n[2],
+                velocity: n[3],
+            })
+        },
+    )
+}
+
+/// A field that may be absent, spelled `-`.
+fn maybe(row: &[&str], index: usize) -> Option<f64> {
+    (row[index] != "-").then(|| at(row, index))
+}
+
+/// Asks one motion how long it lasts, through the trait.
+///
+/// Generic over [`Sampled`] deliberately: it is the shape the three types are
+/// supposed to share, so a walker written once against all three is also the
+/// assertion that they do. **`at` is not here** — its answer is the trait's
+/// associated `Value`, which is `f64` for a track and a plan and `Vec<f64>`
+/// for a group, and that difference is the one thing about the three that is
+/// genuinely not uniform.
+fn how_long<M: Sampled>(motion: &M, row: &[&str], kind: usize) -> f64 {
+    match row[kind] {
+        "duration" => motion
+            .duration()
+            .unwrap_or_else(|error| unreachable!("{error}")),
+        "totalDuration" => motion
+            .total_duration(at(row, kind + 3) as usize)
+            .unwrap_or_else(|error| unreachable!("{error}")),
+        other => unreachable!("{other} is not a question this helper answers"),
+    }
+}
+
+/// Asks a single-valued motion any of the three questions.
+fn answer<M: Sampled<Value = f64>>(
+    motion: &M,
+    row: &[&str],
+    kind: usize,
+) -> f64 {
+    if row[kind] == "at" {
+        return motion
+            .at(at(row, kind + 1), at(row, kind + 2) as usize)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+    }
+    how_long(motion, row, kind)
+}
+
+#[test]
+fn a_track_answers_where_v1_answers() {
+    let table = include_str!("assets/animate/track.tsv");
+    let (mut compared, mut skipped) = (0, 0);
+    for row in rows(table) {
+        // `js-only` is the fractional count: `total_duration` takes a `usize`
+        // and cannot be asked. A recorded shape difference, not a defect.
+        if row[6] != "both" {
+            skipped += 1;
+            continue;
+        }
+        let motion = Track {
+            from: at(&row, 0),
+            to: at(&row, 1),
+            duration: maybe(&row, 2),
+            delay: at(&row, 3),
+            stagger: at(&row, 4),
+            motion: motion_of(row[5]),
+        };
+        let ours = answer(&motion, &row, 7);
+        let expected = at(&row, 11);
+        assert!(
+            ours == expected,
+            "a track {row:?} answers {ours} where v1 says {expected}"
+        );
+        compared += 1;
+    }
+    assert_eq!((compared, skipped), (126, 6));
+}
+
+#[test]
+fn a_sequence_answers_where_v1_answers() {
+    let table = include_str!("assets/animate/sequence.tsv");
+    let mut compared = 0;
+    for row in rows(table) {
+        let steps = row[3]
+            .split(';')
+            .map(|leg| {
+                let part: Vec<&str> = leg.split(':').collect();
+                Step {
+                    to: part[0].parse().unwrap_or_else(|e| unreachable!("{e}")),
+                    duration: (part[1] != "-").then(|| {
+                        part[1].parse().unwrap_or_else(|e| unreachable!("{e}"))
+                    }),
+                    hold: part[2]
+                        .parse()
+                        .unwrap_or_else(|e| unreachable!("{e}")),
+                    motion: motion_of(part[3]),
+                }
+            })
+            .collect();
+        let plan = Sequence {
+            from: at(&row, 0),
+            steps,
+            delay: at(&row, 1),
+            stagger: at(&row, 2),
+        }
+        .plan()
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        let ours = answer(&plan, &row, 5);
+        let expected = at(&row, 9);
+        assert!(
+            ours == expected,
+            "a sequence {row:?} answers {ours} where v1 says {expected}"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 80);
+}
+
+/// The member vocabulary `parallel.tsv` declares in its header.
+fn member_named(letter: &str) -> Member<f64> {
+    match letter {
+        "A" => Member::Track(Track {
+            from: 0.0,
+            to: 100.0,
+            duration: Some(1.0),
+            delay: 0.0,
+            stagger: 0.0,
+            motion: Motion::Ease(Easing::OutCubic),
+        }),
+        "B" => Member::Sequence(
+            Sequence {
+                from: 0.0,
+                steps: vec![Step {
+                    to: 4.0,
+                    duration: Some(2.0),
+                    hold: 0.0,
+                    motion: Motion::Ease(Easing::Linear),
+                }],
+                delay: 0.0,
+                stagger: 0.0,
+            }
+            .plan()
+            .unwrap_or_else(|error| unreachable!("{error}")),
+        ),
+        "C" => Member::Track(Track {
+            from: 0.0,
+            to: 5.0,
+            duration: Some(1.0),
+            delay: 0.0,
+            stagger: 1.0,
+            motion: Motion::Ease(Easing::Linear),
+        }),
+        other => unreachable!("{other} is not a member this table declares"),
+    }
+}
+
+#[test]
+fn a_group_answers_where_v1_answers() {
+    // The rows include each member alone as well as in company, so a member
+    // built differently here from the JavaScript side is caught directly
+    // rather than as a group disagreement whose cause is a guess.
+    let table = include_str!("assets/animate/parallel.tsv");
+    let mut compared = 0;
+    for row in rows(table) {
+        let names: Vec<&str> = row[0].split(';').collect();
+        let group = Parallel::new(
+            names
+                .iter()
+                .map(|letter| ((*letter).to_owned(), member_named(letter)))
+                .collect(),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        let expected = at(&row, 7);
+        let ours = if row[2] == "at" {
+            // The group's value is a `Vec` in declaration order here and a
+            // record in JavaScript, so the row names one member and the walker
+            // finds its position rather than assuming either container.
+            let values = group
+                .at(at(&row, 3), at(&row, 4) as usize)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let wanted = row[6];
+            let position = names
+                .iter()
+                .position(|letter| *letter == wanted)
+                .unwrap_or_else(|| {
+                    unreachable!("{wanted} is not in this group")
+                });
+            values[position]
+        } else {
+            how_long(&group, &row, 2)
+        };
+        assert!(
+            ours == expected,
+            "a group {row:?} answers {ours} where v1 says {expected}"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 122);
 }

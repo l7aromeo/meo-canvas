@@ -1,0 +1,109 @@
+# Ground truth for sequence(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/sequence.js`).
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# the four original tables name, and verified rather than assumed: the
+# generator was first run against those tables and reproduced all 612 of their
+# rows exactly.
+#
+# Neither surface may be written from the other: a misreading of v1 that
+# reaches both looks like agreement. Both are written against this, and this
+# came from v1 running.
+#
+# Values are shortest-round-trip decimals, compared exactly. `-` is a column
+# the row does not use; it is not a value.
+#
+# Steps are `to:duration:hold:motion`, semicolon separated. A duration of
+# `-` asks a spring leg for its own length.
+#
+# `delay` and `stagger` vary separately and together for the reason
+# `track.tsv` gives: the rule that disagreed between the surfaces was
+# invisible while every row zeroed them.
+#
+# The trailing hold is the case worth having: `at` inside it rests at the
+# step's `to` rather than starting the next leg early, and `duration`
+# excludes it. Sampling at 3.2 in the three-step row is inside that hold.
+#
+# rows: 80
+#
+# from	delay	stagger	steps	surface	kind	t	index	count	value
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	0	0	-	0
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	0	1	-	0
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	0.5	0	-	5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	0.5	1	-	5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	1.5	0	-	15
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	1.5	1	-	15
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	3.2	0	-	30
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	3.2	1	-	30
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	5	0	-	0
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	5	1	-	0
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	duration	-	-	-	4.5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	totalDuration	-	-	0	4.5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	totalDuration	-	-	1	4.5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	totalDuration	-	-	2	4.5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	totalDuration	-	-	3	4.5
+0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	totalDuration	-	-	10	4.5
+0	0.25	0	10:1:0:linear	both	at	0	0	-	0
+0	0.25	0	10:1:0:linear	both	at	0	1	-	0
+0	0.25	0	10:1:0:linear	both	at	0.5	0	-	2.5
+0	0.25	0	10:1:0:linear	both	at	0.5	1	-	2.5
+0	0.25	0	10:1:0:linear	both	at	1.5	0	-	10
+0	0.25	0	10:1:0:linear	both	at	1.5	1	-	10
+0	0.25	0	10:1:0:linear	both	at	3.2	0	-	10
+0	0.25	0	10:1:0:linear	both	at	3.2	1	-	10
+0	0.25	0	10:1:0:linear	both	at	5	0	-	10
+0	0.25	0	10:1:0:linear	both	at	5	1	-	10
+0	0.25	0	10:1:0:linear	both	duration	-	-	-	1.25
+0	0.25	0	10:1:0:linear	both	totalDuration	-	-	0	1.25
+0	0.25	0	10:1:0:linear	both	totalDuration	-	-	1	1.25
+0	0.25	0	10:1:0:linear	both	totalDuration	-	-	2	1.25
+0	0.25	0	10:1:0:linear	both	totalDuration	-	-	3	1.25
+0	0.25	0	10:1:0:linear	both	totalDuration	-	-	10	1.25
+0	0	0.5	10:1:0:linear	both	at	0	0	-	0
+0	0	0.5	10:1:0:linear	both	at	0	1	-	0
+0	0	0.5	10:1:0:linear	both	at	0.5	0	-	5
+0	0	0.5	10:1:0:linear	both	at	0.5	1	-	0
+0	0	0.5	10:1:0:linear	both	at	1.5	0	-	10
+0	0	0.5	10:1:0:linear	both	at	1.5	1	-	10
+0	0	0.5	10:1:0:linear	both	at	3.2	0	-	10
+0	0	0.5	10:1:0:linear	both	at	3.2	1	-	10
+0	0	0.5	10:1:0:linear	both	at	5	0	-	10
+0	0	0.5	10:1:0:linear	both	at	5	1	-	10
+0	0	0.5	10:1:0:linear	both	duration	-	-	-	1
+0	0	0.5	10:1:0:linear	both	totalDuration	-	-	0	1
+0	0	0.5	10:1:0:linear	both	totalDuration	-	-	1	1
+0	0	0.5	10:1:0:linear	both	totalDuration	-	-	2	1.5
+0	0	0.5	10:1:0:linear	both	totalDuration	-	-	3	2
+0	0	0.5	10:1:0:linear	both	totalDuration	-	-	10	5.5
+0	0.25	0.5	10:1:0:linear	both	at	0	0	-	0
+0	0.25	0.5	10:1:0:linear	both	at	0	1	-	0
+0	0.25	0.5	10:1:0:linear	both	at	0.5	0	-	2.5
+0	0.25	0.5	10:1:0:linear	both	at	0.5	1	-	0
+0	0.25	0.5	10:1:0:linear	both	at	1.5	0	-	10
+0	0.25	0.5	10:1:0:linear	both	at	1.5	1	-	7.5
+0	0.25	0.5	10:1:0:linear	both	at	3.2	0	-	10
+0	0.25	0.5	10:1:0:linear	both	at	3.2	1	-	10
+0	0.25	0.5	10:1:0:linear	both	at	5	0	-	10
+0	0.25	0.5	10:1:0:linear	both	at	5	1	-	10
+0	0.25	0.5	10:1:0:linear	both	duration	-	-	-	1.25
+0	0.25	0.5	10:1:0:linear	both	totalDuration	-	-	0	1.25
+0	0.25	0.5	10:1:0:linear	both	totalDuration	-	-	1	1.25
+0	0.25	0.5	10:1:0:linear	both	totalDuration	-	-	2	1.75
+0	0.25	0.5	10:1:0:linear	both	totalDuration	-	-	3	2.25
+0	0.25	0.5	10:1:0:linear	both	totalDuration	-	-	10	5.75
+0	0	0	4:2:0:outCubic	both	at	0	0	-	0
+0	0	0	4:2:0:outCubic	both	at	0	1	-	0
+0	0	0	4:2:0:outCubic	both	at	0.5	0	-	2.3125
+0	0	0	4:2:0:outCubic	both	at	0.5	1	-	2.3125
+0	0	0	4:2:0:outCubic	both	at	1.5	0	-	3.9375
+0	0	0	4:2:0:outCubic	both	at	1.5	1	-	3.9375
+0	0	0	4:2:0:outCubic	both	at	3.2	0	-	4
+0	0	0	4:2:0:outCubic	both	at	3.2	1	-	4
+0	0	0	4:2:0:outCubic	both	at	5	0	-	4
+0	0	0	4:2:0:outCubic	both	at	5	1	-	4
+0	0	0	4:2:0:outCubic	both	duration	-	-	-	2
+0	0	0	4:2:0:outCubic	both	totalDuration	-	-	0	2
+0	0	0	4:2:0:outCubic	both	totalDuration	-	-	1	2
+0	0	0	4:2:0:outCubic	both	totalDuration	-	-	2	2
+0	0	0	4:2:0:outCubic	both	totalDuration	-	-	3	2
+0	0	0	4:2:0:outCubic	both	totalDuration	-	-	10	2
