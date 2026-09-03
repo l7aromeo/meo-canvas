@@ -101,6 +101,7 @@ impl PageInfo {
 
 /// What went wrong between describing a canvas and painting it.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BuildError {
     /// The pages contradict themselves, or there are none.
     Sequence(SequenceError),
@@ -144,6 +145,7 @@ impl From<Error> for BuildError {
 /// something that would not happen — and v1 ignoring it quietly is the reason
 /// it is worth refusing here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SequenceError {
     /// Both a page count and a duration were named.
     CountAndDuration,

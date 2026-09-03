@@ -37,6 +37,7 @@ use crate::Error;
 /// not part of the promise, and neither is whether Skia or a dedicated encoder
 /// does it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ImageFormat {
     /// Lossless raster with an alpha channel.
     Png,

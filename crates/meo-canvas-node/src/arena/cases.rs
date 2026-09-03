@@ -413,11 +413,18 @@ json_tagged!(TrackSize {
     Self::Points(v) => "points", v;
     Self::Percent(v) => "percent", v;
     Self::Fraction(v) => "fraction", v;
+    // As `Spacing` below: `TrackSize` is `#[non_exhaustive]`, and CSS grid has
+    // four sizing functions this does not name yet.
+    _ => "unknown";
 });
 json_tagged!(Spacing {
     Self::Normal => "normal";
     Self::Points(v) => "points", v;
     Self::Em(v) => "em", v;
+    // `Spacing` is `#[non_exhaustive]`. This file writes the expected bytes
+    // for the round trip, so a spelling it cannot name would have to be added
+    // here before it could be a case at all.
+    _ => "unknown";
 });
 json_tagged!(ImageSource {
     Self::Path(v) => "path", v;
@@ -474,6 +481,9 @@ impl ToJson for Mask {
                 "{{\"tag\":\"gradient\",\"value\":{}}}",
                 gradient.to_json()
             ),
+            // As `Spacing` above: `Mask` is `#[non_exhaustive]`, and a mask
+            // this file cannot name is not yet a case.
+            _ => "{\"tag\":\"unknown\"}".to_owned(),
         }
     }
 }
@@ -778,6 +788,12 @@ impl KindCase {
 /// Hand-written rather than emitted by [`json_tagged`], which carries one bound
 /// value per variant and these carry up to nine. The fields are named in wire
 /// order, which is the order the grammar in [`crate::arena`] lists them.
+#[expect(
+    clippy::match_same_arms,
+    reason = "a box holds no fields, so its JSON is empty because there is \
+              nothing to write; the `#[non_exhaustive]` arm is empty because \
+              this file has no case for that kind yet."
+)]
 fn kind_json(kind: &NodeKind) -> String {
     match kind {
         NodeKind::Box => String::from("{}"),
@@ -838,6 +854,9 @@ fn kind_json(kind: &NodeKind) -> String {
             line_dash.to_json(),
             line_dash_offset.to_json()
         ),
+        // `NodeKind` is `#[non_exhaustive]`; a kind this file cannot name is
+        // not yet a case, and an empty object is what an unwritten one holds.
+        _ => String::from("{}"),
     }
 }
 

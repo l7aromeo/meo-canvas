@@ -941,6 +941,12 @@ fn paint_box(
 }
 
 /// Draws whatever the node's kind is.
+#[expect(
+    clippy::match_same_arms,
+    reason = "`Box` draws nothing because a box with no paint is nothing to \
+              draw; the `#[non_exhaustive]` arm draws nothing because it has \
+              no idea what to draw. Same body, different claims."
+)]
 fn paint_kind(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
@@ -1026,6 +1032,11 @@ fn paint_kind(
             }
             Ok(())
         }
+        // `NodeKind` is `#[non_exhaustive]`: a kind this build cannot draw
+        // draws nothing rather than refusing the page. Adding one still fails
+        // to compile in `meo-canvas-scene`, where `NodeKind::tag` matches every
+        // variant -- the guarantee moved rather than went.
+        _ => Ok(()),
     }
 }
 
@@ -4289,6 +4300,10 @@ fn draw_mask(
     mask: &Mask,
     rect: Rect,
 ) -> Result<(), Error> {
+    // The wildcard is `Mask` being `#[non_exhaustive]`: a mask this build
+    // cannot describe clips nothing, which shows the subtree whole rather than
+    // hiding it. A mask that silently removed its own content would be a
+    // missing picture with nothing to point at.
     match mask {
         Mask::Shape(shape) => {
             let (radius_x, radius_y) = match shape {
@@ -4354,6 +4369,7 @@ fn draw_mask(
             }
             Ok(())
         }
+        _ => Ok(()),
     }
 }
 

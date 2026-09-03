@@ -410,19 +410,17 @@ impl<'scene> Resolved<'scene> {
         for (id, node) in scene.nodes.iter().enumerate() {
             // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
             let id = NodeId::new(id as u32);
-            match &node.kind {
-                NodeKind::Image { source, frame, .. } => {
-                    // `at_frame` is applied per node and not shared: it is
-                    // what a node asked of the source rather than part of
-                    // decoding it, so two nodes may hold one decode and
-                    // still want different frames of it.
-                    let decoded =
-                        taken(&once, id, source)?.at_frame(*frame, id)?;
-                    resolved.images.insert(id, decoded);
-                }
-                NodeKind::Box
-                | NodeKind::Text { .. }
-                | NodeKind::Path { .. } => {}
+            // Only an image names a source to resolve. Every other kind
+            // has nothing to decode, including one this build does not know:
+            // `NodeKind` is `#[non_exhaustive]`, so `if let` says that more
+            // honestly than a match with a wildcard that means "and the rest".
+            if let NodeKind::Image { source, frame, .. } = &node.kind {
+                // `at_frame` is applied per node and not shared: it is
+                // what a node asked of the source rather than part of
+                // decoding it, so two nodes may hold one decode and
+                // still want different frames of it.
+                let decoded = taken(&once, id, source)?.at_frame(*frame, id)?;
+                resolved.images.insert(id, decoded);
             }
             if let Some(background) = node.paint.background_image.as_ref() {
                 // Kept in its own table rather than beside the image nodes: a

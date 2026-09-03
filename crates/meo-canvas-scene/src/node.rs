@@ -128,6 +128,7 @@ wire_enum! {
 
 /// What a node draws, and the properties only that kind of drawing has.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum NodeKind {
     /// A container. Draws its background and border and lays out its children.
     ///

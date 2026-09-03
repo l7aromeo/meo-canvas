@@ -721,11 +721,19 @@ fn skia_style(
 ///
 /// Test-only: the live path resolves spacing in [`crate::lines::Metrics`].
 #[cfg(test)]
+#[expect(
+    clippy::match_same_arms,
+    reason = "the named arm and the `#[non_exhaustive]` arm agree today and \
+              mean different things: one is the value this build knows, the \
+              other is one it has never heard of."
+)]
 fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
     match spacing {
         Spacing::Normal => 0.0,
         Spacing::Points(points) => points,
         Spacing::Em(em) => em * font_size,
+        // As `lines::spacing_pixels`: `Spacing` is `#[non_exhaustive]`.
+        _ => 0.0,
     }
 }
 

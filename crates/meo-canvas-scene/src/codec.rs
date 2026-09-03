@@ -172,6 +172,7 @@ pub const MAX_NODES: u32 = 1 << 20;
 
 /// What can be wrong with a buffer meant to hold a scene.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CodecError {
     /// The buffer does not begin with [`MAGIC`].
     NotAScene,

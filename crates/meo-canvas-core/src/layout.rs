@@ -1056,6 +1056,13 @@ fn to_inset(inset: Option<Length>) -> taffy::LengthPercentageAuto {
 /// on both bounds, and `<n>fr` is `minmax(auto, <n>fr)` -- a flexible track has
 /// no fixed minimum, which is what lets it shrink below its share when the
 /// fixed tracks take the room.
+#[expect(
+    clippy::match_same_arms,
+    reason = "the `auto` arm and the `#[non_exhaustive]` arm agree today and \
+              mean different things: one is the track CSS names, the other is \
+              a track this build has never heard of. Merging them would hide \
+              which is which the first time they stop agreeing."
+)]
 const fn to_track_sizing(size: TrackSize) -> taffy::TrackSizingFunction {
     match size {
         TrackSize::Auto => taffy::TrackSizingFunction {
@@ -1073,6 +1080,13 @@ const fn to_track_sizing(size: TrackSize) -> taffy::TrackSizingFunction {
         TrackSize::Fraction(share) => taffy::TrackSizingFunction {
             min: taffy::MinTrackSizingFunction::auto(),
             max: taffy::MaxTrackSizingFunction::fr(share),
+        },
+        // `TrackSize` is `#[non_exhaustive]`, so this arm is what a track this
+        // build does not know becomes. `auto` is the neutral one: a track that
+        // takes what it is given rather than one that claims a size.
+        _ => taffy::TrackSizingFunction {
+            min: taffy::MinTrackSizingFunction::auto(),
+            max: taffy::MaxTrackSizingFunction::auto(),
         },
     }
 }

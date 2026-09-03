@@ -233,6 +233,7 @@ wire_enum! {
 /// `canvas.type.ts` spells this as ``number | 'auto' | `${number}px` |
 /// `${number}fr` | `${number}%` ``, and a bare number there means pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[non_exhaustive]
 pub enum TrackSize {
     /// Sized to its content.
     #[default]
@@ -402,6 +403,29 @@ impl GridPlacement {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn every_track_size_is_named_here_so_a_new_one_cannot_be_ignored_elsewhere()
+    {
+        // **The compile error `#[non_exhaustive]` moved out of the other
+        // crates.** `meo-canvas-core` now has a wildcard arm for this enum, so
+        // a variant added here would take that arm and draw nothing rather
+        // than fail to build. This match has no wildcard and lives in the
+        // crate that owns the type, which is where the attribute leaves
+        // exhaustiveness intact: adding a variant fails to compile here, and
+        // whoever adds it goes and looks at the arms that need it.
+        //
+        // `cargo test` rather than `cargo build`, which is the cost of putting
+        // it in a test; the gate runs both.
+        use super::TrackSize;
+        let witness = |value: &TrackSize| match value {
+            TrackSize::Auto => "auto",
+            TrackSize::Points { .. } => "points",
+            TrackSize::Percent { .. } => "percent",
+            TrackSize::Fraction { .. } => "fraction",
+        };
+        let _ = witness(&TrackSize::Auto);
+    }
     use super::{
         Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
         GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,

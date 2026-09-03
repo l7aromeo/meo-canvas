@@ -40,6 +40,7 @@ neither can grow a capability the other cannot reach.
   - [Stacking contexts](#stacking-contexts)
   - [Layout defaults](#layout-defaults)
   - [Errors](#errors)
+  - [What a public enum promises](#what-a-public-enum-promises)
   - [Performance and memory](#performance-and-memory)
 - [Workflows](#workflows)
   - [The package manager is bun](#the-package-manager-is-bun)
@@ -951,6 +952,62 @@ callers match on them.
 
 `unwrap` is denied. `expect` warns, and is allowed where its message explains
 the invariant that makes it unreachable.
+
+### What a public enum promises
+
+**Closed because CSS closed it, open because we will add to it.**
+
+`#[non_exhaustive]` is the difference between adding a variant and breaking
+every consumer who matched on the type. It is free to add before a first
+release and impossible to add after one, so the marking happens now and the
+question is only which enums get it.
+
+Marked, because they will grow: the five error types -- `Error`, `BuildError`,
+`SequenceError`, `SceneError`, `CodecError` -- which have grown three variants
+in a week; `ImageFormat`, which grows whenever an encoder does; `NodeKind`,
+`Mask`, `TrackSize` and `Spacing`, which are this project's vocabulary rather
+than anyone else's; and `FontVariant`, which names 35 OpenType features out of
+a specification that has more.
+
+Not marked, because the specification closed the set: `Display`,
+`FlexDirection`, `Justify`, `Align`, `Overflow`, `BoxSizing`, `Direction` and
+their neighbours. **The attribute is hostile there for no gain** -- a caller
+matching on `FlexDirection` wants the compiler to tell them when they have
+missed one, and CSS is not going to invent a fifth direction.
+
+Three that look like they belong on the first list and belong on the second,
+because the check is the specification rather than the shape of the type:
+`GradientGeometry` is `Linear | Radial | Conic`, which is every CSS gradient;
+`BackgroundSize` is `PerAxis | Cover | Contain`, which is every
+`background-size`; `LineHeight` is `Number | Length | Percent`, which is every
+`line-height` that is not `normal`, and `normal` is the absent value rather
+than a variant. `TrackSize` is on the first list for the opposite reason: CSS
+grid also has `min-content`, `max-content`, `minmax()` and `fit-content()`, and
+this names four of eight.
+
+**What marking costs, stated rather than discovered.** `#[non_exhaustive]`
+leaves exhaustiveness intact inside the defining crate and removes it
+everywhere else -- so `meo-canvas-core` matching on a `meo-canvas-scene` enum
+now needs a wildcard arm, and a variant added tomorrow would take that arm
+silently instead of failing the build. That is a real loss and this repository
+cares about it more than most: it is the same guarantee `Style::merge` spends
+sixty-eight lines to keep.
+
+So the guarantee moves rather than goes. Every marked enum has an exhaustive
+match with no wildcard **in the crate that defines it**: `NodeKind::tag` was
+already one, and `Mask`, `TrackSize` and `Spacing` have a witness test each
+that names every variant and does nothing with them. Adding a variant fails to
+compile there, and whoever adds it is then standing in the file that lists the
+places needing an arm. The witnesses are `#[cfg(test)]`, so `cargo build` will
+not catch it and `cargo test` will; that is the price of not inventing public
+API to hold a compile-time check.
+
+Each wildcard arm in another crate says what it does and why it exists. A
+`NodeKind` this build cannot draw draws nothing; a `Mask` it cannot describe
+clips nothing, which shows the subtree whole rather than hiding it; an unknown
+`FontVariant` asks the shaper for nothing. None of them panic: a scene from a
+newer writer should render what this build understands rather than refuse the
+page.
 
 ### Performance and memory
 

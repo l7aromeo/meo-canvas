@@ -363,6 +363,7 @@ impl Scene {
 
 /// What can be wrong with a scene whose bytes are well formed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SceneError {
     /// A [`NodeId`] that does not index this scene's arena.
     UnknownNode(NodeId),

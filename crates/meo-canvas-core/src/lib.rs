@@ -75,6 +75,7 @@ use crate::measure::SceneMeasurer;
 // makes every `[`Error`]` doc link in this file ambiguous between the derive
 // macro and the enum below, which `rustdoc::all = "deny"` rejects.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// A node names a source the renderer cannot obtain by itself.
     #[error("node {} names a source this crate does not fetch", .0.get())]

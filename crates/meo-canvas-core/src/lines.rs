@@ -218,6 +218,12 @@ impl RunStyle {
                 value,
             });
         };
+        #[expect(
+            clippy::match_same_arms,
+            reason = "`Normal` asks for nothing on purpose; the \
+                      `#[non_exhaustive]` arm asks for nothing because it has \
+                      no name to ask with. Same body, different reasons."
+        )]
         for variant in &self.variant {
             match variant {
                 FontVariant::Normal => {}
@@ -261,6 +267,11 @@ impl RunStyle {
                 FontVariant::Ruby => tag("ruby", 1),
                 FontVariant::Super => tag("sups", 1),
                 FontVariant::Sub => tag("subs", 1),
+                // `FontVariant` is `#[non_exhaustive]`, and OpenType has more
+                // features than this list names. One this build does not know
+                // asks the shaper for nothing, which leaves the text as it
+                // would have been drawn without it.
+                _ => {}
             }
         }
         (caps, features)
@@ -578,11 +589,20 @@ impl Metrics {
 }
 
 /// A [`Spacing`] as the pixel count it stands for.
+#[expect(
+    clippy::match_same_arms,
+    reason = "the named arm and the `#[non_exhaustive]` arm agree today and \
+              mean different things: one is the value this build knows, the \
+              other is one it has never heard of."
+)]
 fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
     match spacing {
         Spacing::Normal => 0.0,
         Spacing::Points(points) => points,
         Spacing::Em(em) => em * font_size,
+        // `Spacing` is `#[non_exhaustive]`; an unknown spelling adds nothing,
+        // which is what `Normal` already means.
+        _ => 0.0,
     }
 }
 

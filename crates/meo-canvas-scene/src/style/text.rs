@@ -84,6 +84,7 @@ wire_enum! {
     /// union's autocomplete and its rejection of a misspelling. The keywords
     /// are CSS's own, so `FontVariant::SmallCaps` is `'small-caps'` on the
     /// other side and needs no lookup table between them.
+    #[non_exhaustive]
     pub enum FontVariant {
         /// CSS `normal`. No variant features beyond the font's defaults.
         Normal = 0,
@@ -207,6 +208,7 @@ impl Default for FontWeight {
 
 /// Spacing between glyphs or words.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[non_exhaustive]
 pub enum Spacing {
     /// Whatever the font specifies.
     #[default]
@@ -364,6 +366,27 @@ pub struct ParagraphStyle {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn every_spacing_is_named_here_so_a_new_one_cannot_be_ignored_elsewhere() {
+        // **The compile error `#[non_exhaustive]` moved out of the other
+        // crates.** `meo-canvas-core` now has a wildcard arm for this enum, so
+        // a variant added here would take that arm and draw nothing rather
+        // than fail to build. This match has no wildcard and lives in the
+        // crate that owns the type, which is where the attribute leaves
+        // exhaustiveness intact: adding a variant fails to compile here, and
+        // whoever adds it goes and looks at the arms that need it.
+        //
+        // `cargo test` rather than `cargo build`, which is the cost of putting
+        // it in a test; the gate runs both.
+        use super::Spacing;
+        let witness = |value: &Spacing| match value {
+            Spacing::Normal => "normal",
+            Spacing::Points { .. } => "points",
+            Spacing::Em { .. } => "em",
+        };
+        let _ = witness(&Spacing::Normal);
+    }
     use super::{
         DEFAULT_ELLIPSIS, FontStyle, FontVariant, FontWeight, ParagraphStyle,
         Spacing, TextAlign, TextDecoration, TextStyle, VerticalAlign,
