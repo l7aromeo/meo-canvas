@@ -32,7 +32,26 @@ import type { Color, Gradient, Style } from './style.js'
 export type NodeKind = 'box' | 'text' | 'image' | 'path'
 
 /** Where an image's bytes come from. */
-export type ImageSource = { readonly path: string } | { readonly url: string } | { readonly bytes: Uint8Array }
+export type ImageSource =
+  | {
+      /** A path on the machine doing the rendering, read at render time. */
+      readonly path: string
+    }
+  | {
+      /**
+       * A remote address, fetched at render time.
+       *
+       * **Refused unless the renderer was built to fetch.** The core is
+       * fetch-free by default and answers a URL with an error rather than
+       * reaching the network on an input's say-so; the CLI needs `--features
+       * net` for the same reason.
+       */
+      readonly url: string
+    }
+  | {
+      /** The encoded image itself, when the caller already holds it. */
+      readonly bytes: Uint8Array
+    }
 
 /** One run of a rich-text node, with a style of its own. */
 export interface TextSegment {
@@ -406,6 +425,13 @@ export function Image(props: ImageProps): SceneNode {
  */
 export type PathPaint = Color | 'none' | Gradient
 
+/**
+ * A path node's own properties, on top of everything a node can be styled with.
+ *
+ * The geometry lives here rather than in {@link Style} because it is what the
+ * node *is* rather than how it looks: a path without `d` draws nothing, where a
+ * path without a fill is still a shape.
+ */
 export type PathProps = Style & {
   /** The SVG `d` attribute, in the node's own coordinates — or in
    * the space of {@link PathProps}'s `viewBox` when one is given. */
