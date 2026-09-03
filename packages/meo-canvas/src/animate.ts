@@ -255,11 +255,45 @@ export function steps(count: number): (t: number) => number {
 
 /** A spring's physical description. Every field has v1's default. */
 export interface SpringConfig {
+  /**
+   * Where the motion starts. Defaults to `0`.
+   *
+   * Also what a spring answers for any `t` at or below zero: it holds at
+   * `from` rather than at a literal `0`, which are the same number only for a
+   * default spring.
+   */
   readonly from?: number
+  /**
+   * Where it comes to rest. Defaults to `1`.
+   *
+   * Approached asymptotically and never exactly reached, which is why
+   * {@link springDuration} exists -- a spring has no natural end, and a page
+   * count needs one.
+   */
   readonly to?: number
+  /**
+   * How hard it pulls toward the target. Defaults to `170`.
+   *
+   * Higher is faster and, at a fixed `damping`, overshoots further.
+   */
   readonly stiffness?: number
+  /**
+   * How strongly motion is resisted. Defaults to `26`.
+   *
+   * The three regimes are genuinely different solutions rather than one
+   * formula with edge cases: below `2 * Math.sqrt(stiffness * mass)` the
+   * motion oscillates, exactly at it the approach is the fastest that does
+   * not overshoot, and above it the value crawls in without ever crossing.
+   */
   readonly damping?: number
+  /** Inertia. Defaults to `1`. Heavier is slower to start and slower to stop. */
   readonly mass?: number
+  /**
+   * Speed at `t = 0`, in units per second. Defaults to `0`.
+   *
+   * Positive points at the target, so a positive velocity on a spring already
+   * travelling that way arrives sooner and overshoots more.
+   */
   readonly velocity?: number
 }
 
@@ -522,13 +556,30 @@ export interface Sampled<T> {
 
 /** A reusable animation: what to move between, when, and how. */
 export interface TrackConfig<T extends Animatable> {
+  /** The value before the track starts, and during any `delay`. */
   readonly from: T
+  /** The value once the motion has finished. */
   readonly to: T
   /** Seconds the motion lasts. Required unless `spring` supplies one. */
   readonly duration?: number
+  /**
+   * Seconds to wait before the motion starts. Defaults to `0`.
+   *
+   * **Counted in {@link Sampled.duration}**, which reports how long from the
+   * start of the render until this track has finished rather than how long the
+   * motion itself lasts. A track delayed by `0.5` with a `duration` of `1`
+   * reports `1.5`.
+   */
   readonly delay?: number
   /** Extra delay per item index, for staggering a row of elements. */
   readonly stagger?: number
+  /**
+   * The timing curve, by name or as a function of `0..1`.
+   *
+   * Mutually exclusive with `spring`, and giving both is refused rather than
+   * silently preferring one. A function receives a clamped `t` and may return
+   * outside `0..1`: the overshooting curves depend on it.
+   */
   readonly ease?: EasingName | ((t: number) => number)
   /** Spring physics instead of an easing. Supplies its own duration. */
   readonly spring?: SpringConfig
@@ -580,9 +631,19 @@ export function track<T extends Animatable>(config: TrackConfig<T>): Sampled<T> 
 
 /** One leg of a sequence. The start is wherever the previous leg finished. */
 export interface SequenceStep<T extends Animatable> {
+  /** Where this leg ends. It begins wherever the previous one finished. */
   readonly to: T
+  /** Seconds this leg takes. Required unless `spring` supplies one. */
   readonly duration?: number
+  /** The timing curve for this leg alone. Mutually exclusive with `spring`. */
   readonly ease?: EasingName | ((t: number) => number)
+  /**
+   * Physics for this leg instead of a curve, supplying its own duration.
+   *
+   * A `from` or `to` here is refused: the step already defines its range, and
+   * the spring is driven over `0..1` so the physics stays independent of the
+   * units. Dropping them silently would animate to a value nobody asked for.
+   */
   readonly spring?: SpringConfig
   /** Seconds to rest at `to` before the next step begins. */
   readonly hold?: number
@@ -590,9 +651,13 @@ export interface SequenceStep<T extends Animatable> {
 
 /** A multi-step animation on a single value. */
 export interface SequenceConfig<T extends Animatable> {
+  /** Where the first step starts from. */
   readonly from: T
+  /** The legs, in order. At least one; an empty sequence is refused. */
   readonly steps: readonly SequenceStep<T>[]
+  /** Seconds before the first step begins. Counted in the reported duration. */
   readonly delay?: number
+  /** Extra delay per item index, so a row of things runs in turn. */
   readonly stagger?: number
 }
 
@@ -702,9 +767,25 @@ export function parallel<M extends Record<string, Sampled<unknown>>>(members: M)
 
 /** A colour as four channels: `r`, `g`, `b` in 0–255 and `a` in 0–1. */
 export interface Rgba {
+  /**
+   * Red, nominally `0` to `255` and **not clamped to it**.
+   *
+   * Mixing past either end of a range leaves the channel outside the gamut,
+   * and that is kept rather than flattened: {@link formatColor} writes such a
+   * colour as `color(srgb ...)`, which can express it, instead of a hex triple
+   * that cannot.
+   */
   readonly r: number
+  /** Green, on the same terms. */
   readonly g: number
+  /** Blue, on the same terms. */
   readonly b: number
+  /**
+   * Alpha, nominally `0` to `1` and not clamped either.
+   *
+   * {@link parseColor} returns the number the author wrote: `0.1` reads back
+   * as `0.1`, and a hex byte as `byte / 255`.
+   */
   readonly a: number
 }
 
