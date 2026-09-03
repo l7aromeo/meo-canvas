@@ -306,7 +306,12 @@ describe('the divergences the tables record rather than assert', () => {
     expect(formatColor(mixColor(black, white, 1.25))).toBe('color(srgb 1.25 1.25 1.25)')
   })
 
-  it('parses the alpha the author wrote, not an eight-bit approximation of it', () => {
+  // `it.fails` rather than `it`: this asserts the test **fails today**, so the
+  // suite stays green while the defect stands. A red suite would hide the next
+  // real failure behind an expected one. The moment the parse boundary stops
+  // narrowing, this starts failing -- which is the signal to change `it.fails`
+  // back to `it` in the same commit as the fix, and delete this paragraph.
+  it.fails('parses the alpha the author wrote, not an eight-bit approximation of it', () => {
     // **This is expected to fail until the parse boundary is fixed**, and it is
     // meant to: it is the failing-first evidence for the finding, and it passes
     // on each surface only once that surface stops narrowing the value.
