@@ -2338,6 +2338,12 @@ count that matches the generator's is necessary and not sufficient — one table
 silently lost three rows because `#` is the comment character and a hex colour
 begins with one, and it was the row census, not the values, that found it.
 
+The same census applies to tests. When pinned values move into a table and the
+tests that held them are rewritten as a walker, a test that was not a pin --
+a refusal, a `throws` contract -- can go with them, and a deleted test does not
+fail. The one time it happened here, an ESLint unused-import error was the only
+signal. Diff the test names before and after any move between files.
+
 ### Structural coverage is not positional coverage
 
 The chart's byte comparison puts the legend on a different side in each case:
