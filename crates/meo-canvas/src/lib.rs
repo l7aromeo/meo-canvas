@@ -2,27 +2,20 @@
 //!
 //! ```
 //! use meo_canvas::{
-//!     Column, Image, Row, Style, Text, all, hex_rgb, px, scene::ObjectFit,
+//!     Column, Image, Row, Styled, Text, all, hex_rgb, px, scene::ObjectFit,
 //! };
 //!
 //! let card = Row::new()
-//!     .with_style(
-//!         Style::new()
-//!             .gap(px(16.0))
-//!             .padding(all(px(24.0)))
-//!             .background_color(hex_rgb(0x10_10_14)),
-//!     )
+//!     .gap(px(16.0))
+//!     .padding(all(px(24.0)))
+//!     .background_color(hex_rgb(0x10_10_14))
 //!     .children([
-//!         Image::path("avatar.png").with_style(
-//!             Style::new()
-//!                 .size(px(64.0), px(64.0))
-//!                 .object_fit(ObjectFit::Cover),
-//!         ),
+//!         Image::path("avatar.png")
+//!             .size(px(64.0), px(64.0))
+//!             .object_fit(ObjectFit::Cover),
 //!         Column::new().children([
-//!             Text::new("Ukasyah")
-//!                 .with_style(Style::new().font_size(24.0).bold()),
-//!             Text::new("Bandung")
-//!                 .with_style(Style::new().color(hex_rgb(0x88_88_90))),
+//!             Text::new("Ukasyah").font_size(24.0).bold(),
+//!             Text::new("Bandung").color(hex_rgb(0x88_88_90)),
 //!         ]),
 //!     ]);
 //!
@@ -30,11 +23,16 @@
 //! # Ok::<(), meo_canvas_scene::SceneError>(())
 //! ```
 //!
-//! A node carries a constructor, a [`Style`], and its children. Three methods,
-//! and the set never grows: a new property is a new method on `Style`, not on
-//! nine node types. Each node's essential argument is a constructor parameter
-//! -- [`Text::new`] takes the content, [`Image::path`] the source, [`Path::d`]
-//! the data -- so it cannot be forgotten.
+//! Properties are named on the node, flat, as CSS names them and as the
+//! JavaScript surface's props spell them. That is the path this crate is
+//! taught in: the setters come from [`Styled`], which every node implements,
+//! so the import is one trait rather than a type per node.
+//!
+//! A node carries a constructor, its properties, and its children. The method
+//! set never grows per node: a new property is a new entry in one table, not a
+//! method on nine node types. Each node's essential argument is a constructor
+//! parameter -- [`Text::new`] takes the content, [`Image::path`] the source,
+//! [`Path::d`] the data -- so it cannot be forgotten.
 //!
 //! # One flat style
 //!
@@ -49,19 +47,29 @@
 //! adjacent and mean different things, which is CSS's trap and not one invented
 //! here. Keeping it is what lets a design be ported without translation.
 //!
-//! Setters are `const` wherever the property allows, so a reusable base is a
-//! `const`:
+//! # A style as a value, for the base a design reuses
+//!
+//! The flat setters name one property at a time, which is the wrong shape for
+//! a base that many nodes share. [`Style`] carries the same setters as
+//! `const fn`s, so that base is a `const`, and
+//! [`with_style`](Element::with_style) layers it onto a node:
 //!
 //! ```
-//! use meo_canvas::{Row, Style, all, hex_rgb, px};
+//! use meo_canvas::{Row, Style, Styled, all, hex_rgb, px};
 //!
 //! const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
 //!
 //! let dark =
 //!     Row::new().with_style(CARD.background_color(hex_rgb(0x10_10_14)));
-//! let light =
-//!     Row::new().with_style(CARD.background_color(hex_rgb(0x1c_1c_22)));
+//! let light = Row::new()
+//!     .with_style(CARD)
+//!     .background_color(hex_rgb(0x1c_1c_22));
 //! ```
+//!
+//! `with_style` merges: what the style names wins, what it leaves absent the
+//! node keeps. So the two idioms compose in either order, and neither erases
+//! the other -- `light` above is a card that is also a row, and would be
+//! whichever way round those two lines were written.
 //!
 //! A `const` is substituted at each use, so every `CARD` is a fresh value a
 //! `self`-taking setter may consume. No clone and no lifetime. A property

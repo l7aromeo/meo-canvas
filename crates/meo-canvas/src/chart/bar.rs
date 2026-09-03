@@ -310,11 +310,12 @@ pub fn bar(
 
     Ok(framed(
         options,
-        // Flat setters rather than `with_style`, which replaces the whole
-        // style and would discard the `flex-direction: column` that
-        // `Column::new` just set -- laying the body and the label strip out
-        // side by side. Caught by the cross-surface byte comparison, which is
-        // the only one of the three checks that could see it.
+        // Flat setters. This was once the workaround for a `with_style`
+        // that replaced the whole style and so discarded the
+        // `flex-direction: column` `Column::new` had just set, laying the body
+        // and the label strip out side by side. `with_style` merges now and
+        // either spelling is safe, but the defect it caused is pinned by
+        // `the_label_strip_sits_under_the_plot_rather_than_beside_it`.
         Column::new().name("body").flex_grow(1.0).children(body),
         legend(options, &series_labels(datasets)),
         "bar chart",

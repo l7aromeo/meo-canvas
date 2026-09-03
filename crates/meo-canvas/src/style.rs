@@ -741,6 +741,192 @@ impl Style {
 
     // -- Effects --------------------------------------------------------
 
+    /// Layers another style over this one, property by property.
+    ///
+    /// A property the argument names wins; a property it leaves absent leaves
+    /// this style's value alone. `None` is not a value to be copied over — it
+    /// is the absence of one, which is what makes a partial style partial.
+    ///
+    /// ```
+    /// use meo_canvas::{Style, all, px};
+    ///
+    /// const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
+    ///
+    /// // The gap is overridden; the padding, which `tight` never mentions,
+    /// // survives.
+    /// let tight = CARD.merge(Style::new().gap(px(8.0)));
+    /// assert_eq!(tight.gap, Some((px(8.0), px(8.0))));
+    /// assert!(tight.padding.is_some());
+    /// ```
+    ///
+    /// This is what [`Element::with_style`](crate::Element::with_style) does,
+    /// and what the JavaScript surface's props spread has always done — a
+    /// container factory there is `{ display: 'grid', ...props }`, so a caller
+    /// who does not name `display` keeps the one the factory set. A replace
+    /// would make the two surfaces disagree about the same call.
+    ///
+    /// Not a `const fn`: assigning over a field that owns a heap value in a
+    /// `const fn` is E0493, the same rule that keeps the `owned` setters out of
+    /// `const`.
+    ///
+    /// # A field added to `Style` will not compile until it is merged here
+    ///
+    /// The argument is destructured without a rest pattern, deliberately. A
+    /// sixty-ninth property that this method forgot would otherwise be a
+    /// property that silently does not carry — visible only as a picture that
+    /// came out wrong, with nothing to point at. Here it is a build error
+    /// naming the field.
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one line per property, which is the exhaustiveness that makes a forgotten field a build error"
+    )]
+    pub fn merge(mut self, other: Self) -> Self {
+        let Self {
+            display,
+            position_type,
+            position,
+            width,
+            height,
+            min_width,
+            min_height,
+            max_width,
+            max_height,
+            aspect_ratio,
+            margin,
+            padding,
+            border,
+            flex_direction,
+            flex_wrap,
+            flex_grow,
+            flex_shrink,
+            flex_basis,
+            justify_content,
+            align_items,
+            align_self,
+            align_content,
+            gap,
+            overflow,
+            box_sizing,
+            direction,
+            grid_template_columns,
+            grid_template_rows,
+            grid_auto_rows,
+            grid_auto_columns,
+            grid_auto_flow,
+            grid_column,
+            grid_row,
+            background_color,
+            gradient,
+            background_image,
+            border_color,
+            border_color_all,
+            border_style,
+            border_radius,
+            opacity,
+            mix_blend_mode,
+            dither,
+            z_index,
+            object_fit,
+            object_position,
+            frame,
+            font_family,
+            font_size,
+            font_weight,
+            font_style,
+            color,
+            text_align,
+            text_decoration,
+            vertical_align,
+            paint_order,
+            line_height,
+            line_gap,
+            font_variant,
+            letter_spacing,
+            word_spacing,
+            text_stroke,
+            transform,
+            box_shadows,
+            text_shadows,
+            mask,
+            filter,
+            backdrop_filter,
+        } = other;
+
+        self.display = display.or(self.display);
+        self.position_type = position_type.or(self.position_type);
+        self.position = position.or(self.position);
+        self.width = width.or(self.width);
+        self.height = height.or(self.height);
+        self.min_width = min_width.or(self.min_width);
+        self.min_height = min_height.or(self.min_height);
+        self.max_width = max_width.or(self.max_width);
+        self.max_height = max_height.or(self.max_height);
+        self.aspect_ratio = aspect_ratio.or(self.aspect_ratio);
+        self.margin = margin.or(self.margin);
+        self.padding = padding.or(self.padding);
+        self.border = border.or(self.border);
+        self.flex_direction = flex_direction.or(self.flex_direction);
+        self.flex_wrap = flex_wrap.or(self.flex_wrap);
+        self.flex_grow = flex_grow.or(self.flex_grow);
+        self.flex_shrink = flex_shrink.or(self.flex_shrink);
+        self.flex_basis = flex_basis.or(self.flex_basis);
+        self.justify_content = justify_content.or(self.justify_content);
+        self.align_items = align_items.or(self.align_items);
+        self.align_self = align_self.or(self.align_self);
+        self.align_content = align_content.or(self.align_content);
+        self.gap = gap.or(self.gap);
+        self.overflow = overflow.or(self.overflow);
+        self.box_sizing = box_sizing.or(self.box_sizing);
+        self.direction = direction.or(self.direction);
+        self.grid_template_columns =
+            grid_template_columns.or(self.grid_template_columns);
+        self.grid_template_rows =
+            grid_template_rows.or(self.grid_template_rows);
+        self.grid_auto_rows = grid_auto_rows.or(self.grid_auto_rows);
+        self.grid_auto_columns = grid_auto_columns.or(self.grid_auto_columns);
+        self.grid_auto_flow = grid_auto_flow.or(self.grid_auto_flow);
+        self.grid_column = grid_column.or(self.grid_column);
+        self.grid_row = grid_row.or(self.grid_row);
+        self.background_color = background_color.or(self.background_color);
+        self.gradient = gradient.or(self.gradient);
+        self.background_image = background_image.or(self.background_image);
+        self.border_color = border_color.or(self.border_color);
+        self.border_color_all = border_color_all.or(self.border_color_all);
+        self.border_style = border_style.or(self.border_style);
+        self.border_radius = border_radius.or(self.border_radius);
+        self.opacity = opacity.or(self.opacity);
+        self.mix_blend_mode = mix_blend_mode.or(self.mix_blend_mode);
+        self.dither = dither.or(self.dither);
+        self.z_index = z_index.or(self.z_index);
+        self.object_fit = object_fit.or(self.object_fit);
+        self.object_position = object_position.or(self.object_position);
+        self.frame = frame.or(self.frame);
+        self.font_family = font_family.or(self.font_family);
+        self.font_size = font_size.or(self.font_size);
+        self.font_weight = font_weight.or(self.font_weight);
+        self.font_style = font_style.or(self.font_style);
+        self.color = color.or(self.color);
+        self.text_align = text_align.or(self.text_align);
+        self.text_decoration = text_decoration.or(self.text_decoration);
+        self.vertical_align = vertical_align.or(self.vertical_align);
+        self.paint_order = paint_order.or(self.paint_order);
+        self.line_height = line_height.or(self.line_height);
+        self.line_gap = line_gap.or(self.line_gap);
+        self.font_variant = font_variant.or(self.font_variant);
+        self.letter_spacing = letter_spacing.or(self.letter_spacing);
+        self.word_spacing = word_spacing.or(self.word_spacing);
+        self.text_stroke = text_stroke.or(self.text_stroke);
+        self.transform = transform.or(self.transform);
+        self.box_shadows = box_shadows.or(self.box_shadows);
+        self.text_shadows = text_shadows.or(self.text_shadows);
+        self.mask = mask.or(self.mask);
+        self.filter = filter.or(self.filter);
+        self.backdrop_filter = backdrop_filter.or(self.backdrop_filter);
+
+        self
+    }
+
     /// A style that sets nothing.
     ///
     /// Every property is absent rather than defaulted, so a style layered over

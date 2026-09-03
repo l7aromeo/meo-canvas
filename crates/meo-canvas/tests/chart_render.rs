@@ -450,12 +450,16 @@ fn a_point_marker_is_centred_on_its_point_and_is_round() {
 #[test]
 fn the_label_strip_sits_under_the_plot_rather_than_beside_it() {
     // **The regression the pixels could not see until it was asked this
-    // question.** `with_style` replaces a style rather than merging it, so a
-    // `Column::new().with_style(...)` discarded the column direction and laid
-    // the plot and the label strip out side by side. Every measurement of a
-    // bar *within* the plot still passed -- the arithmetic was never wrong --
-    // and the picture was. Agent Zero's byte comparison found it; this is the
-    // rendered question that would have.
+    // question.** `with_style` used to replace a style rather than merge it,
+    // so a `Column::new().with_style(...)` discarded the column direction and
+    // laid the plot and the label strip out side by side. Every measurement of
+    // a bar *within* the plot still passed -- the arithmetic was never wrong
+    // -- and the picture was. Agent Zero's byte comparison found it; this is
+    // the rendered question that would have.
+    //
+    // `with_style` merges now, which removes the cause. The question stays:
+    // it asks whether the strip is under the plot, which is true of the
+    // layout and not of any one way of spelling it.
     let chart = bar(
         &["a".to_owned(), "b".to_owned()],
         &[Dataset {

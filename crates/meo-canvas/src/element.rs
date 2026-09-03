@@ -5,25 +5,22 @@
 //! is how it is described:
 //!
 //! ```
-//! use meo_canvas::{Column, Style, Text, all, hex_rgb, px};
+//! use meo_canvas::{Column, Styled, Text, all, hex_rgb, px};
 //!
-//! let card = Column::new()
-//!     .with_style(Style::new().padding(all(px(24.0))).gap(px(8.0)))
-//!     .children([
-//!         Text::new("Ukasyah")
-//!             .with_style(Style::new().font_size(24.0).bold()),
-//!         Text::new("Bandung")
-//!             .with_style(Style::new().color(hex_rgb(0x88_88_90))),
-//!     ]);
+//! let card = Column::new().padding(all(px(24.0))).gap(px(8.0)).children([
+//!     Text::new("Ukasyah").font_size(24.0).bold(),
+//!     Text::new("Bandung").color(hex_rgb(0x88_88_90)),
+//! ]);
 //!
 //! let scene = card.into_scene(320.0, 180.0)?;
 //! assert_eq!(scene.nodes.len(), 3);
 //! # Ok::<(), meo_canvas_scene::SceneError>(())
 //! ```
 //!
-//! Three methods per node and the set never grows: `new` (or the constructor
-//! that takes the node's essential argument), `style`, and `children`. A new
-//! property is a new method on [`Style`], not a tenth method on nine types.
+//! Properties are named flat on the node, from [`Styled`]. Beyond them a node
+//! has `new` (or the constructor taking its essential argument) and
+//! `children`, and that set never grows: a new property is a new entry in the
+//! property table, not a method on nine types.
 
 use meo_canvas_scene::{
     Length, Scene, SceneError, Size,
@@ -65,10 +62,12 @@ impl Element {
         }
     }
 
-    /// Replaces this node's style with a whole one.
+    /// Layers a whole style over this node's, property by property.
     ///
-    /// For the reusable base — `const CARD: Style = …` — with the flat setters
-    /// of [`Styled`] layered on top of it:
+    /// The secondary idiom. A node is normally styled by naming properties on
+    /// it directly — `Row::new().gap(px(16.0))` — and this is for the case the
+    /// flat setters cannot express: a reusable base, declared once as a
+    /// `const`, applied to many nodes.
     ///
     /// ```
     /// use meo_canvas::{Row, Style, Styled, all, px};
@@ -79,38 +78,56 @@ impl Element {
     /// ```
     ///
     /// Not called `style`, so it cannot read as a nested style object —
-    /// properties sit directly on the node on both surfaces. Replaces rather
-    /// than merges, because a caller who
-    /// wants to layer styles composes them before calling this — and a merge
-    /// would make the order of two calls significant in a way the chain does
-    /// not suggest.
+    /// properties sit directly on the node on both surfaces.
     ///
-    /// # What it replaces includes what the constructor set
+    /// # It merges rather than replacing
     ///
-    /// [`Column::new`] is `Box` plus `flex-direction: column`, and a
-    /// `with_style` that does not restate the direction **discards it** —
-    /// leaving a row. The same is true of [`Grid::new`]'s `display` and of
-    /// every other constructor that sets a property.
+    /// A property the argument names wins. A property it leaves absent leaves
+    /// what the node already had, including what its constructor set:
     ///
     /// ```
     /// use meo_canvas::{Column, FlexDirection, Style, Styled, pct};
     ///
-    /// // Lays its children out in a ROW: the style replaced the direction.
-    /// let lost = Column::new().with_style(Style::new().width(pct(100.0)));
+    /// // Still a column. The style said nothing about the direction.
+    /// let kept = Column::new().with_style(Style::new().width(pct(100.0)));
     ///
-    /// // Either restate it, or use the flat setters, which do not replace.
-    /// let kept = Column::new()
-    ///     .with_style(Style::new().width(pct(100.0)))
-    ///     .flex_direction(FlexDirection::Column);
-    /// let simpler = Column::new().width(pct(100.0));
+    /// // A row, because this style did say. Merge is not a rule that the
+    /// // constructor always wins — it is that absent is not a value.
+    /// let row = Column::new()
+    ///     .with_style(Style::new().flex_direction(FlexDirection::Row));
     /// ```
     ///
-    /// **`Row::new()` is the benign case** — `FlexDirection::Row` is the
-    /// default, so discarding it changes nothing, which is what lets the
-    /// shape read as fine wherever it appears.
+    /// [`Style::merge`] is what this calls.
+    ///
+    /// # Answering the reason replace was chosen
+    ///
+    /// This replaced rather than merged until the merge landed, and the reason
+    /// recorded for it was real: merging makes the order of two `with_style`
+    /// calls significant, and a chain does not announce that it does. Three
+    /// things answer it.
+    ///
+    /// Order was already significant, and more sharply. A replace made
+    /// `with_style` destroy every property set before it — the constructor's
+    /// direction, any flat setter earlier in the chain — none of which the
+    /// caller had said a word about. Under a merge the order matters only
+    /// between two callers who both named the same property, where the later
+    /// wins, as the flat setters and CSS's cascade already do.
+    ///
+    /// Every flat setter is already a one-field merge. `.gap(..).opacity(..)`
+    /// sets two properties and keeps the rest. Merging is that same rule over
+    /// many properties at once; replace was the one operation on this surface
+    /// whose semantics differed from the setters sitting beside it.
+    ///
+    /// And the JavaScript surface has always merged. `Row` and `Column` there
+    /// are `{ flexDirection, ...props }` and `Grid` is `{ display: 'grid',
+    /// ...props }` — spread after the default, so a caller who names the
+    /// property keeps their value and a caller who does not keeps the
+    /// factory's. Its own doc says so deliberately. Replace made the two
+    /// surfaces disagree about the same call, which this repository counts as
+    /// a defect rather than a difference.
     #[must_use]
     pub fn with_style(mut self, style: Style) -> Self {
-        self.style = style;
+        self.style = core::mem::take(&mut self.style).merge(style);
         self
     }
 
@@ -803,15 +820,25 @@ mod tests {
     use meo_canvas_scene::{
         node::{ImageSource, LineCap, LineJoin, NodeKind, PathPaint},
         style::{
-            effect::FillRule,
-            layout::{Display, FlexDirection},
-            paint::{Color, ObjectFit},
-            text::ParagraphStyle,
+            PaintOrder,
+            effect::{FillRule, Mask, MaskShape},
+            layout::{
+                Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
+                GridAutoFlow, Justify, Overflow, PositionType,
+            },
+            paint::{
+                BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle,
+                Color, Gradient, GradientGeometry, ObjectFit,
+            },
+            text::{
+                FontStyle, LineHeight, ParagraphStyle, TextAlign,
+                TextDecoration, TextStroke, VerticalAlign,
+            },
         },
     };
 
     use super::{Box, Column, Element, Grid, Image, Path, Row, Text};
-    use crate::{Style, hex_rgb, px};
+    use crate::{Style, Styled, hex_rgb, pct, px};
 
     #[test]
     fn a_paragraph_setter_writes_the_node_and_not_the_style() {
@@ -962,15 +989,158 @@ mod tests {
     }
 
     #[test]
-    fn a_style_replaces_rather_than_merges() {
-        // A merge would make the order of two `.with_style()` calls significant
-        // in a way the chain does not suggest.
+    fn a_style_merges_rather_than_replaces() {
+        // What the argument names wins; what it leaves absent, the node keeps.
+        // A replace discarded the first call's `gap` here, and discarded the
+        // direction a constructor had just set, which is the defect this is.
         let element = Box::new()
             .with_style(Style::new().gap(px(4.0)))
             .with_style(Style::new().opacity(0.5));
 
-        assert!(element.style.gap.is_none());
+        assert_eq!(element.style.gap, Some((px(4.0), px(4.0))));
         assert_eq!(element.style.opacity, Some(0.5));
+    }
+
+    #[test]
+    fn a_constructor_property_the_style_does_not_name_survives_it() {
+        // `Column::new()` is a box plus `flex-direction: column`, and a style
+        // that says nothing about the direction must not turn it into a row.
+        let column = Column::new().with_style(Style::new().width(pct(100.0)));
+
+        assert_eq!(column.style.flex_direction, Some(FlexDirection::Column));
+        assert!(column.style.width.is_some(), "the style still applied");
+    }
+
+    #[test]
+    fn a_constructor_property_the_style_does_name_is_overridden() {
+        // The control for the test above: merge is not "the constructor always
+        // wins". A `Some` in the argument replaces what the node held, which is
+        // what makes the merge a merge rather than a precedence rule.
+        let row = Column::new()
+            .with_style(Style::new().flex_direction(FlexDirection::Row));
+
+        assert_eq!(row.style.flex_direction, Some(FlexDirection::Row));
+    }
+
+    #[test]
+    fn a_none_in_the_style_leaves_what_the_node_already_had() {
+        // Absent is not a value. A style that sets nothing changes nothing,
+        // which is what lets `with_style` be applied to an already-styled node
+        // without auditing all sixty-eight properties for what it will erase.
+        let kept = Box::new().gap(px(12.0)).with_style(Style::new());
+
+        assert_eq!(kept.style.gap, Some((px(12.0), px(12.0))));
+    }
+
+    #[test]
+    fn merge_carries_every_property_it_is_given() {
+        // The destructure in `merge` is exhaustive, so a new field cannot be
+        // *missing* from it. It can still be dismissed: rustc's own suggested
+        // fix for the resulting E0027 is `new_field: _`, which compiles and
+        // silently drops that property from every merge. Nothing above catches
+        // that, because the field is named and the code is wrong.
+        //
+        // This does. Every property is `Some`; merging over an empty style has
+        // to return all of them. A field dismissed with `_` comes back `None`
+        // and fails the equality, and the literal below has no `..`, so a
+        // sixty-ninth property fails to compile here rather than going
+        // unmerged and untested.
+        //
+        // The literal **is** the mechanism, and it has no `..` deliberately:
+        // a sixty-ninth property fails to compile here, and one dismissed with
+        // `_` in `merge` fails the equality below. Replacing it with
+        // `..Default::default()` would compile and assert nothing new.
+        //
+        // `<_>::default()` for a value wherever the type offers one: what each
+        // property *means* is not the question, only whether it carried.
+        let full = Style {
+            display: Some(Display::Flex),
+            position_type: Some(PositionType::Absolute),
+            position: Some(<_>::default()),
+            width: Some(<_>::default()),
+            height: Some(<_>::default()),
+            min_width: Some(<_>::default()),
+            min_height: Some(<_>::default()),
+            max_width: Some(<_>::default()),
+            max_height: Some(<_>::default()),
+            aspect_ratio: Some(<_>::default()),
+            margin: Some(<_>::default()),
+            padding: Some(<_>::default()),
+            border: Some(<_>::default()),
+            flex_direction: Some(FlexDirection::Row),
+            flex_wrap: Some(FlexWrap::NoWrap),
+            flex_grow: Some(<_>::default()),
+            flex_shrink: Some(<_>::default()),
+            flex_basis: Some(<_>::default()),
+            justify_content: Some(Justify::FlexStart),
+            align_items: Some(Align::FlexStart),
+            align_self: Some(Align::FlexStart),
+            align_content: Some(Align::FlexStart),
+            gap: Some(<_>::default()),
+            overflow: Some((Overflow::Visible, Overflow::Visible)),
+            box_sizing: Some(BoxSizing::BorderBox),
+            direction: Some(Direction::Ltr),
+            grid_template_columns: Some(<_>::default()),
+            grid_template_rows: Some(<_>::default()),
+            grid_auto_rows: Some(<_>::default()),
+            grid_auto_columns: Some(<_>::default()),
+            grid_auto_flow: Some(GridAutoFlow::Row),
+            grid_column: Some(<_>::default()),
+            grid_row: Some(<_>::default()),
+            background_color: Some(<_>::default()),
+            gradient: Some(Gradient {
+                geometry: GradientGeometry::Linear {
+                    direction: <_>::default(),
+                },
+                stops: Vec::new(),
+            }),
+            background_image: Some(BackgroundImage {
+                source: ImageSource::Path("a.png".to_owned()),
+                repeat: BackgroundRepeat::Repeat,
+                size: <_>::default(),
+                position: <_>::default(),
+            }),
+            border_color: Some(<_>::default()),
+            border_color_all: Some(<_>::default()),
+            border_style: Some(BorderStyle::Solid),
+            border_radius: Some(<_>::default()),
+            opacity: Some(<_>::default()),
+            mix_blend_mode: Some(BlendMode::Normal),
+            dither: Some(<_>::default()),
+            z_index: Some(<_>::default()),
+            object_fit: Some(ObjectFit::Fill),
+            object_position: Some(<_>::default()),
+            frame: Some(<_>::default()),
+            font_family: Some(<_>::default()),
+            font_size: Some(<_>::default()),
+            font_weight: Some(<_>::default()),
+            font_style: Some(FontStyle::Normal),
+            color: Some(<_>::default()),
+            text_align: Some(TextAlign::Start),
+            text_decoration: Some(TextDecoration::None),
+            vertical_align: Some(VerticalAlign::Top),
+            paint_order: Some(PaintOrder::Fill),
+            line_height: Some(LineHeight::Number(1.5)),
+            line_gap: Some(<_>::default()),
+            font_variant: Some(<_>::default()),
+            letter_spacing: Some(<_>::default()),
+            word_spacing: Some(<_>::default()),
+            text_stroke: Some(TextStroke {
+                width: 1.0,
+                color: <_>::default(),
+            }),
+            transform: Some(<_>::default()),
+            box_shadows: Some(<_>::default()),
+            text_shadows: Some(<_>::default()),
+            mask: Some(Mask::Shape(MaskShape::Circle)),
+            filter: Some(<_>::default()),
+            backdrop_filter: Some(<_>::default()),
+        };
+
+        assert_eq!(Style::new().merge(full.clone()), full);
+
+        // And through the node surface, which is where a caller meets it.
+        assert_eq!(Box::new().with_style(full.clone()).style, full);
     }
 
     #[test]

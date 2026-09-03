@@ -63,27 +63,27 @@ writeFileSync('card.png', await canvas.toBuffer('png'))
 canvas.release()
 ```
 
-The same picture from Rust. A node carries a constructor, a `Style` and its
-children; a new property is a new method on `Style` rather than on nine node
-types:
+The same picture from Rust. Properties are named on the node, flat, exactly as
+they are above; a new property is a new entry in one table rather than a method
+on nine node types:
 
 ```rust,no_run
 use meo_canvas::{
-    Box as BoxNode, Column, Format, Renderer, Root, Style, Styled, Text, all,
+    Box as BoxNode, Column, Format, Renderer, Root, Styled, Text, all,
     hex_rgb, px,
 };
 
-let card = Column::new().with_style(Style::new().gap(px(10.0))).children([
-    Text::new("meo-canvas").with_style(
-        Style::new().font_size(22.0).bold().color(hex_rgb(0xf2_aa_4c)),
-    ),
+let card = Column::new().gap(px(10.0)).children([
+    Text::new("meo-canvas")
+        .font_size(22.0)
+        .bold()
+        .color(hex_rgb(0xf2_aa_4c)),
     Text::new("Describe a layout; get image bytes back.")
-        .with_style(Style::new().font_size(13.0).color(hex_rgb(0xc8_cc_d4))),
-    BoxNode::new().with_style(
-        Style::new()
-            .size(px(64.0), px(4.0))
-            .background_color(hex_rgb(0xf2_aa_4c)),
-    ),
+        .font_size(13.0)
+        .color(hex_rgb(0xc8_cc_d4)),
+    BoxNode::new()
+        .size(px(64.0), px(4.0))
+        .background_color(hex_rgb(0xf2_aa_4c)),
 ]);
 
 let mut canvas = Root::new(320.0)
@@ -94,6 +94,17 @@ let mut canvas = Root::new(320.0)
 
 std::fs::write("card.png", canvas.to_buffer(Format::Png)?)?;
 # Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+A base many nodes share is a `Style` value instead, applied with `with_style`,
+which merges — what the style names wins, what it leaves absent the node keeps:
+
+```rust
+use meo_canvas::{Row, Style, Styled, all, hex_rgb, px};
+
+const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
+
+let dark = Row::new().with_style(CARD).background_color(hex_rgb(0x10_10_14));
 ```
 
 **The examples are the rest of the documentation, because they are the part this

@@ -210,6 +210,39 @@ blanket `impl IntoElements for I: IntoIterator` overlaps `Vec`, `[T; N]` and
 make `Option` an iterator. The syntax differs because the languages do; what a
 caller can express does not.
 
+**Flat setters are the documented path, and `with_style` merges** (4 September
+2026). A node is styled by naming properties on it — `Column::new().gap(px(10.0))`
+— and that is how the crate is taught, in the `lib.rs` header, the `element`
+module doc and the root `README.md`. `Element::with_style` stays for the case
+the setters cannot express, a reusable `const CARD: Style` applied to many
+nodes, and is documented second.
+
+`with_style` merges rather than replacing: a `Some` in the argument wins, a
+`None` leaves what the node already had. It replaced until this date, which
+discarded whatever the constructor had set — `Column::new().with_style(..)`
+became a row — and the reason recorded for replace was that a merge makes the
+order of two calls significant. Three things answer that reason, and the doc on
+`with_style` carries them: order was already significant and more sharply,
+since replace threw the earlier call away entirely; every flat setter is
+already a one-field merge, so replace was the one operation on the surface
+whose semantics differed from the setters beside it; and **the JavaScript
+surface has always merged** — `Row` and `Column` are `{ flexDirection,
+...props }`, `Grid` is `{ display: 'grid', ...props }`, spread after the
+default so the caller's value wins and the factory's survives where the caller
+says nothing. Replace made the two surfaces disagree about the same call, which
+is a defect here rather than a difference.
+
+`Style::merge` is where it lives, and it destructures its argument **without a
+rest pattern**. A sixty-ninth property that the merge forgot would be a
+property that silently does not carry, visible only as a picture that came out
+wrong; the destructure makes it a build error naming the field. Ten of the
+sixty-eight properties have hand-written setters rather than macro-generated
+ones, because their setter converts what the caller passes (`width` takes a
+`Length` and stores a `Dimension`; `gap` takes one `Length` and stores a pair),
+so a merge written as a macro arm over the property table would have covered
+fifty-eight and let the other ten drift. Destructuring the struct covers what
+the struct has, which is the thing that matters.
+
 **A change's two sides land in one commit.** Ownership decides who edits a file,
 not what a commit is: splitting a wire change across two commits to respect a
 boundary leaves `ci` red between them for a change that was never in two parts.
@@ -1953,12 +1986,14 @@ _assemble_ those numbers into the same tree. **Nothing but the third can see a
 tree built wrongly out of right numbers**, and it found three of them in one
 run:
 
-- `with_style` **replaces** a style rather than merging it, so
-  `Column::new().with_style(Style::new().width(…))` discards the
+- `with_style` **replaced** a style rather than merging it, so
+  `Column::new().with_style(Style::new().width(…))` discarded the
   `flex-direction: column` the constructor just set. Three of the four sites
   with that shape were `Row::new()`, where the discarded value is the default
-  and nothing changes — **which is why the pattern reads as fine**. Chart code
-  uses the flat `Styled` setters after a container constructor for this reason.
+  and nothing changes — **which is why the pattern read as fine**. Chart code
+  used the flat `Styled` setters after a container constructor for that reason.
+  The workaround outlived the defect: `with_style` merges as of 4 September
+  2026, and the finding is what made the case for changing it.
 - `Iterator::max_by_key` returns the **last** maximum; JavaScript's
   `reduce` with a strictly-greater test keeps the **first**. A five-division
   axis ties constantly (`1.6`, `1.2`, `0.8`, `0.4` are all three characters),

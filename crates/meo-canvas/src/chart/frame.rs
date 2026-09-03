@@ -143,8 +143,8 @@ pub(crate) fn framed(
     legend: Option<Element>,
     name: &'static str,
 ) -> Element {
-    // Flat setters after the constructor, since `with_style` would replace
-    // the direction it just set -- see `Element::with_style`.
+    // Flat setters after the constructor. `with_style` merges now, so this
+    // is a style choice rather than the workaround it was written as.
     let Some(legend) = legend else {
         return Column::new()
             .name(name)
