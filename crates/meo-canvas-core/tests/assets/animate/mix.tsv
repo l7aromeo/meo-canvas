@@ -29,6 +29,8 @@
 # the colour ones outside 0..1; the number rows outside 0..1 agree.
 #
 # kind	surface	agreement	from	to	t	value	note
+# rows: 15
+#
 number	both	value	0	10	-0.5	-5	-
 array	js-only	value	0;10	10;20	-0.5	-5;5	-
 color	both	diverges	"#ff0000"	"#0000ff"	-0.5	#ff0000	v1 clamps t for colour but not for numbers; we clamp neither

@@ -149,7 +149,7 @@ describe('a url source', () => {
     const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])
     const asked: string[] = []
     const restore = withFetch(async (input: RequestInfo | URL) => {
-      asked.push(String(input))
+      asked.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
       return new Response(png, { status: 200 })
     })
 
@@ -173,7 +173,7 @@ describe('a url source', () => {
   it('asks once for a url two nodes share', async () => {
     const asked: string[] = []
     const restore = withFetch(async (input: RequestInfo | URL) => {
-      asked.push(String(input))
+      asked.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
       return new Response(Uint8Array.from([137, 80, 78, 71]), { status: 200 })
     })
 

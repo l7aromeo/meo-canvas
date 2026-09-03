@@ -450,7 +450,7 @@ const CASES = cases.cases as unknown as Readonly<Record<string, Case>>
 const SIZE = cases.$size as [number, number]
 
 /** The scale every case was written at. */
-const SCALE = cases.$scale as number
+const SCALE = cases.$scale
 
 /**
  * One probe per property this surface spells, keyed by the scene's field name.

@@ -28,7 +28,7 @@ default:
 # nobody agreed to.
 [private]
 ensure-deps:
-    @test -d node_modules || npm ci --ignore-scripts
+    @test -d node_modules || bun install --frozen-lockfile
 
 # Aggregate: what CI runs. Uses non-fixing variants.
 #
@@ -207,9 +207,10 @@ coverage-open:
     cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --open
 
 # Run clippy with autofix (modifies working tree).
-lint:
+lint: ensure-deps
     cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
+    bun run eslint . --fix
 
 # Run clippy without fixing (CI-safe).
 #
@@ -217,10 +218,13 @@ lint:
 # only with a backend compiled is dead code without one, and `-D warnings`
 # refuses it -- so the addon goes unlinted unless its own pass names a backend.
 [doc("Run clippy without fixing (CI-safe).")]
-lint-check:
+lint-check: ensure-deps
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --all-targets --features "{{ host_features }}" -- -D warnings
     cargo clippy --manifest-path examples/rust/Cargo.toml --all-targets --features "{{ host_features }}" -- -D warnings
+    # The JavaScript half. `bun run lint` is the same pair for someone not
+    # using just: eslint, then prettier's check.
+    bun run eslint .
 
 # Rust on the pinned nightly, then JavaScript, TypeScript and Markdown through
 # prettier. Both halves in one recipe, because `just ci` checks both and a pair
@@ -234,13 +238,13 @@ fmt: ensure-deps
     # leaving unformatted or unlinted, since a lint about that surface shows
     # there and nowhere else.
     cargo +{{ fmt_toolchain }} fmt --manifest-path examples/rust/Cargo.toml --all
-    ./node_modules/.bin/prettier --write "**/*.{js,mjs,ts,mts,md}"
+    bun run fmt
 
 # Verify formatting without writing.
 fmt-check: ensure-deps
     cargo +{{ fmt_toolchain }} fmt --all -- --check
     cargo +{{ fmt_toolchain }} fmt --manifest-path examples/rust/Cargo.toml --all -- --check
-    ./node_modules/.bin/prettier --check "**/*.{js,mjs,ts,mts,md}"
+    bun run fmt:check
 
 # The TypeScript surface is what the npm package publishes as its types, and
 # nothing else reads it: prettier parses the file without checking it, and no
@@ -1095,7 +1099,7 @@ docs-js: build-js
     #!/usr/bin/env bash
     set -euo pipefail
     tool=packages/meo-canvas/tools/typedoc
-    test -x "$tool/node_modules/.bin/typedoc" || npm --prefix "$tool" ci --no-audit --no-fund --silent
+    test -x "$tool/node_modules/.bin/typedoc" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
 
 # Compare v1's prop surface against v2's.

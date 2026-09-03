@@ -24,6 +24,8 @@
 # only JavaScript can express what is past it.
 #
 # r	g	b	a	value
+# rows: 8
+#
 128	128	128	1	#808080
 255	0	0	0.5	rgba(255, 0, 0, 0.5)
 300	-20	128	1	color(srgb 1.176471 -0.078431 0.501961)

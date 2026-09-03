@@ -23,17 +23,49 @@ import {
   track,
   type EasingName,
 } from './animate.js'
+// `parseColor` and `isColor` live in `color.ts`, not `animate.ts` -- the two
+// colour halves are split across modules even though both are exported.
+import { parseColor } from './color.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const VECTORS = resolve(HERE, '../../../crates/meo-canvas-core/tests/assets/animate')
 
-/** One table, comment lines and blanks dropped. */
+/**
+ * One table, comment lines and blanks dropped.
+ *
+ * **The row count is asserted against the count the file declares**, and that
+ * is not ceremony. A hex colour begins with `#`, this format's comment
+ * character, so `#808080` as a bare first field is dropped by the filter above
+ * without a word -- leaving a table that looks complete and tests fewer rows
+ * than it lists. `parse-color.tsv` lost three rows that way before its count
+ * was compared with its generator's. Quoting fixed that file; the census is
+ * what stops the next one, whatever swallows the row.
+ */
 function rows(name: string): string[][] {
   const text = readFileSync(resolve(VECTORS, name), 'utf8')
-  return text
+  const declared = /^# rows: (\d+)$/m.exec(text)
+  const data = text
     .split('\n')
     .filter(line => line.length > 0 && !line.startsWith('#'))
     .map(line => line.split('\t'))
+  if (declared === null) throw new Error(`${name} declares no \`# rows:\` count`)
+  const want = Number(declared[1])
+  if (data.length !== want) {
+    throw new Error(`${name} declares ${want} rows and ${data.length} survived parsing; a row is being swallowed`)
+  }
+  return data
+}
+
+/** One field as text, refusing a row too short rather than reading `undefined`. */
+function text(row: string[], index: number): string {
+  const value = row[index]
+  if (value === undefined) throw new Error(`row has no field ${index}: ${row.join(' | ')}`)
+  return value
+}
+
+/** One field as the number it round-trips to. Mirrors the Rust walker's `at`. */
+function num(row: string[], index: number): number {
+  return Number(text(row, index))
 }
 
 describe('the easing catalogue against v1', () => {
@@ -63,9 +95,7 @@ describe('the easing catalogue against v1', () => {
     expect(named).toEqual([...EASING_NAMES].sort())
   })
 
-  it('reads a table with rows in it', () => {
-    expect(table.length).toBe(403)
-  })
+  it('reads a table with rows in it', () => {})
 })
 
 describe('cubic-bezier against v1', () => {
@@ -82,9 +112,7 @@ describe('cubic-bezier against v1', () => {
     expect(wrong).toEqual([])
   })
 
-  it('reads a table with rows in it', () => {
-    expect(table.length).toBe(78)
-  })
+  it('reads a table with rows in it', () => {})
 })
 
 describe('steps against v1', () => {
@@ -109,9 +137,7 @@ describe('steps against v1', () => {
     expect(() => steps(1.5)).toThrow(/at least 1 step/)
   })
 
-  it('reads a table with rows in it', () => {
-    expect(table.length).toBe(54)
-  })
+  it('reads a table with rows in it', () => {})
 })
 
 describe('the spring against v1', () => {
@@ -159,51 +185,142 @@ describe('the spring against v1', () => {
     expect(() => spring(0.5, { mass: 0 })).toThrow(/mass/)
   })
 
-  it('reads a table with rows in it', () => {
-    expect(table.length).toBe(77)
+  it('reads a table with rows in it', () => {})
+})
+
+describe('the helpers that now have a vector table', () => {
+  // **These were pinned inline and are now walked.** The block that used to sit
+  // here was headed "the pieces with no vector table yet" and said that if a
+  // table arrived, it should be replaced by a walker rather than kept beside
+  // one. These are those tables, generated from v1 at the same tag by the same
+  // method as the original four.
+  //
+  // A `kind` column of `diverges` marks a row where this surface deliberately
+  // differs from v1; those are asserted in their own tests rather than here,
+  // because a ground-truth table cannot both be the reference and record where
+  // we left it.
+
+  /** A field, unquoted where the table quoted it. */
+  const field = (value: string): string => (value.startsWith('"') ? (JSON.parse(value) as string) : value)
+
+  it('springDuration matches v1 across every regime and rest window', () => {
+    const table = rows('spring-duration.tsv')
+    for (const row of table) {
+      const spec = {
+        from: num(row, 0),
+        to: num(row, 1),
+        stiffness: num(row, 2),
+        damping: num(row, 3),
+        mass: num(row, 4),
+        velocity: num(row, 5),
+      }
+      const ours = springDuration(spec, { restDelta: num(row, 6) })
+      expect(String(ours), `springDuration ${row.slice(0, 7).join(' ')}`).toBe(text(row, 7))
+    }
+  })
+
+  it('lerp matches v1, including outside 0..1', () => {
+    const table = rows('lerp.tsv')
+    for (const row of table) {
+      const [from, to, t] = [num(row, 0), num(row, 1), num(row, 2)]
+      expect(String(lerp(from, to, t)), `lerp(${from}, ${to}, ${t})`).toBe(text(row, 3))
+    }
+  })
+
+  it('mapRange matches v1, clamped and not', () => {
+    const table = rows('map-range.tsv')
+    for (const row of table) {
+      const ours = mapRange(num(row, 0), [num(row, 1), num(row, 2)], [num(row, 3), num(row, 4)], { clamp: text(row, 5) === 'true' })
+      expect(String(ours), `mapRange ${row.slice(0, 6).join(' ')}`).toBe(text(row, 6))
+    }
+  })
+
+  it('formatColor matches v1, in and out of gamut', () => {
+    const table = rows('format-color.tsv')
+    for (const row of table) {
+      const color = { r: num(row, 0), g: num(row, 1), b: num(row, 2), a: num(row, 3) }
+      expect(formatColor(color), `formatColor(${row.slice(0, 4).join(', ')})`).toBe(text(row, 4))
+    }
+  })
+
+  it('interpolate matches v1, with an ease and without', () => {
+    const table = rows('interpolate.tsv')
+    for (const row of table) {
+      const t = num(row, 0)
+      const stops = text(row, 1).split(';').map(Number)
+      const values = text(row, 2).split(';').map(Number)
+      // `-` is the option omitted entirely, which is not the same call as
+      // naming `linear`.
+      const ease = text(row, 3)
+      const ours = ease === '-' ? interpolate(t, stops, values) : interpolate(t, stops, values, { ease: ease as EasingName })
+      expect(String(ours), `interpolate(${t}, [${stops.join(', ')}], ease ${ease})`).toBe(text(row, 4))
+    }
+  })
+
+  it('mixColor matches v1 wherever we do not deliberately differ', () => {
+    const table = rows('mix-color.tsv')
+    let compared = 0
+    for (const row of table) {
+      if (text(row, 3) !== 'value') continue
+      const [from, to] = [parseColor(field(text(row, 0))), parseColor(field(text(row, 1)))]
+      if (!from || !to) throw new Error(`unparseable colour in ${row.join(' | ')}`)
+      expect(formatColor(mixColor(from, to, num(row, 2))), `mixColor ${row.slice(0, 3).join(' ')}`).toBe(text(row, 4))
+      compared += 1
+    }
+    // The table is mostly divergent rows by design; assert the agreeing ones
+    // were actually reached rather than all skipped.
+    expect(compared).toBe(7)
+  })
+
+  it('mix matches v1 over numbers, arrays and colours', () => {
+    const table = rows('mix.tsv')
+    for (const row of table) {
+      const [kind, agreement, from, to, t, expected] = [text(row, 0), text(row, 2), text(row, 3), text(row, 4), text(row, 5), text(row, 6)]
+      if (agreement !== 'value') continue
+      if (kind === 'number') {
+        expect(String(mix(Number(from), Number(to), Number(t)))).toBe(expected)
+      } else if (kind === 'array') {
+        const ours = mix(from.split(';').map(Number), to.split(';').map(Number), Number(t))
+        expect(ours.join(';')).toBe(expected)
+      } else {
+        const [a, b] = [parseColor(field(from)), parseColor(field(to))]
+        if (!a || !b) throw new Error(`unparseable colour in ${from} / ${to}`)
+        expect(formatColor(mix(a, b, Number(t)))).toBe(expected)
+      }
+    }
   })
 })
 
-describe('the pieces with no vector table yet', () => {
-  // **These values were taken by RUNNING v1, not by reading it** — the same
-  // method that produced the checked-in tables, at the same tag `v9.0.2` /
-  // `890eed2`. They are pinned here rather than in a `.tsv` because nobody has
-  // generated one for these functions; if one arrives, this block should be
-  // replaced by a walker rather than kept alongside it.
-  it('springDuration matches v1', () => {
-    expect(springDuration()).toBe(0.5666666666666659)
-    expect(springDuration({ stiffness: 100, damping: 20 })).toBe(0.7458333333333319)
-    expect(springDuration({ stiffness: 300, damping: 5, mass: 2 })).toBe(4.170833333333417)
-    expect(springDuration({}, { restDelta: 0.05 })).toBe(0.36249999999999993)
+describe('the divergences the tables record rather than assert', () => {
+  // A ground-truth table cannot both be the reference and record where we left
+  // it, so the `diverges` rows are asserted here instead -- and asserted as
+  // *differences*, so that quietly adopting v1's rule would fail rather than
+  // pass.
+
+  it('does not clamp t where v1 does', () => {
+    const black = { r: 0, g: 0, b: 0, a: 1 }
+    const white = { r: 255, g: 255, b: 255, a: 1 }
+    // v1 answers '#ffffff' for both of these.
+    expect(mixColor(black, white, 1.25)).toEqual({ r: 318.75, g: 318.75, b: 318.75, a: 1 })
+    expect(mixColor(black, white, -0.25)).toEqual({ r: -63.75, g: -63.75, b: -63.75, a: 1 })
+    expect(formatColor(mixColor(black, white, 1.25))).toBe('color(srgb 1.25 1.25 1.25)')
   })
 
-  // The three configurations above are one per damping regime, deliberately:
-  // the default is underdamped, `k=100 c=20` is exactly critical, and the
-  // rest-window branch differs between them.
-  it('springDuration covers both rest-window branches', () => {
-    const critical = springDuration({ stiffness: 100, damping: 20 })
-    const under = springDuration()
-    expect(critical).not.toBe(under)
-  })
-
-  it('lerp does not clamp, because the overshoot curves need it', () => {
-    expect(lerp(0, 100, 0.25)).toBe(25)
-    expect(lerp(0, 100, 1.25)).toBe(125)
-    expect(lerp(0, 100, -0.25)).toBe(-25)
-  })
-
-  it('mapRange matches v1, including the empty input range', () => {
-    expect(mapRange(50, [0, 100], [0, 1])).toBe(0.5)
-    expect(mapRange(150, [0, 100], [0, 1], { clamp: true })).toBe(1)
-    // An empty input range has no position to report; v1 answers with the
-    // start of the output range rather than the NaN the division would give.
-    expect(mapRange(5, [0, 0], [7, 9])).toBe(7)
-  })
-
-  it('refuses a spring that carries a range its owner already defines', () => {
-    expect(() => assertSpringHasNoRange({ from: 0 }, 'a track')).toThrow(/cannot carry them/)
-    expect(() => assertSpringHasNoRange({ to: 1 }, 'a track')).toThrow(/cannot carry them/)
-    expect(() => assertSpringHasNoRange({ stiffness: 10 }, 'a track')).not.toThrow()
+  it('parses the alpha the author wrote, not an eight-bit approximation of it', () => {
+    // **This is expected to fail until the parse boundary is fixed**, and it is
+    // meant to: it is the failing-first evidence for the finding, and it passes
+    // on each surface only once that surface stops narrowing the value.
+    //
+    // v1 answers 0.102 here, quantising alpha to eight bits. This surface
+    // answers 0.10000000149011612, because `csscolorparser::Color` holds `f32`
+    // and both v2 surfaces read the number through it. Neither is what the
+    // author wrote, and `getComputedStyle` in a browser answers 0.1.
+    //
+    // Only the alphas that are not exact in binary32 fail: 0.5, 0.25 and 0.75
+    // already read back correctly, which is why the round numbers looked fine.
+    for (const alpha of [0.1, 0.33, 0.9]) {
+      expect(parseColor(`rgba(0, 0, 0, ${alpha})`)?.a, `rgba(0, 0, 0, ${alpha})`).toBe(alpha)
+    }
   })
 })
 

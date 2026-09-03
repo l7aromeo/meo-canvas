@@ -305,7 +305,7 @@ async function pages(props: RootProps): Promise<readonly SceneNode[]> {
     // Sequentially rather than all at once: a builder may fetch, and a
     // thousand-page render firing a thousand requests at once is a denial of
     // service a caller did not ask for.
-    // eslint-disable-next-line no-await-in-loop
+
     const children = await builder(pageInfo(index, count, fps))
     built.push(Box({ ...props, children }))
   }

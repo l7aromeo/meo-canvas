@@ -543,7 +543,6 @@ try {
     const runs = []
     let ink = null
     let start = 0
-    let walked = 0
     for (let step = 0; step <= total; step += 1) {
       const distance = (step / total) * perimeter
       let rest = distance
@@ -565,7 +564,6 @@ try {
         ink = here
         start = step
       }
-      walked = step
     }
     runs.push(`${ink ? 'on' : 'off'}:${(((total - start) / total) * perimeter).toFixed(1)}`)
     const marks = runs.filter(run => run.startsWith('on')).length
@@ -580,7 +578,6 @@ try {
         `box=${tall.width}x${tall.height} walk-length=${perimeter.toFixed(1)} marks=${marks} ${runs.join(' ')}`,
       ].join('\t'),
     )
-    const _ = walked
   }
   await browser.page.setViewportSize(BOX)
 

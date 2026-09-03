@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Package and verify every crate, but publish nothing"
+        description: 'Package and verify every crate, but publish nothing'
         type: boolean
         default: true
 

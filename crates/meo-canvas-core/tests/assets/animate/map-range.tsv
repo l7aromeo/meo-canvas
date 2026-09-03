@@ -21,6 +21,8 @@
 # of the output range rather than the NaN the division would give.
 #
 # value	inMin	inMax	outMin	outMax	clamp	result
+# rows: 12
+#
 50	0	100	0	1	false	0.5
 50	0	100	0	1	true	0.5
 150	0	100	0	1	false	1.5

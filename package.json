@@ -1,12 +1,24 @@
 {
   "name": "meo-canvas-workspace",
   "private": true,
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check ."
+  },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "17.12.0",
     "playwright": "^1.62.1",
     "prettier": "^3.9.6",
-    "typescript": "^7.0.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^4.1.11"
   }
 }

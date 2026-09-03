@@ -29,7 +29,9 @@ const UNDOCUMENTED = 'does not have any documentation'
 
 const typedoc = join(HERE, 'node_modules', '.bin', 'typedoc')
 if (!existsSync(typedoc)) {
-  process.stderr.write('The reference tool is not installed. Run `just docs-js`, which installs it, or `npm ci` in packages/meo-canvas/tools/typedoc.\n')
+  process.stderr.write(
+    'The reference tool is not installed. Run `just docs-js`, which installs it, or `bun install --cwd packages/meo-canvas/tools/typedoc`.\n',
+  )
   process.exit(1)
 }
 
@@ -50,7 +52,8 @@ const output = `${run.stdout ?? ''}${run.stderr ?? ''}`
 process.stdout.write(output)
 
 // Strip the colour codes so the matching below reads the words, not the
-// escape sequences around them.
+// escape sequences around them. The control character is the point.
+// eslint-disable-next-line no-control-regex
 const lines = output.replace(/\[[0-9;]*m/g, '').split('\n')
 
 const structural = lines.filter(

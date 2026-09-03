@@ -413,7 +413,7 @@ describe('the legend', () => {
     ['pie', pie],
     ['doughnut', pie],
   ] as const)('reaches a %s chart at all', (type, data) => {
-    const chart = Chart({ type, data, options: { showLegend: true } } as never)
+    const chart = Chart({ type, data, options: { showLegend: true } })
     expect(find(chart, 'legend')).toBeDefined()
     expect(findAll(chart, name => name.startsWith('legend item')).length).toBeGreaterThan(0)
   })

@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Build and pack every target, validate the publish, but do not publish"
+        description: 'Build and pack every target, validate the publish, but do not publish'
         type: boolean
         default: true
 
@@ -105,7 +105,7 @@ jobs:
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
-          just-version: "1.58.0"
+          just-version: '1.58.0'
 
       # A block scalar, and the quoting is the reason. Written on one line this
       # needed `cut -d'\"'`, where YAML keeps the backslash literal and hands
@@ -144,10 +144,15 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: lts/*
-          cache: npm
 
+      # bun installs the packages; `just pack` builds `dist` with tsc from them.
+      # `npm pack` and `npm publish` stay npm further down: the tarball naming
+      # `release.yml` derives its globs from is npm's, and provenance is npm's.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.0'
       - name: Install the JavaScript dependencies
-        run: npm ci --ignore-scripts
+        run: bun install --frozen-lockfile
 
       # `just pack` builds the release addon, builds `dist`, stages the platform
       # package for this host and packs both tarballs. The same recipe a person

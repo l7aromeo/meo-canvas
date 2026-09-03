@@ -28,3 +28,9 @@ packages/*/vendor
 # and the regenerate-and-diff check would then fail on formatting rather than
 # on drift. Same reason the vendored tree is excluded.
 packages/*/src/generated
+
+# Chrome measurement tables, written by the conformance harness in
+# `tools/conformance/` and read back by the Rust tests. Machine-written, like
+# the fixtures above, and for the same reason: reformatting them turns the next
+# real measurement change into a diff nobody can read.
+crates/*/tests/assets

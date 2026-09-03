@@ -42,6 +42,8 @@
 # its strings for the same reason.
 #
 # css	kind	r	g	b	a	note
+# rows: 12
+#
 "#808080"	value	128	128	128	1	-
 "#f2aa4c"	value	242	170	76	1	-
 "rebeccapurple"	value	102	51	153	1	-

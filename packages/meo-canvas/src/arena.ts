@@ -51,7 +51,7 @@ import {
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
 import type { ColorSpace, ColorType, TrackSize } from './index.js'
-import type { ImageSource, PathPaint, PathProps, SceneNode, TextSegment } from './node.js'
+import type { ImageSource, PathPaint, PathProps, SceneNode } from './node.js'
 import type {
   BackgroundImage,
   BackgroundSize,
@@ -939,13 +939,13 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     index: 7,
     rust: 'margin',
     keys: ['margin'],
-    write: (out, style) => writeSides(style.margin as Sides<Dimension>, 0 as Dimension, edge => writeDimension(out, edge)),
+    write: (out, style) => writeSides(style.margin as Sides<Dimension>, 0, edge => writeDimension(out, edge)),
   },
   {
     index: 8,
     rust: 'padding',
     keys: ['padding'],
-    write: (out, style) => writeSides(style.padding as Sides<Length>, 0 as Length, edge => writeLength(out, edge)),
+    write: (out, style) => writeSides(style.padding as Sides<Length>, 0, edge => writeLength(out, edge)),
   },
   { index: 9, rust: 'border', keys: ['border'], write: (out, style) => writeSides(style.border as Sides<number>, 0, edge => out.f32(edge)) },
   {
@@ -1080,7 +1080,7 @@ function columnTracks(style: Style): readonly TrackSize[] | undefined {
   if (!Number.isInteger(style.columns) || style.columns < 1) {
     throw new TypeError(`\`columns\` is a whole number of columns, not ${JSON.stringify(style.columns)}`)
   }
-  return Array.from({ length: style.columns }, () => '1fr' as TrackSize)
+  return Array.from({ length: style.columns }, () => '1fr')
 }
 
 /**

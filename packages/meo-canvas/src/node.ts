@@ -185,7 +185,7 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
 
   const many = children as readonly Child[]
   const kept = many.every(child => child !== false && child !== undefined)
-  if (kept) return many as readonly SceneNode[]
+  if (kept) return many
   return many.filter((child): child is SceneNode => child !== false && child !== undefined)
 }
 

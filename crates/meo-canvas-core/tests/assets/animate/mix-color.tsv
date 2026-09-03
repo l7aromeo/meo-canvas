@@ -32,6 +32,8 @@
 # a known difference from a new one.
 #
 # from	to	t	kind	value	note
+# rows: 15
+#
 "#000000"	"#ffffff"	-0.25	diverges	#000000	v1 clamps t; we do not, deliberately
 "#000000"	"#ffffff"	0	value	#000000	-
 "#000000"	"#ffffff"	0.5	value	#808080	-

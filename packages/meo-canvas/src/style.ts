@@ -109,7 +109,7 @@ export type Color =
   | 'purple'
   | 'grey'
   | 'gray'
-  // eslint-disable-next-line @typescript-eslint/ban-types -- the one idiom that keeps a union's completions and accepts the rest
+  // `string & {}` is the one idiom that keeps a union's completions and accepts the rest.
   | (string & {})
 
 /** Weight from 1 to 1000, or the two keywords CSS names. */

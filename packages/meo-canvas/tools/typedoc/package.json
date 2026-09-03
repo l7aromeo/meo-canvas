@@ -1,0 +1,13 @@
+{
+  "name": "meo-canvas-reference",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Builds the JavaScript API reference from the package's built declarations. Its own package because TypeDoc 0.28 loads TypeScript up to 6.0.x only and the root is on 7.x -- see README.md.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "typedoc": "0.28.20",
+    "typescript": "6.0.3\n6.0.3"
+  }
+}

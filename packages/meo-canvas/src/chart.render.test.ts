@@ -70,7 +70,7 @@ async function shot(width: number, height: number, chart: ReturnType<typeof Char
       fonts: [{ family: 'Fixture', paths: [FONT] }],
       children: chart,
     })
-    raw = (await canvas.toBuffer('raw')) as Buffer
+    raw = await canvas.toBuffer('raw')
   } catch (cause) {
     throw new Error('the addon is not built; run `just addon`. These are the only chart checks that go through the renderer.', { cause })
   }
@@ -147,10 +147,10 @@ describe('gridlines, in every kind that draws them', () => {
   // gridLines() is `i / 5` for i in 0..5 — six lines, five equal bands. The
   // helper serves bar and line, so both are asked.
   it.each([
-    ['bar', { type: 'bar' as ChartType, data: cartesian }],
-    ['line', { type: 'line' as ChartType, data: cartesian }],
-  ])('divides a %s plot into five equal bands', async (_kind, props) => {
-    const page = await shot(200, 120, Chart({ ...props, fontFamily: 'Fixture', options: { grid: { show: true } } } as never))
+    ['bar', { type: 'bar', data: cartesian }],
+    ['line', { type: 'line', data: cartesian }],
+  ] as const)('divides a %s plot into five equal bands', async (_kind, props) => {
+    const page = await shot(200, 120, Chart({ ...props, fontFamily: 'Fixture', options: { grid: { show: true } } }))
     const rows = rowsIn(page, 4, GREY)
     // **Five, not six.** `gridLines()` returns six fractions and the last is
     // `1.0`, which puts a one-pixel rule with its top on the plot's bottom
@@ -175,10 +175,10 @@ describe('a pie is solid and a doughnut is not', () => {
   // and two slices meet at the centre, so the exact centre is white in both.
   // The discriminator is the coloured share of a disc.
   it.each([
-    ['pie', 'pie' as ChartType, 0.9],
-    ['doughnut', 'doughnut' as ChartType, 0],
-  ])('%s fills its centre', async (_kind, type, atLeast) => {
-    const page = await shot(200, 120, Chart({ type, data, fontFamily: 'Fixture' } as never))
+    ['pie', 'pie', 0.9],
+    ['doughnut', 'doughnut', 0],
+  ] as const)('%s fills its centre', async (_kind, type, atLeast) => {
+    const page = await shot(200, 120, Chart({ type, data, fontFamily: 'Fixture' }))
     const ink = (r: number, g: number, b: number) => (r > 150 && g < 90 && b < 90) || (r < 90 && g > 60 && g < 130 && b > 150)
     let coloured = 0
     let seen = 0
@@ -264,12 +264,12 @@ describe('a line chart fills its box and keeps its pen', () => {
 describe('the y-axis gutter measures its widest label', () => {
   // Both cartesian kinds share the gutter, so both are asked. A gutter that
   // stated a width would inset the plot by the same amount for both.
-  it.each([['bar' as ChartType], ['line' as ChartType]])('insets a %s plot by what the labels take', async type => {
+  it.each([['bar'], ['line']] as const)('insets a %s plot by what the labels take', async type => {
     const narrow = { labels: ['a', 'b'], datasets: [{ data: [1, 2], color: '#3366cc' }] }
     const wide = { labels: ['a', 'b'], datasets: [{ data: [7500, 10000], color: '#3366cc' }] }
     const options = { showYAxis: true }
-    const small = await shot(240, 120, Chart({ type, data: narrow, fontFamily: 'Fixture', options } as never))
-    const large = await shot(240, 120, Chart({ type, data: wide, fontFamily: 'Fixture', options } as never))
+    const small = await shot(240, 120, Chart({ type, data: narrow, fontFamily: 'Fixture', options }))
+    const large = await shot(240, 120, Chart({ type, data: wide, fontFamily: 'Fixture', options }))
     const leftOf = (page: Shot) => (columnRuns(page, BLUE)[0] as [number, number])[0]
     expect(leftOf(large)).toBeGreaterThan(leftOf(small))
   })
@@ -300,7 +300,7 @@ describe('these measurements can fail', () => {
           Box({ positionType: 'absolute', position: { left: '30%', bottom: 0 }, width: '20%', height: '50%', backgroundColor: '#3366cc' }),
           Box({ positionType: 'absolute', position: { left: '75%', bottom: 0 }, width: '20%', height: '100%', backgroundColor: '#3366cc' }),
         ],
-      }) as never,
+      }),
     )
     expect(columnRuns(wrong, BLUE)).not.toEqual(columnRuns(right, BLUE))
   })
@@ -314,7 +314,7 @@ describe('these measurements can fail', () => {
     ]
     const ink = (r: number, g: number, b: number) => (r > 150 && g < 90 && b < 90) || (r < 90 && g > 60 && g < 130 && b > 150)
     const share = async (type: ChartType) => {
-      const page = await shot(200, 120, Chart({ type, data, fontFamily: 'Fixture' } as never))
+      const page = await shot(200, 120, Chart({ type, data, fontFamily: 'Fixture' }))
       let coloured = 0
       for (let dy = -20; dy <= 20; dy += 1) {
         for (let dx = -20; dx <= 20; dx += 1) {
@@ -339,8 +339,8 @@ describe('the label strip centres each label in its slot', () => {
   // **No byte comparison could see it**, because both surfaces were wrong in
   // the same way, and no geometry row covers it. A pixel is the only
   // instrument that could ever have caught it.
-  it.each([['bar' as ChartType], ['line' as ChartType]])('centres a %s chart s labels', async type => {
-    const page = await shot(200, 120, Chart({ type, fontFamily: 'Fixture', data: cartesian, options: { showLabels: true } } as never))
+  it.each([['bar'], ['line']] as const)('centres a %s chart s labels', async type => {
+    const page = await shot(200, 120, Chart({ type, fontFamily: 'Fixture', data: cartesian, options: { showLabels: true } }))
     // The strip's own band, below the plot, so bar ink cannot be mistaken for
     // label ink.
     const dark = (r: number, g: number, b: number) => r < 90 && g < 90 && b < 90

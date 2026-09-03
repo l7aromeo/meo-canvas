@@ -57,6 +57,18 @@
 # module that is right there.
 !/packages/**/*.d.mts
 
+# The JavaScript reference tool is its own package so it can pin the TypeScript
+# TypeDoc loads. Everything it needs to install and run is named here, one file
+# at a time -- the first commit of this directory shipped the two `.mjs` files
+# the rule above already allowed and silently dropped the config, the manifest
+# and the baseline, because `git add -A` does not add what this file denies.
+!/packages/*/tools/typedoc/package.json
+!/packages/*/tools/typedoc/bun.lock
+!/packages/*/tools/typedoc/typedoc.json
+!/packages/*/tools/typedoc/tsconfig.json
+!/packages/*/tools/typedoc/README.md
+!/packages/*/tools/typedoc/undocumented-baseline.txt
+
 # The vendored tree carries the licence of the project it came from. MIT asks
 # for the notice to travel with a substantial portion of the code, and the
 # whole JavaScript surface of another project is one. Keeping it beside the
@@ -65,10 +77,11 @@
 !/packages/*/vendor/LICENSE
 
 # -- Formatter --------------------------------------------------------------
-# The lockfile is tracked because `npm ci` reads it, in CI and in the `fmt`
-# recipe's precondition alike; without it neither installs anything.
-!/package.json
-!/package-lock.json
+# The lockfile is tracked because `bun install --frozen-lockfile` reads it, in
+# CI and in `ensure-deps`, and refuses to proceed when it and package.json
+# disagree. `packageManager` in package.json names the bun version.
+!/bun.lock
+!/eslint.config.mjs
 !/.prettierrc
 !/.prettierignore
 

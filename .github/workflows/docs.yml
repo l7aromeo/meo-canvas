@@ -33,16 +33,16 @@ on:
     types: [published]
   pull_request:
     paths:
-      - "packages/meo-canvas/src/**"
-      - "packages/meo-canvas/tools/typedoc/**"
-      - ".github/workflows/docs.yml"
+      - 'packages/meo-canvas/src/**'
+      - 'packages/meo-canvas/tools/typedoc/**'
+      - '.github/workflows/docs.yml'
   # Backfills a version published before this workflow existed, or reruns one
   # whose build failed. Publishing an older tag does not move `latest/` unless
   # it really is the newest stable.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, e.g. v10.0.0-alpha.4"
+        description: 'Release tag to publish, e.g. v10.0.0-alpha.4'
         required: true
         type: string
 
@@ -88,15 +88,15 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: lts/*
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            packages/meo-canvas/tools/typedoc/package-lock.json
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.0'
 
       - name: Install
         run: |
-          npm ci --ignore-scripts
-          npm --prefix packages/meo-canvas/tools/typedoc ci
+          bun install --frozen-lockfile
+          bun install --cwd packages/meo-canvas/tools/typedoc --frozen-lockfile
 
       # The declarations are built, not committed: `tsc` on the package's build
       # config emits `dist/*.d.ts`, which is what the package ships as `types`

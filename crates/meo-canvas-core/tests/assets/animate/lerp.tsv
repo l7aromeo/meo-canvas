@@ -19,6 +19,8 @@
 # Reversed ranges and a zero-length range are here for the same reason.
 #
 # from	to	t	value
+# rows: 28
+#
 0	100	-0.5	-50
 0	100	0	0
 0	100	0.25	25

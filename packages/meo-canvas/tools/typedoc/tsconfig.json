@@ -1,0 +1,28 @@
+{
+  "//": [
+    "The compiler options TypeDoc reads the built declarations under.",
+    "",
+    "Mirrors the package's build config where it matters -- strict, nodenext,",
+    "es2022 -- and names `node` in `types` because the declarations reach for",
+    "`Buffer`. Without it every mention of `Buffer` renders as a broken link and",
+    "`invalidLink` validation fills the log with the same finding a hundred",
+    "times. No DOM library: this package renders on a server and nothing in its",
+    "surface names a browser type.",
+    "",
+    "`skipLibCheck` stays off, as it is off at the root: `dist/*.d.ts` is what",
+    "the package ships as its types, and the generator reading it is one more",
+    "thing that notices when it stops making sense."
+  ],
+  "compilerOptions": {
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": false,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": ["node"],
+    "typeRoots": ["../../../../node_modules/@types"]
+  },
+  "files": ["../../dist/index.d.ts"]
+}

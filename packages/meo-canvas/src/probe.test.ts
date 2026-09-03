@@ -153,7 +153,7 @@ describe('we match', () => {
     const ends = async (boxSizing: 'content-box' | 'border-box'): Promise<number> => {
       const runs = (await row(sized(boxSizing), 80, 60, 20)).split(' ')
       const white = runs[runs.length - 1] as string
-      return Number(white.split('-')[0] as string) - 1
+      return Number(white.split('-')[0]) - 1
     }
 
     expect(await ends('content-box'), '40 of content plus 4 of border each side').toBe(47)

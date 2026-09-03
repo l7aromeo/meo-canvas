@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { Canvas, type EncodeOptions, type Format, type NativeCanvas } from './canvas.js'
 

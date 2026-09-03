@@ -35,7 +35,7 @@ const { resolveAddon, PLATFORM_PACKAGES } = await import('./addon.js')
  * which is the whole distinction under test: installed-and-broken is a
  * different problem from not-installed, with a different fix.
  */
-function requiring(table: Record<string, unknown | (() => never)>) {
+function requiring(table: Record<string, unknown>) {
   const load = (id: string) => {
     if (!(id in table)) throw Object.assign(new Error(`Cannot find module '${id}'`), { code: 'MODULE_NOT_FOUND' })
     const entry = table[id]

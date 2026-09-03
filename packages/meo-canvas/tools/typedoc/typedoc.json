@@ -1,0 +1,33 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["../../dist/index.d.ts"],
+  "entryPointStrategy": "resolve",
+  "out": "../../../../target/jsdoc",
+  "tsconfig": "./tsconfig.json",
+
+  "name": "meo-canvas",
+  "readme": "../../README.md",
+  "githubPages": false,
+
+  "excludeExternals": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+
+  "categorizeByGroup": true,
+  "sort": ["kind", "alphabetical"],
+  "navigationLinks": {
+    "Source": "https://github.com/l7aromeo/meo-canvas/tree/v10",
+    "Rust API": "https://docs.rs/meo-canvas",
+    "npm": "https://www.npmjs.com/package/meo-canvas"
+  },
+
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": true,
+    "rewrittenLink": true,
+    "unusedMergeModuleWith": true
+  },
+  "treatValidationWarningsAsErrors": false,
+  "logLevel": "Info"
+}

@@ -432,7 +432,7 @@ function plotArea(options: BaseChartOptions | undefined, maxValue: number, fontF
  * `barY = chartY + finalChartHeight - barHeight` says.
  */
 function barChart(props: ChartProps<'bar'>): SceneNode {
-  const { labels, datasets } = props.data as CartesianChartData
+  const { labels, datasets } = props.data
   const options = props.options
   const values = datasets.map(dataset => dataset.data)
   const maxValue = Math.max(0, ...values.flat())
@@ -591,7 +591,7 @@ export function slicePath(start: number, end: number, outer: number, inner: numb
 
 /** A pie or doughnut. */
 function pieChart(props: ChartProps<'pie' | 'doughnut'>, innerFraction: number): SceneNode {
-  const points = props.data as readonly PieChartDataPoint[]
+  const points = props.data
   assertDrawable([points.map(point => point.value)])
 
   const outer = (PIE_SPACE / 2) * (1 - PIE_INSET)
@@ -719,7 +719,7 @@ export function linePath(points: readonly { x: number; y: number }[]): string {
 
 /** A line chart. */
 function lineChart(props: ChartProps<'line'>): SceneNode {
-  const { labels, datasets } = props.data as CartesianChartData
+  const { labels, datasets } = props.data
   const options = props.options
   const values = datasets.map(dataset => dataset.data)
   assertDrawable(values)

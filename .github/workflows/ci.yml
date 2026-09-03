@@ -61,7 +61,7 @@ jobs:
       # every recipe without a commit.
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
-          just-version: "1.58.0"
+          just-version: '1.58.0'
 
       # Both toolchains are named by the files that define them rather than
       # restated here, so no version lives in two places and CI cannot install
@@ -107,13 +107,11 @@ jobs:
           key: ${{ matrix.os }}
           cache-bin: true
 
-      # `just fmt-check` runs prettier, which needs a Node runtime and the
-      # package installed. `cache: npm` keys on package-lock.json, so a run
-      # that changes no dependency restores rather than downloads.
+      # A Node runtime for prettier, vitest and the tools; the packages
+      # themselves are installed by bun below, so there is no npm cache to key.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: lts/*
-          cache: npm
 
       # `libaom-sys` configures libaom with cmake, and libaom assembles its hot
       # paths on x86 rather than compiling them, so it fails outright when it
@@ -152,13 +150,13 @@ jobs:
       # `bun: command not found` on a runner, however green it is locally.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.0"
+          bun-version: '1.4.0'
 
-      # `npm ci` rather than `npm install`: it installs exactly what the
-      # lockfile names and fails when the lockfile and package.json disagree,
-      # which is what a check job wants to hear about.
+      # `--frozen-lockfile`: install exactly what `bun.lock` names and fail
+      # when it and package.json disagree, which is what a check job wants to
+      # hear about. The npm equivalent was `npm ci`.
       - name: Install the JavaScript dependencies
-        run: npm ci --ignore-scripts
+        run: bun install --frozen-lockfile
 
       # `--locked` so a run installs the versions the tools' own lockfiles
       # name, rather than whatever published since the last cache miss.

@@ -37,6 +37,8 @@
 # no tolerance here.
 #
 # from	to	stiffness	damping	mass	velocity	restDelta	value
+# rows: 40
+#
 0	1	170	26	1	0	0.005	0.5666666666666659
 0	1	170	26	1	0	0.05	0.36249999999999993
 0	1	170	26	1	0	0.001	0.7041666666666654
