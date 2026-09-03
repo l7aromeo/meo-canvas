@@ -427,6 +427,55 @@ verify-pack: pack verify-packed
 verify-packed:
     node packages/meo-canvas/tools/verify-package.mjs release
 
+# Render the golden fixtures on `linux-x86_64`, in the container a release is
+# built in.
+#
+# **The goldens are architecture-dependent and this is how the second
+# architecture's are made.** 15 of the 23 are byte-identical to the reference
+# and 8 are not, and the 8 are the ones with a curve, a gradient, a blend or a
+# glyph in them. `tests/fixtures.rs` carries the reasoning and the evidence that
+# it is rasterisation rather than a fault.
+#
+# With no argument this reports which fixtures differ here. With one, it accepts
+# that fixture's Linux render into `expected.linux-x86_64.png` -- one name at a
+# time, deliberately, for the reason `MEO_FIXTURE_ACCEPT` gives: accepting
+# everything at once is how a regression becomes a commit.
+#
+# The container is the release image rather than any Linux box, so the goldens
+# it produces are made by the toolchain that builds the published binary. A
+# render from a different Skia build would pin a picture nothing ships.
+#
+# **`--features vulkan` is not about the GPU here**, which `fixtures.rs` pins
+# off regardless. It is what makes `skia-bindings` find a prebuilt Skia for this
+# feature set: without it there is no match, Skia is compiled from source, and
+# the release image carries no `clang++` to do it with. `just test` runs the
+# fixtures both ways -- once in the bare `--workspace` pass and once with the
+# feature -- so the two builds are already required to agree, and this takes the
+# cheaper of the two.
+[doc("Render or accept the golden fixtures on linux-x86_64, in the release container.")]
+fixtures-linux name="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag=meo-canvas-build:linux-x64-gnu
+    docker image inspect "$tag" >/dev/null 2>&1 || \
+        docker build --build-arg BASE=quay.io/pypa/manylinux_2_28_x86_64 \
+            --build-arg ASSEMBLER=nasm \
+            -f containers/Dockerfile.glibc -t "$tag" containers/
+    # The variable is passed only when a name was given. `MEO_FIXTURE_ACCEPT`
+    # is read with `env::var().ok()`, so an empty value is still Some -- and the
+    # run then fails with "no fixture named ``" rather than reporting.
+    accept=()
+    if [[ -n "{{ name }}" ]]; then accept=(-e MEO_FIXTURE_ACCEPT="{{ name }}"); fi
+
+    mkdir -p "$HOME/.cargo/registry"
+    docker run --rm \
+        -v "$PWD":/src -w /src \
+        -v "$HOME/.cargo/registry":/root/.cargo/registry \
+        -e CARGO_TARGET_DIR=/src/target/container/fixtures-linux \
+        "${accept[@]}" \
+        "$tag" \
+        cargo test -p meo-canvas-core --features vulkan --test fixtures -- --nocapture
+
 # What the built addon demands of a machine, against what its target promises.
 #
 # A diagnostic and not a gate -- an unversioned symbol has no version to

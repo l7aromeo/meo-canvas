@@ -94,6 +94,83 @@ fn fixtures_dir() -> PathBuf {
 /// does not exist cannot be resolved and the message names it either way -- a
 /// report saying `crates/meo-canvas-core/../../target/...` is one the reader
 /// has to mentally flatten before they can open it.
+/// The platform whose renders `expected.png` holds.
+///
+/// Named rather than implied, because every other platform's golden is defined
+/// relative to it. The images in this repository were rendered on an Apple
+/// Silicon Mac, and that is the whole of why this constant is what it is.
+const REFERENCE: (&str, &str) = ("macos", "aarch64");
+
+/// Whether this host is the one `expected.png` was rendered on.
+fn on_reference() -> bool {
+    (std::env::consts::OS, std::env::consts::ARCH) == REFERENCE
+}
+
+/// This host's variant suffix, `linux-x86_64` and so on.
+fn host_variant() -> String {
+    format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// The image this host is checked against: its own variant where one exists,
+/// and the reference image otherwise.
+///
+/// # Why a variant exists at all
+///
+/// **A different architecture rasterises anti-aliased edges differently, and
+/// that is not a regression.** Measured: on `linux-x86_64`, 15 of the 23
+/// fixtures are byte-identical to the reference and 8 differ -- and the 8 are
+/// exactly the ones containing a curve, a gradient, a blend or a glyph, while
+/// the 15 are the axis-aligned ones. That is the same dividing line the module
+/// header measures for the Metal backend, arrived at independently on a second
+/// axis.
+///
+/// The evidence that it is rasterisation rather than a fault is that **every
+/// Chrome conformance suite passes on Linux** -- blend formulas, gradient
+/// stops, shadow extents, corner geometry, border and dotted rhythm, text
+/// truth, ellipsis truth, min-content widths. Those pin numbers rather than
+/// pixels, and Linux agrees with the browser on all of them. The pixels differ;
+/// what the pixels mean does not.
+///
+/// # Why a fallback rather than a variant per platform
+///
+/// Two thirds of the suite is byte-identical everywhere, and giving those a
+/// file per platform would be the same picture stored three times, each able to
+/// drift from the others. So a variant exists **only where a platform is
+/// measurably different**, and its absence means "this platform agrees with the
+/// reference" -- which is a claim the run then checks rather than assumes.
+///
+/// # What this deliberately does not do
+///
+/// It does not add a tolerance. The module header argues against one, and the
+/// argument survives this change: a comparison that permits a few pixels of
+/// difference cannot tell a rasteriser apart from a regression that happens to
+/// be small, and this suite is the only thing in the project that looks at the
+/// picture at all.
+fn expected_path(name: &str) -> PathBuf {
+    let dir = fixtures_dir().join(name);
+    if !on_reference() {
+        let variant = dir.join(format!("expected.{}.png", host_variant()));
+        if variant.exists() {
+            return variant;
+        }
+    }
+    dir.join("expected.png")
+}
+
+/// Where `MEO_FIXTURE_ACCEPT` writes on this host.
+///
+/// The reference image on the reference platform, and this platform's variant
+/// anywhere else -- so accepting on Linux can never overwrite the image macOS
+/// is checked against.
+fn accept_path(name: &str) -> PathBuf {
+    let dir = fixtures_dir().join(name);
+    if on_reference() {
+        dir.join("expected.png")
+    } else {
+        dir.join(format!("expected.{}.png", host_variant()))
+    }
+}
+
 fn report_dir(name: &str) -> PathBuf {
     let raw = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/fixtures")
@@ -332,7 +409,7 @@ fn every_fixture_matches_its_expected_image() {
             "no fixture named `{name}`; the fixtures are {names:?}"
         );
         let actual = render_fixture(name);
-        let expected = fixtures_dir().join(name).join("expected.png");
+        let expected = accept_path(name);
         std::fs::write(&expected, &actual).unwrap_or_else(|error| {
             unreachable!("cannot write {}: {error}", expected.display())
         });
@@ -345,7 +422,7 @@ fn every_fixture_matches_its_expected_image() {
     let mut failures = Vec::new();
     for name in &names {
         let actual = render_fixture(name);
-        let expected_path = fixtures_dir().join(name).join("expected.png");
+        let expected_path = expected_path(name);
 
         let Ok(expected) = std::fs::read(&expected_path) else {
             failures.push(format!(
