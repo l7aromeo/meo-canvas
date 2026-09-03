@@ -423,10 +423,10 @@ mod tests {
         // The caller's fix is a filesystem one -- the path in the scene is
         // wrong or unreadable -- so it reads as I/O rather than sending them to
         // look at the renderer.
-        let error = Error::ImageRead {
-            path: "/no-such-directory/a.png".to_owned(),
-            source: std::io::Error::from(std::io::ErrorKind::NotFound),
-        };
+        let error = Error::image_read(
+            "/no-such-directory/a.png".to_owned(),
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        );
 
         assert_eq!(exit_code_for(&error), EXIT_IO);
     }

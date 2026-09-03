@@ -477,10 +477,10 @@ impl Root {
         // This is where it reports: the first call that can fail.
         let size = Size::new(self.width, self.height);
         if !meo_canvas_scene::size_is_pixels(size) {
-            return Err(BuildError::Scene(SceneError::CanvasSize {
-                width: self.width,
-                height: self.height,
-            }));
+            return Err(BuildError::Scene(SceneError::canvas_size(
+                self.width,
+                self.height,
+            )));
         }
 
         let mut scene = Scene::new(size);

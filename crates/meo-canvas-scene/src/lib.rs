@@ -407,12 +407,27 @@ pub enum SceneError {
     /// empty measurement is `NaN`. Both build a scene, pass every structural
     /// check, and lay out to nothing -- so the picture is the first thing that
     /// reports the arithmetic.
+    #[non_exhaustive]
     CanvasSize {
         /// The width asked for.
         width: f32,
         /// The height asked for.
         height: f32,
     },
+}
+
+impl SceneError {
+    /// A canvas size that is not a size, as the error for it.
+    ///
+    /// **A constructor because the variant is `#[non_exhaustive]`**, which
+    /// stops a struct expression outside this crate and would otherwise stop
+    /// `meo-canvas` reporting the thing it checks. The attribute is what keeps
+    /// a field addable later without breaking every caller who destructured
+    /// it; this is the door left open for the callers who build it.
+    #[must_use]
+    pub const fn canvas_size(width: f32, height: f32) -> Self {
+        Self::CanvasSize { width, height }
+    }
 }
 
 impl core::fmt::Display for SceneError {

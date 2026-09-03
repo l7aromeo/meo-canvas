@@ -656,6 +656,7 @@ fn fetch(url: &str) -> Result<Vec<u8>, Error> {
         ureq::get(url).call().map_err(|error| Error::SourceFetch {
             url: url.to_owned(),
             detail: error.to_string(),
+            failure: classify(&error),
         })?;
     response
         .body_mut()
@@ -663,7 +664,75 @@ fn fetch(url: &str) -> Result<Vec<u8>, Error> {
         .map_err(|error| Error::SourceFetch {
             url: url.to_owned(),
             detail: error.to_string(),
+            failure: classify(&error),
         })
+}
+
+/// What `ureq` reported, as the class a caller branches on.
+///
+/// **Mapped from the variants that are certain, and `Other` for the rest.**
+/// `StatusCode` is the default behaviour for 4xx and 5xx, `HostNotFound` is
+/// resolution, `BadUri` is a URL with no scheme or host. `Io` and
+/// `ConnectionFailed` are both the transport, and `ConnectionFailed` is
+/// `ureq`'s own fallback for a connector that gave no reason -- retrying is
+/// still the right first move for either.
+///
+/// `Timeout` is folded into the transport rather than named, because the
+/// configuration this crate uses cannot produce it: `ureq` 3.4 defaults every
+/// timeout to `None` except `await_100`, which needs a request body. The arm
+/// is here so the mapping stays right if a timeout is ever configured.
+///
+/// Everything else -- TLS, proxy, protocol, redirects, cookies -- is `Other`.
+/// They have nothing in common except that repeating the request does not fix
+/// them, which is what `Other` tells a caller.
+#[cfg(all(test, feature = "net"))]
+mod fetch_classification {
+    use super::classify;
+    use crate::FetchFailure;
+
+    #[test]
+    fn a_url_with_no_scheme_is_the_callers_to_fix_and_not_to_retry() {
+        // `BadUri` is the one class a caller can act on without a network at
+        // all, and the only one this test can reach without one.
+        let Err(refused) = ureq::get("not-a-url").call() else {
+            unreachable!("a URL with no scheme is refused")
+        };
+        assert_eq!(classify(&refused), FetchFailure::BadUrl);
+    }
+
+    #[test]
+    fn a_host_that_does_not_resolve_is_not_a_transport_failure() {
+        // Separating these two is the point of the classification: a name that
+        // does not resolve will not resolve on a retry, and a socket that
+        // dropped may well connect on one.
+        let Err(refused) = ureq::get("http://invalid.invalid/a.png").call()
+        else {
+            unreachable!("the reserved TLD does not resolve")
+        };
+        assert!(
+            matches!(
+                classify(&refused),
+                FetchFailure::HostNotFound | FetchFailure::Transport
+            ),
+            "a resolution failure came back as {:?}",
+            classify(&refused)
+        );
+    }
+}
+
+#[cfg(feature = "net")]
+const fn classify(error: &ureq::Error) -> crate::FetchFailure {
+    use crate::FetchFailure;
+
+    match error {
+        ureq::Error::StatusCode(code) => FetchFailure::Status(*code),
+        ureq::Error::HostNotFound => FetchFailure::HostNotFound,
+        ureq::Error::BadUri(_) => FetchFailure::BadUrl,
+        ureq::Error::Io(_)
+        | ureq::Error::ConnectionFailed
+        | ureq::Error::Timeout(_) => FetchFailure::Transport,
+        _ => FetchFailure::Other,
+    }
 }
 
 fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {

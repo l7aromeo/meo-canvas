@@ -200,7 +200,7 @@ impl Element {
         // negative width is the same claim and the type cannot see it.
         let size = Size::new(width, height);
         if !meo_canvas_scene::size_is_pixels(size) {
-            return Err(SceneError::CanvasSize { width, height });
+            return Err(SceneError::canvas_size(width, height));
         }
 
         let mut scene = Scene::new(size);

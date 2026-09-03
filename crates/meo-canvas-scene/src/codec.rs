@@ -179,6 +179,7 @@ pub enum CodecError {
     /// The buffer does not begin with [`MAGIC`].
     NotAScene,
     /// The buffer is well formed but written by another revision.
+    #[non_exhaustive]
     UnsupportedVersion {
         /// The revision the buffer claims.
         found: u16,
@@ -186,6 +187,7 @@ pub enum CodecError {
         expected: u16,
     },
     /// The buffer ends inside a field.
+    #[non_exhaustive]
     Truncated {
         /// Byte offset the read was attempted at.
         offset: usize,
@@ -195,6 +197,7 @@ pub enum CodecError {
         available: usize,
     },
     /// A discriminant that names no variant.
+    #[non_exhaustive]
     UnknownTag {
         /// Byte offset the tag was read from.
         offset: usize,
@@ -202,11 +205,13 @@ pub enum CodecError {
         tag: u8,
     },
     /// A string field that is not valid UTF-8.
+    #[non_exhaustive]
     InvalidUtf8 {
         /// Byte offset the string's contents started at.
         offset: usize,
     },
     /// A node count above [`MAX_NODES`].
+    #[non_exhaustive]
     TooManyNodes {
         /// The count the buffer declared.
         found: u32,
@@ -225,6 +230,7 @@ pub enum CodecError {
     /// Refused rather than ignored: trailing bytes mean the writer and the
     /// reader disagree about the format, and a reader that shrugs at that
     /// difference will accept a file it has silently misread.
+    #[non_exhaustive]
     TrailingBytes {
         /// How many bytes were left over.
         count: usize,

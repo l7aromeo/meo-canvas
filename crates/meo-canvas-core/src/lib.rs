@@ -95,6 +95,56 @@ pub use resolve::{Fonts, Resolved};
 
 use crate::measure::SceneMeasurer;
 
+/// Why a fetch failed, in the terms a caller can act on.
+///
+/// **The classification and not the sentence.** [`Error::SourceFetch`] carries
+/// both: `detail` is what the HTTP client said, which crosses the addon
+/// boundary into a JavaScript exception message and is what a person reads;
+/// this is what a program branches on. A caller deciding whether to try again
+/// should not have to parse prose to do it.
+///
+/// Every variant says what to do with it, because a classification whose
+/// meaning is not written down only moves the guesswork.
+///
+/// **Only distinctions `ureq` reports are here.** There is deliberately no
+/// `Timeout`: `ureq` 3.4's default `Timeouts` leaves every field `None` except
+/// `await_100`, which applies to sending a body with `Expect: 100-continue`
+/// and so cannot arise from the `GET` this crate makes -- measured in
+/// `config.rs`, not read from the note beside it. A `Timeout` variant would be
+/// one that never occurred, and a caller branching on a distinction that is
+/// sometimes wrong makes worse decisions than one branching on fewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FetchFailure {
+    /// The server answered, with a status that is not a success.
+    ///
+    /// **Retry a 5xx, do not retry a 4xx**: the first says the server could
+    /// not answer now, the second says it will not answer this request.
+    Status(u16),
+    /// The host does not resolve.
+    ///
+    /// **Do not retry; fix the URL, or the network it is being resolved on.**
+    HostNotFound,
+    /// The URL is not one this client can use -- no scheme, or no host.
+    ///
+    /// **Do not retry; fix the URL.** Nothing about the network will change
+    /// this.
+    BadUrl,
+    /// The connection failed, or failed partway through.
+    ///
+    /// **Retry.** This is the class where trying again is the right first
+    /// move: a refused connection, a socket that dropped, a read that stopped.
+    Transport,
+    /// Something else went wrong.
+    ///
+    /// **Do not retry blindly.** TLS, a proxy configuration, a malformed
+    /// response, too many redirects: none of them are helped by repeating the
+    /// request, and lumping them under a hopeful name would invite exactly
+    /// that. `Other` says the classification does not know, which is the
+    /// honest thing to say.
+    Other,
+}
+
 /// Anything that can stop a render.
 // `thiserror::Error` is named in full rather than imported: an imported `Error`
 // makes every `[`Error`]` doc link in this file ambiguous between the derive
@@ -113,11 +163,14 @@ pub enum Error {
     /// this one says the fetch was attempted and failed. A caller can act on
     /// the difference -- the first is a build flag, the second is the network.
     #[error("cannot fetch {url}: {detail}")]
+    #[non_exhaustive]
     SourceFetch {
         /// The URL the node named.
         url: String,
-        /// What the HTTP client reported.
+        /// What the HTTP client reported, for a person to read.
         detail: String,
+        /// What went wrong, for a program to branch on.
+        failure: FetchFailure,
     },
 
     /// A [`animate::easing::steps`] count with no width to hold a value for.
@@ -156,6 +209,7 @@ pub enum Error {
 
     /// A font file that cannot be read or parsed.
     #[error("cannot register font family {family:?}: {detail}")]
+    #[non_exhaustive]
     FontRegister {
         /// The family name the caller asked for.
         family: String,
@@ -165,6 +219,7 @@ pub enum Error {
 
     /// A local image path that cannot be read.
     #[error("cannot read image at {path}")]
+    #[non_exhaustive]
     ImageRead {
         /// The path as the scene spelled it.
         path: String,
@@ -191,12 +246,27 @@ pub enum Error {
 
     /// The finished surface could not be written in the requested format.
     #[error("encoding to {format} failed: {detail}")]
+    #[non_exhaustive]
     Encode {
         /// The format that was asked for.
         format: ImageFormat,
         /// What the encoder reported.
         detail: String,
     },
+}
+
+impl Error {
+    /// A path the renderer could not read, as the error for it.
+    ///
+    /// **A constructor because the variant is `#[non_exhaustive]`.** That
+    /// attribute keeps a field addable later without breaking every caller who
+    /// destructured the variant, and it also stops a struct expression outside
+    /// this crate -- including `meo-canvas-cli`, which builds one to check the
+    /// exit code it maps to. This is the door left open for that.
+    #[must_use]
+    pub const fn image_read(path: String, source: std::io::Error) -> Self {
+        Self::ImageRead { path, source }
+    }
 }
 
 /// Everything a render needs that is not the scene itself.
