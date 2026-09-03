@@ -496,6 +496,28 @@ pub struct Block {
     pub width: f32,
     /// Every line box plus the gaps between them.
     pub height: f32,
+    /// How many lines the **wrap** produced, before `max_lines` dropped any.
+    ///
+    /// `lines.len()` cannot answer this and that is the whole reason the field
+    /// exists. A paragraph with `max_lines: 1` that broke into two comes back
+    /// as one line carrying a marker, which is indistinguishable by any later
+    /// test from a paragraph that never broke -- and
+    /// [`crate::measure::SceneMeasurer`] has a rescue that needs exactly that
+    /// distinction, because a break caused by a box rounded down from the
+    /// text's own width is an artefact rather than a break.
+    ///
+    /// Recorded here, where the untruncated wrap is still in hand, rather than
+    /// reconstructed afterwards by wrapping a second time.
+    pub wrapped_lines: usize,
+    /// Whether a marker replaced any of the text.
+    ///
+    /// Both triggers set it, and they are different failures: `max_lines`
+    /// dropping lines, and a single line too wide to break -- an unbreakable
+    /// word does not raise `wrapped_lines` above one, so that field alone
+    /// cannot see the second. The rescue in [`crate::measure`] needs both,
+    /// because a box rounded down from the text's own width produces either
+    /// depending only on whether the text has a space in it.
+    pub truncated: bool,
 }
 
 /// The paragraph-level inputs a wrap needs, resolved to pixels.
@@ -1013,6 +1035,7 @@ pub fn layout(
 ) -> Block {
     let all = wrap(measurer, base, segments, max_width, metrics);
     let mut lines = all.clone();
+    let mut truncated = false;
     let marker = paragraph
         .ellipsis
         .as_deref()
@@ -1027,6 +1050,7 @@ pub fn layout(
             lines[last] = truncate_with(
                 measurer, base, &all, last, max_width, marker, metrics,
             );
+            truncated = true;
         }
     }
 
@@ -1050,6 +1074,7 @@ pub fn layout(
         lines[last] = truncate_with(
             measurer, base, &all, last, max_width, marker, metrics,
         );
+        truncated = true;
     }
 
     measure_lines(measurer, base, &mut lines, metrics);
@@ -1064,6 +1089,8 @@ pub fn layout(
         lines,
         width,
         height: boxes + gaps,
+        wrapped_lines: all.len(),
+        truncated,
     }
 }
 

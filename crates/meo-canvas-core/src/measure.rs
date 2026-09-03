@@ -387,7 +387,25 @@ impl<'resolved> SceneMeasurer<'resolved> {
         // a fraction narrower than its text now overflows by that fraction
         // instead of breaking, which is invisible where a spurious line break
         // is not.
-        if laid.lines.len() > 1 && width.is_finite() {
+        // **`wrapped_lines`, not `lines.len()`, and that distinction is the
+        // whole of the defect this once had.**
+        //
+        // The test is "did the wrap break this paragraph". With `max_lines`,
+        // `lines.len()` cannot answer it: a paragraph that broke into two comes
+        // back as one line carrying a marker, identical by this test to one that
+        // never broke -- so the rescue below was skipped for exactly the case it
+        // was needed most, and a label that fitted rendered as its own ellipsis.
+        //
+        // Measured in the report that found it: `HP` in Oswald 12 is `12.49`
+        // wide, its box rounds to `12` at any offset whose fraction is at or
+        // above `.5`, the wrap breaks, and `maxLines: 1` truncates the break to
+        // `…` in a box with room for the whole word.
+        // Both ways a rounded-down box shows: the wrap breaking a paragraph
+        // that fitted, and a single line judged too wide to keep. A word with
+        // no space in it cannot break, so `HP` at `12.49` in a box of `12`
+        // never raises `wrapped_lines` and reaches the marker by the second
+        // route -- which is the case the report was actually about.
+        if (laid.wrapped_lines > 1 || laid.truncated) && width.is_finite() {
             let loose = lines::layout(
                 &mut self.text,
                 style,
