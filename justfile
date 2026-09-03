@@ -207,18 +207,99 @@ test:
 # Written with `/` alone it excluded the file on Linux and macOS and nothing on
 # Windows, where the floor then failed for a reason the other two did not have.
 #
-# **What this gives up, stated rather than buried:** those 500 regions are now
-# measured by nothing. They are *exercised* -- thoroughly, by the JavaScript
-# suite -- but `just coverage-js` measures TypeScript, not these Rust regions.
-# The honest fix is to instrument the addon while the JavaScript suite runs, so
-# that gate's execution feeds this number; until someone does that, this is an
-# exclusion with a known hole in it rather than a solved problem.
+# **The exclusion stays; the hole in it does not.** Those 499 regions used to be
+# measured by nothing: exercised thoroughly by the JavaScript suite, and
+# counted by neither gate, since `coverage-js` measures TypeScript rather than
+# these Rust regions. Since 5 September 2026 this recipe instruments the addon,
+# runs the JavaScript suite against it, and reports `lib.rs` from the profile
+# that run writes -- **64.13% of regions, 68.00% of lines, 57.89% of
+# functions**, against 4.81% from every Rust caller that will ever exist.
+#
+# It keeps its own floor rather than joining the workspace's, because 64% under
+# a 90% average would drag the whole number down to say something about the
+# Neon boundary instead of about the code. Two floors, one gate, one profile
+# directory.
 [doc("Measure coverage and fail below the 90% floor.")]
-coverage:
-    cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests \
+coverage: ensure-deps
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # One profile directory, two reports. `cargo llvm-cov` merges every
+    # `.profraw` under its target directory into one `.profdata` -- the
+    # JavaScript run's included -- but its own report cannot name the addon's
+    # `cdylib` as an object, so those counters land nowhere. Measured: with the
+    # JavaScript profile merged into that profdata, `report` still puts
+    # `lib.rs` at 4.81%, and the same profdata against the `.node` puts it at
+    # 64.13%. So the second report is `llvm-cov` invoked directly on the
+    # artefact the first one cannot see.
+    cargo +{{ fmt_toolchain }} llvm-cov clean --workspace
+    cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --no-report
+
+    # The addon, built with the same instrumentation and left where the suite
+    # already looks. **Not `MEO_CANVAS_ADDON`**: that variable is the subject
+    # of `addon.resolve.test.ts`, and a value in the ambient environment fails
+    # 9 of its 12 tests -- the override under test cannot also be the harness.
+    #
+    # In a subshell, because `show-env` exports a dozen `CARGO_LLVM_COV_*`
+    # variables and one of them makes a later `report` exit non-zero after
+    # printing a clean result: a floor failure with no floor in it.
+    #
+    # The addon is instrumented when this finishes. Everything `ci` runs after
+    # it works on that binary, only slower; `just addon` puts an ordinary one
+    # back.
+    (
+      eval "$(cargo +{{ fmt_toolchain }} llvm-cov show-env --export-prefix)"
+      unset CARGO_LLVM_COV_SHOW_ENV
+      cargo +{{ fmt_toolchain }} build -p meo-canvas-node --features "{{ host_features }}"
+      cp "${CARGO_LLVM_COV_TARGET_DIR:-target}/debug/{{ lib_name }}" {{ addon_path }}
+    )
+
+    # **`--pool=threads` is not a performance choice.** It is the difference
+    # between a measurement and a zero: vitest's default `forks` pool loads the
+    # instrumented addon in worker processes that never flush a profile, so
+    # every one of the 15 test files writes no `.profraw` at all and the run
+    # reads exactly like a suite that never touches the addon. Continuous mode
+    # (`%c`) is worse -- it writes files whose counters are all zero, which
+    # merge cleanly and report 0.00% across the whole workspace. Threads run in
+    # one process that exits normally, and its `atexit` writes the profile.
+    LLVM_PROFILE_FILE="$PWD/target/llvm-cov-target/js-%p-%14m.profraw" \
+      ./node_modules/.bin/vitest run --pool=threads
+
+    # The Rust half, with `lib.rs` still excluded: those 499 regions are 4.81%
+    # from any Rust caller and always will be, and averaging them into a
+    # workspace floor measures the boundary rather than the code.
+    cargo +{{ fmt_toolchain }} llvm-cov report --branch --doctests \
       --ignore-filename-regex 'meo-canvas-node[/\\]src[/\\]lib\.rs$' \
       --fail-under-lines 90 --fail-under-regions 90 \
       --lcov --output-path target/lcov.info
+
+    # `-print -quit` rather than `| head -1`: under `pipefail` the pipe kills
+    # `find` with SIGPIPE the moment `head` is satisfied, `set -e` sees that,
+    # and the recipe exits right after the Rust half printed a clean report --
+    # which reads as the floor failing rather than as the plumbing.
+    profdata=$(find target -name '*.profdata' -print -quit)
+
+    # The addon half, read through the toolchain's own `llvm-cov` rather than
+    # whatever is first on `PATH`: a stable `llvm-profdata` refuses these files
+    # with "raw profile version mismatch", which is at least loud.
+    #
+    # **A named source, not the whole artefact.** The `.node` links the core
+    # and scene crates into itself, so a report over the object measures those
+    # too and totals 45% -- a number about layout and Skia rather than about
+    # the boundary. `lib.rs` alone is the file this recipe exists for.
+    llvm_cov="$(rustc +{{ fmt_toolchain }} --print target-libdir)/../bin/llvm-cov"
+    boundary=crates/meo-canvas-node/src/lib.rs
+    "$llvm_cov" report {{ addon_path }} -instr-profile="$profdata" "$boundary"
+
+    # A floor of its own, well under the workspace's: 64.13% of regions on 5
+    # September 2026, and 60 leaves room for a boundary function landing before
+    # the JavaScript that reaches it without turning the number into something
+    # to chase. Raising it means writing JavaScript that reaches the error
+    # arms, not writing Rust.
+    measured=$("$llvm_cov" export {{ addon_path }} -instr-profile="$profdata" \
+      -summary-only "$boundary" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["totals"]["regions"]["percent"])')
+    printf 'the addon boundary is at %.2f%% of regions, floor 60\n' "$measured"
+    python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= 60.0 else 1)' "$measured"
 
 # The report, opened, with no floor to fail. What to run while writing tests.
 [doc("Open the coverage report in a browser.")]
