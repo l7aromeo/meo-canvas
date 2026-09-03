@@ -9,6 +9,73 @@ Two public surfaces, and they are siblings rather than layers: a Rust crate and
 a Node addon. Both construct the same `Scene` and hand it to the same core, so
 neither can grow a capability the other cannot reach.
 
+## Contents
+
+- [Architecture](#architecture)
+  - [Two representations](#two-representations)
+  - [Pages](#pages)
+  - [A page as tall as its content](#a-page-as-tall-as-its-content)
+  - [Where state lives](#where-state-lives)
+  - [Pipeline](#pipeline)
+  - [The JavaScript boundary](#the-javascript-boundary)
+  - [Node addon](#node-addon)
+- [The Rust surface](#the-rust-surface)
+  - [Rasteriser parity](#rasteriser-parity)
+- [The JavaScript surface](#the-javascript-surface)
+  - [One crossing, and when](#one-crossing-and-when)
+  - [Why the tree is built before it is encoded](#why-the-tree-is-built-before-it-is-encoded)
+  - [Throwing and rejecting are different failures](#throwing-and-rejecting-are-different-failures)
+  - [What the canvas exposes](#what-the-canvas-exposes)
+  - [The retained canvas](#the-retained-canvas)
+  - [Where the overhead is](#where-the-overhead-is)
+- [Workspace](#workspace)
+  - [Module layout](#module-layout)
+- [The behavioural target](#the-behavioural-target)
+  - [Three questions answered and closed](#three-questions-answered-and-closed)
+  - [A property whose whole meaning is a DOM event](#a-property-whose-whole-meaning-is-a-dom-event)
+- [Conventions](#conventions)
+  - [Comments](#comments)
+  - [Constants](#constants)
+  - [Stacking](#stacking)
+  - [Stacking contexts](#stacking-contexts)
+  - [Layout defaults](#layout-defaults)
+  - [Errors](#errors)
+  - [Performance and memory](#performance-and-memory)
+- [Workflows](#workflows)
+  - [The package manager is bun](#the-package-manager-is-bun)
+  - [Formatting and linting](#formatting-and-linting)
+  - [Windows runs the gate, and it found four faults in three runs](#windows-runs-the-gate-and-it-found-four-faults-in-three-runs)
+  - [Local iteration against meo-skia-canvas](#local-iteration-against-meo-skia-canvas)
+  - [CLAUDE.md](#claude-md)
+- [Testing](#testing)
+  - [Coverage: the floor, the file it does not count, and who runs it](#coverage-the-floor-the-file-it-does-not-count-and-who-runs-it)
+  - [What a check can and cannot see](#what-a-check-can-and-cannot-see)
+  - [What only a second implementation can see](#what-only-a-second-implementation-can-see)
+  - [And what only a pixel can](#and-what-only-a-pixel-can)
+  - [Pin the wrong answer when the right one is upstream](#pin-the-wrong-answer-when-the-right-one-is-upstream)
+  - [Widening a matrix is the measurement, not the diligence](#widening-a-matrix-is-the-measurement-not-the-diligence)
+  - [A green row is not coverage of a number the case cannot produce](#a-green-row-is-not-coverage-of-a-number-the-case-cannot-produce)
+  - [Structural coverage is not positional coverage](#structural-coverage-is-not-positional-coverage)
+  - [A function-valued option has one instrument where everything else has three](#a-function-valued-option-has-one-instrument-where-everything-else-has-three)
+  - [A language's convenient default is not the other language's](#a-language-s-convenient-default-is-not-the-other-language-s)
+  - [A repro must be minimal in what it is not testing](#a-repro-must-be-minimal-in-what-it-is-not-testing)
+  - [A scripted revert needs an assertion that it reverted](#a-scripted-revert-needs-an-assertion-that-it-reverted)
+  - [A test that fails is not evidence about which side is wrong](#a-test-that-fails-is-not-evidence-about-which-side-is-wrong)
+  - [For shared code the question is not whether it is right](#for-shared-code-the-question-is-not-whether-it-is-right)
+- [Porting a v1 component](#porting-a-v1-component)
+- [Releasing](#releasing)
+  - [The targets, and the one that is missing on purpose](#the-targets-and-the-one-that-is-missing-on-purpose)
+  - [A Linux artefact is a property of its build base](#a-linux-artefact-is-a-property-of-its-build-base)
+  - [The goldens are per architecture, and no tolerance was added](#the-goldens-are-per-architecture-and-no-tolerance-was-added)
+  - [The addon does not ship inside the package](#the-addon-does-not-ship-inside-the-package)
+  - [A target is named three times, and a test asserts all three agree](#a-target-is-named-three-times-and-a-test-asserts-all-three-agree)
+  - [Packing is not installing](#packing-is-not-installing)
+  - [What triggers a publish](#what-triggers-a-publish)
+  - [A new platform package cannot start on OIDC](#a-new-platform-package-cannot-start-on-oidc)
+  - [The reference publishes after the version resolves from npm](#the-reference-publishes-after-the-version-resolves-from-npm)
+  - [The publishing audit](#the-publishing-audit)
+- [Dependencies](#dependencies)
+
 ## Architecture
 
 `Scene` is the contract. It is a plain data tree in `meo-canvas-scene` with no
@@ -70,6 +137,33 @@ re-entry into caller code mid-render.
 
 Fonts and decoded images are resolved once and shared across every page in a
 scene. The layout tree is built and dropped per page.
+
+### A page as tall as its content
+
+`Scene::content_height` asks for it, and `size.height` becomes the **floor**
+rather than the height -- so no field is ever meaningless, and "at least this
+tall" is expressible rather than a second flag.
+
+**Solve, then allocate.** The surface used to be created from `page_size` before
+any layout ran, which is why a derived height was impossible rather than merely
+absent: there was nowhere for the answer to go. `render` now solves each page,
+computes its size from the solved root, and brings the surface into being on the
+first page.
+
+**The circularity argument covers the width and stops there.** Solving needs a
+width before anything can be measured, because that is what text breaks its
+lines against. A height is a consequence of that measuring, so `MaxContent` on
+the height axis is not circular. The two surfaces therefore agree that a width is
+required and a height is not, and the Rust one says so by chaining
+(`Root::new(w).height(h)`) because Rust has no optional argument and `Root`
+configures everything else the same way.
+
+**What the pinning tests are for.** `content_height.rs` in the core reads the
+**encoded PNG's own header**, because layout could resolve any height at all and
+still be painted onto a sheet of the stated size -- which is exactly what used to
+happen. `content_height_surface.rs` in the surface crate checks the other half:
+that the default a caller reaches by writing the least is the derived one, and
+that `.height(120).min_height(90)` stays 120.
 
 ### Where state lives
 
@@ -879,53 +973,103 @@ comment what the reuse is worth when it is not obvious.
 
 ## Workflows
 
-`just` drives everything. `just` alone lists the recipes.
+`just` drives everything. `just` alone lists every recipe with its one-line
+doc; the table below groups them. A bare verb rewrites the tree; the `-check`
+suffix is the variant that reports instead. `just ci` uses only the reporting
+variants.
 
 ```
-just                  List every recipe.
-just setup            First-time setup on a fresh clone. Idempotent.
-just ci               What CI runs. Everything below that reports rather than rewrites.
-just build            Build the workspace, including the addon.
-just test             Unit, integration, and doctests.
-just typecheck        tsc --noEmit over the TypeScript surface.
-just coverage         Enforce the 90% floor. Exits non-zero below it.
-just coverage-open    HTML report, no floor.
-just lint             clippy with autofix. Rewrites the tree.
-just lint-check       clippy without fixing.
-just fmt              rustfmt and prettier. Rewrites the tree.
-just fmt-check        rustfmt and prettier without writing.
-just layout-check     Fail if a mod.rs exists.
-just docs             Fail on any rustdoc warning.
-just unused           Dependencies declared but never imported.
-just fixtures         Render every fixture and compare it to its committed image.
-just fixtures-accept  Accept one fixture's current render as its expected image.
-just clean            Remove all build output.
+setup                 First-time setup on a fresh clone. Idempotent.
+ci                    What CI runs, in order, refusing to start beside another gate.
+
+build / addon         The workspace, and the debug addon into packages/meo-canvas.
+build-js              tsc into packages/meo-canvas/dist.
+test / test-js        Rust (twice, once per GPU feature) and vitest.
+coverage / -js        The 90% floors. Exit non-zero below them.
+lint / lint-check     clippy, then ESLint. `lint` rewrites.
+fmt / fmt-check       rustfmt on the pinned nightly, then prettier over the whole tree.
+typecheck             tsc --noEmit over the package and its tests.
+docs / docs-js        rustdoc with warnings denied; TypeDoc with dead links denied.
+layout-check          No mod.rs anywhere.
+unused / runtime-free Declared-but-unused crates; any async runtime in the tree.
+
+fixtures / -accept    Render every golden and compare; accept one by name.
+fixtures-linux        The same, inside the release container, for the linux-x86_64 set.
+fixture-scenes        Rewrite every fixture's scene.mcs from its source.
+conformance           Re-measure Chrome with Playwright; rewrite the tables the tests read.
+example               Render the nine scenes on both surfaces and compare every byte.
+bench / -rust / -js   criterion; throughput, rss, heap, peak, idle.
+
+arena-tables, arena-enums, arena-cases, media-types, doc-examples, platform-packages
+                      Generated TypeScript from Rust sources; each has a -check that fails on drift.
+
+addon-release         The optimised addon a release ships.
+addon-container       The same, built inside containers/Dockerfile.{glibc,musl}.
+pack / pack-container Two tarballs into release/: the platform package and the main one.
+verify-pack / -packed Install those tarballs somewhere else and render through them.
+abi-floor             What the Linux addon demands against what TARGETS declares.
+acceptance            Load the Linux addon on six images with nothing installed.
+bump-npm              npm version, and every platform pin with it.
+release-npm(-dry)     Dispatch release.yml on the pushed HEAD and watch it.
+release-crate(-dry)   Dispatch crates-io.yml.
+surface-report        v1's prop surface against v2's.
+clean
 ```
 
-A bare verb rewrites the tree; the `-check` suffix is the variant that reports
-instead. `just ci` uses only the reporting variants.
+### The package manager is bun
 
-`fmt` formats Rust, JavaScript, TypeScript, and Markdown in one command. One
-recipe rather than a per-language pair, because a narrower recipe lets someone
-format half the tree, see it succeed, and push a tree that `fmt-check` refuses.
+`bun.lock` is the lockfile and `packageManager` in `package.json` names the
+version. `ensure-deps`, every workflow and the reference tool install with
+`bun install --frozen-lockfile`, which refuses when lockfile and manifest
+disagree -- the `npm ci` equivalent. Two things stay npm on purpose: `npm pack`
+and `npm publish`, because the release workflow derives its tarball globs from
+npm's naming and provenance is npm's; and the consumer-side install in
+`verify-package.mjs`, because consumers use npm.
 
-The Rust half runs on a pinned nightly named by the `fmt_toolchain` variable,
-because `rustfmt.toml` uses unstable options that stable silently ignores —
-stable `cargo fmt` would report clean against weaker rules than CI applies. The
-prettier half runs the copy in `node_modules`, installed from the tracked
-lockfile, rather than reaching the network for whatever `npx` resolves to.
+The root TypeScript is **6.0.3**, not 7. typescript-eslint supports `<6.1.0`
+and TypeDoc 0.28 supports up to 6.0.x; 7 is the Go compiler with a different
+API and neither loads it. The reference tool pins the same version in its own
+package for the same reason.
 
-The vendored JavaScript under `packages/meo-canvas/vendor/` is excluded from
-formatting. It arrives in another repository's style, and reformatting it would
-rewrite every line and destroy the diff against upstream that makes applying a
-fix from there possible.
+### Formatting and linting
 
-That tree carries its own `LICENSE`, copied from the project it came from. MIT
-asks for the notice to travel with a substantial portion of the code, and
-another project's entire JavaScript surface is one. It sits beside the code
-rather than in the root `LICENSE`, so it stays true if the vendored copy is
-ever dropped and so nothing suggests the upstream author holds copyright in
-this repository as a whole.
+`fmt` is one recipe: rustfmt on the nightly named by `fmt_toolchain`, because
+`rustfmt.toml` uses options stable ignores -- stable `cargo fmt` reports clean
+against weaker rules than CI applies -- then `prettier --write .` over the
+whole tree, Markdown, YAML and JSON included. What prettier must not touch is
+named in `.prettierignore` with its reason each time: the vendored v1 layer
+kept in upstream's style so it can be diffed against upstream, the generated
+tables, the golden scenes, and the Chrome measurement tables under
+`crates/*/tests/assets`, which are machine-written and which prettier rewrote
+by 3,460 lines the first time it saw them.
+
+`lint` is clippy with `-D warnings` across the workspace and the examples, then
+ESLint. `eslint.config.mjs` runs typescript-eslint's `recommendedTypeChecked`
+against `tsconfig.test.json`, which is the config that includes the tests;
+`eslint-config-prettier` goes last so no rule argues with the formatter. Two
+rules are deliberate and say so in the config: `require-await` is off because
+`Canvas.toBuffer` is `async` with no `await` on purpose -- the contract is a
+rejection, not a throw -- and `no-unused-vars` has no `^_` escape for
+variables, only for parameters a signature forces on you. `const _ = x` to
+silence the rule is the thing the rule exists to stop.
+
+`bun run lint` is ESLint then `prettier --check .`, for someone not using
+`just`; the recipes call the same scripts so there is one definition.
+
+### Windows runs the gate, and it found four faults in three runs
+
+`ci.yml` runs on ubuntu, macOS and Windows. The sibling project keeps
+from-source builds off pull requests and tests Windows only against a prebuilt
+binary, and adding the runner here was questioned for the same reason. It stays
+because every fault it found was in the tooling, none in the renderer, and none
+was visible any other way: `run:` defaults to PowerShell (now `shell: bash` for
+the workflow); `.gitignore`'s `* text=auto` checked out CRLF and prettier failed
+69 files (now `eol=lf`); two tools split or prefix-matched paths on `/`; and
+three tests turned `new URL(x, import.meta.url).pathname` into `D:\D:\a\...`
+(now `fileURLToPath`). Before writing a `.mjs` tool or a test that touches the
+filesystem, grep for `.pathname`, `split('/')`, `startsWith(dir + '/')` and
+`execFileSync('npm'` -- npm on Windows is `npm.cmd` and Node refuses to spawn it
+without `shell: true`.
 
 ### Local iteration against meo-skia-canvas
 
@@ -974,6 +1118,27 @@ one needs to know how: it registers exactly one font from this repository under
 the family `Fixture` and refuses a scene naming any other, pins the scale, and
 turns `gpu` off. The platform's installed faces answer `has_family` too, so a
 fixture asking for Helvetica would pass here and differ on any other machine.
+
+### Coverage: the floor, the file it does not count, and who runs it
+
+`just coverage` fails below 90% regions and lines, on the pinned nightly so
+branches are measured at all. One file is excluded from the denominator and the
+recipe says why at length: `meo-canvas-node/src/lib.rs`, the Neon boundary, is
+500 regions that no Rust test can execute because every function in it is
+called by V8 and by nothing else. It measured 4.80%, and with it counted the
+workspace sat at 90.06% -- six regions of margin -- and then fell to 89.92% with
+the **identical** 2,536 missed regions when a well-tested deletion shrank the
+denominator. A floor a deletion can breach is not measuring what it claims.
+Excluded, the same tree is 91.65%. What that gives up is stated in the recipe
+rather than buried: those 500 regions are exercised by the JavaScript suite and
+measured by nothing, and the honest fix is to instrument the addon while that
+suite runs. Until someone does, it is an exclusion with a known hole.
+
+`just coverage` writes `target/llvm-cov-target`, so two sessions running it in
+one checkout collide. The rule: per change, each session runs the stateless
+gates -- `fmt-check`, `typecheck`, `cargo test`, `doc-examples-check`, clippy.
+Coverage runs once per push, by whoever pushes, on the tree as pushed. CI runs
+it again on the same commit and is the gate of record.
 
 ### What a check can and cannot see
 
@@ -2368,102 +2533,37 @@ one.
 image would fill**, never a guess at the layout around them and never nothing.
 _A missing asset must not be readable as a layout defect._
 
-## Before publishing
-
-This document and the seven README files describe the design, and a sentence
-true of the architecture but not of the code is fine while nothing is published
-and false the moment something is.
-
-**Every capability claim has been read against what runs**, and the sentences
-that were wrong were the ones the rule predicts: where work happens, what
-formats encode, and what a surface accepts.
-
-What that pass found, kept here because each is a shape rather than an incident:
-
-- **A claim outlived the constraint that made it true.** "The core performs no
-  network access" was written before the `net` feature and survived it in three
-  places, including the dependency table, which credited the feature to the CLI
-  alone.
-- **A claim outlived the code it described.** The pipeline said measure builds a
-  Skia `Paragraph` per text node and that layout answers the intrinsic widths
-  from `min_intrinsic_width()`. That path is `#[cfg(test)]` now; lines are
-  broken in `crate::lines` and the intrinsic questions are the same call at a
-  budget of zero and of infinity.
-- **A document contradicted itself across two sections.** One said baseline
-  alignment on measured text was wrong and unfixable through `TaffyTree`; the
-  other said it was carried. Fixing a defect means finding every sentence about
-  it, and prose has no compiler to say where they are.
-- **A list was right about its members and wrong about its bounds.** "Frames for
-  GIF and APNG" omitted WebP and AVIF, which animate too and say so in
-  `ImageFormat`'s own documentation.
-- **An exclusive claim was made against the wrong axis.** The npm README said
-  the animation helpers were the only JavaScript that runs. `Chart` runs too --
-  it computes bar widths, slice angles and path data. It does not _draw_, which
-  is the axis the sentence beside it defends, and that is what made the wrong
-  one read as safe.
-- **A runnable line was never run.** The CLI README's example named `scene.mcsc`
-  where every scene in the repository is `.mcs`.
-
-**The repository the workspace manifest names exists**, and this clone has no
-remote pointing at it. A push has to add one deliberately.
-
-## A page as tall as its content
-
-`Scene::content_height` asks for it, and `size.height` becomes the **floor**
-rather than the height -- so no field is ever meaningless, and "at least this
-tall" is expressible rather than a second flag.
-
-**Solve, then allocate.** The surface used to be created from `page_size` before
-any layout ran, which is why a derived height was impossible rather than merely
-absent: there was nowhere for the answer to go. `render` now solves each page,
-computes its size from the solved root, and brings the surface into being on the
-first page.
-
-**The circularity argument covers the width and stops there.** Solving needs a
-width before anything can be measured, because that is what text breaks its
-lines against. A height is a consequence of that measuring, so `MaxContent` on
-the height axis is not circular. The two surfaces therefore agree that a width is
-required and a height is not, and the Rust one says so by chaining
-(`Root::new(w).height(h)`) because Rust has no optional argument and `Root`
-configures everything else the same way.
-
-**What the pinning tests are for.** `content_height.rs` in the core reads the
-**encoded PNG's own header**, because layout could resolve any height at all and
-still be painted onto a sheet of the stated size -- which is exactly what used to
-happen. `content_height_surface.rs` in the surface crate checks the other half:
-that the default a caller reaches by writing the least is the derived one, and
-that `.height(120).min_height(90)` stays 120.
-
 ## Releasing
 
 ### The targets, and the one that is missing on purpose
 
     linux-x64-gnu     linux-arm64-gnu
     linux-x64-musl    linux-arm64-musl
-    darwin-arm64      win32-x64
+    darwin-arm64      win32-x64         win32-arm64
+
+Seven, the same seven `meo-skia-canvas` builds. `win32-arm64` runs on the
+`windows-11-arm` runner; it was listed here as "unbuilt, waiting on a runner"
+until the day it was added and passed its first rehearsal in seven minutes,
+because rust-skia ships a prebuilt Skia for that triple -- a commit message
+said otherwise, from reading the wrong function, and the `TARGETS` comment
+records the correction beside the code.
 
 **`darwin-x64` is excluded because Apple stopped supporting Intel**, and
 because it would need `macos-13`, the last Intel runner image, which GitHub is
 retiring. Building it would mean owning a target we lose on someone else's
 timetable rather than our own. `meo-skia-canvas` reached the same conclusion
-independently and ships no Intel Mac build either. Note that `darwin-arm64`
-covers every Apple Silicon machine, so the exclusion reaches only pre-2020
-hardware, and reaches it as a named refusal rather than a crash.
-
-`win32-arm64` is not excluded, only unbuilt: it waits on whether a hosted
-Windows arm64 runner exists.
+independently and ships no Intel Mac build either.
 
 **The rule the set comes from is the user's**: everything within our control,
-and whatever is not gets named as such rather than left as a silent gap. A
-target absent because a runner is being retired is outside our control. A target
-absent because building it is work is not.
+and whatever is not gets named as such rather than left as a silent gap.
 
 **Adding a target is one row in `TARGETS` and nothing else.** That is the
 architecture the `TARGETS` → build matrix → `optionalDependencies` →
-`PLATFORM_PACKAGES` → ABI floors chain exists to provide, and it went untested
-for as long as there were two targets -- **two is the number at which a list and
-a hardcoded pair cannot be told apart**. Anywhere a second edit is needed, that
-is a defect in the chain rather than a step in the task.
+`PLATFORM_PACKAGES` → ABI floors chain exists to provide. Anywhere a second edit
+is needed, that is a defect in the chain rather than a step in the task. The
+seventh target was one row, and it also needed its first publish by hand --
+see **A new platform package cannot start on OIDC** below -- which is a fact
+about npm rather than about the chain.
 
 The npm package is **`meo-canvas`**, unscoped, continuing v1's lineage at 10.x.
 The cargo crate is `meo-canvas` too and versions independently, starting fresh
@@ -2471,20 +2571,70 @@ at 0.1.0.
 
 It was published as `@l7aromeo/meo-canvas` for a while, to let v10 be installed
 beside `meo-canvas@9`. That requirement was real; the scope was the wrong answer
-to it. It came from installing local tarballs, where npm takes the name from
-`package.json` and two packages of one name cannot coexist — but from a registry
-that constraint does not exist. An alias lets the consumer choose the local
-name, so coexistence is their decision rather than a scope we bake into the
-published one:
+to it. From a registry, an alias lets the consumer choose the local name:
 
 ```text
 npm install meo-canvas-v10@npm:meo-canvas@next
 ```
 
-Renaming the package renames the tarballs with it. `npm pack` derives the
-filename from `name`, so the artefacts are `meo-canvas-<version>.tgz` and
-`meo-canvas-<suffix>-<version>.tgz`; anything globbing for them — `just pack`,
-and the release workflow — spells them without a scope prefix.
+### A Linux artefact is a property of its build base
+
+The same source built on `ubuntu-latest` demanded glibc 2.35 and failed to load
+on five of the six images the package claims; built in
+`containers/Dockerfile.glibc` -- `manylinux_2_28`, which is AlmaLinux 8, gcc-
+toolset-14, freetype and fontconfig compiled from source and linked statically
+-- it demands 2.28 and loads on all six. Nothing in the tree changed between
+those two runs. So `just addon-container <suffix>` builds the Linux addons in
+that image, `Dockerfile.musl` is its Alpine sibling, and `release.yml` calls
+the same recipes a person runs.
+
+The musl image is a second instance of the work rather than a variant: Rust's
+musl targets default to `crt-static`, which cannot produce a `cdylib` at all
+(`-C target-feature=-crt-static` is the fix), rust-skia ships no prebuilt Skia
+for musl so the image compiles all of it with clang -- 32 of a 35-minute build,
+measured -- and an explicit `--target` must **not** be passed, because cargo
+then builds build scripts without `RUSTFLAGS` and `skia-bindings`' script, now
+static, cannot `dlopen` libclang. `addon-container` asserts the image's host
+triple is the suffix's instead, which is what `--target` was buying.
+
+Two instruments, and they are not substitutes. `just abi-floor` reads the
+undefined symbols of the built `.node` and fails if it demands a GLIBC or
+GLIBCXX version above what `TARGETS` declares; it also prints the measured
+number beside the declared one, because **a floor declared too high fails
+nothing** -- it under-promises quietly, and the declaration sat three commits
+stale that way once. `just acceptance` mounts a checksum-verified Node into six
+images with nothing installed -- `node:22-slim`, Debian 12, Rocky 9, Amazon
+Linux 2023, Alma 8, and `node:22` as the control that ships the font libraries
+and therefore proves nothing -- and loads the addon. A ceiling compares version
+tags and an unversioned symbol has none: a binary under every ceiling still
+failed on `_M_replace_cold`. **The floor diagnoses; the load decides.** The
+musl pair carry no floors at all, because musl does not version its symbols,
+so for them the load is the whole of the evidence.
+
+Windows and macOS build on the runner and are verified by `verify-packed`,
+which installs the tarballs elsewhere and renders. It is skipped for musl,
+because it runs on the runner and a glibc runner cannot load a musl `.so`.
+
+### The goldens are per architecture, and no tolerance was added
+
+`tests/fixtures.rs` compares against `expected.<os>-<arch>.png` where one
+exists and `expected.png` otherwise. On `linux-x86_64`, 15 of the 23 fixtures
+are byte-identical to the macOS reference and 8 are not -- and the 8 are the
+ones with a curve, a gradient, a blend or a glyph, the same dividing line the
+file's header measured for the Metal backend. Every Chrome conformance suite
+passes on Linux, so the pixels differ and what they mean does not. Windows
+differs on the same 8, five of them byte-identical to Linux's -- the axis for
+those is architecture, not operating system -- and the three that draw glyphs
+differ per OS.
+
+A variant exists only where a platform is measurably different; its absence is
+a claim the run then checks. `just fixtures-linux` makes the Linux set in the
+release container, and `.github/workflows/fixtures.yml` renders the others on
+their runners and **uploads an artifact rather than committing**, because a
+workflow that pushed accepted goldens could turn a rendering regression into a
+commit nobody saw. It is triggered by a push to a `fixtures/**` branch, since
+`workflow_dispatch` needs the file on the default branch and the default is
+v1's.
 
 ### The addon does not ship inside the package
 
@@ -2527,54 +2677,141 @@ into a directory that is not this repository and renders through them.
 
 ### What triggers a publish
 
-`release.yml`, and only `workflow_dispatch` — nothing publishes on a push,
+`release.yml`, and only `workflow_dispatch` -- nothing publishes on a push,
 because a push is how code arrives and publishing is a decision about code that
-already arrived. Its `dry_run` input defaults to **true**.
+already arrived. `just release-npm` dispatches it on the pushed `v10` HEAD and
+refuses on a dirty tree, off the branch, or with unpushed commits; `-dry` runs
+the whole thing and stops short of the registry, and is what to run after any
+change to the workflow, because the workflow is the only thing that reads its
+own YAML. Its `dry_run` input defaults to **true**.
 
-**Any version containing a hyphen goes to the `next` dist-tag**, never `latest`.
-That is what makes a prerelease safe to cut by construction rather than by
-remembering a flag: `npm install` resolves `latest`, and a semver range never
-matches a prerelease, so nobody reaches it without naming it.
+The version is read from `package.json` as committed -- `just bump-npm` sets it
+and rewrites every platform pin with it -- and the workflow only ever reads that
+file. **Any version containing a hyphen goes to the `next` dist-tag**, never
+`latest`: `npm install` resolves `latest`, and a semver range never matches a
+prerelease, so nobody reaches it without naming it.
+
+Seven runners build one addon each and pack two tarballs; the publish job
+refuses unless all seven platform tarballs are present, then publishes them
+**before** the main package, which pins them at an exact version -- the other
+order points at versions that do not exist yet. `--provenance` through the
+repository's trusted publisher, no token anywhere.
 
 **The tag and the release come last, after the registry has accepted
-everything.** A tag pushed first and a publish that then fails leaves a tag with
-no release under it and a version number that can never be reissued;
-`meo-skia-canvas` carries that scar from a `gh` call that failed for an
-unrelated reason once its tag was already up. Tagging last means a failed
-publish leaves the tree as it was.
+everything.** A tag pushed first and a publish that then fails leaves a version
+number that can never be reissued; `meo-skia-canvas` carries that scar. Tagging
+last means a failed publish leaves the tree as it was. The release notes are
+the commit subjects verbatim, not a conventional-commit parse that would drop
+the two thirds of them written as sentences.
 
-**The release notes are the commit subjects, verbatim, and not a
-conventional-commit parse.** 26 of the last 40 subjects here carry no
-`feat:`/`fix:` prefix, so a parser would drop two thirds of the history --
-including the changes someone took the trouble to name in a sentence, which are
-the ones worth reading. The subjects in this repository are written as one-line
-summaries of what changed and why. The log is the release note; reformatting it
-only loses information.
+### A new platform package cannot start on OIDC
 
-**Platform packages publish before the main package**, which pins them at an
-exact version. The other order points at versions that do not exist yet, and
-every install in that window fails.
+A trusted publisher is configured on a package's settings page, and a package
+that has never been published has none. So the first release of every
+`meo-canvas-<suffix>` was refused by the workflow -- correctly, with nothing
+published and no tag, because the ordering above protects -- and the dry run
+could not have seen it: `--dry-run` never authenticates.
+
+The bootstrap is by hand: download the run's own `tarballs-*` artifacts, and
+`npm publish --access public --tag next <tgz>` each one, **one at a time with a
+pause between**. Four new names in ten seconds tripped npm's spam gate
+(`E403 Package name triggered spam detection`) on the fifth and sixth; that is a
+burst heuristic, not a name problem, and the way through is time or a support
+ticket. Once a package exists, its trusted publisher is configured on its
+settings page and every later version goes through OIDC. The publish loop skips
+any `name@version` the registry already has, reading the name from inside the
+tarball, so a re-run after a bootstrap publishes the main package and tags.
+Before `just release-npm` on a version that adds a platform package:
+`npm view meo-canvas-<suffix> version` -- an `E404` means bootstrap first.
+
+### The reference publishes after the version resolves from npm
+
+`docs.yml` builds the TypeDoc reference on every pull request that touches the
+surface, and publishes it to GitHub Pages when a release is published -- which
+`release.yml` does only after every package is on npm -- and still polls
+`npm view meo-canvas@<version>` before deploying, because published and
+installable are separated by propagation. One directory per version,
+prereleases included; `latest/` follows the newest **stable** version the way
+npm's dist-tag does. The tool lives in `packages/meo-canvas/tools/typedoc/`,
+fails on a dead link or a type reaching a signature unexported, and ratchets
+the undocumented-member count: 92 today, may fall, may not rise. Its first build
+found twelve structural defects in the surface.
+
+### The publishing audit
+
+This document and the seven README files describe the design, and a sentence
+true of the architecture but not of the code is fine while nothing is published
+and false the moment something is.
+
+**Every capability claim has been read against what runs**, and the sentences
+that were wrong were the ones the rule predicts: where work happens, what
+formats encode, and what a surface accepts.
+
+What that pass found, kept here because each is a shape rather than an incident:
+
+- **A claim outlived the constraint that made it true.** "The core performs no
+  network access" was written before the `net` feature and survived it in three
+  places, including the dependency table, which credited the feature to the CLI
+  alone.
+- **A claim outlived the code it described.** The pipeline said measure builds a
+  Skia `Paragraph` per text node and that layout answers the intrinsic widths
+  from `min_intrinsic_width()`. That path is `#[cfg(test)]` now; lines are
+  broken in `crate::lines` and the intrinsic questions are the same call at a
+  budget of zero and of infinity.
+- **A document contradicted itself across two sections.** One said baseline
+  alignment on measured text was wrong and unfixable through `TaffyTree`; the
+  other said it was carried. Fixing a defect means finding every sentence about
+  it, and prose has no compiler to say where they are.
+- **A list was right about its members and wrong about its bounds.** "Frames for
+  GIF and APNG" omitted WebP and AVIF, which animate too and say so in
+  `ImageFormat`'s own documentation.
+- **An exclusive claim was made against the wrong axis.** The npm README said
+  the animation helpers were the only JavaScript that runs. `Chart` runs too --
+  it computes bar widths, slice angles and path data. It does not _draw_, which
+  is the axis the sentence beside it defends, and that is what made the wrong
+  one read as safe.
+- **A runnable line was never run.** The CLI README's example named `scene.mcsc`
+  where every scene in the repository is `.mcs`.
 
 ## Dependencies
 
-Every dependency is on its latest stable release.
+Every dependency is on its latest stable release, and the two exceptions say
+why.
 
-|                   |      |                                                                                   |
-| ----------------- | ---- | --------------------------------------------------------------------------------- |
-| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`.                         |
-| `taffy`           | 0.13 | Flexbox, CSS grid, block layout. Without `calc`.                                  |
-| `neon`            | 1.1  | Node addon.                                                                       |
-| `clap`            | 4.6  | CLI.                                                                              |
-| `thiserror`       | 2.0  | Error types.                                                                      |
-| `ureq`            | 3.4  | Remote images, behind the optional `net` feature the core and the CLI each carry. |
-| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing.                       |
+|                   |      |                                                                                                           |
+| ----------------- | ---- | --------------------------------------------------------------------------------------------------------- |
+| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`.                                                 |
+| `taffy`           | 0.14 | Flexbox, CSS grid, block layout. Without `calc`. 0.14 changed the measure signature and moved `min_size`. |
+| `csscolorparser`  | 0.8  | CSS colour syntax. Holds channels as `f32`, which is where alpha loses its author's digits -- see below.  |
+| `neon`            | 1.1  | Node addon.                                                                                               |
+| `clap`            | 4.6  | CLI.                                                                                                      |
+| `thiserror`       | 2.0  | Error types.                                                                                              |
+| `ureq`            | 3.4  | Remote images, behind the optional `net` feature the core and the CLI each carry.                         |
+| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing.                                               |
+
+|            |       |                                                                                              |
+| ---------- | ----- | -------------------------------------------------------------------------------------------- |
+| bun        | 1.4.0 | Package manager and the runtime the JavaScript examples use. `packageManager` pins it.       |
+| typescript | 6.0.3 | Not 7: typescript-eslint supports `<6.1.0` and TypeDoc 0.28 up to 6.0.x. Moves when both do. |
+| eslint     | 10    | With typescript-eslint 8 (`recommendedTypeChecked`) and eslint-config-prettier last.         |
+| prettier   | 3.9   | Over the whole tree; `.prettierignore` names the machine-written files it must not touch.    |
+| vitest     | 4.1   | Tests and the JavaScript coverage floor.                                                     |
+| typedoc    | 0.28  | In its own package under `tools/typedoc/`, so it can pin the TypeScript it loads.            |
+| playwright | 1.62  | Drives Chrome for the conformance tables. `just setup` installs Chromium.                    |
+
+`csscolorparser::Color` is `f32` on all four channels, so `parse_channels`
+returns `[f32; 4]` and `rgba(0, 0, 0, 0.1)` reads back as `0.10000000149011612`
+on both surfaces -- inherited, not a JavaScript defect. The ruling is that the
+parser returns the number the author wrote, with the browser as tiebreak (it
+answers `0.1`; v1 answered `0.102`), and the mechanism is to present each
+channel as the shortest decimal that round-trips to its `f32`, which is what
+Rust's `Display` prints. One parser, one boundary, no second parse.
 
 The core requires no async runtime, and performs no network I/O unless built
-with `net`. It accepts bytes or a reader, so a Rust caller with no runtime and
-the CLI are served by the same code.
+with `net`. `just runtime-free` fails if a runtime enters the tree.
 
 `taffy::TaffyTree` is neither `Send` nor `Sync`: taffy represents every length
-as a tagged pointer, so `Style` itself holds a `*const ()`. No feature set
-changes this. A tree is therefore built and consumed on one thread and never
-crosses a boundary — which costs nothing, because `Scene` carries its own
-style type and taffy's `Style` exists only inside the layout stage.
+as a tagged pointer, so `Style` itself holds a `*const ()`. A tree is therefore
+built and consumed on one thread and never crosses a boundary -- which costs
+nothing, because `Scene` carries its own style type and taffy's `Style` exists
+only inside the layout stage.
