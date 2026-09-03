@@ -138,13 +138,18 @@ pub use element::{
 /// The animation helpers, as a module rather than a curated list.
 ///
 /// **A list would be a second surface that can drift from the first.**
-/// These are five submodules and a dozen or so items -- `Easing`,
-/// `cubic_bezier`, `steps`, `Spring`, `Shape`, `Rgba`, `mix`, `keyframes`,
-/// `Track`, `Motion`, `Sequence`, `page_time` -- and naming them here
-/// means a caller's reach is whatever someone remembered to add. **The
-/// failure mode of that is silence**: a helper exists in the core, is
-/// absent from the facade, and nothing says so. Re-exporting the module
-/// cannot omit.
+/// Naming the items here means a caller's reach is whatever someone
+/// remembered to add, and **the failure mode of that is silence**: a
+/// helper exists in the core, is absent from the facade, and nothing says
+/// so. Re-exporting the module cannot omit.
+///
+/// This paragraph used to carry an illustrative list -- "five submodules"
+/// and a dozen named items -- and **that list drifted, which is the
+/// argument above happening to the paragraph that makes it.** There are
+/// eight submodules, and `Sampled`, `Parallel`, `Member` and `Plan` had
+/// all arrived without it noticing. It is removed rather than corrected: a
+/// completed list is the same claim with a later date on it, and this one
+/// had already shown what that is worth.
 ///
 /// The cost is the other direction: **the module publishes whatever it
 /// later grows.** That is acceptable here because `animate` is already a
