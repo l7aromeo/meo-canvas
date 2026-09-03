@@ -392,9 +392,10 @@ impl<'resolved> SceneMeasurer<'resolved> {
         //
         // The test is "did the wrap break this paragraph". With `max_lines`,
         // `lines.len()` cannot answer it: a paragraph that broke into two comes
-        // back as one line carrying a marker, identical by this test to one that
-        // never broke -- so the rescue below was skipped for exactly the case it
-        // was needed most, and a label that fitted rendered as its own ellipsis.
+        // back as one line carrying a marker, identical by this test to one
+        // that never broke -- so the rescue below was skipped for
+        // exactly the case it was needed most, and a label that fitted
+        // rendered as its own ellipsis.
         //
         // Measured in the report that found it: `HP` in Oswald 12 is `12.49`
         // wide, its box rounds to `12` at any offset whose fraction is at or

@@ -46,7 +46,8 @@ use meo_canvas::{
     sides,
 };
 
-/// The repository's own face, whose `HP HP` at 12px is `27.73` and rounds badly.
+/// The repository's own face, whose `HP HP` at 12px is `27.73` and rounds
+/// badly.
 const FONT: (&str, &str) = (
     "Fixture",
     "../meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf",
@@ -148,8 +149,9 @@ fn render(
         .children([
             // A spacer of fractional width, which is what the report's five
             // side-by-side cases supplied: it is the fraction of the label's
-            // own `x` that decides which way its box rounds, and a case sitting
-            // alone at a whole-numbered offset never reproduces.
+            // own `x` that decides which way its box rounds, and a case
+            // sitting alone at a whole-numbered offset never
+            // reproduces.
             Column::new()
                 .width(px(offset))
                 .children(Text::new(" ").font_size(1.0)),
