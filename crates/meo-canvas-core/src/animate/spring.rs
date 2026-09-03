@@ -224,6 +224,18 @@ impl Spring {
     ///
     /// As [`Spring::at`]: a spring whose parameters have no equation.
     pub fn settles_after(self, rest_delta: f64) -> Result<f64, Error> {
+        // **A threshold of zero asks when the spring is exactly at rest**,
+        // which never happens: the closed form approaches its target and does
+        // not arrive. A negative one asks nothing at all. Both walked to
+        // `MAX_SETTLE_SECONDS` and answered 2.929 and 100.004 -- numbers that
+        // read like measurements and were the scan giving up. `Spring::at`
+        // checks its own parameters this way and this did not check its one.
+        //
+        // Written negated so `NaN` is refused by the same comparison, as the
+        // stiffness and mass checks are.
+        if !(rest_delta > 0.0) {
+            return Err(Error::Spring("rest delta must be greater than 0"));
+        }
         let (omega0, zeta) = self.resolved()?;
         let distance = {
             let travel = (self.to - self.from).abs();
@@ -252,5 +264,38 @@ impl Spring {
         }
 
         Ok(settled + SETTLE_STEP_SECONDS)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_REST_DELTA, Spring};
+    use crate::Error;
+
+    #[test]
+    fn a_rest_delta_that_is_not_a_threshold_is_refused() {
+        // Each of these answered before: `0.0` gave 2.929 and `-1.0` gave
+        // 100.004, both of them the scan reaching `MAX_SETTLE_SECONDS` and
+        // stopping, and both of them shaped exactly like a settling time.
+        //
+        // Zero is the interesting one. It asks when the spring is *exactly* at
+        // its target, and the closed form approaches without arriving, so
+        // there is no answer rather than a large one.
+        for delta in [0.0, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert!(
+                matches!(
+                    Spring::default().settles_after(delta),
+                    Err(Error::Spring(_))
+                ),
+                "a rest delta of {delta} was accepted"
+            );
+        }
+
+        // And the value every caller in this crate passes still works, with
+        // the number v1 gives for it.
+        let settled = Spring::default()
+            .settles_after(DEFAULT_REST_DELTA)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!((settled - 0.566_666_666_666_665_9).abs() < f64::EPSILON);
     }
 }

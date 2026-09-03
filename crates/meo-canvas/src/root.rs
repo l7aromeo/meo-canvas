@@ -130,7 +130,25 @@ impl fmt::Display for BuildError {
     }
 }
 
-impl std::error::Error for BuildError {}
+impl std::error::Error for BuildError {
+    /// The error underneath, so a chain does not stop here.
+    ///
+    /// **Every variant wraps a real error and this returned `None` until 5
+    /// September 2026.** `Display` forwarded, so a person reading the message
+    /// saw the cause; `anyhow`'s `{:#}`, `eyre`'s chain and any caller walking
+    /// `source()` saw one opaque error and lost the `io::ErrorKind` under
+    /// `Write` -- which is the one thing a caller can act on programmatically.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sequence(error) => Some(error),
+            Self::Scene(error) => Some(error),
+            Self::Render(error) => Some(error),
+            Self::Write(error) => Some(error),
+            // The path is the whole of it; there is nothing underneath.
+            Self::Format(_) => None,
+        }
+    }
+}
 
 impl From<Error> for BuildError {
     fn from(error: Error) -> Self {
@@ -776,6 +794,43 @@ mod tests {
         Box as BoxNode, ColorSpace, ColorType, Column, Format, Renderer, Row,
         Styled, Text, hex_rgb, px,
     };
+
+    #[test]
+    fn a_build_error_hands_back_what_went_wrong_underneath_it() {
+        // `impl std::error::Error for BuildError {}` was empty until 5
+        // September 2026, so `source()` was `None` while every variant wrapped
+        // a real error. `Display` forwarded, so the message looked complete
+        // and the chain was not: the `io::ErrorKind` under `Write` is the one
+        // thing a caller can branch on, and it was unreachable.
+        use std::error::Error as _;
+
+        let refused = Root::new(f32::NAN)
+            .children([BoxNode::new()])
+            .into_scene()
+            .err()
+            .unwrap_or_else(|| unreachable!("a NaN width is refused"));
+        let source = refused
+            .source()
+            .unwrap_or_else(|| unreachable!("the scene error is underneath"));
+        assert!(
+            source
+                .downcast_ref::<meo_canvas_scene::SceneError>()
+                .is_some(),
+            "the cause came back as something other than the scene error"
+        );
+
+        // The `io::Error` case, which is the one worth reaching: a caller
+        // deciding whether to retry needs the kind, not the sentence.
+        let io = BuildError::Write(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "no",
+        ));
+        let kind = io
+            .source()
+            .and_then(|error| error.downcast_ref::<std::io::Error>())
+            .map(std::io::Error::kind);
+        assert_eq!(kind, Some(std::io::ErrorKind::PermissionDenied));
+    }
 
     #[test]
     fn a_root_whose_width_is_not_a_length_is_refused() {
