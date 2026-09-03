@@ -331,6 +331,24 @@ jobs:
               artifacts/${{ needs.targets.outputs.prefix }}-${{ needs.targets.outputs.version }}.tgz) continue ;;
             esac
             echo "==> $file"
+            # **Skip a version the registry already has, and say so.** npm
+            # refuses to publish over an existing version (E403), and this loop
+            # runs before the main package on purpose -- so one platform
+            # package already on the registry would stop every package behind
+            # it. That is exactly the state a bootstrap leaves: the first
+            # release of a new platform package cannot use OIDC, because a
+            # trusted publisher is configured on a package's settings page and
+            # a package that has never been published has none. So the seven
+            # were published once by hand, from the same tarballs this run
+            # built, and this run has to walk past them to reach the main
+            # package. Read from the tarball rather than the filename, so a
+            # renamed file cannot make the check ask about a different package.
+            name=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).name")
+            version=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "    ${name}@${version} is already on the registry; not publishing it again"
+              continue
+            fi
             # `./` is not decoration. npm reads a bare relative path as a git
             # shorthand, so `artifacts/x.tgz` becomes `github:artifacts/x.tgz`
             # and fails with `EALLOWGIT: Refusing to fetch`. Only a rehearsal
