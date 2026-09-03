@@ -19,6 +19,19 @@
 # **The base is Alpine, so `lib` rather than `lib64`.** `install-fontlibs.sh`
 # takes that as `LIBDIR` and is otherwise identical between the two families.
 #
+# **The container does far more work here than on glibc.** rust-skia publishes
+# no prebuilt Skia for `*-unknown-linux-musl`, so the download 404s and it
+# falls back to compiling Skia from source -- the whole of it, with this
+# image's toolchain and `RUSTFLAGS` in play throughout. The glibc container
+# gets the prebuilt and never compiles Skia at all: measured in CI, that build
+# finished in 7m56s including the docker build, where this one should be
+# expected to take 30-45 minutes.
+#
+# So the two files are less alike than the shared `install-fontlibs.sh`
+# suggests. On glibc the image contributes the link and the static font
+# libraries; here it additionally contributes every compiler decision Skia is
+# built under, which is why the toolchain block below has no glibc counterpart.
+#
 # `musllinux_1_2_x86_64` is PyPA's, the same reasoning as the glibc image:
 # Alpine 3.22 with gcc, g++ and a current cmake already present, maintained by
 # people shipping portable native binaries for a living.
@@ -36,7 +49,8 @@ ARG ASSEMBLER=nasm
 RUN apk add --no-cache \
       ${ASSEMBLER} gperf ninja-build meson bash curl tar xz \
       linux-headers musl-dev python3 perl \
-      gn
+      gn clang clang-dev llvm llvm-dev \
+      git
 
 # **Skia's own build tools have to come from Alpine, not from skia-bindings.**
 #
@@ -57,6 +71,73 @@ RUN apk add --no-cache \
 ENV GN_EXE=gn \
     SKIA_GN_COMMAND=/usr/bin/gn \
     SKIA_NINJA_COMMAND=/usr/bin/ninja
+
+# bindgen needs `libclang.so`, and it is a **different package from clang**.
+#
+# Alpine ships the compiler in `clang` and the library bindgen loads in
+# `clang-dev`, under a versioned directory rather than a default search path.
+# Without both, Skia compiles all the way through and then:
+#
+#   panicked at bindgen-0.72.1: Unable to find libclang: "couldn't find any
+#   valid shared libraries matching: ['libclang.so', ...]"
+#
+# `git` is on the list above for the same reason: building Skia from source
+# runs `skia/tools/git-sync-deps` to fetch its third-party dependencies, and
+# without git that fails as `skia/tools/git-sync-deps failed` with no mention
+# of git at all.
+#
+# **None of this has a glibc counterpart.** The glibc image takes rust-skia's
+# prebuilt Skia, which ships prebuilt bindings, so neither bindgen nor
+# git-sync-deps ever runs there. Every consequence of building Skia from source
+# arrives on this side only, and they arrive one at a time.
+ENV LIBCLANG_PATH=/usr/lib/llvm20/lib
+
+# **clang finds no GCC under the Rust triple, and both languages fail
+# differently.** Skia's GN build drives `clang++` by name, and `libaom-sys`
+# passes `--target=<arch>-unknown-linux-musl` -- the Rust triple. clang locates
+# a GCC installation by matching that triple, and Alpine installs its GCC under
+# `<arch>-alpine-linux-musl`. Nothing matches, so:
+#
+#   C:    /usr/bin/ld: cannot find crtbeginS.o
+#         /usr/bin/ld: cannot find -lgcc
+#   C++:  fatal error: 'cstdint' file not found
+#
+# Both measured in this image. Without an explicit `--target` the same clang
+# compiles and links fine, which is what makes this so easy to miss locally.
+#
+# Naming the directory answers it, because a directory needs no triple to
+# match. It is chosen by **what it contains** rather than by version: the
+# complete installation is the one with both `crtbeginS.o` and its C++ headers,
+# and "newest" is the wrong test -- `meo-skia-canvas` hit an image carrying a
+# second GCC with no headers at all, which clang preferred for being higher.
+# This base has exactly one and it is complete, so the loop selects it either
+# way and keeps doing so if the base ever gains another.
+#
+# The config file goes beside the clang binary. `/etc/clang` is not read by
+# this one.
+#
+# The two compiles at the end are the point of the block rather than a
+# flourish: they fail the image build here, where the cause is one line above,
+# instead of thirty minutes into a Skia compile where the error names a missing
+# header.
+RUN ARCH="$(uname -m)" && TRIPLE="${ARCH}-alpine-linux-musl" && \
+    GCC_DIR="" && \
+    for dir in /usr/lib/gcc/"$TRIPLE"/*/; do \
+      version="$(basename "$dir")"; \
+      if [ -f "${dir}crtbeginS.o" ] && [ -d "/usr/include/c++/${version}/${TRIPLE}" ]; then \
+        GCC_DIR="${dir%/}"; \
+      fi; \
+    done && \
+    test -n "$GCC_DIR" && \
+    CLANG_DIR="$(dirname "$(readlink -f "$(which clang)")")" && \
+    printf -- '--gcc-install-dir=%s\n' "$GCC_DIR" \
+      | tee "$CLANG_DIR/clang++.cfg" > "$CLANG_DIR/clang.cfg" && \
+    printf 'int main(){ return 0; }\n' > /tmp/t.c && \
+    printf '#include <cstdint>\n#include <vector>\nint main(){ std::vector<int> v; return (int)v.size(); }\n' > /tmp/t.cc && \
+    clang --target="${ARCH}-unknown-linux-musl" /tmp/t.c -o /tmp/t && \
+    clang++ --target="${ARCH}-unknown-linux-musl" /tmp/t.cc -o /tmp/txx && \
+    rm -f /tmp/t.c /tmp/t.cc /tmp/t /tmp/txx && \
+    echo "clang compiles and links C and C++ under the rust triple: ok"
 
 # Identical to the glibc image apart from where Alpine puts libraries.
 #
