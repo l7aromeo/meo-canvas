@@ -2354,6 +2354,24 @@ a refusal, a `throws` contract -- can go with them, and a deleted test does not
 fail. The one time it happened here, an ESLint unused-import error was the only
 signal. Diff the test names before and after any move between files.
 
+### Two doc blocks in a row leave one of them attached to nothing
+
+A forty-line comment describing `barLayout` -- its arithmetic against v1 line by
+line, and the recorded reason it refuses negative values -- sat directly above
+the function. It was also directly above `assertDrawable`'s own comment, with no
+code between the two blocks. TypeScript attaches only the nearest, so the
+nearest went to `assertDrawable` and the other went nowhere: the text was in the
+file, in no reference, and read correctly in both. A diff cannot show this. Both
+blocks are well-formed, both describe the thing under them, and the one that
+lost is the one further away.
+
+**The zero baseline is what catches it.** `just docs-js` reports a member as
+undocumented that visibly has a doc above it, and that combination has one
+cause: the doc attached to something else. Before the count reached zero the
+signal was there and buried in ninety-one others. This is the same shape as the
+row census and the test-name census -- the artefact looks right, and only
+counting what actually arrived tells you otherwise.
+
 ### Structural coverage is not positional coverage
 
 The chart's byte comparison puts the legend on a different side in each case:

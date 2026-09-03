@@ -10,6 +10,20 @@
 // So: structural findings fail immediately, and the undocumented count
 // ratchets. It may fall and it may hold. It may not rise.
 //
+// **The count is now zero, so the ratchet is a gate.** Every exported member
+// has a doc comment, and any new one without fails the build. The ratchet was
+// how it got here -- there were ninety-two on the day this arrived, and
+// failing on all of them at once is how a gate teaches people to turn it off --
+// but the mechanism needs no change to become the stricter thing: a floor of
+// zero cannot be lowered, so `undocumented-baseline.txt` stays at zero and any
+// rise is a failure.
+//
+// It also detects a defect nothing else does. A doc block sitting immediately
+// above another doc block attaches to nothing: TypeScript takes the nearest,
+// and the text remains in the file, absent from the reference, reading
+// correctly in both. A member reported undocumented that visibly has a comment
+// above it means the comment attached to something else.
+//
 // Adapted from `meo-skia-canvas/scripts/typedoc/build.mjs`, with the input
 // changed: that project checks its declarations in, this one builds them, so
 // `just docs-js` runs `build-js` first and this reads what it emitted.
