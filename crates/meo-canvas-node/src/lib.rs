@@ -205,7 +205,7 @@ fn parse_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
     let object = cx.empty_object();
     for (name, channel) in [("r", red), ("g", green), ("b", blue), ("a", alpha)]
     {
-        let value = cx.number(f64::from(channel));
+        let value = cx.number(channel);
         object.set(&mut cx, name, value)?;
     }
     Ok(object.upcast())

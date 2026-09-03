@@ -324,29 +324,28 @@ describe('the divergences the tables record rather than assert', () => {
     expect(formatColor(mixColor(black, white, 1.25))).toBe('color(srgb 1.25 1.25 1.25)')
   })
 
-  // `it.fails` rather than `it`: this asserts the test **fails today**, so the
-  // suite stays green while the defect stands. A red suite would hide the next
-  // real failure behind an expected one. The moment the parse boundary stops
-  // narrowing, this starts failing -- which is the signal to change `it.fails`
-  // back to `it` in the same commit as the fix, and delete this paragraph.
-  it.fails('parses the alpha the author wrote, not an eight-bit approximation of it', () => {
-    // **This is expected to fail until the parse boundary is fixed**, and it is
-    // meant to: it is the failing-first evidence for the finding, and it passes
-    // on each surface only once that surface stops narrowing the value.
+  it('parses the alpha the author wrote, not an eight-bit approximation of it', () => {
+    // This was `it.fails` until the parse boundary was fixed on 4 September
+    // 2026, which is what makes it evidence: it failed on both surfaces, and
+    // passes on both now, so the fix reached the shared parser rather than one
+    // side of it.
     //
     // v1 answers 0.102 here, quantising alpha to eight bits. This surface
-    // answers 0.10000000149011612, because `csscolorparser::Color` holds `f32`
-    // and both v2 surfaces read the number through it. Neither is what the
-    // author wrote, and `getComputedStyle` in a browser answers 0.1.
+    // answered 0.10000000149011612, because `csscolorparser::Color` holds
+    // `f32` and both v2 surfaces read the number through it. Neither was what
+    // the author wrote, and `getComputedStyle` in a browser answers 0.1.
     //
-    // Only the alphas that are not exact in binary32 fail: 0.5, 0.25 and 0.75
-    // already read back correctly, which is why the round numbers looked fine.
+    // Only the alphas that are not exact in binary32 ever failed: 0.5, 0.25
+    // and 0.75 read back correctly all along, which is why the round numbers
+    // looked fine.
     for (const alpha of [0.1, 0.33, 0.9]) {
       expect(parseColor(`rgba(0, 0, 0, ${alpha})`)?.a, `rgba(0, 0, 0, ${alpha})`).toBe(alpha)
     }
-    // Hex bytes reach the same defect by another route, and `#000000cc` is the
-    // one that looks like it should escape: 204/255 is exactly 0.8 in decimal,
-    // and 0.8 is still not representable in binary32.
+    // Hex bytes reached the same defect by another route, and are fixed by a
+    // different rule: the byte is known, so the alpha is `byte / 255` exactly
+    // rather than the shortest decimal naming an `f32`. `#000000cc` is the one
+    // that looks like it should escape either way -- 204/255 is exactly 0.8 in
+    // decimal, and 0.8 is still not representable in binary32.
     expect(parseColor('#0000007f')?.a, '#0000007f').toBe(0x7f / 255)
     expect(parseColor('#000000cc')?.a, '#000000cc').toBe(0.8)
     // A percentage lands on the same f32 as its decimal spelling.

@@ -72,6 +72,14 @@ pub trait Sampled {
     /// means one**, and a length of zero would read as finished to every
     /// caller that checks.
     ///
+    /// **`usize` rather than a float, deliberately** (4 September 2026). The
+    /// JavaScript surface's `totalDuration(2.5)` answers unfloored, because a
+    /// JavaScript number is what it is rather than because half an item was
+    /// designed for. A count of things is an integer here, in the same way
+    /// that a refusal is a `Result` here and a throw there: a difference in
+    /// the shape, chosen, and not a capability one surface has and the other
+    /// lacks.
+    ///
     /// # Errors
     ///
     /// As [`Sampled::at`].

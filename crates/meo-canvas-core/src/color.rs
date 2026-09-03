@@ -59,13 +59,83 @@ pub fn parse_color(css: &str) -> Option<Color> {
 /// Both spellings come through here: the `color(srgb ...)` pre-pass and
 /// everything `csscolorparser` reads. **One parser, one answer** -- which is
 /// why the addon exports this rather than each surface parsing for itself.
+///
+/// # The number a channel reads back as
+///
+/// `csscolorparser` holds its channels as `f32`, so `rgba(0, 0, 0, 0.1)`
+/// arrives here as `0.10000000149011612` -- the nearest `f32` to what the
+/// author wrote, widened. That is an internal float width leaking through a
+/// public boundary, and it is what a caller of the addon's `parseColor` saw.
+///
+/// **Channels are held at `f32` precision and presented as the shortest
+/// decimal that identifies that value**, so an alpha written as a decimal or a
+/// percentage reads back as written; an alpha written as a hex byte is
+/// `byte / 255` exactly, computed where the byte is known rather than
+/// recovered from the `f32`. The two rules are different because the authors
+/// wrote different things: a decimal is a number, and `7f` is a byte, whose
+/// value is a ratio no shortest decimal reaches from an `f32`.
+///
+/// Neither reference had this right. v1 quantises alpha to eight bits and
+/// rounds to three decimals, answering `0.102`; this answered
+/// `0.10000000149011612`; the browser answers `0.1`, and the browser is the
+/// tiebreak, as it is for the mix clamp in [`crate::animate::color`].
 #[must_use]
-pub fn parse_channels(css: &str) -> Option<[f32; 4]> {
-    let [r, g, b, a] = extended_srgb(css).or_else(|| {
-        let parsed = csscolorparser::parse(css).ok()?;
-        Some([parsed.r, parsed.g, parsed.b, parsed.a])
-    })?;
-    Some([r * 255.0, g * 255.0, b * 255.0, a])
+pub fn parse_channels(css: &str) -> Option<[f64; 4]> {
+    if let Some([r, g, b, a]) = extended_srgb(css) {
+        // Already parsed at `f64` from the text, so there is nothing to
+        // recover: these are the author's numbers.
+        return Some([r * 255.0, g * 255.0, b * 255.0, a]);
+    }
+
+    let parsed = csscolorparser::parse(css).ok()?;
+    // The scaling stays in `f32`, where `#808080` gives exactly `128.0`.
+    // Widening first and multiplying in `f64` would land a byte a hair below
+    // itself, which is a worse answer than the one being fixed.
+    let [r, g, b] =
+        [parsed.r, parsed.g, parsed.b].map(|channel| widen(channel * 255.0));
+    Some([r, g, b, hex_alpha(css).unwrap_or_else(|| widen(parsed.a))])
+}
+
+/// An `f32` as the shortest decimal that identifies it.
+///
+/// For anything a person types -- seven significant digits or fewer -- that
+/// decimal is what they typed, because the `f32` they got is the nearest one
+/// to it and no shorter string names it. `Display` for `f32` is defined to
+/// print exactly that string, so this is a widening rather than a rounding: it
+/// returns the `f64` nearest the decimal that names the `f32`, and every
+/// `f32` still maps to a distinct `f64`.
+fn widen(channel: f32) -> f64 {
+    channel
+        .to_string()
+        .parse()
+        .unwrap_or_else(|_| f64::from(channel))
+}
+
+/// The alpha of a hex colour, as the byte the author wrote over 255.
+///
+/// `None` for every other spelling, including a hex colour with no alpha --
+/// `#808080` is opaque, and `1.0` needs no recovering.
+///
+/// **Where the byte is known.** `#0000007f` is alpha `127/255`, which is
+/// `0.4980392156862745`; the shortest decimal naming the `f32` is
+/// `0.49803922`, which is neither the byte nor the ratio. `#000000cc` happens
+/// to work either way because `204/255` is exactly `0.8`, which is why it
+/// cannot be the only hex row a test carries.
+fn hex_alpha(css: &str) -> Option<f64> {
+    let digits = css.trim().strip_prefix('#')?;
+    if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = match digits.len() {
+        // `#rgba`, where each digit is a doubled nibble: `8` is `0x88`.
+        4 => {
+            let nibble = u8::from_str_radix(&digits[3..], 16).ok()?;
+            nibble * 17
+        }
+        8 => u8::from_str_radix(&digits[6..], 16).ok()?,
+        _ => return None,
+    };
+    Some(f64::from(byte) / 255.0)
 }
 
 /// The channels of a `color(srgb …)` string, unclamped, or `None` for
@@ -90,7 +160,7 @@ pub fn parse_channels(css: &str) -> Option<[f32; 4]> {
 /// sRGB would draw a wrong colour silently, so they return `None` and reach
 /// the caller as the same refusal any unparseable string gets. **That is a
 /// known gap: what is missing is the conversion, not the syntax.**
-pub(crate) fn extended_srgb(css: &str) -> Option<[f32; 4]> {
+pub(crate) fn extended_srgb(css: &str) -> Option<[f64; 4]> {
     let (space, values) = color_function(css)?;
     if !space.eq_ignore_ascii_case("srgb") {
         return None;
@@ -99,14 +169,14 @@ pub(crate) fn extended_srgb(css: &str) -> Option<[f32; 4]> {
         .split_once('/')
         .map_or((values, None), |(rgb, a)| (rgb, Some(a)));
     let mut numbers = channels.split_whitespace();
-    let mut next = || numbers.next()?.parse::<f32>().ok();
+    let mut next = || numbers.next()?.parse::<f64>().ok();
     let (red, green, blue) = (next()?, next()?, next()?);
     if numbers.next().is_some() {
         return None;
     }
     let alpha = match alpha {
         None => 1.0,
-        Some(text) => text.trim().parse::<f32>().ok()?,
+        Some(text) => text.trim().parse::<f64>().ok()?,
     };
     Some([red, green, blue, alpha])
 }
@@ -141,7 +211,7 @@ fn color_function(css: &str) -> Option<(&str, &str)> {
 /// four bytes per colour, so a channel above 1 or below 0 has nowhere to go
 /// and is clamped here -- which is the same place a browser clamps, at the
 /// point of painting rather than during interpolation.
-fn to_rgba8(channels: [f32; 4]) -> [u8; 4] {
+fn to_rgba8(channels: [f64; 4]) -> [u8; 4] {
     let [r, g, b, a] = channels;
     [r, g, b, a * 255.0].map(|value| {
         #[expect(
@@ -158,7 +228,113 @@ fn to_rgba8(channels: [f32; 4]) -> [u8; 4] {
 mod tests {
     use meo_canvas_scene::style::paint::Color;
 
-    use super::parse_color;
+    use super::{parse_channels, parse_color};
+
+    #[test]
+    fn an_alpha_a_person_wrote_reads_back_as_they_wrote_it() {
+        // The defect this rule replaced: `csscolorparser` holds channels as
+        // `f32`, so this answered `0.10000000149011612` -- an internal float
+        // width reaching a caller of the addon's `parseColor`. v1 answers
+        // `0.102`, quantising to eight bits. The browser answers `0.1`.
+        //
+        // The values a person writes are the ones that could not be seen: no
+        // test anywhere parsed a string carrying an alpha, so the parameter
+        // was never varied from its default of opaque.
+        for (css, alpha) in [
+            ("rgba(0, 0, 0, 0.1)", 0.1_f64),
+            ("rgba(0, 0, 0, 0.33)", 0.33),
+            ("rgba(0, 0, 0, 0.9)", 0.9),
+            ("rgba(0, 0, 0, 0.005)", 0.005),
+            // Exactly representable already, so these passed before and are
+            // the control: the rule must not move a number that was right.
+            ("rgba(0, 0, 0, 0.25)", 0.25),
+            ("rgba(0, 0, 0, 0.5)", 0.5),
+            ("rgba(0, 0, 0, 0.75)", 0.75),
+            ("rgba(0, 0, 0, 0)", 0.0),
+            // A percentage is a number the author wrote too, and lands on the
+            // same `f32` as the decimal.
+            ("rgba(0, 0, 0, 50%)", 0.5),
+            ("rgba(0, 0, 0, 33%)", 0.33),
+            ("rgba(0, 0, 0, 12.5%)", 0.125),
+        ] {
+            let [.., parsed] = parse_channels(css)
+                .unwrap_or_else(|| unreachable!("{css} is a colour"));
+            assert_eq!(
+                parsed.to_bits(),
+                alpha.to_bits(),
+                "{css} read back as {parsed} rather than {alpha}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_alpha_written_as_a_byte_is_that_byte_over_255() {
+        // A different rule for a different thing written. `7f` is a byte, and
+        // its value is `127/255`; the shortest decimal naming the `f32` is
+        // `0.49803922`, which is neither the byte nor the ratio -- so the
+        // ratio is computed where the byte is known rather than recovered.
+        for (css, alpha) in [
+            ("#0000007f", 127.0_f64 / 255.0),
+            ("#0008", 136.0 / 255.0),
+            // **Not the only hex row, deliberately.** `204/255` is exactly
+            // `0.8`, so this one is right under either rule and would have
+            // reported a passing branch that was never taken.
+            ("#000000cc", 0.8),
+        ] {
+            let [.., parsed] = parse_channels(css)
+                .unwrap_or_else(|| unreachable!("{css} is a colour"));
+            assert_eq!(
+                parsed.to_bits(),
+                alpha.to_bits(),
+                "{css} read back as {parsed} rather than {alpha}"
+            );
+        }
+
+        // A hex colour with no alpha is opaque, and takes the other path.
+        for css in ["#808080", "#fff", "#f2aa4c"] {
+            let [.., parsed] = parse_channels(css)
+                .unwrap_or_else(|| unreachable!("{css} is a colour"));
+            assert_eq!(parsed.to_bits(), 1.0_f64.to_bits(), "{css} is opaque");
+        }
+    }
+
+    #[test]
+    fn widening_a_channel_does_not_move_a_byte_off_its_own_value() {
+        // The trap in the fix rather than in the defect. Widening each channel
+        // *before* scaling would multiply the shortest decimal of `128/255` by
+        // 255 in `f64` and land a hair under 128, breaking rows that passed.
+        // The scaling stays in `f32`, where it is exact.
+        for (css, bytes) in [
+            ("#808080", [128.0_f64, 128.0, 128.0]),
+            ("#f2aa4c", [242.0, 170.0, 76.0]),
+            ("rebeccapurple", [102.0, 51.0, 153.0]),
+            ("rgb(255, 0, 0)", [255.0, 0.0, 0.0]),
+        ] {
+            let [r, g, b, _] = parse_channels(css)
+                .unwrap_or_else(|| unreachable!("{css} is a colour"));
+            assert!(
+                [r, g, b]
+                    .iter()
+                    .zip(&bytes)
+                    .all(|(ours, want)| ours.to_bits() == want.to_bits()),
+                "{css} gave {:?} rather than {bytes:?}",
+                [r, g, b]
+            );
+        }
+    }
+
+    #[test]
+    fn an_out_of_gamut_colour_keeps_its_channels_and_its_alpha() {
+        // `color(srgb ...)` is parsed here rather than by the dependency, and
+        // now at `f64` from the text -- so an overshoot is the author's number
+        // rather than the nearest `f32` to it.
+        let [r, g, b, a] = parse_channels("color(srgb 1.25 -0.1 0.5 / 0.1)")
+            .unwrap_or_else(|| unreachable!("a colour"));
+        assert_eq!(r.to_bits(), 318.75_f64.to_bits(), "1.25 * 255");
+        assert!(g < 0.0, "below the gamut rather than clamped");
+        assert_eq!(b.to_bits(), 127.5_f64.to_bits());
+        assert_eq!(a.to_bits(), 0.1_f64.to_bits(), "and its alpha is written");
+    }
 
     #[test]
     fn a_named_colour_resolves() {
@@ -211,13 +387,10 @@ mod tests {
         // The two agree wherever a colour fits in a byte, and part company
         // exactly where the syntax exists to go outside it. If they ever
         // agreed everywhere, `parse_channels` would be pointless.
-        assert_eq!(
-            super::parse_channels("#ff0000"),
-            Some([255.0, 0.0, 0.0, 1.0])
-        );
+        assert_eq!(parse_channels("#ff0000"), Some([255.0, 0.0, 0.0, 1.0]));
         assert_eq!(parse_color("#ff0000"), Some(Color::rgba(255, 0, 0, 255)));
 
-        let over = super::parse_channels("color(srgb 1.2 -0.1 0.5)")
+        let over = parse_channels("color(srgb 1.2 -0.1 0.5)")
             .unwrap_or_else(|| unreachable!("an srgb colour"));
         assert!(over[0] > 255.0, "the overshoot was flattened at the parse");
         assert!(over[1] < 0.0, "the undershoot was flattened at the parse");
@@ -235,7 +408,7 @@ mod tests {
         // and the surface's. A parse that scaled all four alike would report
         // an opaque colour as `a: 255` and every caller comparing against 1
         // would read it as transparent.
-        let half = super::parse_channels("rgba(0, 0, 0, 0.5)")
+        let half = parse_channels("rgba(0, 0, 0, 0.5)")
             .unwrap_or_else(|| unreachable!("an rgba colour"));
         assert!(
             (half[3] - 0.5).abs() < 0.01,

@@ -285,6 +285,7 @@ mod tests {
     use crate::{
         Error,
         animate::{
+            color::Rgba,
             easing::Easing,
             sampled::Sampled,
             sequence::{Sequence, Step},
@@ -472,6 +473,115 @@ mod tests {
             Sampled::at(&both, 0.5, 0)
                 .unwrap_or_else(|error| unreachable!("{error}")),
             vec![5.0, 2.5]
+        );
+    }
+
+    #[test]
+    fn the_trait_answers_the_same_way_for_a_colour_as_for_a_number() {
+        // **The other instantiation.** `Animatable` has two implementors and
+        // every other test here uses `f64`, so the uniformity the trait states
+        // was proven for numbers and assumed for colours -- and a colour is
+        // where the three types could plausibly differ, since `Rgba` mixes per
+        // channel and a group's `at` returns a compound value of them.
+        //
+        // A generic with one instantiation exercised reads as covered and
+        // uncovered at once: the question to ask a coverage report about a
+        // generic is which instantiations, not whether it is covered.
+        //
+        // Measured from v1 through the JavaScript surface: a track from red to
+        // blue over a second is `{r: 127.5, g: 0, b: 127.5, a: 1}` at 0.5s.
+        let red = Rgba {
+            r: 255.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 255.0,
+            a: 1.0,
+        };
+        let halfway = Rgba {
+            r: 127.5,
+            g: 0.0,
+            b: 127.5,
+            a: 1.0,
+        };
+
+        let crossfade = Track {
+            from: red,
+            to: blue,
+            duration: Some(1.0),
+            delay: 0.0,
+            stagger: 0.5,
+            motion: Motion::Ease(Easing::Linear),
+        };
+        assert_eq!(
+            Sampled::at(&crossfade, 0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            halfway
+        );
+        assert_eq!(
+            crossfade
+                .duration()
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            1.0
+        );
+        assert_eq!(
+            Sampled::total_duration(&crossfade, 3)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            2.0
+        );
+
+        let run = Sequence {
+            from: red,
+            steps: vec![Step {
+                to: blue,
+                duration: Some(1.0),
+                motion: Motion::Ease(Easing::Linear),
+                hold: 0.0,
+            }],
+            delay: 0.0,
+            stagger: 0.5,
+        }
+        .plan()
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(
+            Sampled::at(&run, 0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            halfway,
+            "a sequence of one leg is the track"
+        );
+        assert_eq!(
+            Sampled::total_duration(&run, 3)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            2.0
+        );
+
+        let both = Parallel::new(vec![
+            ("track".to_owned(), Member::Track(crossfade)),
+            ("sequence".to_owned(), Member::Sequence(run)),
+        ])
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(
+            Sampled::at(&both, 0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            vec![halfway, halfway],
+            "and a group is one value per member, of the same colour"
+        );
+        assert_eq!(
+            Sampled::total_duration(&both, 3)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            2.0
+        );
+
+        // The index reaches a colour member as it reaches a numeric one.
+        assert_eq!(
+            Sampled::at(&both, 0.5, 1)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            vec![red, red],
+            "the second of a staggered set has not started"
         );
     }
 
