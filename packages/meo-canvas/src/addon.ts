@@ -48,6 +48,17 @@ const OVERRIDE = 'MEO_CANVAS_ADDON'
 const IN_TREE = '../meo-canvas.node'
 
 /**
+ * Where the repository is, because most readers of these messages are not in it.
+ *
+ * **`just addon` is an instruction to someone who has a checkout**, and almost
+ * nobody who reaches a loader failure does: they ran `npm install`, and they
+ * have neither the command nor the tree it runs in. The advice was not wrong so
+ * much as addressed to the wrong person, which reads as a broken package rather
+ * than as a step. Naming the repository is what turns it back into one.
+ */
+const BUILD_IT = 'Build one from a checkout of https://github.com/l7aromeo/meo-canvas with `just addon`.'
+
+/**
  * Which C library this Node runs against, and which version of it.
  *
  * `glibcVersionRuntime` is present in the process report only on a glibc host,
@@ -145,7 +156,7 @@ function older(version: string, floor: string): boolean {
  */
 function loadFailure(platformPackage: string, cause: unknown): string {
   const detail = cause instanceof Error ? cause.message : String(cause)
-  const fix = `Build one with \`just addon\`, or point ${OVERRIDE} at a binary you built.`
+  const fix = `${BUILD_IT} Or point ${OVERRIDE} at a binary you built.`
 
   // A shared object the binary needs and the host does not have. First because
   // it is the failure a consumer meets first: a stock `node:22-slim` has
@@ -223,7 +234,7 @@ export function resolveAddon<T>(): T {
       // lines below, which was correct only while no musl build existed.
       `no prebuilt addon is published for ${host}. ` +
         `The published targets are ${Object.keys(PLATFORM_PACKAGES).join(', ')}. ` +
-        `Build one with \`just addon\`, or point ${OVERRIDE} at a binary you built.`,
+        `${BUILD_IT} Or point ${OVERRIDE} at a binary you built.`,
     )
   }
 
@@ -251,10 +262,21 @@ export function resolveAddon<T>(): T {
     }
   }
 
+  // **Three causes rather than one, because this message cannot tell them
+  // apart.** A platform package that will not resolve looks identical whether
+  // it was skipped at install, bundled away from the `node_modules` it was
+  // resolved against, or never installed. The bundler case is the one that
+  // reads least like itself: the addon is resolved at run time rather than
+  // imported by a literal path, so nothing is there for a bundler to trace, and
+  // the output works while it sits beside the tree it was built in and fails
+  // the moment it is copied into an image on its own. Naming only the install
+  // sent that reader to a command that would not have helped.
   throw new Error(
     `the addon for ${host} was not found in ${attempts.length} places: ` +
       attempts.map(attempt => attempt.where).join('; ') +
-      `. Install the package with its optional dependencies, or run \`just addon\` in a checkout.`,
+      `. Install the package with its optional dependencies -- \`--omit=optional\` and a lockfile written without them both skip it. ` +
+      `If this code was bundled, mark meo-canvas external instead, since the addon is resolved at run time and no bundler can follow it. ` +
+      BUILD_IT,
     { cause: attempts[attempts.length - 1]?.cause },
   )
 }

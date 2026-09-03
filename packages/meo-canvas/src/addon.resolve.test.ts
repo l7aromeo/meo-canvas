@@ -81,7 +81,10 @@ describe('a platform nothing is published for', () => {
     // The published list is host triples rather than package names, which is
     // what a reader compares their own host against.
     expect(() => resolveAddon()).toThrow(/darwin-arm64, linux-arm64-gnu/)
-    expect(() => resolveAddon()).toThrow(/just addon/)
+    // **`just addon` on its own is an instruction to someone with a checkout**,
+    // and this reader ran `npm install`. The repository is named so the advice
+    // is a step rather than a command they do not have.
+    expect(() => resolveAddon()).toThrow(/checkout of https:\/\/github\.com\/l7aromeo\/meo-canvas with `just addon`/)
   })
 
   it('names a musl host as musl, on an architecture with no musl build', () => {
@@ -156,6 +159,24 @@ describe('a musl host', () => {
 
   it('and a glibc host on the same architecture are given different packages', () => {
     expect(PLATFORM_PACKAGES['linux-x64-musl']).not.toBe(PLATFORM_PACKAGES['linux-x64-gnu'])
+  })
+})
+
+describe('a platform package that does not resolve', () => {
+  it('names all three ways it goes missing, because it cannot tell them apart', () => {
+    host({ platform: 'darwin', arch: 'arm64' })
+    injected.current = requiring({})
+
+    // Skipped at install, bundled away from the `node_modules` it resolved
+    // against, or never installed at all: the three arrive here identically,
+    // so all three are named. The bundler one reads least like itself -- the
+    // output works while it sits beside the tree it was built in and fails the
+    // moment it is copied into an image on its own -- and naming only the
+    // install sent that reader to a command that would not have helped.
+    expect(() => resolveAddon()).toThrow(/was not found in 2 places/)
+    expect(() => resolveAddon()).toThrow(/--omit=optional/)
+    expect(() => resolveAddon()).toThrow(/mark meo-canvas external/)
+    expect(() => resolveAddon()).toThrow(/checkout of https:\/\/github\.com\/l7aromeo\/meo-canvas/)
   })
 })
 

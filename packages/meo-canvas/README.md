@@ -21,7 +21,10 @@ per package name, so two names is what it takes:
 npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
 ```
 
-Requires Node 22 or newer. The package is ESM only.
+Requires Node 22 or newer. The package is written as ES modules and `require`
+works too, through Node's own `require(esm)`, which is unflagged from 22.12.
+Below that version `require` reports `ERR_REQUIRE_ESM` and `import` is the way
+in.
 
 ### Platforms
 
@@ -55,6 +58,23 @@ that can run Node already has it, since Node links it too.
 
 macOS x64 and 32-bit targets are not built. Apple has ended support for Intel
 Macs, and no 32-bit target has been asked for.
+
+### Bundlers
+
+**Mark this package external.** A bundler inlines the JavaScript and cannot
+follow the addon, which is resolved at run time from the platform package
+rather than imported by a literal path — there is nothing static for a bundler
+to trace. Bundling it anyway appears to work while the output sits beside the
+`node_modules` it was built in, and fails once the bundle is copied somewhere
+on its own, which is what a container image or a function archive does.
+
+```text
+esbuild app.js --bundle --platform=node --external:meo-canvas
+```
+
+Webpack takes `externals`, Rollup `external`, Vite `build.rollupOptions.external`
+or `ssr.external`. The package and its platform package then travel as ordinary
+dependencies, installed where the bundle runs.
 
 ## Usage
 
