@@ -50,21 +50,40 @@ export type ChartType = 'pie' | 'doughnut' | 'bar' | 'line'
 
 /** One series of a cartesian chart. */
 export interface ChartDataset {
+  /** The series name, shown in the legend. Absent leaves it out of the legend. */
   readonly label?: string
+  /**
+   * One value per category, in the same order as
+   * {@link CartesianChartData.labels}.
+   *
+   * A series shorter than the labels leaves the trailing categories empty
+   * rather than shifting; the two are matched by position, not zipped.
+   */
   readonly data: readonly number[]
+  /** The series colour. Absent takes the next colour from the built-in cycle. */
   readonly color?: string
 }
 
 /** Data for a bar or line chart. */
 export interface CartesianChartData {
+  /** The category names along the x axis. Their count sets the number of groups. */
   readonly labels: readonly string[]
+  /** The series drawn against those categories, each contributing one bar or line. */
   readonly datasets: readonly ChartDataset[]
 }
 
 /** One slice of a pie or doughnut. */
 export interface PieChartDataPoint {
+  /** The slice's name, shown in the legend. */
   readonly label: string
+  /**
+   * The slice's size, as a share of the total of every value.
+   *
+   * Not a percentage: the values are summed and each slice takes its
+   * proportion, so they need not add to anything in particular.
+   */
   readonly value: number
+  /** The slice's colour. Absent takes the next colour from the built-in cycle. */
   readonly color?: string
 }
 
@@ -83,25 +102,6 @@ export const GRID_DIVISIONS = 5
  */
 export const BAR_GROUP_SPACING = 0.2
 
-/**
- * Where every bar of a cartesian chart sits, as fractions of the plot area.
- *
- * **This is the reference.** v1 computes these in pixels against a plot
- * rectangle it measured; the same arithmetic in fractions is independent of
- * how big the plot turns out to be, which is what lets layout resolve it:
- *
- * ```text
- * groupWidth = 1 / labels                      v1: chartWidth / labels.length
- * spacing    = groupWidth * 0.2                v1: groupWidth * 0.2
- * barWidth   = (groupWidth - spacing) / series v1: (groupWidth - barSpacing) / datasets.length
- * x          = index * groupWidth + spacing/2 + series * barWidth
- * height     = value / maxValue                v1: (value / maxValue) * finalChartHeight
- * ```
- *
- * `y` is not returned because a bar is anchored to the bottom of the plot: v1's
- * `barY = chartY + finalChartHeight - barHeight` is what "sits on the axis"
- * means, and a bottom-aligned box says it without arithmetic.
- */
 /**
  * Refuses data this geometry cannot draw.
  *
@@ -136,12 +136,44 @@ function assertDrawable(values: readonly (readonly number[])[]): void {
   }
 }
 
+/**
+ * Where every bar of a cartesian chart sits, as fractions of the plot area.
+ *
+ * **This is the reference.** v1 computes these in pixels against a plot
+ * rectangle it measured; the same arithmetic in fractions is independent of
+ * how big the plot turns out to be, which is what lets layout resolve it:
+ *
+ * ```text
+ * groupWidth = 1 / labels                      v1: chartWidth / labels.length
+ * spacing    = groupWidth * 0.2                v1: groupWidth * 0.2
+ * barWidth   = (groupWidth - spacing) / series v1: (groupWidth - barSpacing) / datasets.length
+ * x          = index * groupWidth + spacing/2 + series * barWidth
+ * height     = value / maxValue                v1: (value / maxValue) * finalChartHeight
+ * ```
+ *
+ * `y` is not returned because a bar is anchored to the bottom of the plot: v1's
+ * `barY = chartY + finalChartHeight - barHeight` is what "sits on the axis"
+ * means, and a bottom-aligned box says it without arithmetic.
+ */
 export function barLayout(
   labels: number,
   series: number,
   values: readonly (readonly number[])[],
   maxValue: number,
-): { x: number; width: number; height: number }[][] {
+): {
+  /** Left edge, as a fraction of the plot's width. */
+  x: number
+  /** Bar width, as a fraction of the plot's width. */
+  width: number
+  /**
+   * Bar height, as a fraction of the plot's height.
+   *
+   * Zero when every value is zero, rather than the `NaN` the division would
+   * give — see the note in the body for why that divergence from v1 is
+   * deliberate.
+   */
+  height: number
+}[][] {
   assertDrawable(values)
 
   const groupWidth = 1 / labels
@@ -187,19 +219,44 @@ const percent = (fraction: number): `${number}%` => `${fraction * 100}%`
 
 /** Options every chart understands, as v1 spells them. */
 export interface BaseChartOptions {
+  /** Draw the category names along the x axis. */
   readonly showLabels?: boolean
+  /** Draw each datum's own number beside it. */
   readonly showValues?: boolean
+  /** Draw the y axis and its scale. */
   readonly showYAxis?: boolean
+  /** Draw the legend. A chart whose series have no `label` has nothing to put in it. */
   readonly showLegend?: boolean
+  /** Which side the legend sits on. */
   readonly legendPosition?: LegendPosition
+  /** Type size for the category labels, in pixels. */
   readonly labelFontSize?: number
+  /** Type size for the per-datum values. */
   readonly valueFontSize?: number
+  /** Type size for the y axis scale. */
   readonly yAxisFontSize?: number
+  /** Colour of the category labels. */
   readonly labelColor?: string
+  /** Colour of the per-datum values. */
   readonly valueColor?: string
+  /** Colour of the y axis scale text. */
   readonly yAxisColor?: string
+  /** Colour of the axis rules themselves, as distinct from their text. */
   readonly axisColor?: string
-  readonly grid?: { readonly show?: boolean; readonly color?: string }
+  /** The horizontal gridlines behind the plot. Absent draws none. */
+  readonly grid?: {
+    /** Draw them. Absent draws none, so the object alone is not enough. */
+    readonly show?: boolean
+    /** Their colour. */
+    readonly color?: string
+  }
+  /**
+   * Formats a y axis number before it is drawn — for a unit, a currency or a
+   * thousands separator.
+   *
+   * Receives the raw value, so the formatter decides the rounding as well as
+   * the text.
+   */
   readonly yAxisLabelFormatter?: (value: number) => string
   /** Formats a category label before it is drawn. v1 passes the index too. */
   readonly xAxisLabelFormatter?: (label: string, index: number) => string
@@ -229,11 +286,22 @@ export interface BaseChartOptions {
 
 /** What a chart is asked for. */
 export interface ChartProps<T extends ChartType> {
+  /**
+   * Which chart to draw.
+   *
+   * It also decides what `data` must be: this is the discriminant, so a bar
+   * chart handed pie data is a type error rather than an empty plot.
+   */
   readonly type: T
+  /** The values, in the shape `type` selects. */
   readonly data: T extends 'bar' | 'line' ? CartesianChartData : readonly PieChartDataPoint[]
+  /** What to draw besides the data itself, and in what colours. */
   readonly options?: BaseChartOptions
+  /** The chart's width. Absent lets layout decide, as for any other node. */
   readonly width?: number | string
+  /** The chart's height, on the same terms. */
   readonly height?: number | string
+  /** The face every piece of text in the chart is set in. */
   readonly fontFamily?: string
 }
 
@@ -558,7 +626,12 @@ const PIE_INSET = 0.05
 const PIE_LABEL_REACH = 0.7
 
 /** Where one slice begins and ends, in turns clockwise from the top. */
-export function sliceAngles(values: readonly number[]): { start: number; end: number }[] {
+export function sliceAngles(values: readonly number[]): {
+  /** Where the slice begins, in radians. Zero is three o'clock, as `Math` has it. */
+  start: number
+  /** Where it ends. Sweeps clockwise from `start`. */
+  end: number
+}[] {
   const total = values.reduce((sum, value) => sum + value, 0)
   const out: { start: number; end: number }[] = []
   // v1 starts at `-Math.PI / 2` — twelve o'clock — and sweeps clockwise.
@@ -698,7 +771,22 @@ const LINE_POINT_RADIUS = 4
  * the plot's edges rather than inset. A single label has no span to divide, so
  * v1 divides by one and the point sits at the left edge.
  */
-export function linePoints(labels: number, values: readonly number[], maxValue: number): { x: number; y: number }[] {
+export function linePoints(
+  labels: number,
+  values: readonly number[],
+  maxValue: number,
+): {
+  /** Distance across the plot, as a fraction of its width. */
+  x: number
+  /**
+   * Distance **down** the plot, as a fraction of its height.
+   *
+   * Inverted from the value: `0` is the top of the plot and `1` the bottom, so
+   * a point can be placed without the caller flipping it. A maximum of zero
+   * puts every point on the floor rather than dividing by it.
+   */
+  y: number
+}[] {
   const spacing = labels > 1 ? 1 / (labels - 1) : 1
   return values.map((value, index) => ({
     x: index * spacing,

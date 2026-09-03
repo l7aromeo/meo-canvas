@@ -546,7 +546,14 @@ export interface Style {
    * `row` is the gap *between rows*, so it separates children stacked
    * vertically -- the axis names the gap it opens, not the direction it runs.
    */
-  readonly gap?: Length | { readonly row?: Length; readonly column?: Length }
+  readonly gap?:
+    | Length
+    | {
+        /** Space between rows, separating children stacked vertically. */
+        readonly row?: Length
+        /** Space between columns, separating children placed side by side. */
+        readonly column?: Length
+      }
   /** Clipping behaviour, on both axes. */
   readonly overflow?: Overflow
   /** Whether `width` and `height` include padding and border. */
