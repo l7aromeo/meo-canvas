@@ -85,6 +85,15 @@
 !/.prettierrc
 !/.prettierignore
 
+# The vitest config, and the reason it is called out rather than swept up by a
+# pattern: this file *is* the JavaScript floor. It carries the 90% thresholds,
+# `all: true`, and the named exclusions for the three generated tables. Absent,
+# vitest still finds the tests and `--coverage` still runs -- with no thresholds
+# and a denominator of whatever some test happened to import, so the recipe
+# passes and measures nothing. It went untracked from the day it was written,
+# and every gate agreed the floor was enforced while CI enforced nothing.
+!/vitest.config.mts
+
 # -- Golden fixtures --------------------------------------------------------
 # Scenes and the images they must produce. The images are the assertion, so
 # they are tracked like source: a diff that changes one is a diff that changes
