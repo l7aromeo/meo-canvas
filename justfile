@@ -234,6 +234,27 @@ coverage: ensure-deps
     cargo +{{ fmt_toolchain }} llvm-cov clean --workspace
     cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --no-report
 
+    # **The addon half does not run on Windows.** `2c1c9e1` died there with a
+    # segmentation fault -- `just ci` exit 139 -- on the `--pool=threads` line,
+    # after nine test files had passed, at the point the instrumented addon is
+    # loaded in-process. The Rust half above still runs on Windows and its
+    # floor still gates there; what Windows does not measure is the 499 regions
+    # of `lib.rs`, and that number does not vary by platform, so CI measures it
+    # on the other two runners.
+    #
+    # **What is not known, stated rather than assumed:** whether Windows dies
+    # from the instrumentation or from the addon. The addon loads and answers
+    # in a `worker_threads` worker on macOS uninstrumented, and no CI job has
+    # ever run the JavaScript suite under `--pool=threads` on Windows -- the
+    # `test-js` recipe takes vitest's default pool -- so this commit introduced
+    # the first such run anywhere. If it is the addon rather than the
+    # profiling runtime, then a consumer using `worker_threads` on Windows
+    # crashes, which is a shipping defect on a platform this publishes for. The
+    # measurement that settles it is one Windows job loading an **ordinary**
+    # `.node` under `--pool=threads`; it is not run here, and it is worth
+    # running before publish.
+    if [[ "{{ os() }}" != "windows" ]]; then
+
     # The addon, built with the same instrumentation and left where the suite
     # already looks. **Not `MEO_CANVAS_ADDON`**: that variable is the subject
     # of `addon.resolve.test.ts`, and a value in the ambient environment fails
@@ -300,6 +321,10 @@ coverage: ensure-deps
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["totals"]["regions"]["percent"])')
     printf 'the addon boundary is at %.2f%% of regions, floor 60\n' "$measured"
     python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= 60.0 else 1)' "$measured"
+
+    else
+      echo "the addon boundary is not measured on windows; see the note above"
+    fi
 
 # The report, opened, with no floor to fail. What to run while writing tests.
 [doc("Open the coverage report in a browser.")]
