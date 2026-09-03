@@ -466,6 +466,16 @@ precede its children. Buffering to reorder is the intermediate tree again, less
 visibly. So the factories build plain objects and `Root` encodes them in one
 pass.
 
+### An explicit `undefined` is not an absent key
+
+`exactOptionalPropertyTypes` is on, so `{ duration: undefined }` and `{}` are
+different types where a property is declared `duration?: number`. Optional
+fields are therefore spread conditionally -- `...(x === undefined ? {} : { x })`
+-- rather than assigned, because assigning `undefined` does not type-check
+where omitting the key does. Found writing the animation walkers: a spring
+track has no duration of its own to give, and the row builder had to leave the
+key out rather than set it to nothing.
+
 ### Throwing and rejecting are different failures
 
 An argument of the wrong shape **throws synchronously**. A failure inside the
