@@ -4,12 +4,20 @@
 //!
 //! Every value in `tests/assets/animate` was printed at JavaScript's default
 //! precision, which is the shortest string that round-trips an `f64`. So both
-//! surfaces parse the identical number and **there is no tolerance here at
-//! all**: a difference of one bit is a difference. That is only affordable
-//! because the module refuses fused multiply-add, which rounds once where
-//! JavaScript rounds twice -- see `animate::easing`.
+//! surfaces parse the identical number, so the comparison is exact: a
+//! difference of one bit is a difference. That is only affordable because the
+//! module refuses fused multiply-add, which rounds once where JavaScript
+//! rounds twice -- see `animate::easing`.
 //!
-//! If a row ever needs an epsilon, the epsilon is the finding.
+//! **One table is not exact, and the sentence above must not be quoted without
+//! it.** `spring.tsv` is compared within [`EXP_ULP`], because the closed form
+//! evaluates `exp` and the two runtimes' `exp` differ in the last place. That
+//! bound is measured rather than chosen, and it is one unit in the last place
+//! -- not a tolerance anyone picked to make a row pass. Every other table here
+//! is bit-exact.
+//!
+//! If a row outside that one ever needs an epsilon, the epsilon is the
+//! finding.
 //!
 //! # What this table does not cover
 //!
@@ -39,14 +47,53 @@
 
 use meo_canvas_core::animate::{
     easing::{Easing, cubic_bezier, steps},
+    interpolate::{Animatable, keyframes, map_range},
     spring::Spring,
 };
 
 /// The rows of one vector file, comments dropped and fields split.
-fn rows(text: &'static str) -> impl Iterator<Item = Vec<&'static str>> {
-    text.lines()
+///
+/// **The count is checked against the one the file declares**, and that is not
+/// ceremony. A hex colour begins with `#`, this format's comment character, so
+/// a bare `#808080` in the first field is dropped by the filter below without
+/// a word -- leaving a table that looks complete and tests fewer rows than it
+/// lists. `parse-color.tsv` lost three rows exactly that way before its count
+/// was compared with its generator's. Quoting fixed that file; the census is
+/// what catches the next one, whatever swallows the row. The JavaScript walker
+/// makes the same check, so a table cannot lose rows silently on either
+/// surface.
+fn rows(text: &'static str) -> Vec<Vec<&'static str>> {
+    let data: Vec<Vec<&str>> = text
+        .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
         .map(|line| line.split('\t').collect())
+        .collect();
+    let declared = text
+        .lines()
+        .find_map(|line| line.strip_prefix("# rows: "))
+        .unwrap_or_else(|| {
+            unreachable!("the table declares no `# rows:` count")
+        })
+        .trim()
+        .parse::<usize>()
+        .unwrap_or_else(|error| {
+            unreachable!("unreadable `# rows:` count: {error}")
+        });
+    assert_eq!(
+        data.len(),
+        declared,
+        "the table declares {declared} rows and {} survived parsing; a row is \
+         being swallowed",
+        data.len()
+    );
+    data
+}
+
+/// One field, unquoted where the table quoted it.
+///
+/// Quoting exists so a value beginning with `#` cannot be read as a comment.
+fn field(value: &str) -> &str {
+    value.trim_matches('"')
 }
 
 /// One field as the `f64` it round-trips to.
@@ -85,7 +132,7 @@ fn every_curve_in_the_catalogue_matches_v1() {
 fn the_catalogue_is_the_whole_catalogue() {
     let table = include_str!("assets/animate/easing.tsv");
     let named: std::collections::HashSet<&str> =
-        rows(table).map(|row| row[0]).collect();
+        rows(table).into_iter().map(|row| row[0]).collect();
     for curve in Easing::ALL {
         assert!(named.contains(curve.name()), "{} is untested", curve.name());
     }
@@ -178,7 +225,7 @@ fn ulps_between(ours: f64, theirs: f64) -> i64 {
 const EXP_ULP: i64 = 1;
 
 #[test]
-fn a_spring_settles_where_v1_settles() {
+fn a_spring_is_where_v1_puts_it() {
     let table = include_str!("assets/animate/spring.tsv");
     let mut regimes = (0, 0, 0);
     for row in rows(table) {
@@ -261,4 +308,145 @@ fn a_spring_without_an_equation_is_refused() {
         .is_err()
     );
     assert!(Spring::default().at(0.5).is_ok());
+}
+
+/// One easing by the name the tables use, or `Linear` for the absent option.
+///
+/// `-` is the option omitted rather than `linear` named, and the two are
+/// different calls on the JavaScript side even though they answer alike.
+fn easing_named(name: &str) -> Easing {
+    if name == "-" {
+        return Easing::Linear;
+    }
+    Easing::ALL
+        .into_iter()
+        .find(|curve| curve.name() == name)
+        .unwrap_or_else(|| unreachable!("{name} is not in the catalogue"))
+}
+
+#[test]
+fn a_spring_settles_where_v1_settles_for_every_regime() {
+    // `settles_after` had no direct test at all before this table: it was
+    // reached only through `Track::duration` and `Sequence::plan`, so it could
+    // have drifted with the suite staying green.
+    let table = include_str!("assets/animate/spring-duration.tsv");
+    let mut checked = 0;
+    for row in rows(table) {
+        let spring = Spring {
+            from: at(&row, 0),
+            to: at(&row, 1),
+            stiffness: at(&row, 2),
+            damping: at(&row, 3),
+            mass: at(&row, 4),
+            velocity: at(&row, 5),
+        };
+        let ours = spring
+            .settles_after(at(&row, 6))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let expected = at(&row, 7);
+        assert!(
+            ours == expected,
+            "a spring {row:?} settles after {ours} where v1 says {expected}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 40);
+}
+
+#[test]
+fn a_lerp_lands_where_v1_lands() {
+    // `t` runs outside 0..1 here on purpose: the mix does not clamp, and a
+    // table sampling only 0..1 could not tell an unclamped implementation from
+    // a clamped one.
+    let table = include_str!("assets/animate/lerp.tsv");
+    for row in rows(table) {
+        let (from, to, t) = (at(&row, 0), at(&row, 1), at(&row, 2));
+        let ours = from.mix(to, t);
+        let expected = at(&row, 3);
+        assert!(
+            ours == expected,
+            "lerp({from}, {to}, {t}) is {ours} where v1 says {expected}"
+        );
+    }
+}
+
+#[test]
+fn a_range_maps_where_v1_maps() {
+    let table = include_str!("assets/animate/map-range.tsv");
+    for row in rows(table) {
+        let clamp = field(row[5]) == "true";
+        let ours = map_range(
+            at(&row, 0),
+            (at(&row, 1), at(&row, 2)),
+            (at(&row, 3), at(&row, 4)),
+            clamp,
+        );
+        let expected = at(&row, 6);
+        assert!(
+            ours == expected,
+            "map_range {row:?} is {ours} where v1 says {expected}"
+        );
+    }
+}
+
+#[test]
+fn keyframes_land_where_v1_lands() {
+    let table = include_str!("assets/animate/interpolate.tsv");
+    for row in rows(table) {
+        let t = at(&row, 0);
+        let stops: Vec<f64> = field(row[1])
+            .split(';')
+            .map(|value| {
+                value
+                    .parse()
+                    .unwrap_or_else(|error| unreachable!("{error}"))
+            })
+            .collect();
+        let values: Vec<f64> = field(row[2])
+            .split(';')
+            .map(|value| {
+                value
+                    .parse()
+                    .unwrap_or_else(|error| unreachable!("{error}"))
+            })
+            .collect();
+        let ours = keyframes(t, &stops, &values, easing_named(field(row[3])))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let expected = at(&row, 4);
+        assert!(
+            ours == expected,
+            "keyframes {row:?} is {ours} where v1 says {expected}"
+        );
+    }
+}
+
+#[test]
+fn a_mix_lands_where_v1_lands_for_the_kinds_rust_has() {
+    // **`kind = array` is skipped, and the skip is the finding.** `Animatable`
+    // is implemented for `f64` and `Rgba` and nothing else, so a JavaScript
+    // caller can mix two arrays element-wise and a Rust caller cannot. The
+    // table carries a `surface` column saying so rather than leaving the rows
+    // out, because a gap absent from a table is a gap nobody compares.
+    //
+    // The colour rows are skipped here too, for a different reason: their
+    // values are v1's CSS strings and this crate has no formatter to answer
+    // with. `mix-color.tsv` walks the colour arithmetic where it can.
+    let table = include_str!("assets/animate/mix.tsv");
+    let (mut compared, mut skipped) = (0, 0);
+    for row in rows(table) {
+        if field(row[0]) != "number" || field(row[2]) != "value" {
+            skipped += 1;
+            continue;
+        }
+        let (from, to, t) = (at(&row, 3), at(&row, 4), at(&row, 5));
+        let ours = from.mix(to, t);
+        let expected = at(&row, 6);
+        assert!(
+            ours == expected,
+            "mix({from}, {to}, {t}) is {ours} where v1 says {expected}"
+        );
+        compared += 1;
+    }
+    // A table read as all-skips would pass without asking anything.
+    assert_eq!((compared, skipped), (5, 10));
 }
