@@ -24,6 +24,17 @@ import { join, resolve } from 'node:path'
 /** The first eight bytes of every PNG, which is what proves a render happened. */
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
+/**
+ * npm, by the name the platform actually has for it.
+ *
+ * On Windows npm is `npm.cmd`, a batch file, and `execFileSync` does not
+ * consult PATHEXT -- so `execFileSync('npm', ...)` fails with `spawnSync npm
+ * ENOENT` on a machine where `npm` works perfectly in a shell. That failed the
+ * `win32-x64` release job at this step, after the addon had built and packed
+ * cleanly: the artefact was fine and the tool checking it was not.
+ */
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
 const releaseDir = resolve(process.argv[2] ?? 'release')
 const tarballs = readdirSync(releaseDir)
   .filter(name => name.endsWith('.tgz'))
@@ -43,7 +54,7 @@ try {
   // Both at once, so npm resolves the main package's `optionalDependencies`
   // against the platform tarball rather than reaching the registry for a
   // version that is not published yet.
-  execFileSync('npm', ['install', '--silent', '--no-audit', '--no-fund', ...tarballs], { cwd: project, stdio: 'inherit' })
+  execFileSync(NPM, ['install', '--silent', '--no-audit', '--no-fund', ...tarballs], { cwd: project, stdio: 'inherit' })
 
   const script = `
 import { Box, Root } from 'meo-canvas'

@@ -253,12 +253,25 @@ addon-release:
 # packing, the floor check, the acceptance harness -- reads one path and does
 # not care which of the two built it.
 #
-# `target/container/` rather than `target/`, because the container builds as
-# root and three different libcs would otherwise write `libmeo_canvas_node.so`
-# to the same place: a host build, a glibc build and a musl build are three
-# artefacts with one filename. `--target` is passed for the same reason, so the
-# triple is in the path rather than implied by whatever the container's host
-# triple happens to be.
+# `target/container/<suffix>/` rather than `target/`, because the container
+# builds as root and three different libcs would otherwise write
+# `libmeo_canvas_node.so` to the same place: a host build, a glibc build and a
+# musl build are three artefacts with one filename.
+#
+# **`--target` is deliberately NOT passed, and passing it broke musl.** With an
+# explicit `--target`, cargo builds build scripts for the HOST and does not
+# apply `RUSTFLAGS` to them -- so `-C target-feature=-crt-static` never reached
+# `skia-bindings`' build script, which on musl is then a static binary that
+# cannot `dlopen`:
+#
+#   Unable to find libclang: the `libclang` shared library at
+#   /usr/lib/llvm20/lib/libclang.so.20.1.8 could not be opened:
+#   Dynamic loading not supported
+#
+# Without it, host and target are one build and the flag reaches everything.
+# The image is chosen for the triple, so host IS target here -- which the step
+# below asserts rather than assumes, since that is the whole of what `--target`
+# was buying and it is worth keeping without the cost.
 #
 # `vulkan` is written here rather than taken from `host_features`, which is
 # `metal` on macOS: this recipe builds a Linux artefact whichever machine drives
@@ -315,15 +328,24 @@ addon-container suffix:
 
     # The registry is mounted rather than re-downloaded, so a cache on the host
     # -- the runner's, or a person's own -- reaches the build inside.
+    # What `--target` used to guarantee, asserted instead. A `manylinux` image
+    # under an `aarch64` suffix would otherwise build an x86_64 artefact and
+    # stage it under a name npm installs on machines that cannot load it.
+    host=$(docker run --rm "$tag" rustc -vV | sed -n 's/^host: //p')
+    if [[ "$host" != "$triple" ]]; then
+        echo "error: ${tag} builds for ${host}, but {{ suffix }} is ${triple}" >&2
+        exit 1
+    fi
+
     mkdir -p "$HOME/.cargo/registry"
     docker run --rm \
         -v "$PWD":/src -w /src \
         -v "$HOME/.cargo/registry":/root/.cargo/registry \
-        -e CARGO_TARGET_DIR=/src/target/container \
+        -e CARGO_TARGET_DIR=/src/target/container/{{ suffix }} \
         "$tag" \
-        cargo build --release -p meo-canvas-node --target "$triple" --features vulkan
+        cargo build --release -p meo-canvas-node --features vulkan
 
-    cp "target/container/${triple}/release/libmeo_canvas_node.so" {{ addon_path }}
+    cp "target/container/{{ suffix }}/release/libmeo_canvas_node.so" {{ addon_path }}
     echo "built {{ addon_path }} in ${tag}"
 
 # Everything a release publishes, packed and installable, for this host only.
