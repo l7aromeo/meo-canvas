@@ -65,7 +65,13 @@ async function sources(directory) {
 function modulePath(path) {
   const relative = path.slice(SCENE_SRC.length + 1).replace(/\.rs$/, '')
   if (relative === 'lib') return CRATE
-  return [CRATE, ...relative.split('/')].join('::')
+  // Split on both separators, because this is a filesystem path becoming a
+  // Rust module path and Windows spells the first one `\`. Splitting on `/`
+  // alone emitted `meo_canvas_scene::style\layout` there -- not a crash, a
+  // **wrong generated file**, which `arena-enums-check` reported as the table
+  // being stale on Windows and nowhere else. Committing that file from a
+  // Windows machine would have put backslashes into module paths for everyone.
+  return [CRATE, ...relative.split(/[/\\]/)].join('::')
 }
 
 /**
