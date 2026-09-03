@@ -51,12 +51,12 @@ downloads the one it can run and skips the rest. Nothing is fetched by a
 postinstall script, which is what keeps offline and `--ignore-scripts` installs
 working.
 
-| Platform | Architecture | Requires |
-| --- | --- | --- |
-| Linux (glibc) | x64, arm64 | glibc 2.28 or newer |
-| Linux (musl) | x64, arm64 | Alpine 3.x, or any musl host with `libstdc++` |
-| macOS | arm64 | macOS 11 or newer |
-| Windows | x64 | — |
+| Platform      | Architecture | Requires                                      |
+| ------------- | ------------ | --------------------------------------------- |
+| Linux (glibc) | x64, arm64   | glibc 2.28 or newer                           |
+| Linux (musl)  | x64, arm64   | Alpine 3.x, or any musl host with `libstdc++` |
+| macOS         | arm64        | macOS 11 or newer                             |
+| Windows       | x64          | —                                             |
 
 **The glibc floor is 2.28, and it is measured rather than declared.** That is
 AlmaLinux 8 and RHEL 8, which is older than every currently supported

@@ -1,6 +1,16 @@
-# Normalize line endings in the repository, and check out what the platform
-# uses. Set for everything, so a file type added later needs no entry here.
-* text=auto
+# Normalize line endings in the repository, and check out LF everywhere. Set for
+# everything, so a file type added later needs no entry here.
+#
+# **`eol=lf` rather than "what the platform uses", and the difference is a
+# failing gate.** Without it Windows checks out CRLF through `core.autocrlf`,
+# and `.prettierrc.json` pins `endOfLine` to `lf` -- so `prettier --check`
+# failed on **69 files at once** on the first Windows run of the format gate,
+# before a single test had been reached. Nothing was wrong with any of them.
+#
+# The binary rules below re-clear `text` for their own patterns; the last
+# matching line wins per attribute, so those keep `-text` and are never
+# rewritten.
+* text=auto eol=lf
 
 # Compiled addons and images carry bytes that a line-ending rewrite corrupts.
 *.node binary
