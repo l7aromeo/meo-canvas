@@ -18,8 +18,16 @@
 # number the author wrote**, and the `a` column carries that. Rows where v1 or
 # this surface disagrees are `diverges`, and the note records what each gives.
 #
-# **These rows fail today and are meant to.** They are the failing-first
-# evidence, and they prove a fix reached both surfaces rather than one.
+# **These rows failed on both surfaces when they were written, and that was
+# the point** -- they were the failing-first evidence for the finding. As of
+# `302c31e` they pass: `parse_channels` presents each channel as the shortest
+# decimal identifying its `f32`, and computes a hex alpha as `byte / 255`. The
+# `note` column records what v1 still gives, which is what these rows continue
+# to diverge from.
+#
+# There was no second fix to wait for. The JavaScript surface has no parser of
+# its own -- it reads through the addon, which calls `parse_channels` -- so one
+# change moved both surfaces at once.
 #
 # # What hid it, and what it narrows to
 #
@@ -27,11 +35,19 @@
 # build `{r, g, b, a}` objects directly, so the alpha never passes the parser.
 # The parameter no row varied, for the fourth time in this audit.
 #
-# Hex-byte alphas carry the same defect by a different route: `#0000007f` is
-# 127/255, and neither surface answers `0.4980392156862745`. `#000000cc` is
-# 204/255, which is exactly `0.8` in decimal and **still fails**, because `0.8`
-# is not representable in binary32 either -- a row that looks like it should
-# pass by luck and does not.
+# Hex-byte alphas need their own rule, and two of these three rows are what
+# show it. Presenting the `f32` as its shortest identifying decimal fixes the
+# decimals and the percentages; a hex byte needs `byte / 255` computed where
+# the byte is known, because the ratio is not a decimal any `f32` reaches.
+#
+# `#0000007f` and `#0008` are the rows that discriminate: widening gives
+# `0.49803922` and `0.53333336`, and the rule gives `0.4980392156862745` and
+# `0.5333333333333333`. **`#000000cc` cannot tell the two apart** -- widening
+# gives the shortest decimal for `f32(0.8)`, which is `0.8`, and `204 / 255` is
+# also `0.8`. It is here as the row that agrees under both rules, which is the
+# same trap as the group whose members agree whether or not the count
+# propagates: an implementation checked only against it would report a passing
+# branch nothing took.
 #
 # Percentage spellings land on the same f32 as their decimal equivalents, so
 # `33%` fails exactly as `0.33` does. `12.5%` passes: it is a negative power of
@@ -59,16 +75,16 @@
 "rebeccapurple"	value	102	51	153	1	-
 "rgb(255, 0, 0)"	value	255	0	0	1	-
 "rgba(0, 0, 255, 0.5)"	diverges	0	0	255	0.5	v1 quantises alpha to 0.502
-"rgba(0, 0, 0, 0.1)"	diverges	0	0	0	0.1	v1 quantises alpha to 0.102; ours is f32 0.10000000149011612
+"rgba(0, 0, 0, 0.1)"	diverges	0	0	0	0.1	v1 quantises alpha to 0.102
 "rgba(0, 0, 0, 0.25)"	diverges	0	0	0	0.25	v1 quantises alpha to 0.251
 "rgba(0, 0, 0, 0.75)"	diverges	0	0	0	0.75	v1 quantises alpha to 0.749
-"rgba(0, 0, 0, 0.33)"	diverges	0	0	0	0.33	v1 quantises alpha to 0.329; ours is f32 0.33000001311302185
-"rgba(0, 0, 0, 0.9)"	diverges	0	0	0	0.9	v1 quantises alpha to 0.902; ours is f32 0.8999999761581421
+"rgba(0, 0, 0, 0.33)"	diverges	0	0	0	0.33	v1 quantises alpha to 0.329
+"rgba(0, 0, 0, 0.9)"	diverges	0	0	0	0.9	v1 quantises alpha to 0.902
 "rgba(0, 0, 0, 0)"	value	0	0	0	0	-
 "#fff"	value	255	255	255	1	-
-"#0000007f"	diverges	0	0	0	0.4980392156862745	v1 gives 0.498; ours gives 0.49803921580314636
-"#0008"	diverges	0	0	0	0.5333333333333333	v1 gives 0.533; ours gives 0.5333333611488342
-"#000000cc"	diverges	0	0	0	0.8	ours gives 0.800000011920929
+"#0000007f"	diverges	0	0	0	0.4980392156862745	v1 gives 0.498
+"#0008"	diverges	0	0	0	0.5333333333333333	v1 gives 0.533
+"#000000cc"	diverges	0	0	0	0.8	-
 "rgba(0, 0, 0, 50%)"	diverges	0	0	0	0.5	v1 gives 0.502
-"rgba(0, 0, 0, 33%)"	diverges	0	0	0	0.33	v1 gives 0.329; ours gives 0.33000001311302185
+"rgba(0, 0, 0, 33%)"	diverges	0	0	0	0.33	v1 gives 0.329
 "rgba(0, 0, 0, 12.5%)"	value	0	0	0	0.125	-

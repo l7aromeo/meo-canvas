@@ -45,10 +45,14 @@
               `EXP_ULP`, which is measured rather than chosen."
 )]
 
-use meo_canvas_core::animate::{
-    easing::{Easing, cubic_bezier, steps},
-    interpolate::{Animatable, keyframes, map_range},
-    spring::Spring,
+use meo_canvas_core::{
+    animate::{
+        color::{Rgba, mix},
+        easing::{Easing, cubic_bezier, steps},
+        interpolate::{Animatable, keyframes, map_range},
+        spring::Spring,
+    },
+    color::parse_channels,
 };
 
 /// The rows of one vector file, comments dropped and fields split.
@@ -449,4 +453,109 @@ fn a_mix_lands_where_v1_lands_for_the_kinds_rust_has() {
     }
     // A table read as all-skips would pass without asking anything.
     assert_eq!((compared, skipped), (5, 10));
+}
+
+/// A CSS colour as this crate reads it, or a panic naming the row.
+fn parsed(css: &str) -> Rgba {
+    let [r, g, b, a] = parse_channels(css)
+        .unwrap_or_else(|| unreachable!("{css} did not parse"));
+    Rgba { r, g, b, a }
+}
+
+#[test]
+fn a_colour_parses_to_the_channels_the_author_wrote() {
+    // **The one table here whose expected values are not v1's.** On alpha
+    // neither reference was right: v1 quantises to eight bits and answers
+    // `0.102` for `0.1`, and this crate answered `0.10000000149011612` while
+    // the channels were `f32`. The browser answers `0.1` and is the tiebreak.
+    //
+    // The `note` column records what each surface gave before the rule
+    // arrived, so a row that regresses says which of the two old answers it
+    // regressed to rather than only that it moved.
+    let table = include_str!("assets/animate/parse-color.tsv");
+    let mut checked = 0;
+    for row in rows(table) {
+        let css = field(row[0]);
+        let ours = parsed(css);
+        let want = Rgba {
+            r: at(&row, 2),
+            g: at(&row, 3),
+            b: at(&row, 4),
+            a: at(&row, 5),
+        };
+        assert!(
+            ours.r == want.r && ours.g == want.g && ours.b == want.b,
+            "{css} parses to ({}, {}, {}) where the rule says ({}, {}, {})",
+            ours.r,
+            ours.g,
+            ours.b,
+            want.r,
+            want.g,
+            want.b
+        );
+        assert!(
+            ours.a == want.a,
+            "{css} parses to alpha {} where the author wrote {}",
+            ours.a,
+            want.a
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 18);
+}
+
+#[test]
+fn a_colour_mixes_where_v1_mixes() {
+    // **This is a weaker check than the JavaScript walker's, and the reason is
+    // worth stating rather than hiding in a rounding call.** v1's `mixColor`
+    // takes CSS strings and returns one; this crate takes and returns `Rgba`
+    // and has no formatter, so the expected value has to be parsed back into
+    // channels. Formatting is lossy: mixing `#000000` and `#ffffff` at `0.5`
+    // gives exactly `127.5` here, and v1 writes `#808080`, which reads back as
+    // `128`. The sub-byte half is real and the string cannot carry it.
+    //
+    // So this asserts the mix **to byte precision**, which is everything a hex
+    // string holds, and the JavaScript side asserts the full string against
+    // v1's own. A defect smaller than half a channel is invisible here and
+    // visible there; neither walker alone covers `mixColor`, and the pair does.
+    let table = include_str!("assets/animate/mix-color.tsv");
+    let (mut compared, mut skipped) = (0, 0);
+    for row in rows(table) {
+        if field(row[3]) != "value" {
+            skipped += 1;
+            continue;
+        }
+        let ours =
+            mix(parsed(field(row[0])), parsed(field(row[1])), at(&row, 2));
+        let want = parsed(field(row[4]));
+        let byte = |channel: f64| channel.round();
+        assert!(
+            byte(ours.r) == byte(want.r)
+                && byte(ours.g) == byte(want.g)
+                && byte(ours.b) == byte(want.b),
+            "mixing {} and {} at {} gives ({}, {}, {}) where v1 draws {}",
+            field(row[0]),
+            field(row[1]),
+            field(row[2]),
+            ours.r,
+            ours.g,
+            ours.b,
+            field(row[4])
+        );
+        // Alpha survives a string exactly where the channels do not: v1 writes
+        // it as a decimal rather than a byte.
+        assert!(
+            ours.a == want.a,
+            "mixing {} and {} at {} gives alpha {} where v1 draws {}",
+            field(row[0]),
+            field(row[1]),
+            field(row[2]),
+            ours.a,
+            want.a
+        );
+        compared += 1;
+    }
+    // Mostly divergent by design; assert the agreeing rows were reached rather
+    // than all skipped.
+    assert_eq!((compared, skipped), (7, 8));
 }
