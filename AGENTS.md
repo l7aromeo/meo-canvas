@@ -2263,6 +2263,71 @@ It is the same shape as the `flex-alignment` rows that agreed under both rules
 and the box-shadow fixture whose spacer children could not discriminate: in each
 the assertion was true, stayed true, and was true of the wrong thing.
 
+**A repository typechecks its own types in the one configuration no consumer
+has.** Every `tsc` here runs with `"types": ["node"]` set and `skipLibCheck`
+off. A consumer's runs with neither: `tsc --init` writes `skipLibCheck: true`,
+and someone who has not needed a `types` field has not written one. The gap
+between those two configurations is invisible from inside, and a defect that
+lives in it compiles cleanly here and degrades there.
+
+**TypeScript 6 does not auto-include `node_modules/@types` at all** -- not with
+the default, not with an explicit `typeRoots`. A consumer resolves even
+`process` only by writing `"types": ["node"]` or a reference of their own.
+
+The general form is not about this package: **any `.d.ts` that names an ambient
+global is a consumer-visible `any` under a default tsconfig**, and it is `any`
+silently, because the error that would have said so is inside a declaration
+file and `skipLibCheck` skips declaration files. `Buffer` is only the instance
+we happened to ship. It is why this class of defect exists now and did not a
+year ago, and why a package can be correct in its own repository and wrong
+everywhere it is installed.
+
+`dist/canvas.d.ts` named `Buffer`, and `const bad: string = await
+canvas.toBuffer('png')` compiled clean in a consumer. A grep for `any` in the
+emitted declarations found nine hits and all nine were prose: **the `any`
+arrives from an unresolved name rather than from the keyword**, so the obvious
+search cannot see it either.
+
+Two fixes look right and are not, and both were measured on 6.0.3 and on 7.0.2
+before either was believed. `import type { Buffer } from 'node:buffer'`
+survives declaration emit -- the import is right there in the shipped `.d.ts`,
+and any reader would nod at it -- and still does not resolve, because a bare
+`node:` specifier needs `@types/node` already loaded, which is the thing the
+consumer has not done. A `/// <reference types="node" />` in the source does
+resolve and is elided from declaration emit: it reaches `dist/canvas.js` and
+never `dist/canvas.d.ts`, with `types` set in the build config and with it
+emptied to `[]`. What works is adding the reference to the emitted declaration
+after `tsc`, which `tools/reference-node-types.mjs` does and `just build-js`
+runs. **The failed attempts are the substance here**: anyone can be told to
+inject a directive after `tsc`, and without them the next person tries the
+import again.
+
+**That is also why `@types/node` is a runtime dependency and not a development
+one.** A reference is followed transitively, so the package has to sit beside
+this one -- hoisted by npm, and inside pnpm's store because it is declared.
+Making it a peer dependency would break the fix. The evaluation that found the
+defect had recommended exactly that, on the code as it then stood, and the
+recommendation stopped being right the moment the fix existed.
+
+`verify-package.mjs` is what holds all of this: it compiles a consumer with the
+default tsconfig, and its control -- the assignment above -- has to fail. **A
+clean compile there is the defect, not the absence of one**, which is why the
+assertion reads backwards.
+
+**vitest does not typecheck, so `test-js` and `typecheck` are not
+interchangeable.** Narrowing `TrackConfig.spring` to
+`Omit<SpringConfig, 'from' | 'to'>` left `just test-js` green and `just
+typecheck` red, and the red was the narrowing working: the test that covers the
+runtime refusal could no longer be written in TypeScript. A green suite says
+nothing about a change whose whole content is a type. It is the same division
+_What a public enum promises_ describes on the Rust side, where the witness
+tests are `#[cfg(test)]` and so `cargo build` will not catch a new variant and
+`cargo test` will -- in both languages the instrument that sees the change is
+not the one whose name suggests it. That narrowing had the same deadline as
+`#[non_exhaustive]`, and for the same reason: it is free before a first release
+and breaking after one, because it is only free while nobody holds a
+`SpringConfig` variable.
+
 ### What only a second implementation can see
 
 The chart port has three checks and they answer three questions. A geometry
