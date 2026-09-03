@@ -1020,3 +1020,16 @@ mod ico_promise {
         );
     }
 }
+
+/// This crate's own README, compiled.
+///
+/// The fences in it are a public promise that a snippet works, and a fence
+/// checked by nothing is the way that promise goes stale -- the reader finds
+/// out, not the gate. Anchoring the file here puts its `rust` blocks in front
+/// of rustdoc, so an example naming an item that moved is a failed build.
+///
+/// `../README.md`, one level up from `src/`: this is the crate's own front
+/// page rather than the repository's, which `meo-canvas` anchors separately.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct CrateReadme;
