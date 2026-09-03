@@ -59,7 +59,7 @@ impl<T: Animatable> Track<T> {
         if self.stagger < 0.0 {
             return Err(Error::Track("stagger cannot be negative"));
         }
-        let duration = self.duration()?;
+        let duration = self.motion_duration()?;
 
         #[expect(
             clippy::cast_precision_loss,
@@ -91,15 +91,70 @@ impl<T: Animatable> Track<T> {
         }
     }
 
-    /// How long this track runs for.
-    ///
-    /// **A spring settles rather than ending**, so its duration comes from the
-    /// physics unless the caller states one.
+    /// How long a staggered set of `count` of these runs for.
     ///
     /// # Errors
     ///
-    /// As [`Track::at`].
+    /// As [`Track::duration`].
+    pub fn total_duration(&self, count: usize) -> Result<f64, Error> {
+        #[expect(clippy::cast_precision_loss, reason = "as `Track::at`")]
+        let last = count.saturating_sub(1) as f64;
+        Ok(self.stagger.mul_add(last, self.duration()?))
+    }
+
+    /// How long this track runs for, **from the moment it is asked for a
+    /// value to the moment it stops moving** -- so the delay is part of it.
+    ///
+    /// **A spring settles rather than ending**, so the motion's own length
+    /// comes from the physics unless the caller states one.
+    ///
+    /// ```
+    /// use meo_canvas_core::animate::{
+    ///     easing::Easing,
+    ///     track::{Motion, Track},
+    /// };
+    ///
+    /// let fade = Track {
+    ///     from: 0.0,
+    ///     to: 1.0,
+    ///     duration: Some(1.0),
+    ///     delay: 0.5,
+    ///     stagger: 0.0,
+    ///     motion: Motion::Ease(Easing::Linear),
+    /// };
+    ///
+    /// // Half a second of stillness, then a second of motion.
+    /// assert_eq!(fade.duration()?, 1.5);
+    /// # Ok::<(), meo_canvas_core::Error>(())
+    /// ```
+    ///
+    /// **This counted only the motion until 4 September 2026.** The delay was
+    /// left out, which disagreed with the JavaScript surface, with v1 behind
+    /// it, and with this crate's own [`Plan::duration`] -- whose length has
+    /// always started at the delay. No doc claimed the old rule and no test
+    /// asserted it, which is how it drifted; it was found by measuring a
+    /// delayed track across the two surfaces, because every conformance vector
+    /// either of them had used a delay of zero, where the two rules give the
+    /// same number.
+    ///
+    /// [`Plan::duration`]: crate::animate::sequence::Plan::duration
+    ///
+    /// # Errors
+    ///
+    /// As [`Track::at`], and for a negative delay -- which has no meaning in a
+    /// length now that the length contains it.
     pub fn duration(&self) -> Result<f64, Error> {
+        if self.delay < 0.0 {
+            return Err(Error::Track("delay cannot be negative"));
+        }
+        Ok(self.delay + self.motion_duration()?)
+    }
+
+    /// How long the motion itself takes, with no delay in front of it.
+    ///
+    /// What [`Track::at`] measures elapsed time against, since the delay is
+    /// already subtracted there.
+    fn motion_duration(&self) -> Result<f64, Error> {
         let duration = match (self.duration, self.motion) {
             (Some(seconds), _) => seconds,
             (None, Motion::Spring(shape)) => shape
@@ -175,6 +230,77 @@ mod tests {
             stagger: 0.0,
             motion: Motion::Ease(Easing::Linear),
         }
+    }
+
+    #[test]
+    fn a_duration_counts_the_delay_before_the_motion() {
+        // v1's `track.duration` is delay + motion, and the JavaScript surface
+        // follows it: a track of 1s after a 0.5s delay reports 1.5. Rust
+        // reported 1.0 until 4 September 2026 -- see the note on `duration`.
+        // Measured against v1 through the JavaScript surface at these inputs.
+        let delayed = Track {
+            delay: 0.5,
+            ..linear()
+        };
+        assert!(
+            (delayed
+                .duration()
+                .unwrap_or_else(|error| unreachable!("{error}"))
+                - 1.5)
+                .abs()
+                < f64::EPSILON
+        );
+
+        // And the delay does not move the motion itself: the value at a time
+        // is what it was, which is what makes this a change to one number
+        // rather than to the animation.
+        assert!(
+            (delayed
+                .at(1.0, 0)
+                .unwrap_or_else(|error| unreachable!("{error}"))
+                - 5.0)
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn a_negative_delay_is_refused_by_the_duration_as_well_as_the_sample() {
+        // The delay is part of the length now, so a length cannot be reported
+        // for a delay that has no meaning.
+        let bad = Track {
+            delay: -1.0,
+            ..linear()
+        };
+        assert!(matches!(bad.duration(), Err(Error::Track(_))));
+    }
+
+    #[test]
+    fn a_staggered_set_lasts_longer_than_one_of_its_members() {
+        // `duration + stagger * (count - 1)`, measured from v1 through the
+        // JavaScript surface: a 1s track after a 0.5s delay staggered by 0.25
+        // gives 1.5, 1.5, 1.75, 2.0, 2.25 for counts 0 through 4.
+        let staggered = Track {
+            delay: 0.5,
+            stagger: 0.25,
+            ..linear()
+        };
+        let lengths: Vec<f64> = (0..5)
+            .map(|count| {
+                staggered
+                    .total_duration(count)
+                    .unwrap_or_else(|error| unreachable!("{error}"))
+            })
+            .collect();
+        assert_eq!(lengths, vec![1.5, 1.5, 1.75, 2.0, 2.25]);
+
+        // A count of zero is a count of one rather than a length of zero: one
+        // of a thing is what "none stated" means, and zero would read as
+        // finished.
+        assert!(
+            (lengths[0] - lengths[1]).abs() < f64::EPSILON,
+            "no items and one item are the same length"
+        );
     }
 
     #[test]

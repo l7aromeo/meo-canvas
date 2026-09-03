@@ -1,0 +1,236 @@
+name: docs
+
+# The JavaScript reference: gated on every pull request, and published once per
+# release rather than once per commit.
+#
+# `latest/` follows the newest stable published release, not `v10`. A reference
+# that tracked the branch would describe methods that are not in anyone's
+# `node_modules` yet, which is worse than describing none: the reader has no
+# way to tell which half of the page they can call. Every release keeps its
+# own copy at `vX.Y.Z/`, prereleases included, so a project pinned to any
+# version still has its documentation.
+#
+# Only the JavaScript half is built. TypeDoc reads `dist/*.d.ts` and needs no
+# native module, so a build is under a minute; `cargo doc` needs a full Skia
+# build, and docs.rs publishes that from the crate's own doc comments, per
+# version, for nothing.
+#
+# Adapted from `meo-skia-canvas/.github/workflows/docs.yml`. Two things differ.
+# That project checks its declarations in; this one builds them with `tsc`
+# first. And that project's release is created before its package is published,
+# so it has to reason about the gap; here `release.yml` creates the GitHub
+# release only after `npm publish` has succeeded, and this workflow still
+# **waits for the version to resolve from the registry** before deploying,
+# because "published" and "installable" are separated by propagation.
+run-name: >-
+  docs — ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag || 'check' }}
+
+on:
+  # The GitHub release being published. `release.yml` opens it as the last
+  # step after every package is on npm, so this fires after the publish and
+  # never before it.
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - "packages/meo-canvas/src/**"
+      - "packages/meo-canvas/tools/typedoc/**"
+      - ".github/workflows/docs.yml"
+  # Backfills a version published before this workflow existed, or reruns one
+  # whose build failed. Publishing an older tag does not move `latest/` unless
+  # it really is the newest stable.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v10.0.0-alpha.4"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: reference (typedoc)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.which.outputs.version }}
+    steps:
+      # Which version, if any, this run publishes. A pull request builds and
+      # gates but publishes nothing.
+      - id: which
+        run: |
+          case "${{ github.event_name }}" in
+            workflow_dispatch) TAG="${{ inputs.tag }}" ;;
+            release)           TAG="${{ github.event.release.tag_name }}" ;;
+            *)                 TAG="" ;;
+          esac
+          # `v10.0.0` or `v10.0.0-alpha.4`; the crates lineage is `crates-v*`
+          # and does not create a JavaScript reference.
+          if [ -n "$TAG" ] && ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "::error::'$TAG' is not an npm release tag (expected vX.Y.Z or vX.Y.Z-pre)"
+              exit 1
+            fi
+            echo "::notice::$TAG is not an npm release tag; nothing published"
+            TAG=""
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.which.outputs.version }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/meo-canvas/tools/typedoc/package-lock.json
+
+      - name: Install
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix packages/meo-canvas/tools/typedoc ci
+
+      # The declarations are built, not committed: `tsc` on the package's build
+      # config emits `dist/*.d.ts`, which is what the package ships as `types`
+      # and what TypeDoc reads. No native module is involved.
+      - name: Build the declarations
+        run: ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
+
+      # Structural findings fail; the undocumented count may not rise. See
+      # `tools/typedoc/build.mjs`.
+      - name: Build the reference
+        run: node packages/meo-canvas/tools/typedoc/build.mjs
+
+      # `build.mjs` lowers the baseline when the count falls. On a pull request
+      # that must be committed with the change, not discovered here.
+      - name: Check the baseline did not move
+        run: git diff --exit-code packages/meo-canvas/tools/typedoc/undocumented-baseline.txt
+
+      - name: Keep the reference
+        if: steps.which.outputs.version != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reference
+          path: target/jsdoc
+          retention-days: 1
+
+  publish:
+    name: publish ${{ needs.build.outputs.version }}
+    needs: build
+    if: needs.build.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      # **Installable, not merely published.** The release event fires after
+      # `npm publish` returned, and the registry can still take a minute to
+      # serve the version. Deploying `latest/` for a version `npm install`
+      # cannot yet give you is the confusion this whole arrangement exists to
+      # prevent, so this waits for the registry to answer -- bounded, and loud
+      # when the bound is hit, because a version that never appears is a
+      # release that did not happen.
+      - name: Wait for the version to resolve from npm
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          want="${VERSION#v}"
+          for attempt in $(seq 1 20); do
+            got=$(npm view "meo-canvas@${want}" version 2>/dev/null || true)
+            if [ "$got" = "$want" ]; then
+              echo "meo-canvas@${want} resolves from the registry"
+              exit 0
+            fi
+            echo "attempt ${attempt}: meo-canvas@${want} not yet on the registry"
+            sleep 30
+          done
+          echo "::error::meo-canvas@${want} did not resolve from npm in 10 minutes; not publishing a reference for a version nobody can install"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reference
+          path: incoming
+
+      # The site accumulates on `gh-pages`: every published version, and the
+      # index over them. Fetched shallow because only the newest state matters
+      # and the history is one commit per release anyway.
+      - name: Fetch the store
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git init -q site
+          cd site
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          if git fetch -q --depth=1 origin gh-pages; then
+            git checkout -q -B gh-pages FETCH_HEAD
+            echo "store: $(git rev-parse --short HEAD)"
+          else
+            git checkout -q -B gh-pages
+            echo "store: empty, first publish"
+          fi
+
+      # `latest/` is the newest **stable** version, the way npm's `latest`
+      # dist-tag is; while none exists it follows the newest prerelease and
+      # the index says so. Chosen by `site-index.mjs`'s ordering, which knows
+      # that `v10.0.0` outranks `v10.0.0-alpha.4`.
+      - name: Assemble the site
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          touch site/.nojekyll
+          rm -rf "site/${VERSION}"
+          cp -r incoming "site/${VERSION}"
+          newest=$(node -e "
+            const { readdirSync } = require('node:fs')
+            const parse = n => { const m = /^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(n); return m && { v: [+m[1], +m[2], +m[3]], pre: m[4] ?? null } }
+            const all = readdirSync('site', { withFileTypes: true }).filter(e => e.isDirectory() && parse(e.name)).map(e => e.name)
+            const stable = all.filter(n => parse(n).pre === null)
+            const pool = stable.length ? stable : all
+            pool.sort((a, b) => { const x = parse(a), y = parse(b); for (let i = 0; i < 3; i++) if (x.v[i] !== y.v[i]) return y.v[i] - x.v[i]; return String(y.pre).localeCompare(String(x.pre), undefined, { numeric: true }) })
+            process.stdout.write(pool[0])
+          ")
+          echo "latest/ follows ${newest}"
+          rm -rf site/latest
+          cp -r "site/${newest}" site/latest
+          printf '%s\n' "${newest}" > site/latest/VERSION
+          node repo/packages/meo-canvas/tools/typedoc/site-index.mjs site
+
+      - name: Record it
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "nothing changed" && exit 0
+          git commit -q -m "docs: ${VERSION}"
+          git push -q origin HEAD:gh-pages
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

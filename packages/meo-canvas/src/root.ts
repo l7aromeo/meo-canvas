@@ -90,16 +90,16 @@ export type RootProps = Style & {
    * What to draw.
    *
    * Elements for a single page, or a function for a sequence — one page per
-   * call. The function form needs either {@link RootProps.pages} or
-   * {@link RootProps.duration}.
+   * call. The function form needs either {@link RootProps}'s `pages` or
+   * {@link RootProps}'s `duration`.
    */
   readonly children?: Children | PageBuilder
-  /** How many pages to render. Not with {@link RootProps.duration}. */
+  /** How many pages to render. Not with {@link RootProps}'s `duration`. */
   readonly pages?: number
   /** How long the sequence runs, in seconds; the page count is `ceil(duration * fps)`. */
   readonly duration?: number
   /**
-   * The rate {@link RootProps.duration} and {@link PageInfo.time} are derived at.
+   * The rate {@link RootProps}'s `duration` and {@link PageInfo.time} are derived at.
    *
    * Describes the render, not the encode. An animation encoded to play at this
    * rate needs it passed to `toBuffer('gif', { fps })` as well.

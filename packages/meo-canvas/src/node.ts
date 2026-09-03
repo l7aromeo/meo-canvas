@@ -408,7 +408,7 @@ export type PathPaint = Color | 'none' | Gradient
 
 export type PathProps = Style & {
   /** The SVG `d` attribute, in the node's own coordinates — or in
-   * {@link PathProps.viewBox}'s space when one is given. */
+   * the space of {@link PathProps}'s `viewBox` when one is given. */
   readonly d: string
   /**
    * The coordinate space `d` is written in, as SVG's `viewBox`:
@@ -451,7 +451,7 @@ export type PathProps = Style & {
    * viewBox fixes that, since the box's aspect would have to match the node's
    * and that is exactly what is unknown when the drawing is authored.
    *
-   * It does **not** distort the pen — see {@link PathProps.viewBox}.
+   * It does **not** distort the pen — see {@link PathProps}'s `viewBox`.
    */
   readonly preserveAspectRatio?: 'none'
   /** How the interior is painted. Defaults to black, as SVG does. */

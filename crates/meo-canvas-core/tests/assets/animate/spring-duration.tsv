@@ -1,0 +1,79 @@
+# Ground truth for springDuration(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/spring.js`) rather than from either v2 implementation.
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# `spring.tsv` names, and verified rather than assumed: this generator was first
+# run against the four existing tables and reproduced all 612 of their rows
+# exactly, which is what establishes it is the same v1 they came from.
+#
+# Neither surface may be written from the other: a misreading of v1 that reaches
+# both looks like agreement. Both are written against this, and this came from
+# v1 running, not from anyone reading it.
+#
+# # Why this table exists
+#
+# `springDuration` had no shared table and no direct Rust test at all -- Rust's
+# `Spring::settles_after` was reached only through `Track::duration` and
+# `Sequence::plan`, so it could have drifted with the suite staying green. The
+# two surfaces were measured bit-identical on four configurations before this
+# was written; this is what keeps them so.
+#
+# # Why these inputs
+#
+# **A table whose inputs all zero a parameter cannot see the rule about that
+# parameter.** Three defects in one audit hid that way -- a spring floored at
+# `from` where every row had `from: 0`, a spring evaluated past its ceiling
+# where every row sampled inside `0..1`, and a track duration that disagreed
+# between the surfaces where every row had `delay: 0`. So every parameter here
+# varies away from its default somewhere: a non-zero `from`, a range crossing
+# zero, velocity in both directions, and all three damping regimes.
+#
+# `restDelta` is swept per configuration because it is the only option the
+# function takes and it selects the rest window -- and because `0.005` is its
+# default, which is exactly the value a table would otherwise never state.
+#
+# Columns mirror `spring.tsv` with `restDelta` where `t` was, so the two read as
+# siblings. Values are shortest-round-trip decimals, compared exactly: there is
+# no tolerance here.
+#
+# from	to	stiffness	damping	mass	velocity	restDelta	value
+0	1	170	26	1	0	0.005	0.5666666666666659
+0	1	170	26	1	0	0.05	0.36249999999999993
+0	1	170	26	1	0	0.001	0.7041666666666654
+0	1	170	26	1	0	0.5	0.12916666666666665
+0	1	100	20	1	0	0.005	0.7458333333333319
+0	1	100	20	1	0	0.05	0.47499999999999953
+0	1	100	20	1	0	0.001	0.9249999999999979
+0	1	100	20	1	0	0.5	0.17083333333333345
+0	1	300	5	2	0	0.005	4.170833333333417
+0	1	300	5	2	0	0.05	2.3583333333333454
+0	1	300	5	2	0	0.001	5.458333333333344
+0	1	300	5	2	0	0.5	0.541666666666666
+0	1	100	40	1	0	0.005	2.008333333333328
+0	1	100	40	1	0	0.05	1.1458333333333306
+0	1	100	40	1	0	0.001	2.608333333333358
+0	1	100	40	1	0	0.5	0.2875000000000002
+5	10	170	26	1	0	0.005	0.5666666666666659
+5	10	170	26	1	0	0.05	0.36249999999999993
+5	10	170	26	1	0	0.001	0.7041666666666654
+5	10	170	26	1	0	0.5	0.12916666666666665
+-3	3	200	12	1	0	0.005	0.8374999999999982
+-3	3	200	12	1	0	0.05	0.516666666666666
+-3	3	200	12	1	0	0.001	1.0874999999999975
+-3	3	200	12	1	0	0.5	0.09166666666666666
+0	1	170	26	1	10	0.005	0.4708333333333329
+0	1	170	26	1	10	0.05	0.27500000000000024
+0	1	170	26	1	10	0.001	0.6041666666666657
+0	1	170	26	1	10	0.5	0.07083333333333333
+0	1	170	26	1	-10	0.005	0.612499999999999
+0	1	170	26	1	-10	0.05	0.4083333333333331
+0	1	170	26	1	-10	0.001	0.7499999999999986
+0	1	170	26	1	-10	0.5	0.1791666666666668
+0	1	170	26	5	0	0.005	2.008333333333328
+0	1	170	26	5	0	0.05	0.899999999999998
+0	1	170	26	5	0	0.001	2.6208333333333584
+0	1	170	26	5	0	0.5	0.21666666666666692
+0	1	1000	10	0.5	0	0.005	0.5208333333333327
+0	1	1000	10	0.5	0	0.05	0.30000000000000016
+0	1	1000	10	0.5	0	0.001	0.6708333333333322
+0	1	1000	10	0.5	0	0.5	0.029166666666666664

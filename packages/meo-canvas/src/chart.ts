@@ -573,7 +573,7 @@ export function sliceAngles(values: readonly number[]): { start: number; end: nu
   return out
 }
 
-/** One slice as SVG path data, in {@link PIE_SPACE}'s coordinates. */
+/** One slice as SVG path data, in `PIE_SPACE`'s coordinates. */
 export function slicePath(start: number, end: number, outer: number, inner: number): string {
   const centre = PIE_SPACE / 2
   const at = (radius: number, angle: number): string => `${(centre + Math.cos(angle) * radius).toFixed(4)} ${(centre + Math.sin(angle) * radius).toFixed(4)}`
@@ -706,7 +706,7 @@ export function linePoints(labels: number, values: readonly number[], maxValue: 
   }))
 }
 
-/** One series as SVG path data, in {@link LINE_SPACE}'s coordinates. */
+/** One series as SVG path data, in `LINE_SPACE`'s coordinates. */
 export function linePath(points: readonly { x: number; y: number }[]): string {
   return points
     .map((point, index) => {

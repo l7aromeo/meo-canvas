@@ -206,6 +206,7 @@ export type {
   Transform,
   TextDecoration,
   VerticalAlign,
+  FontVariant,
 } from './style.js'
 
 export { Box, Column, DEFAULT_ELLIPSIS, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
@@ -222,10 +223,15 @@ export type {
   SceneNode,
   TextProps,
   TextSegment,
+  PathPaint,
 } from './node.js'
 
 export { Root } from './root.js'
 export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOptions, RootDependencies, RootProps } from './root.js'
+// `NativeRenderer` is the seam a caller may implement themselves, and its
+// `paint` takes `SideValue`s -- so the type has to be nameable from outside or
+// the seam cannot be implemented without reaching into `arena`.
+export type { SideValue } from './arena.js'
 
 export { Canvas } from './canvas.js'
 export type { EncodeOptions, Format, NativeCanvas, WriteFile, WriteFileSync } from './canvas.js'
@@ -269,4 +275,4 @@ export type {
 } from './animate.js'
 
 export { BAR_GROUP_SPACING, Chart, GRID_DIVISIONS, barLayout, gridLines, linePath, linePoints, seriesColor, sliceAngles, slicePath } from './chart.js'
-export type { BaseChartOptions, CartesianChartData, ChartDataset, ChartProps, ChartType, PieChartDataPoint } from './chart.js'
+export type { BaseChartOptions, CartesianChartData, ChartDataset, ChartProps, ChartType, LegendPosition, PieChartDataPoint } from './chart.js'

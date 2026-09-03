@@ -85,7 +85,7 @@ ci:
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -1076,6 +1076,27 @@ layout-check:
 [doc("Fail on a rustdoc warning -- broken intra-doc links above all.")]
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+# The JavaScript reference, built and gated the way `docs` gates rustdoc.
+#
+# TypeDoc reads the declarations `build-js` emits into `dist/`, so a signature
+# that names a type nothing exports, or a `{@link}` to nothing, fails here
+# rather than reaching a reader as a dead end. The number of undocumented
+# members ratchets: it may hold or fall, never rise, and the baseline file is
+# what holds the line. `tools/typedoc/build.mjs` says how the two kinds of
+# finding are told apart.
+#
+# The tool pins its own TypeDoc and TypeScript in `tools/typedoc/package.json`
+# rather than sharing the root's, because TypeDoc is compiled against one
+# TypeScript minor and refuses to load another -- the root can move on its own
+# schedule without breaking the reference.
+[doc("Build the JavaScript API reference and fail on a dead link or a new undocumented member.")]
+docs-js: build-js
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tool=packages/meo-canvas/tools/typedoc
+    test -x "$tool/node_modules/.bin/typedoc" || npm --prefix "$tool" ci --no-audit --no-fund --silent
+    node "$tool/build.mjs"
 
 # Compare v1's prop surface against v2's.
 #
