@@ -160,6 +160,18 @@ pub struct Scene {
     pub pages: Vec<NodeId>,
 }
 
+/// Whether a canvas size is a size in pixels.
+///
+/// Zero is allowed: a zero-width canvas is empty rather than impossible, and
+/// the encoders already answer for it. What is refused is a number that cannot
+/// be a length -- negative, `NaN`, or infinite.
+#[must_use]
+pub fn size_is_pixels(size: Size) -> bool {
+    [size.width, size.height]
+        .iter()
+        .all(|value| value.is_finite() && *value >= 0.0)
+}
+
 impl Scene {
     /// The `scale` a scene has when nothing sets one.
     ///
@@ -298,6 +310,16 @@ impl Scene {
     /// [`SceneError::MultipleParents`] for a node two others claim, and
     /// [`SceneError::Unreachable`] for a node no page reaches.
     pub fn validate(&self) -> Result<(), SceneError> {
+        // **Before the structure, because a size is not structural.** Every
+        // check below is about which node holds which; this one is about
+        // whether the canvas is a canvas. A scene sized `NaN` passes all of
+        // them and lays out to nothing.
+        if !size_is_pixels(self.size) {
+            return Err(SceneError::CanvasSize {
+                width: self.size.width,
+                height: self.size.height,
+            });
+        }
         if self.pages.is_empty() {
             return Err(SceneError::NoPages);
         }
@@ -362,7 +384,9 @@ impl Scene {
 }
 
 /// What can be wrong with a scene whose bytes are well formed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// `Eq` is not derived: `CanvasSize` carries the two floats the caller
+// passed, and a size that is `NaN` is exactly the case worth reporting back.
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum SceneError {
     /// A [`NodeId`] that does not index this scene's arena.
@@ -375,6 +399,20 @@ pub enum SceneError {
     MultipleParents(NodeId),
     /// A node in the arena that no page reaches.
     Unreachable(NodeId),
+    /// A canvas size that is not a number of pixels.
+    ///
+    /// **Not merely negative.** `NaN` and the infinities reach here too, and
+    /// they are the ones a caller produces by accident: a width divided by a
+    /// count that turned out to be zero is `inf`, and one derived from an
+    /// empty measurement is `NaN`. Both build a scene, pass every structural
+    /// check, and lay out to nothing -- so the picture is the first thing that
+    /// reports the arithmetic.
+    CanvasSize {
+        /// The width asked for.
+        width: f32,
+        /// The height asked for.
+        height: f32,
+    },
 }
 
 impl core::fmt::Display for SceneError {
@@ -393,6 +431,10 @@ impl core::fmt::Display for SceneError {
             Self::Unreachable(id) => {
                 write!(f, "node {} is in the arena but on no page", id.get())
             }
+            Self::CanvasSize { width, height } => write!(
+                f,
+                "a canvas is {width} by {height}, which is not a size in pixels"
+            ),
         }
     }
 }

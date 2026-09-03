@@ -171,7 +171,9 @@ pub const VERSION: u16 = 5;
 pub const MAX_NODES: u32 = 1 << 20;
 
 /// What can be wrong with a buffer meant to hold a scene.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// `Eq` follows `SceneError`, which stopped deriving it when a canvas size
+// -- two floats, `NaN` among them -- became a variant.
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum CodecError {
     /// The buffer does not begin with [`MAGIC`].

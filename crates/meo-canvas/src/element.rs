@@ -194,7 +194,16 @@ impl Element {
         width: f32,
         height: f32,
     ) -> Result<Scene, SceneError> {
-        let mut scene = Scene::new(Size::new(width, height));
+        // **The runtime half of the promise the type already makes.** The
+        // signature refuses `pct(50.0)` here, with a `compile_fail` doctest
+        // saying why a percentage of nothing has no meaning; a `NaN` or a
+        // negative width is the same claim and the type cannot see it.
+        let size = Size::new(width, height);
+        if !meo_canvas_scene::size_is_pixels(size) {
+            return Err(SceneError::CanvasSize { width, height });
+        }
+
+        let mut scene = Scene::new(size);
         let root = scene.root().ok_or(SceneError::NoPages)?;
         write_page(&mut scene, root, self)?;
         Ok(scene)
@@ -818,6 +827,7 @@ impl Path {
 #[cfg(test)]
 mod tests {
     use meo_canvas_scene::{
+        SceneError,
         node::{ImageSource, LineCap, LineJoin, NodeKind, PathPaint},
         style::{
             PaintOrder,
@@ -959,6 +969,35 @@ mod tests {
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the page has a root"));
         assert_eq!(root.paint.background_color, hex_rgb(0x10_10_14));
+    }
+
+    #[test]
+    fn a_canvas_size_that_is_not_a_length_is_refused() {
+        // Until 5 September 2026 every one of these returned `Ok` with a scene
+        // sized `NaN`, `-1` or `inf`, which passed `validate` and reached the
+        // renderer -- so the picture was the first thing that reported the
+        // caller's arithmetic. The signature already refuses `pct(50.0)` here,
+        // with a `compile_fail` doctest saying a percentage of nothing has no
+        // meaning; these are the same claim in numbers the type cannot see.
+        for (width, height) in [
+            (f32::NAN, 10.0),
+            (10.0, f32::NAN),
+            (-1.0, 10.0),
+            (10.0, -1.0),
+            (f32::INFINITY, 10.0),
+            (10.0, f32::NEG_INFINITY),
+        ] {
+            let refused = Box::new().into_scene(width, height);
+            assert!(
+                matches!(refused, Err(SceneError::CanvasSize { .. })),
+                "{width} by {height} was accepted"
+            );
+        }
+
+        // **Zero is not in that list and must not be.** An empty canvas is a
+        // canvas with nothing on it, which the encoders already answer for; a
+        // rule that refused it would be a new refusal wearing a bug fix.
+        assert!(Box::new().into_scene(0.0, 0.0).is_ok());
     }
 
     #[test]

@@ -454,7 +454,18 @@ impl Root {
     pub fn into_scene(self) -> Result<Scene, BuildError> {
         let (count, fps) = self.sequence().map_err(BuildError::Sequence)?;
 
-        let mut scene = Scene::new(Size::new(self.width, self.height));
+        // The width came from `Root::new`, which is a `const fn` returning
+        // `Self` and so has nowhere to report a number that is not a length.
+        // This is where it reports: the first call that can fail.
+        let size = Size::new(self.width, self.height);
+        if !meo_canvas_scene::size_is_pixels(size) {
+            return Err(BuildError::Scene(SceneError::CanvasSize {
+                width: self.width,
+                height: self.height,
+            }));
+        }
+
+        let mut scene = Scene::new(size);
         scene.content_height = self.content_height;
         scene.scale = self.scale;
         scene.gpu = self.gpu;
@@ -765,6 +776,47 @@ mod tests {
         Box as BoxNode, ColorSpace, ColorType, Column, Format, Renderer, Row,
         Styled, Text, hex_rgb, px,
     };
+
+    #[test]
+    fn a_root_whose_width_is_not_a_length_is_refused() {
+        // `Root::new` is a `const fn` returning `Self`, so it has nowhere to
+        // report a width that is not a number of pixels. `into_scene` is the
+        // first call that can, and until 5 September 2026 it did not: a root
+        // of `NaN` built a scene sized `NaN by 0.0` and rendered nothing.
+        for width in [f32::NAN, -100.0, f32::INFINITY] {
+            let refused =
+                Root::new(width).children([BoxNode::new()]).into_scene();
+            assert!(
+                matches!(
+                    refused,
+                    Err(BuildError::Scene(
+                        meo_canvas_scene::SceneError::CanvasSize { .. }
+                    ))
+                ),
+                "a width of {width} was accepted"
+            );
+        }
+
+        // A height set explicitly reaches the same check.
+        let refused = Root::new(10.0)
+            .height(-1.0)
+            .children([BoxNode::new()])
+            .into_scene();
+        assert!(matches!(
+            refused,
+            Err(BuildError::Scene(
+                meo_canvas_scene::SceneError::CanvasSize { .. }
+            ))
+        ));
+
+        // And zero stays a canvas, as it is on the element surface.
+        assert!(
+            Root::new(0.0)
+                .children([BoxNode::new()])
+                .into_scene()
+                .is_ok()
+        );
+    }
 
     #[test]
     fn to_file_accepts_the_extensions_the_javascript_surface_does() {
