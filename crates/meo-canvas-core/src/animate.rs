@@ -15,7 +15,9 @@
 
 pub mod color;
 pub mod easing;
+pub mod group;
 pub mod interpolate;
+pub mod sampled;
 pub mod sequence;
 pub mod spring;
 pub mod track;

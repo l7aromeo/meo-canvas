@@ -200,21 +200,53 @@ impl<T: Animatable> Plan<T> {
     }
 }
 
+impl<T: Animatable> crate::animate::sampled::Sampled for Plan<T> {
+    type Value = T;
+
+    /// Infallible underneath: [`Plan::at`] cannot fail, because
+    /// [`Sequence::plan`] checked the arithmetic once. The `Result` is the
+    /// trait's, so that one shape fits a track as well.
+    fn at(&self, seconds: f64, index: usize) -> Result<T, Error> {
+        Ok(Self::at(self, seconds, index))
+    }
+
+    fn duration(&self) -> Result<f64, Error> {
+        Ok(Self::duration(self))
+    }
+
+    fn total_duration(&self, count: usize) -> Result<f64, Error> {
+        Ok(Self::total_duration(self, count))
+    }
+}
+
 /// How long a group of motions started together lasts.
 ///
-/// **This is what survives of v1's `parallel`.** There, a group is a record of
-/// named members whose `at` returns a record of their values -- and that
-/// record is a *type*, assembled by TypeScript's mapped types from whatever
-/// was passed in. Rust has no need of it: a caller with three tracks writes a
-/// struct with three fields and calls each, which is what the mapped type was
-/// reconstructing. **What does not fall out for free is the timing**, because
-/// the members have different value types and only their durations are
-/// comparable.
+/// The group is over when its longest member is. Returns `None` for an empty
+/// group, which v1 refuses outright -- **a group of nothing has no duration
+/// rather than a duration of zero**, and zero would read as "finished" to
+/// every caller that checks.
 ///
-/// So the group is over when its longest member is. Returns `None` for an
-/// empty group, which v1 refuses outright -- **a group of nothing has no
-/// duration rather than a duration of zero**, and zero would read as
-/// "finished" to every caller that checks.
+/// # This was once the whole of v1's `parallel`
+///
+/// The argument, until 4 September 2026, was that Rust needed no group type:
+/// v1's group is a record of named members whose `at` returns a record of
+/// their values, that record is a *type* assembled by TypeScript's mapped
+/// types, and a Rust caller with three tracks writes a struct with three
+/// fields and calls each -- which is what the mapped type was reconstructing.
+/// Only the timing did not fall out for free, so only the timing was written,
+/// and this function is it.
+///
+/// **The user overruled that in the animation audit**, and
+/// [`Parallel`](crate::animate::group::Parallel) is the group. The argument
+/// was right that Rust cannot build the record type and wrong that the record
+/// was the point: the JavaScript surface offers `at`, `duration` and
+/// `totalDuration` on a group, and a Rust caller writing the struct by hand
+/// gets none of the three -- not the index reaching every member, not the
+/// count reaching every member, only a shape they already had. Two surfaces,
+/// one of which cannot answer a question the other can, is a defect here
+/// rather than a difference in the languages.
+///
+/// This stays: it is `Parallel::duration`'s rule, and `Parallel` calls it.
 #[must_use]
 pub fn longest(durations: &[f64]) -> Option<f64> {
     durations.iter().copied().reduce(f64::max)

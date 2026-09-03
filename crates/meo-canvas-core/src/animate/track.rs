@@ -173,6 +173,22 @@ impl<T: Animatable> Track<T> {
     }
 }
 
+impl<T: Animatable> crate::animate::sampled::Sampled for Track<T> {
+    type Value = T;
+
+    fn at(&self, seconds: f64, index: usize) -> Result<T, Error> {
+        Self::at(self, seconds, index)
+    }
+
+    fn duration(&self) -> Result<f64, Error> {
+        Self::duration(self)
+    }
+
+    fn total_duration(&self, count: usize) -> Result<f64, Error> {
+        Self::total_duration(self, count)
+    }
+}
+
 /// When a page is shown, in seconds from the start of the animation.
 ///
 /// **v1 handed every animated value a `PageInfo` carrying a clock. v2 has no
