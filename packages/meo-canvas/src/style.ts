@@ -63,9 +63,13 @@ export type LineHeight = number | `${number}px` | `${number}%`
 export type Sides<T> =
   | T
   | {
+      /** The top edge. An absent edge is unset, which is not the same as zero. */
       readonly top?: T
+      /** The right edge, on the same terms. */
       readonly right?: T
+      /** The bottom edge, on the same terms. */
       readonly bottom?: T
+      /** The left edge, on the same terms. */
       readonly left?: T
     }
 
@@ -73,9 +77,13 @@ export type Sides<T> =
 export type Corners =
   | number
   | {
+      /** Radius at the top-left corner, in pixels. Absent is square. */
       readonly topLeft?: number
+      /** Radius at the top-right corner. */
       readonly topRight?: number
+      /** Radius at the bottom-right corner. */
       readonly bottomRight?: number
+      /** Radius at the bottom-left corner. */
       readonly bottomLeft?: number
     }
 
@@ -226,7 +234,16 @@ export type Overflow = 'visible' | 'hidden' | 'scroll'
  * A bare value sizes the width and leaves the height to the picture's own
  * proportions, which is v1's reading of `size: 12`.
  */
-export type BackgroundSize = 'cover' | 'contain' | Dimension | { readonly width?: Dimension; readonly height?: Dimension }
+export type BackgroundSize =
+  | 'cover'
+  | 'contain'
+  | Dimension
+  | {
+      /** Tile width. Absent leaves the image's own, so one axis can be set alone. */
+      readonly width?: Dimension
+      /** Tile height, on the same terms. */
+      readonly height?: Dimension
+    }
 
 /** Where the first tile of a background image sits, from the box's top-left. */
 export interface BackgroundPosition {
@@ -297,7 +314,18 @@ export interface GradientCenter {
  * offsets either way.
  */
 export type GradientRamp =
-  { readonly colors: readonly Color[]; readonly stops?: undefined } | { readonly stops: readonly GradientStop[]; readonly colors?: undefined }
+  | {
+      /** Colours spread evenly from one end to the other. */
+      readonly colors: readonly Color[]
+      /** Absent in this arm: give `colors` or `stops`, never both. */
+      readonly stops?: undefined
+    }
+  | {
+      /** Colours at chosen offsets, when even spacing is not what is wanted. */
+      readonly stops: readonly GradientStop[]
+      /** Absent in this arm: give `colors` or `stops`, never both. */
+      readonly colors?: undefined
+    }
 
 /**
  * A gradient, as a fill or as the alpha of a {@link Mask}.
@@ -314,9 +342,26 @@ export type GradientRamp =
  * ```
  */
 export type Gradient =
-  | ({ readonly type: 'linear'; readonly direction?: GradientDirection } & GradientRamp)
-  | ({ readonly type: 'radial'; readonly at?: GradientCenter } & GradientRamp)
-  | ({ readonly type: 'conic'; readonly at?: GradientCenter; readonly from?: number } & GradientRamp)
+  | ({
+      /** Selects the linear geometry: a ramp along a straight line. */
+      readonly type: 'linear'
+      /** Which way the ramp runs. Absent is top to bottom. */
+      readonly direction?: GradientDirection
+    } & GradientRamp)
+  | ({
+      /** Selects the radial geometry: a ramp outward from a point. */
+      readonly type: 'radial'
+      /** The centre it spreads from. Absent is the middle of the box. */
+      readonly at?: GradientCenter
+    } & GradientRamp)
+  | ({
+      /** Selects the conic geometry: a ramp swept around a point. */
+      readonly type: 'conic'
+      /** The point it sweeps around. Absent is the middle of the box. */
+      readonly at?: GradientCenter
+      /** Where the sweep begins, in degrees clockwise from twelve o'clock. */
+      readonly from?: number
+    } & GradientRamp)
 
 /**
  * Moving, turning and scaling a node after layout.
@@ -401,7 +446,26 @@ export type FillRule = 'nonzero' | 'evenodd'
  *
  * A bare string is path data, which is v1's shorthand for `{ path }`.
  */
-export type Mask = string | { readonly shape: MaskShape } | { readonly path: string; readonly fillRule?: FillRule } | { readonly gradient: Gradient }
+export type Mask =
+  | string
+  | {
+      /** A circle or ellipse inscribed in the node's box. Clips, so the edge is hard. */
+      readonly shape: MaskShape
+    }
+  | {
+      /** SVG path data, in the node's own coordinates. Clips. */
+      readonly path: string
+      /** Which side of a winding counts as inside. Absent is `nonzero`. */
+      readonly fillRule?: FillRule
+    }
+  | {
+      /**
+       * A gradient read as alpha rather than as colour, so the node fades
+       * rather than being cut. This is the costly arm: it needs a layer to
+       * composite through, where the clipping arms do not.
+       */
+      readonly gradient: Gradient
+    }
 
 /** Where a grid item sits on one axis: a line, or a line and a span. */
 export interface GridPlacement {
@@ -475,6 +539,12 @@ export interface Style {
    *
    * A single value applies to both axes; `{ row, column }` names them apart.
    * v1 takes the same pair of forms and has no separate `rowGap`.
+   */
+  /**
+   * Space between children. One value for both axes, or each named.
+   *
+   * `row` is the gap *between rows*, so it separates children stacked
+   * vertically -- the axis names the gap it opens, not the direction it runs.
    */
   readonly gap?: Length | { readonly row?: Length; readonly column?: Length }
   /** Clipping behaviour, on both axes. */
@@ -590,6 +660,7 @@ export interface Style {
    * another.
    */
   readonly fontVariant?: readonly FontVariant[]
+  /** How lines sit within the text box. Inherits. */
   readonly textAlign?: TextAlign
   /** A line through, over or under. Inherits. */
   readonly textDecoration?: TextDecoration
