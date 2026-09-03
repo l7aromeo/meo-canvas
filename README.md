@@ -63,8 +63,38 @@ writeFileSync('card.png', await canvas.toBuffer('png'))
 canvas.release()
 ```
 
-The Rust surface builds the same scene through a builder rather than a literal,
-and `crates/meo-canvas`' own documentation opens with the equivalent.
+The same picture from Rust. A node carries a constructor, a `Style` and its
+children; a new property is a new method on `Style` rather than on nine node
+types:
+
+```rust,no_run
+use meo_canvas::{
+    Box as BoxNode, Column, Format, Renderer, Root, Style, Styled, Text, all,
+    hex_rgb, px,
+};
+
+let card = Column::new().with_style(Style::new().gap(px(10.0))).children([
+    Text::new("meo-canvas").with_style(
+        Style::new().font_size(22.0).bold().color(hex_rgb(0xf2_aa_4c)),
+    ),
+    Text::new("Describe a layout; get image bytes back.")
+        .with_style(Style::new().font_size(13.0).color(hex_rgb(0xc8_cc_d4))),
+    BoxNode::new().with_style(
+        Style::new()
+            .size(px(64.0), px(4.0))
+            .background_color(hex_rgb(0xf2_aa_4c)),
+    ),
+]);
+
+let mut canvas = Root::new(320.0)
+    .padding(all(px(20.0)))
+    .background_color(hex_rgb(0x10_18_20))
+    .children([card])
+    .render(&Renderer::new())?;
+
+std::fs::write("card.png", canvas.to_buffer(Format::Png)?)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
 
 **The examples are the rest of the documentation, because they are the part this
 repository can check.** `examples/bun` and `examples/rust` hold the same nine

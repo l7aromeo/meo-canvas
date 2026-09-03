@@ -234,3 +234,18 @@ pub mod scene {
         },
     };
 }
+
+/// The repository README's Rust examples, compiled and run as doctests.
+///
+/// **A README fence is checked by nothing otherwise**, and the repository page
+/// is where a reader meets this crate before they have added it to anything.
+/// `#[cfg(doctest)]` keeps it out of the rendered documentation: it exists to
+/// make `cargo test --doc` read the file, and nothing else.
+///
+/// The TypeScript surface has the mirror of this -- `generate-doc-examples.mjs`
+/// lifts the same file's ```ts fences into a typechecked module. Neither
+/// mechanism trips on the other's blocks: rustdoc runs only unlabelled and
+/// `rust` fences, and the lifter keys on ```ts.
+#[cfg(doctest)]
+#[doc = include_str!("../../../README.md")]
+pub struct RepositoryReadme;
