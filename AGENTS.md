@@ -2841,9 +2841,13 @@ twelve-row measurement is why: an alpha written as a decimal or a percentage
 is presented as the shortest decimal that round-trips to its `f32`, which is
 what Rust's `Display` prints and which recovers every such spelling tried; an
 alpha written as a hex byte is `byte / 255` computed where the byte is known,
-because no decimal-shortening reaches 127/255 from an f32 -- `#000000cc` passed
-that test only because 204/255 is exactly 0.8. One parser, one boundary, no
-second parse.
+because no decimal-shortening reaches 127/255 from an f32. The rows that prove
+the second half are `#0000007f` (0.4980392156862745) and `#0008`
+(0.5333333333333333); `#000000cc` is the row that **cannot**, since both rules
+give 0.8, and it is in the table to say so. One parser, one boundary, no
+second parse. The scaling to 0..255 stays in f32, where it is exact, and the
+widening happens to the product -- widening first lands `#808080` a hair under
+128, which is the trap the fix's own test pins.
 
 The core requires no async runtime, and performs no network I/O unless built
 with `net`. `just runtime-free` fails if a runtime enters the tree.
