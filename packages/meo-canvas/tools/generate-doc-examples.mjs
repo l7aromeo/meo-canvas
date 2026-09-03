@@ -232,7 +232,23 @@ for (const path of await sources()) {
   const text = await readFile(path, 'utf8')
   // The READMEs are not under `src`, so a blind slice would name them by
   // whatever the prefix left behind.
-  const relative = path.startsWith(`${SOURCE_DIR}/`) ? path.slice(SOURCE_DIR.length + 1) : path === README_PACKAGE ? 'README.md' : '../../README.md'
+  //
+  // `join` rather than a literal `/`: this is a filesystem path, Windows spells
+  // the separator `\\`, and comparing against `${SOURCE_DIR}/` matched nothing
+  // there -- so every `.ts` source fell into the branch below and was labelled
+  // as the root README. The generated file then differed from the committed one
+  // on Windows alone, which `doc-examples-check` reported as staleness. That is
+  // the second time this separator has bitten in one day; the first was
+  // `generate-arena-enums.mjs`.
+  // The two READMEs are matched by identity rather than by path shape. An
+  // earlier version asked whether the path started with `${SOURCE_DIR}/`, which
+  // on Windows is never true -- the separator there is a backslash -- so every
+  // `.ts` source took the README branch and was labelled `../../README.md`. The
+  // generated file then differed from the committed one on Windows alone, which
+  // `doc-examples-check` reported as staleness. Comparing the paths this module
+  // already holds has no separator in it to get wrong, and is exact where a
+  // prefix test would also accept a sibling directory whose name begins `src`.
+  const relative = path === README_PACKAGE ? 'README.md' : path === README_ROOT ? '../../README.md' : path.slice(SOURCE_DIR.length + 1)
   for (const example of examples(path, text)) {
     const { imports, rest } = split(example.body)
     collected.push({ file: relative, anchor: example.anchor, imports, rest })

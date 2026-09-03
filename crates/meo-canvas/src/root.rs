@@ -689,6 +689,39 @@ impl Canvas {
     pub const fn scale(&self) -> f32 {
         self.painted.scale()
     }
+
+    /// Whether the GPU was asked for.
+    ///
+    /// **Asking is not getting** -- compare [`Canvas::engine`]. This is what
+    /// [`Root::gpu`] was told, and it is `true` when nothing was said, because
+    /// that is the renderer's own default.
+    #[must_use]
+    pub const fn gpu(&self) -> bool {
+        self.painted.gpu()
+    }
+
+    /// Which rasteriser drew the pages: `"gpu"` or `"cpu"`.
+    ///
+    /// The outcome rather than the request, and they disagree: a build with no
+    /// GPU backend compiled, a machine with no device, a driver that declines,
+    /// and a float `color_type` all rasterise on the CPU whatever `gpu` says.
+    ///
+    /// **Without it a caller who asks for the GPU and gets the CPU has no way
+    /// to find out**, and neither has a test. This crate's own
+    /// `the_two_rasterisers_do_not_draw_the_same_pixels` branched on whether a
+    /// backend was *compiled in*, which is a different question: a headless
+    /// Linux runner compiles Vulkan, finds no device, falls back correctly, and
+    /// the test called the correct fallback a failure. It also meant the GPU
+    /// path was asserted nowhere on that platform, because it had never run
+    /// there.
+    ///
+    /// The JavaScript surface has carried this since it was written
+    /// (`packages/meo-canvas/src/canvas.ts`); this is the Rust half of the same
+    /// pair.
+    #[must_use]
+    pub fn engine(&self) -> &'static str {
+        self.painted.engine()
+    }
 }
 
 /// Base64, for a `data:` URL.
