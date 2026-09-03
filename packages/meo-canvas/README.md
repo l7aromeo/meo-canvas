@@ -24,20 +24,56 @@ What that buys you is that a scene of any size costs one crossing, and that the 
 ## Installation
 
 ```text
-npm install meo-canvas
+npm install meo-canvas@next
+```
+
+**The `@next` is not optional.** `meo-canvas@latest` is the 9.x line, and npm
+resolves `latest` for a bare install — so `npm install meo-canvas` gives you 9.x
+today and will keep doing so until 10 is out of prerelease. Every 10.x
+prerelease carries a hyphen in its version, which is what keeps it off `latest`
+and out of any semver range: nothing reaches it without asking for it by name.
+
+To run 9.x and 10.x side by side, alias one of them. npm resolves one directory
+per package name, so two names is what it takes:
+
+```text
+npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
 ```
 
 Requires Node 22 or newer. The package is ESM only.
 
-**The scope is deliberate.** The unscoped `meo-canvas` is the 9.x line, and npm
-resolves one directory per package name, so the two can only be installed beside
-each other under two names. Nothing here replaces 9.x until you replace it.
+### Platforms
 
-The renderer itself is a native addon of about 51 MB, and it is **not** in this
+The renderer is a native addon of about 51 MB, and it is **not** in this
 package. One package per platform carries one binary, named in
-`optionalDependencies` with its own `os` and `cpu`, so an install downloads the
-one it can run and skips the rest. Nothing is fetched by a postinstall script,
-which is what keeps offline and `--ignore-scripts` installs working.
+`optionalDependencies` with its own `os`, `cpu` and `libc`, so an install
+downloads the one it can run and skips the rest. Nothing is fetched by a
+postinstall script, which is what keeps offline and `--ignore-scripts` installs
+working.
+
+| Platform | Architecture | Requires |
+| --- | --- | --- |
+| Linux (glibc) | x64, arm64 | glibc 2.28 or newer |
+| Linux (musl) | x64, arm64 | Alpine 3.x, or any musl host with `libstdc++` |
+| macOS | arm64 | macOS 11 or newer |
+| Windows | x64 | — |
+
+**The glibc floor is 2.28, and it is measured rather than declared.** That is
+AlmaLinux 8 and RHEL 8, which is older than every currently supported
+distribution: Ubuntu 20.04 is 2.31, RHEL 9 and Amazon Linux 2023 are 2.34,
+Ubuntu 22.04 is 2.35, Debian 12 is 2.36. What it excludes has already reached
+end of life — RHEL 7, Ubuntu 18.04, Debian 9. Each release asserts the built
+binary demands no more than this and loads on Alma 8, Rocky 9, Amazon Linux
+2023, Debian 12, `node:22-slim` and `node:22-alpine` with no font packages
+installed.
+
+**No system libraries are needed.** freetype and fontconfig are linked
+statically, so a slim container image needs nothing added to it. The musl
+binaries do need `libstdc++`, which a bare Alpine image lacks — but any image
+that can run Node already has it, since Node links it too.
+
+macOS x64 and 32-bit targets are not built. Apple has ended support for Intel
+Macs, and no 32-bit target has been asked for.
 
 ## Usage
 
