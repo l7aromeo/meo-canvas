@@ -26,16 +26,30 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+# Every `run:` block here is bash. On `windows-latest` the default is
+# PowerShell, and `Read the pinned toolchains` below is `grep | cut` -- which is
+# exactly how `release.yml` failed its Windows job every run since it was
+# written. Declared before the Windows row was added rather than after it failed.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   ci:
     name: ci (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
-      # Both platforms report. Cancelling the pair on one failure hides whether
+      # Every platform reports. Cancelling the set on one failure hides whether
       # the fault is the code or the backend, which is the first thing to know.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # **Windows is here because `win32-x64` is a published platform package
+        # and nothing had ever compiled this on Windows.** The release workflow
+        # built it -- badly, and never successfully -- and no test ran there at
+        # all, so the target was a binary shipped from a job that had never
+        # gone green, from code no gate had executed. Either it is tested here
+        # or it should not be in `TARGETS`.
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,6 +133,18 @@ jobs:
           sudo apt-get install -y \
             cmake nasm \
             pkg-config libfontconfig1-dev libfreetype-dev
+
+      # The same libaom requirement, and only that one. No font packages:
+      # Skia uses DirectWrite on Windows rather than fontconfig and freetype,
+      # which is also why `win32-x64` carries no `floors` in `TARGETS` -- a PE
+      # binary has no ELF symbol versions to declare.
+      #
+      # cmake is already on the image; nasm is not.
+      - name: Install what libaom needs
+        if: runner.os == 'Windows'
+        run: |
+          choco install nasm --no-progress -y
+          echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
 
       # `just ci` runs the examples, and the JavaScript half of them runs under
       # bun rather than node -- it is a consumer of the published package and
