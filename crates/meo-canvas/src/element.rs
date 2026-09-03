@@ -1053,6 +1053,14 @@ mod tests {
         //
         // `<_>::default()` for a value wherever the type offers one: what each
         // property *means* is not the question, only whether it carried.
+        //
+        // **This does not test that `merge` merges.** A pure replace returns
+        // the full style here too, since it is merged over an empty one — the
+        // measurement: with `merge` reduced to `self = other`, this passes and
+        // the three direction tests above fail. The two sets are orthogonal
+        // and both load-bearing. They ask *carried or dropped* and *merged or
+        // replaced*; neither answers the other, and the name of this one reads
+        // broader than it is.
         let full = Style {
             display: Some(Display::Flex),
             position_type: Some(PositionType::Absolute),

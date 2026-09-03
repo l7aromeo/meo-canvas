@@ -769,6 +769,14 @@ impl Style {
     /// `const fn` is E0493, the same rule that keeps the `owned` setters out of
     /// `const`.
     ///
+    /// Hand-written rather than a `properties!` arm, because the table is not
+    /// the whole struct. Ten properties have hand-written setters — `width`
+    /// takes a `Length` and stores a `Dimension`, `gap` takes one `Length` and
+    /// stores a pair — so the macro declares 58 of the 68 fields. An arm
+    /// generated from it would be exhaustive over the table and silently wrong
+    /// about the other ten. The struct is what a merge has to follow, which is
+    /// also why [`Style::new`] writes its literal out in full.
+    ///
     /// # A field added to `Style` will not compile until it is merged here
     ///
     /// The argument is destructured without a rest pattern, deliberately. A
