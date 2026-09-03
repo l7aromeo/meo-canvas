@@ -1,0 +1,49 @@
+# Ground truth for mixColor(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/color.js`) rather than from either v2 implementation.
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# the four original tables name, verified by reproducing all 612 of their rows.
+#
+# # v1's interface is not ours, and the table records v1's
+#
+# v1's `mixColor(from: string, to: string, t): string` takes CSS strings and
+# returns one. Ours takes and returns `Rgba`. So the walker bridges through
+# `parseColor` and `formatColor`, which is what the existing inline test already
+# did. A recorded shape difference, not a capability one.
+#
+# The `from` and `to` columns are quoted because a hex colour begins with `#`,
+# this format's comment character, and a bare `#000000` in the first field is
+# dropped by both walkers' comment filter without saying so.
+#
+# # Two kinds of divergence, and only one of them is deliberate
+#
+# `diverges` rows at `t` outside 0..1 are the **known, intended** difference:
+# v1 clamps and we do not, because CSS interpolates colour through an
+# overshooting curve and clamps where colour becomes paint. Both v2 surfaces
+# diverge from v1 here in the same direction, independently, so it is
+# agreement between them rather than a defect.
+#
+# `diverges` rows **inside** 0..1 are the alpha finding: v1 quantises alpha to
+# eight bits, so its `rgba(..., 0.5)` reads back as `0.502`. See
+# `parse-color.tsv` for the rule that replaced both v1's answer and ours.
+#
+# Six of the eight divergent rows here are the clamp and two are the alpha. They
+# were nearly read as eight of one thing; counting them apart is what separated
+# a known difference from a new one.
+#
+# from	to	t	kind	value	note
+"#000000"	"#ffffff"	-0.25	diverges	#000000	v1 clamps t; we do not, deliberately
+"#000000"	"#ffffff"	0	value	#000000	-
+"#000000"	"#ffffff"	0.5	value	#808080	-
+"#000000"	"#ffffff"	1	value	#ffffff	-
+"#000000"	"#ffffff"	1.25	diverges	#ffffff	v1 clamps t; we do not, deliberately
+"#ff0000"	"rgba(0, 0, 255, 0.5)"	-0.25	diverges	#ff0000	v1 clamps t; we do not, deliberately
+"#ff0000"	"rgba(0, 0, 255, 0.5)"	0	value	#ff0000	-
+"#ff0000"	"rgba(0, 0, 255, 0.5)"	0.5	diverges	rgba(128, 0, 128, 0.751)	v1 alpha is 8-bit quantised; ours rgba(128, 0, 128, 0.75)
+"#ff0000"	"rgba(0, 0, 255, 0.5)"	1	diverges	rgba(0, 0, 255, 0.502)	v1 alpha is 8-bit quantised; ours rgba(0, 0, 255, 0.5)
+"#ff0000"	"rgba(0, 0, 255, 0.5)"	1.25	diverges	rgba(0, 0, 255, 0.502)	v1 clamps t; we do not, deliberately
+"rebeccapurple"	"#f2aa4c"	-0.25	diverges	#663399	v1 clamps t; we do not, deliberately
+"rebeccapurple"	"#f2aa4c"	0	value	#663399	-
+"rebeccapurple"	"#f2aa4c"	0.5	value	#ac6f73	-
+"rebeccapurple"	"#f2aa4c"	1	value	#f2aa4c	-
+"rebeccapurple"	"#f2aa4c"	1.25	diverges	#f2aa4c	v1 clamps t; we do not, deliberately

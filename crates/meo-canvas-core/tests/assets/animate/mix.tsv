@@ -1,0 +1,46 @@
+# Ground truth for mix(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/interpolate.js`) rather than from either v2 implementation.
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# the four original tables name, verified by reproducing all 612 of their rows.
+#
+# # The `surface` column, and why a table needs one
+#
+# `mix` is generic over what v1 calls `Animatable`, and the two v2 surfaces do
+# not implement it over the same set. Rust has exactly two impls, `f64` and
+# `Rgba`; JavaScript also mixes arrays element-wise. So `kind = array` rows are
+# **JavaScript-only** and carry `surface = js-only`, which a Rust walker skips.
+#
+# That is a recorded parity gap rather than a walker convenience: an array is a
+# capability one surface ships and the other does not, and the column is where
+# it is visible instead of being absent from a Rust table nobody compares.
+#
+# `t` runs outside 0..1 because `mix` does not clamp on either v2 surface --
+# both diverge from v1's `mixColor` in the same direction, deliberately, since
+# the overshooting curves exist to produce exactly that.
+#
+# Colour values are quoted for the reason `parse-color.tsv` gives.
+#
+# # v1 clamps colour and does not clamp numbers, inside one function
+#
+# `mix` delegates its colour case to `mixColor`, which clamps `t`, while its
+# number case does not -- so v1 contradicts itself between two arms of the same
+# generic. Both v2 surfaces clamp neither, deliberately. The `diverges` rows are
+# the colour ones outside 0..1; the number rows outside 0..1 agree.
+#
+# kind	surface	agreement	from	to	t	value	note
+number	both	value	0	10	-0.5	-5	-
+array	js-only	value	0;10	10;20	-0.5	-5;5	-
+color	both	diverges	"#ff0000"	"#0000ff"	-0.5	#ff0000	v1 clamps t for colour but not for numbers; we clamp neither
+number	both	value	0	10	0	0	-
+array	js-only	value	0;10	10;20	0	0;10	-
+color	both	value	"#ff0000"	"#0000ff"	0	#ff0000	-
+number	both	value	0	10	0.5	5	-
+array	js-only	value	0;10	10;20	0.5	5;15	-
+color	both	value	"#ff0000"	"#0000ff"	0.5	#800080	-
+number	both	value	0	10	1	10	-
+array	js-only	value	0;10	10;20	1	10;20	-
+color	both	value	"#ff0000"	"#0000ff"	1	#0000ff	-
+number	both	value	0	10	1.5	15	-
+array	js-only	value	0;10	10;20	1.5	15;25	-
+color	both	diverges	"#ff0000"	"#0000ff"	1.5	#0000ff	v1 clamps t for colour but not for numbers; we clamp neither

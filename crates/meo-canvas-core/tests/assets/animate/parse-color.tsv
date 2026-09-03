@@ -1,0 +1,56 @@
+# Ground truth for parseColor(), and the one table here whose expected values
+# are NOT v1's.
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean. Generated the same way
+# as its siblings -- that generator reproduced all 612 rows of the four original
+# tables exactly, which is what establishes it is the same v1 they came from.
+#
+# # Why this table records a third answer
+#
+# On alpha, **neither v1 nor this implementation is right**, so pinning either
+# would pin an artefact. v1 quantises alpha to eight bits and rounds to three
+# decimals, so `rgba(0, 0, 0, 0.1)` parses to `0.102`. Ours round-trips it
+# through `f32`, giving `0.10000000149011612`. Both are the float width of an
+# internal representation leaking through a public boundary.
+#
+# The browser is the tiebreak, as it was for the mix clamp: `getComputedStyle`
+# on `rgba(0, 0, 0, 0.1)` answers `0.1`. The rule is **`parseColor` returns the
+# number the author wrote**, and the `a` column carries that. Rows where v1 or
+# this surface disagrees are `diverges`, and the note records what each gives.
+#
+# **These rows fail today and are meant to.** They are the failing-first
+# evidence, and they prove a fix reached both surfaces rather than one.
+#
+# # What hid it, and what it narrows to
+#
+# Nothing anywhere parses a CSS string carrying an alpha -- the colour tests
+# build `{r, g, b, a}` objects directly, so the alpha never passes the parser.
+# The parameter no row varied, for the fourth time in this audit.
+#
+# Only three of the six alpha rows fail on this surface: `0.5`, `0.25` and
+# `0.75` are exactly representable in binary32 and already read back correctly.
+# It is `0.1`, `0.33` and `0.9` that do not -- which is why an eye passing over
+# the round numbers would have called it fine.
+#
+# # The css column is quoted, and that is not decoration
+#
+# A hex colour starts with `#`, which is this format's comment character, so
+# `#808080` as a bare first field is dropped by both walkers' own comment
+# filter -- silently, leaving a table that looks complete and tests three fewer
+# rows than it lists. This file lost three rows that way before the count was
+# checked against the generator's. Quoting follows `ellipsis.tsv`, which quotes
+# its strings for the same reason.
+#
+# css	kind	r	g	b	a	note
+"#808080"	value	128	128	128	1	-
+"#f2aa4c"	value	242	170	76	1	-
+"rebeccapurple"	value	102	51	153	1	-
+"rgb(255, 0, 0)"	value	255	0	0	1	-
+"rgba(0, 0, 255, 0.5)"	diverges	0	0	255	0.5	v1 quantises alpha to 0.502
+"rgba(0, 0, 0, 0.1)"	diverges	0	0	0	0.1	v1 quantises alpha to 0.102; ours is f32 0.10000000149011612
+"rgba(0, 0, 0, 0.25)"	diverges	0	0	0	0.25	v1 quantises alpha to 0.251
+"rgba(0, 0, 0, 0.75)"	diverges	0	0	0	0.75	v1 quantises alpha to 0.749
+"rgba(0, 0, 0, 0.33)"	diverges	0	0	0	0.33	v1 quantises alpha to 0.329; ours is f32 0.33000001311302185
+"rgba(0, 0, 0, 0.9)"	diverges	0	0	0	0.9	v1 quantises alpha to 0.902; ours is f32 0.8999999761581421
+"rgba(0, 0, 0, 0)"	value	0	0	0	0	-
+"#fff"	value	255	255	255	1	-

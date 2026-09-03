@@ -1,0 +1,35 @@
+# Ground truth for mapRange(), generated from meo-canvas v1's built module
+# (`dist/esm/animate/interpolate.js`) rather than from either v2 implementation.
+#
+# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
+# the four original tables name, and verified rather than assumed: this
+# generator was first run against those tables and reproduced all 612 of their
+# rows exactly, which is what establishes it is the same v1 they came from.
+#
+# Neither surface may be written from the other: a misreading of v1 that reaches
+# both looks like agreement. Both are written against this, and this came from
+# v1 running, not from anyone reading it.
+#
+# Values are shortest-round-trip decimals, compared exactly. There is no
+# tolerance here.
+#
+# Every case is generated with `clamp` both false and true, because the two
+# rules coincide wherever the value is already inside the input range -- a
+# table that only used in-range values could not see the flag at all.
+#
+# An empty input range has no position to report: v1 answers with the start
+# of the output range rather than the NaN the division would give.
+#
+# value	inMin	inMax	outMin	outMax	clamp	result
+50	0	100	0	1	false	0.5
+50	0	100	0	1	true	0.5
+150	0	100	0	1	false	1.5
+150	0	100	0	1	true	1
+-50	0	100	0	1	false	-0.5
+-50	0	100	0	1	true	0
+5	0	0	7	9	false	7
+5	0	0	7	9	true	7
+50	100	0	0	1	false	0.5
+50	100	0	0	1	true	0.5
+0	0	10	10	0	false	10
+0	0	10	10	0	true	10
