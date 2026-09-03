@@ -1,0 +1,43 @@
+# Something has to move the pins.
+#
+# Every `uses:` in every workflow is pinned to a full commit SHA, which is the
+# right way to depend on an action and also the reason nothing here ever
+# updates: a tag moves under you, a SHA does not, and a SHA does not move for a
+# security advisory either. Pinning without an updater is not caution, it is a
+# frozen dependency set with a comment explaining that it is deliberate.
+#
+# Grouped and weekly, because the failure mode of an updater is not missing a
+# release -- it is a queue of pull requests nobody reads, which trains everyone
+# to close them unopened.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: 'Update'
+
+  # The Rust dependencies. `skia-safe` is not really ours to move -- it arrives
+  # through `meo-skia-canvas`, which pins it -- so most of what this sees is the
+  # small end of the tree, which is exactly where an unread advisory hides.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      rust:
+        patterns: ['*']
+    commit-message:
+      prefix: 'Update'
+
+# Not the JavaScript dependencies, and the omission is deliberate rather than an
+# oversight. The versions there are chosen against each other, not for being
+# newest: TypeScript is held at 6.0.3 because typescript-eslint supports it and
+# TypeDoc's supported range ends there, and vitest is held at 4 while its
+# coverage provider follows. An updater would open the same three pull requests
+# every week and we would close them every week. Revisit when the eslint and
+# TypeDoc constraints lift, which is the event that actually unblocks it.

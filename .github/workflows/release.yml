@@ -16,14 +16,16 @@ on:
         type: boolean
         default: true
 
-# `id-token: write` is what lets npm mint a provenance attestation from the
-# workflow's own identity, so no long-lived token is stored anywhere.
-# `contents: write` is what lets the publish job tag the commit it published and
-# open a release under that tag. Without it nothing on GitHub records which
-# commit a version on the registry was built from.
+# Read at the top, and widened only where the widening is used. `id-token:
+# write` is what lets npm mint a provenance attestation from the workflow's own
+# identity, so no long-lived token is stored anywhere -- but only the publish
+# job publishes, and a token seven build jobs can mint is seven machines that
+# can speak as this repository while compiling third-party code. `contents:
+# write` is what lets that same job tag the commit it published and open a
+# release under the tag; without it nothing on GitHub records which commit a
+# version on the registry was built from. Both live on `publish` below.
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -274,6 +276,11 @@ jobs:
     name: publish
     needs: [targets, build]
     runs-on: ubuntu-latest
+    # The only job that needs either: `id-token` to mint provenance, `contents`
+    # to push the tag and open the release. See the note at the top.
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

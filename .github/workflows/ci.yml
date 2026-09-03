@@ -19,6 +19,13 @@ on:
 
 # A push onto a branch with a run already going cancels that run: the older
 # result describes code nobody has any more.
+# Read, said out loud. The repository default is `read` today, so this changes
+# nothing now and keeps changing nothing if that setting is ever widened --
+# which is a settings page, not a diff, and would otherwise hand every gate on
+# every pull request a writable token.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

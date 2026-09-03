@@ -126,6 +126,7 @@
 
 # -- CI ---------------------------------------------------------------------
 !/.github/workflows/*.yml
+!/.github/dependabot.yml
 
 # The build images the Linux addons are compiled in. Named by extension rather
 # than by filename because there is one per libc family and the second arrives
