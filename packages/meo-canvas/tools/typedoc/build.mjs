@@ -27,13 +27,22 @@ const ENTRY = resolve(HERE, '../../dist/index.d.ts')
 // thing distinguishing a coverage warning from a structural one.
 const UNDOCUMENTED = 'does not have any documentation'
 
-const typedoc = join(HERE, 'node_modules', '.bin', 'typedoc')
-if (!existsSync(typedoc)) {
+// TypeDoc's own entry script, found through the package's `bin` field and run
+// under the current Node -- not the `.bin/typedoc` shim. The shim is `typedoc`
+// on POSIX and `typedoc.exe` or `typedoc.cmd` on Windows, and looking for it by
+// the POSIX name reported the tool as "not installed" on a runner where bun had
+// just installed it. `require.resolve('typedoc/bin/typedoc')` is not the answer
+// either: the package's `exports` map does not expose that path and the
+// resolver throws. The manifest says where the script is; read it.
+const PACKAGE = join(HERE, 'node_modules', 'typedoc')
+if (!existsSync(join(PACKAGE, 'package.json'))) {
   process.stderr.write(
     'The reference tool is not installed. Run `just docs-js`, which installs it, or `bun install --cwd packages/meo-canvas/tools/typedoc`.\n',
   )
   process.exit(1)
 }
+const bin = JSON.parse(readFileSync(join(PACKAGE, 'package.json'), 'utf8')).bin
+const typedoc = join(PACKAGE, typeof bin === 'string' ? bin : bin.typedoc)
 
 // The declarations are built, not committed. A stale or missing `dist/` would
 // document a surface nobody ships, or nothing -- and TypeDoc reports the
@@ -47,7 +56,7 @@ if (!existsSync(ENTRY)) {
 // progress to stdout -- reading only what a command returns would have found
 // nothing to report and called that a clean build. The sibling project did,
 // once.
-const run = spawnSync(typedoc, ['--options', join(HERE, 'typedoc.json')], { cwd: HERE, encoding: 'utf8' })
+const run = spawnSync(process.execPath, [typedoc, '--options', join(HERE, 'typedoc.json')], { cwd: HERE, encoding: 'utf8' })
 const output = `${run.stdout ?? ''}${run.stderr ?? ''}`
 process.stdout.write(output)
 

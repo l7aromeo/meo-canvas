@@ -1125,7 +1125,8 @@ docs-js: build-js
     #!/usr/bin/env bash
     set -euo pipefail
     tool=packages/meo-canvas/tools/typedoc
-    test -x "$tool/node_modules/.bin/typedoc" || bun install --cwd "$tool" --frozen-lockfile
+    # Presence by the package, not the `.bin` shim, whose filename differs per platform.
+    test -f "$tool/node_modules/typedoc/package.json" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
 
 # Compare v1's prop surface against v2's.
