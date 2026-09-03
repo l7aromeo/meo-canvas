@@ -21,6 +21,29 @@
  * @packageDocumentation
  */
 
+// **`Buffer` is a global, and a consumer's compiler does not have it.** Every
+// method below answers a Node `Buffer`, which is the value the addon actually
+// returns. TypeScript 6 does not auto-include `node_modules/@types`, so a
+// consumer who has not written `"types": ["node"]` cannot resolve the name --
+// it becomes `any`, and `skipLibCheck`, which `tsc --init` writes as `true`,
+// swallows the error that would have said so. The declarations compiled here
+// and degraded there, and nothing in this repository could see it: every
+// in-tree typecheck sets `types`.
+//
+// **Two obvious fixes were measured and neither works.**
+// `import type { Buffer } from 'node:buffer'` survives into the emitted `.d.ts`
+// and still does not resolve: a bare `node:` specifier needs `@types/node`
+// already loaded, which is the thing the consumer has not done. And a
+// `/// <reference types="node" />` here, which does resolve, is elided from
+// declaration emit -- it reaches `dist/canvas.js` and never `dist/canvas.d.ts`,
+// with or without `types` in the build config.
+//
+// So the reference is added to the emitted declaration after `tsc` runs, by
+// `tools/reference-node-types.mjs`, and `verify-package.mjs` proves it landed
+// by compiling a consumer whose control has to fail. That is also what the
+// `@types/node` entry in `dependencies` is for: a reference is followed
+// transitively, and the package sits beside this one under both a hoisted and
+// an isolated layout only because it is a real dependency.
 import { MEDIA_TYPES, type Format } from './generated/media-types.js'
 
 export type { Format }

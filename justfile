@@ -412,6 +412,10 @@ fmt-check: ensure-deps
 [doc("Build the TypeScript package into dist.")]
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
+    # `tsc` elides a triple-slash type reference from declaration emit, so the
+    # one that makes `Buffer` resolve in a consumer has to be put back after it
+    # runs. The tool says which declarations carry it, and refuses if none does.
+    node packages/meo-canvas/tools/reference-node-types.mjs
 
 # The addon, optimised, where a release takes it from.
 #

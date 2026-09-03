@@ -23,6 +23,7 @@ import {
   track,
   type EasingName,
   type Sampled,
+  type SpringConfig,
 } from './animate.js'
 // `parseColor` and `isColor` live in `color.ts`, not `animate.ts` -- the two
 // colour halves are split across modules even though both are exported.
@@ -453,7 +454,13 @@ describe('track, sequence and parallel against their vector tables', () => {
     expect(() => track({ from: 0, to: 1, duration: 1, ease: 'linear', spring: {} })).toThrow(/not both/)
     expect(() => track({ from: 0, to: 1 })).toThrow(/needs a `duration`/)
     expect(() => track({ from: 0, to: 1, duration: 1, delay: -1 })).toThrow(/delay cannot be negative/)
-    expect(() => track({ from: 0, to: 1, spring: { from: 0 } })).toThrow(/cannot carry them/)
+    // **The cast is the assertion, not a way around one.** `TrackConfig` no
+    // longer accepts a spring carrying a range, so this line stopped compiling
+    // when the type was narrowed -- which is the narrowing working. The runtime
+    // refusal still has to be covered, because a JavaScript caller has no
+    // compiler to be told by, and reaching it now requires saying so out loud.
+    const ranged = { from: 0 } as unknown as Omit<SpringConfig, 'from' | 'to'>
+    expect(() => track({ from: 0, to: 1, spring: ranged })).toThrow(/cannot carry them/)
     expect(() => sequence({ from: 0, steps: [] })).toThrow(/at least one step/)
     expect(() => parallel({})).toThrow(/at least one member/)
     expect(() => mix([0], [0, 1], 0.5)).toThrow(/same length/)
