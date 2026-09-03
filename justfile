@@ -160,6 +160,26 @@ test:
     # compiled cannot tell whether the pin holds -- the two rasterisers differ on
     # eight of the ten scenes. This is the run that reads the pin.
     cargo test -p meo-canvas-core --features "{{ host_features }}"
+# Does an ordinary addon survive being loaded in a worker thread?
+#
+# **This is a question about what we ship, not about coverage.** The `coverage`
+# recipe loads an *instrumented* addon under vitest's threads pool, and on
+# Windows that segfaults -- exit 139, nine test files in. Two candidates: the
+# profiling runtime writing a profile from a thread, or the addon itself under
+# Windows threads. Only the second matters to a consumer, and it matters a lot:
+# `worker_threads` is how a server keeps a render off its event loop, and a
+# crash there is a crash we published.
+#
+# The discriminator is this recipe: the same pool, the same suite, an **ordinary**
+# addon. Green means the instrumentation was the problem and the guard in
+# `coverage` is the whole fix. A segfault means we have a shipping defect on a
+# platform we build for, and it is worth finding before someone else does.
+#
+# Not in `ci-steps`. It runs as its own step so its verdict is legible on its
+# own, and it does not gate while the answer is unknown.
+threads-probe: ensure-deps addon
+    ./node_modules/.bin/vitest run --pool=threads
+
 
 # Coverage floor is 90%. `--fail-under-*` exits non-zero, so this is the gate
 # rather than a report.

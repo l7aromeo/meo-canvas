@@ -164,3 +164,12 @@ jobs:
         run: cargo install --locked cargo-llvm-cov cargo-machete
 
       - run: just ci
+
+      # Whether an ordinary addon survives vitest's threads pool. Windows only,
+      # because that is where the instrumented one segfaults, and
+      # `continue-on-error` because the answer is unknown: a red mark here is a
+      # finding to act on rather than a gate to satisfy. See `just threads-probe`.
+      - name: Does an ordinary addon survive worker threads?
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: just threads-probe
