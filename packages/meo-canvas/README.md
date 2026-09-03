@@ -77,7 +77,23 @@ Macs, and no 32-bit target has been asked for.
 
 ## Usage
 
-This section holds usage examples. It is empty while the API they would show is still moving, because an example that does not run is worse than none.
+The examples are the documentation, because they are the only form of it this
+repository can check. `examples/bun` and `examples/rust` hold the same nine
+scenes twice — block, flex and grid layout, text, images, paths, paint,
+positioning and multi-page output — and `just example` renders both and
+**compares the bytes**. A scene that drifts on one surface fails against the
+other.
+
+```text
+just example
+```
+
+Doc comments carry runnable snippets besides: the Rust ones are doctests that
+`just docs` runs, and the TypeScript ones are lifted into a generated file that
+`just typecheck` covers, so a renamed property fails a gate rather than sitting
+in a comment.
+
+Nothing checks a fenced block in a README, which is why there is not one here.
 
 ## What runs in JavaScript
 

@@ -47,21 +47,42 @@ cargo add meo-canvas
 Node.js:
 
 ```text
-npm install meo-canvas
+npm install meo-canvas@next
 ```
 
-This continues v1's lineage: 10.x is the same `meo-canvas` name the 9.x line
-holds. npm resolves one directory per package name, so installing both majors
-at once is done with an alias, and the consumer picks the local name rather
-than us picking it for them:
+**The `@next` is not optional while 10.x is in prerelease.** 10.x continues v1's
+lineage under the same `meo-canvas` name, and npm resolves `latest` for a bare
+install — so `npm install meo-canvas` gives you the 9.x line. Every 10.x
+prerelease carries a hyphen, which keeps it off `latest` and out of any semver
+range.
+
+npm resolves one directory per package name, so installing both majors at once
+is done with an alias, and the consumer picks the local name rather than us
+picking it for them:
 
 ```text
-npm install meo-canvas-v10@npm:meo-canvas@next
+npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
 ```
 
 ## Usage
 
-This section holds usage examples. It is empty while the API they would show is still moving, because an example that does not compile is worse than none.
+The examples are the documentation, because they are the only form of it this
+repository can check. `examples/bun` and `examples/rust` hold the same nine
+scenes twice — block, flex and grid layout, text, images, paths, paint,
+positioning and multi-page output — and `just example` renders both and
+**compares the bytes**. A scene that drifts on one surface fails against the
+other.
+
+```text
+just example
+```
+
+Doc comments carry runnable snippets besides: the Rust ones are doctests that
+`just docs` runs, and the TypeScript ones are lifted into a generated file that
+`just typecheck` covers, so a renamed property fails a gate rather than sitting
+in a comment.
+
+Nothing checks a fenced block in a README, which is why there is not one here.
 
 ## Licence
 
