@@ -2803,9 +2803,14 @@ why.
 returns `[f32; 4]` and `rgba(0, 0, 0, 0.1)` reads back as `0.10000000149011612`
 on both surfaces -- inherited, not a JavaScript defect. The ruling is that the
 parser returns the number the author wrote, with the browser as tiebreak (it
-answers `0.1`; v1 answered `0.102`), and the mechanism is to present each
-channel as the shortest decimal that round-trips to its `f32`, which is what
-Rust's `Display` prints. One parser, one boundary, no second parse.
+answers `0.1`; v1 answered `0.102`). The mechanism has two halves, and a
+twelve-row measurement is why: an alpha written as a decimal or a percentage
+is presented as the shortest decimal that round-trips to its `f32`, which is
+what Rust's `Display` prints and which recovers every such spelling tried; an
+alpha written as a hex byte is `byte / 255` computed where the byte is known,
+because no decimal-shortening reaches 127/255 from an f32 -- `#000000cc` passed
+that test only because 204/255 is exactly 0.8. One parser, one boundary, no
+second parse.
 
 The core requires no async runtime, and performs no network I/O unless built
 with `net`. `just runtime-free` fails if a runtime enters the tree.
