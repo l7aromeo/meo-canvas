@@ -1009,6 +1009,40 @@ clips nothing, which shows the subtree whole rather than hiding it; an unknown
 newer writer should render what this build understands rather than refuse the
 page.
 
+#### Mark what a caller reads, give a constructor to what a caller writes
+
+The attribute on the enum stops a caller matching a new **variant**. It does
+nothing about a new **field**: a struct-like variant can still be destructured
+exhaustively from outside, so `Error::SourceFetch { url, detail }` was breaking
+to extend even with `Error` marked. Variant-level `#[non_exhaustive]` is what
+closes that, and it has the same deadline -- free now, impossible after a
+release.
+
+Marked, because a caller only ever reads them: `Error::SourceFetch`,
+`FontRegister`, `ImageRead` and `Encode`; `SceneError::CanvasSize`; the six on
+`CodecError`. That is what let `SourceFetch` gain a `failure` field as an
+addition rather than a break.
+
+**A closed variant cannot be built with a struct expression outside its own
+crate, so the ones we build elsewhere get a constructor rather than losing the
+attribute.** `SceneError::canvas_size` exists because `meo-canvas` reports it
+from both `into_scene` entry points; `Error::image_read` exists because
+`meo-canvas-cli` builds one to check which exit code it maps to. The
+constructor is the door left open, and it says so in its own doc.
+
+**And the case where the rule says no**, which is the half that makes it usable
+on something new. `NodeKind::Text`, `NodeKind::Image`, `NodeKind::Path` and
+`Mask::Path` are struct-like and stay open. Every caller of the scene
+constructs them -- `meo-canvas` writes `NodeKind::Text { .. }` to make a text
+node, and so does anyone building a tree by hand -- so closing them would trade
+a field addition nobody has asked for against the ability to write a node at
+all. A constructor per variant would be the alternative and it is worse: nine
+of them, wrapping nothing, to protect a change that has never been wanted.
+
+The test is the same one the enums get, read at a finer grain. **Ask whether
+the outside builds it or only inspects it.** An error is inspected; a node is
+built.
+
 ### Performance and memory
 
 Measured on a 111-node page, GPU off, by `just bench`:
