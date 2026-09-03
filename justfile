@@ -375,6 +375,18 @@ addon-container suffix:
         "$tag" \
         cargo build --release -p meo-canvas-node --features vulkan
 
+    # The container ran as root, so everything it wrote under `target/container`
+    # is root-owned. On a GitHub runner the cache action's `tar` then cannot
+    # read it and the post-job save fails -- `Failed to save: /usr/bin/tar
+    # failed with exit code 2` on every container-built target -- which is why
+    # the musl builds recompiled Skia from source on every run. Handing the
+    # tree back to the invoking user is what lets the next run start from the
+    # cache. Skipped where there is no `sudo` or no Linux, which is a Mac with
+    # Docker Desktop, where bind mounts are already the host user's.
+    if [[ "$(uname)" == Linux ]] && command -v sudo >/dev/null; then
+        sudo chown -R "$(id -u):$(id -g)" target/container
+    fi
+
     cp "target/container/{{ suffix }}/release/libmeo_canvas_node.so" {{ addon_path }}
     echo "built {{ addon_path }} in ${tag}"
 
@@ -505,6 +517,18 @@ fixtures-linux name="":
         "${accept[@]}" \
         "$tag" \
         cargo test -p meo-canvas-core --features vulkan --test fixtures -- --nocapture
+
+    # The container ran as root, so everything it wrote under `target/container`
+    # is root-owned. On a GitHub runner the cache action's `tar` then cannot
+    # read it and the post-job save fails -- `Failed to save: /usr/bin/tar
+    # failed with exit code 2` on every container-built target -- which is why
+    # a run after it starts cold. Handing the
+    # tree back to the invoking user is what lets the next run start from the
+    # cache. Skipped where there is no `sudo` or no Linux, which is a Mac with
+    # Docker Desktop, where bind mounts are already the host user's.
+    if [[ "$(uname)" == Linux ]] && command -v sudo >/dev/null; then
+        sudo chown -R "$(id -u):$(id -g)" target/container
+    fi
 
 # What the built addon demands of a machine, against what its target promises.
 #
