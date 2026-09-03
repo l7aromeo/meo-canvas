@@ -2,25 +2,6 @@
 
 Server-side image generation for Node. Describe a layout the way you would describe a page — boxes, rows, text, images, paths, charts — and get back encoded bytes.
 
-## The canvas is as tall as what is in it
-
-`height` is optional. Leave it out and the page is the height of its content,
-the way it is in 9.x; `minHeight` is the floor when you want "at least this
-tall". A width is always stated, and cannot be otherwise: text breaks into lines
-against a width, so a width has to be known before anything can be measured.
-
-```js
-Root({ width: 520, children }) // as tall as the content
-Root({ width: 520, minHeight: 200, children }) // ...and at least 200
-Root({ width: 520, height: 180, children }) // exactly 180
-```
-
-## Nothing is drawn in JavaScript
-
-This package is a thin surface over a native addon. Your calls describe a scene; layout, text shaping, painting and encoding all happen in Rust, and the whole description crosses into it once per render rather than once per drawing call.
-
-What that buys you is that a scene of any size costs one crossing, and that the drawing itself runs at native speed with no per-call boundary tax.
-
 ## Installation
 
 ```text
@@ -77,25 +58,76 @@ Macs, and no 32-bit target has been asked for.
 
 ## Usage
 
-The examples are the documentation, because they are the only form of it this
-repository can check. `examples/bun` and `examples/rust` hold the same nine
-scenes twice — block, flex and grid layout, text, images, paths, paint,
-positioning and multi-page output — and `just example` renders both and
-**compares the bytes**. A scene that drifts on one surface fails against the
-other.
+```ts
+import { writeFileSync } from 'node:fs'
+import { Box, Column, Root, Text } from 'meo-canvas'
 
-```text
-just example
+const canvas = await Root({
+  width: 320,
+  padding: 20,
+  backgroundColor: '#101820',
+  children: Column({
+    gap: 10,
+    children: [
+      Text('meo-canvas', { fontSize: 22, fontWeight: 600, color: '#f2aa4c' }),
+      Text('Describe a layout; get image bytes back.', { fontSize: 13, color: '#c8ccd4' }),
+      Box({ height: 4, width: 64, backgroundColor: '#f2aa4c', borderRadius: 2 }),
+    ],
+  }),
+})
+
+writeFileSync('card.png', await canvas.toBuffer('png'))
+canvas.release()
 ```
 
-Doc comments carry runnable snippets besides: the Rust ones are doctests that
-`just docs` runs, and the TypeScript ones are lifted into a generated file that
-`just typecheck` covers, so a renamed property fails a gate rather than sitting
-in a comment.
+`height` is optional, and that is the one thing worth knowing before you write
+anything: leave it out and the page is as tall as its content, the way it is in
+9.x. A width is always stated and cannot be otherwise, because text breaks into
+lines against a width and nothing can be measured until one is known.
 
-Nothing checks a fenced block in a README, which is why there is not one here.
+```ts
+import { Box, Root } from 'meo-canvas'
 
-## What runs in JavaScript
+const children = [Box({ height: 40, backgroundColor: '#f2aa4c' })]
+
+Root({ width: 520, children }) // as tall as the content
+Root({ width: 520, minHeight: 200, children }) // ...and at least 200
+Root({ width: 520, height: 180, children }) // exactly 180
+```
+
+`release()` frees the native surface. Without it the bytes are still correct and
+the memory is reclaimed whenever the collector gets to it, which under load is
+later than you want.
+
+More, and all of it checked: the repository holds the same nine scenes written
+twice, once per surface, and `just example` renders both and compares every
+byte.
+
+## What it renders
+
+- **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps
+  and absolute positioning.
+- **Text** — shaped by Skia and broken into lines here, with per-span styling,
+  letter and word spacing, decorations, line clamping and ellipsis.
+- **Images** — from a file, a buffer or a URL, with object-fit and
+  object-position placement.
+- **Paths** — arbitrary shapes from SVG path data, filled and stroked, with an
+  optional `viewBox` so a path scales to the box that holds it.
+- **Charts** — bar, line, pie and doughnut.
+- **Effects** — gradients, masks, shadows, opacity groups, blend modes and CSS
+  filters.
+- **Export** — PNG, JPEG, WebP, AVIF, TIFF, BMP, ICO, SVG, PDF, GIF, APNG and
+  raw pixels.
+
+Multi-page renders produce frames for GIF, APNG, WebP and AVIF, sheets for PDF
+and TIFF, and sizes for ICO — and ICO is the only one whose pages may differ in
+size.
+
+## Where the work happens
+
+This package is a thin surface over a native addon. Your calls describe a scene; layout, text shaping, painting and encoding all happen in Rust, and the whole description crosses into it once per render rather than once per drawing call.
+
+What that buys you is that a scene of any size costs one crossing, and that the drawing itself runs at native speed with no per-call boundary tax.
 
 Two things, and both compute rather than draw.
 

@@ -7,8 +7,9 @@
 // compiles nothing inside a comment, so without this an example may name a
 // property that no longer exists and every check stays green.
 
-import { Image, Path, Root, Row, Text, formatColor, mixColor, parseColor } from '../index.js'
+import { Box, Column, Image, Path, Root, Row, Text, formatColor, mixColor, parseColor } from '../index.js'
 import type { Gradient } from '../index.js'
+import { writeFileSync } from 'node:fs'
 
 /** `color.ts, parseColor`. */
 export async function example_parseColor(): Promise<void> {
@@ -65,4 +66,56 @@ export async function example_Gradient(): Promise<void> {
 
   const fade: Gradient = { type: 'linear', direction: 'to-bottom', colors: ['#101014', 'transparent'] }
   const dial: Gradient = { type: 'conic', from: 90, stops: [{ offset: 0, color: '#f0c' }] }
+}
+
+/** `README.md`. */
+export async function example_README_md(): Promise<void> {
+
+  const canvas = await Root({
+    width: 320,
+    padding: 20,
+    backgroundColor: '#101820',
+    children: Column({
+      gap: 10,
+      children: [
+        Text('meo-canvas', { fontSize: 22, fontWeight: 600, color: '#f2aa4c' }),
+        Text('Describe a layout; get image bytes back.', { fontSize: 13, color: '#c8ccd4' }),
+        Box({ height: 4, width: 64, backgroundColor: '#f2aa4c', borderRadius: 2 }),
+      ],
+    }),
+  })
+
+  writeFileSync('card.png', await canvas.toBuffer('png'))
+  canvas.release()
+}
+
+/** `README.md`. */
+export async function example_README_md_2(): Promise<void> {
+
+  const children = [Box({ height: 40, backgroundColor: '#f2aa4c' })]
+
+  Root({ width: 520, children }) // as tall as the content
+  Root({ width: 520, minHeight: 200, children }) // ...and at least 200
+  Root({ width: 520, height: 180, children }) // exactly 180
+}
+
+/** `../../README.md`. */
+export async function example_______README_md(): Promise<void> {
+
+  const canvas = await Root({
+    width: 320,
+    padding: 20,
+    backgroundColor: '#101820',
+    children: Column({
+      gap: 10,
+      children: [
+        Text('meo-canvas', { fontSize: 22, fontWeight: 600, color: '#f2aa4c' }),
+        Text('Describe a layout; get image bytes back.', { fontSize: 13, color: '#c8ccd4' }),
+        Box({ height: 4, width: 64, backgroundColor: '#f2aa4c', borderRadius: 2 }),
+      ],
+    }),
+  })
+
+  writeFileSync('card.png', await canvas.toBuffer('png'))
+  canvas.release()
 }

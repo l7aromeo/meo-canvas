@@ -23,6 +23,12 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SOURCE_DIR = resolve(HERE, '../src')
+
+/** The package's own README, whose examples are what an npm visitor reads. */
+const README_PACKAGE = resolve(HERE, '../README.md')
+
+/** The repository README, whose examples are what a GitHub visitor reads. */
+const README_ROOT = resolve(HERE, '../../../README.md')
 const CHECKED_IN = resolve(HERE, '../src/generated/doc-examples.ts')
 
 // An explicit destination lets the drift check emit somewhere disposable and
@@ -55,11 +61,22 @@ function fail(where, message) {
 /** The `.ts` files whose comments carry examples. */
 async function sources() {
   const entries = await readdir(SOURCE_DIR, { withFileTypes: true })
-  return entries
+  const files = entries
     .filter(entry => entry.isFile() && entry.name.endsWith('.ts'))
     .filter(entry => !entry.name.endsWith('.test.ts'))
     .map(entry => join(SOURCE_DIR, entry.name))
     .sort()
+
+  // **The two READMEs, for the same reason the `.ts` files are here.** A doc
+  // comment's example is lifted because TypeScript compiles nothing inside a
+  // comment; a README's example is not compiled by anything at all, and it is
+  // the one a reader meets first -- on npm and on the repository page, before
+  // they have installed anything.
+  //
+  // The extractor needs no change to read them. It strips a leading `* ` from
+  // each line, which a markdown fence simply does not have, and it keys on
+  // ```ts, which is the fence these use.
+  return [...files, README_PACKAGE, README_ROOT]
 }
 
 /**
@@ -213,7 +230,13 @@ function emit(collected) {
 const collected = []
 for (const path of await sources()) {
   const text = await readFile(path, 'utf8')
-  const relative = path.slice(SOURCE_DIR.length + 1)
+  // The READMEs are not under `src`, so a blind slice would name them by
+  // whatever the prefix left behind.
+  const relative = path.startsWith(`${SOURCE_DIR}/`)
+    ? path.slice(SOURCE_DIR.length + 1)
+    : path === README_PACKAGE
+      ? 'README.md'
+      : '../../README.md'
   for (const example of examples(path, text)) {
     const { imports, rest } = split(example.body)
     collected.push({ file: relative, anchor: example.anchor, imports, rest })

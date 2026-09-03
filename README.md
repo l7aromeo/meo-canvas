@@ -11,31 +11,6 @@ The same core does the work either way you reach it.
 
 Layout, text shaping, painting and encoding all happen in Rust. The Node surface describes a scene and asks for pixels; nothing is drawn in JavaScript.
 
-## What it renders
-
-- **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps and absolute positioning. A canvas takes its height from its content unless one is given; a width is always stated, because text breaks its lines against it.
-- **Text** — shaped by Skia and broken into lines here, with per-span styling, letter and word spacing, decorations, line clamping and ellipsis.
-- **Images** — from a file or a buffer, with object-fit and object-position placement. A URL is resolved to bytes by the Node surface before rendering, and by the Rust crate or the CLI only when built with the optional `net` feature; without it a URL is an error and no HTTP stack is linked.
-- **Paths** — arbitrary shapes from SVG path data, filled and stroked, with an optional `viewBox` so a path scales to the box that holds it.
-- **Charts** — bar, line, pie and doughnut.
-- **Effects** — gradients, masks, shadows, opacity groups, blend modes and CSS filters.
-- **Export** — PNG, JPEG, WebP, AVIF, TIFF, BMP, ICO, SVG, PDF, GIF, APNG and raw pixels.
-
-Multi-page renders produce frames for GIF, APNG, WebP and AVIF, sheets for PDF and TIFF, and sizes for ICO — and ICO is the only one whose pages may differ in size.
-
-## What it computes
-
-Nothing here draws. These are pure functions a caller uses to work out _what_ to
-draw, and they exist on both surfaces.
-
-- **Easing** — the CSS catalogue, `cubic-bezier` and `steps`.
-- **Springs** — a damped spring solved in closed form, so any frame can be
-  evaluated on its own, plus the settling time to size a render by.
-- **Interpolation** — numbers, colours and keyframe tracks, and the tracks and
-  sequences that drive them over time.
-- **Colour** — one CSS parser behind both surfaces, so a string the renderer
-  accepts is a string the animation helpers accept.
-
 ## Installation
 
 Rust:
@@ -66,23 +41,66 @@ npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
 
 ## Usage
 
-The examples are the documentation, because they are the only form of it this
-repository can check. `examples/bun` and `examples/rust` hold the same nine
+```ts
+import { writeFileSync } from 'node:fs'
+import { Box, Column, Root, Text } from 'meo-canvas'
+
+const canvas = await Root({
+  width: 320,
+  padding: 20,
+  backgroundColor: '#101820',
+  children: Column({
+    gap: 10,
+    children: [
+      Text('meo-canvas', { fontSize: 22, fontWeight: 600, color: '#f2aa4c' }),
+      Text('Describe a layout; get image bytes back.', { fontSize: 13, color: '#c8ccd4' }),
+      Box({ height: 4, width: 64, backgroundColor: '#f2aa4c', borderRadius: 2 }),
+    ],
+  }),
+})
+
+writeFileSync('card.png', await canvas.toBuffer('png'))
+canvas.release()
+```
+
+The Rust surface builds the same scene through a builder rather than a literal,
+and `crates/meo-canvas`' own documentation opens with the equivalent.
+
+**The examples are the rest of the documentation, because they are the part this
+repository can check.** `examples/bun` and `examples/rust` hold the same nine
 scenes twice — block, flex and grid layout, text, images, paths, paint,
 positioning and multi-page output — and `just example` renders both and
-**compares the bytes**. A scene that drifts on one surface fails against the
+**compares the bytes**, so a scene that drifts on one surface fails against the
 other.
 
 ```text
 just example
 ```
 
-Doc comments carry runnable snippets besides: the Rust ones are doctests that
-`just docs` runs, and the TypeScript ones are lifted into a generated file that
-`just typecheck` covers, so a renamed property fails a gate rather than sitting
-in a comment.
+## What it renders
 
-Nothing checks a fenced block in a README, which is why there is not one here.
+- **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps and absolute positioning. A canvas takes its height from its content unless one is given; a width is always stated, because text breaks its lines against it.
+- **Text** — shaped by Skia and broken into lines here, with per-span styling, letter and word spacing, decorations, line clamping and ellipsis.
+- **Images** — from a file or a buffer, with object-fit and object-position placement. A URL is resolved to bytes by the Node surface before rendering, and by the Rust crate or the CLI only when built with the optional `net` feature; without it a URL is an error and no HTTP stack is linked.
+- **Paths** — arbitrary shapes from SVG path data, filled and stroked, with an optional `viewBox` so a path scales to the box that holds it.
+- **Charts** — bar, line, pie and doughnut.
+- **Effects** — gradients, masks, shadows, opacity groups, blend modes and CSS filters.
+- **Export** — PNG, JPEG, WebP, AVIF, TIFF, BMP, ICO, SVG, PDF, GIF, APNG and raw pixels.
+
+Multi-page renders produce frames for GIF, APNG, WebP and AVIF, sheets for PDF and TIFF, and sizes for ICO — and ICO is the only one whose pages may differ in size.
+
+## What it computes
+
+Nothing here draws. These are pure functions a caller uses to work out _what_ to
+draw, and they exist on both surfaces.
+
+- **Easing** — the CSS catalogue, `cubic-bezier` and `steps`.
+- **Springs** — a damped spring solved in closed form, so any frame can be
+  evaluated on its own, plus the settling time to size a render by.
+- **Interpolation** — numbers, colours and keyframe tracks, and the tracks and
+  sequences that drive them over time.
+- **Colour** — one CSS parser behind both surfaces, so a string the renderer
+  accepts is a string the animation helpers accept.
 
 ## Licence
 
