@@ -232,11 +232,7 @@ for (const path of await sources()) {
   const text = await readFile(path, 'utf8')
   // The READMEs are not under `src`, so a blind slice would name them by
   // whatever the prefix left behind.
-  const relative = path.startsWith(`${SOURCE_DIR}/`)
-    ? path.slice(SOURCE_DIR.length + 1)
-    : path === README_PACKAGE
-      ? 'README.md'
-      : '../../README.md'
+  const relative = path.startsWith(`${SOURCE_DIR}/`) ? path.slice(SOURCE_DIR.length + 1) : path === README_PACKAGE ? 'README.md' : '../../README.md'
   for (const example of examples(path, text)) {
     const { imports, rest } = split(example.body)
     collected.push({ file: relative, anchor: example.anchor, imports, rest })
