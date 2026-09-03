@@ -30,6 +30,25 @@ default:
 ensure-deps:
     @test -d node_modules || bun install --frozen-lockfile
 
+# The examples are a consumer of the package and carry their own lockfile.
+#
+# Their `meo-canvas` is a `file:` dependency, and bun installs one of those by
+# **copying the directory at install time** -- so the copy has whatever
+# `dist/` had when `bun install` ran, and nothing afterwards. Installed before
+# `build-js`, it has no `dist` at all and every import resolves to an error
+# type; installed once and left, it keeps yesterday's declarations. So this
+# reinstalls whenever the copy's `index.d.ts` is missing or older than the real
+# one, which is why every recipe that needs it lists `build-js` first.
+[private]
+ensure-example-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    real=packages/meo-canvas/dist/index.d.ts
+    copy=examples/bun/node_modules/meo-canvas/dist/index.d.ts
+    if [[ ! -f "$copy" || "$real" -nt "$copy" ]]; then
+        (cd examples/bun && bun install --frozen-lockfile)
+    fi
+
 # Aggregate: what CI runs. Uses non-fixing variants.
 #
 # Refuses to start while another gate is running in this tree, because two of
@@ -207,7 +226,7 @@ coverage-open:
     cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --open
 
 # Run clippy with autofix (modifies working tree).
-lint: ensure-deps
+lint: ensure-deps build-js ensure-example-deps
     cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
     bun run eslint . --fix
@@ -217,8 +236,15 @@ lint: ensure-deps
 # Two passes, because one feature set does not lint the crate. Code reachable
 # only with a backend compiled is dead code without one, and `-D warnings`
 # refuses it -- so the addon goes unlinted unless its own pass names a backend.
+# ESLint is type-aware and `examples/bun` is in its project list, so linting
+# needs what the examples' TypeScript program resolves against: their own
+# `node_modules`, which only `just example` installed before, and
+# `packages/meo-canvas/dist`, which their `meo-canvas` dependency points at
+# for types. Locally both existed from earlier commands and the gate passed;
+# on a runner neither did, every import resolved to an error type, and
+# `no-unsafe-*` reported 102 errors in files with nothing wrong in them.
 [doc("Run clippy without fixing (CI-safe).")]
-lint-check: ensure-deps
+lint-check: ensure-deps build-js ensure-example-deps
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --all-targets --features "{{ host_features }}" -- -D warnings
     cargo clippy --manifest-path examples/rust/Cargo.toml --all-targets --features "{{ host_features }}" -- -D warnings
