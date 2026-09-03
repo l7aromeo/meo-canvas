@@ -10,13 +10,18 @@ name: fixtures
 # Linux set in the release container; there is no equivalent for Windows on a
 # developer's Mac, and this is it.
 #
-# Manual only. It writes nothing to the branch: it uploads an artifact, and a
-# person looks at the images before committing them. A workflow that pushed
-# accepted goldens would be a workflow that can turn a rendering regression into
-# a commit without anyone seeing it.
+# It writes nothing to the branch: it uploads an artifact, and a person looks at
+# the images before committing them. A workflow that pushed accepted goldens
+# would be a workflow that can turn a rendering regression into a commit without
+# anyone seeing it.
 run-name: >-
-  fixtures — accept on ${{ inputs.os }}
+  fixtures — render the goldens
 
+# **Both triggers, and the push one is not redundant.** `workflow_dispatch`
+# requires the workflow file to exist on the repository's default branch, and
+# this repository's default is `main` -- v1's semantic-release branch, which
+# nothing about v10 should be pushed to. So until 10.x is the default, a push to
+# a `fixtures/**` branch is how this is run.
 on:
   workflow_dispatch:
     inputs:
@@ -25,10 +30,8 @@ on:
         type: choice
         options: [windows-latest, ubuntu-latest, macos-latest]
         default: windows-latest
-      names:
-        description: "Space-separated fixture names, or empty to only report which differ"
-        type: string
-        default: ""
+  push:
+    branches: ["fixtures/**"]
 
 permissions:
   contents: read
@@ -43,8 +46,14 @@ defaults:
 
 jobs:
   accept:
-    name: accept on ${{ inputs.os }}
-    runs-on: ${{ inputs.os }}
+    name: accept on ${{ inputs.os || matrix.os }}
+    # A push carries no inputs, so the branch runs every platform that has a
+    # rasteriser of its own and lets the artifacts say which needed a variant.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ inputs.os && fromJSON(format('["{0}"]', inputs.os)) || fromJSON('["windows-latest","ubuntu-latest"]') }}
+    runs-on: ${{ inputs.os || matrix.os }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,7 +75,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: fixtures-${{ inputs.os }}
+          key: fixtures-${{ inputs.os || matrix.os }}
 
       # The same two the CI job installs, and for the same reasons: libaom
       # assembles its hot paths on x86, and Skia links the system font
@@ -89,19 +98,27 @@ jobs:
       # and again with the host's GPU feature, and it is the bare pass whose
       # comparison CI reports. Accepting from a different build than the one
       # being checked would pin a picture the gate never produces.
-      - name: Report which fixtures differ
-        id: report
-        continue-on-error: true
-        run: cargo test -p meo-canvas-core --test fixtures -- --nocapture
-
-      # One name at a time, which is what `MEO_FIXTURE_ACCEPT` allows and why:
-      # accepting a whole set in one command is how a regression becomes a
-      # commit. The loop is here so a person still names each fixture.
-      - name: Accept the named fixtures
-        if: ${{ inputs.names != '' }}
+      # The set is read from the report rather than typed, and the reason the
+      # "one name at a time" rule still holds is that **this commits nothing**.
+      # That rule exists so a bulk accept cannot become a commit unseen; here
+      # the output is an artifact somebody opens. Naming eight fixtures by hand
+      # for a push trigger that carries no inputs would only move the typing.
+      - name: Accept every fixture that differs
         run: |
           set -euo pipefail
-          for name in ${{ inputs.names }}; do
+          # `|| true` on the render, because a differing fixture is what this
+          # exists to find and the test reports it by failing. Without it
+          # `set -e` ends the step on exactly the outcome it came for.
+          report=$(cargo test -p meo-canvas-core --test fixtures -- --nocapture 2>&1 || true)
+          printf '%s\n' "$report" | tail -20
+          names=$(printf '%s\n' "$report" \
+            | sed -n 's/^  `\([a-z0-9-]*\)`: .* pixels differ.*/\1/p' | sort -u)
+          if [ -z "$names" ]; then
+            echo "every fixture matches the reference on this platform; no variant is needed"
+            exit 0
+          fi
+          echo "differing: $names"
+          for name in $names; do
             echo "==> $name"
             MEO_FIXTURE_ACCEPT="$name" cargo test -p meo-canvas-core --test fixtures
           done
@@ -111,7 +128,7 @@ jobs:
       # rather than take the run's word for it.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fixtures-${{ inputs.os }}
+          name: fixtures-${{ inputs.os || matrix.os }}
           path: |
             fixtures/**/expected.*.png
             target/fixtures/**
