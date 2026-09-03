@@ -291,6 +291,24 @@ describe('the helpers that now have a vector table', () => {
   })
 })
 
+describe('the refusals, which no table can carry', () => {
+  // A `throws` contract is not a vector: nothing about it comes from v1, and
+  // filing it under ground truth would say it did. These stayed inline when the
+  // numeric pins moved into tables -- and this one was dropped in that move and
+  // restored, having been caught by ESLint reporting its import as unused
+  // rather than by anything asserting the behaviour was gone.
+
+  it('refuses a spring that carries a range its owner already defines', () => {
+    // A track and a sequence step each define their own range and drive the
+    // spring over 0..1, so a `from` or `to` on the spring cannot be honoured --
+    // and dropping it silently would animate to a value nobody asked for while
+    // looking obeyed.
+    expect(() => assertSpringHasNoRange({ from: 0 }, 'a track')).toThrow(/cannot carry them/)
+    expect(() => assertSpringHasNoRange({ to: 1 }, 'a track')).toThrow(/cannot carry them/)
+    expect(() => assertSpringHasNoRange({ stiffness: 10 }, 'a track')).not.toThrow()
+  })
+})
+
 describe('the divergences the tables record rather than assert', () => {
   // A ground-truth table cannot both be the reference and record where we left
   // it, so the `diverges` rows are asserted here instead -- and asserted as
@@ -326,6 +344,13 @@ describe('the divergences the tables record rather than assert', () => {
     for (const alpha of [0.1, 0.33, 0.9]) {
       expect(parseColor(`rgba(0, 0, 0, ${alpha})`)?.a, `rgba(0, 0, 0, ${alpha})`).toBe(alpha)
     }
+    // Hex bytes reach the same defect by another route, and `#000000cc` is the
+    // one that looks like it should escape: 204/255 is exactly 0.8 in decimal,
+    // and 0.8 is still not representable in binary32.
+    expect(parseColor('#0000007f')?.a, '#0000007f').toBe(0x7f / 255)
+    expect(parseColor('#000000cc')?.a, '#000000cc').toBe(0.8)
+    // A percentage lands on the same f32 as its decimal spelling.
+    expect(parseColor('rgba(0, 0, 0, 33%)')?.a, '33%').toBe(0.33)
   })
 })
 

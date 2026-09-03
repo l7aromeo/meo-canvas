@@ -27,7 +27,17 @@
 # build `{r, g, b, a}` objects directly, so the alpha never passes the parser.
 # The parameter no row varied, for the fourth time in this audit.
 #
-# Only three of the six alpha rows fail on this surface: `0.5`, `0.25` and
+# Hex-byte alphas carry the same defect by a different route: `#0000007f` is
+# 127/255, and neither surface answers `0.4980392156862745`. `#000000cc` is
+# 204/255, which is exactly `0.8` in decimal and **still fails**, because `0.8`
+# is not representable in binary32 either -- a row that looks like it should
+# pass by luck and does not.
+#
+# Percentage spellings land on the same f32 as their decimal equivalents, so
+# `33%` fails exactly as `0.33` does. `12.5%` passes: it is a negative power of
+# two and exact in binary32.
+#
+# Only three of the six decimal alpha rows fail on this surface: `0.5`, `0.25` and
 # `0.75` are exactly representable in binary32 and already read back correctly.
 # It is `0.1`, `0.33` and `0.9` that do not -- which is why an eye passing over
 # the round numbers would have called it fine.
@@ -42,7 +52,7 @@
 # its strings for the same reason.
 #
 # css	kind	r	g	b	a	note
-# rows: 12
+# rows: 18
 #
 "#808080"	value	128	128	128	1	-
 "#f2aa4c"	value	242	170	76	1	-
@@ -56,3 +66,9 @@
 "rgba(0, 0, 0, 0.9)"	diverges	0	0	0	0.9	v1 quantises alpha to 0.902; ours is f32 0.8999999761581421
 "rgba(0, 0, 0, 0)"	value	0	0	0	0	-
 "#fff"	value	255	255	255	1	-
+"#0000007f"	diverges	0	0	0	0.4980392156862745	v1 gives 0.498; ours gives 0.49803921580314636
+"#0008"	diverges	0	0	0	0.5333333333333333	v1 gives 0.533; ours gives 0.5333333611488342
+"#000000cc"	diverges	0	0	0	0.8	ours gives 0.800000011920929
+"rgba(0, 0, 0, 50%)"	diverges	0	0	0	0.5	v1 gives 0.502
+"rgba(0, 0, 0, 33%)"	diverges	0	0	0	0.33	v1 gives 0.329; ours gives 0.33000001311302185
+"rgba(0, 0, 0, 12.5%)"	value	0	0	0	0.125	-
