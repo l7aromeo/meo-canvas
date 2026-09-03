@@ -282,10 +282,14 @@ impl<T: Animatable> Sampled for Parallel<T> {
 )]
 mod tests {
     use super::{Member, Parallel};
-    use crate::animate::{
-        easing::Easing,
-        sequence::{Sequence, Step},
-        track::{Motion, Track},
+    use crate::{
+        Error,
+        animate::{
+            easing::Easing,
+            sampled::Sampled,
+            sequence::{Sequence, Step},
+            track::{Motion, Track},
+        },
     };
 
     /// A linear track from 0 to `to` over `seconds`, staggering by `stagger`.
@@ -406,6 +410,121 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}")),
             vec![0.0]
         );
+    }
+
+    #[test]
+    fn the_three_types_answer_the_same_three_questions_through_the_trait() {
+        // **The point of the trait, asserted rather than assumed.** A caller
+        // generic over `Sampled` gets the same three answers from a track, a
+        // planned sequence and a group, and the numbers are the ones the
+        // inherent methods give. Nothing else here calls the trait, so
+        // without this the impls compile and are never run.
+        fn ask<M: Sampled>(motion: &M, count: usize) -> (f64, f64) {
+            (
+                motion
+                    .duration()
+                    .unwrap_or_else(|error| unreachable!("{error}")),
+                motion
+                    .total_duration(count)
+                    .unwrap_or_else(|error| unreachable!("{error}")),
+            )
+        }
+
+        let one = track(10.0, 1.0, 0.5);
+        assert_eq!(ask(&one, 3), (1.0, 2.0));
+        assert_eq!(
+            one.at(0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            Sampled::at(&one, 0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            "the trait and the inherent method are the same call"
+        );
+
+        let run = Sequence {
+            from: 0.0,
+            steps: vec![Step {
+                to: 10.0,
+                duration: Some(1.0),
+                motion: Motion::Ease(Easing::Linear),
+                hold: 0.0,
+            }],
+            delay: 0.25,
+            stagger: 0.5,
+        }
+        .plan()
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        // Measured from v1 through the JavaScript surface: a sequence delayed
+        // by 0.25 running 1s reports 1.25, and three of them 2.25.
+        assert_eq!(ask(&run, 3), (1.25, 2.25));
+        assert_eq!(
+            run.at(0.5, 0),
+            Sampled::at(&run, 0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            "a plan cannot fail, and the trait's `Result` is always `Ok`"
+        );
+
+        let both = group(vec![
+            ("track", Member::Track(one)),
+            ("sequence", Member::Sequence(run)),
+        ]);
+        assert_eq!(ask(&both, 3), (1.25, 2.25), "the longer member decides");
+        assert_eq!(
+            Sampled::at(&both, 0.5, 0)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            vec![5.0, 2.5]
+        );
+    }
+
+    #[test]
+    fn a_nested_group_answers_for_its_own_members() {
+        // The `Member::Group` arms of `duration` and `total_duration`, which
+        // the flat cases never reach: an outer group's length has to come
+        // through an inner group's, not around it.
+        let inner = group(vec![
+            ("staggering", Member::Track(track(5.0, 1.0, 1.0))),
+            ("long", Member::Track(track(9.0, 2.0, 0.0))),
+        ]);
+        let outer = group(vec![
+            ("short", Member::Track(track(1.0, 0.5, 0.0))),
+            ("in", Member::Group(inner)),
+        ]);
+
+        assert_eq!(
+            outer
+                .duration()
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            2.0,
+            "the inner group's longest member is the outer group's length"
+        );
+        assert_eq!(
+            outer
+                .total_duration(3)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            3.0,
+            "and the count reaches through the nesting"
+        );
+    }
+
+    #[test]
+    fn a_member_that_refuses_refuses_for_the_whole_group() {
+        // An eased track with no duration has no length, and a group holding
+        // one cannot answer either question. Without this the `?` in all three
+        // of `at`, `duration` and `total_duration` is never taken.
+        let lengthless = Track {
+            duration: None,
+            ..track(1.0, 1.0, 0.0)
+        };
+        let broken = group(vec![("bad", Member::Track(lengthless))]);
+
+        assert!(matches!(broken.at(0.5, 0), Err(Error::Track(_))));
+        assert!(matches!(broken.duration(), Err(Error::Track(_))));
+        assert!(matches!(broken.total_duration(3), Err(Error::Track(_))));
+
+        // And through a nesting, so the inner group's `?` is taken too.
+        let outer = group(vec![("in", Member::Group(broken))]);
+        assert!(matches!(outer.at(0.5, 0), Err(Error::Track(_))));
+        assert!(matches!(outer.duration(), Err(Error::Track(_))));
+        assert!(matches!(outer.total_duration(3), Err(Error::Track(_))));
     }
 
     #[test]

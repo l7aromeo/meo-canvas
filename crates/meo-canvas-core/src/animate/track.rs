@@ -320,6 +320,26 @@ mod tests {
     }
 
     #[test]
+    fn a_set_of_a_track_with_no_length_is_refused_rather_than_counted() {
+        // `total_duration` multiplies the stagger and adds the length, so a
+        // track that cannot say how long it is cannot say how long a row of
+        // them is either. Without this the `?` in `total_duration` is never
+        // taken and the method looks total.
+        let lengthless = Track {
+            duration: None,
+            motion: Motion::Ease(Easing::Linear),
+            ..linear()
+        };
+        assert!(matches!(lengthless.total_duration(3), Err(Error::Track(_))));
+
+        let backwards = Track {
+            delay: -1.0,
+            ..linear()
+        };
+        assert!(matches!(backwards.total_duration(3), Err(Error::Track(_))));
+    }
+
+    #[test]
     fn a_track_holds_at_both_ends() {
         let track = linear();
         assert!(
