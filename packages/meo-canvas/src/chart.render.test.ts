@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { fileURLToPath } from 'node:url'
 
 import { Chart, type ChartType } from './chart.js'
 import { Box, Root } from './index.js'
@@ -38,7 +39,12 @@ import { Box, Root } from './index.js'
  */
 
 /** The test font, so a label's width is the same on every machine. */
-const FONT = new URL('../../../crates/meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf', import.meta.url).pathname
+// `fileURLToPath`, not `.pathname`. A file URL's pathname on Windows is
+// `/D:/a/...`, and handing that to anything that resolves paths prepends the
+// current drive: `D:\D:\a\...`, ENOENT, in the three test files that read an
+// asset from disk and nowhere else. Nine other files here already did this
+// correctly; these three were the ones that had never run on Windows.
+const FONT = fileURLToPath(new URL('../../../crates/meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf', import.meta.url))
 
 /** One rendered page, as `[r, g, b, a]` rows. */
 interface Shot {

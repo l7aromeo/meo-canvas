@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
@@ -56,7 +57,12 @@ import { encodeScene } from './arena.js'
  * against them, and a legitimate change to the chart is a deliberate
  * regeneration: `UPDATE_CHART_BYTES=1 npx vitest run chart.agreement`.
  */
-const asset = (kind: string) => new URL(`../../../crates/meo-canvas/tests/assets/chart/${kind}-bytes.txt`, import.meta.url).pathname
+// `fileURLToPath`, not `.pathname`. A file URL's pathname on Windows is
+// `/D:/a/...`, and handing that to anything that resolves paths prepends the
+// current drive: `D:\D:\a\...`, ENOENT, in the three test files that read an
+// asset from disk and nowhere else. Nine other files here already did this
+// correctly; these three were the ones that had never run on Windows.
+const asset = (kind: string) => fileURLToPath(new URL(`../../../crates/meo-canvas/tests/assets/chart/${kind}-bytes.txt`, import.meta.url))
 
 interface Addon {
   sceneBytes(slots: Float64Array, values: readonly (string | Buffer)[]): Buffer
