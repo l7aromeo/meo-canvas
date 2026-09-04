@@ -1186,6 +1186,16 @@ encode. `13.71 ms` against `2.86 + 9.16 = 12.02 ms` of Rust paint and encode
 leaves about 1.7 ms for the boundary, the arena and the scene build, which is
 the shape one would expect rather than a contradiction.
 
+**And "paint" means two different spans in the two places it is written**, which
+is the part that reads as a contradiction until someone says so. `draw` in the
+table above is the drawing stage alone. The package README's ~9 ms is the whole
+native call, which also decodes the arena, resolves, measures and lays out
+before anything is drawn. **The two agree on the total** -- 2.86 + 9.16 against
+9 + 4 -- and disagree only on where the line between paint and encode falls.
+The roughly 6 ms between `draw` and the native call is where the flat floor
+lives: the cost a 20x20 canvas pays and a 4000x4000 canvas pays equally, which
+is why a thumbnail costs what a poster costs. Nobody has attributed it.
+
 ## Workflows
 
 `just` drives everything. `just` alone lists every recipe with its one-line
