@@ -21,6 +21,21 @@
 # what crates.io and npm render, and `clippy::cargo` requires the `readme` and
 # `license` metadata that names these. Internal prose stays in AGENTS.md alone.
 !/README.md
+
+# -- Community health -------------------------------------------------------
+# GitHub serves these from the **default branch**, so while `main` is the v1
+# lineage the repository looks complete and this branch has none of them. At the
+# swap they would simply vanish: no security policy, no code of conduct, and no
+# issue templates for the form people actually file through. Named here so they
+# can exist at all -- every one of these paths is refused by the `*` above, which
+# is why copying them across from `main` would have failed silently.
+!/CODE_OF_CONDUCT.md
+!/SECURITY.md
+!/CONTRIBUTING.md
+!/.github/CODEOWNERS
+!/.github/PULL_REQUEST_TEMPLATE.md
+!/.github/ISSUE_TEMPLATE/*.yml
+!/.github/ISSUE_TEMPLATE/*.md
 !/LICENSE
 
 # -- Crates -----------------------------------------------------------------
