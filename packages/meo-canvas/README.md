@@ -37,7 +37,7 @@ in.
 **Coming from v9?** Read
 [MIGRATING.md](https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md) first. Most calls
 survive, but three keep their name and change what they do — `mixColor` above all, which takes
-colour objects now and returns nulls rather than throwing when handed v9's strings.
+colour objects now and refuses a v9 string call rather than answering it.
 
 ### Platforms
 
@@ -53,7 +53,7 @@ working.
 | Linux (glibc) | x64, arm64   | glibc 2.28 or newer                           |
 | Linux (musl)  | x64, arm64   | Alpine 3.x, or any musl host with `libstdc++` |
 | macOS         | arm64        | macOS 11 or newer                             |
-| Windows       | x64          | —                                             |
+| Windows       | x64, arm64   | —                                             |
 
 **The glibc floor is 2.28, and it is measured rather than declared.** That is
 AlmaLinux 8 and RHEL 8, which is older than every currently supported
@@ -170,6 +170,39 @@ Worker threads each keep their own registry, so each has to register its own
 faces and each is affected only by itself. Two renders already in flight keep
 the faces they were given.
 
+## Fetching images
+
+An `Image` whose `src` is a URL is fetched before anything is drawn, and
+`httpOptions` is passed to `fetch` for every one of them — headers, credentials,
+a proxy agent, an `AbortSignal`, whatever the runtime's `fetch` accepts.
+
+```ts
+import { Image, Root } from 'meo-canvas'
+
+const token = process.env['IMAGE_TOKEN'] ?? ''
+
+const canvas = await Root({
+  width: 600,
+  httpOptions: { headers: { authorization: `Bearer ${token}` } },
+  children: [Image({ src: { url: 'https://example.invalid/photo.png' } })],
+})
+canvas.release()
+```
+
+**Bytes cross to the renderer, never URLs**, so anything set here reaches the
+origin and nothing else.
+
+Two bounds apply whatever you pass, and they match the ones the Rust crate sets
+for itself: **a fetch has 60 seconds** and **an image may not exceed 32 MiB**.
+The size is counted while reading rather than taken from `content-length`, which
+a server may omit and may lie about. Both refuse with a message naming the limit
+as this renderer's.
+
+A signal you pass is kept rather than replaced — the deadline is composed with
+it, so either can abort. If you need a different policy, fetch the bytes
+yourself and pass them as an inline source; that path has no limits of ours on
+it at all.
+
 ## Sizing a service
 
 Measured on an Apple M4 Pro, macOS 26.6.2, Node v26.4.0 — the shape rather than
@@ -184,9 +217,15 @@ it.
 
 Encoding is what turns the drawing into pixels, and it grows with area — so it
 is the half that answers "how big". A **480×320 render takes about 13 ms end to
-end, which is 75 a second on one thread**: ~9 ms of paint, ~4 ms of encode. The
+end, which is about 73 a second on one thread**: ~9 ms of paint, ~4 ms of encode. The
 same thread does about four a second at 4000×4000, where the encode alone is
 ~256 ms.
+
+**"Paint" here is the whole native call** — the arena decode, resolve, measure,
+layout and the drawing. `AGENTS.md`'s benchmark table splits the same render
+differently, at 2.86 ms of _drawing_ against 9.16 ms of encode, because its
+`draw` is only the last of those stages. The two agree on the total and measure
+different things; the roughly 6 ms between them is where the flat floor lives.
 
 So plan with the whole render rather than the floor. **A thumbnail and a poster
 cost the same to paint and nothing like the same to encode**, the floor is what

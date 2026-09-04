@@ -221,6 +221,61 @@ describe('a url source', () => {
     }
   })
 
+  it('bounds the body, counting rather than trusting content-length', async () => {
+    // **Counted while reading.** The header claims one byte and the stream
+    // sends thirty-three mebibytes, which is the shape of the attack a cap
+    // built on `content-length` does not stop.
+    const chunk = new Uint8Array(1024 * 1024)
+    const restore = withFetch(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.enqueue(chunk)
+            },
+          }),
+          { status: 200, headers: { 'content-length': '1' } },
+        ),
+    )
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/big.png' } }) }, dependencies)).rejects.toThrow(
+        /larger than the 32 MiB this renderer fetches/,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('keeps the caller signal rather than replacing it with the deadline', async () => {
+    // The bound is added to the caller's control, not taken from it: a signal
+    // they passed still aborts, and the message is theirs rather than ours.
+    // Without `AbortSignal.any` this test passes only by accident, because the
+    // deadline would have overwritten `signal` and nothing would abort at all.
+    const controller = new AbortController()
+    let composed: AbortSignal | undefined
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      composed = init?.signal ?? undefined
+      controller.abort(new Error('the caller changed their mind'))
+      throw composed?.reason instanceof Error ? composed.reason : new Error('aborted')
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await expect(
+        Root({ width: 10, height: 10, httpOptions: { signal: controller.signal }, children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies),
+      ).rejects.toThrow(/the caller changed their mind/)
+      expect(composed?.aborted).toBe(true)
+      // Ours did not fire, so the message must not claim a timeout.
+      await expect(
+        Root({ width: 10, height: 10, httpOptions: { signal: controller.signal }, children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies),
+      ).rejects.not.toThrow(/seconds this renderer waits/)
+    } finally {
+      restore()
+    }
+  })
+
   // The status is named rather than swallowed: a 404 that reached the decoder
   // as an HTML error page would fail as "undecodable image", which sends the
   // reader looking at the picture instead of at the server.

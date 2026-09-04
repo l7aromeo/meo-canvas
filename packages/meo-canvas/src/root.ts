@@ -23,6 +23,83 @@ import type { ColorSpace, ColorType } from './index.js'
 import type { Style } from './style.js'
 
 /**
+ * How long a fetch may take, connection and body together.
+ *
+ * **Sixty seconds, matching `GLOBAL_TIMEOUT` in `meo-canvas-core`'s `resolve`,
+ * so the two surfaces wait the same length of time.** `fetch` has no timeout of
+ * its own: without this, a URL that accepts a connection and then says nothing
+ * holds the render for as long as the peer cares to hold it, which on a server
+ * is a request that never completes rather than one that fails.
+ *
+ * That a caller *can* pass their own `AbortSignal` is not a reason to leave it
+ * unbounded. A default that hangs is a defect whether or not it is overridable,
+ * and it is the same argument the crate rejected for itself.
+ */
+const FETCH_TIMEOUT_MS = 60_000
+
+/**
+ * The largest image this surface will fetch.
+ *
+ * Thirty-two mebibytes, matching `MAX_IMAGE_BYTES` in `meo-canvas-core`. Sixty
+ * seconds against it is a floor of about 4.5 Mbit/s, which is why the timeout
+ * and the cap are one decision rather than two.
+ */
+const MAX_IMAGE_BYTES = 32 * 1024 * 1024
+
+/**
+ * The response body, refused once it passes {@link MAX_IMAGE_BYTES}.
+ *
+ * **Counted while reading rather than believed from `content-length`**, which a
+ * server may omit and may lie about — the crate's own fetch says the same, and
+ * a cap that trusts a header is a cap an attacker sets. `arrayBuffer()` cannot
+ * do this: it has already allocated the whole body by the time it returns.
+ *
+ * The limit is named as this renderer's in the message, because a caller
+ * meeting it needs to know whose number it is before they can decide whether to
+ * fetch the bytes themselves and pass them as an inline source — which is the
+ * escape, and the same one the crate offers.
+ */
+async function bounded(url: string, response: Response): Promise<Uint8Array> {
+  const reader = response.body?.getReader()
+  // A body with no stream — an empty response, or a `fetch` a test replaced
+  // with something simpler. Nothing to read incrementally, so the check is the
+  // same one against what arrived.
+  if (reader === undefined) {
+    const whole = new Uint8Array(await response.arrayBuffer())
+    if (whole.byteLength > MAX_IMAGE_BYTES) throw tooLarge(url)
+    return whole
+  }
+
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_IMAGE_BYTES) {
+      // Stop the transfer rather than draining it: the point of counting while
+      // reading is that the bytes past the limit are never taken.
+      await reader.cancel()
+      throw tooLarge(url)
+    }
+    chunks.push(value)
+  }
+
+  const bytes = new Uint8Array(total)
+  let at = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, at)
+    at += chunk.byteLength
+  }
+  return bytes
+}
+
+/** The refusal, worded as the crate words its own. */
+function tooLarge(url: string): TypeError {
+  return new TypeError(`cannot fetch ${JSON.stringify(url)}: the image is larger than the ${MAX_IMAGE_BYTES / (1024 * 1024)} MiB this renderer fetches`)
+}
+
+/**
  * A font family, and the files that make it up.
  *
  * # Registering a family changes the process, and cannot be undone
@@ -434,16 +511,31 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
     const fetched = new Map<string, Uint8Array>()
     await Promise.all(
       wanted.map(async url => {
+        const deadline = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        // **Composed rather than substituted.** A caller who passed their own
+        // signal keeps it: `AbortSignal.any` aborts when either fires, so the
+        // bound is added to their control rather than taking it away.
+        const caller = props.httpOptions?.signal
+        const signal = caller === undefined || caller === null ? deadline : AbortSignal.any([deadline, caller])
+
         let response: Response
         try {
-          response = await fetch(url, props.httpOptions)
+          response = await fetch(url, { ...props.httpOptions, signal })
         } catch (cause) {
+          // Ours or theirs is worth distinguishing: one is a limit this
+          // renderer chose and the other is the caller's own abort, and a
+          // reader who cannot tell them apart looks in the wrong place.
+          if (deadline.aborted && !(caller?.aborted ?? false)) {
+            throw new TypeError(`cannot fetch ${JSON.stringify(url)}: it took longer than the ${FETCH_TIMEOUT_MS / 1000} seconds this renderer waits`, {
+              cause,
+            })
+          }
           throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
         }
         if (!response.ok) {
           throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${response.status} ${response.statusText}`)
         }
-        fetched.set(url, new Uint8Array(await response.arrayBuffer()))
+        fetched.set(url, await bounded(url, response))
       }),
     )
     arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched)

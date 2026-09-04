@@ -85,7 +85,11 @@ This library takes untrusted input in more places than most, so it is worth bein
   dimensions** and that is documented rather than accidental — sizes come from your code, and
   bounding them is yours to do. See "Sizing a service" in the package README.
 - Fetching a URL a caller passed in. The renderer fetches what the scene names; deciding what may
-  be named is the caller's job.
+  be named is the caller's job. **What the fetch itself may cost is ours, and is bounded**: 60
+  seconds and 32 MiB on both surfaces, with the size counted while reading rather than taken from
+  `content-length`. A caller who passes an `AbortSignal` keeps it — the deadline is composed with
+  theirs — and a caller wanting a different policy fetches the bytes and passes them inline, which
+  is the escape on both surfaces.
 - A font registered by one render affecting a later one in the same process. This is real, it is
   documented on `FontRegistration`, and it is a property of the registry below this project rather
   than a defect here — but a service that registers per request should read that note.

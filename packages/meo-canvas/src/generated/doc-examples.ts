@@ -121,6 +121,19 @@ export async function example_README_md_3(): Promise<void> {
   canvas.release()
 }
 
+/** `README.md`. */
+export async function example_README_md_4(): Promise<void> {
+
+  const token = process.env['IMAGE_TOKEN'] ?? ''
+
+  const canvas = await Root({
+    width: 600,
+    httpOptions: { headers: { authorization: `Bearer ${token}` } },
+    children: [Image({ src: { url: 'https://example.invalid/photo.png' } })],
+  })
+  canvas.release()
+}
+
 /** `../../README.md`. */
 export async function example_______README_md(): Promise<void> {
 

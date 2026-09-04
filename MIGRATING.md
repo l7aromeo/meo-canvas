@@ -126,6 +126,9 @@ The easing set itself is unchanged: 31 names in v9, 31 in v10, and `cubicBezier`
 
 More than you would expect for a rewrite, and this is the reassuring half.
 
+`parallel` is unchanged and worth naming, since a migration guide that lists `track` and `sequence`
+and not the third combinator reads as though it went somewhere. It did not: same call, same answer.
+
 These `Root` props mean exactly what they did: `children`, `pages`, `duration`, `fps`, `width`,
 `height`, `scale`, `fonts`, `gpu`, `colorType`, `colorSpace`. The node factories `Box`, `Row`,
 `Column`, `Grid`, `Image`, `Path`, `Chart` and `Text` are still there and still take props objects.
@@ -146,9 +149,10 @@ serves every later render on that thread, and a render that names a family it ne
 whatever an earlier one left behind instead of failing. Register at start-up, not per request. See
 `FontRegistration` in the API reference for the whole of it.
 
-**A render is about 13 ms and only half of it depends on the picture.** Painting is a flat ~9 ms
-whatever it draws; encoding is what grows with area. One thread does roughly 75 renders a second at
-480×320 and about four a second at 4000×4000. v9's worker pool is gone, so if you were leaning on
+**A render is about 13 ms and only half of it depends on the picture.** Painting — the whole native
+call, from arena decode through layout to the drawing — is a flat ~9 ms whatever it draws; encoding
+is what grows with area. One thread does about 73 renders a second at 480×320 and about four a
+second at 4000×4000. v9's worker pool is gone, so if you were leaning on
 it, a pool of `worker_thread`s doing their own renders is the replacement — they share nothing and
 scale.
 
@@ -158,7 +162,7 @@ A migration guide is not a feature tour, so only what you might go looking for: 
 per-span styling within one paragraph, `Canvas` as a named export you can annotate, chart internals
 (`barLayout`, `gridLines`, `linePath`, `linePoints`, `sliceAngles`, `slicePath`, `seriesColor`) if
 you are drawing your own, `httpOptions` on `Root` for fetching image URLs, and CSS grid and block
-display alongside flex. There is also a Rust crate now, with the same capabilities.
+display alongside flex. There is also a Rust crate now, covering the same ground — with the one difference that fetching a URL is behind its `net` feature there and always available here.
 
 ## Scope of this guide
 

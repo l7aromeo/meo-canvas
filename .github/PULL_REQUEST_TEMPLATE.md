@@ -23,7 +23,7 @@ guard, say how you saw it fire.
 - [ ] `just typecheck`
 - [ ] `just test`
 - [ ] `just test-js`
-- [ ] `just doc-examples-check` and `just docs`
+- [ ] `just doc-examples-check`, `just docs` and `just docs-js`
 
 <!--
 Run them separately rather than chained. `just test-js` passing while `just typecheck` fails is a
@@ -56,6 +56,6 @@ later.
 
 ## Checklist
 
-- [ ] New public items carry doc comments, and `just docs` passes — the published reference is built from them
+- [ ] New public items carry doc comments, and `just docs` and `just docs-js` pass — the two published references are built from them, one per surface
 - [ ] A behaviour change that a caller could not guess is written down where they would look, not only in the commit
 - [ ] Breaking changes explain what a caller has to do instead
