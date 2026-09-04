@@ -82,6 +82,7 @@ ensure-example-deps:
 # `--output-path target/lcov.info`, a literal relative path that no target-dir
 # setting moves, so two gates still write one file -- milder by a long way,
 # and not nothing.
+[doc("Run every gate, once, in this tree.")]
 ci:
     #!/usr/bin/env bash
     # One shell for the whole recipe, which is what lets the trap outlive the
@@ -178,6 +179,7 @@ addon:
 # rasterises on the CPU and a test asserting that the two rasterisers differ
 # would pass vacuously. A run without the features is a run where the assertion
 # that matters cannot fail.
+[doc("Run the Rust tests, the doctests and the golden fixtures.")]
 test:
     cargo test --workspace
     cargo test -p meo-canvas-node --features "{{ host_features }}"
@@ -221,6 +223,7 @@ test:
 # This exists because nothing scanned at all until 4 September 2026, when three
 # advisories were found by querying OSV by hand against the 385 crates in
 # `Cargo.lock`. A finding that needs someone to think of looking is not a gate.
+[doc("Fail on a known vulnerability in the dependency tree.")]
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
@@ -241,6 +244,7 @@ audit:
 #
 # Not in `ci-steps`. It runs as its own step so its verdict is legible on its
 # own, and it does not gate while the answer is unknown.
+[doc("Check an ordinary addon survives a worker-thread pool.")]
 threads-probe: ensure-deps addon
     ./node_modules/.bin/vitest run --pool=threads
 
@@ -1101,6 +1105,7 @@ doc-examples-check:
 # **This replaces the test that asserted the three lists agreed.** A generated
 # file plus an equality assertion between it and its source is one mechanism
 # written twice, and a reader cannot tell which is authoritative.
+[doc("Fail when the generated platform package list is out of date.")]
 platform-packages-check:
     @mkdir -p target/platform-packages
     @node packages/meo-canvas/tools/generate-platform-packages.mjs target/platform-packages
@@ -1158,6 +1163,7 @@ arena-tables:
 # scene with that property set and the bytes the byte format writes for it.
 # Keyed by Rust field name; the TypeScript spelling is the public API and lives
 # in the encoder.
+[doc("Regenerate the arena property cases the encoder is checked against.")]
 arena-cases:
     cargo test -p meo-canvas-node --lib -- --ignored --exact \
       arena::cases::tests::emit_arena_cases
@@ -1168,6 +1174,7 @@ arena-cases:
 # `arena-tables-check` does: `git status` reports a file as changed whether it
 # is untracked, written or staged, so a check built on it refuses the workflow
 # it exists to support.
+[doc("Fail when the arena property cases are out of date.")]
 arena-cases-check:
     @mkdir -p target
     @MEO_ARENA_CASES="$PWD/target/arena-cases.check.json" cargo test -q \
