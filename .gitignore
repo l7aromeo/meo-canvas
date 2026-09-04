@@ -38,6 +38,11 @@
 !/.github/ISSUE_TEMPLATE/*.md
 !/.github/FUNDING.yml
 !/SUPPORT.md
+# The v9 -> v10 migration guide. At the root rather than in the package, and
+# linked from the README by absolute URL: the npm tarball ships only `dist`,
+# `src`, `package.json`, `LICENSE` and `README.md`, so a relative link would
+# 404 for exactly the reader it is written for.
+!/MIGRATING.md
 !/LICENSE
 
 # -- Crates -----------------------------------------------------------------
