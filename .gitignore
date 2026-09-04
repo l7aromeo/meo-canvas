@@ -43,6 +43,18 @@
 # `src`, `package.json`, `LICENSE` and `README.md`, so a relative link would
 # 404 for exactly the reader it is written for.
 !/MIGRATING.md
+
+# -- Brand ------------------------------------------------------------------
+# The banners on the three READMEs, and the script that draws them. Drawn by
+# meo-canvas itself, so they are proof rather than illustration: if rendering
+# breaks, the banner breaks. **Not LFS** -- our own encoder is efficient enough
+# that an animated banner is a few hundred kilobytes, and README images are
+# fetched on every npm and crates.io page view, which is metered bandwidth on
+# LFS and free here.
+!/tools/brand/**
+!/docs/assets/brand/*.webp
+!/docs/assets/brand/*.png
+!/docs/assets/brand/README.md
 !/LICENSE
 
 # -- Crates -----------------------------------------------------------------
