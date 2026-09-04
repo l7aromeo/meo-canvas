@@ -33,6 +33,18 @@
 //! | 6 | the scene names a source this build cannot obtain |
 //! | 7 | a render pass failed |
 
+// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
+// way.** Measured before it was declared: zero occurrences of the token across
+// every `crates/*/src`. A renderer reaching a C++ library through two binding
+// layers is exactly the crate where an `unsafe` would look reasonable and go
+// unquestioned, and the declaration turns adding one into a decision someone
+// has to make deliberately rather than a line that passes review.
+//
+// The integration tests are separate crates and are not covered: the
+// allocator that measures `codec::decode`'s reservation has to be an
+// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
+// it exists to measure a defect.
+#![forbid(unsafe_code)]
 // The CLI's whole output contract is stdout and stderr: the rendered bytes go
 // to a file or to stdout, and progress goes to stderr. `print_stdout` is a
 // warning aimed at libraries that log where a caller cannot intercept it, which

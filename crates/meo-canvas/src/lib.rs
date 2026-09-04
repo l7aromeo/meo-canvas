@@ -125,6 +125,18 @@
 //! here -- that API already exists, in `meo-skia-canvas`, and reproducing it
 //! would give the workspace two answers to the same question.
 
+// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
+// way.** Measured before it was declared: zero occurrences of the token across
+// every `crates/*/src`. A renderer reaching a C++ library through two binding
+// layers is exactly the crate where an `unsafe` would look reasonable and go
+// unquestioned, and the declaration turns adding one into a decision someone
+// has to make deliberately rather than a line that passes review.
+//
+// The integration tests are separate crates and are not covered: the
+// allocator that measures `codec::decode`'s reservation has to be an
+// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
+// it exists to measure a defect.
+#![forbid(unsafe_code)]
 pub mod chart;
 pub mod element;
 pub mod root;

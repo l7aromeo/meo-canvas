@@ -2811,7 +2811,24 @@ fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
 /// the way from black to white is `64` encoded and `137` linear, and the
 /// second is what we drew before this converted. The blend has to happen in
 /// whichever space the ramp either side of it is being drawn in.
+/// # Panics
+///
+/// **On an empty `stops`, and the guard against that is the caller's.** The
+/// first and last stop are read before anything else, so there is nothing
+/// sensible to return for a gradient with no colours in it. `conic_shader`
+/// refuses that case five lines above the call, and the render fuzz reaches
+/// this arm often enough that the refusal is exercised rather than merely
+/// present -- 1,509 of one 2,000-scene run were empty-gradient refusals.
+///
+/// The assertion below is what makes that caller's check load-bearing instead
+/// of incidental: a second caller added later fails here in a debug build
+/// rather than indexing past the end in a release one.
 fn seam_color(stops: &[SkiaGradientStop], turns: f32) -> RgbaLinear {
+    debug_assert!(
+        !stops.is_empty(),
+        "seam_color needs at least one stop; the caller checks `is_empty` \
+         before calling and a new caller must do the same"
+    );
     let at = (-turns).rem_euclid(1.0);
     let (mut before, mut after) = (stops[0], stops[stops.len() - 1]);
     for stop in stops {
