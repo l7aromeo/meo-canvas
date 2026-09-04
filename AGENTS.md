@@ -1158,6 +1158,25 @@ Taken at `c2035a8`, 5 September 2026, on an **Apple M4 Pro, 14 cores, macOS
 | baseline rss        | 90.6 MiB |
 | retained after idle | +8.3 MiB |
 
+**Re-measured at `74a8418`, after `meo-skia-canvas` 0.13 → 0.14 took skia-safe
+0.99 → 0.153 and Skia M150 → M153, and the table above still stands.** Every
+criterion median moved by less than 1% except `resolve` over 551 nodes, which
+read 59.60 µs against 52.90 µs — and that is the one measurement whose own
+confidence interval this run spanned 54.08 to 64.82 µs, a ±9% width no other
+benchmark came near. **A Skia bump moving `resolve` while `draw` and
+`re-encode` hold at −0.3% and +0.1% is backwards**, which is the argument that
+it is the instrument rather than the code. `bench-js` read 69.2/s and 14.39 ms
+at p50 against 72.7/s and 13.71 ms, about 5% — inside this repository's own
+floor that ~10% is noise rather than a result, so the recorded numbers are left
+as they are.
+
+Upstream measured the same bump as flat across thirty-five timings, median move
+−0.5%. **That is their measurement on their code**, quoted because it agrees
+rather than because it substitutes: the numbers in the table above are ours.
+
+The table omits `render/resolve/111-nodes`, which the suite also runs and which
+read 12.15 µs here.
+
 **Encoding is still more than half the pipeline**, which is why separating
 rendering from encoding is worth more than any allocation fix: a second format
 costs a fraction of a fresh render rather than all of it.
@@ -3334,16 +3353,18 @@ What that pass found, kept here because each is a shape rather than an incident:
 Every dependency is on its latest stable release, and the two exceptions say
 why.
 
-|                   |      |                                                                                                           |
-| ----------------- | ---- | --------------------------------------------------------------------------------------------------------- |
-| `meo-skia-canvas` | 0.13 | Skia, text shaping, encoding. `default-features = false`.                                                 |
-| `taffy`           | 0.14 | Flexbox, CSS grid, block layout. Without `calc`. 0.14 changed the measure signature and moved `min_size`. |
-| `csscolorparser`  | 0.8  | CSS colour syntax. Holds channels as `f32`, which is where alpha loses its author's digits -- see below.  |
-| `neon`            | 1.1  | Node addon.                                                                                               |
-| `clap`            | 4.6  | CLI.                                                                                                      |
-| `thiserror`       | 2.0  | Error types.                                                                                              |
-| `ureq`            | 3.4  | Remote images, behind the optional `net` feature the core and the CLI each carry.                         |
-| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing.                                               |
+|                   |      |                                                                                                             |
+| ----------------- | ---- | ----------------------------------------------------------------------------------------------------------- |
+| `meo-skia-canvas` | 0.14 | Skia, text shaping, encoding. `default-features = false`. Binds Skia M153 through skia-safe 0.153.          |
+| `taffy`           | 0.14 | Flexbox, CSS grid, block layout. Without `calc`. 0.14 changed the measure signature and moved `min_size`.   |
+| `csscolorparser`  | 0.8  | CSS colour syntax. Holds channels as `f32`, which is where alpha loses its author's digits -- see below.    |
+| `neon`            | 1.1  | Node addon.                                                                                                 |
+| `clap`            | 4.6  | CLI.                                                                                                        |
+| `thiserror`       | 2.0  | Error types.                                                                                                |
+| `ureq`            | 3.4  | Remote images, behind the optional `net` feature the core and the CLI each carry.                           |
+| `rayon`           | 1.12 | The pool the addon's asynchronous encode runs on. Not an async runtime -- `just runtime-free` still passes. |
+| `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing.                                                 |
+| `criterion`       | dev  | `just bench-rust`. `harness = false`, since it supplies its own.                                            |
 
 |            |       |                                                                                              |
 | ---------- | ----- | -------------------------------------------------------------------------------------------- |
