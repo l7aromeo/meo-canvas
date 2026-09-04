@@ -422,6 +422,15 @@ coverage: ensure-deps
     printf 'the addon boundary is at %.2f%% of regions, floor 60\n' "$measured"
     python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= 60.0 else 1)' "$measured"
 
+    # **Put an ordinary addon back.** The instrumented one is the point of
+    # everything above, and leaving it is what the comment used to tell a reader
+    # to undo by hand -- a recipe describing its own cleanup rather than doing
+    # it. Worse, `ci-steps` runs `example` afterwards, so every example wrote a
+    # `.profraw` into whatever directory it ran from; nine of them were sitting
+    # in `examples/bun` when this was found. Gitignored, so nothing reached a
+    # commit, and accumulating anyway.
+    just addon
+
     else
       echo "the addon boundary is not measured on windows; see the note above"
     fi
