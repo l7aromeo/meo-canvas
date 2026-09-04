@@ -178,7 +178,13 @@ function loadFailure(platformPackage: string, cause: unknown): string {
     return (
       `${platformPackage} is installed, and it needs glibc ${floors.glibc} or newer; this host has ${host.version}. ` +
       `No package installs around that -- it is the C library the system is built on. ` +
-      `Run on a newer image, or ${fix.charAt(0).toLowerCase()}${fix.slice(1)}`
+      // **Appended whole rather than spliced mid-sentence.** This read
+      // `Run on a newer image, or ${lowercased fix}`, which worked while `fix`
+      // was one sentence and stopped working when it grew to two: the result
+      // was a clause, a full stop, and then a second sentence opening with a
+      // capital where a conjunction had been promised. Nothing but a reader
+      // meeting the message could see it.
+      `Run on a newer image. ${fix}`
     )
   }
 

@@ -1072,6 +1072,39 @@ Allocation in the paint stage is on the critical path for every frame of an
 animated render. Prefer reusing a buffer over allocating per node, and say in a
 comment what the reuse is worth when it is not obvious.
 
+**The same shape seen from JavaScript, which is the surface most callers use.**
+Measured through the addon on darwin-arm64, by wrapping
+`dependencies.renderer.paint` so the native call is timed apart from everything
+around it:
+
+| nodes | total     | tree + arena  | native paint    | encode        |
+| ----- | --------- | ------------- | --------------- | ------------- |
+| 10    | 19.00 ms  | 0.21 ms (1%)  | 9.63 ms (51%)   | 9.16 ms (48%) |
+| 100   | 16.21 ms  | 0.37 ms (2%)  | 11.06 ms (68%)  | 4.79 ms (30%) |
+| 1000  | 47.38 ms  | 2.88 ms (6%)  | 39.21 ms (83%)  | 5.29 ms (11%) |
+| 5000  | 244.36 ms | 13.07 ms (5%) | 224.41 ms (92%) | 6.88 ms (3%)  |
+
+**The JavaScript side is not where the time is** -- between one and six per cent
+at every size. The `Float64Array` arena is doing what it was built for, and an
+optimisation there is an optimisation of five per cent of the problem. Node
+count scales linearly: 100 000 nodes 838 ms, 500 000 nodes 4125 ms.
+
+**Paint costs about 9 ms per call whatever it is painting.** A 20×20 canvas with
+one node costs what a 4000×4000 canvas costs, on the GPU and on the CPU alike,
+because paint records a picture and rasterising happens at encode -- `Root()` at
+200000×200000 returns with RSS at 79 MB. It matches `draw, without encode` in
+the table above, reached independently. The first call in a process is 40--53 ms
+and every one after is 8.4--9.7 ms; it is not GPU context setup, not font
+enumeration, and not the arena.
+
+The number a person sizing a service needs, and the reason this is written down:
+**about 110 renders per second per thread, regardless of how small the picture
+is.** Encode is what scales with pixels -- 11 ms at 800², 65 ms at 2000²,
+256 ms at 4000² -- so a service drawing many small images is bounded by the
+per-call cost and one drawing few large ones is bounded by area. Both numbers
+are from one machine and one binary; treat them as the shape rather than as a
+specification.
+
 ## Workflows
 
 `just` drives everything. `just` alone lists every recipe with its one-line
@@ -2995,6 +3028,27 @@ tarball, so a re-run after a bootstrap publishes the main package and tags.
 Before `just release-npm` on a version that adds a platform package:
 `npm view meo-canvas-<suffix> version` -- an `E404` means bootstrap first.
 
+**Every platform package must exist before the main one, and the check is per
+name rather than per release.** npm and pnpm skip an optional dependency whose
+`os`, `cpu` or `libc` excludes the host and never ask the registry about it, so
+a missing platform package costs nothing to anyone who could not have used it.
+**yarn resolves all seven before it installs any**, and a 404 on one fails the
+whole install:
+
+```text
+➤ YN0035: │ meo-canvas-linux-x64-musl@npm:10.0.0-alpha.4: Package not found
+➤ YN0035: │   Response Code: 404 (Not Found)
+➤ YN0000: · Failed with errors in 0s 408ms
+```
+
+Measured with yarn 4.10.3, against the same tarballs npm and pnpm install
+without complaint. So the window between publishing the main package and
+finishing the platform bootstrap is a window in which every yarn install fails
+outright -- and that window is **the expected path rather than an accident**,
+because the bootstrap is by hand, one at a time, with a pause between. Publish
+all seven first, `npm view` each name, and only then the package that depends on
+them.
+
 ### The reference publishes after the version resolves from npm
 
 `docs.yml` builds the TypeDoc reference on every pull request that touches the
@@ -3004,9 +3058,10 @@ surface, and publishes it to GitHub Pages when a release is published -- which
 installable are separated by propagation. One directory per version,
 prereleases included; `latest/` follows the newest **stable** version the way
 npm's dist-tag does. The tool lives in `packages/meo-canvas/tools/typedoc/`,
-fails on a dead link or a type reaching a signature unexported, and ratchets
-the undocumented-member count: 92 today, may fall, may not rise. Its first build
-found twelve structural defects in the surface.
+fails on a dead link or a type reaching a signature unexported, and refuses any
+undocumented member at all: `undocumented-baseline.txt` is `0`, which a ratchet
+reached from the ninety-two there on the day it arrived and which a floor of
+zero now holds. Its first build found twelve structural defects in the surface.
 
 ### The publishing audit
 
