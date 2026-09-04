@@ -158,16 +158,24 @@ function loadFailure(platformPackage: string, cause: unknown): string {
   const detail = cause instanceof Error ? cause.message : String(cause)
   const fix = `${BUILD_IT} Or point ${OVERRIDE} at a binary you built.`
 
-  // A shared object the binary needs and the host does not have. First because
-  // it is the failure a consumer meets first: a stock `node:22-slim` has
-  // neither `libfontconfig.so.1` nor `libfreetype.so.6`.
-  const missing = /([\w.+-]+\.so[\w.]*): cannot open shared object file/.exec(detail)
-  if (missing !== null) {
-    return (
-      `${platformPackage} is installed, and loading it needs ${missing[1]}, which this host does not have. ` +
-      `Install it -- \`libfontconfig1\` and \`libfreetype6\` on Debian and Ubuntu, \`fontconfig\` and \`freetype\` on RHEL-family images. ` +
-      fix
-    )
+  // A shared object the binary needs and the host does not have.
+  //
+  // **No artefact this project publishes can reach this today, and it is kept
+  // anyway.** The `linux-arm64-gnu` binary was read: eight `DT_NEEDED` entries
+  // -- `libdl`, `libz`, `libstdc++`, `libm`, `libgcc_s`, `libpthread`, `libc`,
+  // `ld-linux` -- with no `libfontconfig.so.1` and no `libfreetype.so.6`,
+  // because both are linked statically, and all eight resolve on a stock
+  // `node:22-slim`, on `debian:12` and on `node:22-alpine`. The branch it was
+  // written for is gone.
+  //
+  // It stays because **dead for what we ship today is not dead**: a target that
+  // links dynamically would bring it straight back, `MEO_CANVAS_ADDON` can name
+  // a binary built any way at all, and the musl artefact genuinely needs a
+  // `libstdc++` its host might lack. It was reached deliberately, by adding a
+  // `DT_NEEDED` nothing provides, so this is measured rather than assumed.
+  const missing = missingLibrary(detail)
+  if (missing !== undefined) {
+    return `${platformPackage} is installed, and loading it needs ${missing}, which this host does not have. ${installing(missing)} ${fix}`
   }
 
   // A glibc older than the binary was built against, named against the floor
@@ -192,6 +200,61 @@ function loadFailure(platformPackage: string, cause: unknown): string {
   // see. The loader's text is passed through rather than paraphrased: it names
   // the symbol, and a guess about the cause would be worse than the fact.
   return `${platformPackage} is installed and its binary would not load: ${detail}. ${fix}`
+}
+
+/**
+ * The shared object a loader could not find, whichever loader said so.
+ *
+ * **The two C libraries word this differently, and only glibc's was matched.**
+ * glibc says `libX.so.1: cannot open shared object file: No such file or
+ * directory`; musl says `Error loading shared library libX.so.1: No such file
+ * or directory (needed by …)`. The pattern here required the library name and
+ * `cannot open shared object file` to be adjacent, which is true of the first
+ * and of neither half of the second, so **the branch never fired on musl** --
+ * the one target where a genuinely missing library is expected, since the musl
+ * artefact needs a `libstdc++` a bare Alpine image does not have. That reader
+ * got the generic "would not load" and no advice at all.
+ *
+ * Both wordings were read off the loaders rather than recalled: a shared object
+ * with a `DT_NEEDED` nothing provides, loaded on `node:22-slim` and on
+ * `node:22-alpine`.
+ *
+ * `No such file or directory` is required on the musl side rather than matching
+ * everything after `Error loading shared library`, because that prefix also
+ * carries `Exec format error` -- a binary for the wrong architecture, which is
+ * a different failure with a different fix and must not be described as a
+ * missing dependency.
+ */
+function missingLibrary(detail: string): string | undefined {
+  const glibc = /([\w.+-]+\.so[\w.]*): cannot open shared object file/.exec(detail)
+  if (glibc !== null) return glibc[1]
+  const musl = /Error loading shared library ([\w.+-]+\.so[\w.]*): No such file or directory/.exec(detail)
+  return musl?.[1]
+}
+
+/**
+ * How to install the shared object that is missing, named for the one found.
+ *
+ * **The advice used to be for two libraries the message had not named.** It
+ * reported the missing object correctly and then recommended `libfontconfig1`
+ * and `libfreetype6` whatever that object was, so a host missing `libstdc++`
+ * was told to install fonts. That was right while fontconfig and freetype were
+ * the only plausible answer and became wrong when they were linked statically,
+ * which is the direction this kind of advice always rots in: the diagnosis
+ * stayed general and the remedy did not.
+ *
+ * Named packages only where a name is actually known. Everywhere else the
+ * honest answer is which command asks the distribution, which is more use than
+ * a guess that happens to be typed as a fact.
+ */
+function installing(library: string): string {
+  if (/^libfontconfig|^libfreetype/.test(library)) {
+    return 'Install it -- `libfontconfig1` and `libfreetype6` on Debian and Ubuntu, `fontconfig` and `freetype` on RHEL-family images.'
+  }
+  if (/^libstdc\+\+/.test(library)) {
+    return 'Install it -- `libstdc++6` on Debian and Ubuntu, `libstdc++` on Alpine and on RHEL-family images. Any image that can run Node already has it, since Node links it too.'
+  }
+  return 'Install whatever your distribution provides it in -- `apt-file search`, `dnf provides` or `apk info --who-owns` will name the package.'
 }
 
 /** Every attempt made, so a failure can say what was tried rather than what was last tried. */

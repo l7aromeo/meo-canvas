@@ -162,6 +162,12 @@ export class Canvas {
   /**
    * Encodes the canvas and resolves with the bytes.
    *
+   * **This is where the pixels are allocated**, because painting recorded a
+   * drawing rather than a bitmap. So this is what costs time in proportion to
+   * the canvas area — about 11 ms at 800×800, 65 ms at 2000×2000 and 256 ms at
+   * 4000×4000 on one machine — and this is what throws when the area is more
+   * than the host can allocate, however long ago the size was chosen.
+   *
    * See {@link Canvas.toBufferSync} for why the type is `Buffer`.
    */
   async toBuffer(format: Format = 'png', options: EncodeOptions = {}): Promise<Buffer> {

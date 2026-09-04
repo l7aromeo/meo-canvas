@@ -157,6 +157,45 @@ Worker threads each keep their own registry, so each has to register its own
 faces and each is affected only by itself. Two renders already in flight keep
 the faces they were given.
 
+## Sizing a service
+
+Numbers from one machine, and the shape rather than a specification — but the
+shape is what you cannot guess.
+
+**A render costs about 9 ms before it draws anything, and that does not depend
+on the picture.** A 20×20 canvas with one node costs what a 4000×4000 canvas
+costs. So a single thread does roughly **110 renders per second whatever it is
+drawing**, a thumbnail costs what a poster costs, and the way to go faster is
+more threads rather than smaller scenes. Each `worker_thread` gets its own
+renderer and they neither share state nor contend, so they scale.
+
+**Building the scene is not the cost.** Constructing the tree and encoding it
+for the addon is 1% of a render at ten nodes and 5% at five thousand — so if you
+are wondering whether to optimise how you build props, the answer is no. Node
+count scales linearly beyond that: 100 000 nodes take 838 ms, 500 000 take
+4125 ms.
+
+**What does scale is the encode, with pixel area**, because painting records a
+drawing and `toBuffer` is what turns it into pixels: roughly 11 ms at 800×800,
+65 ms at 2000×2000, 256 ms at 4000×4000.
+
+### Size limits
+
+There are none, other than what the machine can allocate — and because the
+allocation happens at `toBuffer` rather than at `Root`, **a size that cannot
+work fails after the render has been paid for, not when it was set.** `Root`
+returns for a 200000×200000 canvas with the process still under 80 MB.
+
+Measured: 8000×8000 succeeded at 610 MB, 16384×16384 at 2244 MB and 5.7 s,
+32768×32768 threw `Could not allocate new 32768×32768 bitmap`. Failure at the
+top is a clean error; the hazard is the middle, where two gigabytes go without
+anything objecting. **If a width or height can come from a request, bound it
+yourself** — and remember a container's memory limit will kill the process
+before an allocator returns null.
+
+The one ceiling this package enforces is on node count: above 1048576 nodes a
+scene is refused with `the arena declares N nodes, the limit is 1048576`.
+
 ## What it renders
 
 - **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps

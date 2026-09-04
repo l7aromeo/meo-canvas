@@ -199,8 +199,12 @@ describe('a platform package that resolves and will not load', () => {
   })
 
   it('names the missing shared object and what installs it', () => {
-    // The failure a consumer meets first: a stock `node:22-slim` has neither
-    // `libfontconfig.so.1` nor `libfreetype.so.6`.
+    // **No binary this project publishes reaches this**, and the branch is kept
+    // for a target that links dynamically, for a `MEO_CANVAS_ADDON` built any
+    // way at all, and for musl's `libstdc++`. The `linux-arm64-gnu` artefact was
+    // read: eight `DT_NEEDED` entries, none of them fontconfig or freetype,
+    // all resolving on a stock `node:22-slim`. So this test is what keeps the
+    // branch honest rather than what keeps it alive.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     injected.current = requiring({
       'meo-canvas-linux-x64-gnu': dlopen('libfontconfig.so.1: cannot open shared object file: No such file or directory'),
@@ -210,6 +214,55 @@ describe('a platform package that resolves and will not load', () => {
     expect(() => resolveAddon()).toThrow(/libfontconfig\.so\.1/)
     expect(() => resolveAddon()).toThrow(/libfontconfig1/)
     expect(() => resolveAddon()).toThrow(/fontconfig/)
+  })
+
+  it("recognises musl's wording, which is not glibc's", () => {
+    // **The branch never fired on musl**, because the pattern wanted the
+    // library name and `cannot open shared object file` adjacent -- true of
+    // glibc and of neither half of musl's sentence. musl is the one target
+    // where a missing library is expected rather than hypothetical: its
+    // artefact needs a `libstdc++` a bare Alpine image lacks. Both strings
+    // below were read off the loaders, not recalled, by loading an object with
+    // a `DT_NEEDED` nothing provides on `node:22-slim` and `node:22-alpine`.
+    host({ platform: 'linux', arch: 'x64' })
+    injected.current = requiring({
+      'meo-canvas-linux-x64-musl': dlopen('Error loading shared library libstdc++.so.6: No such file or directory (needed by /app/meo-canvas.node)'),
+      'meo-canvas-linux-x64-musl/package.json': {},
+    })
+
+    expect(() => resolveAddon()).toThrow(/loading it needs libstdc\+\+\.so\.6/)
+    // And the remedy is for the library it found. This said `libfontconfig1`
+    // whatever was missing, which is a fix for something else and reads as a
+    // package that does not know what it needs.
+    expect(() => resolveAddon()).toThrow(/libstdc\+\+6/)
+    expect(() => resolveAddon()).not.toThrow(/libfontconfig1/)
+  })
+
+  it('does not read a wrong-architecture binary as a missing dependency', () => {
+    // musl opens both sentences with `Error loading shared library`, and this
+    // one is an artefact for another architecture -- a different failure with a
+    // different fix. Matching everything after that prefix would have told the
+    // reader to install a package that would not have helped. Measured: this is
+    // what `node:22-alpine` says when handed the glibc build.
+    host({ platform: 'linux', arch: 'x64' })
+    injected.current = requiring({
+      'meo-canvas-linux-x64-musl': dlopen('Error loading shared library /app/meo-canvas.node: Exec format error'),
+      'meo-canvas-linux-x64-musl/package.json': {},
+    })
+
+    expect(() => resolveAddon()).not.toThrow(/loading it needs/)
+    expect(() => resolveAddon()).toThrow(/would not load: Error loading shared library/)
+  })
+
+  it('says which command asks, for a library it has no package name for', () => {
+    host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
+    injected.current = requiring({
+      'meo-canvas-linux-x64-gnu': dlopen('libmeo-nosuch.so.1: cannot open shared object file: No such file or directory'),
+      'meo-canvas-linux-x64-gnu/package.json': {},
+    })
+
+    expect(() => resolveAddon()).toThrow(/apt-file search/)
+    expect(() => resolveAddon()).not.toThrow(/libfontconfig1/)
   })
 
   it('names both glibc versions when the host is below the declared floor', () => {

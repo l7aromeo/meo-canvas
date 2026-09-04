@@ -139,7 +139,30 @@ export type RootProps = Style & {
    * rate needs it passed to `toBuffer('gif', { fps })` as well.
    */
   readonly fps?: number
-  /** The canvas width in pixels. Text cannot wrap without knowing its room. */
+  /**
+   * The canvas width in pixels. Text cannot wrap without knowing its room.
+   *
+   * # Nothing bounds this, and a size too large fails late
+   *
+   * **There is no maximum.** The limit is what the machine can allocate, and
+   * the allocation does not happen here: painting records a drawing rather than
+   * a bitmap, so `Root` returns cheaply at any size —
+   * `{ width: 200000, height: 200000 }` resolves with the process still under
+   * 80 MB — and the whole cost arrives at
+   * {@link Canvas.toBuffer}. A size that cannot work therefore fails *after*
+   * the render has been paid for rather than when it was set.
+   *
+   * Measured on one machine, as the shape rather than a specification:
+   * 8000×8000 succeeded at 610 MB, 16384×16384 at 2244 MB and 5.7 s, and
+   * 32768×32768 threw `Could not allocate new 32768×32768 bitmap`. Failure at
+   * the top is clean; the hazard is the middle, where two gigabytes are spent
+   * without anything objecting.
+   *
+   * **So a width that came from a request needs a bound of the caller's own.**
+   * The one ceiling this package enforces is on node count, not on pixels: a
+   * scene above 1048576 nodes is refused with `the arena declares N nodes, the
+   * limit is 1048576`.
+   */
   readonly width: number
   /**
    * The canvas height in pixels, or omitted for the height of the content.
