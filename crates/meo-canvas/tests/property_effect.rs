@@ -44,8 +44,8 @@
 //! looked like.
 
 use meo_canvas::{
-    Box as BoxNode, Element, Format, Image, Renderer, Root, Style, Styled,
-    Text, hex_rgb, px,
+    Box, Element, Format, Image, Renderer, Root, Style, Styled, Text, hex_rgb,
+    px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
         BorderStyle, BoxShadow, Color, Dimension, FillRule, Gradient,
@@ -91,7 +91,7 @@ struct Case {
 
 /// A square over a gradient, which is what a blend or a backdrop reads.
 fn over(child: Element) -> Element {
-    BoxNode::new()
+    Box::new()
         .size(px(72.0), px(72.0))
         .gradient(ramp())
         .children(child)
@@ -99,7 +99,7 @@ fn over(child: Element) -> Element {
 
 /// The square every compositing case puts over the gradient.
 fn inner() -> Element {
-    BoxNode::new()
+    Box::new()
         .size(px(40.0), px(40.0))
         .margin(sides(px(16.0), px(16.0), px(16.0), px(16.0)))
         .background_color(hex_rgb(0x28_50_dc))
@@ -107,7 +107,7 @@ fn inner() -> Element {
 
 /// The same square, translucent, so what is behind it is still visible.
 fn glass() -> Element {
-    BoxNode::new()
+    Box::new()
         .size(px(40.0), px(40.0))
         .margin(sides(px(16.0), px(16.0), px(16.0), px(16.0)))
         .background_color(Color::rgba(0xff, 0xff, 0xff, 0x40))
@@ -138,7 +138,7 @@ fn ramp() -> Gradient {
 
 /// A shallow ramp across the whole box, which is where banding shows.
 fn shallow() -> Element {
-    BoxNode::new().size(px(72.0), px(72.0)).gradient(Gradient {
+    Box::new().size(px(72.0), px(72.0)).gradient(Gradient {
         geometry: GradientGeometry::Linear {
             direction: LinearDirection::Angle(90.0),
         },
@@ -157,7 +157,7 @@ fn shallow() -> Element {
 
 /// A filled box, so a mask's edge is the only edge in the picture.
 fn filled() -> Element {
-    BoxNode::new()
+    Box::new()
         .size(px(72.0), px(72.0))
         .background_color(hex_rgb(0x28_50_dc))
 }
@@ -200,7 +200,7 @@ fn tile(
 
 /// A plain box, so a background image is the only thing in it.
 fn plain() -> Element {
-    BoxNode::new()
+    Box::new()
         .size(px(72.0), px(72.0))
         .background_color(hex_rgb(0xee_ee_f2))
 }

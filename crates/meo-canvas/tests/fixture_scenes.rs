@@ -16,9 +16,9 @@
 //! scene change that happens to render the same slip through.
 
 use meo_canvas::{
-    Align, Box as BoxNode, Display, Element, FlexDirection, FlexWrap, Image,
-    Justify, ObjectFit, Overflow, Path, PositionType, Root, Styled, Text,
-    corners, corners_all, hex_rgb, px,
+    Align, Box, Display, Element, FlexDirection, FlexWrap, Image, Justify,
+    ObjectFit, Overflow, Path, PositionType, Root, Styled, Text, corners,
+    corners_all, hex_rgb, px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BorderStyle,
         BoxShadow, Color, Corners, Dimension, FillRule, FontWeight, Gradient,
@@ -66,11 +66,11 @@ fn block_stacking() -> Scene {
         .display(Display::Block)
         .background_color(hex_rgb(0xff_ff_ff))
         .children([
-            BoxNode::new()
+            Box::new()
                 .size(px(80.0), px(40.0))
                 .background_color(hex_rgb(0xdc_28_28))
                 .z_index(5),
-            BoxNode::new()
+            Box::new()
                 .size(px(80.0), px(40.0))
                 .margin(sides(px(-20.0), px(0.0), px(0.0), px(20.0)))
                 .background_color(hex_rgb(0x28_50_dc)),
@@ -90,12 +90,12 @@ fn block_stacking_relative() -> Scene {
         .display(Display::Block)
         .background_color(hex_rgb(0xff_ff_ff))
         .children([
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(80.0), px(40.0))
                 .background_color(hex_rgb(0xdc_28_28))
                 .z_index(5),
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(80.0), px(40.0))
                 .margin(sides(px(-20.0), px(0.0), px(0.0), px(20.0)))
@@ -112,7 +112,7 @@ fn block_stacking_relative() -> Scene {
 /// one `borderColor` property.
 fn borders_per_edge() -> Scene {
     let row = |background: u32, border: Sides<f32>, radius: Corners<f32>| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(120.0), px(80.0))
             .border(border)
@@ -168,7 +168,7 @@ fn borders_per_edge() -> Scene {
 /// card rather than beside it, so no outer cell can stand in for it.
 fn box_shadow() -> Scene {
     let card = |shadow: BoxShadow| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(72.0), px(72.0))
             .background_color(hex_rgb(0xff_ff_ff))
@@ -233,7 +233,7 @@ fn box_shadow() -> Scene {
 /// among the three cases rather than only that a higher index wins.
 fn z_order() -> Scene {
     let card = |offset: f32, background: Color| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(offset)), None, None, Some(px(offset))))
             .size(px(90.0), px(70.0))
@@ -260,7 +260,7 @@ fn z_order() -> Scene {
 /// the child simply fitted.
 fn overflow_clip() -> Scene {
     let child = || {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(20.0)), None, None, Some(px(30.0))))
             .size(px(120.0), px(90.0))
@@ -275,14 +275,14 @@ fn overflow_clip() -> Scene {
         .gap_xy(px(0.0), px(8.0))
         .background_color(hex_rgb(0xff_ff_ff))
         .children([
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(110.0), px(70.0))
                 .overflow(Overflow::Hidden)
                 .background_color(hex_rgb(0xe8_ec_f5))
                 .border_radius_corners(corners_all(16.0))
                 .children(child()),
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(110.0), px(70.0))
                 .background_color(hex_rgb(0xe8_ec_f5))
@@ -323,7 +323,7 @@ const STRIP: &[u8] = include_bytes!("assets/strip.png");
 /// does not say better.
 fn object_fit() -> Scene {
     let cell = |fit: ObjectFit| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(72.0), px(72.0))
             .overflow(Overflow::Hidden)
@@ -377,7 +377,7 @@ fn gradients() -> Scene {
     };
     let centre = (Length::Percent(0.5), Length::Percent(0.5));
     let cell = |geometry: GradientGeometry| {
-        BoxNode::new().size(px(96.0), px(96.0)).gradient(Gradient {
+        Box::new().size(px(96.0), px(96.0)).gradient(Gradient {
             geometry,
             stops: ramp(),
         })
@@ -446,7 +446,7 @@ fn baseline_alignment() -> Scene {
             .color(hex_rgb(0x14_14_1e))
     };
     let row = |align: Align, name: &str| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .padding(px(8.0))
             .align_items(align)
@@ -498,7 +498,7 @@ fn baseline_alignment() -> Scene {
 /// measurement says must not exist, and this cell is what would catch it.
 fn stacking_hoist() -> Scene {
     let child = || {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(10.0)), None, None, Some(px(10.0))))
             .size(px(36.0), px(36.0))
@@ -506,7 +506,7 @@ fn stacking_hoist() -> Scene {
             .z_index(-1)
     };
     let cell = |name: &str| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(56.0), px(56.0))
             .background_color(hex_rgb(0xdc_28_28))
@@ -560,7 +560,7 @@ const MASK_IMAGE: &[u8] = include_bytes!("assets/mask-half.png");
 /// would pass with the two arms swapped.
 fn mask_kinds() -> Scene {
     let cell = |name: &str, mask: Option<Mask>| {
-        let box_node = BoxNode::new()
+        let box_node = Box::new()
             .position_type(PositionType::Relative)
             .size(px(56.0), px(40.0))
             .background_color(hex_rgb(0x28_50_dc))
@@ -641,12 +641,12 @@ fn mask_kinds() -> Scene {
 /// exactly that reason.
 fn backdrop_filter() -> Scene {
     let stripe = |color: Color| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(22.0), px(72.0))
             .background_color(color)
     };
-    let stripes = BoxNode::new()
+    let stripes = Box::new()
         .position_type(PositionType::Absolute)
         .position(sides(Some(px(0.0)), None, None, Some(px(0.0))))
         .size(px(264.0), px(72.0))
@@ -661,7 +661,7 @@ fn backdrop_filter() -> Scene {
                 .collect::<Vec<_>>(),
         );
     let panel = |name: &str, left: f32, filter: Option<&str>| {
-        let box_node = BoxNode::new()
+        let box_node = Box::new()
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(8.0)), None, None, Some(px(left))))
             .size(px(72.0), px(56.0))
@@ -716,7 +716,7 @@ fn backdrop_filter() -> Scene {
 /// this suite is drawing it already.
 fn vertical_align() -> Scene {
     let cell = |name: &str, align: VerticalAlign| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(80.0), px(72.0))
             .background_color(hex_rgb(0xf0_f0_f0))
@@ -781,7 +781,7 @@ fn background_tiling() -> Scene {
             position: (Length::ZERO, Length::ZERO),
         };
     let cell = |name: &str, background: BackgroundImage| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(56.0), px(40.0))
             .background_color(hex_rgb(0xff_ff_ff))
@@ -867,7 +867,7 @@ fn background_tiling() -> Scene {
 /// as varying where it is read.
 fn borders_square() -> Scene {
     let cell = |radius: Corners<f32>, border: Sides<f32>| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(56.0), px(56.0))
             .border(border)
@@ -957,7 +957,7 @@ fn gradient_as_paint() -> Scene {
     };
 
     let cell = || {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(72.0), px(48.0))
             .background_color(hex_rgb(0xf4_f4_f6))
@@ -995,7 +995,7 @@ fn gradient_roles(
     across: &dyn Fn() -> Gradient,
     fade: &dyn Fn() -> Gradient,
 ) -> Element {
-    BoxNode::new()
+    Box::new()
         .position_type(PositionType::Relative)
         .gap_xy(px(0.0), px(8.0))
         .children([
@@ -1027,7 +1027,7 @@ fn flat_roles(
     path: &dyn Fn() -> Element,
 ) -> Element {
     let flat = hex_rgb(0xfa_d2_3c);
-    BoxNode::new()
+    Box::new()
         .position_type(PositionType::Relative)
         .gap_xy(px(0.0), px(8.0))
         .children([
@@ -1088,7 +1088,7 @@ fn gradient_linear() -> Scene {
         ]
     };
     let cell = |geometry: GradientGeometry| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             // 88 by 56: a direction read off the wrong axis lands somewhere a
             // square cell would have hidden.
@@ -1109,7 +1109,7 @@ fn gradient_linear() -> Scene {
         })
     };
     let row = |children: Vec<Element>| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .gap_xy(px(0.0), px(8.0))
             .children(children)
@@ -1206,7 +1206,7 @@ fn blend_modes() -> Scene {
         ],
     };
     let cell = |mode: Option<BlendMode>| {
-        let mut source = BoxNode::new()
+        let mut source = Box::new()
             .position_type(PositionType::Relative)
             .size(px(36.0), px(24.0))
             .margin(sides(px(8.0), px(0.0), px(0.0), px(10.0)))
@@ -1214,7 +1214,7 @@ fn blend_modes() -> Scene {
         if let Some(mode) = mode {
             source = source.mix_blend_mode(mode);
         }
-        let cell = BoxNode::new()
+        let cell = Box::new()
             .position_type(PositionType::Relative)
             .size(px(56.0), px(40.0))
             .gradient(backdrop());
@@ -1224,7 +1224,7 @@ fn blend_modes() -> Scene {
         }
     };
     let row = |children: Vec<Element>| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .gap_xy(px(0.0), px(6.0))
             .children(children)
@@ -1281,12 +1281,12 @@ fn blend_modes() -> Scene {
 /// `FlexStart` and claims to have covered it.
 fn flex_alignment() -> Scene {
     let child = |width: f32, content: f32, ink: Color| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .width(px(width))
             .background_color(ink)
             .children(
-                BoxNode::new()
+                Box::new()
                     .position_type(PositionType::Relative)
                     .height(px(content)),
             )
@@ -1316,7 +1316,7 @@ fn flex_alignment() -> Scene {
         ]
     };
     let cell = |align: Align| {
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Relative)
             .size(px(88.0), px(56.0))
             .background_color(hex_rgb(0xf0_f0_f4))
@@ -1333,7 +1333,7 @@ fn flex_alignment() -> Scene {
         .background_color(hex_rgb(0xff_ff_ff))
         .name("the five cross-axis alignments, and wrapping. See notes.json.")
         .children([
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .gap_xy(px(0.0), px(8.0))
                 .children([
@@ -1342,27 +1342,27 @@ fn flex_alignment() -> Scene {
                     cell(Align::FlexEnd).name("flex-end"),
                     cell(Align::Stretch).name("stretch - the one that resizes"),
                 ]),
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .gap_xy(px(0.0), px(8.0))
                 .children([
                     cell(Align::Baseline).name("baseline - on boxes, the bottom edge"),
                     // Wrap needs more children than fit, so this cell has six.
-                    BoxNode::new()
+                    Box::new()
                         .position_type(PositionType::Relative)
                         .size(px(88.0), px(56.0))
                         .background_color(hex_rgb(0xf0_f0_f4))
                         .flex_wrap(FlexWrap::Wrap)
                         .children(six())
                         .name("wrap - six children in a box that fits three"),
-                    BoxNode::new()
+                    Box::new()
                         .position_type(PositionType::Relative)
                         .size(px(88.0), px(56.0))
                         .background_color(hex_rgb(0xf0_f0_f4))
                         .flex_wrap(FlexWrap::WrapReverse)
                         .children(six())
                         .name("wrap-reverse - the same six, lines the other way up"),
-                    BoxNode::new()
+                    Box::new()
                         .position_type(PositionType::Relative)
                         .size(px(88.0), px(56.0))
                         .background_color(hex_rgb(0xf0_f0_f4))
@@ -1398,7 +1398,7 @@ fn borders_dashed_square() -> Scene {
         .background_color(hex_rgb(0xff_ff_ff))
         .name("a dashed square border. Chrome's runs are in notes.json.")
         .children(
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(240.0), px(48.0))
                 .border(sides(4.0, 4.0, 4.0, 4.0))
@@ -1427,7 +1427,7 @@ fn borders_dashed_radius() -> Scene {
         .background_color(hex_rgb(0xff_ff_ff))
         .name("a dashed border above the radius threshold. See notes.json.")
         .children(
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(240.0), px(48.0))
                 .border(sides(4.0, 4.0, 4.0, 4.0))

@@ -4,17 +4,17 @@
 //! a colour in the wrong place, rather than as a size a reader has to measure.
 
 use meo_canvas::{
-    Align, Box as BoxNode, Element, FlexDirection, Grid, GridAutoFlow,
-    GridPlacement, Justify, Root, Styled, fr, hex_rgb, px, track,
+    Align, Box, Element, FlexDirection, Grid, GridAutoFlow, GridPlacement,
+    Justify, Root, Styled, fr, hex_rgb, px, track,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
 /// A filled cell.
 fn cell(colour: u32) -> Element {
-    BoxNode::new().background_color(hex_rgb(colour))
+    Box::new().background_color(hex_rgb(colour))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
     let (red, blue, green, gold) =
         (0xdc_28_28, 0x28_50_dc, 0x28_8c_3c, 0xe6_aa_1e);
 
@@ -90,8 +90,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flex_direction(FlexDirection::Column)
         .gap(px(6.0))
         .children([
-            BoxNode::new().gap(px(6.0)).children([fixed, spanning]),
-            BoxNode::new().gap(px(6.0)).children([flowed, aligned]),
+            Box::new().gap(px(6.0)).children([fixed, spanning]),
+            Box::new().gap(px(6.0)).children([flowed, aligned]),
         ]);
 
     draw("layout-grid", root, FORMATS)

@@ -75,11 +75,7 @@ on nine node types:
 
 ```rust,no_run
 use meo_canvas::{
-    // Aliased because `meo_canvas::Box` shadows the prelude's `Box<T>`, and a
-    // file that needs both wants two names. The node keeps the name v9 callers
-    // know; a module that never heap-allocates can `use meo_canvas::Box`.
-    Box as BoxNode,
-    Column, Format, Renderer, Root, Styled, Text, all, hex_rgb, px,
+    Box, Column, Format, Renderer, Root, Styled, Text, all, hex_rgb, px,
 };
 
 let card = Column::new().gap(px(10.0)).children([
@@ -90,7 +86,7 @@ let card = Column::new().gap(px(10.0)).children([
     Text::new("Describe a layout; get image bytes back.")
         .font_size(13.0)
         .color(hex_rgb(0xc8_cc_d4)),
-    BoxNode::new()
+    Box::new()
         .size(px(64.0), px(4.0))
         .background_color(hex_rgb(0xf2_aa_4c)),
 ]);
@@ -102,7 +98,8 @@ let mut canvas = Root::new(320.0)
     .render(&Renderer::new())?;
 
 std::fs::write("card.png", canvas.to_buffer(Format::Png)?)?;
-# Ok::<(), Box<dyn std::error::Error>>(())
+# // `Box` here is the node, so the heap allocation is spelled in full.
+# Ok::<(), std::boxed::Box<dyn std::error::Error>>(())
 ```
 
 A base many nodes share is a `Style` value instead, applied with `with_style`,

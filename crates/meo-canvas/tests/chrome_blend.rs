@@ -39,8 +39,7 @@
 //! would need the full equation, and there is no row here that has one.
 
 use meo_canvas::{
-    Box as BoxNode, Element, Format, PositionType, Renderer, Root, Styled,
-    hex_rgb, px,
+    Box, Element, Format, PositionType, Renderer, Root, Styled, hex_rgb, px,
     scene::{
         BlendMode, Color, Gradient, GradientGeometry, GradientStop,
         LinearDirection,
@@ -153,14 +152,14 @@ fn backdrop() -> Gradient {
 /// `isolation: isolate` is what the browser page needed and what a cell here
 /// gets for free: the source blends against the cell, not against the page.
 fn cell(mode: Option<BlendMode>) -> Element {
-    let cell = BoxNode::new()
+    let cell = Box::new()
         .position_type(PositionType::Relative)
         .size(px(CELL.0), px(CELL.1))
         .gradient(backdrop());
     match mode {
         None => cell,
         Some(mode) => cell.children(
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Relative)
                 .size(px(SOURCE.0), px(SOURCE.1))
                 .margin(sides(

@@ -3,14 +3,14 @@
 //! **Two tests, one per build, and only one of them compiles at a time.** The
 //! flag is the subject, so a test that ran under both would be measuring
 //! neither.
-use meo_canvas::{Box as BoxNode, Renderer, Root, Styled, px};
+use meo_canvas::{Box, Renderer, Root, Styled, px};
 
 /// A page whose one node names a URL nothing will answer.
 fn page() -> Root {
     Root::new(64.0).height(64.0).children([
         meo_canvas::Image::url("http://127.0.0.1:1/never.png")
             .size(px(16.0), px(16.0)),
-        BoxNode::new(),
+        Box::new(),
     ])
 }
 

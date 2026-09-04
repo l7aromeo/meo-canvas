@@ -6,14 +6,14 @@
 //! appear.
 
 use meo_canvas::{
-    Box as BoxNode, Element, FlexDirection, Overflow, PositionType, Root,
-    Styled, hex_rgb, left, px, sides, top,
+    Box, Element, FlexDirection, Overflow, PositionType, Root, Styled, hex_rgb,
+    left, px, sides, top,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
 /// A card the cells are built from.
 fn card(colour: u32, offset: f32) -> Element {
-    BoxNode::new()
+    Box::new()
         .position_type(PositionType::Absolute)
         .position(sides(Some(px(offset)), None, None, Some(px(offset))))
         .size(px(44.0), px(34.0))
@@ -22,14 +22,14 @@ fn card(colour: u32, offset: f32) -> Element {
 
 /// A panel the cards sit in.
 fn panel(children: impl meo_canvas::IntoElements) -> Element {
-    BoxNode::new()
+    Box::new()
         .position_type(PositionType::Relative)
         .size(px(86.0), px(74.0))
         .background_color(hex_rgb(0xee_ee_f2))
         .children(children)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
     let (red, blue, green, gold) =
         (0xdc_28_28, 0x28_50_dc, 0x28_8c_3c, 0xe6_aa_1e);
 

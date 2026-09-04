@@ -10,7 +10,7 @@
 //! -- is a thing worth knowing rather than a thing to avoid asking.
 
 use meo_canvas::{
-    Box as BoxNode, Element, Format, PageInfo, Root, Styled, hex_rgb, pct, px,
+    Box, Element, Format, PageInfo, Root, Styled, hex_rgb, pct, px,
     scene::{
         Color, Gradient, GradientGeometry, GradientStop, LinearDirection,
         Transform,
@@ -22,7 +22,7 @@ use meo_canvas_examples::{FONT, FORMATS, PAGED_FORMATS, draw_with_fonts};
 /// The ink every page draws in.
 const INK: Color = Color::rgb(0x28, 0x50, 0xdc);
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
     let formats: Vec<Format> = FORMATS
         .iter()
         .copied()
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// One page of the sequence.
 fn page(info: PageInfo) -> Vec<Element> {
     vec![
-        BoxNode::new()
+        Box::new()
             .size(pct(100.0), pct(100.0))
             .padding(px(12.0))
             .flex_direction(meo_canvas::FlexDirection::Column)
@@ -75,17 +75,17 @@ fn page(info: PageInfo) -> Vec<Element> {
                 .color(hex_rgb(0x14_14_1e)),
                 // `progress` spans the sequence inclusively: this bar is empty
                 // on the first page and exactly full on the last.
-                BoxNode::new()
+                Box::new()
                     .size(pct(100.0), px(10.0))
                     .background_color(hex_rgb(0xd0_d0_dc))
                     .children(
-                        BoxNode::new()
+                        Box::new()
                             .size(pct(info.progress * 100.0), pct(100.0))
                             .background_color(INK),
                     ),
                 // `cycle` goes round: the last page is one step short of the
                 // first rather than a copy of it, so a loop does not stutter.
-                BoxNode::new()
+                Box::new()
                     .size(px(36.0), px(36.0))
                     .margin(sides(px(6.0), px(0.0), px(0.0), px(60.0)))
                     .background_color(INK)

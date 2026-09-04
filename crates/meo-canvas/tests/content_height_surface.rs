@@ -6,7 +6,7 @@
 //! that never sets the flag renders a stated height correctly for ever and
 //! never content-sizes anything.
 
-use meo_canvas::{Box as BoxNode, Root, Styled as _, px};
+use meo_canvas::{Box, Root, Styled as _, px};
 
 /// The width every case states, since a width is never derived.
 const WIDTH: f32 = 200.0;
@@ -64,7 +64,7 @@ fn the_content_still_reaches_the_scene() {
     // The flag is not the whole claim: a root that content-sizes and drops its
     // children would satisfy every assertion above.
     let scene = scene_of(
-        Root::new(WIDTH).children(BoxNode::new().size(px(10.0), px(10.0))),
+        Root::new(WIDTH).children(Box::new().size(px(10.0), px(10.0))),
     );
 
     assert!(scene.content_height);

@@ -35,7 +35,7 @@
 //! Run through `just percentage-fixture`.
 
 use meo_canvas::{
-    Box as BoxNode, Root, Styled, hex_rgb, left, px,
+    Box, Root, Styled, hex_rgb, left, px,
     scene::{Length, codec},
 };
 
@@ -65,7 +65,7 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
         .children([
             // A quarter of the canvas wide: fifty pixels of white against a
             // hundred and fifty of ground.
-            BoxNode::new()
+            Box::new()
                 .width(QUARTER)
                 .height(px(40.0))
                 .background_color(hex_rgb(0xff_ff_ff)),
@@ -74,7 +74,7 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
             // down as well and makes the horizontal reading harder
             // to check. The box is forty wide, so the white runs
             // from fifty to ninety.
-            BoxNode::new()
+            Box::new()
                 .position_type(meo_canvas::PositionType::Relative)
                 .position(left(Some(QUARTER)))
                 .width(px(40.0))
@@ -82,7 +82,7 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
                 .background_color(hex_rgb(0xff_ff_ff)),
             // A gradient reaching white a quarter of the way across and
             // holding it: the edge of the ramp is at fifty pixels.
-            BoxNode::new()
+            Box::new()
                 .width(Length::Percent(1.0))
                 .height(px(40.0))
                 .gradient(meo_canvas::scene::Gradient {

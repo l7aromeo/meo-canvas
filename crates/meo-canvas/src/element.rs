@@ -410,30 +410,28 @@ fn push(
 ///
 /// # Importing this shadows `std::boxed::Box`
 ///
-/// `Box<T>` is in the prelude, and a `use meo_canvas::Box` in the same module
-/// takes the name. Nothing warns: the next `Box::new(vec![1])` fails to
-/// compile with a message about this type, which is a confusing place to be
-/// sent when the line that broke it was an import at the top of the file.
+/// `Box<T>` is in the prelude, so a `use meo_canvas::Box` takes that name for
+/// the rest of the file. Nothing warns.
 ///
-/// **The name is kept because v9 callers already know it.** `Box` is what the
-/// JavaScript surface calls this node and what a migrating reader is looking
-/// for, and one alias is a smaller cost than a second vocabulary.
+/// **The fix is to spell the heap allocation in full, not to rename the
+/// node.** `std::boxed::Box<dyn Error>` is unambiguous, it is one occurrence
+/// in a file that mostly draws, and it leaves the component called what it is
+/// called everywhere else -- in the JavaScript surface, in v9, and in every
+/// example. Aliasing our own name to make room for the standard library's is
+/// backwards: the qualification belongs on the thing that is not the subject
+/// of the file.
 ///
-/// So a module that needs both writes the alias, and every Rust caller in this
-/// repository does:
+/// Both names in one file, compiled here rather than asserted:
 ///
 /// ```
-/// use meo_canvas::{Box as BoxNode, Styled, px};
+/// use meo_canvas::{Box, Styled, px};
 ///
-/// let held: Box<dyn std::error::Error> = "still the prelude's".into();
-/// let spacer = BoxNode::new().size(px(8.0), px(8.0));
-/// # let _ = (held, spacer);
+/// let spacer = Box::new().size(px(8.0), px(8.0));
+/// let held: std::boxed::Box<dyn std::error::Error> = "in full".into();
+/// # let _ = (spacer, held);
 /// ```
 ///
-/// A module that never heap-allocates can import it plainly, which is why the
-/// example above compiles as it stands. That is worth knowing rather than
-/// discovering: the plain import is not wrong, it is only unlucky the moment
-/// the file grows a `Box<dyn Error>`.
+/// A file that never heap-allocates needs none of this, which is most of them.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Box;
@@ -630,6 +628,24 @@ impl Image {
 }
 
 /// An arbitrary shape from SVG path data.
+///
+/// # Importing this shadows `std::path::Path`
+///
+/// The same collision as [`Box`], and a likelier one: **both spell their
+/// constructor `Path::new`**, so a file that draws a shape and opens a font
+/// file has two `Path::new` calls meaning different things, and the compiler
+/// reports the second as a type error rather than as a name clash.
+///
+/// The fix is the same and so is the reason: spell the standard library's in
+/// full where you need it, and leave the component called `Path`.
+///
+/// ```
+/// use meo_canvas::Path;
+///
+/// let arrow = Path::d("M0 0 L10 5 L0 10 Z");
+/// let font = std::path::Path::new("/usr/share/fonts/Inter.ttf");
+/// # let _ = (arrow, font);
+/// ```
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Path;

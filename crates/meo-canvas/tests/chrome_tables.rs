@@ -39,8 +39,8 @@
 use std::collections::BTreeMap;
 
 use meo_canvas::{
-    Box as BoxNode, BoxSizing, Display, Element, Format, PositionType,
-    Renderer, Root, Styled, hex_rgb, pct, px,
+    Box, BoxSizing, Display, Element, Format, PositionType, Renderer, Root,
+    Styled, hex_rgb, pct, px,
     scene::{Color, GridAutoFlow, GridPlacement, TrackSize, Transform},
     sides,
 };
@@ -194,7 +194,7 @@ fn box_of(row: &Row, is_b: bool, painted: bool) -> Element {
         (true, true) => B_INK,
         (true, false) => A_INK,
     };
-    let mut element = BoxNode::new()
+    let mut element = Box::new()
         .size(px(50.0), px(34.0))
         .position_type(kind)
         .background_color(ink);
@@ -254,7 +254,7 @@ fn parent_of(row: &Row, draw: Draw) -> Element {
     } else {
         Color::rgba(0, 0, 0, 0)
     };
-    let mut parent = BoxNode::new()
+    let mut parent = Box::new()
         .size(px(90.0), px(60.0))
         // `Relative`, as Chrome's probe had it, and **not** `Absolute` even
         // though that would place it in one property: an absolutely positioned
@@ -274,7 +274,7 @@ fn parent_of(row: &Row, draw: Draw) -> Element {
     // origin, so that a `fixed` box -- which resolves against the page -- and
     // an absolute one -- which resolves against the parent -- are not the same
     // thing. Chrome's probe had the same offset for the same reason.
-    BoxNode::new()
+    Box::new()
         .display(Display::Block)
         .padding(sides(px(PARENT_AT.1), px(0.0), px(0.0), px(PARENT_AT.0)))
         .children(parent)
@@ -426,7 +426,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
     let border = row["border"].parse::<f32>().unwrap_or(0.0);
     let padding = row["padding"].parse::<f32>().unwrap_or(0.0);
 
-    let mut child = BoxNode::new()
+    let mut child = Box::new()
         .height(px(40.0))
         .box_sizing(if row["sizing"] == "border-box" {
             BoxSizing::BorderBox
@@ -452,7 +452,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
         // content width. Drawn in a third colour so it is told from the
         // padding around it, which shares the child's background.
         child = child.children(
-            BoxNode::new()
+            Box::new()
                 .size(pct(100.0), pct(100.0))
                 .background_color(Color::rgb(240, 200, 40)),
         );
@@ -462,7 +462,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
 
 /// The host the child sits in: 200 wide, and the display the row names.
 fn host(row: &Row, with_content: bool) -> Element {
-    BoxNode::new()
+    Box::new()
         .width(px(200.0))
         .position_type(PositionType::Relative)
         .display(display(&row["parent"]).unwrap_or(Display::Block))
@@ -762,7 +762,7 @@ fn clipper_of(
         |kind| matches!(kind, PositionType::Absolute | PositionType::Fixed);
 
     let child_kind = position_letter(&row.code[2..3]);
-    let mut child = BoxNode::new()
+    let mut child = Box::new()
         .size(px(50.0), px(40.0))
         .position_type(child_kind)
         .background_color(if paint_child {
@@ -777,7 +777,7 @@ fn clipper_of(
     };
 
     let clipper_kind = position_letter(&row.code[1..2]);
-    let mut clipper = BoxNode::new()
+    let mut clipper = Box::new()
         .size(px(60.0), px(40.0))
         .position_type(clipper_kind)
         .display(Display::Block)
@@ -814,14 +814,14 @@ fn clipper_of(
     // a child's margin escape through it, and every in-flow row comes out
     // twenty pixels low. Padding on the wrapper stops the margin escaping any
     // further, which is exactly what the body's padding did in the browser.
-    let outer = BoxNode::new()
+    let outer = Box::new()
         .size(px(200.0), px(120.0))
         .position_type(PositionType::Relative)
         .display(Display::Block)
         .background_color(OUTER_INK)
         .children(clipper);
 
-    BoxNode::new()
+    Box::new()
         .display(Display::Block)
         .padding(sides(px(OUTER_AT.1), px(0.0), px(0.0), px(OUTER_AT.0)))
         .children(outer)
@@ -1235,18 +1235,18 @@ fn flex_rects(justify: &str, align: &str) -> Vec<[f32; 4]> {
     let children: Vec<Element> = FLEX_CHILDREN
         .iter()
         .map(|(width, content, ink)| {
-            BoxNode::new()
+            Box::new()
                 .width(px(*width))
                 .background_color(*ink)
                 // The spacer, which gives the child a height without setting
                 // one.
-                .children(BoxNode::new().height(px(*content)))
+                .children(Box::new().height(px(*content)))
         })
         .collect();
 
     let page = render(
         FLEX_BOX,
-        BoxNode::new()
+        Box::new()
             .size(px(FLEX_BOX.0), px(FLEX_BOX.1))
             .justify_content(justify_of(justify))
             .align_items(align_of(align))
@@ -1402,16 +1402,16 @@ fn wrap_rects(wrap: &str) -> Vec<[f32; 4]> {
     let children: Vec<Element> = FLEX_SIX
         .iter()
         .map(|(width, content, ink)| {
-            BoxNode::new()
+            Box::new()
                 .width(px(*width))
                 .background_color(*ink)
-                .children(BoxNode::new().height(px(*content)))
+                .children(Box::new().height(px(*content)))
         })
         .collect();
 
     let page = render(
         FLEX_WRAP_PAGE,
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(FLEX_WRAP_AT)), None, None, Some(px(0.0))))
             .size(px(FLEX_WRAP_BOX.0), px(FLEX_WRAP_BOX.1))
@@ -1545,7 +1545,7 @@ fn grid_rects(flow: GridAutoFlow) -> Vec<Option<[f32; 4]>> {
         .iter()
         .enumerate()
         .map(|(index, ink)| {
-            let item = BoxNode::new().background_color(*ink);
+            let item = Box::new().background_color(*ink);
             match index {
                 // `span 3` and `span 2` with no start line: the placement is
                 // still the algorithm's, and only the size is ours.
@@ -1564,7 +1564,7 @@ fn grid_rects(flow: GridAutoFlow) -> Vec<Option<[f32; 4]>> {
 
     let page = render(
         GRID_PAGE,
-        BoxNode::new()
+        Box::new()
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(GRID_AT)), None, None, Some(px(GRID_AT))))
             .size(px(GRID.0), px(GRID.1))

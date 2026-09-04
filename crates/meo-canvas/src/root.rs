@@ -791,8 +791,8 @@ mod tests {
 
     use super::{BuildError, PageInfo, Root, SequenceError};
     use crate::{
-        Box as BoxNode, ColorSpace, ColorType, Column, Format, Renderer, Row,
-        Styled, Text, hex_rgb, px,
+        Box, ColorSpace, ColorType, Column, Format, Renderer, Row, Styled,
+        Text, hex_rgb, px,
     };
 
     #[test]
@@ -805,7 +805,7 @@ mod tests {
         use std::error::Error as _;
 
         let refused = Root::new(f32::NAN)
-            .children([BoxNode::new()])
+            .children([Box::new()])
             .into_scene()
             .err()
             .unwrap_or_else(|| unreachable!("a NaN width is refused"));
@@ -839,8 +839,7 @@ mod tests {
         // first call that can, and until 5 September 2026 it did not: a root
         // of `NaN` built a scene sized `NaN by 0.0` and rendered nothing.
         for width in [f32::NAN, -100.0, f32::INFINITY] {
-            let refused =
-                Root::new(width).children([BoxNode::new()]).into_scene();
+            let refused = Root::new(width).children([Box::new()]).into_scene();
             assert!(
                 matches!(
                     refused,
@@ -855,7 +854,7 @@ mod tests {
         // A height set explicitly reaches the same check.
         let refused = Root::new(10.0)
             .height(-1.0)
-            .children([BoxNode::new()])
+            .children([Box::new()])
             .into_scene();
         assert!(matches!(
             refused,
@@ -865,12 +864,7 @@ mod tests {
         ));
 
         // And zero stays a canvas, as it is on the element surface.
-        assert!(
-            Root::new(0.0)
-                .children([BoxNode::new()])
-                .into_scene()
-                .is_ok()
-        );
+        assert!(Root::new(0.0).children([Box::new()]).into_scene().is_ok());
     }
 
     #[test]
@@ -887,7 +881,7 @@ mod tests {
 
         let mut canvas = Root::new(8.0)
             .height(4.0)
-            .children(BoxNode::new())
+            .children(Box::new())
             .render(&Renderer::new())
             .unwrap_or_else(|error| unreachable!("{error}"));
 
@@ -1079,7 +1073,7 @@ mod tests {
         // worth knowing before changing the scene.
         let renderer = Renderer::new();
         let rounded = || {
-            BoxNode::new()
+            Box::new()
                 .size(px(120.0), px(60.0))
                 .border_radius(24.0)
                 .background_color(hex_rgb(0xff_ff_ff))

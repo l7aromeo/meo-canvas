@@ -8,8 +8,8 @@
 //! cannot express -- its text style carries a colour and no stroke width.
 
 use meo_canvas::{
-    Box as BoxNode, Element, FlexDirection, LineHeight, Root, Styled, Text,
-    TextAlign, TextDecoration, hex_rgb, px, scene::DEFAULT_ELLIPSIS,
+    Box, Element, FlexDirection, LineHeight, Root, Styled, Text, TextAlign,
+    TextDecoration, hex_rgb, px, scene::DEFAULT_ELLIPSIS,
 };
 use meo_canvas_examples::{FONT, FORMATS, draw_with_fonts};
 
@@ -24,9 +24,9 @@ fn line(text: &str) -> Element {
         .color(hex_rgb(0x14_14_1e))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
     let column = |children: Vec<Element>| {
-        BoxNode::new()
+        Box::new()
             .width(px(184.0))
             .padding(px(4.0))
             .flex_direction(FlexDirection::Column)

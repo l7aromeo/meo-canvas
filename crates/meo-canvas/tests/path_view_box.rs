@@ -20,8 +20,8 @@
 //! the same subset-of-a-standard-vocabulary move as `preserve_aspect_ratio`.
 
 use meo_canvas::{
-    Box as BoxNode, Format, Path, PositionType, Renderer, Root, Styled,
-    hex_rgb, px, scene::PathPaint,
+    Box, Format, Path, PositionType, Renderer, Root, Styled, hex_rgb, px,
+    scene::PathPaint,
 };
 
 /// The page every case is drawn on.
@@ -39,7 +39,7 @@ fn render(view: Option<(f32, f32, f32, f32)>, size: (f32, f32)) -> Vec<u8> {
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .children(
-            BoxNode::new()
+            Box::new()
                 .position_type(PositionType::Absolute)
                 .position(meo_canvas::sides(
                     Some(px(0.0)),
