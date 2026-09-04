@@ -1,7 +1,7 @@
 {
   "name": "meo-canvas-workspace",
   "private": true,
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.1",
   "scripts": {
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
