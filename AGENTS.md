@@ -41,6 +41,7 @@ neither can grow a capability the other cannot reach.
   - [Layout defaults](#layout-defaults)
   - [Errors](#errors)
   - [What a public enum promises](#what-a-public-enum-promises)
+  - [What is this a statement about](#what-is-this-a-statement-about)
   - [Performance and memory](#performance-and-memory)
 - [Workflows](#workflows)
   - [The package manager is bun](#the-package-manager-is-bun)
@@ -1042,6 +1043,36 @@ of them, wrapping nothing, to protect a change that has never been wanted.
 The test is the same one the enums get, read at a finer grain. **Ask whether
 the outside builds it or only inspects it.** An error is inspected; a node is
 built.
+
+### What is this a statement about
+
+Two defects in one day had the same shape, and neither was a wrong statement.
+
+`Reader::list` refuses a count larger than the bytes remaining, because every
+value costs at least one byte. That is correct, and it is a statement about
+**the count**. The next line was `Vec::with_capacity(count)`, which reads it as
+a statement about **the memory** -- and a `Node` is 1048 bytes in memory
+against 184 on the wire, so one megabyte of input reserved 1.02 GB. The comment
+above the defect explained, accurately, why the count was safe.
+
+`Fonts::registered` reports the families **this registry** registered. That is
+correct, and it is a statement about **the instance**. A caller reads `Fonts`
+as the scope of what it registers -- it is a value they hold, they pass it to a
+renderer -- so they take it as a statement about **what can be drawn**, which
+is `Fonts::has`, which answers about the process. Both methods work exactly as
+written and contradict each other in front of a caller who is right to be
+confused.
+
+**Neither survives review by hiding. They survive because there is nothing
+wrong to catch** -- only something narrow standing where something wider is
+needed, with a correct comment above it. A reviewer checking whether the line
+is true finds that it is.
+
+So the question to ask is not whether a check or an accessor is right. It is:
+**what is this actually a statement about, and what will the next line take it
+to mean?** Where the two differ, say so at the narrow one -- `Wire::MIN_ENCODED`
+exists because the count's bound was not the memory's, and `has` and
+`registered` each name their scope because the type cannot.
 
 ### Performance and memory
 
