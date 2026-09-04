@@ -31,13 +31,34 @@
 //! draw the same file decode it once, and the layout pass that runs per page
 //! reads a table that was built once.
 //!
-//! # No global state
+//! # Registering a font changes the process, not the registry
 //!
-//! Nothing here is a `static`. [`Fonts`] owns its registry and a caller holds
-//! it, so two renders on two threads share nothing and contend for nothing.
-//! (`meo-skia-canvas` keeps a process-wide registry of its own behind
-//! `FontLibrary`, which this crate cannot opt out of; what it can do, and does,
-//! is add no second one.)
+//! **A face registered through [`Fonts`] is registered for the whole process,
+//! and stays registered after the `Fonts` that registered it is dropped.**
+//! `meo-skia-canvas` keeps one `FontLibrary` behind its API and this crate
+//! cannot opt out of it; what this crate can do, and does, is add no second
+//! one.
+//!
+//! Measured, because none of it is guessable from the type: register a family
+//! in one `Fonts`, drop it, and a `Fonts` built afterwards answers
+//! `has(family)` with `true`, while its own `registered()` is empty. A
+//! `Renderer` built afterwards draws text in that family. Nothing on this
+//! surface unregisters anything.
+//!
+//! **This is the shape a server has to plan around.** Faces belong at start-up,
+//! registered once, rather than per request: a request that registers a family
+//! has changed every later request on that process, and a request that forgets
+//! to register one may still render, with whatever a previous caller left
+//! behind. `Fonts` being a value a caller holds reads as a scope and is not
+//! one.
+//!
+//! The signature says so where the type does not: `register_path` and
+//! `register_bytes` take `&self`. Registering is not a mutation of this value,
+//! because this value is not what changes.
+//!
+//! Everything else here is scoped as it looks. Nothing in this module is a
+//! `static`, the caches are owned per resolve, and two renders on two threads
+//! share nothing and contend for nothing **except the font registry**.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -142,8 +163,20 @@ impl Fonts {
             })
     }
 
-    /// Whether a family can be drawn with, whether registered here or installed
-    /// on the platform.
+    /// Whether a family can be drawn with **anywhere in this process**.
+    ///
+    /// True for a family registered through any `Fonts`, not only this one,
+    /// and for a family installed on the platform. It stays true after the
+    /// `Fonts` that registered the family is dropped.
+    ///
+    /// **This and [`Fonts::registered`] answer about different scopes, and
+    /// that is deliberate rather than an oversight.** This one answers "can
+    /// this be drawn"; that one answers "what did I register". A caller who
+    /// asks both of a registry that registered nothing gets `true` here and an
+    /// empty list there, which looks like an inconsistent library and is two
+    /// correct answers to two different questions. The scope is in each
+    /// signature's doc because it is not in the type: `Fonts` is a value a
+    /// caller holds, and the registry underneath it is the process's.
     #[must_use]
     pub fn has(&self, family: &str) -> bool {
         if family.is_empty() || self.library.has_font(family) {
@@ -154,7 +187,14 @@ impl Fonts {
             .any(|installed| installed.eq_ignore_ascii_case(family))
     }
 
-    /// The families registered here, in registration order.
+    /// The families **this** registry registered, in registration order.
+    ///
+    /// Not what the process can draw with -- that is [`Fonts::has`], and the
+    /// two differ whenever anything else in the process has registered a face.
+    /// This is the narrower and less obvious of the two, and it is the one
+    /// worth keeping: "what did I register" has callers a diagnostic, a test
+    /// and a service logging its own start-up, and the process-wide answer is
+    /// already available from `has`.
     #[must_use]
     pub fn registered(&self) -> Vec<String> {
         self.library.families()
