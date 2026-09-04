@@ -18,6 +18,20 @@ host_features := if os() == "macos" { "metal" } else { "vulkan" }
 lib_name := if os() == "macos" { "libmeo_canvas_node.dylib" } else if os() == "windows" { "meo_canvas_node.dll" } else { "libmeo_canvas_node.so" }
 addon_path := "packages/meo-canvas/meo-canvas.node"
 
+# Where a cross-build lands, and why it is not `addon_path`.
+#
+# **A container build must not overwrite the native addon.** It did, and the
+# consequence was invisible from the recipe's name: `just addon-container
+# linux-arm64-gnu` on a Mac left a Linux `.so` at `addon_path`, so `test-js`,
+# `example` and every other check needing the native binary failed with a format
+# error until someone rebuilt it -- and on a shared checkout it did that to
+# whoever else was mid-run, as a failure that reads like their own regression.
+#
+# One path per target, under `target/` where build output belongs. The suffix is
+# the same spelling `TARGETS` uses, because a second spelling of one target is
+# how a lookup silently matches no key.
+container_addon := "target/container"
+
 # Default: show available recipes.
 default:
     @just --list
@@ -598,8 +612,10 @@ addon-container suffix:
         sudo chown -R "$(id -u):$(id -g)" target/container
     fi
 
-    cp "target/container/{{ suffix }}/release/libmeo_canvas_node.so" {{ addon_path }}
-    echo "built {{ addon_path }} in ${tag}"
+    # Into the target's own path, never over `addon_path`. See `container_addon`.
+    out="{{ container_addon }}/{{ suffix }}/meo-canvas.node"
+    cp "target/container/{{ suffix }}/release/libmeo_canvas_node.so" "$out"
+    echo "built $out in ${tag}"
 
 # Everything a release publishes, packed and installable, for this host only.
 #
@@ -624,7 +640,7 @@ addon-container suffix:
 pack: ensure-deps build-js addon-release
     #!/usr/bin/env bash
     set -euo pipefail
-    just _pack-tarballs "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)"
+    just _pack-tarballs "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)" {{ addon_path }}
 
 # The same pack, from an addon built in its release container.
 #
@@ -635,19 +651,36 @@ pack: ensure-deps build-js addon-release
 # cleanly, and hand npm a binary it installs onto machines that cannot load it
 # -- the arm64 mistake above, in a second dimension.
 [doc("Build a Linux addon in its release container and pack it.")]
-pack-container suffix: ensure-deps build-js (addon-container suffix) (_pack-tarballs suffix)
+pack-container suffix: ensure-deps build-js (addon-container suffix)
+    just _pack-tarballs "{{ suffix }}" "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
 
 # The packing itself, for whatever addon is at `addon_path` under whatever name
 # it is given. Both spellings above end here, so there is one description of
 # what a release artefact is.
 [private]
-_pack-tarballs suffix:
+_pack-tarballs suffix addon:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    # **The path a build wrote must be the path this reads.** `pack` derives its
+    # suffix from the host and `pack-container` is handed one, so the two sides
+    # can disagree about how a target is spelled -- the same shape as a
+    # `glibc`/`gnu` mismatch, where the wrong spelling matches no key and every
+    # host is told nothing is published for it. A missing file here means those
+    # two disagreed, and saying so beats `npm pack` failing three lines later
+    # about something else.
+    if [[ ! -s "{{ addon }}" ]]; then
+        echo "error: no addon at {{ addon }} for target {{ suffix }}" >&2
+        echo "       A build writes that path and this reads it; if they disagree" >&2
+        echo "       about how the target is spelled, that is the defect rather" >&2
+        echo "       than a missing build." >&2
+        exit 1
+    fi
+
     rm -rf release
     mkdir -p release/npm
     node packages/meo-canvas/tools/stage-platform-package.mjs \
-        "{{ suffix }}" {{ addon_path }} release/npm
+        "{{ suffix }}" "{{ addon }}" release/npm
     npm pack --pack-destination "$PWD/release" ./release/npm/"{{ suffix }}" >/dev/null
     npm pack --pack-destination "$PWD/release" ./packages/meo-canvas >/dev/null
     echo ""
@@ -748,7 +781,7 @@ fixtures-linux name="":
 # `_M_replace_cold`. `acceptance` is the gate.
 [doc("Check the built addon demands no more than its target declares.")]
 abi-floor suffix:
-    node packages/meo-canvas/tools/check-abi-floor.mjs {{ suffix }} {{ addon_path }}
+    node packages/meo-canvas/tools/check-abi-floor.mjs {{ suffix }} "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
 
 # Load the built addon on the images its target claims, with nothing installed.
 #
@@ -757,7 +790,7 @@ abi-floor suffix:
 # them.
 [doc("Load the built addon on the images its target claims.")]
 acceptance suffix:
-    node packages/meo-canvas/tools/acceptance.mjs {{ suffix }} {{ addon_path }}
+    node packages/meo-canvas/tools/acceptance.mjs {{ suffix }} "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
 
 # Bump the npm package's version, and the platform packages it pins with it.
 #

@@ -188,7 +188,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          SO=packages/meo-canvas/meo-canvas.node
+          # The path `just addon-container` writes, which is per target and
+          # deliberately not the native addon's. See `container_addon` in the
+          # justfile: a cross-build that overwrote `addon_path` disarmed every
+          # local check needing the native binary.
+          SO="target/container/${{ matrix.suffix }}/meo-canvas.node"
           # Single quotes around the message on purpose: backticks inside a
           # double-quoted shell string are command substitution, and this one
           # would have run `just pack` a second time to build its own error.
