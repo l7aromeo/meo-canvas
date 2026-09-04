@@ -6,7 +6,7 @@ import type { SideValue } from './arena.js'
 import type { NativeCanvas } from './canvas.js'
 import { Box, Image, Text } from './node.js'
 import type { ColorType } from './index.js'
-import { Root, type PageInfo, type RootDependencies, type RootProps } from './root.js'
+import { Root, fetchDeadline, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
 /**
  * Slot index of the page count: magic, version, three geometry floats, and the
@@ -219,6 +219,23 @@ describe('a url source', () => {
     } finally {
       restore()
     }
+  })
+
+  it('caps the wait rather than defaulting it, so no signal can extend past ours', async () => {
+    // **The distinction the whole design rests on.** A bound `httpOptions`
+    // could raise is this defect with a supported spelling, so the caller's
+    // signal may only tighten. Both directions, because either alone passes on
+    // an implementation that got the other one wrong.
+    const never = new AbortController().signal
+    const ours = fetchDeadline(never, 5)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(ours.signal.aborted).toBe(true)
+    expect(never.aborted).toBe(false)
+
+    const early = AbortSignal.abort(new Error('the caller was quicker'))
+    const theirs = fetchDeadline(early, 60_000)
+    expect(theirs.signal.aborted).toBe(true)
+    expect(theirs.ceiling.aborted).toBe(false)
   })
 
   it('bounds the body, counting rather than trusting content-length', async () => {

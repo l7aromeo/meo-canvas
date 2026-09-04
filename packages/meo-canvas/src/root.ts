@@ -38,6 +38,39 @@ import type { Style } from './style.js'
 const FETCH_TIMEOUT_MS = 60_000
 
 /**
+ * The signal a fetch runs under: this renderer's ceiling, and the caller's.
+ *
+ * **A ceiling rather than a default, and the difference is the whole point.** A
+ * bound `httpOptions` could raise would be this defect with a supported
+ * spelling: a signal that never fires, or an omitted one, and the hang is
+ * reachable again through the documented API. `AbortSignal.any` aborts on the
+ * first of the two, so a caller who knows their host may ask for five seconds
+ * and get five, and nobody gets sixty-one.
+ *
+ * Nothing that works today breaks: a caller's existing signal keeps behaving
+ * exactly as it did, because tightening is all it could ever do. A caller who
+ * wants a different policy fetches the bytes themselves and passes them inline,
+ * which is the same escape the crate offers and is what makes the two surfaces
+ * consistent rather than merely similar.
+ *
+ * The ceiling is returned beside the composed signal because the two failures
+ * have to be told apart afterwards: a limit this renderer chose and a caller's
+ * own abort send a reader to different places.
+ *
+ * `ms` is a parameter so the ceiling can be asserted in a test without waiting
+ * a minute for it. It is not reachable from {@link RootProps} — which is the
+ * property under test.
+ */
+export function fetchDeadline(
+  caller: AbortSignal | null | undefined,
+  ms: number = FETCH_TIMEOUT_MS,
+): { readonly signal: AbortSignal; readonly ceiling: AbortSignal } {
+  const ceiling = AbortSignal.timeout(ms)
+  const signal = caller === undefined || caller === null ? ceiling : AbortSignal.any([ceiling, caller])
+  return { ceiling, signal }
+}
+
+/**
  * The largest image this surface will fetch.
  *
  * Thirty-two mebibytes, matching `MAX_IMAGE_BYTES` in `meo-canvas-core`. Sixty
@@ -511,12 +544,8 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
     const fetched = new Map<string, Uint8Array>()
     await Promise.all(
       wanted.map(async url => {
-        const deadline = AbortSignal.timeout(FETCH_TIMEOUT_MS)
-        // **Composed rather than substituted.** A caller who passed their own
-        // signal keeps it: `AbortSignal.any` aborts when either fires, so the
-        // bound is added to their control rather than taking it away.
         const caller = props.httpOptions?.signal
-        const signal = caller === undefined || caller === null ? deadline : AbortSignal.any([deadline, caller])
+        const { ceiling, signal } = fetchDeadline(caller)
 
         let response: Response
         try {
@@ -525,7 +554,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
           // Ours or theirs is worth distinguishing: one is a limit this
           // renderer chose and the other is the caller's own abort, and a
           // reader who cannot tell them apart looks in the wrong place.
-          if (deadline.aborted && !(caller?.aborted ?? false)) {
+          if (ceiling.aborted && !(caller?.aborted ?? false)) {
             throw new TypeError(`cannot fetch ${JSON.stringify(url)}: it took longer than the ${FETCH_TIMEOUT_MS / 1000} seconds this renderer waits`, {
               cause,
             })

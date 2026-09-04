@@ -198,10 +198,24 @@ The size is counted while reading rather than taken from `content-length`, which
 a server may omit and may lie about. Both refuse with a message naming the limit
 as this renderer's.
 
-A signal you pass is kept rather than replaced — the deadline is composed with
-it, so either can abort. If you need a different policy, fetch the bytes
-yourself and pass them as an inline source; that path has no limits of ours on
-it at all.
+**The 60 seconds is a ceiling, not a default.** An `AbortSignal` you pass is
+composed with it rather than replacing it, so it can only make the wait shorter:
+ask for five seconds and you get five, and nothing gets sixty-one. A bound you
+could raise would be the same hang with a supported spelling. Your existing
+signal keeps behaving exactly as it did, because tightening is all it could ever
+have done.
+
+If you need a different policy, fetch the bytes yourself and pass them as an
+inline source — that path carries no limits of ours at all, and it is the same
+escape the Rust crate offers.
+
+One difference between the surfaces, since it is real: **you can tighten these
+bounds and a Rust caller cannot.** `httpOptions` is already a public object
+here, so composing with it honours a contract that exists rather than inventing
+a knob; the crate has nowhere equivalent to put one. The capability is the same
+on both — fetch a URL, under a bound you did not choose — and only the price of
+adjusting it differs, which is the reasoning that governs the crate's `net`
+feature too.
 
 ## Sizing a service
 
