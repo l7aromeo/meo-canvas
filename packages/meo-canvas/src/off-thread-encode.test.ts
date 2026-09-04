@@ -73,8 +73,15 @@ async function painted() {
  * The counter is read before and after rather than reset, so a tick that lands
  * between arming the interval and starting the work is not counted as one that
  * landed during it.
+ *
+ * `work` returns `unknown` because both shapes are wanted and neither is read:
+ * the asynchronous cases hand back a promise this awaits, and the synchronous
+ * control hands back nothing, which `await` passes through unchanged. Writing
+ * that as `Promise<unknown> | unknown` says less than it appears to -- a union
+ * with `unknown` in it *is* `unknown` -- so the type is spelled the way it
+ * resolves and the intent is here instead.
  */
-async function ticksDuring(work: () => Promise<unknown> | unknown): Promise<number> {
+async function ticksDuring(work: () => unknown): Promise<number> {
   let ticks = 0
   const timer = setInterval(() => {
     ticks += 1
