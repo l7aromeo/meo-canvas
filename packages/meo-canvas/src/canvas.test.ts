@@ -11,6 +11,13 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
       calls.push({ format, options })
       return bytes
     },
+    // The same bytes through the same recording, which is what the addon
+    // does: `encode` and `encodeAsync` are one path there, so a double that
+    // answered differently would be testing a surface nothing ships.
+    async encodeAsync(format, options) {
+      calls.push({ format, options })
+      return bytes
+    },
     release() {
       released += 1
     },

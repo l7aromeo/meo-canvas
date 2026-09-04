@@ -510,7 +510,14 @@ have to change how it writes a file:
 
 The sync variants are ordinary functions here. v1 needed `Atomics.wait` on a
 `SharedArrayBuffer` for them because its canvas lived in a worker; this one does
-not, so `toBufferSync` is the same call without the `await`.
+not, because the canvas stays on the calling thread and only the encode leaves
+it.
+
+**The pairs differ in the thing their names claim.** They did not always:
+`toBuffer` was `return this.toBufferSync(...)`, a promise handed over already
+settled after the event loop had been blocked for the whole encode. The
+asynchronous forms now hand the encode to a rayon worker; the synchronous ones
+do it here. Same bytes, different thread.
 
 `release()` frees the Skia surface without waiting for a collection. v1's method
 of that name released a canvas from _worker_ memory, which is bookkeeping this
@@ -532,20 +539,37 @@ that library's version.
 again at a different format; **it does not re-render.** Two formats of one
 picture cost one resolve, one measure, one layout, one paint, and two encodes.
 
-**A retained surface and an off-loop paint are mutually exclusive**, and the
+**A retained surface and an off-loop _paint_ are mutually exclusive**, and the
 compiler settles it: `RenderedCanvas` holds a `SkPictureRecorder` and an
-`Rc<RefCell<Gradient>>`, so it is `!Send`, and `cx.task` requires a `Send`
-result. The paint therefore runs on the event loop and blocks it for its
-duration. `render`, which returns bytes, is unaffected and still runs off the
-loop — bytes are `Send` — so the one-shot path keeps the property the retained
-path cannot have.
+`Rc<RefCell<Gradient>>`, so it is `!Send`. The paint therefore runs on the event
+loop and blocks it for its duration.
 
-A server that must not block has `render`; a caller wanting several formats of
-one picture has the retained canvas. Buying both means a thread owning the
-surface with encode requests marshalled to it over a channel: one OS thread per
-live canvas, `encode` blocking the loop on a round trip for no gain over
-encoding inline, and `release` having to join. That is the shape v1 had, and it
-had it because its canvas lived in a worker.
+**The encode is a separate question, and the answer changed.** This section used
+to conclude that a retained canvas could not encode off the loop either, and
+that buying both meant a thread owning the surface with requests marshalled over
+a channel — one OS thread per live canvas, `release` having to join. That was
+true while `Canvas::to_buffer` was the only way out of a Skia canvas, and it
+stopped being true in meo-skia-canvas 0.13.0: `Canvas::prepare_export` hands
+back a `Pages` that is `Send`, so the half of an export that needs the canvas
+runs on the thread that owns it and the half that does not runs on a worker.
+`RenderedCanvas::prepare_encode` wraps it, and `encodeAsync` is what the addon
+exports.
+
+**Almost all of the cost is on the far side of that line.** At 4000×4000 the
+record costs 2.74 ms and the encode 97.23 ms, and rasterising is about a tenth
+of the second number — 10.42 ms against a 97.24 ms PNG — so it crosses too.
+Nothing rasterises until `Pages::encode` runs.
+
+**And nothing on the worker needs a font.** The pages carry recorded drawings
+with their text already shaped. That matters because a family is registered per
+_thread_: a design that moved the paint rather than the encode would find no
+registered face on the worker. On this pipeline that would be a refused render
+rather than a silent fallback — `Resolved::new` rejects an unregistered family —
+but the design avoids the question rather than relying on the refusal.
+
+The pool is rayon's, not `cx.task`'s. libuv's pool is shared with `fs`, `dns`
+and `crypto` and has four threads by default, so a 130 ms encode there does not
+free the loop so much as move the stall into `fs.readFile`.
 
 `Root` is async because a page builder may fetch, not because the paint is off
 the loop.

@@ -16,7 +16,15 @@
  *
  * The sync variants are ordinary functions. v1 needed `Atomics.wait` on a
  * `SharedArrayBuffer` for them because its canvas lived in a worker; this one
- * does not, so `toBufferSync` is the same call without the `await`.
+ * does not, because the canvas stays on the calling thread and only the encode
+ * leaves it.
+ *
+ * **The pairs are a real choice, and were not always.** `toBuffer` and
+ * `toBufferSync` once ran the same code, the asynchronous one wrapping a
+ * finished value in a promise after blocking the event loop for the whole
+ * encode. They now differ in the thing the names claim they differ in: the
+ * asynchronous form hands the encode to a worker and the synchronous form does
+ * it here. Nothing about the bytes changes between them.
  *
  * @packageDocumentation
  */
@@ -78,8 +86,15 @@ export interface EncodeOptions {
  *
  * Declared here rather than imported so this file compiles without the native
  * module, and so the shape the addon has to satisfy is written down in one
- * place. Every method is synchronous: encoding is CPU work with no I/O, and
- * {@link Canvas} is what decides which calls a caller awaits.
+ * place.
+ *
+ * **Two encodes rather than one, and the difference is which thread does the
+ * work.** {@link NativeCanvas.encode} runs on the event loop;
+ * {@link NativeCanvas.encodeAsync} takes the half of an export that needs the
+ * canvas, hands the rest to a worker, and resolves when that worker finishes.
+ * Both are required: a surface offering only the synchronous one would make
+ * {@link Canvas.toBuffer} a promise that was already settled, which is what
+ * this pair exists to stop being true.
  */
 export interface NativeCanvas {
   /**
@@ -92,6 +107,19 @@ export interface NativeCanvas {
    * package ships.
    */
   encode(format: Format, options: EncodeOptions): Buffer
+  /**
+   * Encodes the painted pages on a worker and resolves with the bytes.
+   *
+   * The same bytes {@link NativeCanvas.encode} returns — the addon defines the
+   * two as one path rather than two, so they cannot drift — produced without
+   * occupying the event loop for the encode.
+   *
+   * Rejects rather than throwing once the work has left the calling thread:
+   * a format the addon does not know is a synchronous `TypeError`, because
+   * there is still a call to throw from, while a failure inside the encode
+   * settles the promise.
+   */
+  encodeAsync(format: Format, options: EncodeOptions): Promise<Buffer>
   /** Frees the Skia surface. Calling it twice is not an error. */
   release(): void
   /** Whether the GPU was asked for. */
@@ -160,7 +188,7 @@ export class Canvas {
   }
 
   /**
-   * Encodes the canvas and resolves with the bytes.
+   * Encodes the canvas on a worker thread and resolves with the bytes.
    *
    * **This is where the pixels are allocated**, because painting recorded a
    * drawing rather than a bitmap. So this is what costs time in proportion to
@@ -168,18 +196,30 @@ export class Canvas {
    * 4000×4000 on one machine — and this is what throws when the area is more
    * than the host can allocate, however long ago the size was chosen.
    *
+   * **That time is not spent on the event loop.** It used to be: this method
+   * returned a promise that was already settled, having blocked every other
+   * request in the process for the whole encode, so `await` bought a tick and
+   * nothing else. What crosses to the worker is the recorded pages, not the
+   * scene — the drawing is already shaped, so the worker consults no font and
+   * cannot substitute one.
+   *
+   * The remaining loop time is the half of an export that needs the canvas,
+   * which is small and does not grow with area the way the encode does.
+   *
    * See {@link Canvas.toBufferSync} for why the type is `Buffer`.
    */
   async toBuffer(format: Format = 'png', options: EncodeOptions = {}): Promise<Buffer> {
-    return this.toBufferSync(format, options)
+    this.#assertLive()
+    return this.#native.encodeAsync(format, options)
   }
 
   /**
    * Encodes the canvas and returns the bytes.
    *
-   * The same call without the `await`. Encoding is CPU work with no I/O, so
-   * there is nothing for the asynchronous form to overlap with — it exists
-   * because v1's did and a ported script should keep working.
+   * The same bytes {@link Canvas.toBuffer} resolves with, produced on the
+   * calling thread instead of a worker. **A genuine choice rather than the
+   * same call twice**: this one blocks the event loop for the whole encode,
+   * which is what a script wants and what a server does not.
    *
    * # Why `Buffer` and not `Uint8Array`
    *
@@ -200,9 +240,15 @@ export class Canvas {
     return this.#native.encode(format, options)
   }
 
-  /** Encodes the canvas and writes it to `path`. */
+  /**
+   * Encodes the canvas on a worker and writes it to `path`.
+   *
+   * Both halves are off the event loop now. Only the write ever was: the
+   * encode this awaited was the synchronous one, so the expensive half ran on
+   * the loop and the promise covered the cheap half.
+   */
   async toFile(path: string, options: EncodeOptions = {}): Promise<void> {
-    const bytes = this.toBufferSync(formatForPath(path), options)
+    const bytes = await this.toBuffer(formatForPath(path), options)
     await this.#writeFile(path, bytes)
   }
 
@@ -211,9 +257,17 @@ export class Canvas {
     this.#writeFileSync(path, this.toBufferSync(formatForPath(path), options))
   }
 
-  /** Encodes the canvas and resolves with a `data:` URL. */
+  /**
+   * Encodes the canvas on a worker and resolves with a `data:` URL.
+   *
+   * The base64 runs on the calling thread, which is where it has to: it is a
+   * string, and a string cannot cross to a worker without being copied twice.
+   * It is also the cheap end — a 4000×4000 PNG is tens of kilobytes by the
+   * time it is bytes, against the hundred milliseconds that made it.
+   */
   async toURL(format: Format = 'png', options: EncodeOptions = {}): Promise<string> {
-    return this.toURLSync(format, options)
+    const bytes = await this.toBuffer(format, options)
+    return `data:${MEDIA_TYPES[format]};base64,${toBase64(bytes)}`
   }
 
   /** Encodes the canvas and returns a `data:` URL. */

@@ -23,6 +23,7 @@ function fakeRenderer() {
   const painted: { slots: Float64Array; values: readonly SideValue[]; fonts: unknown }[] = []
   const native: NativeCanvas = {
     encode: () => Buffer.from([1]),
+    encodeAsync: async () => Buffer.from([1]),
     release: () => undefined,
     gpu: true,
     engine: 'cpu',
