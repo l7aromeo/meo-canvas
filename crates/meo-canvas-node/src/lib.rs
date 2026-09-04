@@ -58,31 +58,6 @@
     reason = "contradicts the workspace's unreachable_pub"
 )]
 
-// **This does not fire today, and it is here anyway.** Cargo builds
-// dependencies before the crate that names them, so with both features on,
-// `meo-skia-canvas` fails first and the caller sees `E0252` from a crate they
-// did not name -- measured, not assumed: `cargo check -p meo-canvas --features
-// metal,vulkan` reports the upstream error and never reaches this line. What
-// it does buy is a statement at the declaration site that the two are
-// alternatives, and a message that appears the moment upstream compiles with
-// both and misbehaves instead. See the `[features]` comment in `Cargo.toml`,
-// which is where someone choosing a backend actually reads.
-#[cfg(all(feature = "metal", feature = "vulkan"))]
-compile_error!(
-    "`metal` and `vulkan` are alternatives, not additions: name one. \
-     meo-skia-canvas binds both engines to the same `Engine` name, so \
-     compiling with both is `error[E0252]: the name `Engine` is defined \
-     multiple times` inside a crate the caller did not name -- \
-     l7aromeo/meo-skia-canvas#36, unfixed as of 0.12.0. This message exists \
-     so the failure names the two features and the manifest that can turn one \
-     off. It does NOT help the case that matters most: Cargo unifies \
-     features, so a binary depending on two crates that each want a different \
-     backend gets both, and no manifest that consumer controls can separate \
-     them. Only upstream choosing a precedence fixes that, which is why the \
-     issue is filed there. Delete this when a release above 0.12.0 carries \
-     the fix."
-);
-
 pub mod arena;
 
 use std::{cell::RefCell, rc::Rc};

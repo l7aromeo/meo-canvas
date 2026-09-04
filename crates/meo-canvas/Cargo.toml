@@ -11,17 +11,19 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-# **`metal` and `vulkan` are alternatives; naming both does not build.**
-# meo-skia-canvas binds both engines to one `Engine` name, so a build with both
-# is `error[E0252]` inside that crate -- l7aromeo/meo-skia-canvas#36, unfixed
-# as of 0.12.0. Cargo builds dependencies first, so the error arrives from a
-# crate the caller never named and no `compile_error!` here can get in front of
-# it; this comment is the earliest place the fact can be read.
+# **Naming both `metal` and `vulkan` builds, and Metal wins.** It did not
+# before 0.12.1: meo-skia-canvas bound both engines to one `Engine` name and a
+# build with both was `error[E0252]` inside a crate the caller never named
+# (l7aromeo/meo-skia-canvas#36). Upstream fixed it by precedence rather than by
+# refusal -- `#[cfg(all(feature = "vulkan", not(feature = "metal")))]` on the
+# module, the engine and the renderer -- because the overlap is only reachable
+# on macOS, where Vulkan runs through MoltenVK anyway.
 #
-# **Feature unification makes this worse than a manifest mistake.** A binary
-# depending on two crates that each want a different backend gets both, and
-# nothing that consumer controls separates them. Only upstream choosing a
-# precedence fixes it.
+# So the failure mode changed rather than went. **A build that names both is
+# silently a Metal build**, which matters because Cargo unifies features: a
+# binary depending on two crates that each want a different backend gets both,
+# and now compiles. `Renderer::engine` reports which one is live, and asking it
+# is the only way to know.
 [features]
 # The GPU backend, forwarded through `meo-canvas-core` rather than named
 # directly: `meo-skia-canvas` is deliberately absent from this crate's

@@ -30,7 +30,7 @@ meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0" }
 # `default-features = false` is what keeps its `node-addon` feature off, and so
 # keeps its `#[neon::main]` out of the graph: a `.node` addon has exactly one
 # module-init symbol, and `meo-canvas-node` owns it.
-meo-skia-canvas = { version = "0.11", default-features = false }
+meo-skia-canvas = { version = "0.12.1", default-features = false }
 
 # Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
 # `*const ()` handle the caller resolves, so it adds a surface with no
@@ -53,7 +53,7 @@ taffy = { version = "0.14", default-features = false, features = [
 ] }
 
 # CSS colour parsing. The same crate `meo-skia-canvas` parses its own colour
-# strings with (`meo-skia-canvas-0.11.0/Cargo.toml:148`), so a colour this
+# strings with (`meo-skia-canvas-0.12.1/Cargo.toml:148`), so a colour this
 # workspace resolves and one the backend resolves agree by construction rather
 # than by two implementations tracking CSS Color 4 in parallel. It is already in
 # the graph through that dependency; naming it here adds no crate, only an edge.
