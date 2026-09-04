@@ -143,6 +143,18 @@ build:
 [doc("Build the native addon into packages/meo-canvas.")]
 addon:
     cargo build -p meo-canvas-node --features "{{ host_features }}"
+    # **A fresh inode every build, deliberately.** `cp` over an existing file
+    # truncates it in place and keeps the inode, so anything the operating
+    # system has attached to that path's identity survives every rebuild. On
+    # this machine something -- Gatekeeper's cache, XProtect, or an endpoint
+    # agent -- marked this exact inode and killed node with SIGKILL on load: no
+    # output, no throw, exit 137, indistinguishable from an allocation abort.
+    # The identical bytes loaded from /tmp, loaded under any other name in this
+    # same directory, and loaded again the moment the file was removed and
+    # copied back. Rebuilding never cleared it, because `cp` handed the new
+    # bytes to the marked inode. `rm -f` first costs nothing and makes that
+    # class of failure unreproducible.
+    @rm -f {{ addon_path }}
     @cp target/debug/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }}"
 
@@ -427,6 +439,7 @@ build-js: ensure-deps
 [doc("Build the native addon in release mode.")]
 addon-release:
     cargo build --release -p meo-canvas-node --features "{{ host_features }}"
+    @rm -f {{ addon_path }}
     @cp target/release/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }} (release)"
 
