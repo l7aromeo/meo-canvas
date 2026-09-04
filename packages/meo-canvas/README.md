@@ -242,10 +242,37 @@ differently, at 2.86 ms of _drawing_ against 9.16 ms of encode, because its
 different things; the roughly 6 ms between them is where the flat floor lives.
 
 So plan with the whole render rather than the floor. **A thumbnail and a poster
-cost the same to paint and nothing like the same to encode**, the floor is what
-stops small scenes being free, and the way past the floor is more threads. Each
-`worker_thread` gets its own renderer and they neither share state nor contend,
-so they scale.
+cost the same to paint and nothing like the same to encode**, and the floor is
+what stops small scenes being free.
+
+### What costs and what blocks are different numbers
+
+The times above are what a render _costs_. What it _blocks_ is smaller, and the
+two stopped being the same thing when the encode moved off the event loop.
+
+Measured by watching a 1 ms timer during each call — the sample count is the
+measurement, because a fully blocked loop runs no callbacks at all:
+
+|                             | wall clock | timer callbacks during it |
+| --------------------------- | ---------- | ------------------------- |
+| `Root` at any size          | ~9–12 ms   | none — fully blocked      |
+| `toBuffer` at 4000×4000     | 277 ms     | 218 — free                |
+| `toBufferSync` at 4000×4000 | 294 ms     | none — fully blocked      |
+
+**`toBuffer` costs the same wall clock as `toBufferSync` and gives the loop
+back**: 0–3% difference across 480², 2000² and 4000². There is no reason to
+reach for the synchronous form in a server, and every reason to use it in a
+script, where there is nothing else for the loop to do.
+
+What still blocks is the paint, and it is flat — so **a server's throughput and
+its worst request-blocking are no longer the same number.** Concurrency is
+bounded by the ~9 ms of paint per render rather than by the encode, however
+large the picture.
+
+`worker_threads` still help, and for less than they did. Each gets its own
+renderer and they neither share state nor contend, so they scale the paint —
+but reaching for one _to get an encode off the request path_ is no longer
+necessary, because it already is.
 
 Encode against area, to size the second half: roughly 1 ms at 200×200, 4 ms at
 480×320, 11 ms at 800×800, 65 ms at 2000×2000, 256 ms at 4000×4000.

@@ -152,9 +152,14 @@ whatever an earlier one left behind instead of failing. Register at start-up, no
 **A render is about 13 ms and only half of it depends on the picture.** Painting — the whole native
 call, from arena decode through layout to the drawing — is a flat ~9 ms whatever it draws; encoding
 is what grows with area. One thread does about 73 renders a second at 480×320 and about four a
-second at 4000×4000. v9's worker pool is gone, so if you were leaning on
-it, a pool of `worker_thread`s doing their own renders is the replacement — they share nothing and
-scale.
+second at 4000×4000.
+
+**v9's worker pool is gone, and you need less of a replacement than that sounds.** `toBuffer`,
+`toFile` and `toURL` do their encoding off the event loop, so the part that scales with area no
+longer blocks: a 4000×4000 encode takes 277 ms with the loop running throughout, against 294 ms of a
+completely starved loop for `toBufferSync`. What still blocks is the paint, and that is the flat
+~9 ms. A pool of `worker_thread`s is the replacement if you want more paint throughput — they share
+nothing and scale — but not something you need in order to keep a request path responsive.
 
 ## New in v10, briefly
 
