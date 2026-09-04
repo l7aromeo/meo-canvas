@@ -69,8 +69,11 @@ on nine node types:
 
 ```rust,no_run
 use meo_canvas::{
-    Box as BoxNode, Column, Format, Renderer, Root, Styled, Text, all,
-    hex_rgb, px,
+    // Aliased because `meo_canvas::Box` shadows the prelude's `Box<T>`, and a
+    // file that needs both wants two names. The node keeps the name v9 callers
+    // know; a module that never heap-allocates can `use meo_canvas::Box`.
+    Box as BoxNode,
+    Column, Format, Renderer, Root, Styled, Text, all, hex_rgb, px,
 };
 
 let card = Column::new().gap(px(10.0)).children([

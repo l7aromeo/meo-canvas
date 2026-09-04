@@ -403,10 +403,37 @@ fn push(
 /// rather than Yoga's column.
 ///
 /// ```
-/// use meo_canvas::{Box, Style, px};
+/// use meo_canvas::{Box, Styled, px};
 ///
-/// let spacer = Box::new().with_style(Style::new().size(px(8.0), px(8.0)));
+/// let spacer = Box::new().size(px(8.0), px(8.0));
 /// ```
+///
+/// # Importing this shadows `std::boxed::Box`
+///
+/// `Box<T>` is in the prelude, and a `use meo_canvas::Box` in the same module
+/// takes the name. Nothing warns: the next `Box::new(vec![1])` fails to
+/// compile with a message about this type, which is a confusing place to be
+/// sent when the line that broke it was an import at the top of the file.
+///
+/// **The name is kept because v9 callers already know it.** `Box` is what the
+/// JavaScript surface calls this node and what a migrating reader is looking
+/// for, and one alias is a smaller cost than a second vocabulary.
+///
+/// So a module that needs both writes the alias, and every Rust caller in this
+/// repository does:
+///
+/// ```
+/// use meo_canvas::{Box as BoxNode, Styled, px};
+///
+/// let held: Box<dyn std::error::Error> = "still the prelude's".into();
+/// let spacer = BoxNode::new().size(px(8.0), px(8.0));
+/// # let _ = (held, spacer);
+/// ```
+///
+/// A module that never heap-allocates can import it plainly, which is why the
+/// example above compiles as it stands. That is worth knowing rather than
+/// discovering: the plain import is not wrong, it is only unlucky the moment
+/// the file grows a `Box<dyn Error>`.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Box;
