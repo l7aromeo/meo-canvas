@@ -172,6 +172,44 @@ test:
     # compiled cannot tell whether the pin holds -- the two rasterisers differ on
     # eight of the ten scenes. This is the run that reads the pin.
     cargo test -p meo-canvas-core --features "{{ host_features }}"
+# What the dependency tree is known to be vulnerable to.
+#
+# **Not in `ci-steps`.** An advisory is a fact about the lockfile, not about the
+# platform, so running it on three runners would buy three copies of one answer.
+# CI calls it once, on Linux, as its own step.
+#
+# **Vulnerabilities fail; unmaintained notices report.** `cargo audit` already
+# draws that line -- an `unmaintained` advisory is a warning and exits zero --
+# and two crates sit there today, `paste` and `ttf-parser` through
+# `owned_ttf_parser`, both transitive. Failing on those would be red for a
+# condition nobody here can resolve, which is how a gate stops being read.
+#
+# **The ignores are flags rather than a config file, so the reasons live beside
+# them.** `cargo audit` reads `.cargo/audit.toml`, and this repository excludes
+# `.cargo/` on purpose -- it is where a local `config.toml` points at a sibling
+# checkout. A policy in a file git does not track is a policy that applies on
+# one machine.
+#
+# **RUSTSEC-2026-0194 and -0195**, both `quick-xml` 0.37.5, both denial of
+# service: quadratic time checking a start tag for duplicate attribute names,
+# and unbounded namespace-declaration allocation in `NsReader`. Both fixed in
+# 0.41.0, which **we cannot take**: the chain is
+# `quick-xml <- little_exif 0.6.23 <- meo-skia-canvas <- us`, and 0.6.23 is
+# little_exif's newest release requiring `^0.37.5`, which cannot resolve to
+# 0.41.0. On reachability, what was checked rather than what is comfortable:
+# `meo-skia-canvas` uses little_exif in `encode/webp.rs` and `context/page.rs`,
+# writing metadata during encode, and images are decoded through Skia rather
+# than little_exif -- so the path from untrusted input into the XML parser is
+# probably not open. That is a reading of the call sites, not a proof.
+# **Remove both the moment little_exif publishes a release requiring
+# quick-xml 0.41 or newer.** That is the entire condition.
+#
+# This exists because nothing scanned at all until 4 September 2026, when three
+# advisories were found by querying OSV by hand against the 385 crates in
+# `Cargo.lock`. A finding that needs someone to think of looking is not a gate.
+audit:
+    cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+
 # Does an ordinary addon survive being loaded in a worker thread?
 #
 # **This is a question about what we ship, not about coverage.** The `coverage`

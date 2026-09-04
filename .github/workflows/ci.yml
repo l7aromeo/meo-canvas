@@ -172,6 +172,16 @@ jobs:
 
       - run: just ci
 
+      # Advisories, once rather than three times: the lockfile is the same on
+      # every runner, so this asks Linux and nobody else. Installed here rather
+      # than in the line above for the same reason -- two of the three runners
+      # would compile a tool they never call.
+      - name: What the tree is known to be vulnerable to
+        if: runner.os == 'Linux'
+        run: |
+          cargo install --locked cargo-audit
+          just audit
+
       # An ordinary addon under vitest's threads pool, on the platform where the
       # *instrumented* one segfaults. It ran once without gating to answer which
       # of the two was at fault; it passed on 4 September 2026, so the crash is
