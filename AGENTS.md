@@ -1074,6 +1074,36 @@ to mean?** Where the two differ, say so at the narrow one -- `Wire::MIN_ENCODED`
 exists because the count's bound was not the memory's, and `has` and
 `registered` each name their scope because the type cannot.
 
+#### And its complement, which is cheaper to catch
+
+The two above are statements **narrower** than the code beside them reads. The
+opposite is a statement **wider** than the measurement behind it, and it is the
+easier of the two to make.
+
+The font registry is the worked example, and it is mine. I measured that a face
+registered through one `Fonts` was visible to another built afterwards and to a
+renderer made later, wrote _"registered for the whole process"_, and committed
+it. The probe had only ever run on one thread. It could not have told a
+thread-wide registry from a process-wide one -- **structurally**, in the same
+way a conformance table whose inputs all zero a parameter cannot see a rule
+about that parameter. The registry is the thread's: register on a worker and
+the main thread still answers `false` after it joins, and register on the main
+thread and a worker spawned afterwards answers `false` too. Both directions,
+because one direction cannot distinguish the two scopes.
+
+It mattered more than a word. Process-wide would mean one contaminated registry
+that any request can poison for every other; thread-wide means a pool has one
+copy each, which is better news and **more** work for a caller -- a
+registration per worker rather than one at boot. A reader given the wrong one
+would either over-fear it or under-plan for it.
+
+The catch has a name: **ask what the probe could not have seen.** Not whether
+it passed, and not whether the reasoning was sound -- what was outside the
+frame. A single-threaded test cannot find a thread boundary. A table sampling
+0..1 cannot find a rule about 1.5. Thirty-four chosen inputs are evidence about
+those thirty-four. Say the claim the evidence supports, and if the wider claim
+is the useful one, go and measure it.
+
 ### Performance and memory
 
 Measured on a 111-node page, GPU off, by `just bench`:
