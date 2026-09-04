@@ -27,7 +27,7 @@
 use std::{fmt, path::Path};
 
 use meo_canvas_core::{
-    EncodeOptions, Error, ImageFormat, RenderedCanvas, Renderer,
+    EncodeOptions, Error, ImageFormat, PreparedEncode, RenderedCanvas, Renderer,
 };
 use meo_canvas_scene::{Scene, SceneError, Size};
 
@@ -603,6 +603,50 @@ impl Canvas {
         options: &EncodeOptions,
     ) -> Result<Vec<u8>, BuildError> {
         Ok(self.painted.to_buffer(format, options)?)
+    }
+
+    /// Takes the half of an encode that needs this canvas, and stops there.
+    ///
+    /// The returned [`PreparedEncode`] is [`Send`] where this canvas is not,
+    /// so the expensive half of an export runs wherever the caller puts it
+    /// while this canvas stays on the thread that owns it. At 4000x4000 that
+    /// is 97 ms of the 100 a `to_buffer` costs.
+    ///
+    /// **Here because the JavaScript surface has it.** `toBuffer` there
+    /// returns a promise that settles off the event loop, and a Rust caller
+    /// serving requests from a thread pool wants the same thing for the same
+    /// reason. A capability on one of these two surfaces and not the other is
+    /// a defect rather than a difference.
+    ///
+    /// One handle is one format: encoding a second format is a second call,
+    /// made here rather than on the worker.
+    ///
+    /// ```
+    /// use meo_canvas::{EncodeOptions, Format, Renderer, Root};
+    ///
+    /// let renderer = Renderer::new();
+    /// let mut canvas = Root::new(64.0).height(32.0).render(&renderer)?;
+    ///
+    /// let pending =
+    ///     canvas.prepare_encode(Format::Png, &EncodeOptions::default())?;
+    /// let png = std::thread::spawn(move || pending.encode())
+    ///     .join()
+    ///     .expect("the encoding thread")?;
+    /// assert!(!png.bytes.is_empty());
+    /// # Ok::<(), meo_canvas::BuildError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::Render`] when the options do not fit the painted
+    /// pages. Failures that belong to encoding itself are raised by
+    /// [`PreparedEncode::encode`].
+    pub fn prepare_encode(
+        &mut self,
+        format: ImageFormat,
+        options: &EncodeOptions,
+    ) -> Result<PreparedEncode, BuildError> {
+        Ok(self.painted.prepare_encode(format, options)?)
     }
 
     /// Encodes the canvas and writes it to `path`, taking the format from the

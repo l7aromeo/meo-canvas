@@ -415,11 +415,144 @@ fn to_skia_options(
     lowered
 }
 
+/// A painted surface's pages, resolved and ready to encode on any thread.
+///
+/// [`Send`] where a painted canvas is not, which is the whole of the point.
+/// An export has a cheap half that needs the canvas -- resolving which pages
+/// the call names, folding the surface's colour and text settings into the
+/// options, snapshotting each page's recorded drawing -- and an expensive half
+/// that does not. This is the boundary between them, so the second half can be
+/// handed to a worker while the thread that owns the canvas goes on with
+/// something else.
+///
+/// **The expensive half is nearly all of it.** Measured on this crate's
+/// pipeline: at 4000x4000 the record costs 2.74 ms and the encode 97.23 ms, so
+/// 97% of a `to_buffer` is on this side of the line. Rasterising is about a
+/// tenth of that -- 10.42 ms against a 97.24 ms PNG -- and it moves too, since
+/// nothing here rasterises until [`PreparedEncode::encode`] does.
+///
+/// **Bound to one format and one set of options.** They are fixed when the
+/// handle is taken rather than when it is used, because a rasterised page is
+/// cached under the options it was rasterised for: a handle is not
+/// format-neutral, and encoding one twice under two formats would hand back
+/// the first format's pixels. Two formats of one picture are two handles, both
+/// taken on the thread that owns the canvas.
+///
+/// **Nothing here needs a font.** The pages hold recorded drawings with their
+/// text already shaped, so a worker encoding one has no font registry to
+/// consult and cannot fall back to a face the caller did not register. That is
+/// what makes crossing the thread safe at all, because a registered family is
+/// visible only to the thread that registered it.
+pub struct PreparedEncode {
+    pages: meo_skia_canvas::Pages,
+    format: ImageFormat,
+}
+
+impl core::fmt::Debug for PreparedEncode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // `Pages` does not implement `Debug`, and a dump of snapshotted Skia
+        // pictures would not help a reader. What it is for and how much of it
+        // there is are the two facts worth printing.
+        f.debug_struct("PreparedEncode")
+            .field("format", &self.format)
+            .field("pages", &self.pages.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PreparedEncode {
+    /// The format this handle was taken for.
+    #[must_use]
+    pub const fn format(&self) -> ImageFormat {
+        self.format
+    }
+
+    /// How many pages this handle holds.
+    ///
+    /// The pages the call selected. Naming [`EncodeOptions::page`] does not
+    /// slice them -- that index is resolved when the bytes are produced -- so
+    /// a handle for one page of twenty still reports twenty.
+    #[must_use]
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Rasterises the pages and compresses them.
+    ///
+    /// Takes `self` because the handle is spent: see the type's own note on
+    /// why one handle is one format.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Encode`] when the encoder rejects the drawing, which
+    /// for [`ImageFormat::Jpeg`] includes a surface whose alpha channel cannot
+    /// be flattened without a stated background.
+    pub fn encode(self) -> Result<EncodedImage, Error> {
+        let format = self.format;
+        let bytes = self.pages.encode().map_err(|error| Error::Encode {
+            format,
+            detail: error.to_string(),
+        })?;
+        Ok(EncodedImage { bytes, format })
+    }
+}
+
+/// Takes the half of an export that needs the surface, and stops there.
+///
+/// The counterpart to [`encode`], which is this followed immediately by
+/// [`PreparedEncode::encode`]. Split so a caller who wants the expensive half
+/// elsewhere can have it, and written as the one path so the two cannot drift:
+/// `encode` is defined in terms of this rather than beside it.
+///
+/// # Errors
+///
+/// Returns [`Error::Encode`] when the options do not suit the format -- see
+/// [`EncodeOptions::validate`] -- and when the surface cannot resolve the
+/// pages the options name.
+pub fn prepare(
+    surface: &mut crate::paint::Surface,
+    format: ImageFormat,
+    options: &EncodeOptions,
+) -> Result<PreparedEncode, Error> {
+    // Counted through the surface rather than the canvas, so the count is read
+    // without a Skia type entering this function's reasoning, and read before
+    // the mutable borrow the prepare itself needs.
+    //
+    // The surface's pages rather than the scene's: a page that failed to begin
+    // is not one the encoder can write, and `frame_delays` is checked against
+    // what is written.
+    //
+    // **Before the snapshot, which is a choice.** The handle could report its
+    // own page count and be validated against that instead, and upstream's
+    // shape invites it -- but this crate has no `page_range`, so the two counts
+    // agree, and validating first means a caller error costs nothing rather
+    // than a snapshot that is thrown away. It also keeps the order of the two
+    // failures exactly what it was before the split.
+    options.validate(format, surface.page_count())?;
+
+    // `&mut`, because `prepare_export` resolves the page selection against the
+    // canvas and folds the canvas's own colour and text settings into the
+    // options, which is a mutation of the canvas.
+    surface
+        .canvas_mut()
+        .prepare_export(to_skia_format(format), &to_skia_options(options))
+        .map(|pages| PreparedEncode { pages, format })
+        .map_err(|error| Error::Encode {
+            format,
+            detail: error.to_string(),
+        })
+}
+
 /// Encodes a painted surface.
 ///
 /// Every page the surface holds is already drawn; which of them reach the file
 /// is the format's rule, and [`EncodeOptions::validate`] has already refused
 /// the combinations that cannot be honoured.
+///
+/// [`prepare`] followed by [`PreparedEncode::encode`], and defined as exactly
+/// that rather than as a second route to the same bytes: the two paths produce
+/// identical files because they are one path, not because a test found them
+/// equal.
 ///
 /// # Errors
 ///
@@ -432,27 +565,7 @@ pub fn encode(
     format: ImageFormat,
     options: &EncodeOptions,
 ) -> Result<EncodedImage, Error> {
-    // Counted through the surface rather than the canvas, so the count is read
-    // without a Skia type entering this function's reasoning, and read before
-    // the mutable borrow the encode itself needs.
-    //
-    // The surface's pages rather than the scene's: a page that failed to begin
-    // is not one the encoder can write, and `frame_delays` is checked against
-    // what is written.
-    options.validate(format, surface.page_count())?;
-
-    // `&mut`, because every encode entry point upstream takes `&mut self`
-    // (`canvas.rs:551`, `:624`, `:656`) -- `to_buffer` prepares the page
-    // sequence before writing it, which is a mutation of the canvas.
-    let bytes = surface
-        .canvas_mut()
-        .to_buffer(to_skia_format(format), &to_skia_options(options))
-        .map_err(|error| Error::Encode {
-            format,
-            detail: error.to_string(),
-        })?;
-
-    Ok(EncodedImage { bytes, format })
+    prepare(surface, format, options)?.encode()
 }
 
 #[cfg(test)]

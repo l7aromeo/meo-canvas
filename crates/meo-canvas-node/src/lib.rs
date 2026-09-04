@@ -76,8 +76,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use arena::{SideValue, Values};
 use meo_canvas_core::{
-    EncodeOptions, ImageFormat, RenderedCanvas, Renderer, Surface,
-    SurfaceOptions,
+    EncodeOptions, ImageFormat, PreparedEncode, RenderedCanvas, Renderer,
+    Surface, SurfaceOptions,
 };
 use neon::{prelude::*, types::buffer::TypedArray};
 
@@ -149,6 +149,48 @@ fn render_off_thread(
     renderer
         .render_to_buffer(&scene, format, &EncodeOptions::default())
         .map_err(|error| error.to_string())
+}
+
+/// The encode itself, on a rayon worker, with no V8 and no canvas in reach.
+///
+/// # Why a panic is caught here
+///
+/// **rayon aborts the process when a panic escapes a `spawn`**, printing
+/// "Rayon: detected unexpected panic; aborting" -- a `SIGABRT` that no
+/// JavaScript `catch` can reach. That is a different outcome from the same
+/// panic on the event loop, where Neon turns it into a catchable error. Without
+/// this, one defect would be a rejected promise through `encode` and a dead
+/// process through `encodeAsync`, and the asynchronous one is the form a server
+/// calls.
+///
+/// This does not make panicking acceptable. Every panic reachable from an
+/// export is still a defect and the message a caller gets is still opaque. What
+/// it buys is that a process serving requests survives one, and that the two
+/// entry points agree about what a failure is -- which is the module's standing
+/// promise that no panic crosses the boundary, kept on a thread Neon does not
+/// own.
+///
+/// `AssertUnwindSafe` is the honest annotation rather than a way past the
+/// checker: the handle is moved in and dropped here, so nothing observes it
+/// after an unwind.
+fn encode_off_thread(prepared: PreparedEncode) -> Result<Vec<u8>, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        prepared
+            .encode()
+            .map(|image| image.bytes)
+            .map_err(|error| error.to_string())
+    }))
+    .unwrap_or_else(|panic| {
+        // Whatever `panic!` was given: a `&str` for a literal, a `String` for
+        // a formatted message, and neither for a panic raised with something
+        // else.
+        let detail = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap_or("no message");
+        Err(format!("internal error while encoding: {detail}"))
+    })
 }
 
 /// Reports which rasteriser a render would use, and which one it asks for.
@@ -499,6 +541,53 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
         }
     })?;
     surface.set(&mut cx, "encode", encode)?;
+
+    let held = Rc::clone(&painted);
+    let encode_async = JsFunction::new(&mut cx, move |mut cx| {
+        let tag = cx.argument::<JsString>(0)?.value(&mut cx);
+        let Some(format) = format_from_tag(&tag) else {
+            return cx.throw_type_error(format!(
+                "no image format is called {tag:?}"
+            ));
+        };
+        let options = encode_options(&mut cx, 1)?;
+
+        // The half that needs the canvas, on the thread that owns it. The
+        // borrow ends here: nothing below touches the canvas, which is what
+        // lets the caller keep drawing while this encode runs.
+        //
+        // **This is also what keeps the fonts right.** A registered family is
+        // visible only to the thread that registered it, and painting is lazy
+        // -- so a design that moved the paint to the worker would find no
+        // registered face there and draw a fallback, producing bytes that are
+        // plausible, testable and wrong. Preparing here means the worker
+        // receives recorded pages with their text already shaped and never
+        // consults a font at all.
+        let prepared = {
+            let mut held = held.borrow_mut();
+            let Some(canvas) = held.as_mut() else {
+                return cx.throw_error(
+                    "this canvas has been released; encode before calling release()",
+                );
+            };
+            match canvas.prepare_encode(format, &options) {
+                Ok(prepared) => prepared,
+                Err(error) => return cx.throw_error(error.to_string()),
+            }
+        };
+
+        let channel = cx.channel();
+        let (deferred, promise) = cx.promise();
+        rayon::spawn_fifo(move || {
+            let result = encode_off_thread(prepared);
+            deferred.settle_with(&channel, move |mut cx| match result {
+                Ok(bytes) => JsBuffer::from_slice(&mut cx, &bytes),
+                Err(message) => cx.throw_error(message),
+            });
+        });
+        Ok(promise)
+    })?;
+    surface.set(&mut cx, "encodeAsync", encode_async)?;
 
     let release = JsFunction::new(&mut cx, move |mut cx| {
         // Dropping the surface, not marking it dropped: the point of `release`

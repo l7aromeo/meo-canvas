@@ -198,7 +198,8 @@ pub use element::{
 /// does not, and which building this crate cannot tell you.
 pub use meo_canvas_core::animate;
 pub use meo_canvas_core::{
-    EncodeOptions, Error, ImageFormat as Format, RenderedCanvas, Renderer,
+    EncodeOptions, Error, ImageFormat as Format, PreparedEncode,
+    RenderedCanvas, Renderer,
 };
 pub use meo_canvas_scene::style::{
     PaintOrder,

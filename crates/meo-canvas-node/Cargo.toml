@@ -43,6 +43,9 @@ vulkan = ["meo-skia-canvas/vulkan"]
 meo-canvas-core = { workspace = true }
 meo-canvas-scene = { workspace = true }
 neon = { workspace = true }
+# The pool `encodeAsync` runs on; the workspace entry says why it is not
+# `cx.task`.
+rayon = { workspace = true }
 # Named here as well as under `meo-canvas-core` so the addon can re-export the
 # backend's own surface to JavaScript. `default-features = false` comes from the
 # workspace entry and is what keeps its `node-addon` feature -- and so its own

@@ -30,7 +30,7 @@ meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0" }
 # `default-features = false` is what keeps its `node-addon` feature off, and so
 # keeps its `#[neon::main]` out of the graph: a `.node` addon has exactly one
 # module-init symbol, and `meo-canvas-node` owns it.
-meo-skia-canvas = { version = "0.12.1", default-features = false }
+meo-skia-canvas = { version = "0.13.0", default-features = false }
 
 # Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
 # `*const ()` handle the caller resolves, so it adds a surface with no
@@ -60,6 +60,17 @@ taffy = { version = "0.14", default-features = false, features = [
 csscolorparser = "0.8"
 
 neon = "1.1"
+# The pool the addon's asynchronous encodes run on. **Not `cx.task`**, which is
+# libuv's pool: that pool is shared with `fs`, `dns` and `crypto`, and libuv
+# gives it four threads by default -- so a 130 ms encode there does not free the
+# event loop so much as move the stall into `fs.readFile`. rayon has its own
+# pool, sized to the machine, and `meo-skia-canvas` spawns its own off-thread
+# encodes on it for the same reason.
+#
+# Already in the graph through `meo-skia-canvas`, which reports
+# `rayon::current_num_threads()` in its backend info. Naming it here adds an
+# edge rather than a crate.
+rayon = "1.11"
 clap = { version = "4.6", features = ["derive"] }
 # The one HTTP client that does not decide the consumer's runtime for them:
 # ureq 3.4's required dependencies are `base64`, `log`, `percent-encoding`,

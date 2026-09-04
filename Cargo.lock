@@ -1360,6 +1360,7 @@ dependencies = [
  "meo-canvas-scene",
  "meo-skia-canvas",
  "neon",
+ "rayon",
 ]
 
 [[package]]
@@ -1368,9 +1369,9 @@ version = "0.1.0"
 
 [[package]]
 name = "meo-skia-canvas"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7d3f8d3636fa3ae5a5cd57e6bbe4ecc13d1341a73ed3930be12e29b0230430d"
+checksum = "9a01101186768d0ef5cb34a853ff433377bac55b6f47f70d9dbf16344463491d"
 dependencies = [
  "allsorts",
  "ash",
