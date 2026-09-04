@@ -209,7 +209,7 @@ export type {
   FontVariant,
 } from './style.js'
 
-export { Box, Column, DEFAULT_ELLIPSIS, Grid, Image, NODE_KEYS, Path, RichText, Row, Text } from './node.js'
+export { Box, Column, DEFAULT_ELLIPSIS, Grid, Image, Path, RichText, Row, Text } from './node.js'
 export type {
   Child,
   Children,
@@ -244,7 +244,6 @@ export { isColor, parseColor } from './color.js'
 
 export {
   EASING_NAMES,
-  assertSpringHasNoRange,
   cubicBezier,
   ease,
   formatColor,
@@ -274,5 +273,5 @@ export type {
   TrackConfig,
 } from './animate.js'
 
-export { BAR_GROUP_SPACING, Chart, GRID_DIVISIONS, barLayout, gridLines, linePath, linePoints, seriesColor, sliceAngles, slicePath } from './chart.js'
+export { Chart, barLayout, gridLines, linePath, linePoints, seriesColor, sliceAngles, slicePath } from './chart.js'
 export type { BaseChartOptions, CartesianChartData, ChartDataset, ChartProps, ChartType, LegendPosition, PieChartDataPoint } from './chart.js'

@@ -586,7 +586,7 @@ export interface TrackConfig<T extends Animatable> {
    *
    * **Narrowed rather than merely refused.** A track defines its own range and
    * drives the spring over `0..1`, so a `from` or `to` on the spring cannot be
-   * honoured, and {@link assertSpringHasNoRange} throws on one. Accepting the
+   * honoured, and the assertion `track` runs throws on one. Accepting the
    * wider type here left the compiler agreeing with a call the runtime rejects,
    * which is the one thing types are for. The assertion stays for JavaScript
    * callers, who have no compiler to tell.
@@ -652,7 +652,7 @@ export interface SequenceStep<T extends Animatable> {
    * A `from` or `to` here is refused: the step already defines its range, and
    * the spring is driven over `0..1` so the physics stays independent of the
    * units. Dropping them silently would animate to a value nobody asked for.
-   * The type says so as well as {@link assertSpringHasNoRange}, so the refusal
+   * The type says so as well as the assertion `sequence` runs, so the refusal
    * arrives at the keystroke rather than at the call.
    */
   readonly spring?: Omit<SpringConfig, 'from' | 'to'>
