@@ -1074,6 +1074,25 @@ to mean?** Where the two differ, say so at the narrow one -- `Wire::MIN_ENCODED`
 exists because the count's bound was not the memory's, and `has` and
 `registered` each name their scope because the type cannot.
 
+#### A third: true in the frame it was measured in, false in the frame it ships in
+
+Two features of one change can each be right and interact. The size limit on a
+URL fetch was first classified from `ureq::Error::BodyExceedsLimit`, which is
+exactly what `ureq` reports -- **when no timeout is configured**. The same
+change also set `timeout_global`, and with a timeout set the identical
+over-size read reports a bare `Io(Os { code: 22, InvalidInput })` instead.
+Measured both ways against the same 33 MiB response.
+
+So the classification was correct in every test written without a timeout and
+wrong in the crate that sets one, and an isolated probe confirmed it while the
+real path contradicted it three runs out of three. The fix was to stop asking
+the dependency: `fetch` counts the bytes itself, which makes the answer the
+same in every configuration and makes the limit this crate's in the sense that
+matters.
+
+**Ask which frame the evidence came from.** A probe that isolates one feature
+has, by construction, removed the other -- and the crate ships both.
+
 #### And its complement, which is cheaper to catch
 
 The two above are statements **narrower** than the code beside them reads. The
@@ -1106,65 +1125,86 @@ is the useful one, go and measure it.
 
 ### Performance and memory
 
-Measured on a 111-node page, GPU off, by `just bench`:
+**A baseline for reading, not a gate.** `just bench` is an instrument: a
+benchmark that fails CI on a shared runner teaches people to rerun until it
+passes. These numbers exist so that the next person can tell a regression from
+noise, which requires knowing what was measured, on what, and when.
 
-|                             |          |
-| --------------------------- | -------- |
-| full pipeline               | 22.95 ms |
-| draw, without encode        | 9.86 ms  |
-| re-encode a painted surface | 9.00 ms  |
-| `resolve`, 551 nodes        | 43.71 µs |
-| `z_ordered` over 551 nodes  | 1.92 µs  |
+Taken at `c2035a8`, 5 September 2026, on an **Apple M4 Pro, 14 cores, macOS
+26.6.2**, `rustc 1.98.0`, Node v26.4.0, `cargo bench -p meo-canvas-core`
+(release) and `node --expose-gc tools/bench.mjs`.
 
-**Encoding is more than half the pipeline.** Nothing in resolve, layout or paint
-is where the time goes at this size, which is why separating rendering from
-encoding is worth more than any allocation fix: a second format costs 39% of a
-fresh render rather than 100%.
+`bench-rust`, on a 111-node page with the GPU off:
+
+|                             | criterion median |
+| --------------------------- | ---------------- |
+| full pipeline               | 13.92 ms         |
+| draw, without encode        | 2.86 ms          |
+| re-encode a painted surface | 9.16 ms          |
+| `resolve`, 551 nodes        | 52.90 µs         |
+| `z_ordered` over 551 nodes  | 2.12 µs          |
+
+`bench-js`, 500 renders of a 480x320 scene to 7.2 KiB PNGs:
+
+|                     |          |
+| ------------------- | -------- |
+| throughput          | 72.7 / s |
+| per render, p50     | 13.71 ms |
+| per render, p99     | 15.14 ms |
+| baseline rss        | 90.6 MiB |
+| retained after idle | +8.3 MiB |
+
+**Encoding is still more than half the pipeline**, which is why separating
+rendering from encoding is worth more than any allocation fix: a second format
+costs a fraction of a fresh render rather than all of it.
 
 Two allocations look wasteful and are not worth removing, measured rather than
 argued. `resolve` clones a `ResolvedText` per node and again per child, which is
-some fraction of 43.71 µs against a 22.95 ms pipeline. `z_ordered` clones and
-sorts every container's children, which is 1.92 µs across a 551-node tree. Both
-are real observations about the code and false as performance problems; a `Cow`
-in that signature would make the hot path read worse to save nothing. Do not
-change either without a number that says otherwise.
+some fraction of 52.90 µs against a 13.92 ms pipeline. `z_ordered` clones and
+sorts every container's children, 2.12 µs across a 551-node tree. Both are real
+observations about the code and false as performance problems. Do not change
+either without a number that says otherwise.
 
 Allocation in the paint stage is on the critical path for every frame of an
 animated render. Prefer reusing a buffer over allocating per node, and say in a
 comment what the reuse is worth when it is not obvious.
 
-**The same shape seen from JavaScript, which is the surface most callers use.**
-Measured through the addon on darwin-arm64, by wrapping
-`dependencies.renderer.paint` so the native call is timed apart from everything
-around it:
+#### Why several figures rather than one
 
-| nodes | total     | tree + arena  | native paint    | encode        |
-| ----- | --------- | ------------- | --------------- | ------------- |
-| 10    | 19.00 ms  | 0.21 ms (1%)  | 9.63 ms (51%)   | 9.16 ms (48%) |
-| 100   | 16.21 ms  | 0.37 ms (2%)  | 11.06 ms (68%)  | 4.79 ms (30%) |
-| 1000  | 47.38 ms  | 2.88 ms (6%)  | 39.21 ms (83%)  | 5.29 ms (11%) |
-| 5000  | 244.36 ms | 13.07 ms (5%) | 224.41 ms (92%) | 6.88 ms (3%)  |
+**A single number has no control; a table has one for free.** The previous
+table, recorded at `e2cc251` on 22 August 2026, gave `draw` as 9.86 ms against
+2.86 ms here -- a 3.4x gap that looks like a measurement error. What settles it
+is the row beside it: `re-encode` was 9.00 ms then and 9.16 ms now, within 2%.
+**A faster or slower machine moves both.** One row transformed and its
+neighbour unchanged is the machine holding still while the draw path changed,
+and that control was free -- it was already in the run.
 
-**The JavaScript side is not where the time is** -- between one and six per cent
-at every size. The `Float64Array` arena is doing what it was built for, and an
-optimisation there is an optimisation of five per cent of the problem. Node
-count scales linearly: 100 000 nodes 838 ms, 500 000 nodes 4125 ms.
+The rest was free too, and worth doing before paying for a rebuild. The bench
+recipe is unchanged; `skia-safe` is 0.99.0 in both lockfiles; the benchmark
+source differs by three lines adapting to `z_index` becoming an `Option`, so
+the scene it builds is the same and the figures are comparable.
 
-**Paint costs about 9 ms per call whatever it is painting.** A 20×20 canvas with
-one node costs what a 4000×4000 canvas costs, on the GPU and on the CPU alike,
-because paint records a picture and rasterising happens at encode -- `Root()` at
-200000×200000 returns with RSS at 79 MB. It matches `draw, without encode` in
-the table above, reached independently. The first call in a process is 40--53 ms
-and every one after is 8.4--9.7 ms; it is not GPU context setup, not font
-enumeration, and not the arena.
+**The improvement is real and unattributed, which is the honest state of it.**
+The arithmetic is consistent: the pipeline fell 9.03 ms while `draw` fell 7.00
+and `re-encode` held. Thirty-five commits touched `paint.rs` in between. One
+looked like a candidate on its title -- `e8c3c78`, which removed an `eprintln!`
+from every dotted render -- and it is eliminated by measurement rather than
+opinion: the bench scene sets no dotted or dashed border at all, so that print
+never ran in it. No hunt was made beyond that, because a guess with a commit
+hash attached is worth less than an honest gap.
 
-The number a person sizing a service needs, and the reason this is written down:
-**about 110 renders per second per thread, regardless of how small the picture
-is.** Encode is what scales with pixels -- 11 ms at 800², 65 ms at 2000²,
-256 ms at 4000² -- so a service drawing many small images is bounded by the
-per-call cost and one drawing few large ones is bounded by area. Both numbers
-are from one machine and one binary; treat them as the shape rather than as a
-specification.
+`e2cc251` named no machine, no profile and no recipe. That absence is why this
+section now names all three.
+
+#### The JavaScript and Rust figures are not the same measurement
+
+`bench-js` reports 13.71 ms per render at p50 and 72.7 renders a second; the
+Rust `draw` row is 2.86 ms. **These do not disagree, they answer different
+questions.** The JavaScript number is a whole render through the addon
+including PNG encoding, and the Rust `draw` row is the paint pass alone with no
+encode. `13.71 ms` against `2.86 + 9.16 = 12.02 ms` of Rust paint and encode
+leaves about 1.7 ms for the boundary, the arena and the scene build, which is
+the shape one would expect rather than a contradiction.
 
 ## Workflows
 
