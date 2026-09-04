@@ -58,29 +58,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # **Defender scans every object file a Rust build writes**, and a build
-      # writes tens of thousands of small ones. Measured on run 33863321915,
-      # both platforms compiling nothing because the cache hit: check and build
-      # took 2m54s on Ubuntu and 4m57s here, and `just ci` 7.8m against 13.4m.
-      # Setup, caching and toolchain were within seconds of each other, so the
-      # whole gap is doing the work, and most of that is the filesystem.
-      #
-      # The runner is ephemeral and is destroyed after the job, so it gains
-      # nothing by scanning files it compiled itself.
-      #
-      # **Not a gate.** If a future image refuses this -- a policy change, a
-      # permission change -- the step reports and the build continues slowly,
-      # which is the right failure for an optimisation.
-      - name: Stop Defender scanning what this job builds
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          Add-MpPreference -ExclusionPath `
-            "$env:GITHUB_WORKSPACE", `
-            "$env:USERPROFILE\.cargo", `
-            "$env:USERPROFILE\.rustup"
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: lts/*
