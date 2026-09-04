@@ -86,3 +86,48 @@ fn a_registration_outlives_the_registry_that_made_it() {
         "an unregistered family rendered, so the assertion above proves nothing"
     );
 }
+
+#[test]
+fn the_scope_is_the_thread_and_not_the_process() {
+    // **This is the difference between a hazard and a catastrophe**, so it is
+    // measured in both directions rather than inferred from the one above.
+    // A pool of render threads has one copy of the problem each rather than
+    // one shared between them, and each worker still needs its own start-up
+    // registration.
+    const IN_WORKER: &str = "MeoFontScopeWorkerProbe";
+    const IN_MAIN: &str = "MeoFontScopeMainProbe";
+
+    let seen_in_worker = std::thread::spawn(|| {
+        let fonts = Fonts::new();
+        fonts
+            .register_path(IN_WORKER, FONT)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        // Visible to another registry on the same thread, which is the
+        // thread-wide half of the claim.
+        Fonts::new().has(IN_WORKER)
+    })
+    .join()
+    .unwrap_or_else(|_| unreachable!("the worker did not panic"));
+    assert!(
+        seen_in_worker,
+        "a registration was not visible on its own thread"
+    );
+
+    assert!(
+        !Fonts::new().has(IN_WORKER),
+        "a family registered on a worker reached the main thread, so the          registry is the process's after all -- the module doc says otherwise"
+    );
+
+    let owner = Fonts::new();
+    owner
+        .register_path(IN_MAIN, FONT)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let seen_in_a_later_thread =
+        std::thread::spawn(|| Fonts::new().has(IN_MAIN))
+            .join()
+            .unwrap_or_else(|_| unreachable!("the worker did not panic"));
+    assert!(
+        !seen_in_a_later_thread,
+        "a family registered on the main thread reached a thread spawned after          it, so the registry is the process's after all"
+    );
+}

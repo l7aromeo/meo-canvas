@@ -31,26 +31,38 @@
 //! draw the same file decode it once, and the layout pass that runs per page
 //! reads a table that was built once.
 //!
-//! # Registering a font changes the process, not the registry
+//! # Registering a font changes the thread, not the registry
 //!
-//! **A face registered through [`Fonts`] is registered for the whole process,
+//! **A face registered through [`Fonts`] is registered for the whole thread,
 //! and stays registered after the `Fonts` that registered it is dropped.**
-//! `meo-skia-canvas` keeps one `FontLibrary` behind its API and this crate
+//! `meo-skia-canvas` keeps a `FontLibrary` behind its API and this crate
 //! cannot opt out of it; what this crate can do, and does, is add no second
 //! one.
 //!
-//! Measured, because none of it is guessable from the type: register a family
-//! in one `Fonts`, drop it, and a `Fonts` built afterwards answers
-//! `has(family)` with `true`, while its own `registered()` is empty. A
-//! `Renderer` built afterwards draws text in that family. Nothing on this
-//! surface unregisters anything.
+//! Measured, because none of it is guessable from the type. Register a family
+//! in one `Fonts`, drop it, and a `Fonts` built afterwards **on the same
+//! thread** answers `has(family)` with `true` while its own `registered()` is
+//! empty, and a `Renderer` built afterwards draws text in that family. Nothing
+//! on this surface unregisters anything.
 //!
-//! **This is the shape a server has to plan around.** Faces belong at start-up,
-//! registered once, rather than per request: a request that registers a family
-//! has changed every later request on that process, and a request that forgets
-//! to register one may still render, with whatever a previous caller left
-//! behind. `Fonts` being a value a caller holds reads as a scope and is not
-//! one.
+//! **The scope is the thread and not the process**, which is the difference
+//! between a hazard and a catastrophe: a family registered on a worker is
+//! invisible to the main thread and to every other worker, and dies when that
+//! thread does. Measured in both directions -- registering inside a spawned
+//! thread leaves the main thread answering `false` after it joins, and a
+//! family registered on the main thread is `false` in a thread spawned after
+//! it.
+//!
+//! **This is the shape a server has to plan around.** Faces belong at the
+//! start of each thread that renders, not per request: a request that
+//! registers a family has changed every later request **on that thread**, and
+//! a request that forgets to register one may still render, with whatever an
+//! earlier request on the same thread left behind -- which is not an error in
+//! a log, it is the wrong typeface in a picture nobody looks at twice. A pool
+//! of render threads does not share the problem; it has one copy of it each,
+//! and each worker still needs its own registration.
+//!
+//! `Fonts` being a value a caller holds reads as a scope and is not one.
 //!
 //! The signature says so where the type does not: `register_path` and
 //! `register_bytes` take `&self`. Registering is not a mutation of this value,
@@ -163,11 +175,12 @@ impl Fonts {
             })
     }
 
-    /// Whether a family can be drawn with **anywhere in this process**.
+    /// Whether a family can be drawn with **anywhere on this thread**.
     ///
-    /// True for a family registered through any `Fonts`, not only this one,
-    /// and for a family installed on the platform. It stays true after the
-    /// `Fonts` that registered the family is dropped.
+    /// True for a family registered through any `Fonts` on this thread, not
+    /// only this one, and for a family installed on the platform. It stays
+    /// true after the `Fonts` that registered the family is dropped, and it is
+    /// false on a thread where nothing registered it.
     ///
     /// **This and [`Fonts::registered`] answer about different scopes, and
     /// that is deliberate rather than an oversight.** This one answers "can
@@ -176,7 +189,7 @@ impl Fonts {
     /// empty list there, which looks like an inconsistent library and is two
     /// correct answers to two different questions. The scope is in each
     /// signature's doc because it is not in the type: `Fonts` is a value a
-    /// caller holds, and the registry underneath it is the process's.
+    /// caller holds, and the registry underneath it is the thread's.
     #[must_use]
     pub fn has(&self, family: &str) -> bool {
         if family.is_empty() || self.library.has_font(family) {
@@ -189,11 +202,11 @@ impl Fonts {
 
     /// The families **this** registry registered, in registration order.
     ///
-    /// Not what the process can draw with -- that is [`Fonts::has`], and the
-    /// two differ whenever anything else in the process has registered a face.
+    /// Not what the thread can draw with -- that is [`Fonts::has`], and the
+    /// two differ whenever anything else on this thread has registered a face.
     /// This is the narrower and less obvious of the two, and it is the one
     /// worth keeping: "what did I register" has callers a diagnostic, a test
-    /// and a service logging its own start-up, and the process-wide answer is
+    /// and a service logging its own start-up, and the thread-wide answer is
     /// already available from `has`.
     #[must_use]
     pub fn registered(&self) -> Vec<String> {
@@ -203,7 +216,7 @@ impl Fonts {
     /// The registry the measure pass builds its text engine from.
     /// Test-only: the live path measures through
     /// [`crate::lines::TextMeasurer`], whose canvas resolves families from the
-    /// process-wide font library without being handed one.
+    /// thread-wide font library without being handed one.
     #[cfg(test)]
     pub(crate) const fn library(&self) -> &meo_skia_canvas::FontLibrary {
         &self.library
