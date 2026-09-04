@@ -159,25 +159,37 @@ the faces they were given.
 
 ## Sizing a service
 
-Numbers from one machine, and the shape rather than a specification — but the
-shape is what you cannot guess.
+Measured on an Apple M4 Pro, macOS 26.6.2, Node v26.4.0 — the shape rather than
+a specification, but the shape is what you cannot guess.
 
-**A render costs about 9 ms before it draws anything, and that does not depend
-on the picture.** A 20×20 canvas with one node costs what a 4000×4000 canvas
-costs. So a single thread does roughly **110 renders per second whatever it is
-drawing**, a thumbnail costs what a poster costs, and the way to go faster is
-more threads rather than smaller scenes. Each `worker_thread` gets its own
-renderer and they neither share state nor contend, so they scale.
+**Getting an image is two costs, and only one of them depends on the picture.**
+
+Painting is a flat **~9 ms per render whatever it draws**: a 20×20 canvas with
+one node costs what a 4000×4000 canvas costs, because painting records a drawing
+rather than pixels. That is the floor, and no scene is small enough to get under
+it.
+
+Encoding is what turns the drawing into pixels, and it grows with area — so it
+is the half that answers "how big". A **480×320 render takes about 13 ms end to
+end, which is 75 a second on one thread**: ~9 ms of paint, ~4 ms of encode. The
+same thread does about four a second at 4000×4000, where the encode alone is
+~256 ms.
+
+So plan with the whole render rather than the floor. **A thumbnail and a poster
+cost the same to paint and nothing like the same to encode**, the floor is what
+stops small scenes being free, and the way past the floor is more threads. Each
+`worker_thread` gets its own renderer and they neither share state nor contend,
+so they scale.
+
+Encode against area, to size the second half: roughly 1 ms at 200×200, 4 ms at
+480×320, 11 ms at 800×800, 65 ms at 2000×2000, 256 ms at 4000×4000.
 
 **Building the scene is not the cost.** Constructing the tree and encoding it
-for the addon is 1% of a render at ten nodes and 5% at five thousand — so if you
-are wondering whether to optimise how you build props, the answer is no. Node
-count scales linearly beyond that: 100 000 nodes take 838 ms, 500 000 take
-4125 ms.
-
-**What does scale is the encode, with pixel area**, because painting records a
-drawing and `toBuffer` is what turns it into pixels: roughly 11 ms at 800×800,
-65 ms at 2000×2000, 256 ms at 4000×4000.
+for the addon is 0.03 ms of a 480×320 render — under one per cent, and still
+only five per cent at five thousand nodes. So if you are wondering whether to
+optimise how you build props, the answer is no. Node count is what makes
+painting stop being flat, and it scales linearly: 100 000 nodes take 838 ms,
+500 000 take 4125 ms.
 
 ### Size limits
 
