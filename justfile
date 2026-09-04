@@ -226,6 +226,18 @@ test:
 [doc("Fail on a known vulnerability in the dependency tree.")]
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+# The README banners, drawn by this library.
+#
+# **Not in `ci`.** It regenerates rather than checks, so it belongs with
+# `conformance`: the output is a diff someone looks at, and a gate that rewrites
+# four binaries on every run would make every unrelated change carry them.
+#
+# Reads `packages/meo-canvas/dist` and the addon, so it wants both built first,
+# the way `example` does.
+[doc("Redraw the README banners with the library itself.")]
+brand: build-js addon
+    node tools/brand/banner.mjs
+
 
 # Does an ordinary addon survive being loaded in a worker thread?
 #

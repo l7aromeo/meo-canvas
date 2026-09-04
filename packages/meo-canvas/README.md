@@ -14,7 +14,9 @@ Server-side image generation for Node. Describe a layout the way you would descr
 npm install meo-canvas@next
 ```
 
-**The `@next` is not optional.** `meo-canvas@latest` is the 9.x line, and npm
+**Not published yet.** No 10.x is on npm at the time of writing — `npm view meo-canvas dist-tags` answers `latest: 9.0.3` and nothing else — so the line above works from the first 10.x release onward, and a bare install gives 9.x until then. See [MIGRATING.md](https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md).
+
+**Once it is published, the `@next` is not optional.** `meo-canvas@latest` is the 9.x line, and npm
 resolves `latest` for a bare install — so `npm install meo-canvas` gives you 9.x
 today and will keep doing so until 10 is out of prerelease. Every 10.x
 prerelease carries a hyphen in its version, which is what keeps it off `latest`
