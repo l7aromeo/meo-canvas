@@ -699,27 +699,136 @@ fn taken(
 /// walking its tree rather than by reading the note beside it, which lists a
 /// smaller set than it pulls.
 ///
-/// No redirect limit, timeout or size cap is set here beyond `ureq`'s own. That
-/// is not an oversight and it is not a promise: a caller wanting a policy has
-/// the same escape the TypeScript surface has, which is to fetch the bytes
-/// themselves and pass `ImageSource::Bytes`.
+/// # The policy, which is this crate's rather than the client's
+///
+/// **Five seconds to connect and thirty seconds for everything.** Until 5
+/// September 2026 no timeout was set at all: `ureq` 3.4 defaults every field of
+/// `Timeouts` to `None` except `await_100`, which needs a request body and so
+/// cannot fire for the bodiless `GET` this makes. A host that accepted a
+/// connection and then said nothing held a render thread until the process
+/// died.
+///
+/// `global` rather than a set of per-phase timeouts, because **only the global
+/// clock bounds the thread**: a host dripping one byte inside every window
+/// keeps `recv_body` alive forever. `Timeout::Global` is checked at every phase
+/// including `RecvBody` and its clock starts when the call is created, so it
+/// spans `read_to_vec` below -- which matters, since a timeout that stopped at
+/// `.call()` would leave the hang exactly where it was and look like a fix.
+///
+/// The numbers are derived rather than chosen. Five seconds is about sixteen
+/// worst-case intercontinental round trips, and a host that cannot complete a
+/// handshake in that will not deliver an image. Thirty seconds against the
+/// ten-mebibyte ceiling below is a claim that a host sustains **about
+/// 2.8 Mbit/s**, which is the honest way to state it: disagree with the number
+/// by disagreeing with the floor. It is also about 1,300 times a whole render,
+/// so it is not competing with a legitimate slow case -- a request whose image
+/// fetch took thirty seconds has already missed its own deadline.
+///
+/// **Thirty-two mebibytes, set here rather than inherited.** `ureq`'s own
+/// `MAX_BODY_SIZE` is ten, and taking it meant this crate's size policy was
+/// whatever a dependency happened to choose and free to move under a version
+/// bump. It is a *functional* limit and not only a safety one: an image larger
+/// than this named by a URL does not render, and the caller gets
+/// [`FetchFailure::TooLarge`], which says so in this crate's own words.
+///
+/// **The number is arithmetic, not a measurement, and that is worth knowing
+/// before trusting it.** There is no photographic corpus in this repository to
+/// weigh -- measuring what *this* library emits gives 0.37 MiB for a 90-frame
+/// 720p WebP, which is a fact about flat vector content and says nothing about
+/// someone else's screen recording. So: GIF is the least efficient animated
+/// format and the one most often linked, a palettised LZW frame runs about one
+/// bit per pixel on photographic content, and 1280x720 at 30 fps is therefore
+/// roughly 115 KB a frame -- **three seconds of 720p GIF is about 10.4 MB**,
+/// which the inherited ten-mebibyte cap refused. Thirty-two buys about nine
+/// seconds of that, or three at 1080p, and animated WebP and AVIF are five to
+/// twenty times denser so anything that fits GIF fits them.
+///
+/// # Fixed, not configurable
+///
+/// A caller wanting a policy has the same escape the TypeScript surface has:
+/// fetch the bytes themselves and pass `ImageSource::Bytes`. Making these
+/// configurable would start this crate down the road of being an HTTP client --
+/// then redirects, proxies, headers, TLS -- and, more directly, **a
+/// configurable timeout can be set to infinity, which is this defect with a
+/// supported spelling.**
+///
+/// What is still `ureq`'s: ten redirects then an error, and a 64 KiB cap on
+/// response headers.
 #[cfg(feature = "net")]
 fn fetch(url: &str) -> Result<Vec<u8>, Error> {
-    let mut response =
-        ureq::get(url).call().map_err(|error| Error::SourceFetch {
-            url: url.to_owned(),
-            detail: error.to_string(),
-            failure: classify(&error),
-        })?;
+    use std::io::Read as _;
+
+    let refuse = |error: ureq::Error| Error::SourceFetch {
+        url: url.to_owned(),
+        detail: error.to_string(),
+        failure: classify(&error),
+    };
+
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_global(Some(GLOBAL_TIMEOUT))
+        .build()
+        .into();
+
+    let mut response = agent.get(url).call().map_err(refuse)?;
+
+    // **The size policy is enforced here rather than by the client**, and that
+    // is not tidiness. `ureq`'s own `limit` reports `BodyExceedsLimit` when no
+    // timeout is configured and a bare `Io(Os { code: 22, InvalidInput })`
+    // when `timeout_global` is -- measured, both ways, against the same 33 MiB
+    // response. So a classification resting on its error variant would have
+    // been correct in a test and wrong in this crate, which configures a
+    // timeout. Counting the bytes ourselves makes the answer ours in every
+    // configuration.
+    //
+    // One byte past the limit is read so that "exactly at the limit" is
+    // accepted and "one more" is not, without a `Content-Length` the server
+    // may not send or may lie about.
+    let mut bytes = Vec::new();
     response
         .body_mut()
-        .read_to_vec()
+        .as_reader()
+        .take(MAX_IMAGE_BYTES + 1)
+        .read_to_end(&mut bytes)
         .map_err(|error| Error::SourceFetch {
             url: url.to_owned(),
             detail: error.to_string(),
-            failure: classify(&error),
-        })
+            failure: crate::FetchFailure::Transport,
+        })?;
+
+    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+        return Err(Error::SourceFetch {
+            url: url.to_owned(),
+            detail: format!(
+                "the image is larger than the {} MiB this renderer fetches",
+                MAX_IMAGE_BYTES / (1024 * 1024)
+            ),
+            failure: crate::FetchFailure::TooLarge,
+        });
+    }
+    Ok(bytes)
 }
+
+/// How long a connection may take to establish.
+///
+/// About sixteen worst-case intercontinental round trips. See [`fetch`].
+#[cfg(feature = "net")]
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How long the whole fetch may take, connection and body together.
+///
+/// Sixty seconds against [`MAX_IMAGE_BYTES`] is a floor of about 4.5 Mbit/s.
+/// The two are one decision; see [`fetch`].
+#[cfg(feature = "net")]
+const GLOBAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The largest image this crate will fetch over HTTP.
+///
+/// Thirty-two mebibytes, chosen here rather than inherited from `ureq`, so it
+/// does not move when a dependency does. A functional limit, not only a safety
+/// one. See [`fetch`] for the arithmetic and for why it is arithmetic.
+#[cfg(feature = "net")]
+const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
 /// What `ureq` reported, as the class a caller branches on.
 ///
@@ -781,6 +890,11 @@ const fn classify(error: &ureq::Error) -> crate::FetchFailure {
         ureq::Error::StatusCode(code) => FetchFailure::Status(*code),
         ureq::Error::HostNotFound => FetchFailure::HostNotFound,
         ureq::Error::BadUri(_) => FetchFailure::BadUrl,
+        // Kept for the case `ureq` raises it directly, which it does when no
+        // timeout is configured. This crate configures one, so the size case
+        // is caught by counting bytes in `fetch` instead -- see the note
+        // there.
+        ureq::Error::BodyExceedsLimit(_) => FetchFailure::TooLarge,
         ureq::Error::Io(_)
         | ureq::Error::ConnectionFailed
         | ureq::Error::Timeout(_) => FetchFailure::Transport,

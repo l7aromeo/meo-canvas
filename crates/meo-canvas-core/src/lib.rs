@@ -23,6 +23,17 @@
 //! inside one, and neither the CLI nor a Rust caller with no executor can be
 //! asked to host it. The CLI fetches behind its own `net` feature.
 //!
+//! **With `net` on, this crate does fetch, and the policy is fixed.** Five
+//! seconds to connect, sixty seconds for the whole fetch, and thirty-two
+//! mebibytes per image -- numbers rather than adjectives, because someone
+//! planning a deployment needs them and a version bump is where they would
+//! change. The size limit is functional: an image past it does not render and
+//! the caller gets [`FetchFailure::TooLarge`]. A caller wanting their own
+//! policy fetches the bytes themselves and passes `ImageSource::Bytes`, which
+//! is the same escape the TypeScript surface has. `resolve`'s `fetch` carries
+//! the derivation, including why the timeout and the size cap are one decision
+//! rather than two.
+//!
 //! No JavaScript. Nothing here names a neon type. The addon crate converts at
 //! its own boundary, which is what lets this crate be tested without building a
 //! `.node` binary.
@@ -122,6 +133,18 @@ pub enum FetchFailure {
     /// **Retry.** This is the class where trying again is the right first
     /// move: a refused connection, a socket that dropped, a read that stopped.
     Transport,
+    /// The image is larger than this renderer fetches.
+    ///
+    /// **Do not retry; the asset has to change, or be fetched by the caller.**
+    /// Distinct from [`FetchFailure::Transport`] because the two want opposite
+    /// responses and were indistinguishable before this existed: both arrived
+    /// as a transport failure carrying the HTTP client's own wording, so "too
+    /// big" and "too slow" read the same to a caller deciding whether to try
+    /// again.
+    ///
+    /// The limit is this crate's rather than the client's, which is what makes
+    /// the case knowable at all -- see `resolve`'s `MAX_IMAGE_BYTES`.
+    TooLarge,
     /// Something else went wrong.
     ///
     /// **Do not retry blindly.** TLS, a proxy configuration, a malformed

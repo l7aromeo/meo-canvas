@@ -49,6 +49,23 @@ vulkan = ["meo-skia-canvas/vulkan"]
 #
 # The client is blocking, which is the part that matters: see the note beside
 # `ureq` below for what this crate promised and what changed.
+#
+# **The policy, in numbers, because a deployment needs them.** Five seconds to
+# connect, sixty seconds for the whole fetch including the body, and thirty-two
+# mebibytes per image. Fixed rather than configurable: a caller wanting their
+# own policy fetches the bytes and passes `ImageSource::Bytes`, and a timeout
+# that can be set to infinity is the hang this replaced with a supported
+# spelling. Ten redirects and a 64 KiB header cap are still `ureq`'s.
+#
+# The size limit is **functional, not only protective**: an image past it does
+# not render, and the caller gets `FetchFailure::TooLarge` saying so. Thirty-two
+# is about nine seconds of 720p GIF, the least efficient animated format and the
+# one most often linked; ten -- `ureq`'s own default, which this used to inherit
+# -- refused three seconds of it.
+#
+# The two numbers are one decision. Sixty seconds against thirty-two mebibytes
+# is a claim that a host sustains about 4.5 Mbit/s, and moving either alone
+# makes the other the real limit. `resolve::fetch` carries the derivation.
 net = ["dep:ureq"]
 
 [dependencies]
