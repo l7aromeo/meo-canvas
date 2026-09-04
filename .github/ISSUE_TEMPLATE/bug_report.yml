@@ -1,0 +1,149 @@
+name: Bug report
+description: Something renders wrong, refuses, or will not load.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This ships two public surfaces over one renderer — a Rust crate and an npm package — and
+        seven prebuilt binaries behind the npm one. **Which surface, and which binary, is usually
+        half the answer**, so the first fields are not paperwork.
+
+        If you have an error message, paste it rather than describing it. The loader already names
+        your platform triple and every published target, and the fetch and layout errors say which
+        class of failure they are.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface
+      description: >
+        The two are separate implementations over a shared core, and a bug is rarely in both. If
+        you are not sure: `import ... from 'meo-canvas'` is the npm package, `meo_canvas::` is the
+        crate.
+      options:
+        - npm package (meo-canvas)
+        - Rust crate (meo-canvas)
+        - CLI (meo-canvas-cli)
+        - Both surfaces, same wrong result
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where it fails
+      description: >
+        **The loader and the renderer fail for unrelated reasons.** A binary that will not load is
+        a packaging or platform problem and its message says which; a render that comes out wrong
+        is a drawing problem and needs the scene.
+      options:
+        - It will not load at all
+        - It loads, and a call throws or returns an error
+        - It loads and draws, and the picture is wrong
+        - It hangs
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform triple
+      description: >
+        As the error prints it, if you have one — `darwin-arm64`, `linux-x64-gnu`,
+        `linux-arm64-musl`, and so on. **The libc matters on Linux**: a glibc binary and a musl one
+        are different artefacts for the same `linux-x64`, and picking the wrong one fails at
+        `dlopen` rather than at run time.
+      placeholder: linux-x64-gnu, Ubuntu 24.04 / darwin-arm64, macOS 15 / linux-x64-musl, Alpine 3.20
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The npm version, the crate version, or both if you are using both.
+      placeholder: meo-canvas 10.0.0-alpha.3 / meo-canvas 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Node or Rust version
+      description: '`node -v`, or `rustc --version`. Whichever surface you named above.'
+      placeholder: v22.11.0 / rustc 1.98.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: The error, verbatim
+      description: >
+        Paste it whole, including the `cause` if there is one. **The loader's message names the
+        host it detected and the seven targets it publishes**, which answers most of what would
+        otherwise be a round trip. If nothing was thrown, say so and describe what you got instead.
+      render: text
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: The smallest scene that shows it
+      description: >
+        Something someone can paste and run. Most bugs here turn on an exact combination of
+        properties, so a scene is worth more than a description of one — and if it renders wrong
+        rather than failing, the scene **is** the report.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what you got
+      description: >
+        For a wrong picture, attach both images if you can. A browser rendering the same CSS is the
+        strongest possible evidence: this project treats Chrome as the reference and has a
+        conformance harness for exactly that comparison.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: fonts
+    attributes:
+      label: Fonts
+      description: >
+        Registering a font changes the **thread**, not the call — it outlives the registry that
+        did it, and every later render on that thread sees it. A missing or unexpected typeface is
+        very often this.
+      options:
+        - No fonts registered; system fonts only
+        - Registered once at start-up
+        - Registered per render or per request
+        - Not sure
+        - Not a text bug
+      default: 4
+
+  - type: input
+    id: format
+    attributes:
+      label: Output format
+      description: What you encoded to, if the bug involves output at all. Animated formats behave differently from still ones.
+      placeholder: png / webp (animated) / avif / gif
+
+  - type: dropdown
+    id: gpu
+    attributes:
+      label: Rasteriser
+      description: >
+        **Asking for the GPU is not getting it.** A build with no backend compiled renders on the
+        CPU and still reports the request; `Canvas::engine` (Rust) and `canvas.engine` (npm) say
+        which one actually drew.
+      options:
+        - CPU
+        - GPU
+        - Not sure
+      default: 2

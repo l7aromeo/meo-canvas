@@ -1,0 +1,9 @@
+# Review is requested automatically from the owner of a path when a pull request
+# touches it. One maintainer today, so the pattern is broad: the value is that
+# nothing merges unreviewed once branch protection is on, not the routing.
+#
+# Carried from `main` unchanged, because it is the one file in this set that was
+# not stale. If ownership ever splits, the useful seams are the two surfaces --
+# `crates/` and `packages/` -- and the release machinery in `.github/workflows`.
+
+* @l7aromeo

@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/l7aromeo/meo-canvas/security/advisories/new
+    about: Report privately. Do not open a public issue for a vulnerability.
+  - name: The addon will not load
+    url: https://github.com/l7aromeo/meo-canvas#installation
+    about: >
+      The error already names your platform triple and every published target.
+      Read it first — it usually says which of the seven binaries is missing and
+      what to install.

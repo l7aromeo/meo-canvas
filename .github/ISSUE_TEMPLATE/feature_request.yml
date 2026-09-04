@@ -1,0 +1,49 @@
+name: Feature request
+description: Something this should be able to draw, or say, and cannot.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **The two surfaces move together.** A capability on the Rust crate and not the npm package,
+        or the reverse, is treated here as a defect rather than a difference — so a request is
+        usually a request for both, and it is worth saying if you think it should not be.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to draw
+      description: >
+        The picture or the behaviour, rather than the API. Most of this library's shape is decided
+        by what CSS does, so "Chrome renders this and we do not" is the strongest form of the ask.
+    validations:
+      required: true
+
+  - type: input
+    id: css
+    attributes:
+      label: The CSS or v1 equivalent, if there is one
+      description: >
+        A property name, a `<canvas>` call, or the v1 API this replaces. Where CSS has already
+        decided the behaviour, that decision is the specification here.
+      placeholder: 'background-clip: text / ctx.filter / v1 `Text` with `stroke`'
+
+  - type: dropdown
+    id: surfaces
+    attributes:
+      label: Which surfaces need it
+      options:
+        - Both
+        - npm package only, and here is why
+        - Rust crate only, and here is why
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you are doing instead
+      description: >
+        If there is a workaround, it tells us how much this costs today. If the workaround is
+        "render it somewhere else", say that too.
