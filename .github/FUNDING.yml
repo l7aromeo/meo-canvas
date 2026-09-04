@@ -5,3 +5,7 @@
 # then the entry is inert rather than broken, so it is safe to carry ahead of
 # the enrolment rather than after it.
 github: l7aromeo
+
+# One-off tipping, and it renders immediately -- unlike `github` above, which
+# stays inert until the account is enrolled at github.com/sponsors.
+ko_fi: l7aromeo
