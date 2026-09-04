@@ -3336,7 +3336,7 @@ why.
 
 |                   |      |                                                                                                           |
 | ----------------- | ---- | --------------------------------------------------------------------------------------------------------- |
-| `meo-skia-canvas` | 0.11 | Skia, text shaping, encoding. `default-features = false`.                                                 |
+| `meo-skia-canvas` | 0.13 | Skia, text shaping, encoding. `default-features = false`.                                                 |
 | `taffy`           | 0.14 | Flexbox, CSS grid, block layout. Without `calc`. 0.14 changed the measure signature and moved `min_size`. |
 | `csscolorparser`  | 0.8  | CSS colour syntax. Holds channels as `f32`, which is where alpha loses its author's digits -- see below.  |
 | `neon`            | 1.1  | Node addon.                                                                                               |
@@ -3347,7 +3347,7 @@ why.
 
 |            |       |                                                                                              |
 | ---------- | ----- | -------------------------------------------------------------------------------------------- |
-| bun        | 1.4.0 | Package manager and the runtime the JavaScript examples use. `packageManager` pins it.       |
+| bun        | 1.4.1 | Package manager and the runtime the JavaScript examples use. `packageManager` pins it.       |
 | typescript | 6.0.3 | Not 7: typescript-eslint supports `<6.1.0` and TypeDoc 0.28 up to 6.0.x. Moves when both do. |
 | eslint     | 10    | With typescript-eslint 8 (`recommendedTypeChecked`) and eslint-config-prettier last.         |
 | prettier   | 3.9   | Over the whole tree; `.prettierignore` names the machine-written files it must not touch.    |
