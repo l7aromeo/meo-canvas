@@ -32,6 +32,28 @@ default = []
 metal = ["meo-canvas-core/metal"]
 vulkan = ["meo-canvas-core/vulkan"]
 
+# Fetching an `ImageSource::Url`, forwarded to `meo-canvas-core/net`.
+#
+# **Off by default, and that is not a smaller capability than the JavaScript
+# surface has.** The parity rule this workspace keeps -- neither surface ships a
+# capability the other lacks -- is about what a consumer *can* have, not about
+# what arrives unasked: `metal` and `vulkan` are default-off on three crates and
+# nobody calls the GPU a capability gap. A flag is availability.
+#
+# **Identical capability, different price.** On npm the addon is a prebuilt
+# binary and the HTTP client is inside it whether anyone fetches or not, so
+# `httpOptions` costs its caller nothing to have. Here the consumer compiles it,
+# so the same capability costs dependencies, build time and audit surface. The
+# flag is what lets the one who pays decide, and most callers never pay: a scene
+# built from `ImageSource::Bytes` or `Path` names no URL at all.
+#
+# And a rendering library reaching the network because a string appeared in a
+# scene should be something someone chose, rather than what happens by default.
+#
+# With it off, a URL is `Error::UnresolvedSource`, and that message names this
+# feature -- a flag whose failure does not name the flag teaches nobody.
+net = ["meo-canvas-core/net"]
+
 [dependencies]
 meo-canvas-core = { workspace = true }
 meo-canvas-scene = { workspace = true }

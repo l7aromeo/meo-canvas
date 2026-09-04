@@ -116,10 +116,24 @@
 //! on that crate's schedule, and a caller who reads this crate's documentation
 //! never has to learn two other vocabularies to place a rectangle.
 //!
-//! No fetching. The renderer beneath resolves local paths and inline bytes; an
-//! [`ImageSource::Url`](scene::ImageSource) is an error there rather than a
-//! request. This crate imposes no async runtime on anyone, which it could not
-//! do while owning an HTTP client.
+//! No async runtime, and no HTTP client unless you ask for one. An
+//! [`ImageSource::Url`](scene::ImageSource) is [`Error::UnresolvedSource`] by
+//! default, and the `net` feature makes it a request instead -- the client
+//! beneath is blocking by construction, so enabling it puts no runtime in any
+//! consumer.
+//!
+//! **Off by default is not a smaller surface than the JavaScript one has.**
+//! `RootProps.httpOptions` fetches there, and this fetches here; the difference
+//! is who pays and when. On npm the addon is a prebuilt binary with the client
+//! already inside it, so having the capability costs its caller nothing. Here
+//! the consumer compiles it, so the same capability costs dependencies, build
+//! time and audit surface -- **identical capability, different price**, and the
+//! flag is what lets the one who pays decide. Most callers never do: a scene
+//! built from bytes or paths names no URL.
+//!
+//! It is the shape `metal` and `vulkan` already have, for the same reason.
+//! Neither surface ships a capability the other lacks; a capability behind a
+//! flag is one the consumer can have.
 //!
 //! No mutable drawing context. There is no `move_to`/`line_to` state machine
 //! here -- that API already exists, in `meo-skia-canvas`, and reproducing it

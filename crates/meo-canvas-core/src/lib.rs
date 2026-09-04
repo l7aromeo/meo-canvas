@@ -162,8 +162,18 @@ pub enum FetchFailure {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// A node names a source the renderer cannot obtain by itself.
-    #[error("node {} names a source this crate does not fetch", .0.get())]
+    /// A node names a URL and this build cannot fetch.
+    ///
+    /// **The message names the feature**, because a flag whose failure does not
+    /// name the flag teaches nobody: a caller who meets this has already shown
+    /// they did not read the documentation that would have told them, and the
+    /// error is the one thing they are certainly looking at.
+    #[error(
+        "node {} names a URL, and this build cannot fetch: enable the `net` \
+         feature on meo-canvas or meo-canvas-core, or resolve the bytes \
+         yourself and pass ImageSource::Bytes",
+        .0.get()
+    )]
     UnresolvedSource(NodeId),
 
     /// A URL source the fetcher could not obtain.
