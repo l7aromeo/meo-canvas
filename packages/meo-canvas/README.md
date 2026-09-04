@@ -26,6 +26,11 @@ works too, through Node's own `require(esm)`, which is unflagged from 22.12.
 Below that version `require` reports `ERR_REQUIRE_ESM` and `import` is the way
 in.
 
+**Coming from v9?** Read
+[MIGRATING.md](https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md) first. Most calls
+survive, but three keep their name and change what they do — `mixColor` above all, which takes
+colour objects now and returns nulls rather than throwing when handed v9's strings.
+
 ### Platforms
 
 The renderer is a native addon of about 51 MB, and it is **not** in this

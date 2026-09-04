@@ -809,6 +809,42 @@ const clampChannel = (value: number): number => Math.min(CHANNEL_MAX, Math.max(0
 /** Whether every channel sits inside what sRGB — and so hex — can write. */
 const inGamut = ({ r, g, b }: Rgba): boolean => [r, g, b].every(c => c >= 0 && c <= CHANNEL_MAX)
 
+/** The migration guide, named in the errors most likely to be a v9 call. */
+const MIGRATING = 'https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md'
+
+/**
+ * A colour, or a refusal saying what arrived instead.
+ *
+ * **A string here is almost certainly v9 code**, whose `mixColor` took two CSS
+ * strings and returned one. v10's takes and returns {@link Rgba}, and without
+ * this the v9 call answered `{ r: null, g: null, b: null, a: null }` — which
+ * {@link formatColor} then wrote as `color(srgb NaN NaN NaN / NaN)`, a
+ * syntactically valid colour string that paints nothing anyone asked for. It is
+ * the single line of a v9 codebase most likely to survive a migration
+ * untouched, and it failed only for callers in TypeScript.
+ *
+ * So it fails at the call instead, which is the same rule a surface of
+ * `NaN`×`NaN` pixels is refused under: **a caller's arithmetic mistake should
+ * stop where it was made rather than travel into the picture.** A non-finite
+ * channel is refused for the same reason, whatever produced it.
+ */
+function colour(value: Rgba, argument: string, where: string): Rgba {
+  if (typeof value === 'string') {
+    throw new Error(
+      `[canvas] ${where} takes a colour rather than a string, and ${argument} is ${JSON.stringify(value)}. ` +
+        `v9's took strings and parsed them; parse it first with \`parseColor\`. See ${MIGRATING}`,
+    )
+  }
+  if (value === null || typeof value !== 'object') {
+    throw new Error(`[canvas] ${where} needs an { r, g, b, a } colour, and ${argument} is ${value === null ? 'null' : typeof value}`)
+  }
+  const off = (['r', 'g', 'b', 'a'] as const).filter(key => !Number.isFinite(value[key]))
+  if (off.length > 0) {
+    throw new Error(`[canvas] ${where} needs finite channels, and ${argument} has ${off.map(key => `${key}: ${String(value[key])}`).join(', ')}`)
+  }
+  return value
+}
+
 /**
  * Writes a colour back as a string the renderer accepts.
  *
@@ -816,8 +852,12 @@ const inGamut = ({ r, g, b }: Rgba): boolean => [r, g, b].every(c => c >= 0 && c
  * becomes `color(srgb …)`**, which carries the extended values verbatim and
  * reads back exactly — hex has no room for a channel above 255 or below 0, and
  * clamping instead would substitute a duller colour without saying so.
+ *
+ * Out of gamut is fine and `NaN` is not: the first is a colour this cannot
+ * write in hex, and the second is not a colour.
  */
-export function formatColor(color: Rgba): string {
+export function formatColor(input: Rgba): string {
+  const color = colour(input, 'it', 'formatColor')
   const alpha = Math.min(1, Math.max(0, color.a))
 
   if (!inGamut(color)) {
@@ -855,12 +895,16 @@ export function formatColor(color: Rgba): string {
  * `outBack` driving a colour should be allowed to overshoot here and be
  * resolved later, exactly as it is for a number. `formatColor` is where an
  * out-of-gamut result stops being silent.
+ *
+ * Both arguments are checked, because a v9 call passes strings to both and
+ * naming only the first would send the reader back for the second.
  */
 export function mixColor(from: Rgba, to: Rgba, t: number): Rgba {
+  const [start, end] = [colour(from, '`from`', 'mixColor'), colour(to, '`to`', 'mixColor')]
   return {
-    r: from.r + (to.r - from.r) * t,
-    g: from.g + (to.g - from.g) * t,
-    b: from.b + (to.b - from.b) * t,
-    a: from.a + (to.a - from.a) * t,
+    r: start.r + (end.r - start.r) * t,
+    g: start.g + (end.g - start.g) * t,
+    b: start.b + (end.b - start.b) * t,
+    a: start.a + (end.a - start.a) * t,
   }
 }

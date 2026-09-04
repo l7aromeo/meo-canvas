@@ -23,6 +23,7 @@ import {
   track,
   type EasingName,
   type Sampled,
+  type Rgba,
   type SpringConfig,
 } from './animate.js'
 // `parseColor` and `isColor` live in `color.ts`, not `animate.ts` -- the two
@@ -508,5 +509,31 @@ describe('colour', () => {
     expect(mix(red, blue, 0.5)).toEqual({ r: 127.5, g: 0, b: 127.5, a: 1 })
     const fade = track({ from: red, to: blue, duration: 1 })
     expect(fade.at({ time: 0.5 })).toEqual({ r: 127.5, g: 0, b: 127.5, a: 1 })
+  })
+
+  it('refuses a v9 call rather than answering it with nulls', () => {
+    // **The worst line a migration can leave behind.** v9's `mixColor` took two
+    // CSS strings and returned one; passing those here used to answer
+    // `{ r: null, g: null, b: null, a: null }`, which `formatColor` wrote as
+    // `color(srgb NaN NaN NaN / NaN)` -- a valid colour string that paints
+    // nothing anyone asked for, from code that compiles in JavaScript. The cast
+    // is what a JavaScript caller does not need, which is the whole problem.
+    const v9 = '#000000' as unknown as Rgba
+    expect(() => mixColor(v9, v9, 0.5)).toThrow(/takes a colour rather than a string/)
+    expect(() => mixColor(v9, v9, 0.5)).toThrow(/parseColor/)
+    // Both arguments, because a v9 call passes strings to both and naming only
+    // the first sends the reader back for the second.
+    expect(() => mixColor({ r: 0, g: 0, b: 0, a: 1 }, v9, 0.5)).toThrow(/`to` is "#000000"/)
+  })
+
+  it('refuses a channel that is not a number, wherever it came from', () => {
+    // The same rule a surface of NaN pixels is refused under: a caller's
+    // arithmetic mistake stops where it was made. Out of gamut is not that --
+    // 300 is a colour hex cannot write, and the row above proves it survives.
+    expect(() => formatColor({ r: Number.NaN, g: 0, b: 0, a: 1 })).toThrow(/finite channels/)
+    expect(() => formatColor({ r: 0, g: 0, b: 0, a: Number.POSITIVE_INFINITY })).toThrow(/a: Infinity/)
+    expect(() => mixColor({ r: Number.NaN, g: 0, b: 0, a: 1 }, { r: 0, g: 0, b: 0, a: 1 }, 0.5)).toThrow(/finite channels/)
+    // And an overshoot, which is finite and deliberate, still passes through.
+    expect(formatColor(mixColor({ r: 0, g: 0, b: 0, a: 1 }, { r: 255, g: 255, b: 255, a: 1 }, 1.25))).toBe('color(srgb 1.25 1.25 1.25)')
   })
 })
