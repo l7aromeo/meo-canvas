@@ -30,7 +30,7 @@
 //!
 //! A node carries a constructor, its properties, and its children. The method
 //! set never grows per node: a new property is a new entry in one table, not a
-//! method on nine node types. Each node's essential argument is a constructor
+//! method on seven node types. Each node's essential argument is a constructor
 //! parameter -- [`Text::new`] takes the content, [`Image::path`] the source,
 //! [`Path::d`] the data -- so it cannot be forgotten.
 //!

@@ -56,7 +56,7 @@ neither can grow a capability the other cannot reach.
   - [And what only a pixel can](#and-what-only-a-pixel-can)
   - [Pin the wrong answer when the right one is upstream](#pin-the-wrong-answer-when-the-right-one-is-upstream)
   - [Widening a matrix is the measurement, not the diligence](#widening-a-matrix-is-the-measurement-not-the-diligence)
-  - [A green row is not coverage of a number the case cannot produce](#a-green-row-is-not-coverage-of-a-number-the-case-cannot-produce)
+  - [Could this evidence have failed?](#could-this-evidence-have-failed)
   - [Structural coverage is not positional coverage](#structural-coverage-is-not-positional-coverage)
   - [A function-valued option has one instrument where everything else has three](#a-function-valued-option-has-one-instrument-where-everything-else-has-three)
   - [A language's convenient default is not the other language's](#a-language-s-convenient-default-is-not-the-other-language-s)
@@ -212,7 +212,8 @@ the machine is a build-time decision**: without the `net` feature -- the default
 -- an `ImageSource::Url` is refused with `Error::UnresolvedSource` and no HTTP
 stack is linked, and a surface with a fetcher resolves the URL to bytes before
 handing the scene over. With `net` on, the core fetches it through a blocking
-client. The rule that does not bend either way is the runtime: `ureq` brings
+client. **The facade forwards the flag**, so a consumer of `meo-canvas` enables
+it there rather than depending on the core to reach it. The rule that does not bend either way is the runtime: `ureq` brings
 none.
 
 **measure** shapes each text node and breaks it into lines, in `crate::lines`.
@@ -391,7 +392,7 @@ canvas.to_file("out.png", Format::Png)?;
 
 Setters are flat and chained. They are written once, on a trait every node
 implements through a single accessor, rather than once per node type — the
-alternative is the same sixty-five methods repeated nine times, which is what
+alternative is the same seventy-three methods repeated seven times, which is what
 made a nested style object look attractive before the shape was seen in use.
 
 `Style` remains a public type because the scene carries it and because a
@@ -1095,33 +1096,12 @@ has, by construction, removed the other -- and the crate ships both.
 
 #### And its complement, which is cheaper to catch
 
-The two above are statements **narrower** than the code beside them reads. The
-opposite is a statement **wider** than the measurement behind it, and it is the
-easier of the two to make.
-
-The font registry is the worked example, and it is mine. I measured that a face
-registered through one `Fonts` was visible to another built afterwards and to a
-renderer made later, wrote _"registered for the whole process"_, and committed
-it. The probe had only ever run on one thread. It could not have told a
-thread-wide registry from a process-wide one -- **structurally**, in the same
-way a conformance table whose inputs all zero a parameter cannot see a rule
-about that parameter. The registry is the thread's: register on a worker and
-the main thread still answers `false` after it joins, and register on the main
-thread and a worker spawned afterwards answers `false` too. Both directions,
-because one direction cannot distinguish the two scopes.
-
-It mattered more than a word. Process-wide would mean one contaminated registry
-that any request can poison for every other; thread-wide means a pool has one
-copy each, which is better news and **more** work for a caller -- a
-registration per worker rather than one at boot. A reader given the wrong one
-would either over-fear it or under-plan for it.
-
-The catch has a name: **ask what the probe could not have seen.** Not whether
-it passed, and not whether the reasoning was sound -- what was outside the
-frame. A single-threaded test cannot find a thread boundary. A table sampling
-0..1 cannot find a rule about 1.5. Thirty-four chosen inputs are evidence about
-those thirty-four. Say the claim the evidence supports, and if the wider claim
-is the useful one, go and measure it.
+The opposite of the two rules above is a statement **wider** than the
+measurement behind it, and it is the easier of the two to make. It is one of
+three worked examples under "Could this evidence have failed?", with the font
+registry measured on a single thread as the case -- kept there rather than
+repeated here, because three statements of one mechanism at two depths is a
+thing a reader cannot arbitrate.
 
 ### Performance and memory
 
@@ -1356,10 +1336,24 @@ fixture asking for Helvetica would pass here and differ on any other machine.
 
 ### Coverage: two floors, two reports, and who runs it
 
-`just coverage` measures two things and fails on either. The workspace floor is
-90% of regions and lines, on the pinned nightly so branches are measured at all.
-The second floor is 60% of regions on `meo-canvas-node/src/lib.rs` alone, the
-Neon boundary, which the workspace number still excludes.
+`just coverage` measures two things and fails on either -- on macOS and Linux.
+The workspace floor is 90% of regions and lines, on the pinned nightly so
+branches are measured at all. The second floor is 60% of regions on
+`meo-canvas-node/src/lib.rs` alone, the Neon boundary, which the workspace
+number still excludes.
+
+**On Windows only the first of the two runs.** Loading the instrumented addon
+in-process under `--pool=threads` was a segmentation fault there -- `just ci`
+exit 139, after nine test files had passed -- so the recipe guards that half
+with `os() != "windows"`. Windows still gates on the workspace floor; what it
+does not measure is the boundary, and that number does not vary by platform, so
+CI measures it on the other two runners. Said here because a file about checks
+that look like they measure and do not had acquired one of its own: this
+paragraph existed for two days saying "two things" while one runner ran one.
+
+Both floors are also stated in "What a check can and cannot see", which points
+back here rather than repeating the mechanics -- one place to correct when the
+recipe moves, which this paragraph is the argument for.
 
 **Why the boundary is excluded from the workspace number.** Its 499 regions are
 called by V8 and by nothing else, so no Rust test can execute them: from a Rust
@@ -1399,10 +1393,10 @@ indistinguishable from a suite that never loads the addon. Continuous mode
 (`%c`) is worse: it writes files whose counters are all zero, and they merge
 cleanly and report 0.00% across the workspace. `--pool=threads` is therefore not
 a performance choice, and it belongs on that invocation only, not in
-`vitest.config.mts`. This is the same failure as "A table whose inputs all zero
-a parameter cannot see a rule about that parameter", one level up: there the
-inputs could not see the rule, here the instrument could not see the execution.
-Both are silent, and both look like a clean result.
+`vitest.config.mts`. This is the same failure as "Could this evidence have
+failed?", one level up: there the inputs could not see the rule, here the
+instrument could not see the execution. Both are silent, and both look like a
+clean result.
 
 **Two plumbing traps, both commented where they bite**, because each fails as a
 clean report followed by a floor failure with no floor in it. `find ... | head -1`
@@ -2358,13 +2352,13 @@ Coverage is measured with `cargo-llvm-cov` on the pinned nightly, because
 is the same toolchain `fmt` uses, so the pin is one date to move rather than
 two.
 
-The workspace floor is 90% on lines and regions, which are the only dimensions
-the tool can fail on — there is no `--fail-under-branches`. The boundary's own
-floor of 60% is enforced by the recipe's arithmetic instead, because that half
-is not `cargo llvm-cov` and has no `--fail-under` of any kind. Branch percentages reach the
-report and `target/lcov.info` for reading; regions is what refuses a merge. A
-region is a span with its own arm count, so an untaken arm still lands in the
-number that gates.
+The two floors, which platforms run them, and why one file is excluded are in
+"Coverage: two floors, two reports, and who runs it". What belongs here is the
+instrument rather than the policy: lines and regions are the only dimensions
+`cargo llvm-cov` can fail on -- there is no `--fail-under-branches` -- so branch
+percentages reach the report and `target/lcov.info` for reading while regions is
+what refuses a merge. A region is a span with its own arm count, so an untaken
+arm still lands in the number that gates.
 
 Source-based coverage instruments Rust only, so Skia is linked but never
 instrumented and its lines never enter the denominator.
@@ -2374,8 +2368,7 @@ the `coverage` recipe rather than by a pattern, one path at a time, so the list
 is reviewable in a diff. `meo-canvas-node/src/lib.rs` earns it by being callable
 only from V8 -- not by being generated -- and the exclusion is paid for by a
 second floor that measures it from the suite that does call it. Everything else
-this project implements stays in the denominator. See "Coverage: two floors, two
-reports, and who runs it".
+this project implements stays in the denominator.
 
 **A green result produced by the check breaking its own precondition is worse
 than a red one.** The acceptance harness loads a built addon in stock base
@@ -2667,7 +2660,19 @@ It was caught because `903` was a recognisable number. **A measurement that
 happens to be a number you know is not a check; ask what the case can produce
 before reading what it did.**
 
-### A green row is not coverage of a number the case cannot produce
+### Could this evidence have failed?
+
+**One rule, learned three times from three different defects.** A check that
+passes tells you nothing until you know it was capable of failing, and every
+way of getting that wrong looks identical from the outside: a green result.
+
+The three worked examples below are kept whole, because the rule is unusable in
+the abstract -- what makes it applicable to a fourth case is having seen what it
+looked like in three. What they have in common is the question, asked of
+whichever part is doing the work: **the assertion, the inputs, or the
+instrument.**
+
+#### The values the case can produce
 
 **The four-kinds rule one level down: not a kind that is missing, but a value
 the case cannot generate.**
@@ -2692,7 +2697,7 @@ exhibit a scaling one. **The case has to be able to fail before its passing
 means anything** — which is the same demand as "a case that cannot discriminate
 is not a case that agreed", asked of the inputs rather than the assertion.
 
-### A table whose inputs all zero a parameter cannot see a rule about that parameter
+#### The parameter the inputs never varied
 
 Four times in one audit of the animation helpers (3 and 4 September 2026),
 and every time the shape was the same. The spring floor: every pinned spring
@@ -2724,6 +2729,36 @@ tests that held them are rewritten as a walker, a test that was not a pin --
 a refusal, a `throws` contract -- can go with them, and a deleted test does not
 fail. The one time it happened here, an ESLint unused-import error was the only
 signal. Diff the test names before and after any move between files.
+
+#### The thing the probe could not have seen
+
+The two above are statements **narrower** than the code beside them reads. The
+opposite is a statement **wider** than the measurement behind it, and it is the
+easier of the two to make.
+
+The font registry is the worked example, and it is mine. I measured that a face
+registered through one `Fonts` was visible to another built afterwards and to a
+renderer made later, wrote _"registered for the whole process"_, and committed
+it. The probe had only ever run on one thread. It could not have told a
+thread-wide registry from a process-wide one -- **structurally**, in the same
+way a conformance table whose inputs all zero a parameter cannot see a rule
+about that parameter. The registry is the thread's: register on a worker and
+the main thread still answers `false` after it joins, and register on the main
+thread and a worker spawned afterwards answers `false` too. Both directions,
+because one direction cannot distinguish the two scopes.
+
+It mattered more than a word. Process-wide would mean one contaminated registry
+that any request can poison for every other; thread-wide means a pool has one
+copy each, which is better news and **more** work for a caller -- a
+registration per worker rather than one at boot. A reader given the wrong one
+would either over-fear it or under-plan for it.
+
+The catch has a name: **ask what the probe could not have seen.** Not whether
+it passed, and not whether the reasoning was sound -- what was outside the
+frame. A single-threaded test cannot find a thread boundary. A table sampling
+0..1 cannot find a rule about 1.5. Thirty-four chosen inputs are evidence about
+those thirty-four. Say the claim the evidence supports, and if the wider claim
+is the useful one, go and measure it.
 
 ### Two doc blocks in a row leave one of them attached to nothing
 
@@ -3271,7 +3306,8 @@ widening happens to the product -- widening first lands `#808080` a hair under
 128, which is the trap the fix's own test pins.
 
 The core requires no async runtime, and performs no network I/O unless built
-with `net`. `just runtime-free` fails if a runtime enters the tree.
+with `net`, which `meo-canvas` forwards under the same name. `just runtime-free`
+fails if a runtime enters the tree.
 
 `taffy::TaffyTree` is neither `Send` nor `Sync`: taffy represents every length
 as a tagged pointer, so `Style` itself holds a `*const ()`. A tree is therefore

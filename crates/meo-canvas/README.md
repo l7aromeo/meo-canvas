@@ -12,6 +12,30 @@ a Skia backend.
 The public surface: struct-literal options closed with `..Default::default()`,
 no Skia or taffy types anywhere, and no async runtime imposed on the caller.
 
+## Features
+
+All three are off by default. A build that names none of them renders on the
+CPU, reads local paths and inline bytes, and links no HTTP stack.
+
+```text
+metal    GPU rasterising on Apple platforms
+vulkan   GPU rasterising elsewhere
+net      resolve an ImageSource::Url over HTTP
+```
+
+`metal` and `vulkan` are alternatives rather than additions: naming both builds,
+and Metal wins, because the overlap is only reachable on macOS where Vulkan
+runs through MoltenVK anyway. `Canvas::engine` reports which one actually drew,
+since asking for the GPU is not the same as getting it.
+
+`net` is the same shape as those two and not a smaller surface than the npm
+package has. There the addon is a prebuilt binary with the HTTP client already
+inside it, so the capability costs its caller nothing; here you compile it, so
+it costs dependencies, build time and audit surface. Identical capability,
+different price, and the flag is what lets the one who pays decide. Without it
+an `ImageSource::Url` is an error naming the feature; a caller who would rather
+fetch for themselves passes `ImageSource::Bytes` and needs none of this.
+
 ## System libraries
 
 Unlike the npm package, which ships a binary with freetype and fontconfig

@@ -71,7 +71,7 @@ canvas.release()
 
 The same picture from Rust. Properties are named on the node, flat, exactly as
 they are above; a new property is a new entry in one table rather than a method
-on nine node types:
+on seven node types:
 
 ```rust,no_run
 use meo_canvas::{

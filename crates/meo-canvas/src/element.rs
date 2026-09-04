@@ -20,7 +20,7 @@
 //! Properties are named flat on the node, from [`Styled`]. Beyond them a node
 //! has `new` (or the constructor taking its essential argument) and
 //! `children`, and that set never grows: a new property is a new entry in the
-//! property table, not a method on nine types.
+//! property table, not a method on seven types.
 
 use meo_canvas_scene::{
     Length, Scene, SceneError, Size,

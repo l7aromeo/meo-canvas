@@ -230,7 +230,7 @@ pub struct Style {
 ///
 /// One list produces two things — the setters on [`Style`], and the same
 /// setters on [`Styled`], which every node implements. Writing them twice is
-/// what the sixty-five-methods-per-node objection was actually about, and a
+/// what the seventy-three-methods-per-node objection was actually about, and a
 /// second list is a second place for a property to be forgotten: a node would
 /// simply lack a setter, with nothing failing to compile.
 ///
@@ -279,7 +279,13 @@ impl Style {
         /// `Row::new().gap(px(16.0))` — rather than by handing it a style
         /// object. The methods are here, once, and a node type implements this
         /// by pointing at the [`Style`] it holds: one line per node type
-        /// against sixty-nine methods.
+        /// against seventy-three methods.
+        ///
+        /// **The count is the macro's, not a tally anyone keeps.** It is the
+        /// `fields` block's fifty-eight entries plus the `via` block's
+        /// fifteen, so a reader who doubts it can recount it in one place --
+        /// which is worth saying, because this number was written down twice
+        /// as two different wrong values before anyone did.
         ///
         /// ```
         /// use meo_canvas::{Row, Styled, hex, px};
