@@ -345,7 +345,12 @@ not what a commit is: splitting a wire change across two commits to respect a
 boundary leaves `ci` red between them for a change that was never in two parts.
 
 **Neither surface ships a capability the other lacks, and neither is finished
-first.** A change to one is not done until the other has it. The two examples
+first.** A change to one is not done until the other has it. A capability behind
+a feature flag is one the consumer can have, so the rule is about reach rather
+than defaults: `net` puts URL fetching behind a flag on the crate and
+`RootProps.httpOptions` has it always on npm, because the addon ships the client
+already built and a crate consumer compiles it. Identical capability, different
+price, and the flag is what lets whoever pays decide. The two examples
 are the check: `examples/bun` and `examples/rust` draw the same picture, and
 `just example` runs both, so a surface left behind fails the command rather than
 being noticed later.
@@ -3362,7 +3367,7 @@ why.
 | `clap`            | 4.6  | CLI.                                                                                                        |
 | `thiserror`       | 2.0  | Error types.                                                                                                |
 | `ureq`            | 3.4  | Remote images, behind the optional `net` feature the core and the CLI each carry.                           |
-| `rayon`           | 1.12 | The pool the addon's asynchronous encode runs on. Not an async runtime -- `just runtime-free` still passes. |
+| `rayon`           | 1.11 | The pool the addon's asynchronous encode runs on. Not an async runtime -- `just runtime-free` still passes. |
 | `png`, `gif`      | dev  | Decoding output back in tests; a byte count proves nothing.                                                 |
 | `criterion`       | dev  | `just bench-rust`. `harness = false`, since it supplies its own.                                            |
 
