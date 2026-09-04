@@ -48,6 +48,14 @@ export async function example_Path(): Promise<void> {
   const tick = Path({ d: 'M2 8 L6 12 L14 3' })
 }
 
+/** `root.ts, FontRegistration`. */
+export async function example_FontRegistration(): Promise<void> {
+  // Register once, where the process starts.
+  const FONTS = [{ family: 'Brand', paths: ['./fonts/Brand-Regular.ttf'] }]
+  const canvas = await Root({ width: 200, height: 100, fonts: FONTS, children: [] })
+  canvas.release()
+}
+
 /** `root.ts, Root`. */
 export async function example_Root(): Promise<void> {
 
@@ -97,6 +105,20 @@ export async function example_README_md_2(): Promise<void> {
   Root({ width: 520, children }) // as tall as the content
   Root({ width: 520, minHeight: 200, children }) // ...and at least 200
   Root({ width: 520, height: 180, children }) // exactly 180
+}
+
+/** `README.md`. */
+export async function example_README_md_3(): Promise<void> {
+
+  const FONTS = [{ family: 'Brand', paths: ['./fonts/Brand-Regular.ttf', './fonts/Brand-Bold.ttf'] }]
+
+  const canvas = await Root({
+    width: 600,
+    height: 400,
+    fonts: FONTS,
+    children: [Text('Hello', { fontFamily: 'Brand', fontSize: 24 })],
+  })
+  canvas.release()
 }
 
 /** `../../README.md`. */

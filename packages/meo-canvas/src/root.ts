@@ -22,7 +22,41 @@ import { Box, type Children, type SceneNode } from './node.js'
 import type { ColorSpace, ColorType } from './index.js'
 import type { Style } from './style.js'
 
-/** A font family, and the files that make it up. */
+/**
+ * A font family, and the files that make it up.
+ *
+ * # Registering a family changes the process, and cannot be undone
+ *
+ * **A family registered by one render is registered for every render after it,
+ * on that thread, until the process exits.** Nothing unregisters anything,
+ * passing different files under the same name replaces what that name draws
+ * from then on, and a render that names a family it never registered will use
+ * whatever an earlier one left behind rather than failing.
+ *
+ * That last part is the one to leave with, because it is not an error a log
+ * will show: it is the wrong typeface in a picture nobody looks at twice. A
+ * server that registers per request, one tenant's face at a time, is a server
+ * where the next request quietly renders in the previous tenant's font.
+ *
+ * ```ts
+ * // Register once, where the process starts.
+ * const FONTS = [{ family: 'Brand', paths: ['./fonts/Brand-Regular.ttf'] }]
+ * const canvas = await Root({ width: 200, height: 100, fonts: FONTS, children: [] })
+ * canvas.release()
+ * ```
+ *
+ * Registering the same list on every render is fine and costs nothing beyond
+ * the file read — it is *varying* it that is the hazard. Faces belong at
+ * start-up, named once, and every render after that names the same ones.
+ *
+ * Each worker thread is its own process for this purpose: they do not share a
+ * registry, so each has to register its own faces, and each is contaminated
+ * only by itself. Two renders already in flight keep their own faces.
+ *
+ * The registry lives in `meo-skia-canvas`, below the addon, and neither surface
+ * can scope it — see `crates/meo-canvas-core/src/resolve.rs`, which says the
+ * same thing to a Rust caller and has the measurement behind it.
+ */
 export interface FontRegistration {
   /** The name `fontFamily` refers to. Any name may be chosen; it need not match the file. */
   readonly family: string
@@ -120,7 +154,13 @@ export type RootProps = Style & {
   readonly height?: number
   /** Device pixel ratio. */
   readonly scale?: number
-  /** Font files to register for this render. */
+  /**
+   * Font families to register before this render.
+   *
+   * **Not only for this render.** Registration is process-wide and permanent —
+   * see {@link FontRegistration} for what that costs a server. Name the same
+   * list every time.
+   */
   readonly fonts?: readonly FontRegistration[]
   /**
    * Passed to `fetch` for every URL source in the scene.
@@ -175,7 +215,10 @@ export type RootProps = Style & {
  * here as well would be two places that can disagree.
  *
  * Fonts stay here because a renderer outlives any one scene: a server registers
- * its families once and draws a thousand pictures with them.
+ * its families once and draws a thousand pictures with them. **That reads as a
+ * scope and is not one** — the registry is the process's, so registering once
+ * is the pattern to follow rather than a constraint the API enforces. See
+ * {@link FontRegistration}.
  */
 export interface PaintOptions {
   /** The families to register before laying anything out. */

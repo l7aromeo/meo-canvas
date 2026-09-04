@@ -123,6 +123,40 @@ More, and all of it checked: the repository holds the same nine scenes written
 twice, once per surface, and `just example` renders both and compares every
 byte.
 
+## Fonts
+
+Pass the families you need on `fonts`, and pass **the same list every time**:
+
+```ts
+import { Root, Text } from 'meo-canvas'
+
+const FONTS = [{ family: 'Brand', paths: ['./fonts/Brand-Regular.ttf', './fonts/Brand-Bold.ttf'] }]
+
+const canvas = await Root({
+  width: 600,
+  height: 400,
+  fonts: FONTS,
+  children: [Text('Hello', { fontFamily: 'Brand', fontSize: 24 })],
+})
+canvas.release()
+```
+
+**Registration is process-wide and permanent.** A family registered by one
+render is registered for every render after it, nothing unregisters anything,
+and giving different files under the same name changes what that name draws from
+then on. A render that names a family it never registered does not fail — it
+uses whatever an earlier render left behind, which means the failure is not an
+error in a log but the wrong typeface in a picture nobody looks at twice.
+
+So faces belong at start-up rather than per request. A server that registers one
+tenant's face per request is a server where the next request renders in the
+previous tenant's font. Registering the same list on every render is fine, and
+costs nothing beyond reading the files; varying it is the hazard.
+
+Worker threads each keep their own registry, so each has to register its own
+faces and each is affected only by itself. Two renders already in flight keep
+the faces they were given.
+
 ## What it renders
 
 - **Layout** — flexbox, CSS grid and block, with margins, padding, borders, gaps
