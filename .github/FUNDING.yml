@@ -1,0 +1,7 @@
+# The sponsor button, which GitHub renders at the top of the repository and on
+# every release page.
+#
+# `github` requires the account to be enrolled at github.com/sponsors; until
+# then the entry is inert rather than broken, so it is safe to carry ahead of
+# the enrolment rather than after it.
+github: l7aromeo
