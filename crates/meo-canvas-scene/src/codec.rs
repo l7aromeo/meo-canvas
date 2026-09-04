@@ -294,6 +294,21 @@ pub(crate) trait Wire: Sized {
 
     /// Reads one value, advancing the reader past it.
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError>;
+
+    /// The fewest bytes one of these can occupy on the wire.
+    ///
+    /// **What [`Reader::list`] reserves against, and it is not the same
+    /// question as what the count may be.** A count above the bytes remaining
+    /// is corrupt, because every value costs at least one byte -- true, and
+    /// the check that rests on it is right. It says nothing about memory: a
+    /// count the buffer can back still reserves `count * size_of::<T>()`, and
+    /// a `Node` is 1048 bytes in memory against 184 on the wire. One megabyte
+    /// of input reserved 1.02 GB before this existed, measured, and was then
+    /// refused.
+    ///
+    /// One is the honest default for a type that can encode to a single byte.
+    /// A type that cannot says so, and the reservation shrinks by the ratio.
+    const MIN_ENCODED: usize = 1;
 }
 
 /// Writes a scene into a fresh buffer.

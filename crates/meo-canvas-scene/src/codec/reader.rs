@@ -143,7 +143,19 @@ impl<'bytes> Reader<'bytes> {
                 available,
             });
         }
-        let mut values = Vec::with_capacity(count);
+        // **The count is bounded and the reservation is not the count.**
+        // `count <= available` is right about whether the prefix is corrupt,
+        // and says nothing about the memory it asks for: a `Node` is 1048
+        // bytes in memory and 184 on the wire, so a count this buffer can back
+        // still reserved a thousand times the buffer. Measured before this
+        // line existed: one megabyte of input, 1.02 GB reserved, then refused.
+        //
+        // So the reservation is bounded by what the remaining bytes can
+        // actually contain, at the smallest this type encodes to. A count
+        // larger than that is still allowed to be read -- it will run out of
+        // bytes and fail honestly -- it is simply not reserved for up front.
+        let capacity = count.min(available / T::MIN_ENCODED.max(1));
+        let mut values = Vec::with_capacity(capacity);
         for _ in 0..count {
             values.push(T::read(self)?);
         }

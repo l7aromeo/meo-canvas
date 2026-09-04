@@ -178,6 +178,9 @@ impl<T: Wire> Wire for Corners<T> {
 }
 
 impl Wire for NodeId {
+    /// A `u32`, always.
+    const MIN_ENCODED: usize = 4;
+
     fn write(&self, out: &mut Writer<'_>) {
         out.u32(self.get());
     }
@@ -971,6 +974,13 @@ impl Wire for NodeKind {
 }
 
 impl Wire for Node {
+    /// Measured rather than counted by hand, and asserted in
+    /// `a_node_never_encodes_smaller_than_the_reservation_assumes`: a default
+    /// container is 184 bytes of node plus the four its parent spends naming
+    /// it. Every style field is fixed width, so nothing a caller sets makes a
+    /// node smaller -- only larger.
+    const MIN_ENCODED: usize = 184;
+
     fn write(&self, out: &mut Writer<'_>) {
         self.kind.write(out);
         self.layout.write(out);
