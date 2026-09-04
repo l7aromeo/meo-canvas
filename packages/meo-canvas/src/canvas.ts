@@ -120,6 +120,28 @@ export interface NativeCanvas {
    * settles the promise.
    */
   encodeAsync(format: Format, options: EncodeOptions): Promise<Buffer>
+  /**
+   * Encodes the painted pages straight into a file, blocking.
+   *
+   * Not {@link NativeCanvas.encode} followed by a write, and the difference is
+   * the whole reason it exists: a format that gathers every page streams into
+   * the file, where encoding first has to hold the entire document in memory
+   * to hand it back. A long animation is bounded by disk here and by RAM
+   * there.
+   *
+   * The format is passed rather than inferred from the path. The extension is
+   * resolved on this side, because the error for an unrecognised one names the
+   * file; inferring it again on the far side would be one question with two
+   * places to answer it.
+   */
+  write(path: string, format: Format, options: EncodeOptions): void
+  /**
+   * Encodes the painted pages straight into a file, on a worker.
+   *
+   * {@link NativeCanvas.write} with the encode moved off the event loop, the
+   * way {@link NativeCanvas.encodeAsync} moves it for a buffer.
+   */
+  writeAsync(path: string, format: Format, options: EncodeOptions): Promise<void>
   /** Frees the Skia surface. Calling it twice is not an error. */
   release(): void
   /** Whether the GPU was asked for. */
@@ -165,26 +187,27 @@ export class Canvas {
   /** The painted surface. */
   readonly #native: NativeCanvas
 
-  /** How bytes reach the filesystem, awaited. */
-  readonly #writeFile: WriteFile
-
-  /** How bytes reach the filesystem, blocking. */
-  readonly #writeFileSync: WriteFileSync
-
   /** Whether {@link Canvas.release} has already run. */
   #released = false
 
   /**
    * Wraps a native surface.
    *
-   * The filesystem is injected rather than imported so this class can be tested
-   * without touching a disk, and so a caller in an environment without
-   * `node:fs` can supply their own.
+   * **The two filesystem arguments are no longer read, and are still accepted.**
+   * They were how bytes reached the disk when `toFile` encoded to a `Buffer`
+   * and handed it over. It does not: the file is written where it is encoded,
+   * so a page-spanning format streams into it instead of existing whole in
+   * memory first, and there is no buffer left for an injected writer to
+   * receive. The native surface is now the seam a test substitutes at, which is
+   * the same seam `encode` was always mocked through — one injection point
+   * instead of two.
+   *
+   * Kept in the signature because removing them changes an exported type and
+   * the arity of a constructor this package ships, which is a decision about
+   * the public surface rather than about this method.
    */
-  constructor(native: NativeCanvas, writeFile: WriteFile, writeFileSync: WriteFileSync) {
+  constructor(native: NativeCanvas, _writeFile?: WriteFile, _writeFileSync?: WriteFileSync) {
     this.#native = native
-    this.#writeFile = writeFile
-    this.#writeFileSync = writeFileSync
   }
 
   /**
@@ -243,18 +266,31 @@ export class Canvas {
   /**
    * Encodes the canvas on a worker and writes it to `path`.
    *
-   * Both halves are off the event loop now. Only the write ever was: the
-   * encode this awaited was the synchronous one, so the expensive half ran on
-   * the loop and the promise covered the cheap half.
+   * **The bytes never come back through JavaScript.** They used to: this
+   * encoded to a `Buffer`, resolved it here, and handed it to a write — so a
+   * three-hundred-frame animation had to exist whole in memory before any of
+   * it reached the disk. The file is now written where it is encoded, and a
+   * spanning format streams into it page by page.
+   *
+   * That is also why the filesystem injected into the constructor is not on
+   * this path any more. It cannot be: the point is that no buffer crosses back
+   * for anyone to write.
    */
   async toFile(path: string, options: EncodeOptions = {}): Promise<void> {
-    const bytes = await this.toBuffer(formatForPath(path), options)
-    await this.#writeFile(path, bytes)
+    this.#assertLive()
+    await this.#native.writeAsync(path, formatForPath(path), options)
   }
 
-  /** Encodes the canvas and writes it to `path`, blocking. */
+  /**
+   * Encodes the canvas and writes it to `path`, blocking.
+   *
+   * The same call on the calling thread. It asks the format question once, on
+   * this side, and everything after that is the one decision made in one
+   * place — see {@link NativeCanvas.write}.
+   */
   toFileSync(path: string, options: EncodeOptions = {}): void {
-    this.#writeFileSync(path, this.toBufferSync(formatForPath(path), options))
+    this.#assertLive()
+    this.#native.write(path, formatForPath(path), options)
   }
 
   /**

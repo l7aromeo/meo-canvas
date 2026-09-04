@@ -24,6 +24,8 @@ function fakeRenderer() {
   const native: NativeCanvas = {
     encode: () => Buffer.from([1]),
     encodeAsync: async () => Buffer.from([1]),
+    write: () => undefined,
+    writeAsync: async () => undefined,
     release: () => undefined,
     gpu: true,
     engine: 'cpu',

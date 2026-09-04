@@ -193,6 +193,33 @@ fn encode_off_thread(prepared: PreparedEncode) -> Result<Vec<u8>, String> {
     })
 }
 
+/// The write itself, on a rayon worker, with no V8 and no canvas in reach.
+///
+/// The counterpart to [`encode_off_thread`], and it catches a panic for the
+/// same reason: rayon aborts the process when one escapes a `spawn`.
+///
+/// **Why this is not `encode_off_thread` followed by a write.** A format that
+/// gathers every page streams into the file here, where encoding first has to
+/// hold the whole document in memory to hand it back. That is the difference
+/// between a hundred-frame animation bounded by disk and one bounded by RAM,
+/// and it is the only reason this path exists.
+fn write_off_thread(
+    prepared: PreparedEncode,
+    path: std::path::PathBuf,
+) -> Result<(), String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        prepared.write(path).map_err(|error| error.to_string())
+    }))
+    .unwrap_or_else(|panic| {
+        let detail = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap_or("no message");
+        Err(format!("internal error while writing: {detail}"))
+    })
+}
+
 /// Reports which rasteriser a render would use, and which one it asks for.
 ///
 /// Two questions, not one, and they can disagree: `requested` is what the
@@ -380,6 +407,26 @@ fn format_from_tag(tag: &str) -> Option<ImageFormat> {
     ImageFormat::from_named(tag)
 }
 
+/// Reads the `(path, format, options)` the two writing exports take.
+///
+/// Shared so the two cannot disagree about what their arguments mean. The
+/// format is a tag the caller wrote rather than one inferred from the path:
+/// the TypeScript surface resolves the extension itself, because the message
+/// it throws for an unrecognised one names the file, and inferring here as
+/// well would be the same question asked twice with two answers available.
+fn write_arguments(
+    cx: &mut FunctionContext<'_>,
+) -> NeonResult<(std::path::PathBuf, ImageFormat, EncodeOptions)> {
+    let path = cx.argument::<JsString>(0)?.value(cx);
+    let tag = cx.argument::<JsString>(1)?.value(cx);
+    let Some(format) = format_from_tag(&tag) else {
+        return cx
+            .throw_type_error(format!("no image format is called {tag:?}"));
+    };
+    let options = encode_options(cx, 2)?;
+    Ok((std::path::PathBuf::from(path), format, options))
+}
+
 /// Reads the encode options object, which may be absent or empty.
 fn encode_options(
     cx: &mut FunctionContext<'_>,
@@ -436,6 +483,70 @@ fn encode_options(
         options.loops = Some(loops.value(cx) as u32);
     }
     Ok(options)
+}
+
+/// Hangs `write` and `writeAsync` on the painted surface.
+///
+/// Split out of [`paint`] because that function was over the line length the
+/// workspace lints for, and this is the half of it that is one subject: two
+/// exports that differ only in which thread the encode runs on.
+fn attach_writers<'a>(
+    cx: &mut FunctionContext<'a>,
+    surface: Handle<'a, JsObject>,
+    painted: &Painted,
+) -> NeonResult<()> {
+    let held = Rc::clone(painted);
+    let write = JsFunction::new(cx, move |mut cx| {
+        let (path, format, options) = write_arguments(&mut cx)?;
+        let mut held = held.borrow_mut();
+        let Some(canvas) = held.as_mut() else {
+            return cx.throw_error(
+                "this canvas has been released; write before calling release()",
+            );
+        };
+        match canvas
+            .prepare_encode(format, &options)
+            .and_then(|prepared| prepared.write(&path))
+        {
+            Ok(()) => Ok(cx.undefined()),
+            Err(error) => cx.throw_error(error.to_string()),
+        }
+    })?;
+    surface.set(cx, "write", write)?;
+
+    let held = Rc::clone(painted);
+    let write_async = JsFunction::new(cx, move |mut cx| {
+        let (path, format, options) = write_arguments(&mut cx)?;
+
+        // Prepared on the thread that owns the canvas, for the reason
+        // `encodeAsync` gives: the worker receives recorded pages and consults
+        // no font.
+        let prepared = {
+            let mut held = held.borrow_mut();
+            let Some(canvas) = held.as_mut() else {
+                return cx.throw_error(
+                    "this canvas has been released; write before calling release()",
+                );
+            };
+            match canvas.prepare_encode(format, &options) {
+                Ok(prepared) => prepared,
+                Err(error) => return cx.throw_error(error.to_string()),
+            }
+        };
+
+        let channel = cx.channel();
+        let (deferred, promise) = cx.promise();
+        rayon::spawn_fifo(move || {
+            let result = write_off_thread(prepared, path);
+            deferred.settle_with(&channel, move |mut cx| match result {
+                Ok(()) => Ok(cx.undefined()),
+                Err(message) => cx.throw_error(message),
+            });
+        });
+        Ok(promise)
+    })?;
+    surface.set(cx, "writeAsync", write_async)?;
+    Ok(())
 }
 
 /// Paints a scene and hands back a surface that can be encoded more than once.
@@ -588,6 +699,8 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
         Ok(promise)
     })?;
     surface.set(&mut cx, "encodeAsync", encode_async)?;
+
+    attach_writers(&mut cx, surface, &painted)?;
 
     let release = JsFunction::new(&mut cx, move |mut cx| {
         // Dropping the surface, not marking it dropped: the point of `release`

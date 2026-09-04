@@ -495,6 +495,40 @@ impl PreparedEncode {
         })?;
         Ok(EncodedImage { bytes, format })
     }
+
+    /// Encodes the pages straight into a file.
+    ///
+    /// **Bounded by disk rather than by memory**, which is the reason to
+    /// prefer it over [`encode`](Self::encode) followed by a write: a format
+    /// that gathers every page streams into the file, where `encode` has to
+    /// hold the whole document to hand it back. A hundred-frame animation is
+    /// the case that makes the difference visible.
+    ///
+    /// The format is the one this handle was taken for, not one inferred from
+    /// the extension. A caller who has a path and no format asks
+    /// [`ImageFormat::from_named`] first, which is what the two public
+    /// surfaces do.
+    ///
+    /// **Which page or pages reach the file is decided in one place.** This
+    /// asks nothing about the format that [`encode`](Self::encode) does not
+    /// ask: both defer to the same handle, so an [`EncodeOptions::page`]
+    /// naming one frame of a GIF writes that frame here exactly as it encodes
+    /// that frame there. Asking it a second way -- a `format.spans_pages()`
+    /// beside the call, say -- is how the two paths come to disagree, and the
+    /// disagreement is silent: one file with every frame in it is a plausible
+    /// GIF.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Encode`] for everything [`encode`](Self::encode)
+    /// reports, and for a file that cannot be written.
+    pub fn write(self, path: impl AsRef<std::path::Path>) -> Result<(), Error> {
+        let format = self.format;
+        self.pages.write(path).map_err(|error| Error::Encode {
+            format,
+            detail: error.to_string(),
+        })
+    }
 }
 
 /// Takes the half of an export that needs the surface, and stops there.

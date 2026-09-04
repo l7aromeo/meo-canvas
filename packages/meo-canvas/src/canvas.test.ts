@@ -5,6 +5,10 @@ import { Canvas, type EncodeOptions, type Format, type NativeCanvas } from './ca
 /** A native surface that records what it was asked for and returns its bytes. */
 function fake(bytes = Buffer.from([1, 2, 3])) {
   const calls: { format: Format; options: EncodeOptions }[] = []
+  // Recorded here rather than through an injected filesystem, because that is
+  // where the write now happens: the bytes never come back through JavaScript,
+  // so the surface is the only thing that knows a file was asked for.
+  const wrote: { path: string; format: Format }[] = []
   let released = 0
   const native: NativeCanvas = {
     encode(format, options) {
@@ -18,6 +22,14 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
       calls.push({ format, options })
       return bytes
     },
+    write(path, format, options) {
+      calls.push({ format, options })
+      wrote.push({ path, format })
+    },
+    async writeAsync(path, format, options) {
+      calls.push({ format, options })
+      wrote.push({ path, format })
+    },
     release() {
       released += 1
     },
@@ -26,7 +38,7 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
     pageCount: 1,
     scale: 2,
   }
-  return { native, calls, released: () => released }
+  return { native, calls, wrote, released: () => released }
 }
 
 /** A canvas over a fake surface and a fake filesystem. */
@@ -80,13 +92,16 @@ describe('encoding', () => {
 describe('writing a file', () => {
   it('takes the format from the extension', async () => {
     const surface = fake()
-    const { canvas, written } = canvasOver(surface.native)
+    const { canvas } = canvasOver(surface.native)
 
     await canvas.toFile('out.webp')
     canvas.toFileSync('out.JPEG')
 
     expect(surface.calls.map(call => call.format)).toEqual(['webp', 'jpg'])
-    expect(written.map(entry => entry.path)).toEqual(['out.webp', 'out.JPEG'])
+    expect(surface.wrote).toEqual([
+      { path: 'out.webp', format: 'webp' },
+      { path: 'out.JPEG', format: 'jpg' },
+    ])
   })
 
   it('refuses a path whose extension names no format', async () => {
