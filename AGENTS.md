@@ -2458,6 +2458,39 @@ It is the same shape as the `flex-alignment` rows that agreed under both rules
 and the box-shadow fixture whose spacer children could not discriminate: in each
 the assertion was true, stayed true, and was true of the wrong thing.
 
+**An empty set flowing into a reducer returns that reducer's identity, and the
+identity is frequently the value that means the opposite of what happened.**
+`max` of nothing is the smallest thing, `sum` of nothing is zero, `all` of
+nothing is true. **The measurement does not fail. It succeeds, on no data, and
+answers with the good number.**
+
+The worked example is an instrument, which is where this hurts most. Event-loop
+stall during an export was measured with a 1 ms timer, collecting how late each
+tick was, and reported as `Math.max(0, ...samples)`. A call that blocks the loop
+so completely that **no sample is ever taken** therefore reports a stall of
+zero: the most blocked case reading as the least. `toBufferSync` at 4000×4000
+starves the loop for 294 ms and would have gone into the package README as
+"0 ms stall" — a published number that is not merely wrong but exactly
+backwards, and one nothing in the repository could have contradicted.
+
+**What caught it is the part that generalises.** `Root` reported 0 ms of stall
+while taking 10 ms of wall clock, and those two cannot both be true. A second
+quantity that constrains the first is what makes an impossible answer visible,
+where a single number has nothing to be impossible against. So the table that
+replaced it reports the **sample count** beside the stall, and reads "no
+callbacks" rather than "0 ms" — the count is the measurement, and the stall is
+only meaningful once the count says the instrument was running.
+
+It is adjacent to the rule below rather than the same one: that is about a
+comparison silently classifying a value it was not written for, and this is
+about a fold over nothing at all. **Four instances turned up in a single day** —
+this, the `NaN` channel judged out of gamut, an abort-signal test that would
+have passed because with the caller's signal dropped nothing aborted at all, and
+a container probe that read one manifest three times through `require`'s cache
+and reported three agreeing answers. **Three of the four were the tool rather
+than the code**, found by someone checking their own instrument, which is the
+habit the count argues for.
+
 **A predicate built from comparisons has a third case its author did not write,
 and `NaN` falls into it silently.** Every comparison against `NaN` is false, so
 a value that is not a number fails the test and takes the else branch -- and the
