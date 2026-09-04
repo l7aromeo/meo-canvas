@@ -19,6 +19,12 @@ use crate::Error;
 /// omission of a method from one of the three a compile error rather than
 /// something to notice.
 ///
+/// **It is open, so a caller's own motion can implement it**, and that decides
+/// how it may grow: a method added here arrives with a provided body, or it
+/// breaks every implementor outside this crate. `total_duration` already has
+/// one. If a future method genuinely cannot have a sensible default, the
+/// honest move is to seal the trait then rather than to add it and hope.
+///
 /// ```
 /// use meo_canvas_core::animate::{
 ///     easing::Easing,
@@ -83,5 +89,102 @@ pub trait Sampled {
     /// # Errors
     ///
     /// As [`Sampled::at`].
-    fn total_duration(&self, count: usize) -> Result<f64, Error>;
+    ///
+    /// **Provided, and that is deliberate rather than a convenience.** A trait
+    /// whose every method is required breaks every implementor outside this
+    /// crate the day a fourth is added, and this one is meant to be
+    /// implemented outside it: the reason it exists is that a caller can be
+    /// generic over what they are animating, which is only worth having if
+    /// their own motion can join in.
+    /// [`crate::animate::interpolate::Animatable`] is the neighbour with
+    /// the same shape, and `Styled` on the facade is the one that gets it
+    /// most right -- one required method and sixty-eight provided.
+    ///
+    /// The default is the answer for a motion that does not stagger: a set of
+    /// them is as long as one of them. A type that staggers overrides it.
+    fn total_duration(&self, count: usize) -> Result<f64, Error> {
+        let _ = count;
+        self.duration()
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::float_cmp,
+    reason = "every expected value here is a whole number or a half, exact in \
+              binary, and the exact comparison is the assertion"
+)]
+mod tests {
+    use super::Sampled;
+    use crate::{
+        Error,
+        animate::{
+            easing::Easing,
+            track::{Motion, Track},
+        },
+    };
+
+    /// A motion of a caller's own, which is the case the trait exists for and
+    /// the case a required fourth method would break.
+    struct Blink {
+        seconds: f64,
+    }
+
+    impl Sampled for Blink {
+        type Value = f64;
+
+        fn at(&self, seconds: f64, _index: usize) -> Result<f64, Error> {
+            Ok(if seconds.rem_euclid(self.seconds * 2.0) < self.seconds {
+                1.0
+            } else {
+                0.0
+            })
+        }
+
+        fn duration(&self) -> Result<f64, Error> {
+            Ok(self.seconds * 2.0)
+        }
+    }
+
+    #[test]
+    fn an_outside_motion_needs_two_methods_and_gets_the_third() {
+        // **`Blink` implements `at` and `duration` and not `total_duration`.**
+        // That it compiles is the assertion: a trait whose every method is
+        // required breaks a type like this the day a fourth arrives, and the
+        // provided body is what stops that.
+        let blink = Blink { seconds: 0.5 };
+        assert_eq!(
+            blink
+                .duration()
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            1.0
+        );
+        // The default is "a set of these is as long as one of them", which is
+        // right for a motion that does not stagger.
+        assert_eq!(
+            blink
+                .total_duration(9)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            1.0
+        );
+    }
+
+    #[test]
+    fn a_motion_that_staggers_overrides_it() {
+        // The control for the test above: the default is a default rather than
+        // the only answer, and `Track` still lengthens with the count.
+        let staggered = Track {
+            from: 0.0,
+            to: 1.0,
+            duration: Some(1.0),
+            delay: 0.0,
+            stagger: 0.5,
+            motion: Motion::Ease(Easing::Linear),
+        };
+        assert_eq!(
+            Sampled::total_duration(&staggered, 3)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            2.0
+        );
+    }
 }

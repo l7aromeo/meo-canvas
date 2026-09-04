@@ -48,7 +48,7 @@ use meo_canvas_scene::style::paint::Color;
 pub const CHANNEL_MAX: f64 = 255.0;
 
 /// A colour with room to be between two others, and outside both.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rgba {
     /// Red, 0 to 255, and not clamped to it.
     pub r: f64,

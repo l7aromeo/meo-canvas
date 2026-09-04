@@ -26,8 +26,30 @@ pub enum Motion {
     Spring(Shape),
 }
 
+impl Default for Motion {
+    /// A linear ease.
+    ///
+    /// **The identity curve, because a default should add nothing.** Derived
+    /// `Default` cannot name it: the variant carries a value, and `#[default]`
+    /// only marks unit variants. `Track` and `Step` need this so their own
+    /// literals can be closed with `..Default::default()`.
+    fn default() -> Self {
+        Self::Ease(Easing::Linear)
+    }
+}
+
 /// A value animated from one end of a range to the other.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// # Adding a field here must not break a caller
+///
+/// Every field is public and the documented way to build one is a struct
+/// literal, so a field added later is a breaking change unless callers wrote
+/// the rest pattern. **They should: `..Default::default()` closes the literal
+/// and absorbs whatever arrives next.** This is [`crate::animate`]'s version of
+/// the reasoning written on the facade's `Style`, which is not
+/// `#[non_exhaustive]` for exactly this reason -- that attribute forbids the
+/// literal outright, and the literal is how these are written.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Track<T> {
     /// Where the value starts.
     pub from: T,

@@ -158,7 +158,7 @@ fn a_bezier_solves_where_v1_solves() {
         let (x1, y1) = (at(&row, 0), at(&row, 1));
         let (x2, y2) = (at(&row, 2), at(&row, 3));
         let (t, expected) = (at(&row, 4), at(&row, 5));
-        let ours = cubic_bezier(x1, y1, x2, y2)(t);
+        let ours = cubic_bezier(x1, y1, x2, y2).at(t);
         assert!(
             ours == expected,
             "cubic-bezier({x1}, {y1}, {x2}, {y2}) at {t} is {ours} where v1 \
@@ -175,8 +175,9 @@ fn steps_land_on_the_side_v1_lands_on() {
             .parse::<u32>()
             .unwrap_or_else(|error| unreachable!("{error}"));
         let (t, expected) = (at(&row, 1), at(&row, 2));
-        let ours =
-            steps(count).unwrap_or_else(|error| unreachable!("{error}"))(t);
+        let ours = steps(count)
+            .unwrap_or_else(|error| unreachable!("{error}"))
+            .at(t);
         assert!(
             ours == expected,
             "steps({count}) at {t} is {ours} where v1 gives {expected}"

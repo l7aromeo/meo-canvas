@@ -71,9 +71,6 @@
 
 use crate::Error;
 
-/// Time and progress both run 0 to 1, though `back` and `elastic` overshoot.
-pub type Curve = fn(f64) -> f64;
-
 /// Clamped, because a track running past its own duration should hold at its
 /// end value rather than accelerate off the curve.
 const fn clamp01(t: f64) -> f64 {
@@ -193,8 +190,36 @@ const BEZIER_MAX_ITERATIONS: usize = 12;
 /// approaches zero stalls Newton, and so does a curve that has not converged
 /// within twelve iterations. Both fall through to the same bisection,
 /// which cannot stall.
-pub fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64) -> impl Fn(f64) -> f64 {
-    move |time: f64| {
+#[must_use]
+pub const fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64) -> CubicBezier {
+    CubicBezier { x1, y1, x2, y2 }
+}
+
+/// A `cubic-bezier` curve, as a value a caller can hold.
+///
+/// **Named rather than `impl Fn`, because a curve that cannot be named cannot
+/// be stored.** The builder used to return an opaque closure, which a caller
+/// could call and nothing else: not a struct field, not a return type of their
+/// own, and a `Vec` of them only through `Box<dyn Fn>`. The four control points
+/// are the whole state, so the type that holds them is smaller than the box.
+///
+/// [`CubicBezier::at`] rather than a call, matching [`Easing::at`] -- the two
+/// answer the same question and now look alike. `Fn` cannot be implemented on
+/// stable Rust, so a callable spelling is not available; `move |t| curve.at(t)`
+/// is one line for a caller who needs a closure after all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CubicBezier {
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+}
+
+impl CubicBezier {
+    /// The curve's value at a normalised time.
+    #[must_use]
+    pub fn at(&self, time: f64) -> f64 {
+        let (x1, y1, x2, y2) = (self.x1, self.y1, self.x2, self.y2);
         let target = clamp01(time);
         if target == 0.0 || target == 1.0 {
             return target;
@@ -259,19 +284,38 @@ pub const MIN_STEPS: u32 = 1;
 ///
 /// Returns [`Error::Steps`] for a count below [`MIN_STEPS`]. v1 throws here
 /// and a `Result` is the same refusal spelled the way this crate spells them.
-pub fn steps(count: u32) -> Result<impl Fn(f64) -> f64, Error> {
+pub const fn steps(count: u32) -> Result<Steps, Error> {
     if count < MIN_STEPS {
         return Err(Error::Steps(count));
     }
-    let count = f64::from(count);
-    Ok(move |t: f64| {
+    Ok(Steps { count })
+}
+
+/// A `steps()` curve, as a value a caller can hold.
+///
+/// Named for the same reason as [`CubicBezier`]: a curve returned as
+/// `impl Fn` can be called and nothing else, and the step count is the whole
+/// of its state.
+///
+/// Constructed through [`steps`], which is where the count is checked, so a
+/// `Steps` that exists is one with at least [`MIN_STEPS`] in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Steps {
+    count: u32,
+}
+
+impl Steps {
+    /// The curve's value at a normalised time.
+    #[must_use]
+    pub fn at(&self, t: f64) -> f64 {
+        let count = f64::from(self.count);
         let clamped = clamp01(t);
         if clamped >= 1.0 {
             1.0
         } else {
             (clamped * count).floor() / count
         }
-    })
+    }
 }
 
 /// The standard easing catalogue, by name.

@@ -13,7 +13,7 @@ use crate::{
 
 /// One leg of a sequence: where to go, how long to take, and how long to wait
 /// afterwards.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Step<T> {
     /// Where this leg ends. It starts wherever the last one finished.
     pub to: T,
@@ -26,7 +26,17 @@ pub struct Step<T> {
 }
 
 /// A run of steps from one starting value.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// # Adding a field here must not break a caller
+///
+/// Every field is public and the documented way to build one is a struct
+/// literal, so a field added later is a breaking change unless callers wrote
+/// the rest pattern. **They should: `..Default::default()` closes the literal
+/// and absorbs whatever arrives next.** This is [`crate::animate`]'s version of
+/// the reasoning written on the facade's `Style`, which is not
+/// `#[non_exhaustive]` for exactly this reason -- that attribute forbids the
+/// literal outright, and the literal is how these are written.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Sequence<T> {
     /// Where the whole run starts.
     pub from: T,
