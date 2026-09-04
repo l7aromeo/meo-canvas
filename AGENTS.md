@@ -2431,6 +2431,33 @@ It is the same shape as the `flex-alignment` rows that agreed under both rules
 and the box-shadow fixture whose spacer children could not discriminate: in each
 the assertion was true, stayed true, and was true of the wrong thing.
 
+**A predicate built from comparisons has a third case its author did not write,
+and `NaN` falls into it silently.** Every comparison against `NaN` is false, so
+a value that is not a number fails the test and takes the else branch -- and the
+else branch is usually the one written for input that is unusual but valid. The
+thing that is not a number is then handled as though it were an extreme one.
+
+`formatColor` had exactly this. `inGamut` is
+`[r, g, b].every(c => c >= 0 && c <= CHANNEL_MAX)`, its else branch is the
+`color(srgb …)` form that carries a channel hex cannot hold, and a `NaN` channel
+was therefore **judged out of gamut** and printed faithfully as
+`color(srgb NaN NaN NaN / NaN)`. Nothing was broken. The predicate did what it
+says, and 300 and `NaN` arrived at the same branch because the only question
+asked distinguishes neither from the other.
+
+The contrast is in the same package, and it is what the rule looks like applied.
+`older` in `addon.ts` compares two dotted version numbers component by
+component, and names the case rather than letting it fall through: **"a
+non-numeric component makes the comparison meaningless rather than false"**, so
+it returns early instead of asserting an ordering nobody established. One
+function asked "is this outside the range", got `NaN`, and answered yes; the
+other asked "can these be compared at all" first.
+
+So when a branch exists for input that is extreme but legal, ask what arrives
+there that is not a number at all. It is a different failure from the ones above
+-- those are about a statement being narrower or wider than the code around it,
+and this is about a total function having a case its author never named.
+
 **A repository typechecks its own types in the one configuration no consumer
 has.** Every `tsc` here runs with `"types": ["node"]` set and `skipLibCheck`
 off. A consumer's runs with neither: `tsc --init` writes `skipLibCheck: true`,
