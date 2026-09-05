@@ -264,10 +264,21 @@ pub struct EncodeOptions {
     /// The colour transparency is flattened against by a format with no alpha
     /// channel, as a packed `0xRRGGBB`.
     pub matte: Option<u32>,
-    /// Which page a single-page format writes, counting from zero.
+    /// Which page is written, counting from zero.
     ///
-    /// `None` writes the last page, which is the one a caller who drew a
-    /// sequence and asked for a PNG almost always means.
+    /// **Not only for a single-page format**, which is what this said until
+    /// the two file-writing paths were measured against each other. Naming a
+    /// page wins over a format that would otherwise gather them all: a GIF
+    /// asked for page 1 of three is a one-frame GIF, and a PDF asked for one
+    /// page is a one-sheet PDF. [`EncodeOptions::written_pages`] is that rule,
+    /// and `tests/write_path.rs` is the measurement — three frames with this
+    /// unset, one with it named, on both the encoding and the writing path.
+    ///
+    /// An index past the last page is refused rather than clamped.
+    ///
+    /// `None` writes every page for a format that spans them, and otherwise
+    /// the last page — the one a caller who drew a sequence and asked for a
+    /// PNG almost always means.
     pub page: Option<usize>,
     /// Frames per second for an animated format.
     ///
@@ -494,6 +505,40 @@ impl PreparedEncode {
             detail: error.to_string(),
         })?;
         Ok(EncodedImage { bytes, format })
+    }
+
+    /// Encodes the pages straight into a file.
+    ///
+    /// **Bounded by disk rather than by memory**, which is the reason to
+    /// prefer it over [`encode`](Self::encode) followed by a write: a format
+    /// that gathers every page streams into the file, where `encode` has to
+    /// hold the whole document to hand it back. A hundred-frame animation is
+    /// the case that makes the difference visible.
+    ///
+    /// The format is the one this handle was taken for, not one inferred from
+    /// the extension. A caller who has a path and no format asks
+    /// [`ImageFormat::from_named`] first, which is what the two public
+    /// surfaces do.
+    ///
+    /// **Which page or pages reach the file is decided in one place.** This
+    /// asks nothing about the format that [`encode`](Self::encode) does not
+    /// ask: both defer to the same handle, so an [`EncodeOptions::page`]
+    /// naming one frame of a GIF writes that frame here exactly as it encodes
+    /// that frame there. Asking it a second way -- a `format.spans_pages()`
+    /// beside the call, say -- is how the two paths come to disagree, and the
+    /// disagreement is silent: one file with every frame in it is a plausible
+    /// GIF.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Encode`] for everything [`encode`](Self::encode)
+    /// reports, and for a file that cannot be written.
+    pub fn write(self, path: impl AsRef<std::path::Path>) -> Result<(), Error> {
+        let format = self.format;
+        self.pages.write(path).map_err(|error| Error::Encode {
+            format,
+            detail: error.to_string(),
+        })
     }
 }
 

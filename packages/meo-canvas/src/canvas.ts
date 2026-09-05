@@ -71,7 +71,17 @@ export interface EncodeOptions {
   readonly lossless?: boolean
   /** The colour transparency is flattened against, for a format with no alpha. */
   readonly matte?: string
-  /** Which page a single-page format writes, counting from zero. */
+  /**
+   * Which page is written, counting from zero.
+   *
+   * **Not only for a single-page format.** Naming a page wins over a format
+   * that would otherwise gather them all, so a GIF asked for page 1 of three
+   * is a one-frame GIF and a PDF asked for one page is a one-sheet PDF. Left
+   * out, a spanning format writes every page and every other format writes the
+   * last one.
+   *
+   * An index past the last page is refused rather than clamped.
+   */
   readonly page?: number
   /** Frames per second for an animated format. */
   readonly fps?: number
@@ -120,6 +130,28 @@ export interface NativeCanvas {
    * settles the promise.
    */
   encodeAsync(format: Format, options: EncodeOptions): Promise<Buffer>
+  /**
+   * Encodes the painted pages straight into a file, blocking.
+   *
+   * Not {@link NativeCanvas.encode} followed by a write, and the difference is
+   * the whole reason it exists: a format that gathers every page streams into
+   * the file, where encoding first has to hold the entire document in memory
+   * to hand it back. A long animation is bounded by disk here and by RAM
+   * there.
+   *
+   * The format is passed rather than inferred from the path. The extension is
+   * resolved on this side, because the error for an unrecognised one names the
+   * file; inferring it again on the far side would be one question with two
+   * places to answer it.
+   */
+  write(path: string, format: Format, options: EncodeOptions): void
+  /**
+   * Encodes the painted pages straight into a file, on a worker.
+   *
+   * {@link NativeCanvas.write} with the encode moved off the event loop, the
+   * way {@link NativeCanvas.encodeAsync} moves it for a buffer.
+   */
+  writeAsync(path: string, format: Format, options: EncodeOptions): Promise<void>
   /** Frees the Skia surface. Calling it twice is not an error. */
   release(): void
   /** Whether the GPU was asked for. */
@@ -131,12 +163,6 @@ export interface NativeCanvas {
   /** The device-pixel multiplier the pages were drawn at. */
   readonly scale: number
 }
-
-/** Writes bytes to a path. Supplied by the caller of {@link Canvas}. */
-export type WriteFile = (path: string, bytes: Uint8Array) => Promise<void>
-
-/** Writes bytes to a path, blocking. */
-export type WriteFileSync = (path: string, bytes: Uint8Array) => void
 
 /**
  * The format a filename's extension names.
@@ -165,26 +191,25 @@ export class Canvas {
   /** The painted surface. */
   readonly #native: NativeCanvas
 
-  /** How bytes reach the filesystem, awaited. */
-  readonly #writeFile: WriteFile
-
-  /** How bytes reach the filesystem, blocking. */
-  readonly #writeFileSync: WriteFileSync
-
   /** Whether {@link Canvas.release} has already run. */
   #released = false
 
   /**
    * Wraps a native surface.
    *
-   * The filesystem is injected rather than imported so this class can be tested
-   * without touching a disk, and so a caller in an environment without
-   * `node:fs` can supply their own.
+   * **One argument, where there were three.** The other two were a filesystem,
+   * injected so this class could be tested without a disk. They cannot survive
+   * the encode moving into the file: `toFile` no longer produces a buffer for
+   * anyone to write, so a caller supplying a writer would have been passing
+   * something nothing could call — a documented capability that silently did
+   * nothing.
+   *
+   * The seam did not go, it moved. A test substitutes a {@link NativeCanvas},
+   * which is where `encode` was always mocked anyway, and a host without
+   * `node:fs` supplies one too. One injection point instead of two.
    */
-  constructor(native: NativeCanvas, writeFile: WriteFile, writeFileSync: WriteFileSync) {
+  constructor(native: NativeCanvas) {
     this.#native = native
-    this.#writeFile = writeFile
-    this.#writeFileSync = writeFileSync
   }
 
   /**
@@ -243,18 +268,31 @@ export class Canvas {
   /**
    * Encodes the canvas on a worker and writes it to `path`.
    *
-   * Both halves are off the event loop now. Only the write ever was: the
-   * encode this awaited was the synchronous one, so the expensive half ran on
-   * the loop and the promise covered the cheap half.
+   * **The bytes never come back through JavaScript.** They used to: this
+   * encoded to a `Buffer`, resolved it here, and handed it to a write — so a
+   * three-hundred-frame animation had to exist whole in memory before any of
+   * it reached the disk. The file is now written where it is encoded, and a
+   * spanning format streams into it page by page.
+   *
+   * That is also why the filesystem injected into the constructor is not on
+   * this path any more. It cannot be: the point is that no buffer crosses back
+   * for anyone to write.
    */
   async toFile(path: string, options: EncodeOptions = {}): Promise<void> {
-    const bytes = await this.toBuffer(formatForPath(path), options)
-    await this.#writeFile(path, bytes)
+    this.#assertLive()
+    await this.#native.writeAsync(path, formatForPath(path), options)
   }
 
-  /** Encodes the canvas and writes it to `path`, blocking. */
+  /**
+   * Encodes the canvas and writes it to `path`, blocking.
+   *
+   * The same call on the calling thread. It asks the format question once, on
+   * this side, and everything after that is the one decision made in one
+   * place — see {@link NativeCanvas.write}.
+   */
   toFileSync(path: string, options: EncodeOptions = {}): void {
-    this.#writeFileSync(path, this.toBufferSync(formatForPath(path), options))
+    this.#assertLive()
+    this.#native.write(path, formatForPath(path), options)
   }
 
   /**
