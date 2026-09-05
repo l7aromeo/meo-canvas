@@ -3387,6 +3387,25 @@ What that pass found, kept here because each is a shape rather than an incident:
 - **A runnable line was never run.** The CLI README's example named `scene.mcsc`
   where every scene in the repository is `.mcs`.
 
+One of those shapes has a practice that prevents it rather than a way to notice
+it, so it is written as an instruction: **cite the name, not the line.** A
+function, a constant or a heading survives an edit above it; a line number is
+invalidated by anything inserted before it, including a change that never
+touched the thing being cited.
+
+Twice in one day, and the second is why it is here rather than assumed. The
+`httpOptions` contract question sat open in the release backlog for days on the
+strength of `lib.rs:119`, which had moved to `:126` -- it had been settled in
+prose the whole time, and chasing a number instead of a name is the only reason
+it stayed open. Then this file cited `root.rs:704` for the byte-parity instance
+on the same afternoon that rule was agreed, while the branch changing that very
+function was already in flight. **The practice does not survive the meeting
+where the principle is agreed**, which is what makes it worth an instruction.
+
+A line number is fine where it names something that cannot move -- a fixed
+offset in a byte format, a column in a table with a stated width. The test is
+whether an edit elsewhere in the file could invalidate it.
+
 ## Dependencies
 
 Every dependency is on its latest stable release, and the two exceptions say
