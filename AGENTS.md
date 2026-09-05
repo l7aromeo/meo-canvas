@@ -356,15 +356,22 @@ are the check: `examples/bun` and `examples/rust` draw the same picture, and
 being noticed later.
 
 **But the proxy a gate can check is narrower than the claim the gate is cited
-for, and the gap is invisible precisely because the gate is green.** `just
-example` compares the bytes two surfaces write, and bytes are a complete record
-of _what_ was drawn and carry nothing about _what it cost to draw it_. So a
-surface that buffers a whole export in memory where the other streams it passes,
-byte for byte, for as long as both keep drawing the same picture -- which is the
-divergence found on 5 September 2026 at `crates/meo-canvas/src/root.rs:704`,
-where `to_file_with` is `to_buffer_with` followed by `std::fs::write`. The rule
-above is sound; the check named under it is narrower than the rule, and nothing
-red would ever have said so.
+for, and the gap is invisible precisely because the gate is green.**
+
+**Byte parity is not capability parity.** `just example` compares what the two
+surfaces write, so a divergence that produces identical bytes is invisible to
+it: the Rust `to_file` buffered a whole spanning export in memory after the
+JavaScript one had stopped, and the gate was green throughout. **When a change
+gives one surface a property rather than an output, the parity check for it has
+to be something other than the fixture bytes.**
+
+The instance is `crates/meo-canvas/src/root.rs:704`, where `to_file_with` was
+`to_buffer_with` followed by `std::fs::write`. The JavaScript surface took the
+streaming write in `44359fa` and the Rust surface stayed on the buffer until
+`174fa4a`, both 5 September 2026 -- one commit apart rather than the interval
+that phrase suggests, and long enough regardless, because no run of `just
+example` in between could have said so. The rule above is sound; the check named
+under it is narrower than the rule.
 
 The same shape reaches `docs-js` -- see _A gate examines a proxy_ under the
 recipe table -- so it is worth stating once rather than per gate: **a green gate
