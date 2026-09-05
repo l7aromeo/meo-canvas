@@ -1131,6 +1131,7 @@ conformance: ensure-deps
     node packages/meo-canvas/tools/conformance/boxshadow.mjs
     node packages/meo-canvas/tools/conformance/shadowextent.mjs
     node packages/meo-canvas/tools/conformance/objectfit.mjs
+    node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
     node packages/meo-canvas/tools/conformance/grid.mjs
     node packages/meo-canvas/tools/conformance/mincontent.mjs
 

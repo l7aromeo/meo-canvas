@@ -966,14 +966,47 @@ fn paint_kind(
             let intrinsic =
                 Size::new(image.width() as f32, image.height() as f32);
             let placed = fit_image(intrinsic, rect, *fit, *position);
-            context.draw_image_sized(
-                image,
-                placed.origin.x,
-                placed.origin.y,
-                placed.size.width,
-                placed.size.height,
-            );
-            Ok(())
+            // **Clipped, because CSS clips replaced content and this did not.**
+            // `fit_image`'s own note says the destination may be larger than
+            // the box and "the caller crops"; this caller did not, so a
+            // `cover` whose aspect did not match its box painted outside the
+            // element -- reported from a real consumer as a 152x186 avatar in
+            // a 26x26 frame painting 26x32.
+            //
+            // **Not only `cover`.** `None` draws at intrinsic size, so any
+            // source larger than its box overflows too. Nobody reported that
+            // one because `cover` is the common case; the clip is
+            // unconditional because the rule is about the element rather than
+            // about the fit, which is how Chrome applies it.
+            //
+            // Measured rather than assumed, on an `<img>` with no `overflow`
+            // declared on it or any ancestor and a page larger than the box:
+            // Chrome paints `cover` and `none` inside the box and its computed
+            // `overflow` is `clip`. Forcing `overflow: visible` makes the same
+            // picture spill exactly as this used to.
+            // `tests/assets/chrome/object-fit-overflow.tsv` carries the run,
+            // including that last row -- without a case that spills, three
+            // rows saying "inside" are also what a harness blind to everything
+            // outside the box would print.
+            //
+            // Through `clip_to_box` rather than a plain rectangle, so a node
+            // with a border radius crops to the curve. Same shape as
+            // `draw_background_image`: the closure is what makes the `restore`
+            // unconditional.
+            context.save();
+            let result = (|context: &mut Context2D| {
+                clip_to_box(context, &node.paint, rect)?;
+                context.draw_image_sized(
+                    image,
+                    placed.origin.x,
+                    placed.origin.y,
+                    placed.size.width,
+                    placed.size.height,
+                );
+                Ok(())
+            })(context);
+            context.restore();
+            result
         }
         NodeKind::Path {
             data,

@@ -1318,6 +1318,7 @@ version = "0.1.0"
 dependencies = [
  "meo-canvas-core",
  "meo-canvas-scene",
+ "png",
 ]
 
 [[package]]

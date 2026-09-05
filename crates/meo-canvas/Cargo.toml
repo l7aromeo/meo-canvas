@@ -65,3 +65,10 @@ meo-canvas-scene = { workspace = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Writes the sources `chrome_object_fit_overflow` renders. Generated rather
+# than committed: `cover` needs an aspect that does not match its box and
+# `none` needs a source larger than its box, and one asset cannot be both
+# without boxes so small the assertion becomes a rounding argument.
+png = "0.18.1"

@@ -1,0 +1,25 @@
+# Chrome, through `just conformance`. Whether a picture stays inside its element.
+#
+# `object-fit.tsv` cannot answer this: its cell is `overflow:hidden`, its
+# viewport is the box, and its screenshot is clipped to the box. Three reasons
+# a pixel outside the element cannot reach it, so it measures placement given a
+# clip and is silent about whether Chrome applies one.
+#
+# Here the element sits at 80,80 on a 240x240 page with no
+# `overflow` declared on it or on any ancestor, and the shot covers the page.
+#
+# `painted` is the bounding box of every pixel that is not the paper colour.
+# `verdict` compares it against `box`: `inside` means Chrome clipped, `spills`
+# means it did not. `contain` is the control -- it cannot exceed its box, so a
+# `spills` there is evidence about this harness rather than about Chrome.
+#
+# `overflow` is the element's computed value, which is the mechanism behind
+# whatever the pixels show. The last row forces it to `visible` and must read
+# `spills`: without a row that does, three `inside` verdicts are also what a
+# harness blind to everything outside the box would print.
+#
+# fit	box	source	box-rect	painted	verdict	overflow
+cover	40x30	40x10	80,80,40,30	80,80,40,30	inside	clip
+none	20x20	60x60	80,80,20,20	80,80,20,20	inside	clip
+contain	40x30	40x10	80,80,40,30	80,90,40,10	inside	clip
+cover	40x30	40x10	80,80,40,30	40,80,120,30	spills	visible
