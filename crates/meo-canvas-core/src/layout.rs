@@ -69,10 +69,28 @@ use crate::{
 const LAYOUT_SCALE: f32 = 1.0;
 
 /// Where every node ended up.
+///
+/// **`#[non_exhaustive]` because a field was just added to it.** `insets`
+/// arrived after `rects` and `baselines`, which is this struct demonstrating
+/// that it grows -- and the window to say so without breaking anyone is now:
+/// `meo-canvas-core` is public API of a crate `just release-crate` publishes,
+/// and nothing of it is on crates.io yet. The day after the first publish this
+/// costs a major version.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct LayoutResult {
     /// Absolute rectangle per node, in logical pixels at scale 1.
     pub rects: HashMap<NodeId, Rect>,
+    /// How far a node's own content sits inside that rectangle: its border
+    /// plus its padding, per edge.
+    ///
+    /// **Kept rather than re-derived, and that is the whole reason it is
+    /// here.** Percentage padding resolves against the containing block's
+    /// width, so working it out at paint time reimplements a rule layout has
+    /// already applied -- and two implementations of one rule are two answers
+    /// waiting to disagree. taffy computes both and hands them back with the
+    /// rectangle; this stops throwing them away.
+    pub insets: HashMap<NodeId, Sides<f32>>,
     /// Distance from a measured leaf's top edge to its first baseline.
     ///
     /// Only text has one, and only because [`crate::measure`] computed it on
@@ -90,6 +108,38 @@ impl LayoutResult {
     #[must_use]
     pub fn get(&self, node: NodeId) -> Option<Rect> {
         self.rects.get(&node).copied()
+    }
+
+    /// The rectangle a node's own content sits in: its box, less its border
+    /// and padding.
+    ///
+    /// **This is where replaced content goes**, which is what CSS says and
+    /// what Chrome does — an `<img>` with an 8px border or 8px of padding puts
+    /// its picture 8px in on every edge, and with both, 16. Text and child
+    /// boxes already land here; the image path was the one drawing into the
+    /// box itself.
+    ///
+    /// Never larger than the box and never inverted: an inset wider than the
+    /// box it insets leaves an empty rectangle at the box's centre rather than
+    /// a negative one.
+    #[must_use]
+    pub fn content(&self, node: NodeId) -> Option<Rect> {
+        let rect = self.get(node)?;
+        let inset = self.insets.get(&node).copied().unwrap_or(Sides {
+            left: 0.0,
+            right: 0.0,
+            top: 0.0,
+            bottom: 0.0,
+        });
+        let width = (rect.size.width - inset.left - inset.right).max(0.0);
+        let height = (rect.size.height - inset.top - inset.bottom).max(0.0);
+        Some(Rect {
+            origin: meo_canvas_scene::Point {
+                x: rect.origin.x + inset.left.min(rect.size.width),
+                y: rect.origin.y + inset.top.min(rect.size.height),
+            },
+            size: Size::new(width, height),
+        })
     }
 
     /// The first baseline computed for `node`, or `None` if it has none.
@@ -254,10 +304,15 @@ where
     .map_err(|error| Error::Layout(error.to_string()))?;
 
     let mut rects = HashMap::with_capacity(to_scene.len());
-    collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects)?;
+    let mut insets = HashMap::with_capacity(to_scene.len());
+    collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects, &mut insets)?;
     bottom_align_reversed_wraps(scene, page, &mut rects);
 
-    Ok(LayoutResult { rects, baselines })
+    Ok(LayoutResult {
+        rects,
+        insets,
+        baselines,
+    })
 }
 
 /// Moves an overflowing `wrap-reverse` line stack to the bottom of its box.
@@ -589,6 +644,7 @@ fn collect(
     parent_x: f32,
     parent_y: f32,
     rects: &mut HashMap<NodeId, Rect>,
+    insets: &mut HashMap<NodeId, Sides<f32>>,
 ) -> Result<(), Error> {
     let layout = tree
         .layout(node)
@@ -605,13 +661,26 @@ fn collect(
                 size: Size::new(layout.size.width, layout.size.height),
             },
         );
+        // Taken from the same `Layout` the rectangle came from, already
+        // resolved. A percentage padding has a containing block behind it and
+        // taffy has just used it; asking again here would be a second
+        // implementation of that rule.
+        insets.insert(
+            scene_node,
+            Sides {
+                left: layout.border.left + layout.padding.left,
+                right: layout.border.right + layout.padding.right,
+                top: layout.border.top + layout.padding.top,
+                bottom: layout.border.bottom + layout.padding.bottom,
+            },
+        );
     }
 
     let children = tree
         .children(node)
         .map_err(|error| Error::Layout(error.to_string()))?;
     for child in children {
-        collect(tree, child, to_scene, x, y, rects)?;
+        collect(tree, child, to_scene, x, y, rects, insets)?;
     }
 
     Ok(())
