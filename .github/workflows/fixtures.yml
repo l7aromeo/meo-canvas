@@ -54,13 +54,20 @@ jobs:
       matrix:
         os: ${{ inputs.os && fromJSON(format('["{0}"]', inputs.os)) || fromJSON('["windows-latest","ubuntu-latest"]') }}
     runs-on: ${{ inputs.os || matrix.os }}
+    # Fifteen minutes warm, and a cold Skia is the long pole. The bound is on a
+    # build that has stopped rather than one that is slow.
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
-        with:
-          just-version: '1.58.0'
+      # No `setup-just` here, and its absence is deliberate rather than an
+      # omission. The steps below call `cargo` directly -- so that the run
+      # reproduces the bare `cargo test` whose comparison CI reports, which the
+      # step that does it explains -- and the toolchain is read with `grep`
+      # rather than `just --evaluate` the way `ci.yml` reads its nightly. The
+      # action was installed here and never invoked: a pinned version to keep
+      # in step, and a minute of every run, for a tool nothing in this file ran.
 
       - name: Read the pinned toolchain
         id: toolchain
@@ -106,17 +113,44 @@ jobs:
       - name: Accept every fixture that differs
         run: |
           set -euo pipefail
-          # `|| true` on the render, because a differing fixture is what this
-          # exists to find and the test reports it by failing. Without it
-          # `set -e` ends the step on exactly the outcome it came for.
-          report=$(cargo test -p meo-canvas-core --test fixtures -- --nocapture 2>&1 || true)
-          printf '%s\n' "$report" | tail -20
-          names=$(printf '%s\n' "$report" \
-            | sed -n 's/^  `\([a-z0-9-]*\)`: .* pixels differ.*/\1/p' | sort -u)
-          if [ -z "$names" ]; then
+          # **The status and the parse are two sources, and this needs both.**
+          # Not failing on the render is still right -- a differing fixture is
+          # what this exists to find and the test reports it by failing -- but
+          # the status has to be kept rather than thrown away with `|| true`,
+          # because it is the only thing that separates "the comparison ran and
+          # agreed" from "nothing ran at all".
+          #
+          # The parse cannot separate them. A compile error, a link failure, a
+          # missing font or a panic before the comparison loop all produce a
+          # report naming no fixture, and this step used to answer every one of
+          # them with "every fixture matches the reference on this platform"
+          # and exit 0 -- on the workflow whose entire purpose is rendering
+          # goldens on a platform nobody here has. The upload below could not
+          # notice either: sixteen variants are committed, so its path always
+          # matches files and `if-no-files-found: error` never fires.
+          set +e
+          report=$(cargo test -p meo-canvas-core --test fixtures -- --nocapture 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$report" | tail -30
+
+          if [ "$status" -eq 0 ]; then
             echo "every fixture matches the reference on this platform; no variant is needed"
             exit 0
           fi
+
+          # `fixtures.rs` reports four shapes and this reads one. The other
+          # three -- a size mismatch, bytes that differ where every pixel
+          # agrees, and a reference that is missing outright -- are differences
+          # an accept would paper over, so falling through to the refusal below
+          # is the right answer for them rather than a gap in the pattern.
+          names=$(printf '%s\n' "$report" \
+            | sed -n 's/^  `\([a-z0-9-]*\)`: .* pixels differ.*/\1/p' | sort -u)
+          if [ -z "$names" ]; then
+            echo "::error::the fixture test failed (exit ${status}) and named no differing fixture, so this is not a rasteriser difference to accept; read the log above"
+            exit "$status"
+          fi
+
           echo "differing: $names"
           for name in $names; do
             echo "==> $name"
