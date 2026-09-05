@@ -274,11 +274,25 @@ ${
 ${rows}
       </ul>
 
+      <!-- Two links are absent rather than forgotten: docs.rs and crates.io.
+           The crate has never been published -- index.crates.io answers
+           NoSuchKey for meo-canvas, which is the decisive check, since
+           crates.io and npmjs both answer 403 to curl and prove nothing --
+           and docs.rs is 404 in consequence. A dead "Rust reference" on the
+           landing page of a library whose Rust surface is the primary one is
+           worse than no link, because a reader cannot tell a "not yet" from a
+           "broken".
+
+           **Put both back the day the crate is published**, which is blocked
+           behind the branch swap, which is blocked behind a taffy release --
+           so this is weeks rather than days and not worth a placeholder. They
+           are not conditional on anything this script can see: a landing page
+           that needs the network to build is one that fails to build, which is
+           the same reason there are no dates. A footer that changes when a
+           fact changes beats a footer that explains itself. -->
       <footer>
         <a href="https://github.com/l7aromeo/meo-canvas">Source</a>
-        <a href="https://docs.rs/meo-canvas">Rust reference</a>
         <a href="https://www.npmjs.com/package/meo-canvas">npm</a>
-        <a href="https://crates.io/crates/meo-canvas">crates.io</a>
       </footer>
     </div>
   </body>
