@@ -22,46 +22,11 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { TARGETS } from './stage-platform-package.mjs'
+import { TARGETS, packageName } from './stage-platform-package.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PACKAGE = resolve(HERE, '../package.json')
 const GENERATED = resolve(HERE, '../src/generated/platform-packages.ts')
-
-/**
- * The package a target's binary ships in: a scope named for the main package,
- * with the target suffix as the package name.
- *
- * **Scoped, and npm's spam heuristic is why.** The unscoped
- * `meo-canvas-<suffix>` names were refused with `E403 Package name triggered
- * spam detection` on 5 September 2026 -- two isolated publishes, nineteen
- * hours after the previous attempt, two different names, on the account that
- * had published four packages of exactly that shape the day before. So it was
- * neither a burst nor those particular names, and spacing the attempts could
- * not have helped. A scope is a namespace with an owner, which is what
- * name-squatting detection has far less to fire on, and it is what every
- * comparable project already ships: `@esbuild/darwin-arm64`,
- * `@rollup/rollup-darwin-arm64`, `@swc/core-darwin-arm64`.
- *
- * **The main package stays unscoped**, so `npm install meo-canvas` is
- * unchanged and v9's lineage continues at 10.x. Only the binaries move, and
- * `optionalDependencies` resolves them from the same registry by name, so no
- * consumer needs an `.npmrc` or a credential.
- *
- * `npm pack` names a scoped tarball `<scope>-<name>-<version>.tgz`, so this
- * produces exactly the filenames the unscoped scheme did -- which is why
- * `release.yml`'s prefix glob needs no change.
- */
-function packageName(main, suffix) {
-  // A scoped main package would give `@@scope/name/suffix`, which is not a
-  // name npm accepts. Refuse rather than emit it: this is generated into a
-  // manifest, and a malformed name there fails at publish time with nothing
-  // pointing back here.
-  if (main.startsWith('@')) {
-    throw new Error(`the main package is scoped (${main}); packageName() composes a scope from it and cannot`)
-  }
-  return `@${main}/${suffix}`
-}
 
 /**
  * The host key a running process derives for a target.

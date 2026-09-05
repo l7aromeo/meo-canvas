@@ -157,13 +157,46 @@ export function hostSuffix() {
  * passed.
  */
 
+/**
+ * The package a target's binary ships in: a scope named for the main package,
+ * with the target suffix as the package name.
+ *
+ * **Scoped, and npm's spam heuristic is why.** The unscoped
+ * `meo-canvas-<suffix>` names were refused with `E403 Package name triggered
+ * spam detection` on 5 September 2026 -- two isolated publishes, nineteen
+ * hours apart, on the account that had published four of exactly that shape
+ * the day before. The same binary repacked under `@meo-canvas/` reached the
+ * ordinary two-factor prompt instead, and published.
+ *
+ * **The main package stays unscoped**, so `npm install meo-canvas` is
+ * unchanged; only the binaries move, and `optionalDependencies` resolves them
+ * by name from the same registry.
+ *
+ * **This lives here because `TARGETS` lives here, and one of them without the
+ * other is how a target gets two names.** It did: the scope landed in
+ * `generate-platform-packages.mjs` alone, so `optionalDependencies` and
+ * `PLATFORM_PACKAGES` asked for `@meo-canvas/darwin-arm64` while the staged
+ * package still called itself `meo-canvas-darwin-arm64`. Both generated lists
+ * agreed with each other and neither agreed with the artefact, so the test
+ * comparing them passed and `just verify-packed` failed on three runners.
+ */
+export function packageName(main, suffix) {
+  // A scoped main package would compose `@@scope/name/suffix`, which npm will
+  // not accept. Refuse rather than emit it: this reaches a manifest, and a
+  // malformed name there fails at publish time with nothing pointing back here.
+  if (main.startsWith('@')) {
+    throw new Error(`the main package is scoped (${main}); packageName() composes a scope from it and cannot`)
+  }
+  return `@${main}/${suffix}`
+}
+
 /** The manifest a platform package ships, derived from the main one. */
 export function manifest(suffix, version) {
   const main = JSON.parse(readFileSync(PACKAGE, 'utf8'))
   const target = TARGETS[suffix]
   if (target === undefined) throw new Error(`no target named ${suffix}; known: ${Object.keys(TARGETS).join(', ')}`)
   return {
-    name: `${main.name}-${suffix}`,
+    name: packageName(main.name, suffix),
     version,
     description: `The ${suffix} binary for ${main.name}.`,
     license: main.license,
@@ -194,10 +227,15 @@ export function stage(suffix, binary, outDir) {
   return { name: manifest(suffix, version).name, version, staged }
 }
 
-// The command-line half runs only when this file *is* the command. `TARGETS`
-// and `manifest` are imported by `src/addon.test.ts`, which asserts them
-// against the two other places a target is named, and an unguarded body would
-// exit that test run with a usage message instead.
+// The command-line half runs only when this file *is* the command. `TARGETS`,
+// `hostSuffix` and `manifest` are imported by `src/addon.test.ts`, which
+// asserts them against the other places a target is named, and an unguarded
+// body would exit that test run with a usage message instead.
+//
+// **This comment claimed `manifest` was imported before it was.** It was not,
+// and the check it described did not exist -- which is how the scope reached
+// the two generated lists and not the staged manifest, with every test green.
+// A comment asserting a check is not a check.
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [suffix, binary, outDir] = process.argv.slice(2)
   // The release workflow needs the same list as a job matrix, and deriving it

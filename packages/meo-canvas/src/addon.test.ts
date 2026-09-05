@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { PLATFORM_PACKAGES, target } from './addon.js'
-import { TARGETS, hostSuffix } from '../tools/stage-platform-package.mjs'
+import { TARGETS, hostSuffix, manifest } from '../tools/stage-platform-package.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PACKAGE = JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8')) as {
@@ -47,6 +47,20 @@ describe('the platform target lists', () => {
     for (const [host, name] of Object.entries(PLATFORM_PACKAGES)) {
       const platform = host.split('-')[0] as string
       expect(name.startsWith(`@${PACKAGE.name}/${platform}`), `${host} resolves ${name}`).toBe(true)
+    }
+  })
+
+  it('names the staged package what the resolver will ask for', () => {
+    // **The artefact, not a third list generated from the same function.**
+    // `PLATFORM_PACKAGES` and `optionalDependencies` both come out of
+    // `packageName`, so they agree with each other whatever it returns; the
+    // name that decides whether an install works is the one written into the
+    // staged package's own manifest, and until 5 September 2026 nothing
+    // compared them. The scope reached the generator and not the stager, both
+    // generated lists agreed, and `just verify-packed` failed on three
+    // runners with the addon "not found in 2 places".
+    for (const [host, name] of Object.entries(PLATFORM_PACKAGES)) {
+      expect(manifest(host, PACKAGE.version).name, `the staged package for ${host}`).toBe(name)
     }
   })
 
