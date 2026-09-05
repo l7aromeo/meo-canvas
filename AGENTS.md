@@ -355,6 +355,22 @@ are the check: `examples/bun` and `examples/rust` draw the same picture, and
 `just example` runs both, so a surface left behind fails the command rather than
 being noticed later.
 
+**But the proxy a gate can check is narrower than the claim the gate is cited
+for, and the gap is invisible precisely because the gate is green.** `just
+example` compares the bytes two surfaces write, and bytes are a complete record
+of _what_ was drawn and carry nothing about _what it cost to draw it_. So a
+surface that buffers a whole export in memory where the other streams it passes,
+byte for byte, for as long as both keep drawing the same picture -- which is the
+divergence found on 5 September 2026 at `crates/meo-canvas/src/root.rs:704`,
+where `to_file_with` is `to_buffer_with` followed by `std::fs::write`. The rule
+above is sound; the check named under it is narrower than the rule, and nothing
+red would ever have said so.
+
+The same shape reaches `docs-js` -- see _A gate examines a proxy_ under the
+recipe table -- so it is worth stating once rather than per gate: **a green gate
+means the thing it examines is right, which is reassurance only when the thing
+it examines is the thing that can be wrong.**
+
 `just example` compares more than exit status. Both halves render the same scene
 at the same size, so their PNGs are compared byte for byte — a difference that
 survives identical input is a difference between the surfaces, and the pixels
@@ -1288,6 +1304,16 @@ release-crate(-dry)   Dispatch crates-io.yml.
 surface-report        v1's prop surface against v2's.
 clean
 ```
+
+**A gate examines a proxy, and the proxy is narrower than the rule it is cited
+for.** `docs-js` resolves `{@link}` targets and refuses a type reaching a
+signature unexported, so a reference that goes nowhere fails -- but a string
+literal written in prose is neither a link nor a type, and nothing compares it
+with the union it describes. `RootProps.colorType` documented `'F32'`, which is
+not a member of `ColorType`, and the reference built clean until the sentence
+around it was rewritten for another reason on 5 September 2026 (`e94bf86`). The
+counterpart on `just example` is beside the parity rule; the general form is
+stated there.
 
 ### The package manager is bun
 
