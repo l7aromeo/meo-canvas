@@ -747,6 +747,41 @@ fn soft(
         // decision rather than a fact about the world: a caller who did not
         // compile an HTTP client has not had a fetch fail, they have asked for
         // something this build cannot do.
+        // **`UnresolvedSource` softens only when somebody else already tried.**
+        // On its own it is the `net` feature being off -- a build decision
+        // rather than a fact about the world, and a caller who did not compile
+        // an HTTP client has not had a fetch fail, they have asked for
+        // something this build cannot do. That must keep naming the flag.
+        //
+        // The npm surface resolves URLs in JavaScript, so a URL it could not
+        // fetch arrives here unresolved and looks identical.
+        // `image_fetch_attempts` is how that surface says otherwise, and it
+        // carries the reason so one real 404 produces the same warning on both
+        // public surfaces rather than a vaguer one here.
+        Error::UnresolvedSource(_) => {
+            let Some(attempt) = scene
+                .image_fetch_attempts
+                .iter()
+                .find(|attempt| attempt.url == *url)
+            else {
+                return Err(error);
+            };
+            Ok(Some(ImageWarning {
+                url: url.clone(),
+                node,
+                failure: match FetchFailure::from(attempt.failure) {
+                    // The wire enum carries no payload, so the status comes
+                    // from beside it rather than from the variant.
+                    FetchFailure::Status(_) => {
+                        FetchFailure::Status(attempt.status.unwrap_or(0))
+                    }
+                    other => other,
+                },
+                detail: attempt.detail.clone(),
+                nodes,
+            }))
+        }
+
         // **Everything else stays loud, and the list above is the whole of
         // what may soften.** A 404, a reset connection, a body past the limit
         // and bytes a decoder refuses are all "the picture is missing", which
@@ -1134,8 +1169,39 @@ mod softening {
         ));
         // A build that cannot fetch has not had a fetch fail; it has been
         // asked for something it does not do, and the message names the flag.
+        // A build that cannot fetch has not had a fetch fail; it has been
+        // asked for something it does not do, and the message names the flag.
         assert!(matches!(
             soft(&scene, node, &source, Error::UnresolvedSource(node), 1),
+            Err(Error::UnresolvedSource(_))
+        ));
+
+        // **Unless a surface that fetches for itself says it tried.** Then the
+        // same error is the broken-image case, and the reason it carries is
+        // the one that surface measured rather than one synthesised here.
+        let mut tried = scene.clone();
+        tried
+            .image_fetch_attempts
+            .push(meo_canvas_scene::ImageFetchAttempt {
+                url: "http://example.invalid/x.png".to_owned(),
+                failure: meo_canvas_scene::ImageFetchFailure::Status,
+                status: Some(404),
+                detail: "404 Not Found".to_owned(),
+            });
+        let softened =
+            soft(&tried, node, &source, Error::UnresolvedSource(node), 1);
+        assert!(
+            matches!(
+                softened,
+                Ok(Some(ref warning)) if warning.failure == crate::FetchFailure::Status(404)
+            ),
+            "a recorded attempt should soften and keep its own reason: {softened:?}"
+        );
+
+        // And only for the URL that was actually tried.
+        let other = ImageSource::Url("http://example.invalid/y.png".to_owned());
+        assert!(matches!(
+            soft(&tried, node, &other, Error::UnresolvedSource(node), 1),
             Err(Error::UnresolvedSource(_))
         ));
         assert!(matches!(

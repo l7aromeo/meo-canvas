@@ -424,6 +424,13 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
     // slot is always present and the default is a variant rather than an
     // absence.
     onImageError: read(input, 'OnImageError'),
+    // The attempts list, always written so offsets do not depend on failure.
+    attempts: Array.from({ length: slot(input) }, () => ({
+      url: read(input, 'String'),
+      failure: read(input, 'ImageFetchFailure'),
+      status: read(input, 'Option<u16>'),
+      detail: read(input, 'String'),
+    })),
   }
 
   const count = slot(input)

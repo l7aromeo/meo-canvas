@@ -133,6 +133,26 @@ pub struct ImageWarning {
     pub nodes: usize,
 }
 
+impl From<meo_canvas_scene::ImageFetchFailure> for FetchFailure {
+    /// **Matched exhaustively on purpose.** A variant added to either list
+    /// fails this build rather than a test, which is the same guarantee
+    /// `ColorType`'s two-sided mapping gives.
+    ///
+    /// `Status` arrives without its code here and gains one from the attempt's
+    /// own `status` field, because the wire enum carries no payload.
+    fn from(failure: meo_canvas_scene::ImageFetchFailure) -> Self {
+        use meo_canvas_scene::ImageFetchFailure as Wire;
+        match failure {
+            Wire::Status => Self::Status(0),
+            Wire::HostNotFound => Self::HostNotFound,
+            Wire::BadUrl => Self::BadUrl,
+            Wire::Transport => Self::Transport,
+            Wire::TooLarge => Self::TooLarge,
+            Wire::Other => Self::Other,
+        }
+    }
+}
+
 /// Why a fetch failed, in the terms a caller can act on.
 ///
 /// **The classification and not the sentence.** [`Error::SourceFetch`] carries
@@ -145,12 +165,19 @@ pub struct ImageWarning {
 /// meaning is not written down only moves the guesswork.
 ///
 /// **Only distinctions `ureq` reports are here.** There is deliberately no
-/// `Timeout`: `ureq` 3.4's default `Timeouts` leaves every field `None` except
-/// `await_100`, which applies to sending a body with `Expect: 100-continue`
-/// and so cannot arise from the `GET` this crate makes -- measured in
-/// `config.rs`, not read from the note beside it. A `Timeout` variant would be
-/// one that never occurred, and a caller branching on a distinction that is
-/// sometimes wrong makes worse decisions than one branching on fewer.
+/// `Timeout`: **deferred rather than impossible, and the note here used to say
+/// impossible.** `ureq` 3.4's own default `Timeouts` leaves every field `None`
+/// except `await_100`, which cannot arise from the `GET` this crate makes --
+/// measured in `config.rs` rather than read from the note beside it. But this
+/// crate sets a sixty-second global timeout of its own, `fetch_policy.rs`
+/// records it firing at 60.1 seconds and arriving as `Transport`, and the npm
+/// surface has an explicit timeout branch with its own message. The case
+/// occurs. What is deferred is the variant, and `#[non_exhaustive]` above is
+/// what makes adding one later a non-breaking change rather than a reason to
+/// widen the API inside an unrelated release.
+///
+/// Until then a timeout is `Transport`, which is where the crate's own already
+/// landed and whose advice -- retry -- is the right advice for one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FetchFailure {

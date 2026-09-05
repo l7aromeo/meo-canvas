@@ -121,6 +121,28 @@
 //! slot layout widened. Appending a property to a table is not such a change —
 //! its bit is simply never set by an older writer.
 
+/// Reads the fetches the JavaScript half already attempted.
+///
+/// **Its own function rather than a `Vec` impl**, because the shape is a
+/// struct of four fields and the arena's generic list reader is for values
+/// that know how to read themselves. Keeping it here puts the whole of the
+/// attempt's wire layout in one place beside the header that carries it.
+fn read_attempts(
+    input: &mut Reader<'_>,
+) -> Result<Vec<ImageFetchAttempt>, ArenaError> {
+    let count = input.count()?;
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        out.push(ImageFetchAttempt {
+            url: String::read(input)?,
+            failure: ImageFetchFailure::read(input)?,
+            status: Option::<u16>::read(input)?,
+            detail: String::read(input)?,
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 pub(crate) mod cases;
 pub(crate) mod group;
@@ -129,7 +151,8 @@ pub(crate) mod value;
 
 use group::{BITS_PER_SLOT, Mask, arena_group, ascending};
 use meo_canvas_scene::{
-    OnImageError, Scene, SceneError, Size,
+    ImageFetchAttempt, ImageFetchFailure, OnImageError, Scene, SceneError,
+    Size,
     node::{
         ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
         PathPaint,
@@ -827,6 +850,10 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
     // its default is a variant rather than an absence, so there is no "the
     // caller said nothing" to distinguish.
     let on_image_error = OnImageError::read(&mut input)?;
+    // What the JavaScript half already tried and could not fetch, with the
+    // reason it measured. Empty unless a URL failed, and `Vec` does not
+    // allocate empty.
+    let attempts: Vec<ImageFetchAttempt> = read_attempts(&mut input)?;
 
     let page_count = input.count()?;
     let mut scene = Scene {
@@ -837,6 +864,7 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
         color_type,
         color_space,
         on_image_error,
+        image_fetch_attempts: attempts,
         nodes: Vec::new(),
         pages: Vec::with_capacity(page_count),
     };
@@ -1044,6 +1072,8 @@ mod tests {
             // optional -- `Placeholder`, the default, so a header written here
             // describes the same scene it did before the slot existed.
             self.slots.push(0.0);
+            // No fetch attempts: a Rust test writes no header that fetched.
+            self.slots.push(0.0);
             self.slots.push(pages as f64);
             self
         }
@@ -1085,10 +1115,10 @@ mod tests {
     /// Slot index of the page count in a header whose surface says nothing:
     /// magic, version, four geometry slots -- width, height, the
     /// content-height flag and scale -- three absent surface discriminants,
-    /// and the one slot `on_image_error` always occupies. Named rather than
-    /// written as a number at each use, so a header change moves one line
-    /// instead of three.
-    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3 + 1;
+    /// the one slot `on_image_error` always occupies, and the one holding the
+    /// count of fetch attempts. Named rather than written as a number at each
+    /// use, so a header change moves one line instead of three.
+    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3 + 1 + 1;
 
     /// Slot index of the first node's tag, one past the page count.
     const FIRST_TAG_SLOT: usize = PAGE_COUNT_SLOT + 1;

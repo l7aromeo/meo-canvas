@@ -49,7 +49,7 @@ import {
   VERTICAL_ALIGN,
 } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
-import { ON_IMAGE_ERROR } from './generated/arena-enums.js'
+import { IMAGE_FETCH_FAILURE, ON_IMAGE_ERROR } from './generated/arena-enums.js'
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
 import type { ColorSpace, ColorType, OnImageError, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode } from './node.js'
@@ -290,8 +290,32 @@ export interface SurfaceOptions {
   readonly onImageError?: OnImageError
 }
 
+/**
+ * A fetch this surface attempted and could not complete.
+ *
+ * **Carries the reason, not only the fact.** Without it the renderer would
+ * have to synthesise a vaguer warning than a crate consumer gets for the same
+ * real-world 404, and the two public surfaces would describe one event
+ * differently.
+ */
+export interface FetchAttempt {
+  readonly url: string
+  readonly failure: 'status' | 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
+  readonly status?: number
+  readonly detail: string
+}
+
 /** Writes the header every arena opens with, and the page count. */
-function writeHeader(out: ArenaWriter, width: number, height: number, contentHeight: boolean, scale: number, surface: SurfaceOptions, pages: number): void {
+function writeHeader(
+  out: ArenaWriter,
+  width: number,
+  height: number,
+  contentHeight: boolean,
+  scale: number,
+  surface: SurfaceOptions,
+  pages: number,
+  attempts: readonly FetchAttempt[] = [],
+): void {
   out.slot(MAGIC)
   out.slot(VERSION)
   out.f32(width)
@@ -312,6 +336,17 @@ function writeHeader(out: ArenaWriter, width: number, height: number, contentHei
   // it here keeps the arena's shape fixed rather than making the reader's
   // offset depend on whether the caller said anything.
   out.enum(variant(ON_IMAGE_ERROR, surface.onImageError ?? 'placeholder', 'onImageError'))
+
+  // What this surface already tried to fetch and could not, with the reason it
+  // measured. Empty unless a URL failed, and it is written unconditionally so
+  // the reader's offsets do not depend on whether anything went wrong.
+  out.count(attempts.length)
+  for (const attempt of attempts) {
+    out.text(attempt.url)
+    out.enum(variant(IMAGE_FETCH_FAILURE, attempt.failure, 'failure'))
+    out.optional(attempt.status, status => out.slot(status))
+    out.text(attempt.detail)
+  }
 
   out.count(pages)
 }
@@ -1501,10 +1536,11 @@ export function encodeScene(
   scale: number,
   surface: SurfaceOptions = {},
   fetched?: ReadonlyMap<string, Uint8Array>,
+  attempts: readonly FetchAttempt[] = [],
 ): Arena {
   const out = new ArenaWriter()
   out.fetched = fetched
-  writeHeader(out, width, height, contentHeight, scale, surface, pages.length)
+  writeHeader(out, width, height, contentHeight, scale, surface, pages.length, attempts)
   for (const page of pages) writeNode(out, page)
   return out.finish()
 }

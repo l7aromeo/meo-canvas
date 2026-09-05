@@ -206,6 +206,16 @@ export const GRID_AUTO_FLOW = {
   ColumnDense: 3,
 } as const
 
+/** `meo_canvas_scene::surface::ImageFetchFailure`. */
+export const IMAGE_FETCH_FAILURE = {
+  Status: 0,
+  HostNotFound: 1,
+  BadUrl: 2,
+  Transport: 3,
+  TooLarge: 4,
+  Other: 5,
+} as const
+
 /** `meo_canvas_scene::style::layout::Justify`. */
 export const JUSTIFY = {
   FlexStart: 0,
@@ -325,6 +335,7 @@ export const ENUMS: Readonly<Record<string, ArenaEnum>> = {
   FontVariant: { path: 'meo_canvas_scene::style::text', variants: FONT_VARIANT },
   GradientKind: { path: 'meo_canvas_scene::style::paint', variants: GRADIENT_KIND },
   GridAutoFlow: { path: 'meo_canvas_scene::style::layout', variants: GRID_AUTO_FLOW },
+  ImageFetchFailure: { path: 'meo_canvas_scene::surface', variants: IMAGE_FETCH_FAILURE },
   Justify: { path: 'meo_canvas_scene::style::layout', variants: JUSTIFY },
   LineCap: { path: 'meo_canvas_scene::node', variants: LINE_CAP },
   LineJoin: { path: 'meo_canvas_scene::node', variants: LINE_JOIN },

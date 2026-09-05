@@ -100,7 +100,9 @@ pub use codec::CodecError;
 pub use geometry::{Corners, Point, Rect, Sides, Size};
 pub use node::{Node, NodeId, NodeKind};
 pub use style::{Dimension, Length};
-pub use surface::{ColorSpace, ColorType, OnImageError};
+pub use surface::{
+    ColorSpace, ColorType, ImageFetchAttempt, ImageFetchFailure, OnImageError,
+};
 
 /// A complete drawing: the surface to draw onto, and the pages to draw on it.
 ///
@@ -174,6 +176,16 @@ pub struct Scene {
     /// answer -- the policy is the scene's alone -- so the default is a
     /// variant rather than an absence.
     pub on_image_error: OnImageError,
+    /// Fetches the caller attempted before the scene arrived, and their
+    /// outcomes.
+    ///
+    /// **Empty for every caller that does not resolve URLs itself**, which is
+    /// every Rust one: `Vec::new` does not allocate, so a scene that fetches
+    /// nothing pays nothing for this. The npm surface fetches in JavaScript
+    /// and fills it, so that a URL it failed on is distinguishable from a URL
+    /// this build was never able to fetch -- the first is the broken-image
+    /// case, the second is a missing feature flag and stays an error.
+    pub image_fetch_attempts: Vec<ImageFetchAttempt>,
     /// Every node of every page. Index by [`NodeId::get`].
     pub nodes: Vec<Node>,
     /// The root of each page, in the order the pages are drawn.
@@ -217,6 +229,7 @@ impl Scene {
             color_space: None,
             // The default is a variant, not an absence: see the field.
             on_image_error: OnImageError::default(),
+            image_fetch_attempts: Vec::new(),
             nodes: vec![Node::container()],
             pages: vec![NodeId::ROOT],
         }

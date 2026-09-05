@@ -17,7 +17,7 @@ import { Root, fetchDeadline, type PageInfo, type RootDependencies, type RootPro
  * time the failure was five assertions reading one slot too early, which reads
  * as five bugs rather than as one moved field.
  */
-const PAGE_COUNT = 2 + 4 + 3 + 1
+const PAGE_COUNT = 2 + 4 + 3 + 1 + 1
 
 /** A renderer that records what it was handed and paints nothing. */
 function fakeRenderer() {
@@ -136,6 +136,11 @@ describe('the canvas Root describes', () => {
 })
 
 describe('a url source', () => {
+  // **These pin `'throw'` rather than changing in substance.** They are about
+  // what a fetch does — the status it reports, the signal it keeps, the body
+  // it bounds — and the default is now `'placeholder'`, under which a failure
+  // is a warning and the render finishes. That would leave every assertion
+  // below with nothing to read.
   // **Every test here stubs `fetch`.** A test that dials out is a test that
   // fails on an aeroplane, and worse, one whose failure mode is a DNS error
   // dressed up as a renderer error — which is exactly what the two tests this
@@ -158,7 +163,7 @@ describe('a url source', () => {
 
     try {
       const { dependencies, painted } = fakeRenderer()
-      await Root({ width: 10, height: 10, children: Image({ src: { url: 'https://example.invalid/a.png' } }) }, dependencies)
+      await Root({ width: 10, height: 10, onImageError: 'throw', children: Image({ src: { url: 'https://example.invalid/a.png' } }) }, dependencies)
 
       expect(asked).toEqual(['https://example.invalid/a.png'])
       expect(painted).toHaveLength(1)
@@ -260,9 +265,9 @@ describe('a url source', () => {
 
     try {
       const { dependencies } = fakeRenderer()
-      await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/big.png' } }) }, dependencies)).rejects.toThrow(
-        /larger than the 32 MiB this renderer fetches/,
-      )
+      await expect(
+        Root({ width: 10, height: 10, onImageError: 'throw', children: Image({ src: { url: 'https://a.invalid/big.png' } }) }, dependencies),
+      ).rejects.toThrow(/larger than the 32 MiB this renderer fetches/)
     } finally {
       restore()
     }
@@ -304,9 +309,9 @@ describe('a url source', () => {
 
     try {
       const { dependencies } = fakeRenderer()
-      await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies)).rejects.toThrow(
-        /cannot fetch "https:\/\/a.invalid\/1.png": 404 Not Found/,
-      )
+      await expect(
+        Root({ width: 10, height: 10, onImageError: 'throw', children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies),
+      ).rejects.toThrow(/cannot fetch "https:\/\/a.invalid\/1.png": 404 Not Found/)
     } finally {
       restore()
     }
@@ -319,9 +324,9 @@ describe('a url source', () => {
 
     try {
       const { dependencies } = fakeRenderer()
-      await expect(Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies)).rejects.toThrow(
-        /cannot fetch "https:\/\/a.invalid\/1.png".*network unreachable/s,
-      )
+      await expect(
+        Root({ width: 10, height: 10, onImageError: 'throw', children: Image({ src: { url: 'https://a.invalid/1.png' } }) }, dependencies),
+      ).rejects.toThrow(/cannot fetch "https:\/\/a.invalid\/1.png".*network unreachable/s)
     } finally {
       restore()
     }
@@ -333,7 +338,7 @@ describe('a url source', () => {
   it('leaves a path alone', async () => {
     const { dependencies, painted } = fakeRenderer()
 
-    await Root({ width: 10, height: 10, children: Image({ src: 'local.png' }) }, dependencies)
+    await Root({ width: 10, height: 10, onImageError: 'throw', children: Image({ src: 'local.png' }) }, dependencies)
 
     expect(painted).toHaveLength(1)
   })
@@ -429,7 +434,9 @@ describe('a sequence that contradicts itself', () => {
     const builder = (): ReturnType<typeof Text> => Text('x')
 
     await expect(Root({ width: 10, height: 10, pages: 2, duration: 1, children: builder }, dependencies)).rejects.toThrow(/`pages` or `duration`, not both/)
-    await expect(Root({ width: 10, height: 10, children: builder }, dependencies)).rejects.toThrow(/page builder needs `pages` or `duration`/)
+    await expect(Root({ width: 10, height: 10, onImageError: 'throw', children: builder }, dependencies)).rejects.toThrow(
+      /page builder needs `pages` or `duration`/,
+    )
     await expect(Root({ width: 10, height: 10, pages: 2, children: Text('x') }, dependencies)).rejects.toThrow(
       /`children` has to be a function that builds one/,
     )
@@ -566,21 +573,42 @@ describe('the renderer Root reaches for when told nothing', () => {
 })
 
 describe('an image source that cannot be resolved', () => {
-  // **The soft-fail half of this is not on the npm surface yet, deliberately.**
-  // This surface resolves URLs in TypeScript, before the arena is built, so
-  // `onImageError` has to be honoured here as well as in the renderer — and a
-  // URL this side failed to fetch reaches the addon as an unresolved `Url`,
-  // which the crate refuses because a crate built without `net` has not had a
-  // fetch fail, it has been asked for something it cannot do. Closing that
-  // needs a way for the arena to say "tried, and failed", which is a wire
-  // addition rather than a detail. The two cases below are the ones the
-  // present code already answers.
-  const DEAD = 'http://127.0.0.1:1/never.png'
+  // Port 1 is on Node's blocked-port list, so `fetch` refuses it before it
+  // reaches the network and the failure is "bad port" rather than a refused
+  // connection. 49151 is unassigned and nothing listens, which is the case
+  // being tested.
+  const DEAD = 'http://127.0.0.1:49151/never.png'
 
   it('is an array even when nothing failed, so the check needs no guard', async () => {
     const canvas = await Root({ width: 10, height: 10, children: Box({}) })
     expect(canvas.warnings).toEqual([])
     expect(canvas.warnings.length === 0).toBe(true)
+    canvas.release()
+  })
+
+  it('lets the render finish and records which URL failed', async () => {
+    const canvas = await Root({
+      width: 60,
+      height: 60,
+      children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
+    })
+    expect(canvas.warnings).toHaveLength(1)
+    // Identity is the requirement: the URL is what separates "not uploaded
+    // yet" from "this path has never been right".
+    expect(canvas.warnings[0]?.url).toBe(DEAD)
+    expect(canvas.warnings[0]?.failure).toBe('transport')
+    expect(canvas.warnings[0]?.nodes).toBe(1)
+    canvas.release()
+  })
+
+  it("still records the warning under 'ignore'", async () => {
+    const canvas = await Root({
+      width: 60,
+      height: 60,
+      onImageError: 'ignore',
+      children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
+    })
+    expect(canvas.warnings).toHaveLength(1)
     canvas.release()
   })
 
@@ -592,6 +620,6 @@ describe('an image source that cannot be resolved', () => {
         onImageError: 'throw',
         children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
       }),
-    ).rejects.toThrow(/127\.0\.0\.1:1/)
+    ).rejects.toThrow(/49151/)
   })
 })

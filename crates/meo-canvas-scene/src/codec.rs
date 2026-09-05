@@ -47,7 +47,7 @@
 //! ```text
 //! scene    := "MCSC" u16(version) f32 f32 bool f32
 //!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
-//!             enum(on_image_error)
+//!             enum(on_image_error) list<attempt>(image_fetch_attempts)
 //!             list<u32>(pages) list<node>
 //!             ^magic         ^1   ^w  ^h  ^ch  ^scale
 //!
@@ -60,6 +60,7 @@
 //!                                                            -- Path: fill, stroke, line_width,
 //!                                                               fill_rule, cap, join, dash, offset
 //!
+//! attempt  := str(url) enum(failure) opt<u16>(status) str(detail)
 //! segment  := str textstyle
 //! source   := u8(0) str | u8(1) str | u8(2) bytes            -- Path | Url | Bytes
 //! paint    := u8(0) color | u8(1) gradient                   -- Solid | Gradient
@@ -145,7 +146,7 @@ pub(crate) use writer::Writer;
 use crate::{
     Scene,
     node::NodeId,
-    surface::{ColorSpace, ColorType, OnImageError},
+    surface::{ColorSpace, ColorType, ImageFetchAttempt, OnImageError},
 };
 
 /// The four bytes every encoded scene starts with.
@@ -343,6 +344,9 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     // Not `opt`, because the field is not optional: the scene always has a
     // policy and the default is a variant rather than an absence.
     scene.on_image_error.write(&mut writer);
+    // Empty for every caller that does not fetch for itself, which is every
+    // Rust one -- so this costs one `u32` of zero on an ordinary scene.
+    writer.list(&scene.image_fetch_attempts);
     writer.list(&scene.pages);
     writer.list(&scene.nodes);
 }
@@ -380,6 +384,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let color_type: Option<ColorType> = input.opt()?;
     let color_space: Option<ColorSpace> = input.opt()?;
     let on_image_error = OnImageError::read(&mut input)?;
+    let image_fetch_attempts: Vec<ImageFetchAttempt> = input.list()?;
     let pages: Vec<NodeId> = input.list()?;
 
     let count = input.peek_u32()?;
@@ -404,6 +409,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
         color_type,
         color_space,
         on_image_error,
+        image_fetch_attempts,
         nodes,
         pages,
     };
@@ -456,8 +462,9 @@ mod tests {
     /// Bytes the surface block occupies when all three optional fields are
     /// absent: one discriminant each, and no payload behind any of them --
     /// plus the one byte `on_image_error` always occupies, which is not
-    /// optional and so has no absent form to be shorter than.
-    const ABSENT_SURFACE: usize = 3 + 1;
+    /// optional and so has no absent form to be shorter than -- plus the four
+    /// bytes of the empty `image_fetch_attempts` list's count.
+    const ABSENT_SURFACE: usize = 3 + 1 + 4;
 
     /// Byte offset of the page list in a scene whose surface says nothing.
     const PAGES_OFFSET: usize = SURFACE_OFFSET + ABSENT_SURFACE;

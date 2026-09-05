@@ -307,3 +307,60 @@ wire_enum! {
         Ignore = 2,
     }
 }
+
+wire_enum! {
+    /// Why a fetch a caller already attempted did not produce an image.
+    ///
+    /// **The wire spelling of `meo_canvas_core::FetchFailure`**, and the reason
+    /// there are two names for one idea: this crate has no HTTP client and
+    /// cannot depend on one, but a surface that fetches for itself has to be
+    /// able to say *why* it failed, or the renderer must invent a vaguer
+    /// warning than a crate consumer gets for the identical event. The npm
+    /// surface resolves URLs in JavaScript, so without this the two public
+    /// surfaces would describe the same real-world 404 differently.
+    ///
+    /// `meo-canvas-core` converts this into its own type; the two lists are
+    /// matched exhaustively there, so a variant added on either side fails the
+    /// build rather than a test.
+    pub enum ImageFetchFailure {
+        /// The server answered with a status that is not a success.
+        Status = 0,
+        /// The host does not resolve.
+        HostNotFound = 1,
+        /// The URL is not one the client can use.
+        BadUrl = 2,
+        /// The connection failed, or failed partway through.
+        ///
+        /// A timeout is reported here too, matching where the crate's own
+        /// sixty-second policy already lands -- and `Transport`'s advice,
+        /// retry, is the right advice for one.
+        Transport = 3,
+        /// The image is larger than this renderer fetches.
+        TooLarge = 4,
+        /// Something else went wrong.
+        Other = 5,
+    }
+}
+
+/// A fetch the caller attempted before the scene reached the renderer.
+///
+/// **Only a surface that resolves URLs itself writes these.** The npm package
+/// fetches in JavaScript and hands the renderer bytes, so a URL it could not
+/// fetch would otherwise arrive as an unresolved
+/// [`Url`](crate::node::ImageSource::Url) -- indistinguishable from a build
+/// that has no HTTP client at all, which is a different thing and must stay an
+/// error. This is how the surface says *tried, and failed*.
+///
+/// Carrying the reason rather than only the fact is what keeps the two public
+/// surfaces describing one event the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageFetchAttempt {
+    /// The URL that was tried.
+    pub url: String,
+    /// What went wrong, for a program to branch on.
+    pub failure: ImageFetchFailure,
+    /// The HTTP status, when [`ImageFetchFailure::Status`] is the reason.
+    pub status: Option<u16>,
+    /// What the client reported, for a person to read.
+    pub detail: String,
+}

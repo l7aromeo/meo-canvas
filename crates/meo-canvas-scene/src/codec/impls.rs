@@ -33,6 +33,7 @@ use crate::{
             TextStroke, TextStyle,
         },
     },
+    surface::{ImageFetchAttempt, ImageFetchFailure},
 };
 
 /// The tag byte for a variant that carries nothing after it.
@@ -1000,6 +1001,24 @@ impl Wire for Node {
             effects: Effects::read(input)?,
             children: input.list()?,
             name: Option::read(input)?,
+        })
+    }
+}
+
+impl Wire for ImageFetchAttempt {
+    fn write(&self, out: &mut Writer<'_>) {
+        out.str(&self.url);
+        self.failure.write(out);
+        out.opt(self.status.as_ref());
+        out.str(&self.detail);
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            url: String::read(input)?,
+            failure: ImageFetchFailure::read(input)?,
+            status: Option::<u16>::read(input)?,
+            detail: String::read(input)?,
         })
     }
 }
