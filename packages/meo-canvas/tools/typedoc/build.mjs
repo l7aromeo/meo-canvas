@@ -1,5 +1,27 @@
 // Builds the JavaScript API reference and gates on what it found.
 //
+// # A link that is absent rather than forgotten
+//
+// `typedoc.json`'s `navigationLinks` used to carry `Rust API` pointing at
+// docs.rs/meo-canvas. It is gone, and the note lives here because JSON takes
+// no comments and TypeDoc rejects an unknown key outright -- `Unknown option
+// '_navigationLinks'`, which is how this note was first attempted.
+//
+// **The crate has never been published.** `index.crates.io` answers
+// `NoSuchKey` for `meo-canvas`, which is the decisive check: crates.io and
+// npmjs both answer 403 to curl and prove nothing either way. docs.rs is 404
+// in consequence, and will be until the crate exists -- which is blocked
+// behind the branch swap, which is blocked behind a taffy release.
+//
+// That block puts a link on **every page of the reference**, so it was the
+// wider half of a defect the landing page had once in its footer. A dead
+// "Rust API" on a library whose Rust surface is the primary one is worse than
+// no link at all, because a reader cannot tell a "not yet" from a "broken".
+//
+// Put it back, here and in `site-index.mjs`'s footer, the day the crate is
+// published. Neither is conditional on anything these scripts can see: a
+// reference that needs the network to build is one that fails to build.
+//
 // TypeDoc reports one severity for every validation, and the two kinds of
 // finding here do not deserve the same treatment. A broken link, or a type
 // that escapes into a signature without being exported, is a defect in the

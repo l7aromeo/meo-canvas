@@ -17,7 +17,6 @@
   "sort": ["kind", "alphabetical"],
   "navigationLinks": {
     "Source": "https://github.com/l7aromeo/meo-canvas/tree/v10",
-    "Rust API": "https://docs.rs/meo-canvas",
     "npm": "https://www.npmjs.com/package/meo-canvas"
   },
 
