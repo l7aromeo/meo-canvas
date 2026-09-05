@@ -420,6 +420,10 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
     gpu: read(input, 'Option<bool>'),
     colorType: read(input, 'Option<ColorType>'),
     colorSpace: read(input, 'Option<ColorSpace>'),
+    // Not an `Option`: the field is not optional on the other side, so its
+    // slot is always present and the default is a variant rather than an
+    // absence.
+    onImageError: read(input, 'OnImageError'),
   }
 
   const count = slot(input)

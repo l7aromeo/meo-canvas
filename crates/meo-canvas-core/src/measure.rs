@@ -968,6 +968,72 @@ mod tests {
         );
     }
 
+    /// The four cases Chrome produces for a broken `<img>`, measured.
+    ///
+    /// Playwright, chromium, `route.abort()` on the image so the load really
+    /// fails, and the box read back with `getBoundingClientRect`:
+    ///
+    /// ```text
+    /// auto x auto, no alt              0 x 0
+    /// width:100px, height auto       100 x 0
+    /// height:60px, width auto          0 x 60
+    /// width+height attrs 80x40        80 x 40
+    /// ```
+    ///
+    /// A loaded image of the same size measured 64x32 in the same harness,
+    /// which is what makes the zeros a measurement rather than a failure to
+    /// measure.
+    ///
+    /// **The rule is per-axis, not per-box.** An unresolved image contributes
+    /// zero on each `auto` axis and honours every explicit extent -- so a box
+    /// with a stated size keeps it, which is the case the report that prompted
+    /// this actually has, and their 1x1-transparent-pixel workaround is
+    /// unnecessary.
+    #[test]
+    fn a_source_that_never_decoded_measures_as_chrome_measures_it() {
+        // No bitmap arrived, so there is no intrinsic size to fit.
+        let none = Size::ZERO;
+        let open = (Available::MaxContent, Available::MaxContent);
+
+        assert_eq!(
+            fit_intrinsic(none, (None, None), open),
+            Size::new(0.0, 0.0),
+            "auto on both axes should collapse, as Chrome does"
+        );
+        assert_eq!(
+            fit_intrinsic(none, (Some(100.0), None), open),
+            Size::new(100.0, 0.0),
+            "an explicit width should survive and the auto height collapse"
+        );
+        assert_eq!(
+            fit_intrinsic(none, (None, Some(60.0)), open),
+            Size::new(0.0, 60.0),
+            "an explicit height should survive and the auto width collapse"
+        );
+        assert_eq!(
+            fit_intrinsic(none, (Some(80.0), Some(40.0)), open),
+            Size::new(80.0, 40.0),
+            "both stated should be honoured untouched"
+        );
+
+        // **A zero intrinsic height must not reach the ratio arm.** That arm
+        // divides by the ratio, and 0/0 is NaN -- which would put a NaN into
+        // layout, where every comparison is false and the wrong branch is
+        // silently taken. The guard is `intrinsic.height > 0.0`, false for
+        // zero and for NaN alike; this asserts the consequence rather than
+        // trusting the guard.
+        for size in [
+            fit_intrinsic(none, (Some(100.0), None), open),
+            fit_intrinsic(none, (None, Some(60.0)), open),
+            fit_intrinsic(none, (None, None), open),
+        ] {
+            assert!(
+                size.width.is_finite() && size.height.is_finite(),
+                "a zero intrinsic size produced {size:?}"
+            );
+        }
+    }
+
     #[test]
     fn fitting_an_intrinsic_size_follows_the_replaced_element_rule() {
         let intrinsic = Size::new(4.0, 2.0);

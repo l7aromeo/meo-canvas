@@ -47,6 +47,7 @@
 //! ```text
 //! scene    := "MCSC" u16(version) f32 f32 bool f32
 //!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
+//!             enum(on_image_error)
 //!             list<u32>(pages) list<node>
 //!             ^magic         ^1   ^w  ^h  ^ch  ^scale
 //!
@@ -144,7 +145,7 @@ pub(crate) use writer::Writer;
 use crate::{
     Scene,
     node::NodeId,
-    surface::{ColorSpace, ColorType},
+    surface::{ColorSpace, ColorType, OnImageError},
 };
 
 /// The four bytes every encoded scene starts with.
@@ -158,7 +159,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 5;
+pub const VERSION: u16 = 6;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -339,6 +340,9 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     writer.opt(scene.gpu.as_ref());
     writer.opt(scene.color_type.as_ref());
     writer.opt(scene.color_space.as_ref());
+    // Not `opt`, because the field is not optional: the scene always has a
+    // policy and the default is a variant rather than an absence.
+    scene.on_image_error.write(&mut writer);
     writer.list(&scene.pages);
     writer.list(&scene.nodes);
 }
@@ -375,6 +379,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let gpu: Option<bool> = input.opt()?;
     let color_type: Option<ColorType> = input.opt()?;
     let color_space: Option<ColorSpace> = input.opt()?;
+    let on_image_error = OnImageError::read(&mut input)?;
     let pages: Vec<NodeId> = input.list()?;
 
     let count = input.peek_u32()?;
@@ -398,6 +403,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
         gpu,
         color_type,
         color_space,
+        on_image_error,
         nodes,
         pages,
     };
@@ -447,9 +453,11 @@ mod tests {
     /// floor or the height itself.
     const SURFACE_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 1 + 4;
 
-    /// Bytes the surface block occupies when all three fields are absent: one
-    /// discriminant each, and no payload behind any of them.
-    const ABSENT_SURFACE: usize = 3;
+    /// Bytes the surface block occupies when all three optional fields are
+    /// absent: one discriminant each, and no payload behind any of them --
+    /// plus the one byte `on_image_error` always occupies, which is not
+    /// optional and so has no absent form to be shorter than.
+    const ABSENT_SURFACE: usize = 3 + 1;
 
     /// Byte offset of the page list in a scene whose surface says nothing.
     const PAGES_OFFSET: usize = SURFACE_OFFSET + ABSENT_SURFACE;

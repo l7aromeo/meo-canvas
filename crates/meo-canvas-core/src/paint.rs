@@ -30,7 +30,7 @@
 use std::fmt::Write as _;
 
 use meo_canvas_scene::{
-    ColorSpace, ColorType, Corners, Rect, Sides, Size,
+    ColorSpace, ColorType, Corners, OnImageError, Rect, Sides, Size,
     node::{Node, NodeId, NodeKind, PathPaint},
     style::{
         Dimension, Length, PaintOrder,
@@ -978,8 +978,22 @@ fn paint_kind(
         NodeKind::Box => Ok(()),
         NodeKind::Text { .. } => draw_text(context, measurer, id, node, rect),
         NodeKind::Image { fit, position, .. } => {
+            // **The arm an unresolved image already took.** This returned
+            // `Ok(())` before the placeholder existed and still does under
+            // `Ignore`, so an image that decoded does not reach a single new
+            // branch: the `Option` match below is the one every image node has
+            // always paid for, and everything the placeholder costs is inside
+            // the arm a resolved image never enters.
             let Some(image) = resolved.image(id).map(DecodedImage::inner)
             else {
+                if resolved.scene().on_image_error == OnImageError::Placeholder
+                {
+                    draw_missing(
+                        context,
+                        inner_radii(node, rect, content),
+                        content,
+                    )?;
+                }
                 return Ok(());
             };
             let intrinsic =
@@ -1579,6 +1593,104 @@ fn inner_radii(node: &Node, rect: Rect, content: Rect) -> Corners<f32> {
 /// border, `object-fit: cover` paints 3922 pixels -- against about 3972 for a
 /// 12px inner curve, 3753 for the outer 20px curve applied to the smaller
 /// rectangle, and 4096 for no curve at all.
+/// Draws the mark that stands in for a picture that never arrived.
+///
+/// # What it looks like and why
+///
+/// A hairline frame, a wash, and one short diagonal, all in **one mid grey at
+/// three alphas**. `rgb(128,128,128)` is equidistant from a white card and a
+/// near-black one, so the same three numbers read on both and the renderer
+/// needs no idea what is behind the box -- which it could not have. A
+/// theme-conditional palette here would be a guess dressed as a feature.
+///
+/// # What Chrome does, measured
+///
+/// Chrome paints a **one-pixel border and nothing else** for a broken `<img>`
+/// with a box to paint in: the non-background pixel count is exactly `4n-4` at
+/// 24, 80 and 200 square, and a loaded image of the same size has no border at
+/// all. So the frame here is conformant and the wash and mark are a deliberate
+/// departure -- a hairline alone is too easy to read as a styled empty box on a
+/// busy card, and the case this exists for is a card a person glances at.
+///
+/// # The two clamps, which are the whole design
+///
+/// **The stroke does not scale linearly.** `min(w,h)/32` bounded to 1..=2.5: a
+/// linear stroke is invisible at 24 pixels and a cartoon at 400.
+///
+/// **The mark is size-capped and centred** rather than drawn corner to corner.
+/// A diagonal across the box looks right on a square and smears across a
+/// 300x84 strip; one small centred mark reads the same at every aspect.
+fn draw_missing(
+    context: &mut Context2D,
+    radii: Corners<f32>,
+    content: Rect,
+) -> Result<(), Error> {
+    // Chrome draws nothing in a box with no area, and neither does this: an
+    // `auto` axis with no picture to size it contributes zero, so a collapsed
+    // node has nowhere to put a mark and drawing one would invent an extent
+    // layout did not give it.
+    if content.size.width <= 0.0 || content.size.height <= 0.0 {
+        return Ok(());
+    }
+
+    let short = content.size.width.min(content.size.height);
+    let stroke = (short / 32.0).clamp(1.0, 2.5);
+
+    context.save();
+    let result = (|context: &mut Context2D| {
+        // Everything is inside the element: the clip is the same rounded inner
+        // rectangle the picture would have been clipped to, so a radius is
+        // honoured and nothing reaches the border.
+        clip_to_rounded(context, radii, content)?;
+
+        context.set_fill_style(to_skia_color(Color::rgba(128, 128, 128, 26)));
+        context.fill_rect(
+            content.origin.x,
+            content.origin.y,
+            content.size.width,
+            content.size.height,
+        );
+
+        context
+            .set_stroke_style(to_skia_color(Color::rgba(128, 128, 128, 107)));
+        context.set_line_width(stroke);
+        // Inset by half the stroke so the frame lands inside the content box
+        // rather than straddling its edge, half of which the clip would eat.
+        let half = stroke / 2.0;
+        box_path(
+            context,
+            radii,
+            Rect::new(
+                meo_canvas_scene::Point::new(
+                    content.origin.x + half,
+                    content.origin.y + half,
+                ),
+                Size::new(
+                    (content.size.width - stroke).max(0.0),
+                    (content.size.height - stroke).max(0.0),
+                ),
+            ),
+        )?;
+        context.stroke();
+
+        let mark = (short * 0.38).clamp(10.0, 64.0);
+        let cx = content.origin.x + content.size.width / 2.0;
+        let cy = content.origin.y + content.size.height / 2.0;
+        let arm = mark / 2.0;
+        context
+            .set_stroke_style(to_skia_color(Color::rgba(128, 128, 128, 140)));
+        context.set_line_width(stroke);
+        context.set_line_cap(StrokeCap::Round);
+        context.begin_path();
+        context.move_to(cx - arm, cy - arm);
+        context.line_to(cx + arm, cy + arm);
+        context.stroke();
+        Ok(())
+    })(context);
+    context.restore();
+    result
+}
+
 fn clip_to_rounded(
     context: &mut Context2D,
     radii: Corners<f32>,

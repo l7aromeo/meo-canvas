@@ -93,6 +93,38 @@ pub use resolve::{Fonts, Resolved};
 
 use crate::measure::SceneMeasurer;
 
+/// One image source that could not be resolved, and what a render did about it.
+///
+/// **A render that finishes with warnings is not a render that succeeded
+/// quietly.** Every entry here is a picture the caller asked for and did not
+/// get; the render completed because the alternative -- failing the whole page
+/// for one decorative icon -- is worse for a server drawing cards from
+/// somebody else's payload, not because the failure stopped mattering.
+///
+/// Recorded whatever [`OnImageError`](meo_canvas_scene::OnImageError) says,
+/// including [`Ignore`](meo_canvas_scene::OnImageError::Ignore). Turning the
+/// drawing off never turns the knowing off.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ImageWarning {
+    /// The URL that could not be resolved.
+    pub url: String,
+    /// The first node that asked for it, in node order.
+    ///
+    /// One warning per distinct source rather than per node: sixty nodes
+    /// drawing one dead URL is one thing that went wrong, and a caller
+    /// deduplicating a list we could have deduplicated is a worse surface.
+    pub node: NodeId,
+    /// What went wrong, for a program to branch on.
+    ///
+    /// The same classification a hard failure carries in
+    /// [`Error::SourceFetch`], so the two paths describe one event and a
+    /// caller moving between `throw` and `placeholder` reads the same reasons.
+    pub failure: FetchFailure,
+    /// What the HTTP client reported, for a person to read.
+    pub detail: String,
+}
+
 /// Why a fetch failed, in the terms a caller can act on.
 ///
 /// **The classification and not the sentence.** [`Error::SourceFetch`] carries
@@ -505,7 +537,13 @@ impl Renderer {
         let surface = surface.ok_or_else(|| {
             Error::Layout("a validated scene produced no page".to_owned())
         })?;
-        Ok(RenderedCanvas { surface })
+        Ok(RenderedCanvas {
+            surface,
+            // Moved out of the resolve tables rather than copied: the vector
+            // is empty on every render where nothing failed, and an empty
+            // `Vec` owns no allocation to move.
+            warnings: resolved.into_warnings(),
+        })
     }
 
     /// Renders a scene and encodes it once.
@@ -536,9 +574,26 @@ impl Renderer {
 #[derive(Debug)]
 pub struct RenderedCanvas {
     surface: Surface,
+    warnings: Vec<ImageWarning>,
 }
 
 impl RenderedCanvas {
+    /// Every image source that could not be resolved, in node order.
+    ///
+    /// **Empty is the ordinary answer and is always valid to ask for.** A
+    /// render where every source resolved returns an empty slice rather than
+    /// nothing, so `warnings().is_empty()` is a check a caller can write once
+    /// and never guard.
+    ///
+    /// One entry per distinct source rather than per node. Populated whatever
+    /// [`OnImageError`](meo_canvas_scene::OnImageError) the scene chose,
+    /// including [`Ignore`](meo_canvas_scene::OnImageError::Ignore): the
+    /// option decides what is drawn, never what is recorded.
+    #[must_use]
+    pub fn warnings(&self) -> &[ImageWarning] {
+        &self.warnings
+    }
+
     /// Encodes the painted pages in one format.
     ///
     /// Takes `&mut self` because encoding mutates: every encode entry point

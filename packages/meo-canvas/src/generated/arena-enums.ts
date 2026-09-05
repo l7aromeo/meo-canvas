@@ -253,6 +253,13 @@ export const OBJECT_FIT = {
   ScaleDown: 4,
 } as const
 
+/** `meo_canvas_scene::surface::OnImageError`. */
+export const ON_IMAGE_ERROR = {
+  Placeholder: 0,
+  Throw: 1,
+  Ignore: 2,
+} as const
+
 /** `meo_canvas_scene::style::layout::Overflow`. */
 export const OVERFLOW = {
   Visible: 0,
@@ -324,6 +331,7 @@ export const ENUMS: Readonly<Record<string, ArenaEnum>> = {
   MaskShape: { path: 'meo_canvas_scene::style::effect', variants: MASK_SHAPE },
   NodeTag: { path: 'meo_canvas_scene::node', variants: NODE_TAG },
   ObjectFit: { path: 'meo_canvas_scene::style::paint', variants: OBJECT_FIT },
+  OnImageError: { path: 'meo_canvas_scene::surface', variants: ON_IMAGE_ERROR },
   Overflow: { path: 'meo_canvas_scene::style::layout', variants: OVERFLOW },
   PaintOrder: { path: 'meo_canvas_scene::style', variants: PAINT_ORDER },
   PositionType: { path: 'meo_canvas_scene::style::layout', variants: POSITION_TYPE },

@@ -22,6 +22,7 @@
 //!
 //! ```text
 //! arena  := MAGIC VERSION f32(width) f32(height) f32(scale) surface
+//!           enum(on_image_error)
 //!           list<node>(pages)
 //! surface := opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
 //! node   := enum(kind)
@@ -128,7 +129,7 @@ pub(crate) mod value;
 
 use group::{BITS_PER_SLOT, Mask, arena_group, ascending};
 use meo_canvas_scene::{
-    Scene, SceneError, Size,
+    OnImageError, Scene, SceneError, Size,
     node::{
         ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
         PathPaint,
@@ -151,7 +152,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 5.0;
+pub const VERSION: f64 = 6.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -822,6 +823,10 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
     let gpu = Option::<bool>::read(&mut input)?;
     let color_type = Option::<ColorType>::read(&mut input)?;
     let color_space = Option::<ColorSpace>::read(&mut input)?;
+    // Not optional, unlike the three above: the scene always has a policy and
+    // its default is a variant rather than an absence, so there is no "the
+    // caller said nothing" to distinguish.
+    let on_image_error = OnImageError::read(&mut input)?;
 
     let page_count = input.count()?;
     let mut scene = Scene {
@@ -831,6 +836,7 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
         gpu,
         color_type,
         color_space,
+        on_image_error,
         nodes: Vec::new(),
         pages: Vec::with_capacity(page_count),
     };
@@ -1034,6 +1040,10 @@ mod tests {
                 f64::from(scale),
             ]);
             self.slots.extend_from_slice(surface);
+            // `on_image_error`, always present because the field is not
+            // optional -- `Placeholder`, the default, so a header written here
+            // describes the same scene it did before the slot existed.
+            self.slots.push(0.0);
             self.slots.push(pages as f64);
             self
         }
@@ -1074,10 +1084,11 @@ mod tests {
     /// no children.
     /// Slot index of the page count in a header whose surface says nothing:
     /// magic, version, four geometry slots -- width, height, the
-    /// content-height flag and scale -- and three absent surface
-    /// discriminants. Named rather than written as a number at each use, so a
-    /// header change moves one line instead of three.
-    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3;
+    /// content-height flag and scale -- three absent surface discriminants,
+    /// and the one slot `on_image_error` always occupies. Named rather than
+    /// written as a number at each use, so a header change moves one line
+    /// instead of three.
+    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3 + 1;
 
     /// Slot index of the first node's tag, one past the page count.
     const FIRST_TAG_SLOT: usize = PAGE_COUNT_SLOT + 1;

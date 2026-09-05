@@ -16,7 +16,7 @@ use std::{io::Write, net::TcpListener};
 
 use meo_canvas_core::{Error, FetchFailure, Renderer};
 use meo_canvas_scene::{
-    Length, Scene, Size,
+    Length, OnImageError, Scene, Size,
     node::{ImageSource, Node, NodeKind},
     style::paint::ObjectFit,
 };
@@ -25,6 +25,13 @@ use meo_canvas_scene::{
 /// from outside the crate.
 fn scene_naming(url: String) -> Scene {
     let mut scene = Scene::new(Size::new(64.0, 64.0));
+    // **`Throw`, because this file is about the classification rather than the
+    // policy.** The default is `Placeholder`, under which an oversized image
+    // is softened into a warning and the render finishes -- which is the right
+    // default and would make every assertion below unreachable. The warning
+    // carries the same `failure` value this checks, copied from the same
+    // error, so pinning it here pins it for both paths.
+    scene.on_image_error = OnImageError::Throw;
     let root = scene
         .root()
         .unwrap_or_else(|| unreachable!("a new scene has a root"));

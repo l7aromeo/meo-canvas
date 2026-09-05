@@ -49,8 +49,9 @@ import {
   VERTICAL_ALIGN,
 } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
+import { ON_IMAGE_ERROR } from './generated/arena-enums.js'
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
-import type { ColorSpace, ColorType, TrackSize } from './index.js'
+import type { ColorSpace, ColorType, OnImageError, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode } from './node.js'
 import type {
   BackgroundImage,
@@ -278,6 +279,15 @@ export interface SurfaceOptions {
   readonly colorType?: ColorType
   /** The colour space the surface composites in. */
   readonly colorSpace?: ColorSpace
+  /**
+   * What a render does when an image source cannot be resolved.
+   *
+   * Not optional, unlike the three above: they distinguish "the caller said
+   * nothing" from "the caller asked for the default" because the renderer has
+   * its own answer for them. This one does not — the policy is the scene's
+   * alone — so the default is a value rather than an absence.
+   */
+  readonly onImageError?: OnImageError
 }
 
 /** Writes the header every arena opens with, and the page count. */
@@ -297,6 +307,11 @@ function writeHeader(out: ArenaWriter, width: number, height: number, contentHei
   out.optional(surface.gpu, gpu => out.slot(gpu ? 1 : 0))
   out.optional(surface.colorType, type => out.enum(variant(COLOR_TYPE, type, 'colorType')))
   out.optional(surface.colorSpace, space => out.enum(variant(COLOR_SPACE, space, 'colorSpace')))
+  // Written unconditionally, because the field is not optional on the other
+  // side. `'placeholder'` is the default the scene would take anyway; naming
+  // it here keeps the arena's shape fixed rather than making the reader's
+  // offset depend on whether the caller said anything.
+  out.enum(variant(ON_IMAGE_ERROR, surface.onImageError ?? 'placeholder', 'onImageError'))
 
   out.count(pages)
 }

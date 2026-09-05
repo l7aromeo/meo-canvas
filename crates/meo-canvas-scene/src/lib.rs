@@ -100,7 +100,7 @@ pub use codec::CodecError;
 pub use geometry::{Corners, Point, Rect, Sides, Size};
 pub use node::{Node, NodeId, NodeKind};
 pub use style::{Dimension, Length};
-pub use surface::{ColorSpace, ColorType};
+pub use surface::{ColorSpace, ColorType, OnImageError};
 
 /// A complete drawing: the surface to draw onto, and the pages to draw on it.
 ///
@@ -166,6 +166,14 @@ pub struct Scene {
     /// The colour space the surface composites in. `None` leaves it to the
     /// renderer.
     pub color_space: Option<ColorSpace>,
+    /// What a render does when an image source cannot be resolved.
+    ///
+    /// Not optional, unlike the three above: those distinguish "the caller
+    /// said nothing" from "the caller asked for the default", because the
+    /// renderer supplies its own answer for them. This one has no such second
+    /// answer -- the policy is the scene's alone -- so the default is a
+    /// variant rather than an absence.
+    pub on_image_error: OnImageError,
     /// Every node of every page. Index by [`NodeId::get`].
     pub nodes: Vec<Node>,
     /// The root of each page, in the order the pages are drawn.
@@ -207,6 +215,8 @@ impl Scene {
             gpu: None,
             color_type: None,
             color_space: None,
+            // The default is a variant, not an absence: see the field.
+            on_image_error: OnImageError::default(),
             nodes: vec![Node::container()],
             pages: vec![NodeId::ROOT],
         }

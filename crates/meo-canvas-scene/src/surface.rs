@@ -257,3 +257,53 @@ mod tests {
         }
     }
 }
+
+wire_enum! {
+    /// What a render does when an image source cannot be resolved.
+    ///
+    /// **The split this governs is which source failed, not how badly.** A
+    /// [`Path`](crate::node::ImageSource::Path) that cannot be read and
+    /// [`Bytes`](crate::node::ImageSource::Bytes) that will not decode fail
+    /// loudly whatever this says: the caller is holding the input and can
+    /// check it before rendering. Only a
+    /// [`Url`](crate::node::ImageSource::Url) consults this, because whether a
+    /// fetch will succeed is a fact about the world at render time and no care
+    /// upstream establishes it. As the report that prompted this put it, of the
+    /// guard a consumer would write for themselves:
+    ///
+    /// > a URL that is present and well-formed and answers 404 passes through
+    /// > it untouched. Every consumer that writes this helper will write it
+    /// > with the same blind spot, because the information it would need —
+    /// > whether the fetch will succeed — does not exist at the point where the
+    /// > node is built.
+    ///
+    /// That is why the default is not [`Throw`](Self::Throw).
+    ///
+    /// **Every variant records a warning.** The render result carries one entry
+    /// per source that failed, whichever of these is chosen, so turning the
+    /// drawing off never turns the knowing off.
+    #[derive(Default)]
+    pub enum OnImageError {
+        /// Draw a neutral mark in the box and let the render finish.
+        ///
+        /// The box keeps whatever extent it was given: an explicit width or
+        /// height is honoured and an `auto` axis contributes zero, which is
+        /// what Chrome does with a broken `<img>`. A box that comes out `0x0`
+        /// is drawn as nothing, also as Chrome does.
+        #[default]
+        Placeholder = 0,
+        /// Fail the whole render, as every version before this one did.
+        ///
+        /// The behaviour of `10.0.0-alpha.5` exactly, for a caller whose
+        /// sources come from a manifest they control -- there a 404 means their
+        /// own deployment is broken and finishing the render hides it.
+        Throw = 1,
+        /// Draw nothing at all, and still record the warning.
+        ///
+        /// **The warning is still recorded**, which is the whole difference
+        /// between this and not noticing. A caller who finds the mark
+        /// distracting keeps the diagnostic; the render result carries the same
+        /// entries it would have under [`Placeholder`](Self::Placeholder).
+        Ignore = 2,
+    }
+}

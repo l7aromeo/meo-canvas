@@ -10,13 +10,14 @@ import { Root, fetchDeadline, type PageInfo, type RootDependencies, type RootPro
 
 /**
  * Slot index of the page count: magic, version, three geometry floats, and the
- * three discriminants of the surface block.
+ * three discriminants of the surface block, and the one slot `onImageError`
+ * always occupies.
  *
  * Named rather than written at each use. The header has changed twice and each
  * time the failure was five assertions reading one slot too early, which reads
  * as five bugs rather than as one moved field.
  */
-const PAGE_COUNT = 2 + 4 + 3
+const PAGE_COUNT = 2 + 4 + 3 + 1
 
 /** A renderer that records what it was handed and paints nothing. */
 function fakeRenderer() {
@@ -31,6 +32,7 @@ function fakeRenderer() {
     engine: 'cpu',
     pageCount: 1,
     scale: 1,
+    warnings: [],
   }
   const dependencies: RootDependencies = {
     renderer: {
@@ -560,5 +562,36 @@ describe('the renderer Root reaches for when told nothing', () => {
     expect([...png.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
     expect([...webp.slice(0, 4)]).toEqual([0x52, 0x49, 0x46, 0x46])
     canvas.release()
+  })
+})
+
+describe('an image source that cannot be resolved', () => {
+  // **The soft-fail half of this is not on the npm surface yet, deliberately.**
+  // This surface resolves URLs in TypeScript, before the arena is built, so
+  // `onImageError` has to be honoured here as well as in the renderer — and a
+  // URL this side failed to fetch reaches the addon as an unresolved `Url`,
+  // which the crate refuses because a crate built without `net` has not had a
+  // fetch fail, it has been asked for something it cannot do. Closing that
+  // needs a way for the arena to say "tried, and failed", which is a wire
+  // addition rather than a detail. The two cases below are the ones the
+  // present code already answers.
+  const DEAD = 'http://127.0.0.1:1/never.png'
+
+  it('is an array even when nothing failed, so the check needs no guard', async () => {
+    const canvas = await Root({ width: 10, height: 10, children: Box({}) })
+    expect(canvas.warnings).toEqual([])
+    expect(canvas.warnings.length === 0).toBe(true)
+    canvas.release()
+  })
+
+  it("fails the whole render under 'throw', as every earlier version did", async () => {
+    await expect(
+      Root({
+        width: 60,
+        height: 60,
+        onImageError: 'throw',
+        children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
+      }),
+    ).rejects.toThrow(/127\.0\.0\.1:1/)
   })
 })

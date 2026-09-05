@@ -16,7 +16,7 @@ import { resolveAddon } from './addon.js'
 import { encodeScene, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
 import { Box, type Children, type SceneNode } from './node.js'
-import type { ColorSpace, ColorType } from './index.js'
+import type { ColorSpace, ColorType, OnImageError } from './index.js'
 import type { Style } from './style.js'
 
 /**
@@ -316,6 +316,29 @@ export type RootProps = Style & {
    */
   readonly gpu?: boolean
   /**
+   * What to do when an image source cannot be resolved.
+   *
+   * Defaults to `'placeholder'`: a URL that cannot be fetched or decoded draws
+   * a neutral mark, the layout is unchanged, and the failure is recorded on
+   * {@link Canvas.warnings}. A `src` that is a path or a buffer fails the
+   * render whatever this says — the caller is holding that input and can check
+   * it before rendering, where a fetch's outcome does not exist until the
+   * render runs. As the report that prompted this put it:
+   *
+   * > a URL that is present and well-formed and answers 404 passes through it
+   * > untouched. Every consumer that writes this helper will write it with the
+   * > same blind spot, because the information it would need — whether the
+   * > fetch will succeed — does not exist at the point where the node is built.
+   *
+   * `'throw'` is the behaviour of every version before this one, for a caller
+   * whose URLs come from a manifest they control: there a 404 means their own
+   * deployment is broken and finishing the render hides it.
+   *
+   * `'ignore'` draws nothing at all — **and still records the warning**. Every
+   * setting records it. This chooses what is drawn, never what is known.
+   */
+  readonly onImageError?: OnImageError
+  /**
    * The pixel layout the canvas hands back.
    *
    * `raw` is written in it, and the encoded formats that carry a depth use it.
@@ -516,6 +539,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   // that decides when nothing was said.
   const surface: SurfaceOptions = {
     ...(props.gpu === undefined ? {} : { gpu: props.gpu }),
+    ...(props.onImageError === undefined ? {} : { onImageError: props.onImageError }),
     ...(props.colorType === undefined ? {} : { colorType: props.colorType }),
     ...(props.colorSpace === undefined ? {} : { colorSpace: props.colorSpace }),
   }

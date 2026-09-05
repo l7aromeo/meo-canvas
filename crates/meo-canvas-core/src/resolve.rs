@@ -79,7 +79,7 @@ use std::{
 };
 
 use meo_canvas_scene::{
-    Scene, Size,
+    OnImageError, Scene, Size,
     node::{ImageSource, NodeId, NodeKind},
     style::{
         PaintOrder,
@@ -92,7 +92,7 @@ use meo_canvas_scene::{
     },
 };
 
-use crate::Error;
+use crate::{Error, FetchFailure, ImageWarning};
 
 /// The fonts a render can draw with.
 ///
@@ -427,6 +427,11 @@ impl DecodedImage {
 /// cheap, `Send`, serialisable thing it is defined to be.
 #[derive(Debug)]
 pub struct Resolved<'scene> {
+    /// Every image source that could not be resolved, in node order.
+    ///
+    /// Empty on every render where nothing failed, and `Vec::new` does not
+    /// allocate, so the ordinary case costs nothing.
+    warnings: Vec<ImageWarning>,
     /// The scene these tables belong to.
     pub scene: &'scene Scene,
     images: HashMap<NodeId, DecodedImage>,
@@ -447,6 +452,7 @@ impl<'scene> Resolved<'scene> {
     /// [`Error::UnknownFont`] for a family neither registered nor installed.
     pub fn new(scene: &'scene Scene, fonts: &Fonts) -> Result<Self, Error> {
         let mut resolved = Self {
+            warnings: Vec::new(),
             scene,
             images: HashMap::new(),
             backgrounds: HashMap::new(),
@@ -458,7 +464,8 @@ impl<'scene> Resolved<'scene> {
         // drawing one picture decoded it sixty times, which nothing pointed
         // at because every table was keyed by node and every node got the
         // right bytes -- just not the same ones.
-        let once = decode_sources(scene)?;
+        let (once, warnings) = decode_sources(scene)?;
+        resolved.warnings = warnings;
 
         for (id, node) in scene.nodes.iter().enumerate() {
             // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
@@ -472,8 +479,13 @@ impl<'scene> Resolved<'scene> {
                 // what a node asked of the source rather than part of
                 // decoding it, so two nodes may hold one decode and
                 // still want different frames of it.
-                let decoded = taken(&once, id, source)?.at_frame(*frame, id)?;
-                resolved.images.insert(id, decoded);
+                // Absent rather than inserted when the source softened, so
+                // `Resolved::image` answers `None` and both the measurer and
+                // the painter take the arm they already have for an image they
+                // were never given. No new branch runs for one that resolved.
+                if let Some(decoded) = taken(&once, id, source)? {
+                    resolved.images.insert(id, decoded.at_frame(*frame, id)?);
+                }
             }
             if let Some(background) = node.paint.background_image.as_ref() {
                 // Kept in its own table rather than beside the image nodes: a
@@ -481,20 +493,46 @@ impl<'scene> Resolved<'scene> {
                 // its extent is not a layout input the way an image node's is,
                 // and the measure pass must not find it by asking for a node's
                 // image.
-                let decoded = taken(&once, id, &background.source)?;
-                resolved.backgrounds.insert(id, decoded);
+                if let Some(decoded) = taken(&once, id, &background.source)? {
+                    resolved.backgrounds.insert(id, decoded);
+                }
             }
             // A third table for the same reason the second one exists: a mask
             // image is neither the node's own picture nor its background, and
             // a node may carry all three at once.
-            if let Some(Mask::Image(source)) = node.effects.mask.as_ref() {
-                let decoded = taken(&once, id, source)?;
+            if let Some(Mask::Image(source)) = node.effects.mask.as_ref()
+                && let Some(decoded) = taken(&once, id, source)?
+            {
                 resolved.masks.insert(id, decoded);
             }
         }
 
         resolved.resolve_text(fonts)?;
         Ok(resolved)
+    }
+
+    /// Takes the warnings out, leaving the tables behind.
+    ///
+    /// Consuming rather than cloning: the render result owns them afterwards
+    /// and a copy would be a second list to keep in step.
+    #[must_use]
+    pub fn into_warnings(self) -> Vec<ImageWarning> {
+        self.warnings
+    }
+
+    /// The scene these tables were resolved against.
+    #[must_use]
+    pub const fn scene(&self) -> &'scene Scene {
+        self.scene
+    }
+
+    /// Every image source that could not be resolved, in node order.
+    ///
+    /// One entry per distinct source rather than per node, because sixty nodes
+    /// drawing one dead URL is one thing that went wrong.
+    #[must_use]
+    pub fn warnings(&self) -> &[ImageWarning] {
+        &self.warnings
     }
 
     /// The decoded bitmap for an image node, if it is one.
@@ -598,9 +636,14 @@ fn check_family(fonts: &Fonts, family: &str) -> Result<(), Error> {
 /// The **first failing source in node order**, not the first thread to finish.
 /// Decoding concurrently must not make which error a caller sees depend on
 /// scheduling, and the node named is the first that asked for those bytes.
+type Decoded<'scene> = (
+    HashMap<&'scene ImageSource, DecodedImage>,
+    Vec<ImageWarning>,
+);
+
 fn decode_sources<'scene>(
     scene: &'scene Scene,
-) -> Result<HashMap<&'scene ImageSource, DecodedImage>, Error> {
+) -> Result<Decoded<'scene>, Error> {
     let mut wanted: Vec<(&ImageSource, NodeId)> = Vec::new();
     let mut seen: HashSet<&ImageSource> = HashSet::new();
     let mut want = |source: &'scene ImageSource, id: NodeId| {
@@ -623,10 +666,78 @@ fn decode_sources<'scene>(
 
     let decoded = in_parallel(&wanted);
     let mut once = HashMap::with_capacity(decoded.len());
-    for ((source, _), result) in wanted.iter().zip(decoded) {
-        once.insert(*source, result?);
+    // **`Vec::new` does not allocate.** A render where every source resolves
+    // never pushes, so this costs three words of stack and no heap at all --
+    // which is what lets the diagnostic exist without the loaded path paying
+    // for it.
+    let mut warnings = Vec::new();
+    for ((source, node), result) in wanted.iter().zip(decoded) {
+        match result {
+            Ok(image) => {
+                once.insert(*source, image);
+            }
+            // **Only a `Url` may soften, and only when the scene asked.** A
+            // `Path` that cannot be read and `Bytes` that will not decode are
+            // the caller's own input, checkable before rendering, so they stay
+            // errors whatever the policy says -- and softening them would make
+            // this silent path reachable with no network in it, turning any
+            // future defect in our own decoders into a missing picture rather
+            // than a failure.
+            Err(error) => {
+                let Some(warning) = soft(scene, *node, source, error)? else {
+                    continue;
+                };
+                warnings.push(warning);
+            }
+        }
     }
-    Ok(once)
+    Ok((once, warnings))
+}
+
+/// Turns a failed source into a warning, or gives the error back.
+///
+/// `Ok(None)` cannot happen and is not a state: the `?` above returns every
+/// error this does not soften, so the `Option` exists only to keep the caller's
+/// `let ... else` honest about the type. Softening is decided here rather than
+/// at the call site so that the rule -- which source, under which policy --
+/// lives in one place.
+fn soft(
+    scene: &Scene,
+    node: NodeId,
+    source: &ImageSource,
+    error: Error,
+) -> Result<Option<ImageWarning>, Error> {
+    if scene.on_image_error == OnImageError::Throw {
+        return Err(error);
+    }
+    let ImageSource::Url(url) = source else {
+        return Err(error);
+    };
+    match error {
+        Error::SourceFetch {
+            detail, failure, ..
+        } => Ok(Some(ImageWarning {
+            url: url.clone(),
+            node,
+            failure,
+            detail,
+        })),
+        // Fetched, and then would not decode. The bytes came from the world
+        // rather than from the caller, so this is the same class of fact as a
+        // 404 and softens with it.
+        Error::UndecodableImage(_) => Ok(Some(ImageWarning {
+            url: url.clone(),
+            node,
+            failure: FetchFailure::Other,
+            detail: "the bytes fetched are not an image any decoder here reads"
+                .to_owned(),
+        })),
+        // `UnresolvedSource` is the `net` feature being off, which is a build
+        // decision rather than a fact about the world: a caller who did not
+        // compile an HTTP client has not had a fetch fail, they have asked for
+        // something this build cannot do.
+        other => Err(other),
+    }
 }
 
 /// Decodes a list of sources across the machine's threads, in order.
@@ -683,10 +794,18 @@ fn taken(
     once: &HashMap<&ImageSource, DecodedImage>,
     node: NodeId,
     source: &ImageSource,
-) -> Result<DecodedImage, Error> {
-    once.get(source)
-        .cloned()
-        .ok_or(Error::UndecodableImage(node))
+) -> Result<Option<DecodedImage>, Error> {
+    match once.get(source) {
+        Some(image) => Ok(Some(image.clone())),
+        // Absent for one of two reasons, and they are not the same. A `Url`
+        // was softened above and is deliberately missing, which is how a
+        // failed node reaches layout and paint as "no image" through the
+        // `Option` both of them already match on. Anything else absent is this
+        // function's own invariant broken -- every source in the scene was
+        // asked for -- and stays an error.
+        None if matches!(source, ImageSource::Url(_)) => Ok(None),
+        None => Err(Error::UndecodableImage(node)),
+    }
 }
 
 /// Reads a URL source over HTTP, blocking until it has the bytes.
@@ -793,7 +912,7 @@ fn fetch(url: &str) -> Result<Vec<u8>, Error> {
         .map_err(|error| Error::SourceFetch {
             url: url.to_owned(),
             detail: error.to_string(),
-            failure: crate::FetchFailure::Transport,
+            failure: FetchFailure::Transport,
         })?;
 
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
@@ -803,7 +922,7 @@ fn fetch(url: &str) -> Result<Vec<u8>, Error> {
                 "the image is larger than the {} MiB this renderer fetches",
                 MAX_IMAGE_BYTES / (1024 * 1024)
             ),
-            failure: crate::FetchFailure::TooLarge,
+            failure: FetchFailure::TooLarge,
         });
     }
     Ok(bytes)
@@ -883,7 +1002,7 @@ mod fetch_classification {
 }
 
 #[cfg(feature = "net")]
-const fn classify(error: &ureq::Error) -> crate::FetchFailure {
+const fn classify(error: &ureq::Error) -> FetchFailure {
     use crate::FetchFailure;
 
     match error {

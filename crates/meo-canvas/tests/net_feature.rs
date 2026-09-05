@@ -3,15 +3,23 @@
 //! **Two tests, one per build, and only one of them compiles at a time.** The
 //! flag is the subject, so a test that ran under both would be measuring
 //! neither.
-use meo_canvas::{Box, Renderer, Root, Styled, px};
+use meo_canvas::{Box, OnImageError, Renderer, Root, Styled, px};
 
 /// A page whose one node names a URL nothing will answer.
 fn page() -> Root {
-    Root::new(64.0).height(64.0).children([
-        meo_canvas::Image::url("http://127.0.0.1:1/never.png")
-            .size(px(16.0), px(16.0)),
-        Box::new(),
-    ])
+    // **`Throw`, because this file is about the flag rather than the policy.**
+    // The default is `on_image_error(Placeholder)`, under which a dead URL is a
+    // warning and the render finishes -- so both arms below would have nothing
+    // to read. What the flag decides is whether a fetch is *attempted*, and
+    // that distinction is only visible in an error when the failure is one.
+    Root::new(64.0)
+        .on_image_error(OnImageError::Throw)
+        .height(64.0)
+        .children([
+            meo_canvas::Image::url("http://127.0.0.1:1/never.png")
+                .size(px(16.0), px(16.0)),
+            Box::new(),
+        ])
 }
 
 #[cfg(not(feature = "net"))]

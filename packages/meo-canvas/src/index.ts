@@ -151,6 +151,42 @@ export type ColorType =
   | 'RGBAF32'
 
 /**
+ * What a render does when an image source cannot be resolved.
+ *
+ * `'placeholder'` draws a neutral mark and lets the render finish,
+ * `'throw'` fails the whole render as every version before this one did, and
+ * `'ignore'` draws nothing. **All three record the warning** — the choice is
+ * what is drawn, never what is known.
+ */
+export type OnImageError = 'placeholder' | 'throw' | 'ignore'
+
+/**
+ * One image source that could not be resolved, and what the render did about
+ * it.
+ *
+ * **A render that finishes with warnings is not one that succeeded quietly.**
+ * Every entry is a picture the caller asked for and did not get; the render
+ * completed because failing a whole card for one decorative icon is worse for
+ * a server drawing from somebody else's payload, not because the failure
+ * stopped mattering.
+ */
+export interface ImageWarning {
+  /** The URL that could not be resolved. */
+  readonly url: string
+  /**
+   * What went wrong, for a program to branch on rather than match a message.
+   *
+   * `'status'` carries the HTTP code in {@link ImageWarning.status}; the rest
+   * describe a fetch that never produced a response to have a code.
+   */
+  readonly failure: 'status' | 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
+  /** The HTTP status, when {@link ImageWarning.failure} is `'status'`. */
+  readonly status?: number
+  /** What the HTTP client reported, for a person to read. */
+  readonly detail: string
+}
+
+/**
  * The colour space a canvas composites in.
  *
  * Upstream's spellings, for the reason {@link ColorType} takes upstream's —
