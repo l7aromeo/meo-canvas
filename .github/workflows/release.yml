@@ -328,6 +328,9 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      # Dispatching `docs.yml` at the end of this job. See that step for why a
+      # release created with `GITHUB_TOKEN` cannot start it on its own.
+      actions: write
 
     steps:
       # **Full history and tags, because the release notes are a range.** The
@@ -730,6 +733,70 @@ jobs:
               ${prerelease} \
               artifacts/*.tgz
           fi
+
+      # **A release created with `GITHUB_TOKEN` does not start `docs.yml`, and
+      # never has.** GitHub does not raise events for workflows from actions
+      # taken with that token -- "events triggered by the `GITHUB_TOKEN` will
+      # not create a new workflow run" -- and `release` is not among the three
+      # exceptions (`workflow_dispatch`, `repository_dispatch`,
+      # `pull_request`). So `docs.yml`'s `release: types: [published]` trigger
+      # is correct and simply never fires from here: no error, no red job, no
+      # deploy. Its own comment says this workflow "opens it as the last step
+      # ... so this fires after the publish", which is true about the ordering
+      # and wrong about whether it fires.
+      #
+      # `workflow_dispatch` is one of the documented exceptions, so this uses
+      # GitHub's own carve-out rather than a stored PAT.
+      #
+      # **Chaining, not reimplementing.** `docs.yml` waits for all eight
+      # packages to resolve before it deploys, so "released and propagated" is
+      # already answered there; this only has to start it.
+      #
+      # **Dispatched at the tag**, which is what was published. That depends on
+      # `docs.yml` existing on the default branch -- `workflow_dispatch` is only
+      # offered for workflows that do -- which is the same constraint that
+      # currently makes `crates-io.yml` undispatchable, one file over.
+      - name: Ask the reference workflow to deploy this version
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.targets.outputs.version }}
+        run: |
+          set -euo pipefail
+          git_tag="v${VERSION}"
+
+          # **Failing loudly rather than warning.** A deploy that did not start
+          # is a smaller failure than a red release job -- the packages are on
+          # npm and the tag is pushed by now -- but a *silent* one is the defect
+          # being fixed here, and this job is safe to re-run: the publish, the
+          # tag and the release all walk past what already succeeded.
+          before=$(gh run list --workflow docs.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+          gh workflow run docs.yml --ref "${git_tag}" -f tag="${git_tag}"
+
+          # **A dispatch that returns success and starts nothing is exactly the
+          # failure this step exists to fix**, so the request is not taken as
+          # the outcome. Runs appear within seconds; the two minutes is a
+          # hang-breaker rather than an expected wait, and the message below
+          # reads the same variable so the number cannot drift from the wait.
+          ceiling=120
+          deadline=$(( SECONDS + ceiling ))
+          while :; do
+            latest=$(gh run list --workflow docs.yml --event workflow_dispatch --limit 1 --json databaseId,url --jq '.[0]')
+            id=$(printf '%s' "$latest" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8') || '{}').databaseId || 0")
+            if [ "$id" -gt "$before" ]; then
+              printf '%s' "$latest" | node -p "'started ' + (JSON.parse(require('fs').readFileSync(0,'utf8')).url)"
+              exit 0
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              break
+            fi
+            echo "waited ${SECONDS}s for the reference deploy to appear"
+            sleep 5
+          done
+
+          echo "::error::dispatched docs.yml at ${git_tag} and no run appeared within ${ceiling}s"
+          echo "::error::the packages are published and the release is open; re-run this job, or dispatch the reference workflow by hand"
+          exit 1
 
       - name: Say what happened
         env:
