@@ -1,0 +1,332 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>meo-canvas</title><meta name="description" content="Documentation for meo-canvas"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="index.html" class="title">meo-canvas</a>
+<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/v10">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<h1>meo-canvas</h1></div>
+<div class="tsd-panel tsd-typography"><h1 id="meo-canvas" class="tsd-anchor-link">meo-canvas<a href="#meo-canvas" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner-dark.webp" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner-light.webp" />
+  <img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner.webp" alt="meo-canvas — four easing curves animating, each drawn by the library itself" width="1280" />
+</picture>
+<p>Server-side image generation for Node. Describe a layout the way you would describe a page — boxes, rows, text, images, paths, charts — and get back encoded bytes.</p>
+<h2 id="installation" class="tsd-anchor-link">Installation<a href="#installation" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<pre><code class="text">npm install meo-canvas@next
+</code><button type="button">Copy</button></pre>
+
+<p><strong>Not published yet.</strong> No 10.x is on npm at the time of writing — <code>npm view meo-canvas dist-tags</code> answers <code>latest: 9.0.3</code> and nothing else — so the line above works from the first 10.x release onward, and a bare install gives 9.x until then. See <a href="https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md">MIGRATING.md</a>.</p>
+<p><strong>Once it is published, the <code>@next</code> is not optional.</strong> <code>meo-canvas@latest</code> is the 9.x line, and npm
+resolves <code>latest</code> for a bare install — so <code>npm install meo-canvas</code> gives you 9.x
+today and will keep doing so until 10 is out of prerelease. Every 10.x
+prerelease carries a hyphen in its version, which is what keeps it off <code>latest</code>
+and out of any semver range: nothing reaches it without asking for it by name.</p>
+<p>To run 9.x and 10.x side by side, alias one of them. npm resolves one directory
+per package name, so two names is what it takes:</p>
+<pre><code class="text">npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
+</code><button type="button">Copy</button></pre>
+
+<p>Requires Node 22 or newer. The package is written as ES modules and <code>require</code>
+works too, through Node's own <code>require(esm)</code>, which is unflagged from 22.12.
+Below that version <code>require</code> reports <code>ERR_REQUIRE_ESM</code> and <code>import</code> is the way
+in.</p>
+<p><strong>Coming from v9?</strong> Read
+<a href="https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md">MIGRATING.md</a> first. Most calls
+survive, but three keep their name and change what they do — <code>mixColor</code> above all, which takes
+colour objects now and refuses a v9 string call rather than answering it.</p>
+<h3 id="platforms" class="tsd-anchor-link">Platforms<a href="#platforms" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<p>The renderer is a native addon of about 51 MB, and it is <strong>not</strong> in this
+package. One package per platform carries one binary, named in
+<code>optionalDependencies</code> with its own <code>os</code>, <code>cpu</code> and <code>libc</code>, so an install
+downloads the one it can run and skips the rest. Nothing is fetched by a
+postinstall script, which is what keeps offline and <code>--ignore-scripts</code> installs
+working.</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Architecture</th>
+<th>Requires</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux (glibc)</td>
+<td>x64, arm64</td>
+<td>glibc 2.28 or newer</td>
+</tr>
+<tr>
+<td>Linux (musl)</td>
+<td>x64, arm64</td>
+<td>Alpine 3.x, or any musl host with <code>libstdc++</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>arm64</td>
+<td>macOS 11 or newer</td>
+</tr>
+<tr>
+<td>Windows</td>
+<td>x64, arm64</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The glibc floor is 2.28, and it is measured rather than declared.</strong> That is
+AlmaLinux 8 and RHEL 8, which is older than every currently supported
+distribution: Ubuntu 20.04 is 2.31, RHEL 9 and Amazon Linux 2023 are 2.34,
+Ubuntu 22.04 is 2.35, Debian 12 is 2.36. What it excludes has already reached
+end of life — RHEL 7, Ubuntu 18.04, Debian 9. Each release asserts the built
+binary demands no more than this and loads on Alma 8, Rocky 9, Amazon Linux
+2023, Debian 12, <code>node:22-slim</code> and <code>node:22-alpine</code> with no font packages
+installed.</p>
+<p><strong>No system libraries are needed.</strong> freetype and fontconfig are linked
+statically, so a slim container image needs nothing added to it. The musl
+binaries do need <code>libstdc++</code>, which a bare Alpine image lacks — but any image
+that can run Node already has it, since Node links it too.</p>
+<p>macOS x64 and 32-bit targets are not built. Apple has ended support for Intel
+Macs, and no 32-bit target has been asked for.</p>
+<h3 id="bundlers" class="tsd-anchor-link">Bundlers<a href="#bundlers" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<p><strong>Mark this package external.</strong> A bundler inlines the JavaScript and cannot
+follow the addon, which is resolved at run time from the platform package
+rather than imported by a literal path — there is nothing static for a bundler
+to trace. Bundling it anyway appears to work while the output sits beside the
+<code>node_modules</code> it was built in, and fails once the bundle is copied somewhere
+on its own, which is what a container image or a function archive does.</p>
+<pre><code class="text">esbuild app.js --bundle --platform=node --external:meo-canvas
+</code><button type="button">Copy</button></pre>
+
+<p>Webpack takes <code>externals</code>, Rollup <code>external</code>, Vite <code>build.rollupOptions.external</code>
+or <code>ssr.external</code>. The package and its platform package then travel as ordinary
+dependencies, installed where the bundle runs.</p>
+<h2 id="usage" class="tsd-anchor-link">Usage<a href="#usage" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<pre><code class="ts"><span class="hl-0">import</span><span class="hl-1"> { </span><span class="hl-2">writeFileSync</span><span class="hl-1"> } </span><span class="hl-0">from</span><span class="hl-1"> </span><span class="hl-3">&#39;node:fs&#39;</span><br/><span class="hl-0">import</span><span class="hl-1"> { </span><span class="hl-2">Box</span><span class="hl-1">, </span><span class="hl-2">Column</span><span class="hl-1">, </span><span class="hl-2">Root</span><span class="hl-1">, </span><span class="hl-2">Text</span><span class="hl-1"> } </span><span class="hl-0">from</span><span class="hl-1"> </span><span class="hl-3">&#39;meo-canvas&#39;</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">canvas</span><span class="hl-1"> = </span><span class="hl-0">await</span><span class="hl-1"> </span><span class="hl-6">Root</span><span class="hl-1">({</span><br/><span class="hl-1">  </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">320</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">padding:</span><span class="hl-1"> </span><span class="hl-7">20</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">backgroundColor:</span><span class="hl-1"> </span><span class="hl-3">&#39;#101820&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">children:</span><span class="hl-1"> </span><span class="hl-6">Column</span><span class="hl-1">({</span><br/><span class="hl-1">    </span><span class="hl-2">gap:</span><span class="hl-1"> </span><span class="hl-7">10</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-2">children:</span><span class="hl-1"> [</span><br/><span class="hl-1">      </span><span class="hl-6">Text</span><span class="hl-1">(</span><span class="hl-3">&#39;meo-canvas&#39;</span><span class="hl-1">, { </span><span class="hl-2">fontSize:</span><span class="hl-1"> </span><span class="hl-7">22</span><span class="hl-1">, </span><span class="hl-2">fontWeight:</span><span class="hl-1"> </span><span class="hl-7">600</span><span class="hl-1">, </span><span class="hl-2">color:</span><span class="hl-1"> </span><span class="hl-3">&#39;#f2aa4c&#39;</span><span class="hl-1"> }),</span><br/><span class="hl-1">      </span><span class="hl-6">Text</span><span class="hl-1">(</span><span class="hl-3">&#39;Describe a layout; get image bytes back.&#39;</span><span class="hl-1">, { </span><span class="hl-2">fontSize:</span><span class="hl-1"> </span><span class="hl-7">13</span><span class="hl-1">, </span><span class="hl-2">color:</span><span class="hl-1"> </span><span class="hl-3">&#39;#c8ccd4&#39;</span><span class="hl-1"> }),</span><br/><span class="hl-1">      </span><span class="hl-6">Box</span><span class="hl-1">({ </span><span class="hl-2">height:</span><span class="hl-1"> </span><span class="hl-7">4</span><span class="hl-1">, </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">64</span><span class="hl-1">, </span><span class="hl-2">backgroundColor:</span><span class="hl-1"> </span><span class="hl-3">&#39;#f2aa4c&#39;</span><span class="hl-1">, </span><span class="hl-2">borderRadius:</span><span class="hl-1"> </span><span class="hl-7">2</span><span class="hl-1"> }),</span><br/><span class="hl-1">    ],</span><br/><span class="hl-1">  }),</span><br/><span class="hl-1">})</span><br/><br/><span class="hl-6">writeFileSync</span><span class="hl-1">(</span><span class="hl-3">&#39;card.png&#39;</span><span class="hl-1">, </span><span class="hl-0">await</span><span class="hl-1"> </span><span class="hl-2">canvas</span><span class="hl-1">.</span><span class="hl-6">toBuffer</span><span class="hl-1">(</span><span class="hl-3">&#39;png&#39;</span><span class="hl-1">))</span><br/><span class="hl-2">canvas</span><span class="hl-1">.</span><span class="hl-6">release</span><span class="hl-1">()</span>
+</code><button type="button">Copy</button></pre>
+
+<p><code>height</code> is optional, and that is the one thing worth knowing before you write
+anything: leave it out and the page is as tall as its content, the way it is in
+9.x. A width is always stated and cannot be otherwise, because text breaks into
+lines against a width and nothing can be measured until one is known.</p>
+<pre><code class="ts"><span class="hl-0">import</span><span class="hl-1"> { </span><span class="hl-2">Box</span><span class="hl-1">, </span><span class="hl-2">Root</span><span class="hl-1"> } </span><span class="hl-0">from</span><span class="hl-1"> </span><span class="hl-3">&#39;meo-canvas&#39;</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">children</span><span class="hl-1"> = [</span><span class="hl-6">Box</span><span class="hl-1">({ </span><span class="hl-2">height:</span><span class="hl-1"> </span><span class="hl-7">40</span><span class="hl-1">, </span><span class="hl-2">backgroundColor:</span><span class="hl-1"> </span><span class="hl-3">&#39;#f2aa4c&#39;</span><span class="hl-1"> })]</span><br/><br/><span class="hl-6">Root</span><span class="hl-1">({ </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">520</span><span class="hl-1">, </span><span class="hl-2">children</span><span class="hl-1"> }) </span><span class="hl-8">// as tall as the content</span><br/><span class="hl-6">Root</span><span class="hl-1">({ </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">520</span><span class="hl-1">, </span><span class="hl-2">minHeight:</span><span class="hl-1"> </span><span class="hl-7">200</span><span class="hl-1">, </span><span class="hl-2">children</span><span class="hl-1"> }) </span><span class="hl-8">// ...and at least 200</span><br/><span class="hl-6">Root</span><span class="hl-1">({ </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">520</span><span class="hl-1">, </span><span class="hl-2">height:</span><span class="hl-1"> </span><span class="hl-7">180</span><span class="hl-1">, </span><span class="hl-2">children</span><span class="hl-1"> }) </span><span class="hl-8">// exactly 180</span>
+</code><button type="button">Copy</button></pre>
+
+<p><code>release()</code> frees the native surface. Without it the bytes are still correct and
+the memory is reclaimed whenever the collector gets to it, which under load is
+later than you want.</p>
+<p>More, and all of it checked: the repository holds the same nine scenes written
+twice, once per surface, and <code>just example</code> renders both and compares every
+byte.</p>
+<h2 id="fonts" class="tsd-anchor-link">Fonts<a href="#fonts" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>Pass the families you need on <code>fonts</code>, and pass <strong>the same list every time</strong>:</p>
+<pre><code class="ts"><span class="hl-0">import</span><span class="hl-1"> { </span><span class="hl-2">Root</span><span class="hl-1">, </span><span class="hl-2">Text</span><span class="hl-1"> } </span><span class="hl-0">from</span><span class="hl-1"> </span><span class="hl-3">&#39;meo-canvas&#39;</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">FONTS</span><span class="hl-1"> = [{ </span><span class="hl-2">family:</span><span class="hl-1"> </span><span class="hl-3">&#39;Brand&#39;</span><span class="hl-1">, </span><span class="hl-2">paths:</span><span class="hl-1"> [</span><span class="hl-3">&#39;./fonts/Brand-Regular.ttf&#39;</span><span class="hl-1">, </span><span class="hl-3">&#39;./fonts/Brand-Bold.ttf&#39;</span><span class="hl-1">] }]</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">canvas</span><span class="hl-1"> = </span><span class="hl-0">await</span><span class="hl-1"> </span><span class="hl-6">Root</span><span class="hl-1">({</span><br/><span class="hl-1">  </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">600</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">height:</span><span class="hl-1"> </span><span class="hl-7">400</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">fonts:</span><span class="hl-1"> </span><span class="hl-5">FONTS</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">children:</span><span class="hl-1"> [</span><span class="hl-6">Text</span><span class="hl-1">(</span><span class="hl-3">&#39;Hello&#39;</span><span class="hl-1">, { </span><span class="hl-2">fontFamily:</span><span class="hl-1"> </span><span class="hl-3">&#39;Brand&#39;</span><span class="hl-1">, </span><span class="hl-2">fontSize:</span><span class="hl-1"> </span><span class="hl-7">24</span><span class="hl-1"> })],</span><br/><span class="hl-1">})</span><br/><span class="hl-2">canvas</span><span class="hl-1">.</span><span class="hl-6">release</span><span class="hl-1">()</span>
+</code><button type="button">Copy</button></pre>
+
+<p><strong>Registration is process-wide and permanent.</strong> A family registered by one
+render is registered for every render after it, nothing unregisters anything,
+and giving different files under the same name changes what that name draws from
+then on. A render that names a family it never registered does not fail — it
+uses whatever an earlier render left behind, which means the failure is not an
+error in a log but the wrong typeface in a picture nobody looks at twice.</p>
+<p>So faces belong at start-up rather than per request. A server that registers one
+tenant's face per request is a server where the next request renders in the
+previous tenant's font. Registering the same list on every render is fine, and
+costs nothing beyond reading the files; varying it is the hazard.</p>
+<p>Worker threads each keep their own registry, so each has to register its own
+faces and each is affected only by itself. Two renders already in flight keep
+the faces they were given.</p>
+<h2 id="fetching-images" class="tsd-anchor-link">Fetching images<a href="#fetching-images" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>An <code>Image</code> whose <code>src</code> is a URL is fetched before anything is drawn, and
+<code>httpOptions</code> is passed to <code>fetch</code> for every one of them — headers, credentials,
+a proxy agent, an <code>AbortSignal</code>, whatever the runtime's <code>fetch</code> accepts.</p>
+<pre><code class="ts"><span class="hl-0">import</span><span class="hl-1"> { </span><span class="hl-2">Image</span><span class="hl-1">, </span><span class="hl-2">Root</span><span class="hl-1"> } </span><span class="hl-0">from</span><span class="hl-1"> </span><span class="hl-3">&#39;meo-canvas&#39;</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">token</span><span class="hl-1"> = </span><span class="hl-2">process</span><span class="hl-1">.</span><span class="hl-2">env</span><span class="hl-1">[</span><span class="hl-3">&#39;IMAGE_TOKEN&#39;</span><span class="hl-1">] ?? </span><span class="hl-3">&#39;&#39;</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">canvas</span><span class="hl-1"> = </span><span class="hl-0">await</span><span class="hl-1"> </span><span class="hl-6">Root</span><span class="hl-1">({</span><br/><span class="hl-1">  </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">600</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">httpOptions:</span><span class="hl-1"> { </span><span class="hl-2">headers:</span><span class="hl-1"> { </span><span class="hl-2">authorization:</span><span class="hl-1"> </span><span class="hl-3">`Bearer </span><span class="hl-4">${</span><span class="hl-2">token</span><span class="hl-4">}</span><span class="hl-3">`</span><span class="hl-1"> } },</span><br/><span class="hl-1">  </span><span class="hl-2">children:</span><span class="hl-1"> [</span><span class="hl-6">Image</span><span class="hl-1">({ </span><span class="hl-2">src:</span><span class="hl-1"> { </span><span class="hl-2">url:</span><span class="hl-1"> </span><span class="hl-3">&#39;https://example.invalid/photo.png&#39;</span><span class="hl-1"> } })],</span><br/><span class="hl-1">})</span><br/><span class="hl-2">canvas</span><span class="hl-1">.</span><span class="hl-6">release</span><span class="hl-1">()</span>
+</code><button type="button">Copy</button></pre>
+
+<p><strong>Bytes cross to the renderer, never URLs</strong>, so anything set here reaches the
+origin and nothing else.</p>
+<p>Two bounds apply whatever you pass, and they match the ones the Rust crate sets
+for itself: <strong>a fetch has 60 seconds</strong> and <strong>an image may not exceed 32 MiB</strong>.
+The size is counted while reading rather than taken from <code>content-length</code>, which
+a server may omit and may lie about. Both refuse with a message naming the limit
+as this renderer's.</p>
+<p><strong>The 60 seconds is a ceiling, not a default.</strong> An <code>AbortSignal</code> you pass is
+composed with it rather than replacing it, so it can only make the wait shorter:
+ask for five seconds and you get five, and nothing gets sixty-one. A bound you
+could raise would be the same hang with a supported spelling. Your existing
+signal keeps behaving exactly as it did, because tightening is all it could ever
+have done.</p>
+<p>If you need a different policy, fetch the bytes yourself and pass them as an
+inline source — that path carries no limits of ours at all, and it is the same
+escape the Rust crate offers.</p>
+<p>One difference between the surfaces, since it is real: <strong>you can tighten these
+bounds and a Rust caller cannot.</strong> <code>httpOptions</code> is already a public object
+here, so composing with it honours a contract that exists rather than inventing
+a knob; the crate has nowhere equivalent to put one. The capability is the same
+on both — fetch a URL, under a bound you did not choose — and only the price of
+adjusting it differs, which is the reasoning that governs the crate's <code>net</code>
+feature too.</p>
+<h2 id="sizing-a-service" class="tsd-anchor-link">Sizing a service<a href="#sizing-a-service" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>Measured on an Apple M4 Pro, macOS 26.6.2, Node v26.4.0 — the shape rather than
+a specification, but the shape is what you cannot guess.</p>
+<p><strong>Getting an image is two costs, and only one of them depends on the picture.</strong></p>
+<p>Painting is a flat <strong>~9 ms per render whatever it draws</strong>: a 20×20 canvas with
+one node costs what a 4000×4000 canvas costs, because painting records a drawing
+rather than pixels. That is the floor, and no scene is small enough to get under
+it.</p>
+<p>Encoding is what turns the drawing into pixels, and it grows with area — so it
+is the half that answers &quot;how big&quot;. A <strong>480×320 render takes about 13 ms end to
+end, which is about 73 a second on one thread</strong>: ~9 ms of paint, ~4 ms of encode. The
+same thread does about four a second at 4000×4000, where the encode alone is
+~256 ms.</p>
+<p><strong>&quot;Paint&quot; here is the whole native call</strong> — the arena decode, resolve, measure,
+layout and the drawing. <code>AGENTS.md</code>'s benchmark table splits the same render
+differently, at 2.86 ms of <em>drawing</em> against 9.16 ms of encode, because its
+<code>draw</code> is only the last of those stages. The two agree on the total and measure
+different things; the roughly 6 ms between them is where the flat floor lives.</p>
+<p>So plan with the whole render rather than the floor. <strong>A thumbnail and a poster
+cost the same to paint and nothing like the same to encode</strong>, and the floor is
+what stops small scenes being free.</p>
+<h3 id="what-costs-and-what-blocks-are-different-numbers" class="tsd-anchor-link">What costs and what blocks are different numbers<a href="#what-costs-and-what-blocks-are-different-numbers" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<p>The times above are what a render <em>costs</em>. What it <em>blocks</em> is smaller, and the
+two stopped being the same thing when the encode moved off the event loop.</p>
+<p>Measured by watching a 1 ms timer during each call — the sample count is the
+measurement, because a fully blocked loop runs no callbacks at all:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>wall clock</th>
+<th>timer callbacks during it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Root</code> at any size</td>
+<td>~9–12 ms</td>
+<td>none — fully blocked</td>
+</tr>
+<tr>
+<td><code>toBuffer</code> at 4000×4000</td>
+<td>277 ms</td>
+<td>218 — free</td>
+</tr>
+<tr>
+<td><code>toBufferSync</code> at 4000×4000</td>
+<td>294 ms</td>
+<td>none — fully blocked</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>toBuffer</code> costs the same wall clock as <code>toBufferSync</code> and gives the loop
+back</strong>: 0–3% difference across 480², 2000² and 4000². There is no reason to
+reach for the synchronous form in a server, and every reason to use it in a
+script, where there is nothing else for the loop to do.</p>
+<p>What still blocks is the paint, and it is flat — so <strong>a server's throughput and
+its worst request-blocking are no longer the same number.</strong> Concurrency is
+bounded by the ~9 ms of paint per render rather than by the encode, however
+large the picture.</p>
+<p><code>worker_threads</code> still help, and for less than they did. Each gets its own
+renderer and they neither share state nor contend, so they scale the paint —
+but reaching for one <em>to get an encode off the request path</em> is no longer
+necessary, because it already is.</p>
+<p>Encode against area, to size the second half: roughly 1 ms at 200×200, 4 ms at
+480×320, 11 ms at 800×800, 65 ms at 2000×2000, 256 ms at 4000×4000.</p>
+<p><strong>Building the scene is not the cost.</strong> Constructing the tree and encoding it
+for the addon is 0.03 ms of a 480×320 render — under one per cent, and still
+only five per cent at five thousand nodes. So if you are wondering whether to
+optimise how you build props, the answer is no. Node count is what makes
+painting stop being flat, and it scales linearly: 100 000 nodes take 838 ms,
+500 000 take 4125 ms.</p>
+<h3 id="size-limits" class="tsd-anchor-link">Size limits<a href="#size-limits" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<p>There are none, other than what the machine can allocate — and because the
+allocation happens at <code>toBuffer</code> rather than at <code>Root</code>, <strong>a size that cannot
+work fails after the render has been paid for, not when it was set.</strong> <code>Root</code>
+returns for a 200000×200000 canvas with the process still under 80 MB.</p>
+<p>Measured: 8000×8000 succeeded at 610 MB, 16384×16384 at 2244 MB and 5.7 s,
+32768×32768 threw <code>Could not allocate new 32768×32768 bitmap</code>. Failure at the
+top is a clean error; the hazard is the middle, where two gigabytes go without
+anything objecting. <strong>If a width or height can come from a request, bound it
+yourself</strong> — and remember a container's memory limit will kill the process
+before an allocator returns null.</p>
+<p>The one ceiling this package enforces is on node count: above 1048576 nodes a
+scene is refused with <code>the arena declares N nodes, the limit is 1048576</code>.</p>
+<h2 id="what-it-renders" class="tsd-anchor-link">What it renders<a href="#what-it-renders" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<ul>
+<li><strong>Layout</strong> — flexbox, CSS grid and block, with margins, padding, borders, gaps
+and absolute positioning.</li>
+<li><strong>Text</strong> — shaped by Skia and broken into lines here, with per-span styling,
+letter and word spacing, decorations, line clamping and ellipsis.</li>
+<li><strong>Images</strong> — from a file, a buffer or a URL, with object-fit and
+object-position placement.</li>
+<li><strong>Paths</strong> — arbitrary shapes from SVG path data, filled and stroked, with an
+optional <code>viewBox</code> so a path scales to the box that holds it.</li>
+<li><strong>Charts</strong> — bar, line, pie and doughnut.</li>
+<li><strong>Effects</strong> — gradients, masks, shadows, opacity groups, blend modes and CSS
+filters.</li>
+<li><strong>Export</strong> — PNG, JPEG, WebP, AVIF, TIFF, BMP, ICO, SVG, PDF, GIF, APNG and
+raw pixels.</li>
+</ul>
+<p>Multi-page renders produce frames for GIF, APNG, WebP and AVIF, sheets for PDF
+and TIFF, and sizes for ICO — and ICO is the only one whose pages may differ in
+size.</p>
+<h2 id="where-the-work-happens" class="tsd-anchor-link">Where the work happens<a href="#where-the-work-happens" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>This package is a thin surface over a native addon. Your calls describe a scene; layout, text shaping, painting and encoding all happen in Rust, and the whole description crosses into it once per render rather than once per drawing call.</p>
+<p>What that buys you is that a scene of any size costs one crossing, and that the drawing itself runs at native speed with no per-call boundary tax.</p>
+<p>Two things, and both compute rather than draw.</p>
+<p><strong>The animation helpers</strong>: easings, springs, interpolation and colour. The value
+they produce goes into a scene like any other number. <strong>The colour parser is the
+renderer's own</strong>, reached through the addon, so a string that renders is a
+string that animates.</p>
+<p><strong><code>Chart</code></strong>, which turns data into boxes and paths — bar widths, slice angles,
+gridline positions, the line series' own path data. It emits a scene node and
+nothing else; the layout and the drawing of what it emits happen in Rust like
+everything else. The Rust crate has its own chart rather than a call into this
+one, and the two are checked against each other by encoding the same chart and
+comparing bytes.</p>
+<h2 id="types" class="tsd-anchor-link">Types<a href="#types" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>Every enumerated value is a string-literal union, so an editor completes <code>'flex-start'</code> as you type it and the compiler rejects <code>'flexstart'</code> before anything renders.</p>
+<h2 id="licence" class="tsd-anchor-link">Licence<a href="#licence" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>MIT. See <a href="media/LICENSE">LICENSE</a>.</p>
+</div></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details"><a href="#meo-canvas"><span>meo-<wbr/>canvas</span></a>
+<ul>
+<li><a href="#installation"><span>Installation</span></a></li>
+<li>
+<ul>
+<li><a href="#platforms"><span>Platforms</span></a></li>
+<li><a href="#bundlers"><span>Bundlers</span></a></li></ul></li>
+<li><a href="#usage"><span>Usage</span></a></li>
+<li><a href="#fonts"><span>Fonts</span></a></li>
+<li><a href="#fetching-images"><span>Fetching images</span></a></li>
+<li><a href="#sizing-a-service"><span>Sizing a service</span></a></li>
+<li>
+<ul>
+<li><a href="#what-costs-and-what-blocks-are-different-numbers"><span>What costs and what blocks are different numbers</span></a></li>
+<li><a href="#size-limits"><span>Size limits</span></a></li></ul></li>
+<li><a href="#what-it-renders"><span>What it renders</span></a></li>
+<li><a href="#where-the-work-happens"><span>Where the work happens</span></a></li>
+<li><a href="#types"><span>Types</span></a></li>
+<li><a href="#licence"><span>Licence</span></a></li></ul></div></details></div>
+<div class="site-menu">
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/v10" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a></nav>
+<nav class="tsd-navigation"><a href="modules.html">meo-canvas</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
+<div class="overlay"></div></body></html>

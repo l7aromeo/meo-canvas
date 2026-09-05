@@ -1,0 +1,147 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>RootProps | meo-canvas</title><meta name="description" content="Documentation for meo-canvas"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">meo-canvas</a>
+<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/v10">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="" aria-current="page">RootProps</a></li></ul>
+<h1>Type Alias RootProps</h1></div>
+<div class="tsd-signature"><span class="tsd-kind-type-alias">RootProps</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/Style.html" class="tsd-signature-type tsd-kind-interface">Style</a> <span class="tsd-signature-symbol">&amp;</span> <span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">children</span><span class="tsd-signature-symbol">?:</span> <a href="Children.html" class="tsd-signature-type tsd-kind-type-alias">Children</a> <span class="tsd-signature-symbol">|</span> <a href="PageBuilder.html" class="tsd-signature-type tsd-kind-type-alias">PageBuilder</a><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">colorSpace</span><span class="tsd-signature-symbol">?:</span> <a href="ColorSpace.html" class="tsd-signature-type tsd-kind-type-alias">ColorSpace</a><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">colorType</span><span class="tsd-signature-symbol">?:</span> <a href="ColorType.html" class="tsd-signature-type tsd-kind-type-alias">ColorType</a><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">duration</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">fonts</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <a href="../interfaces/FontRegistration.html" class="tsd-signature-type tsd-kind-interface">FontRegistration</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">fps</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">gpu</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">height</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">httpOptions</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">RequestInit</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">name</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">pages</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">scale</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">width</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div>
+<div class="tsd-comment tsd-typography"><p>What <code>Root</code> accepts: the canvas, and the page root's own style.</p>
+<p>The style properties sit here directly, as they do on every other factory —
+a page root is an ordinary node, so it takes the ordinary style set.</p>
+</div>
+<div class="tsd-type-declaration">
+<h4>Type Declaration</h4>
+<ul class="tsd-parameters">
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">children</span><span class="tsd-signature-symbol">?: </span><a href="Children.html" class="tsd-signature-type tsd-kind-type-alias">Children</a> <span class="tsd-signature-symbol">|</span> <a href="PageBuilder.html" class="tsd-signature-type tsd-kind-type-alias">PageBuilder</a></h5>
+<div class="tsd-comment tsd-typography"><p>What to draw.</p>
+<p>Elements for a single page, or a function for a sequence — one page per
+call. The function form needs either <a href="#" class="tsd-kind-type-alias">RootProps</a>'s <code>pages</code> or
+<a href="#" class="tsd-kind-type-alias">RootProps</a>'s <code>duration</code>.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">colorSpace</span><span class="tsd-signature-symbol">?: </span><a href="ColorSpace.html" class="tsd-signature-type tsd-kind-type-alias">ColorSpace</a></h5>
+<div class="tsd-comment tsd-typography"><p>The colour space the canvas composites in.</p>
+<p>Fixed for the whole render rather than chosen per export: colours are
+interpreted in it, and one outside its gamut is clipped as it is drawn.
+Absent leaves it to the renderer.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">colorType</span><span class="tsd-signature-symbol">?: </span><a href="ColorType.html" class="tsd-signature-type tsd-kind-type-alias">ColorType</a></h5>
+<div class="tsd-comment tsd-typography"><p>The pixel layout the canvas hands back.</p>
+<p><code>raw</code> is written in it, and the encoded formats that carry a depth use it.
+<strong>It is an output format rather than a compositing one</strong>: the surface
+underneath composites at the renderer's own depth unless a float type is
+asked for, so <code>'Gray8'</code> is a request for single-channel output, not for a
+single-channel canvas.</p>
+<p><code>'RGBAF32'</code> is the exception that also changes compositing — it keeps
+colour outside sRGB rather than clipping it as it is drawn, at the cost of
+the GPU, since no GPU composites float. Absent leaves it to the renderer.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">duration</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">number</span></h5>
+<div class="tsd-comment tsd-typography"><p>How long the sequence runs, in seconds; the page count is <code>ceil(duration * fps)</code>.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">fonts</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-keyword">readonly</span> <a href="../interfaces/FontRegistration.html" class="tsd-signature-type tsd-kind-interface">FontRegistration</a><span class="tsd-signature-symbol">[]</span></h5>
+<div class="tsd-comment tsd-typography"><p>Font families to register before this render.</p>
+<p><strong>Not only for this render.</strong> Registration is process-wide and permanent —
+see <a href="../interfaces/FontRegistration.html" class="tsd-kind-interface">FontRegistration</a> for what that costs a server. Name the same
+list every time.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">fps</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">number</span></h5>
+<div class="tsd-comment tsd-typography"><p>The rate <a href="#" class="tsd-kind-type-alias">RootProps</a>'s <code>duration</code> and <a href="../interfaces/PageInfo.html#time" class="tsd-kind-property">PageInfo.time</a> are derived at.</p>
+<p>Describes the render, not the encode. An animation encoded to play at this
+rate needs it passed to <code>toBuffer('gif', { fps })</code> as well.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">gpu</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">boolean</span></h5>
+<div class="tsd-comment tsd-typography"><p>Rasterise on the GPU when there is one. <code>false</code> forces the CPU.</p>
+<p>Asking is not getting: a build without GPU support or a driver that
+declines falls back. Set it <code>false</code> for output that must be identical
+between machines — the two rasterisers resolve anti-aliased edges a level or
+two apart, which a pixel comparison sees.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">height</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">number</span></h5>
+<div class="tsd-comment tsd-typography"><p>The canvas height in pixels, or omitted for the height of the content.</p>
+<p>Width has no such form and cannot: text breaks into lines against a width,
+so a width has to be known before anything can be measured. A height is a
+result of that measuring, which is why only this one can be left out.</p>
+<p><code>minHeight</code> on the same props is the floor when this is omitted, so a page
+can be &quot;as tall as its content, and at least this tall&quot;.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">httpOptions</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">RequestInit</span></h5>
+<div class="tsd-comment tsd-typography"><p>Passed to <code>fetch</code> for every URL source in the scene.</p>
+<p><code>RequestInit</code> as the platform defines it, so headers, credentials, an
+<code>AbortSignal</code> and a proxy agent all work the way they do everywhere else in
+this runtime rather than through a second set of options this package
+invented. One object for the whole render: a per-source variant would be a
+larger promise than v1 made and nothing has asked for it.</p>
+<p>Only the URLs are fetched — <strong>bytes cross the wire to the renderer, never a
+URL</strong> — so a <code>credentials</code> or <code>Authorization</code> set here reaches the origin
+and nothing else.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">name</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>A name carried through for diagnostics.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">pages</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">number</span></h5>
+<div class="tsd-comment tsd-typography"><p>How many pages to render. Not with <a href="#" class="tsd-kind-type-alias">RootProps</a>'s <code>duration</code>.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span class="tsd-kind-property">scale</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">number</span></h5>
+<div class="tsd-comment tsd-typography"><p>Device pixel ratio.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Readonly</code><span class="tsd-kind-property">width</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">number</span></h5>
+<div class="tsd-comment tsd-typography"><p>The canvas width in pixels. Text cannot wrap without knowing its room.</p>
+<h1 id="nothing-bounds-this-and-a-size-too-large-fails-late" class="tsd-anchor-link">Nothing bounds this, and a size too large fails late<a href="#nothing-bounds-this-and-a-size-too-large-fails-late" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h1>
+<p><strong>There is no maximum.</strong> The limit is what the machine can allocate, and
+the allocation does not happen here: painting records a drawing rather than
+a bitmap, so <code>Root</code> returns cheaply at any size —
+<code>{ width: 200000, height: 200000 }</code> resolves with the process still under
+80 MB — and the whole cost arrives at
+<a href="../classes/Canvas.html#tobuffer" class="tsd-kind-method">Canvas.toBuffer</a>. A size that cannot work therefore fails <em>after</em>
+the render has been paid for rather than when it was set.</p>
+<p>Measured on one machine, as the shape rather than a specification:
+8000×8000 succeeded at 610 MB, 16384×16384 at 2244 MB and 5.7 s, and
+32768×32768 threw <code>Could not allocate new 32768×32768 bitmap</code>. Failure at
+the top is clean; the hazard is the middle, where two gigabytes are spent
+without anything objecting.</p>
+<p><strong>So a width that came from a request needs a bound of the caller's own.</strong>
+The one ceiling this package enforces is on node count, not on pixels: a
+scene above 1048576 nodes is refused with <code>the arena declares N nodes, the limit is 1048576</code>.</p>
+</div></li></ul></div><aside class="tsd-sources">
+<ul>
+<li>Defined in root.d.ts:141</li></ul></aside></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details"><a href="#nothing-bounds-this-and-a-size-too-large-fails-late"><span>Nothing bounds this, and a size too large fails late</span></a></div></details></div>
+<div class="site-menu">
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/v10" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a></nav>
+<nav class="tsd-navigation"><a href="../modules.html">meo-canvas</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
+<div class="overlay"></div></body></html>

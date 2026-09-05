@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>meo-canvas — JavaScript reference</title>
+    <meta name="description" content="Server-side image generation for Node. Describe a layout the way you would describe a page — boxes, rows, text, images, paths, charts — and get back encoded bytes." />
+    <style>
+      /* Self-contained on purpose: no CDN, no webfont, no script. This is a
+         static page on Pages and it renders with the network off. */
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfd;
+        --surface: #ffffff;
+        --ink: #16181d;
+        --muted: #5b6170;
+        --line: #e4e6ec;
+        --accent: #4f46e5;
+        --accent-soft: #eef0fe;
+        --pre-bg: #fff4e6;
+        --pre-ink: #9a4a08;
+        --stable-bg: #e7f8f0;
+        --stable-ink: #0a6045;
+        --shadow: 0 1px 2px rgba(16, 18, 26, 0.05), 0 8px 24px rgba(16, 18, 26, 0.05);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0c0e13;
+          --surface: #14171f;
+          --ink: #e9ebf1;
+          --muted: #949cae;
+          --line: #252a35;
+          --accent: #99a2ff;
+          --accent-soft: #1b1f33;
+          --pre-bg: #2b1d0f;
+          --pre-ink: #f5b862;
+          --stable-bg: #0e2a20;
+          --stable-ink: #5fd6a0;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 3rem 1.5rem 4rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .page { max-width: 54rem; margin: 0 auto; }
+      .hero {
+        display: block; width: 100%; height: auto;
+        border: 1px solid var(--line); border-radius: 14px;
+        box-shadow: var(--shadow); background: var(--surface);
+      }
+      h1 {
+        margin: 2.25rem 0 0.4rem;
+        font-size: 2rem; line-height: 1.15; letter-spacing: -0.02em;
+      }
+      .lede { margin: 0; max-width: 40rem; color: var(--muted); font-size: 1.05rem; }
+      .headline {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem;
+        margin: 2rem 0 0; padding: 1.15rem 1.35rem;
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 12px; box-shadow: var(--shadow);
+        text-decoration: none; color: inherit;
+      }
+      .headline:hover { border-color: var(--accent); }
+      .headline .what { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); flex-basis: 100%; }
+      .headline .v { font-size: 1.35rem; font-weight: 650; letter-spacing: -0.01em; }
+      .headline .go { margin-left: auto; color: var(--accent); font-weight: 600; font-size: 0.9rem; }
+      .note {
+        margin: 0.9rem 0 0; padding: 0.85rem 1.1rem;
+        border-left: 3px solid var(--accent); background: var(--accent-soft);
+        border-radius: 0 8px 8px 0; color: var(--muted); font-size: 0.93rem;
+      }
+      .note strong { color: var(--ink); font-weight: 600; }
+      h2 {
+        margin: 2.5rem 0 0.75rem;
+        font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em;
+        color: var(--muted); font-weight: 650;
+      }
+      ul.releases { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+      ul.releases li + li { border-top: 1px solid var(--line); }
+      ul.releases a {
+        display: flex; align-items: center; gap: 0.75rem;
+        padding: 0.7rem 1.1rem; text-decoration: none; color: inherit;
+      }
+      ul.releases a:hover { background: var(--accent-soft); }
+      ul.releases .v { font-weight: 550; font-variant-numeric: tabular-nums; }
+      ul.releases .tags { margin-left: auto; display: flex; gap: 0.4rem; }
+      .tag {
+        padding: 0.12rem 0.5rem; border-radius: 999px;
+        font-size: 0.72rem; font-weight: 650; letter-spacing: 0.02em;
+      }
+      .tag.pre { background: var(--pre-bg); color: var(--pre-ink); }
+      .tag.stable { background: var(--stable-bg); color: var(--stable-ink); }
+      .tag.here { background: var(--accent-soft); color: var(--accent); }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+      footer {
+        margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+        display: flex; flex-wrap: wrap; gap: 1.25rem;
+        font-size: 0.9rem; color: var(--muted);
+      }
+      footer a { color: var(--muted); text-decoration: none; }
+      footer a:hover { color: var(--accent); }
+      @media (max-width: 34rem) {
+        body { padding: 1.5rem 1rem 3rem; }
+        h1 { font-size: 1.6rem; }
+        .headline .go { flex-basis: 100%; margin-left: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <!-- Drawn by meo-canvas. `just brand` renders these; see
+           docs/assets/brand/README.md. Dark and light follow the reader's own
+           setting rather than a toggle, and the PNG is there for anything that
+           will not take webp. -->
+      <picture>
+        <source media="(prefers-color-scheme: dark)" type="image/webp" srcset="assets/brand/banner-dark.webp" />
+        <source media="(prefers-color-scheme: light)" type="image/webp" srcset="assets/brand/banner-light.webp" />
+        <source type="image/webp" srcset="assets/brand/banner.webp" />
+        <img class="hero" src="assets/brand/banner.png" width="1280" height="468"
+             alt="Four easing curves animating side by side, each drawn by meo-canvas itself" />
+      </picture>
+
+      <h1>meo-canvas</h1>
+      <p class="lede">Server-side image generation for Node. Describe a layout the way you would describe a page — boxes, rows, text, images, paths, charts — and get back encoded bytes.</p>
+
+      <a class="headline" href="v10.0.0-alpha.5/">
+        <span class="what">Newest release</span>
+        <span class="v">v10.0.0-alpha.5</span>
+        <span class="go">Read the reference →</span>
+      </a>
+      <p class="note">
+        <strong>No stable 10.x has been published yet</strong>, so there is no
+        <code>latest/</code> here. v10.0.0-alpha.5 is a prerelease: on npm it is
+        <code>meo-canvas@next</code> rather than <code>latest</code>, and a bare
+        <code>npm install meo-canvas</code> does not reach it.
+        <code>latest/</code> appears with the first stable release.
+      </p>
+
+      <h2>All releases</h2>
+      <ul class="releases">
+          <li><a href="v10.0.0-alpha.5/"><span class="v">v10.0.0-alpha.5</span><span class="tags"><span class="tag here">newest</span><span class="tag pre">prerelease</span></span></a></li>
+      </ul>
+
+      <!-- Two links are absent rather than forgotten: docs.rs and crates.io.
+           The crate has never been published -- index.crates.io answers
+           NoSuchKey for meo-canvas, which is the decisive check, since
+           crates.io and npmjs both answer 403 to curl and prove nothing --
+           and docs.rs is 404 in consequence. A dead "Rust reference" on the
+           landing page of a library whose Rust surface is the primary one is
+           worse than no link, because a reader cannot tell a "not yet" from a
+           "broken".
+
+           **Put both back the day the crate is published**, which is blocked
+           behind the branch swap, which is blocked behind a taffy release --
+           so this is weeks rather than days and not worth a placeholder. They
+           are not conditional on anything this script can see: a landing page
+           that needs the network to build is one that fails to build, which is
+           the same reason there are no dates. A footer that changes when a
+           fact changes beats a footer that explains itself. -->
+      <footer>
+        <a href="https://github.com/l7aromeo/meo-canvas">Source</a>
+        <a href="https://www.npmjs.com/package/meo-canvas">npm</a>
+      </footer>
+    </div>
+  </body>
+</html>
