@@ -287,7 +287,19 @@ jobs:
       id-token: write
 
     steps:
+      # **Full history and tags, because the release notes are a range.** The
+      # default checkout is one commit with no tags, so
+      # `git describe --tags` found nothing, the notes step took its
+      # "no previous tag" branch, and `git log HEAD` on a one-commit clone
+      # produced notes consisting of a single subject line -- while printing
+      # that they covered the whole history. Reproduced on a `--depth 1` clone
+      # of this repository: 1 commit, 0 tags, describe empty, notes one line.
+      #
+      # It is also what lets the tag step below ask whether its tag already
+      # exists without going to the network for the answer.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -537,8 +549,26 @@ jobs:
           DRY: ${{ inputs.dry_run }}
           PREFIX: ${{ needs.targets.outputs.prefix }}
         run: |
+          set -euo pipefail
           file="artifacts/${PREFIX}-${VERSION}.tgz"
           test -f "$file"
+
+          # **The same skip the platform loop has, and for the same reason one
+          # step further on.** npm refuses to publish over an existing version,
+          # so a re-run of a release that succeeded died here -- and it died
+          # *before* the tag step, which is the half that had not run if the
+          # first attempt failed after publishing. That made the one state a
+          # re-run exists to repair the one state a re-run could not reach.
+          #
+          # Read from inside the tarball rather than from `VERSION`, so this
+          # asks about the package that is actually about to be published.
+          name=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).name")
+          version=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          if [ "$DRY" != "true" ] && npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "${name}@${version} is already on the registry; not publishing it again"
+            exit 0
+          fi
+
           # `./` for the reason the platform step gives: a bare relative path
           # is a git shorthand to npm.
           if [ "$DRY" = "true" ]; then
@@ -573,7 +603,10 @@ jobs:
           # The subjects in this repository are already written as one-line
           # summaries of what changed and why, so the log is the release note
           # and reformatting it only loses information.
-          previous=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          # Excludes the tag this run is about to create, which matters on a
+          # re-run: without `--exclude` a second attempt describes its own tag
+          # and produces notes covering nothing.
+          previous=$(git describe --tags --abbrev=0 --match 'v*' --exclude "${git_tag}" 2>/dev/null || true)
           if [ -n "$previous" ]; then
             range="${previous}..HEAD"
             echo "notes cover ${range}"
@@ -594,7 +627,33 @@ jobs:
             git log --no-merges --format='- %s' "${range}"
           } > notes.md
 
-          git tag -a "${git_tag}" -m "${NAME} ${VERSION}"
+          # **Both halves ask whether they have already happened.** The tag is
+          # pushed and the release is opened by two commands with a window
+          # between them, and a failure in that window used to leave a tag with
+          # no release under it and no way to finish -- which is the scar
+          # `meo-skia-canvas` wears and the reason everything above it is
+          # ordered the way it is. The window is still there; what changed is
+          # that it is no longer terminal, because a re-run walks past the half
+          # that succeeded and completes the half that did not.
+          #
+          # **Not silently, when the tag names a different commit.** A tag that
+          # exists at another revision is a real conflict -- someone released
+          # this version from elsewhere -- and skipping past it would attach a
+          # release to a commit this run did not build. Tags are local here
+          # because the checkout fetches them.
+          head=$(git rev-parse HEAD)
+          if existing=$(git rev-parse -q --verify "refs/tags/${git_tag}^{commit}"); then
+            if [ "$existing" != "$head" ]; then
+              echo "::error::${git_tag} already exists at ${existing}, and this run built ${head}"
+              exit 1
+            fi
+            echo "${git_tag} already exists at this commit; not creating it again"
+          else
+            git tag -a "${git_tag}" -m "${NAME} ${VERSION}"
+          fi
+          # A no-op when the remote already has this exact tag, and a rejection
+          # if it has a different one -- which is the check above arriving from
+          # the other side, for a tag pushed after this job checked out.
           git push origin "${git_tag}"
 
           # `--prerelease` on the same rule the dist-tag uses, so a version that
@@ -603,12 +662,16 @@ jobs:
           prerelease=""
           case "${VERSION}" in *-*) prerelease="--prerelease" ;; esac
 
-          gh release create "${git_tag}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${NAME} ${VERSION}" \
-            --notes-file notes.md \
-            ${prerelease} \
-            artifacts/*.tgz
+          if gh release view "${git_tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "a release already exists under ${git_tag}; not opening a second one"
+          else
+            gh release create "${git_tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${NAME} ${VERSION}" \
+              --notes-file notes.md \
+              ${prerelease} \
+              artifacts/*.tgz
+          fi
 
       - name: Say what happened
         env:
