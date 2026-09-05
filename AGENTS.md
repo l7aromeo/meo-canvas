@@ -1502,6 +1502,31 @@ and scene crates into itself, so a report over the artefact totals 45% -- a
 number about layout and Skia wearing the boundary's label. `lib.rs` alone is the
 file the recipe exists for.
 
+**Running it leaves an instrumented addon behind, and the warning is to
+yourself.** The recipe copies the coverage build over
+`packages/meo-canvas/meo-canvas.node` and says so; everything `ci` runs after it
+then works on that binary -- slower for the tests, and **wrong for any
+benchmark, silently**, because the command that produces the number does not
+mention the addon. Restore with `just addon`, and check the artefact rather than
+the command: `otool -l packages/meo-canvas/meo-canvas.node | grep -c
+'sectname.*llvm'` should be zero.
+
+**The file is `.gitignore`d, so it is per working directory.** A coverage run in
+your own worktree cannot reach anyone else's, and telling other sessions to
+check theirs sends them looking for a hazard that is not there -- measured
+across three worktrees on 6 September 2026, where only the one that ran it was
+instrumented. Said because the scope is the whole difference between a note and
+an alarm, and because a standing "do not run coverage" with no reason attached
+is what this collapses to once the argument is dropped.
+
+**If you read a coverage number out of the log, you read the wrong one.** The
+report is written with `--lcov --output-path`, so a **passing** run prints no
+summary at all -- the only `TOTAL` in the log is an intermediate over a fraction
+of the workspace. On the run above it read 67.31% over 835 regions where the
+answer was 91.13% over 27,514: wrong by 24 points, and sitting exactly where
+somebody would look. The verdict is the recipe's exit status; the number comes
+from `llvm-cov report --summary-only` against the same profile data.
+
 **A measurement apparatus can fail in a way that looks precisely like the thing
 it measures being absent.** Three of the four ways to instrument this reported
 that the JavaScript suite never touches the addon, and it touches it constantly.
