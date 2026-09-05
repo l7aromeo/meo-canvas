@@ -71,7 +71,17 @@ export interface EncodeOptions {
   readonly lossless?: boolean
   /** The colour transparency is flattened against, for a format with no alpha. */
   readonly matte?: string
-  /** Which page a single-page format writes, counting from zero. */
+  /**
+   * Which page is written, counting from zero.
+   *
+   * **Not only for a single-page format.** Naming a page wins over a format
+   * that would otherwise gather them all, so a GIF asked for page 1 of three
+   * is a one-frame GIF and a PDF asked for one page is a one-sheet PDF. Left
+   * out, a spanning format writes every page and every other format writes the
+   * last one.
+   *
+   * An index past the last page is refused rather than clamped.
+   */
   readonly page?: number
   /** Frames per second for an animated format. */
   readonly fps?: number

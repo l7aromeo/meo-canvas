@@ -264,10 +264,21 @@ pub struct EncodeOptions {
     /// The colour transparency is flattened against by a format with no alpha
     /// channel, as a packed `0xRRGGBB`.
     pub matte: Option<u32>,
-    /// Which page a single-page format writes, counting from zero.
+    /// Which page is written, counting from zero.
     ///
-    /// `None` writes the last page, which is the one a caller who drew a
-    /// sequence and asked for a PNG almost always means.
+    /// **Not only for a single-page format**, which is what this said until
+    /// the two file-writing paths were measured against each other. Naming a
+    /// page wins over a format that would otherwise gather them all: a GIF
+    /// asked for page 1 of three is a one-frame GIF, and a PDF asked for one
+    /// page is a one-sheet PDF. [`EncodeOptions::written_pages`] is that rule,
+    /// and `tests/write_path.rs` is the measurement — three frames with this
+    /// unset, one with it named, on both the encoding and the writing path.
+    ///
+    /// An index past the last page is refused rather than clamped.
+    ///
+    /// `None` writes every page for a format that spans them, and otherwise
+    /// the last page — the one a caller who drew a sequence and asked for a
+    /// PNG almost always means.
     pub page: Option<usize>,
     /// Frames per second for an animated format.
     ///
