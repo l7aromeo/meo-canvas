@@ -110,8 +110,16 @@ jobs:
     # Ninety, which is what `ci.yml` uses for the same compile and for the same
     # reason -- its own note records 16 to 23 minutes normally and a 52-minute
     # run when the Skia cache missed. That outlier is the case this has to
-    # clear: today's 36m48s was a warm-cache number and a cold one is the
-    # release nobody wants to fail on the clock.
+    # clear.
+    #
+    # **This comment used to say 36m48s was a warm-cache number. It was not.**
+    # That leg logged `... Restoring cache ... / No cache found.` -- the
+    # repository holds 10.25 GB of Actions caches against GitHub's 10 GB limit,
+    # so LRU had already evicted it. So 36m48s is the cold figure, and 90 is
+    # generous against it rather than tight. Worth knowing that a warm musl
+    # number has never been observed here: the seven-day retention is shorter
+    # than the gap between releases, so the cache is gone by the next one
+    # whatever the headroom.
     #
     # It is a hang-breaker rather than a prediction, and the difference matters
     # if a build ever approaches it: that is a reason to find out what changed,
@@ -671,6 +679,15 @@ jobs:
             echo "## Changes"
             echo ""
             git log --no-merges --format='- %s' "${range}"
+            echo ""
+            # Where the reference for *this* version lives. A release is when
+            # someone goes looking for it, and `latest/` is not the answer while
+            # 10.x is in prerelease -- it follows the newest stable release, so
+            # it is absent until one exists. Naming the version's own directory
+            # is the link that works either way.
+            echo "---"
+            echo ""
+            echo "[API reference for ${git_tag}](https://l7aromeo.github.io/meo-canvas/${git_tag}/)"
           } > notes.md
 
           # **Both halves ask whether they have already happened.** The tag is
