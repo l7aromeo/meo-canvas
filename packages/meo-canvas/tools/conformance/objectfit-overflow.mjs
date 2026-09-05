@@ -86,6 +86,24 @@ const CASES = [
   // hypothesis was written here, all of them missing it. The instruments were
   // fine; **the cases were not discriminating.**
   { fit: 'contain', box: { width: 80, height: 80 }, source: { width: 40, height: 40 }, radius: 20 },
+  // **Where replaced content sits inside a decorated element.** CSS puts it in
+  // the content box, which is inside the border *and* the padding. Both of
+  // these inset it equally and the two add, which is the part worth measuring
+  // rather than assuming: a fix built from the border case alone is right for
+  // half the inputs and silently wrong for the other half.
+  { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, border: 8 },
+  // **The padding row carries a background and that is load-bearing.** A
+  // padding band is only visible if something paints it, and for `padding` the
+  // element's own `background` is what does -- a border has its own colour, a
+  // padding band does not. The walker's scene sets the same background for the
+  // same reason. Drop either and that row measures the element on one side and
+  // the picture alone on the other, which reads as a placement defect and is
+  // not one.
+  { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, padding: 8 },
+  { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, border: 8, padding: 8 },
+  // And the corner the content box follows, which is tighter than the box's
+  // own by the inset it sits inside.
+  { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, border: 8, radius: 20 },
 ]
 
 const browser = await open()
@@ -93,9 +111,9 @@ try {
   const rows = []
   await browser.page.setViewportSize(PAGE)
 
-  for (const { fit, box, source, overflow, radius } of CASES) {
+  for (const { fit, box, source, overflow, radius, border, padding } of CASES) {
     const computed = await browser.page.evaluate(
-      ({ page, origin, box, source, fit, ink, paper, overflow, radius }) => {
+      ({ page, origin, box, source, fit, ink, paper, overflow, radius, border, padding }) => {
         document.body.innerHTML = ''
         document.body.style.cssText = `margin:0;width:${page.width}px;height:${page.height}px;background:rgb(${paper.join(',')});`
 
@@ -112,7 +130,7 @@ try {
         const image = document.createElement('img')
         // No `overflow` on this element and none on any ancestor. That is the
         // whole point: whatever clipping happens is Chrome's own.
-        image.style.cssText = `position:absolute;left:${origin.x}px;top:${origin.y}px;width:${box.width}px;height:${box.height}px;object-fit:${fit};image-rendering:pixelated;${overflow ? `overflow:${overflow};` : ''}${radius ? `border-radius:${radius}px;` : ''}`
+        image.style.cssText = `position:absolute;left:${origin.x}px;top:${origin.y}px;width:${box.width}px;height:${box.height}px;object-fit:${fit};image-rendering:pixelated;${overflow ? `overflow:${overflow};` : ''}${radius ? `border-radius:${radius}px;` : ''}${border ? `border:${border}px solid #0000ff;` : ''}${padding ? `padding:${padding}px;background:#0000ff;` : ''}box-sizing:border-box;`
         image.src = canvas.toDataURL('image/png')
         document.body.append(image)
 
@@ -121,16 +139,18 @@ try {
         // together rather than one being inferred from the other.
         return getComputedStyle(image).overflow
       },
-      { page: PAGE, origin: ORIGIN, box, source, fit, ink: INK, paper: PAPER, overflow, radius },
+      { page: PAGE, origin: ORIGIN, box, source, fit, ink: INK, paper: PAPER, overflow, radius, border, padding },
     )
     await settle(browser.page)
 
     const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...PAGE } }))
     let painted = null
+    let ink_pixels = 0
     for (let y = 0; y < PAGE.height; y += 1) {
       for (let x = 0; x < PAGE.width; x += 1) {
         const [r, g, b] = pixel(shot, x, y)
         if (r === PAPER[0] && g === PAPER[1] && b === PAPER[2]) continue
+        if (r === 232 && g === 40 && b === 200) ink_pixels += 1
         painted = painted === null ? [x, y, x, y] : [Math.min(painted[0], x), Math.min(painted[1], y), Math.max(painted[2], x), Math.max(painted[3], y)]
       }
     }
@@ -147,7 +167,22 @@ try {
         : painted[0] >= ORIGIN.x && painted[1] >= ORIGIN.y && painted[2] <= ORIGIN.x + box.width - 1 && painted[3] <= ORIGIN.y + box.height - 1
           ? 'inside'
           : 'spills'
-    rows.push([fit, `${box.width}x${box.height}`, `${source.width}x${source.height}`, boxRect, rect, clipped, computed, radius ?? 0, corner].join('\t'))
+    rows.push(
+      [
+        fit,
+        `${box.width}x${box.height}`,
+        `${source.width}x${source.height}`,
+        boxRect,
+        rect,
+        clipped,
+        computed,
+        radius ?? 0,
+        corner,
+        border ?? 0,
+        padding ?? 0,
+        painted === null ? 0 : ink_pixels,
+      ].join('\t'),
+    )
   }
 
   const header = [
@@ -176,7 +211,10 @@ try {
     '# users report -- "my rounded image renders square" rather than "my image',
     '# overflows its box".',
     '#',
-    '# fit\tbox\tsource\tbox-rect\tpainted\tverdict\toverflow\tradius\tcorner',
+    '# `border` and `padding` are what the element carries; `pixels` counts the',
+    '# picture alone, which is what reads a curve the bounding box cannot.',
+    '#',
+    '# fit\tbox\tsource\tbox-rect\tpainted\tverdict\toverflow\tradius\tcorner\tborder\tpadding\tpixels',
   ]
   await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
   process.stderr.write(`object fit overflow: ${rows.length} cases -> ${DESTINATION}\n`)

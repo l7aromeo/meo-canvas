@@ -30,7 +30,7 @@
 use std::fmt::Write as _;
 
 use meo_canvas_scene::{
-    ColorSpace, ColorType, Rect, Sides, Size,
+    ColorSpace, ColorType, Corners, Rect, Sides, Size,
     node::{Node, NodeId, NodeKind, PathPaint},
     style::{
         Dimension, Length, PaintOrder,
@@ -429,7 +429,15 @@ fn walk(
                 }
 
                 let layers = enter_node(context, node, rect, device)?;
-                paint_own_content(context, resolved, measurer, id, node, rect)?;
+                paint_own_content(
+                    context,
+                    resolved,
+                    measurer,
+                    id,
+                    node,
+                    rect,
+                    layout.content(id).unwrap_or(rect),
+                )?;
 
                 stack.push(Step::Leave {
                     layers,
@@ -458,7 +466,15 @@ fn walk(
 
                 context.save();
                 let layers = enter_node(context, node, rect, device)?;
-                paint_own_content(context, resolved, measurer, id, node, rect)?;
+                paint_own_content(
+                    context,
+                    resolved,
+                    measurer,
+                    id,
+                    node,
+                    rect,
+                    layout.content(id).unwrap_or(rect),
+                )?;
 
                 stack.push(Step::Leave {
                     layers,
@@ -815,6 +831,7 @@ fn paint_own_content(
     id: NodeId,
     node: &Node,
     rect: Rect,
+    content: Rect,
 ) -> Result<(), Error> {
     context.save();
     // The one place the backend is asked for it. A gradient shallow enough to
@@ -825,8 +842,9 @@ fn paint_own_content(
     if clips_its_children(node) {
         clip_to_box(context, &node.paint, rect)?;
     }
-    let result = paint_box(context, resolved, id, node, rect)
-        .and_then(|()| paint_kind(context, resolved, measurer, id, node, rect));
+    let result = paint_box(context, resolved, id, node, rect).and_then(|()| {
+        paint_kind(context, resolved, measurer, id, node, rect, content)
+    });
     context.restore();
     result
 }
@@ -915,7 +933,7 @@ fn paint_box(
         let (shader, squash) = build_gradient(gradient, rect)?;
         context.set_fill_shader(&shader);
         fill_with_gradient(context, squash, rect, |context| {
-            box_path(context, paint, rect)
+            box_path(context, paint.border_radius, rect)
         })?;
     }
 
@@ -954,6 +972,7 @@ fn paint_kind(
     id: NodeId,
     node: &Node,
     rect: Rect,
+    content: Rect,
 ) -> Result<(), Error> {
     match &node.kind {
         NodeKind::Box => Ok(()),
@@ -965,7 +984,6 @@ fn paint_kind(
             };
             let intrinsic =
                 Size::new(image.width() as f32, image.height() as f32);
-            let placed = fit_image(intrinsic, rect, *fit, *position);
             // **Clipped, because CSS clips replaced content and this did not.**
             // `fit_image`'s own note says the destination may be larger than
             // the box and "the caller crops"; this caller did not, so a
@@ -989,13 +1007,30 @@ fn paint_kind(
             // rows saying "inside" are also what a harness blind to everything
             // outside the box would print.
             //
-            // Through `clip_to_box` rather than a plain rectangle, so a node
-            // with a border radius crops to the curve. Same shape as
-            // `draw_background_image`: the closure is what makes the `restore`
-            // unconditional.
+            // **Placed in the content box, not the box.** CSS puts replaced
+            // content inside the border *and* the padding, and Chrome does
+            // both and adds them: an 80x80 `<img>` with an 8px border paints
+            // its picture at `68,68,64,64`, with 8px of padding at exactly the
+            // same rectangle, and with both at `76,76,48,48`. Fitting to the
+            // box instead put the picture over the element's own border --
+            // measured as every one of a ring's pixels gone, where Chrome
+            // keeps all of them.
+            //
+            // Text and child boxes already land here; this arm was the one
+            // drawing into the box itself, so this is one path brought into
+            // line with the other two rather than a change to what a box is.
+            //
+            // The corners follow the inner curve, tighter than the box's own
+            // by the inset it sits inside -- see `clip_to_rounded`, which
+            // carries the measurement.
+            let placed = fit_image(intrinsic, content, *fit, *position);
             context.save();
             let result = (|context: &mut Context2D| {
-                clip_to_box(context, &node.paint, rect)?;
+                clip_to_rounded(
+                    context,
+                    inner_radii(node, rect, content),
+                    content,
+                )?;
                 context.draw_image_sized(
                     image,
                     placed.origin.x,
@@ -1432,11 +1467,11 @@ fn apply_transform(
 /// Adds the node's box, rounded if it has radii, as the current path.
 fn box_path(
     context: &mut Context2D,
-    paint: &PaintStyle,
+    radii: Corners<f32>,
     rect: Rect,
 ) -> Result<(), Error> {
     context.begin_path();
-    box_path_continuing(context, paint, rect)
+    box_path_continuing(context, radii, rect)
 }
 
 /// The same contour, added to whatever path is already open.
@@ -1446,10 +1481,9 @@ fn box_path(
 /// `begin_path` would discard the first.
 fn box_path_continuing(
     context: &mut Context2D,
-    paint: &PaintStyle,
+    radii: Corners<f32>,
     rect: Rect,
 ) -> Result<(), Error> {
-    let radii = paint.border_radius;
     let corners = [
         radii.top_left,
         radii.top_right,
@@ -1497,7 +1531,7 @@ fn fill_box(
     paint: &PaintStyle,
     rect: Rect,
 ) -> Result<(), Error> {
-    box_path(context, paint, rect)?;
+    box_path(context, paint.border_radius, rect)?;
     context.fill(SkiaFillRule::NonZero);
     Ok(())
 }
@@ -1507,7 +1541,50 @@ fn clip_to_box(
     paint: &PaintStyle,
     rect: Rect,
 ) -> Result<(), Error> {
-    box_path(context, paint, rect)?;
+    clip_to_rounded(context, paint.border_radius, rect)
+}
+
+/// The corner radii of a node's content box.
+///
+/// Each is the node's own radius less the inset it sits inside, floored at
+/// zero. The **larger** of a corner's two adjacent insets is subtracted: our
+/// radii are scalar where CSS's inner corner is an ellipse with a different
+/// reduction per axis, and rounding a little more than CSS clips a little more
+/// of the picture, where rounding less would let it paint outside the curve.
+/// With uniform insets -- which is every case anyone has reported -- the two
+/// agree exactly.
+fn inner_radii(node: &Node, rect: Rect, content: Rect) -> Corners<f32> {
+    let left = content.origin.x - rect.origin.x;
+    let top = content.origin.y - rect.origin.y;
+    let right = (rect.origin.x + rect.size.width)
+        - (content.origin.x + content.size.width);
+    let bottom = (rect.origin.y + rect.size.height)
+        - (content.origin.y + content.size.height);
+    let radii = node.paint.border_radius;
+    Corners {
+        top_left: (radii.top_left - left.max(top)).max(0.0),
+        top_right: (radii.top_right - right.max(top)).max(0.0),
+        bottom_right: (radii.bottom_right - right.max(bottom)).max(0.0),
+        bottom_left: (radii.bottom_left - left.max(bottom)).max(0.0),
+    }
+}
+
+/// Clips to a rectangle with the corner radii given rather than the ones a
+/// node declares.
+///
+/// **Replaced content needs this and nothing else does.** It is clipped to the
+/// *content* box, whose corners follow a tighter curve than the box's own: CSS
+/// reduces each radius by the border it sits inside, and Chrome does the same
+/// for padding. Measured on an 80x80 `<img>` with a 20px radius and an 8px
+/// border, `object-fit: cover` paints 3922 pixels -- against about 3972 for a
+/// 12px inner curve, 3753 for the outer 20px curve applied to the smaller
+/// rectangle, and 4096 for no curve at all.
+fn clip_to_rounded(
+    context: &mut Context2D,
+    radii: Corners<f32>,
+    rect: Rect,
+) -> Result<(), Error> {
+    box_path(context, radii, rect)?;
     context.clip(SkiaFillRule::NonZero);
     Ok(())
 }
@@ -2165,7 +2242,7 @@ fn centre_line(
     let shrink = |radius: f32, by: f32| (radius - by).max(0.0);
     let radii = paint.border_radius;
     let curved = PaintStyle {
-        border_radius: meo_canvas_scene::Corners {
+        border_radius: Corners {
             top_left: shrink(radii.top_left, widths.left.min(widths.top) / 2.0),
             top_right: shrink(
                 radii.top_right,
@@ -2506,7 +2583,7 @@ fn fill_corner_arcs(
         context.save();
         clip_to_corner(context, corner, direction, radius, reach);
         context.set_line_dash(&[]);
-        let path = box_path(context, side.paint, side.centre);
+        let path = box_path(context, side.paint.border_radius, side.centre);
         if path.is_ok() {
             context.stroke();
         }
@@ -3323,7 +3400,7 @@ fn draw_inset_box_shadow(
                 [(0.0, 0.0); 4],
             )
             .map_err(|error| Error::Paint(error.to_string()))?;
-        box_path_continuing(context, paint, hole)?;
+        box_path_continuing(context, paint.border_radius, hole)?;
         context.fill(SkiaFillRule::EvenOdd);
         Ok(())
     })();

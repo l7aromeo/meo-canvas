@@ -40,10 +40,13 @@ use meo_canvas_scene::{
 };
 
 /// The page, larger than the box, so spill has somewhere to land.
-const PAGE: f32 = 120.0;
+// Large enough that the biggest box plus its margins fits: 60 + 80 + 60. At
+// 120 the 80x80 cases had no room on the far side, taffy shrank them, and the
+// element measured was not the element the table describes.
+const PAGE: f32 = 240.0;
 
 /// Where the element sits, with room on every side.
-const INSET: f32 = 40.0;
+const INSET: f32 = 60.0;
 
 /// The picture's colour. Distinct from the page so ink is unambiguous.
 const INK: (u8, u8, u8) = (232, 40, 200);
@@ -82,7 +85,7 @@ fn picture(width: u32, height: u32) -> Vec<u8> {
 /// picture that stayed inside its box: an absent picture satisfies "does not
 /// paint outside" and proves nothing.
 fn painted(fit: ObjectFit, box_size: (f32, f32), source: (u32, u32)) -> Extent {
-    render(fit, box_size, source, 0.0).0
+    render(fit, box_size, source, 0.0, 0.0, 0.0).0
 }
 
 /// The ink's bounding box: left, top, right, bottom, all inclusive.
@@ -91,13 +94,21 @@ type Extent = Option<(u32, u32, u32, u32)>;
 /// One pixel, as red, green and blue.
 type Pixel = (u8, u8, u8);
 
-/// The ink's bounding box, and the pixel at the box's own rectangular corner.
+/// The ink's bounding box, the pixel at the box's own rectangular corner, and
+/// how many pixels the picture itself covers.
+///
+/// The last is the only one that reads a curve — a bounding box cannot — and
+/// the only one that separates a picture in the content box from one in the
+/// box, since with a border the non-paper extent is the whole element either
+/// way.
 fn render(
     fit: ObjectFit,
     box_size: (f32, f32),
     source: (u32, u32),
     radius: f32,
-) -> (Extent, Pixel) {
+    border: f32,
+    padding: f32,
+) -> (Extent, Pixel, u32) {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].paint.background_color =
         Color::rgb(PAPER.0, PAPER.1, PAPER.2);
@@ -126,7 +137,18 @@ fn render(
             margin: Sides::all(Dimension::Points(INSET)),
             ..LayoutStyle::default()
         };
+        node.layout.border = Sides::all(border);
+        node.layout.padding = Sides::all(Length::Points(padding));
         node.paint.border_radius = Corners::all(radius);
+        node.paint.border_color_all = Color::rgb(0, 0, 255);
+        // The padding band is only visible if something paints it, and the
+        // harness paints it with the element's background -- `padding:8px`
+        // there carries `background:#0000ff`. Without the same here the band
+        // is paper, the extent is the picture alone, and the two sides are
+        // measuring different pictures of the same element.
+        if padding > 0.0 {
+            node.paint.background_color = Color::rgb(0, 0, 255);
+        }
     }
 
     let mut renderer = Renderer::new();
@@ -137,11 +159,21 @@ fn render(
 
     let side = PAGE as u32;
     let mut found: Extent = None;
+    let mut pixels = 0;
     for y in 0..side {
         for x in 0..side {
             let at = ((y * side + x) * 4) as usize;
             let pixel = (bytes[at], bytes[at + 1], bytes[at + 2]);
-            if pixel != INK {
+            // Counted separately, because the two answer different
+            // questions and the harness defines them the same way. The extent
+            // is everything that is not the page -- a border is ink too, so
+            // with one the extent is the whole element either way -- and the
+            // count is the picture alone, which is what reads the curve and
+            // the inset.
+            if pixel == INK {
+                pixels += 1;
+            }
+            if pixel == PAPER {
                 continue;
             }
             found = Some(match found {
@@ -154,7 +186,7 @@ fn render(
     }
     let inset = INSET as u32;
     let at = ((inset * side + inset) * 4) as usize;
-    (found, (bytes[at], bytes[at + 1], bytes[at + 2]))
+    (found, (bytes[at], bytes[at + 1], bytes[at + 2]), pixels)
 }
 
 /// Chrome's answers, as measured.
@@ -166,6 +198,10 @@ struct Row {
     fit: ObjectFit,
     box_size: (f32, f32),
     source: (u32, u32),
+    border: f32,
+    padding: f32,
+    /// How many pixels Chrome's picture covers.
+    pixels: u32,
     relative: (i64, i64, u32, u32),
     verdict: String,
     overflow: String,
@@ -191,7 +227,7 @@ fn rows() -> Vec<Row> {
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
         .map(|line| {
             let cells: Vec<&str> = line.split('\t').map(str::trim).collect();
-            assert_eq!(cells.len(), 9, "unexpected columns in {line:?}");
+            assert_eq!(cells.len(), 12, "unexpected columns in {line:?}");
             let fit = match cells[0] {
                 "cover" => ObjectFit::Cover,
                 "none" => ObjectFit::None,
@@ -223,6 +259,15 @@ fn rows() -> Vec<Row> {
                     .parse()
                     .unwrap_or_else(|error| unreachable!("{error}")),
                 corner: cells[8].to_owned(),
+                border: cells[9]
+                    .parse()
+                    .unwrap_or_else(|error| unreachable!("{error}")),
+                padding: cells[10]
+                    .parse()
+                    .unwrap_or_else(|error| unreachable!("{error}")),
+                pixels: cells[11]
+                    .parse()
+                    .unwrap_or_else(|error| unreachable!("{error}")),
             }
         })
         .collect();
@@ -246,8 +291,14 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
             row.fit
         );
 
-        let (found, corner) =
-            render(row.fit, row.box_size, row.source, row.radius);
+        let (found, corner, pixels) = render(
+            row.fit,
+            row.box_size,
+            row.source,
+            row.radius,
+            row.border,
+            row.padding,
+        );
         let Some((x0, y0, x1, y1)) = found else {
             unreachable!(
                 "{:?} drew nothing; an absent picture is not a picture that \
@@ -294,6 +345,34 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
                 row.fit, row.radius, row.corner
             );
         }
+        // **The column a bounding box cannot read.** With a border the
+        // non-paper extent is the whole element -- the ring is ink too -- so
+        // only the picture's own area separates content-box placement from
+        // box placement: 4096 for an 80x80 element with an 8px border, 2304
+        // with 8px of padding as well.
+        //
+        // Exact where the edges are straight, and within two per cent where a
+        // radius curves them: `fixtures.rs` records that eight of twenty-three
+        // goldens differ between architectures and that all eight have a
+        // curve, a gradient or a glyph in them, so a curve compared exactly
+        // across two rasterisers is a flake waiting for the next platform.
+        let allowed = if row.radius > 0.0 {
+            (f64::from(row.pixels) * 0.02).ceil() as i64
+        } else {
+            0
+        };
+        let difference = (i64::from(pixels) - i64::from(row.pixels)).abs();
+        assert!(
+            difference <= allowed,
+            "{:?} with border {} padding {} radius {}: Chrome paints {} \
+             pixels and we paint {pixels}, off by {difference} against an \
+             allowance of {allowed}",
+            row.fit,
+            row.border,
+            row.padding,
+            row.radius,
+            row.pixels
+        );
         checked += 1;
     }
     assert!(checked >= 2, "only {checked} rows were compared");

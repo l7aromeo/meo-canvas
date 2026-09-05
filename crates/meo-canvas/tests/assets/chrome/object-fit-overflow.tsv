@@ -23,10 +23,17 @@
 # users report -- "my rounded image renders square" rather than "my image
 # overflows its box".
 #
-# fit	box	source	box-rect	painted	verdict	overflow	radius	corner
-cover	40x30	40x10	80,80,40,30	80,80,40,30	inside	clip	0	ink
-none	20x20	60x60	80,80,20,20	80,80,20,20	inside	clip	0	ink
-contain	40x30	40x10	80,80,40,30	80,90,40,10	inside	clip	0	paper
-cover	40x30	40x10	80,80,40,30	40,80,120,30	spills	visible	0	ink
-cover	60x40	60x10	80,80,60,40	80,80,60,40	inside	clip	14	paper
-contain	80x80	40x40	80,80,80,80	80,80,80,80	inside	clip	20	paper
+# `border` and `padding` are what the element carries; `pixels` counts the
+# picture alone, which is what reads a curve the bounding box cannot.
+#
+# fit	box	source	box-rect	painted	verdict	overflow	radius	corner	border	padding	pixels
+cover	40x30	40x10	80,80,40,30	80,80,40,30	inside	clip	0	ink	0	0	1200
+none	20x20	60x60	80,80,20,20	80,80,20,20	inside	clip	0	ink	0	0	400
+contain	40x30	40x10	80,80,40,30	80,90,40,10	inside	clip	0	paper	0	0	400
+cover	40x30	40x10	80,80,40,30	40,80,120,30	spills	visible	0	ink	0	0	3600
+cover	60x40	60x10	80,80,60,40	80,80,60,40	inside	clip	14	paper	0	0	2173
+contain	80x80	40x40	80,80,80,80	80,80,80,80	inside	clip	20	paper	0	0	5976
+cover	80x80	80x20	80,80,80,80	80,80,80,80	inside	clip	0	ink	8	0	4096
+cover	80x80	80x20	80,80,80,80	80,80,80,80	inside	clip	0	ink	0	8	4096
+cover	80x80	80x20	80,80,80,80	80,80,80,80	inside	clip	0	ink	8	8	2304
+cover	80x80	80x20	80,80,80,80	80,80,80,80	inside	clip	20	paper	8	0	3922
