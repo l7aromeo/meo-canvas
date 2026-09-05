@@ -309,9 +309,19 @@ jobs:
     # The other thirty are the work around it -- eight `npm publish` calls, an
     # artefact download, a tag and a release -- and a bound on the thing the
     # gate cannot see: a publish or a `gh` call that has stopped rather than
-    # slowed. No run of this job has been timed, so unlike the build's number
-    # this one is sized from what is inside it rather than from what it has
-    # taken.
+    # slowed.
+    #
+    # **This job has been timed, but never doing the half the bound is for.**
+    # Two dry runs: 27 seconds (run 33961676649) and 31 seconds (run
+    # 33852331873). Those cover the checkout, the artefact download, the
+    # tarball validation and eight `--dry-run` publishes -- with the gate
+    # skipped, no version written to the registry, and no tag or release
+    # created. So half a minute is what everything *except* the eight registry
+    # writes, the wait and the two GitHub calls costs, and the rest of the sixty
+    # is headroom for work that has never run. Unlike the build's number, this
+    # one is sized from what is inside the job rather than from what it has
+    # taken; when a real release gives a figure, that is the moment to revisit
+    # it downward rather than leaving a number nobody can account for.
     timeout-minutes: 60
     # The only job that needs either: `id-token` to mint provenance, `contents`
     # to push the tag and open the release. See the note at the top.
