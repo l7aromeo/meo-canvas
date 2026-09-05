@@ -73,7 +73,7 @@
 //! share nothing and contend for nothing **except the font registry**.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, hash_map::Entry},
     path::Path,
     sync::OnceLock,
 };
@@ -645,12 +645,18 @@ fn decode_sources<'scene>(
     scene: &'scene Scene,
 ) -> Result<Decoded<'scene>, Error> {
     let mut wanted: Vec<(&ImageSource, NodeId)> = Vec::new();
-    let mut seen: HashSet<&ImageSource> = HashSet::new();
-    let mut want = |source: &'scene ImageSource, id: NodeId| {
-        if seen.insert(source) {
-            wanted.push((source, id));
-        }
-    };
+    // How many nodes named each source. The map is built either way because
+    // the dedup needs it; counting is one increment on a lookup that already
+    // happens, so a scene where nothing fails pays nothing extra for it.
+    let mut seen: HashMap<&ImageSource, usize> = HashMap::new();
+    let mut want =
+        |source: &'scene ImageSource, id: NodeId| match seen.entry(source) {
+            Entry::Occupied(mut count) => *count.get_mut() += 1,
+            Entry::Vacant(slot) => {
+                slot.insert(1);
+                wanted.push((source, id));
+            }
+        };
     for (id, node) in scene.nodes.iter().enumerate() {
         let id = NodeId::new(id as u32);
         if let NodeKind::Image { source, .. } = &node.kind {
@@ -684,7 +690,9 @@ fn decode_sources<'scene>(
             // future defect in our own decoders into a missing picture rather
             // than a failure.
             Err(error) => {
-                let Some(warning) = soft(scene, *node, source, error)? else {
+                let Some(warning) =
+                    soft(scene, *node, source, error, seen[source])?
+                else {
                     continue;
                 };
                 warnings.push(warning);
@@ -706,6 +714,7 @@ fn soft(
     node: NodeId,
     source: &ImageSource,
     error: Error,
+    nodes: usize,
 ) -> Result<Option<ImageWarning>, Error> {
     if scene.on_image_error == OnImageError::Throw {
         return Err(error);
@@ -721,6 +730,7 @@ fn soft(
             node,
             failure,
             detail,
+            nodes,
         })),
         // Fetched, and then would not decode. The bytes came from the world
         // rather than from the caller, so this is the same class of fact as a
@@ -731,11 +741,21 @@ fn soft(
             failure: FetchFailure::Other,
             detail: "the bytes fetched are not an image any decoder here reads"
                 .to_owned(),
+            nodes,
         })),
         // `UnresolvedSource` is the `net` feature being off, which is a build
         // decision rather than a fact about the world: a caller who did not
         // compile an HTTP client has not had a fetch fail, they have asked for
         // something this build cannot do.
+        // **Everything else stays loud, and the list above is the whole of
+        // what may soften.** A 404, a reset connection, a body past the limit
+        // and bytes a decoder refuses are all "the picture is missing", which
+        // is the case a placeholder is for. An allocation failure, a decoder
+        // that panicked, a font that will not resolve, a broken invariant in
+        // this crate -- those are "we are not working", and drawing a neat
+        // grey rectangle over one is how a defect ships silently. No
+        // catch-all: a new `Error` variant is loud until somebody decides
+        // otherwise here, deliberately.
         other => Err(other),
     }
 }
@@ -782,7 +802,12 @@ fn in_parallel(
                 // A decoder that panicked is a bug in the decoder, and the
                 // scene still has to answer. The source is named through the
                 // node that asked for it.
-                Err(_) => out.push(Err(Error::UndecodableImage(NodeId::ROOT))),
+                //
+                // **Its own variant, so `soft` cannot downgrade it.** This
+                // used to be `UndecodableImage`, which is on the softenable
+                // list -- so once a URL could soften, a panicking decoder
+                // became a placeholder and the crash was a grey rectangle.
+                Err(_) => out.push(Err(Error::DecoderPanicked(NodeId::ROOT))),
             }
         }
     });
@@ -1053,6 +1078,94 @@ fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
     meo_skia_canvas::Image::from_encoded(bytes)
         .map(|image| DecodedImage { image })
         .map_err(|_| Error::UndecodableImage(node))
+}
+
+#[cfg(test)]
+mod softening {
+    use super::{ImageSource, NodeId, OnImageError, Scene, Size, soft};
+    use crate::Error;
+
+    fn url_scene() -> (Scene, ImageSource) {
+        let mut scene = Scene::new(Size::new(8.0, 8.0));
+        scene.on_image_error = OnImageError::Placeholder;
+        (
+            scene,
+            ImageSource::Url("http://example.invalid/x.png".to_owned()),
+        )
+    }
+
+    /// The allowlist, asserted from both sides.
+    ///
+    /// **A catch-all here would be the instrument failure this repository
+    /// keeps naming**: a path that cannot report the thing it exists to
+    /// report. So the softenable set is named, and everything outside it stays
+    /// an error even for a URL under a tolerant policy.
+    #[test]
+    fn only_the_named_failures_may_be_downgraded() {
+        let (scene, source) = url_scene();
+        let node = NodeId::ROOT;
+
+        // Missing picture: softens.
+        assert!(matches!(
+            soft(
+                &scene,
+                node,
+                &source,
+                Error::SourceFetch {
+                    url: "http://example.invalid/x.png".to_owned(),
+                    detail: "404 Not Found".to_owned(),
+                    failure: crate::FetchFailure::Status(404),
+                },
+                1,
+            ),
+            Ok(Some(_))
+        ));
+        assert!(matches!(
+            soft(&scene, node, &source, Error::UndecodableImage(node), 1),
+            Ok(Some(_))
+        ));
+
+        // **We are not working: stays loud.** A decoder that panicked says
+        // nothing about the bytes -- they may have been perfect -- and a grey
+        // rectangle over our own crash is how a defect ships for a year.
+        assert!(matches!(
+            soft(&scene, node, &source, Error::DecoderPanicked(node), 1),
+            Err(Error::DecoderPanicked(_))
+        ));
+        // A build that cannot fetch has not had a fetch fail; it has been
+        // asked for something it does not do, and the message names the flag.
+        assert!(matches!(
+            soft(&scene, node, &source, Error::UnresolvedSource(node), 1),
+            Err(Error::UnresolvedSource(_))
+        ));
+        assert!(matches!(
+            soft(
+                &scene,
+                node,
+                &source,
+                Error::UnknownFont("Nope".to_owned()),
+                1
+            ),
+            Err(Error::UnknownFont(_))
+        ));
+    }
+
+    /// Neither of the caller's own inputs softens, whatever the policy says.
+    #[test]
+    fn a_path_and_bytes_are_never_downgraded() {
+        let (scene, _) = url_scene();
+        let node = NodeId::ROOT;
+        for source in [
+            ImageSource::Path("/no/such".to_owned()),
+            ImageSource::Bytes(vec![0, 1, 2]),
+        ] {
+            assert!(
+                soft(&scene, node, &source, Error::UndecodableImage(node), 1)
+                    .is_err(),
+                "{source:?} softened, and only a URL may"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

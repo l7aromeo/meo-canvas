@@ -184,6 +184,17 @@ export interface ImageWarning {
   readonly status?: number
   /** What the HTTP client reported, for a person to read. */
   readonly detail: string
+  /**
+   * How many nodes in this render named this source.
+   *
+   * **Deduplicated by URL, with the count beside it.** One dead URL asked for
+   * three times is one thing that went wrong; three identical entries would be
+   * noise. The URL is what locates a defect — it is the only thing separating
+   * "the art is not uploaded yet" from "this path has never been right", and a
+   * consumer cannot recover it after the fact — and the count says how much of
+   * the page it cost.
+   */
+  readonly nodes: number
 }
 
 /**

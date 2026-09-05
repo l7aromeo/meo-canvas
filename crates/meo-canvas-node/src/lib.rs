@@ -566,6 +566,8 @@ fn warnings_array<'cx>(
         entry.set(cx, "url", url)?;
         let detail = cx.string(&warning.detail);
         entry.set(cx, "detail", detail)?;
+        let nodes = cx.number(warning.nodes as f64);
+        entry.set(cx, "nodes", nodes)?;
         let (tag, status) = match warning.failure {
             FetchFailure::Status(code) => ("status", Some(code)),
             FetchFailure::HostNotFound => ("host-not-found", None),

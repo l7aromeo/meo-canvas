@@ -338,3 +338,79 @@ fn a_radius_clips_the_placeholder() {
     let middle = all[30 * width + 30];
     assert_ne!(middle, GROUND, "nothing was drawn inside the rounded box");
 }
+
+#[test]
+fn one_url_asked_for_three_times_is_one_warning_that_says_three() {
+    // The reported defect is a generic path requested three times per card, so
+    // the surface has to answer "which URL" and "how much of the page", and
+    // three identical entries would be noise rather than signal.
+    let mut scene = Scene::new(Size::new(120.0, 40.0));
+    scene.on_image_error = OnImageError::Placeholder;
+    for _ in 0..3 {
+        let id = scene
+            .push(
+                NodeId::ROOT,
+                Node::new(NodeKind::Image {
+                    source: ImageSource::Url(DEAD.to_owned()),
+                    frame: None,
+                    fit: ObjectFit::Fill,
+                    position: (Length::ZERO, Length::ZERO),
+                }),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(id) {
+            node.layout.size =
+                (Dimension::Points(30.0), Dimension::Points(30.0));
+        }
+    }
+
+    let rendered = Renderer::new()
+        .render(&scene)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let warnings = rendered.warnings();
+    assert_eq!(
+        warnings.len(),
+        1,
+        "one dead URL is one thing that went wrong"
+    );
+    // Identity is the requirement: the URL is the only thing that separates
+    // "the art is not uploaded yet" from "this path has never been right", and
+    // a consumer cannot recover it afterwards.
+    assert_eq!(warnings[0].url, DEAD);
+    assert_eq!(
+        warnings[0].nodes, 3,
+        "the count says how much of the page it cost"
+    );
+}
+
+#[test]
+fn two_dead_urls_are_two_warnings_that_name_themselves() {
+    let mut scene = Scene::new(Size::new(120.0, 40.0));
+    scene.on_image_error = OnImageError::Placeholder;
+    let other = "http://127.0.0.1:1/also-never.png";
+    for url in [DEAD, other] {
+        let id = scene
+            .push(
+                NodeId::ROOT,
+                Node::new(NodeKind::Image {
+                    source: ImageSource::Url(url.to_owned()),
+                    frame: None,
+                    fit: ObjectFit::Fill,
+                    position: (Length::ZERO, Length::ZERO),
+                }),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(id) {
+            node.layout.size =
+                (Dimension::Points(30.0), Dimension::Points(30.0));
+        }
+    }
+
+    let rendered = Renderer::new()
+        .render(&scene)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let mut named: Vec<&str> =
+        rendered.warnings().iter().map(|w| w.url.as_str()).collect();
+    named.sort_unstable();
+    assert_eq!(named, [other, DEAD], "each failing URL names itself");
+}

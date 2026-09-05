@@ -123,6 +123,14 @@ pub struct ImageWarning {
     pub failure: FetchFailure,
     /// What the HTTP client reported, for a person to read.
     pub detail: String,
+    /// How many nodes in this scene named this source.
+    ///
+    /// **Deduplicated by URL, with the count beside it**, because one dead URL
+    /// asked for three times is one thing that went wrong and three identical
+    /// entries is noise. The URL is what locates a defect -- it is the only
+    /// thing that separates "the art is not uploaded yet" from "this path has
+    /// never been right" -- and the count says how much of the page it cost.
+    pub nodes: usize,
 }
 
 /// Why a fetch failed, in the terms a caller can act on.
@@ -283,6 +291,21 @@ pub enum Error {
     /// Bytes that no decoder recognises.
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
+
+    /// A decoder panicked while reading a source.
+    ///
+    /// **Distinct from [`Error::UndecodableImage`] so that it can never be
+    /// softened.** Bytes a decoder refuses are a fact about the bytes, and for
+    /// a URL that is the broken-image case a placeholder exists for. A decoder
+    /// that *panicked* is a fact about us: the input may have been perfectly
+    /// good, and drawing a tasteful grey rectangle over our own crash is how a
+    /// real defect ships quietly for a year.
+    ///
+    /// The two shared a variant until the soft-fail path existed, at which
+    /// point sharing one made a panic indistinguishable from a 404 to the code
+    /// deciding what may be downgraded.
+    #[error("a decoder panicked reading the image for node {}", .0.get())]
+    DecoderPanicked(NodeId),
 
     /// A font family the renderer's library does not hold.
     #[error("font family {0:?} is not registered")]
