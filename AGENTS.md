@@ -1323,6 +1323,32 @@ around it was rewritten for another reason on 5 September 2026 (`e94bf86`). The
 counterpart on `just example` is beside the parity rule; the general form is
 stated there.
 
+**A correct shape buys its contents an assumption of care they have not
+earned.** The rules above are about instruments that report the wrong number.
+This one is about reading, and it is the reason a careful-looking thing is
+worse than a careless one: it stops the next reader, including the person who
+wrote it.
+
+Two instances, both from 6 September 2026 and both caught by somebody else.
+The soft-fail path may downgrade only a named list of failures, with no
+catch-all arm -- the right shape, deliberately chosen, and checking the shape
+is what made the contents look checked. They were not: a decoder that
+_panicked_ reported `Error::UndecodableImage`, the same variant a fetched-and-
+refused image uses, so a crash inside a decoder was on the softenable list and
+would have drawn a tidy grey placeholder over it. The distinction had been
+erased upstream, in the panic handler, long before the code that needed it
+(`1334ad6`, `DecoderPanicked`).
+
+The second is the same failure in prose. `taken` carried a comment saying
+absence has two causes and they are not the same -- and then told them apart
+with `matches!(source, ImageSource::Url(_))`, which is the source's _type_ and
+not what happened to it. The comment was right, the code was not, and a reader
+auditing the reasoning finds the correct reasoning and moves on.
+
+So: **a shape, a comment and a name are claims about the contents, not evidence
+about them.** When one of them is what makes something look considered, that is
+the moment to read the contents rather than the moment to stop.
+
 ### The package manager is bun
 
 `bun.lock` is the lockfile and `packageManager` in `package.json` names the
