@@ -18,8 +18,14 @@
 # `spills`: without a row that does, three `inside` verdicts are also what a
 # harness blind to everything outside the box would print.
 #
-# fit	box	source	box-rect	painted	verdict	overflow
-cover	40x30	40x10	80,80,40,30	80,80,40,30	inside	clip
-none	20x20	60x60	80,80,20,20	80,80,20,20	inside	clip
-contain	40x30	40x10	80,80,40,30	80,90,40,10	inside	clip
-cover	40x30	40x10	80,80,40,30	40,80,120,30	spills	visible
+# `corner` reads the box's own rectangular corner: `paper` means a radius
+# cut it and the picture did not paint back over it, which is the symptom
+# users report -- "my rounded image renders square" rather than "my image
+# overflows its box".
+#
+# fit	box	source	box-rect	painted	verdict	overflow	radius	corner
+cover	40x30	40x10	80,80,40,30	80,80,40,30	inside	clip	0	ink
+none	20x20	60x60	80,80,20,20	80,80,20,20	inside	clip	0	ink
+contain	40x30	40x10	80,80,40,30	80,90,40,10	inside	clip	0	paper
+cover	40x30	40x10	80,80,40,30	40,80,120,30	spills	visible	0	ink
+cover	60x40	60x10	80,80,60,40	80,80,60,40	inside	clip	14	paper

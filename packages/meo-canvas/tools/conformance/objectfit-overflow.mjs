@@ -66,6 +66,13 @@ const CASES = [
   // stylesheet's `overflow: clip` on the replaced element, and it is
   // overridable -- which is why this row can exist at all.
   { fit: 'cover', box: { width: 40, height: 30 }, source: { width: 40, height: 10 }, overflow: 'visible' },
+  // **The symptom users actually report.** Not "my image overflows its box" but
+  // "my rounded image renders square": the element's radius is honoured, and
+  // then the overflowing picture paints over the corners it cut. So the
+  // interesting pixel is the box's own rectangular corner, which sits outside a
+  // 14px curve -- paper there means the picture was clipped to the shape rather
+  // than to its bounding rectangle.
+  { fit: 'cover', box: { width: 60, height: 40 }, source: { width: 60, height: 10 }, radius: 14 },
 ]
 
 const browser = await open()
@@ -73,9 +80,9 @@ try {
   const rows = []
   await browser.page.setViewportSize(PAGE)
 
-  for (const { fit, box, source, overflow } of CASES) {
+  for (const { fit, box, source, overflow, radius } of CASES) {
     const computed = await browser.page.evaluate(
-      ({ page, origin, box, source, fit, ink, paper, overflow }) => {
+      ({ page, origin, box, source, fit, ink, paper, overflow, radius }) => {
         document.body.innerHTML = ''
         document.body.style.cssText = `margin:0;width:${page.width}px;height:${page.height}px;background:rgb(${paper.join(',')});`
 
@@ -92,7 +99,7 @@ try {
         const image = document.createElement('img')
         // No `overflow` on this element and none on any ancestor. That is the
         // whole point: whatever clipping happens is Chrome's own.
-        image.style.cssText = `position:absolute;left:${origin.x}px;top:${origin.y}px;width:${box.width}px;height:${box.height}px;object-fit:${fit};image-rendering:pixelated;${overflow ? `overflow:${overflow};` : ''}`
+        image.style.cssText = `position:absolute;left:${origin.x}px;top:${origin.y}px;width:${box.width}px;height:${box.height}px;object-fit:${fit};image-rendering:pixelated;${overflow ? `overflow:${overflow};` : ''}${radius ? `border-radius:${radius}px;` : ''}`
         image.src = canvas.toDataURL('image/png')
         document.body.append(image)
 
@@ -101,7 +108,7 @@ try {
         // together rather than one being inferred from the other.
         return getComputedStyle(image).overflow
       },
-      { page: PAGE, origin: ORIGIN, box, source, fit, ink: INK, paper: PAPER, overflow },
+      { page: PAGE, origin: ORIGIN, box, source, fit, ink: INK, paper: PAPER, overflow, radius },
     )
     await settle(browser.page)
 
@@ -115,6 +122,10 @@ try {
       }
     }
 
+    // The box's own rectangular corner. Inside a radius it is outside the
+    // rounded shape, so the paper colour there means the curve survived.
+    const [cr, cg, cb] = pixel(shot, ORIGIN.x, ORIGIN.y)
+    const corner = cr === PAPER[0] && cg === PAPER[1] && cb === PAPER[2] ? 'paper' : 'ink'
     const rect = painted === null ? 'absent' : `${painted[0]},${painted[1]},${painted[2] - painted[0] + 1},${painted[3] - painted[1] + 1}`
     const boxRect = `${ORIGIN.x},${ORIGIN.y},${box.width},${box.height}`
     const clipped =
@@ -123,7 +134,7 @@ try {
         : painted[0] >= ORIGIN.x && painted[1] >= ORIGIN.y && painted[2] <= ORIGIN.x + box.width - 1 && painted[3] <= ORIGIN.y + box.height - 1
           ? 'inside'
           : 'spills'
-    rows.push([fit, `${box.width}x${box.height}`, `${source.width}x${source.height}`, boxRect, rect, clipped, computed].join('\t'))
+    rows.push([fit, `${box.width}x${box.height}`, `${source.width}x${source.height}`, boxRect, rect, clipped, computed, radius ?? 0, corner].join('\t'))
   }
 
   const header = [
@@ -147,7 +158,12 @@ try {
     '# `spills`: without a row that does, three `inside` verdicts are also what a',
     '# harness blind to everything outside the box would print.',
     '#',
-    '# fit\tbox\tsource\tbox-rect\tpainted\tverdict\toverflow',
+    "# `corner` reads the box's own rectangular corner: `paper` means a radius",
+    '# cut it and the picture did not paint back over it, which is the symptom',
+    '# users report -- "my rounded image renders square" rather than "my image',
+    '# overflows its box".',
+    '#',
+    '# fit\tbox\tsource\tbox-rect\tpainted\tverdict\toverflow\tradius\tcorner',
   ]
   await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
   process.stderr.write(`object fit overflow: ${rows.length} cases -> ${DESTINATION}\n`)

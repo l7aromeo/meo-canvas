@@ -30,7 +30,7 @@
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
-    Scene, Sides, Size,
+    Corners, Scene, Sides, Size,
     node::{ImageSource, Node, NodeId, NodeKind},
     style::{
         Dimension, Length,
@@ -81,11 +81,23 @@ fn picture(width: u32, height: u32) -> Vec<u8> {
 /// `None` when nothing was drawn, which is a failure to distinguish from a
 /// picture that stayed inside its box: an absent picture satisfies "does not
 /// paint outside" and proves nothing.
-fn painted(
+fn painted(fit: ObjectFit, box_size: (f32, f32), source: (u32, u32)) -> Extent {
+    render(fit, box_size, source, 0.0).0
+}
+
+/// The ink's bounding box: left, top, right, bottom, all inclusive.
+type Extent = Option<(u32, u32, u32, u32)>;
+
+/// One pixel, as red, green and blue.
+type Pixel = (u8, u8, u8);
+
+/// The ink's bounding box, and the pixel at the box's own rectangular corner.
+fn render(
     fit: ObjectFit,
     box_size: (f32, f32),
     source: (u32, u32),
-) -> Option<(u32, u32, u32, u32)> {
+    radius: f32,
+) -> (Extent, Pixel) {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].paint.background_color =
         Color::rgb(PAPER.0, PAPER.1, PAPER.2);
@@ -114,6 +126,7 @@ fn painted(
             margin: Sides::all(Dimension::Points(INSET)),
             ..LayoutStyle::default()
         };
+        node.paint.border_radius = Corners::all(radius);
     }
 
     let mut renderer = Renderer::new();
@@ -123,7 +136,7 @@ fn painted(
         .unwrap_or_else(|error| unreachable!("{error}"));
 
     let side = PAGE as u32;
-    let mut found: Option<(u32, u32, u32, u32)> = None;
+    let mut found: Extent = None;
     for y in 0..side {
         for x in 0..side {
             let at = ((y * side + x) * 4) as usize;
@@ -139,7 +152,9 @@ fn painted(
             });
         }
     }
-    found
+    let inset = INSET as u32;
+    let at = ((inset * side + inset) * 4) as usize;
+    (found, (bytes[at], bytes[at + 1], bytes[at + 2]))
 }
 
 /// Chrome's answers, as measured.
@@ -154,6 +169,10 @@ struct Row {
     relative: (i64, i64, u32, u32),
     verdict: String,
     overflow: String,
+    radius: f32,
+    /// Chrome's pixel at the box's own rectangular corner: `paper` where a
+    /// radius cut it and nothing painted back over it.
+    corner: String,
 }
 
 fn pair(text: &str, separator: char) -> (u32, u32) {
@@ -172,7 +191,7 @@ fn rows() -> Vec<Row> {
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
         .map(|line| {
             let cells: Vec<&str> = line.split('\t').map(str::trim).collect();
-            assert_eq!(cells.len(), 7, "unexpected columns in {line:?}");
+            assert_eq!(cells.len(), 9, "unexpected columns in {line:?}");
             let fit = match cells[0] {
                 "cover" => ObjectFit::Cover,
                 "none" => ObjectFit::None,
@@ -200,6 +219,10 @@ fn rows() -> Vec<Row> {
                 ),
                 verdict: cells[5].to_owned(),
                 overflow: cells[6].to_owned(),
+                radius: cells[7]
+                    .parse()
+                    .unwrap_or_else(|error| unreachable!("{error}")),
+                corner: cells[8].to_owned(),
             }
         })
         .collect();
@@ -223,8 +246,9 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
             row.fit
         );
 
-        let Some((x0, y0, x1, y1)) = painted(row.fit, row.box_size, row.source)
-        else {
+        let (found, corner) =
+            render(row.fit, row.box_size, row.source, row.radius);
+        let Some((x0, y0, x1, y1)) = found else {
             unreachable!(
                 "{:?} drew nothing; an absent picture is not a picture that \
                  stayed inside its box",
@@ -242,6 +266,23 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
             "{:?} does not sit where Chrome puts it within the box",
             row.fit
         );
+
+        // Only where a radius could have cut it. With no radius the corner is
+        // a statement about whether the fit reaches the corner at all, which
+        // `contain` does not, and asserting on it would pin an accident.
+        if row.radius > 0.0 {
+            let ours = if corner == (PAPER.0, PAPER.1, PAPER.2) {
+                "paper"
+            } else {
+                "ink"
+            };
+            assert_eq!(
+                ours, row.corner,
+                "{:?} with a {}px radius: Chrome's corner is {} and ours is \
+                 {ours}, so a rounded picture reads square on one of them",
+                row.fit, row.radius, row.corner
+            );
+        }
         checked += 1;
     }
     assert!(checked >= 2, "only {checked} rows were compared");
