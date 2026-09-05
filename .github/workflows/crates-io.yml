@@ -8,6 +8,21 @@ run-name: >-
 # Manual only, for the same reason `release.yml` is: a push is how code arrives,
 # and publishing is a decision about code that already arrived. `just
 # release-crate` is what a person runs; this is what it triggers.
+#
+# **It cannot be triggered at all today, and that is not a defect in this
+# file.** `workflow_dispatch` needs the workflow's path to exist on the
+# repository's default branch, and the default is still `main` -- v1's, which
+# carries `ci.yml`, `docs.yml` and `release.yml` and no `crates-io.yml`. So
+# `gh workflow list --all` does not list this workflow and the API answers
+# `workflow crates-io.yml not found on the default branch`; `just release-crate`
+# fails there rather than here. `release.yml` is dispatchable only because its
+# *path* happens to exist on `main`, and a dispatch of it at `ref: v10` runs
+# v10's content -- which is why that one rehearses and this one has never run.
+#
+# `fixtures.yml` documents the same constraint and works around it with a push
+# trigger. That is not available to a workflow that publishes: a push is how
+# code arrives, which is the sentence above. **The fix is the branch swap**, and
+# nothing here should be reshaped to anticipate it.
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +44,12 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
+    # `cargo publish` builds every crate it packages, and three of the four
+    # reach `meo-skia-canvas`, so this compiles the Skia chain on a cold cache
+    # the first time. The bound is the one `ci.yml` uses for the same build,
+    # and it exists because the alternative is six hours of a runner holding a
+    # publish nobody can see the state of.
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,6 +135,18 @@ jobs:
       # yet, because per-crate verification resolves internal dependencies
       # through crates.io. `--workspace` is the only spelling that can be
       # practised before it is used.
+      #
+      # **What this rehearsal cannot see, and what closes the gap.** The
+      # temporary registry is built from the tarballs it then verifies, so both
+      # sides of the check come from the working tree: it cannot detect that a
+      # member declares a dependency version crates.io does not have, because it
+      # satisfies that dependency locally either way. What closes it is
+      # `version.workspace` -- all four crates share one version, so an internal
+      # dependency cannot name something this same batch will not create.
+      #
+      # That is a reason, not a property, and it stops holding the day the
+      # workspace version is split. It would reopen silently, because this step
+      # would stay green.
       - name: Package and verify every crate
         run: cargo publish --workspace --dry-run
 
