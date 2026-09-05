@@ -2,7 +2,10 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # The formatting toolchain, by name. rustfmt.toml turns on options that only
 # nightly reads, and nightly rustfmt drifts daily, so the date is pinned and
-# the fmt job in .github/workflows/ci.yml installs this exact one.
+# `.github/workflows/ci.yml` installs this exact one, reading the value from
+# here rather than restating it. **There is no `fmt` job**: `ci.yml` has one
+# job, named `ci`, and this comment named a different one for long enough
+# that an audit had to find it.
 fmt_toolchain := "nightly-2026-08-10"
 
 # The GPU backend meo-skia-canvas compiles on this platform. Only
@@ -226,6 +229,35 @@ test:
 [doc("Fail on a known vulnerability in the dependency tree.")]
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+
+# The `net` feature, compiled and tested once.
+#
+# **Not in `ci-steps`**, for the reason `audit` is not: whether the HTTP path
+# compiles is a fact about the code rather than about the platform, so three
+# runners would buy three copies of one answer. `ci.yml` calls it on Linux as
+# its own step, where its verdict is legible on its own.
+#
+# **Nothing built this at all until 5 September 2026.** `--features` everywhere
+# else in this file means `metal` or `vulkan`, so `fetch_policy.rs` -- which
+# carries `#![cfg(feature = "net")]` at file scope -- compiled to nothing, and
+# the second arm of `net_feature.rs` never existed. Nor did the rustdoc: no
+# crate carries `[package.metadata.docs.rs]`, so docs.rs builds default features
+# and the derivation of the sixty-second timeout and the thirty-two mebibyte cap
+# rendered nowhere, while `MIGRATING.md` pointed readers at it.
+#
+# The cost was measured before it was accepted rather than argued about: 10 s
+# cold and 0 s warm, 17 crates added to the graph (157 to 174) -- `ring`,
+# `rustls`, `webpki-roots` and their tree. A cache miss on one runner, and
+# `Swatinem/rust-cache` covers `target/`.
+#
+# **The price of asking once is that a local `just ci` still does not build it**,
+# so a developer can break `net` and hear about it only from CI. That is already
+# true of `audit`, and it is the trade this shape makes.
+[doc("Compile and test the `net` feature, which no other recipe builds.")]
+net-check:
+    cargo clippy -p meo-canvas -p meo-canvas-core --all-targets --features net -- -D warnings
+    cargo test -p meo-canvas-core --features net --test fetch_policy
+    cargo test -p meo-canvas --features net --test net_feature
 # The README banners, drawn by this library.
 #
 # **Not in `ci`.** It regenerates rather than checks, so it belongs with
