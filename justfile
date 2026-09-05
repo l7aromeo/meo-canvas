@@ -665,8 +665,16 @@ addon-container suffix:
     # tree back to the invoking user is what lets the next run start from the
     # cache. Skipped where there is no `sudo` or no Linux, which is a Mac with
     # Docker Desktop, where bind mounts are already the host user's.
+    #
+    # **The registry is mounted into the same root container and was not
+    # covered**, which is the same defect one layer along. `cargo metadata`
+    # runs in the post-job save and reads `~/.cargo/registry`; with the crates
+    # the container downloaded left root-owned it fails
+    # `Permission denied (os error 13)`, the action reports `failed with exit
+    # code 101`, and it then saves a cache without the metadata that tells it
+    # what to keep. Measured on the `linux-x64-musl` leg of run 33961676649.
     if [[ "$(uname)" == Linux ]] && command -v sudo >/dev/null; then
-        sudo chown -R "$(id -u):$(id -g)" target/container
+        sudo chown -R "$(id -u):$(id -g)" target/container "$HOME/.cargo/registry"
     fi
 
     # Into the target's own path, never over `addon_path`. See `container_addon`.
@@ -827,8 +835,16 @@ fixtures-linux name="":
     # tree back to the invoking user is what lets the next run start from the
     # cache. Skipped where there is no `sudo` or no Linux, which is a Mac with
     # Docker Desktop, where bind mounts are already the host user's.
+    #
+    # **The registry is mounted into the same root container and was not
+    # covered**, which is the same defect one layer along. `cargo metadata`
+    # runs in the post-job save and reads `~/.cargo/registry`; with the crates
+    # the container downloaded left root-owned it fails
+    # `Permission denied (os error 13)`, the action reports `failed with exit
+    # code 101`, and it then saves a cache without the metadata that tells it
+    # what to keep. Measured on the `linux-x64-musl` leg of run 33961676649.
     if [[ "$(uname)" == Linux ]] && command -v sudo >/dev/null; then
-        sudo chown -R "$(id -u):$(id -g)" target/container
+        sudo chown -R "$(id -u):$(id -g)" target/container "$HOME/.cargo/registry"
     fi
 
 # What the built addon demands of a machine, against what its target promises.
