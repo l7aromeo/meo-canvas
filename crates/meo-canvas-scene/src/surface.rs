@@ -257,3 +257,114 @@ mod tests {
         }
     }
 }
+
+wire_enum! {
+    /// What a render does when an image source cannot be resolved.
+    ///
+    /// **The split this governs is which source failed, not how badly.** A
+    /// [`Path`](crate::node::ImageSource::Path) that cannot be read and
+    /// [`Bytes`](crate::node::ImageSource::Bytes) that will not decode fail
+    /// loudly whatever this says: the caller is holding the input and can
+    /// check it before rendering. Only a
+    /// [`Url`](crate::node::ImageSource::Url) consults this, because whether a
+    /// fetch will succeed is a fact about the world at render time and no care
+    /// upstream establishes it. As the report that prompted this put it, of the
+    /// guard a consumer would write for themselves:
+    ///
+    /// > a URL that is present and well-formed and answers 404 passes through
+    /// > it untouched. Every consumer that writes this helper will write it
+    /// > with the same blind spot, because the information it would need —
+    /// > whether the fetch will succeed — does not exist at the point where the
+    /// > node is built.
+    ///
+    /// That is why the default is not [`Throw`](Self::Throw).
+    ///
+    /// **Every variant records a warning.** The render result carries one entry
+    /// per source that failed, whichever of these is chosen, so turning the
+    /// drawing off never turns the knowing off.
+    #[derive(Default)]
+    pub enum OnImageError {
+        /// Draw a neutral mark in the box and let the render finish.
+        ///
+        /// The box keeps whatever extent it was given: an explicit width or
+        /// height is honoured and an `auto` axis contributes zero, which is
+        /// what Chrome does with a broken `<img>`. A box that comes out `0x0`
+        /// is drawn as nothing, also as Chrome does.
+        #[default]
+        Placeholder = 0,
+        /// Fail the whole render, as every version before this one did.
+        ///
+        /// The behaviour of `10.0.0-alpha.5` exactly, for a caller whose
+        /// sources come from a manifest they control -- there a 404 means their
+        /// own deployment is broken and finishing the render hides it.
+        Throw = 1,
+        /// Draw nothing at all, and still record the warning.
+        ///
+        /// **The warning is still recorded**, which is the whole difference
+        /// between this and not noticing. A caller who finds the mark
+        /// distracting keeps the diagnostic; the render result carries the same
+        /// entries it would have under [`Placeholder`](Self::Placeholder).
+        Ignore = 2,
+    }
+}
+
+/// Why a fetch a caller already attempted did not produce an image.
+///
+/// **The wire spelling of `meo_canvas_core::FetchFailure`**, and the reason
+/// there are two names for one idea: this crate has no HTTP client and cannot
+/// depend on one, but a surface that fetches for itself has to be able to say
+/// *why* it failed, or the renderer must invent a vaguer warning than a crate
+/// consumer gets for the identical event.
+///
+/// **`Status` carries its code rather than sitting beside an `Option<u16>`.**
+/// The pairing was separate fields once, and a `Status` with no code beside it
+/// was representable -- in Rust, and in an arena, which is bytes. The only
+/// thing to do with that state is invent a number, and a fabricated `0`
+/// reaches a consumer as a status they are documented to branch on: retry a
+/// 5xx, do not retry a 4xx. Zero is neither and reads as real. Carrying the
+/// code inside the variant deletes the state instead of detecting it.
+///
+/// Not a `wire_enum!` for that reason -- that macro is for variants with no
+/// payload. The discriminants below are the wire contract and are written out
+/// by hand in `codec::impls`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFetchFailure {
+    /// The server answered with a status that is not a success, and this is it.
+    Status(u16),
+    /// The host does not resolve.
+    HostNotFound,
+    /// The URL is not one the client can use.
+    BadUrl,
+    /// The connection failed, or failed partway through.
+    ///
+    /// A timeout is reported here too, matching where the crate's own
+    /// sixty-second policy already lands -- and `Transport`'s advice, retry, is
+    /// the right advice for one.
+    Transport,
+    /// The image is larger than this renderer fetches.
+    TooLarge,
+    /// Something else went wrong.
+    Other,
+}
+
+/// A fetch the caller attempted before the scene reached the renderer.
+///
+/// **Only a surface that resolves URLs itself writes these.** The npm package
+/// fetches in JavaScript and hands the renderer bytes, so a URL it could not
+/// fetch would otherwise arrive as an unresolved
+/// [`Url`](crate::node::ImageSource::Url) -- indistinguishable from a build
+/// that has no HTTP client at all, which is a different thing and must stay an
+/// error. This is how the surface says *tried, and failed*.
+///
+/// Carrying the reason rather than only the fact is what keeps the two public
+/// surfaces describing one event the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageFetchAttempt {
+    /// The URL that was tried.
+    pub url: String,
+    /// What went wrong, for a program to branch on, carrying the HTTP status
+    /// when there was one.
+    pub failure: ImageFetchFailure,
+    /// What the client reported, for a person to read.
+    pub detail: String,
+}

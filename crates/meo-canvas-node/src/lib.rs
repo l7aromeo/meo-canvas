@@ -76,8 +76,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use arena::{SideValue, Values};
 use meo_canvas_core::{
-    EncodeOptions, ImageFormat, PreparedEncode, RenderedCanvas, Renderer,
-    Surface, SurfaceOptions,
+    EncodeOptions, FetchFailure, ImageFormat, PreparedEncode, RenderedCanvas,
+    Renderer, Surface, SurfaceOptions,
 };
 use neon::{prelude::*, types::buffer::TypedArray};
 
@@ -549,6 +549,44 @@ fn attach_writers<'a>(
     Ok(())
 }
 
+/// Every unresolved image source, as an array of plain objects.
+///
+/// **Always an array, empty in the ordinary case**, so a caller writes
+/// `warnings.length === 0` once and never guards it. The classification
+/// crosses as a keyword with the HTTP code beside it when there is one, so a
+/// caller branches on a value rather than reading a number out of a sentence.
+fn warnings_array<'cx>(
+    cx: &mut FunctionContext<'cx>,
+    canvas: &RenderedCanvas,
+) -> JsResult<'cx, JsArray> {
+    let warnings = cx.empty_array();
+    for (index, warning) in canvas.warnings().iter().enumerate() {
+        let entry = cx.empty_object();
+        let url = cx.string(&warning.url);
+        entry.set(cx, "url", url)?;
+        let detail = cx.string(&warning.detail);
+        entry.set(cx, "detail", detail)?;
+        let nodes = cx.number(warning.nodes as f64);
+        entry.set(cx, "nodes", nodes)?;
+        let (tag, status) = match warning.failure {
+            FetchFailure::Status(code) => ("status", Some(code)),
+            FetchFailure::HostNotFound => ("host-not-found", None),
+            FetchFailure::BadUrl => ("bad-url", None),
+            FetchFailure::Transport => ("transport", None),
+            FetchFailure::TooLarge => ("too-large", None),
+            _ => ("other", None),
+        };
+        let failure = cx.string(tag);
+        entry.set(cx, "failure", failure)?;
+        if let Some(code) = status {
+            let code = cx.number(f64::from(code));
+            entry.set(cx, "status", code)?;
+        }
+        warnings.set(cx, index as u32, entry)?;
+    }
+    Ok(warnings)
+}
+
 /// Paints a scene and hands back a surface that can be encoded more than once.
 ///
 /// Takes the arena, the side values array and a `{ fonts }` object, and returns
@@ -627,6 +665,14 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     surface.set(&mut cx, "pageCount", pages)?;
     let scale = cx.number(f64::from(canvas.scale()));
     surface.set(&mut cx, "scale", scale)?;
+
+    // A fifth fact about a paint that already happened, and always an array so
+    // `warnings.length === 0` is a check a caller writes once and never
+    // guards. Built here rather than lazily for the same reason as the four
+    // above: after `release` the canvas is gone and a method would go stale,
+    // where what went wrong during the render cannot change afterwards.
+    let warnings = warnings_array(&mut cx, &canvas)?;
+    surface.set(&mut cx, "warnings", warnings)?;
 
     let painted: Painted = Rc::new(RefCell::new(Some(canvas)));
 

@@ -27,9 +27,10 @@
 use std::{fmt, path::Path};
 
 use meo_canvas_core::{
-    EncodeOptions, Error, ImageFormat, PreparedEncode, RenderedCanvas, Renderer,
+    EncodeOptions, Error, ImageFormat, ImageWarning, PreparedEncode,
+    RenderedCanvas, Renderer,
 };
-use meo_canvas_scene::{Scene, SceneError, Size};
+use meo_canvas_scene::{OnImageError, Scene, SceneError, Size};
 
 use crate::{
     ColorSpace, ColorType, Element, IntoElements, Style, Styled,
@@ -226,6 +227,8 @@ pub struct Root {
     /// Height in logical pixels, or the floor when [`Root::content_height`] is
     /// what set it.
     height: f32,
+    /// What a render does when an image source cannot be resolved.
+    on_image_error: OnImageError,
     /// Whether the height comes from the content rather than from the caller.
     content_height: bool,
     /// Device-pixel multiplier applied at paint time.
@@ -286,6 +289,7 @@ impl Root {
             height: 0.0,
             content_height: true,
             scale: Self::DEFAULT_SCALE,
+            on_image_error: OnImageError::Placeholder,
             style: Style::new(),
             name: None,
             gpu: None,
@@ -353,6 +357,28 @@ impl Root {
     #[must_use]
     pub const fn gpu(mut self, gpu: bool) -> Self {
         self.gpu = Some(gpu);
+        self
+    }
+
+    /// What to do when an image source cannot be resolved.
+    ///
+    /// Defaults to [`OnImageError::Placeholder`]: a URL that cannot be fetched
+    /// or decoded draws a neutral mark, the layout is unchanged, and the
+    /// failure is recorded on [`Canvas::warnings`]. A
+    /// [`Path`](meo_canvas_scene::node::ImageSource::Path) or
+    /// [`Bytes`](meo_canvas_scene::node::ImageSource::Bytes) source fails the
+    /// render whatever this says -- the caller is holding that input and can
+    /// check it before rendering, where a fetch's outcome does not exist until
+    /// the render runs.
+    ///
+    /// [`OnImageError::Throw`] is the behaviour of every version before this
+    /// one, for a caller whose URLs come from a manifest they control.
+    ///
+    /// **Every setting records the warning.** This chooses what is drawn, not
+    /// what is known.
+    #[must_use]
+    pub const fn on_image_error(mut self, policy: OnImageError) -> Self {
+        self.on_image_error = policy;
         self
     }
 
@@ -487,6 +513,7 @@ impl Root {
         scene.content_height = self.content_height;
         scene.scale = self.scale;
         scene.gpu = self.gpu;
+        scene.on_image_error = self.on_image_error;
         scene.color_type = self.color_type;
         scene.color_space = self.color_space;
 
@@ -836,6 +863,21 @@ impl Canvas {
     #[must_use]
     pub const fn scale(&self) -> f32 {
         self.painted.scale()
+    }
+
+    /// Every image source that could not be resolved, in node order.
+    ///
+    /// **Empty is the ordinary answer and always safe to ask for**, so
+    /// `warnings().is_empty()` needs no guard. One entry per distinct source
+    /// rather than per node.
+    ///
+    /// Populated whatever [`Root::on_image_error`] chose, including
+    /// [`OnImageError::Ignore`]: a caller who finds the mark distracting keeps
+    /// the diagnostic, because turning the drawing off must not turn the
+    /// knowing off.
+    #[must_use]
+    pub fn warnings(&self) -> &[ImageWarning] {
+        self.painted.warnings()
     }
 
     /// Whether the GPU was asked for.

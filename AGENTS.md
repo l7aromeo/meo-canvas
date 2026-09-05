@@ -1323,6 +1323,32 @@ around it was rewritten for another reason on 5 September 2026 (`e94bf86`). The
 counterpart on `just example` is beside the parity rule; the general form is
 stated there.
 
+**A correct shape buys its contents an assumption of care they have not
+earned.** The rules above are about instruments that report the wrong number.
+This one is about reading, and it is the reason a careful-looking thing is
+worse than a careless one: it stops the next reader, including the person who
+wrote it.
+
+Two instances, both from 6 September 2026 and both caught by somebody else.
+The soft-fail path may downgrade only a named list of failures, with no
+catch-all arm -- the right shape, deliberately chosen, and checking the shape
+is what made the contents look checked. They were not: a decoder that
+_panicked_ reported `Error::UndecodableImage`, the same variant a fetched-and-
+refused image uses, so a crash inside a decoder was on the softenable list and
+would have drawn a tidy grey placeholder over it. The distinction had been
+erased upstream, in the panic handler, long before the code that needed it
+(`1334ad6`, `DecoderPanicked`).
+
+The second is the same failure in prose. `taken` carried a comment saying
+absence has two causes and they are not the same -- and then told them apart
+with `matches!(source, ImageSource::Url(_))`, which is the source's _type_ and
+not what happened to it. The comment was right, the code was not, and a reader
+auditing the reasoning finds the correct reasoning and moves on.
+
+So: **a shape, a comment and a name are claims about the contents, not evidence
+about them.** When one of them is what makes something look considered, that is
+the moment to read the contents rather than the moment to stop.
+
 ### The package manager is bun
 
 `bun.lock` is the lockfile and `packageManager` in `package.json` names the
@@ -1475,6 +1501,31 @@ twice: once through cargo for the workspace, once through the toolchain's own
 and scene crates into itself, so a report over the artefact totals 45% -- a
 number about layout and Skia wearing the boundary's label. `lib.rs` alone is the
 file the recipe exists for.
+
+**Running it leaves an instrumented addon behind, and the warning is to
+yourself.** The recipe copies the coverage build over
+`packages/meo-canvas/meo-canvas.node` and says so; everything `ci` runs after it
+then works on that binary -- slower for the tests, and **wrong for any
+benchmark, silently**, because the command that produces the number does not
+mention the addon. Restore with `just addon`, and check the artefact rather than
+the command: `otool -l packages/meo-canvas/meo-canvas.node | grep -c
+'sectname.*llvm'` should be zero.
+
+**The file is `.gitignore`d, so it is per working directory.** A coverage run in
+your own worktree cannot reach anyone else's, and telling other sessions to
+check theirs sends them looking for a hazard that is not there -- measured
+across three worktrees on 6 September 2026, where only the one that ran it was
+instrumented. Said because the scope is the whole difference between a note and
+an alarm, and because a standing "do not run coverage" with no reason attached
+is what this collapses to once the argument is dropped.
+
+**If you read a coverage number out of the log, you read the wrong one.** The
+report is written with `--lcov --output-path`, so a **passing** run prints no
+summary at all -- the only `TOTAL` in the log is an intermediate over a fraction
+of the workspace. On the run above it read 67.31% over 835 regions where the
+answer was 91.13% over 27,514: wrong by 24 points, and sitting exactly where
+somebody would look. The verdict is the recipe's exit status; the number comes
+from `llvm-cov report --summary-only` against the same profile data.
 
 **A measurement apparatus can fail in a way that looks precisely like the thing
 it measures being absent.** Three of the four ways to instrument this reported

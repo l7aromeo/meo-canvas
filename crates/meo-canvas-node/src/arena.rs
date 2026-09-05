@@ -22,6 +22,7 @@
 //!
 //! ```text
 //! arena  := MAGIC VERSION f32(width) f32(height) f32(scale) surface
+//!           enum(on_image_error)
 //!           list<node>(pages)
 //! surface := opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
 //! node   := enum(kind)
@@ -120,6 +121,54 @@
 //! slot layout widened. Appending a property to a table is not such a change —
 //! its bit is simply never set by an older writer.
 
+/// Reads the fetches the JavaScript half already attempted.
+///
+/// **Its own function rather than a `Vec` impl**, because the shape is a
+/// struct of four fields and the arena's generic list reader is for values
+/// that know how to read themselves. Keeping it here puts the whole of the
+/// attempt's wire layout in one place beside the header that carries it.
+fn read_attempts(
+    input: &mut Reader<'_>,
+) -> Result<Vec<ImageFetchAttempt>, ArenaError> {
+    let count = input.count()?;
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        out.push(ImageFetchAttempt {
+            url: String::read(input)?,
+            failure: read_failure(input)?,
+            detail: String::read(input)?,
+        });
+    }
+    Ok(out)
+}
+
+/// One failure classification, with its HTTP status behind the tag.
+///
+/// **The status lives inside `Status` rather than in a slot beside it**, so a
+/// `Status` with no code cannot be written and cannot be read. The alternative
+/// -- two fields and a rule that they agree -- makes the disagreement
+/// representable, and the only thing to do with it is invent a number that a
+/// consumer is documented to branch on.
+fn read_failure(
+    input: &mut Reader<'_>,
+) -> Result<ImageFetchFailure, ArenaError> {
+    let slot = input.offset();
+    let tag = input.bounded_integer(f64::from(u8::MAX))? as u8;
+    match tag {
+        0 => Ok(ImageFetchFailure::Status(u16::read(input)?)),
+        1 => Ok(ImageFetchFailure::HostNotFound),
+        2 => Ok(ImageFetchFailure::BadUrl),
+        3 => Ok(ImageFetchFailure::Transport),
+        4 => Ok(ImageFetchFailure::TooLarge),
+        5 => Ok(ImageFetchFailure::Other),
+        found => Err(ArenaError::UnknownTag {
+            slot,
+            what: "ImageFetchFailure",
+            found: f64::from(found),
+        }),
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod cases;
 pub(crate) mod group;
@@ -128,7 +177,8 @@ pub(crate) mod value;
 
 use group::{BITS_PER_SLOT, Mask, arena_group, ascending};
 use meo_canvas_scene::{
-    Scene, SceneError, Size,
+    ImageFetchAttempt, ImageFetchFailure, OnImageError, Scene, SceneError,
+    Size,
     node::{
         ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
         PathPaint,
@@ -151,7 +201,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 5.0;
+pub const VERSION: f64 = 6.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -822,6 +872,14 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
     let gpu = Option::<bool>::read(&mut input)?;
     let color_type = Option::<ColorType>::read(&mut input)?;
     let color_space = Option::<ColorSpace>::read(&mut input)?;
+    // Not optional, unlike the three above: the scene always has a policy and
+    // its default is a variant rather than an absence, so there is no "the
+    // caller said nothing" to distinguish.
+    let on_image_error = OnImageError::read(&mut input)?;
+    // What the JavaScript half already tried and could not fetch, with the
+    // reason it measured. Empty unless a URL failed, and `Vec` does not
+    // allocate empty.
+    let attempts: Vec<ImageFetchAttempt> = read_attempts(&mut input)?;
 
     let page_count = input.count()?;
     let mut scene = Scene {
@@ -831,6 +889,8 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
         gpu,
         color_type,
         color_space,
+        on_image_error,
+        image_fetch_attempts: attempts,
         nodes: Vec::new(),
         pages: Vec::with_capacity(page_count),
     };
@@ -1034,6 +1094,12 @@ mod tests {
                 f64::from(scale),
             ]);
             self.slots.extend_from_slice(surface);
+            // `on_image_error`, always present because the field is not
+            // optional -- `Placeholder`, the default, so a header written here
+            // describes the same scene it did before the slot existed.
+            self.slots.push(0.0);
+            // No fetch attempts: a Rust test writes no header that fetched.
+            self.slots.push(0.0);
             self.slots.push(pages as f64);
             self
         }
@@ -1074,10 +1140,11 @@ mod tests {
     /// no children.
     /// Slot index of the page count in a header whose surface says nothing:
     /// magic, version, four geometry slots -- width, height, the
-    /// content-height flag and scale -- and three absent surface
-    /// discriminants. Named rather than written as a number at each use, so a
-    /// header change moves one line instead of three.
-    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3;
+    /// content-height flag and scale -- three absent surface discriminants,
+    /// the one slot `on_image_error` always occupies, and the one holding the
+    /// count of fetch attempts. Named rather than written as a number at each
+    /// use, so a header change moves one line instead of three.
+    const PAGE_COUNT_SLOT: usize = 2 + 4 + 3 + 1 + 1;
 
     /// Slot index of the first node's tag, one past the page count.
     const FIRST_TAG_SLOT: usize = PAGE_COUNT_SLOT + 1;

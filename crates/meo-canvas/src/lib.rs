@@ -198,8 +198,8 @@ pub use element::{
 /// does not, and which building this crate cannot tell you.
 pub use meo_canvas_core::animate;
 pub use meo_canvas_core::{
-    EncodeOptions, Error, ImageFormat as Format, PreparedEncode,
-    RenderedCanvas, Renderer,
+    EncodeOptions, Error, FetchFailure, ImageFormat as Format, ImageWarning,
+    PreparedEncode, RenderedCanvas, Renderer,
 };
 pub use meo_canvas_scene::style::{
     PaintOrder,
@@ -225,7 +225,7 @@ pub use meo_canvas_scene::style::{
 /// node constructors rather than under [`scene`]. The scene module keeps
 /// them too, along with everything a caller assembling a `Scene` by hand
 /// would need.
-pub use meo_canvas_scene::surface::{ColorSpace, ColorType};
+pub use meo_canvas_scene::surface::{ColorSpace, ColorType, OnImageError};
 pub use root::{BuildError, Canvas, PageInfo, Root, SequenceError};
 pub use style::{Style, Styled};
 pub use unit::{

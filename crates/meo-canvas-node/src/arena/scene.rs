@@ -4,6 +4,7 @@
 //! because these are the scene's own vocabulary rather than the format's.
 
 use meo_canvas_scene::{
+    OnImageError,
     node::{ImageSource, LineCap, LineJoin, NodeTag, PathPaint},
     style::{
         Dimension, Length, PaintOrder,
@@ -74,6 +75,7 @@ arena_enum!(
     MaskShape,
     NodeTag,
     ObjectFit,
+    OnImageError,
     Overflow,
     PaintOrder,
     PositionType,

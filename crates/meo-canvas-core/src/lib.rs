@@ -93,6 +93,70 @@ pub use resolve::{Fonts, Resolved};
 
 use crate::measure::SceneMeasurer;
 
+/// One image source that could not be resolved, and what a render did about it.
+///
+/// **A render that finishes with warnings is not a render that succeeded
+/// quietly.** Every entry here is a picture the caller asked for and did not
+/// get; the render completed because the alternative -- failing the whole page
+/// for one decorative icon -- is worse for a server drawing cards from
+/// somebody else's payload, not because the failure stopped mattering.
+///
+/// Recorded whatever [`OnImageError`](meo_canvas_scene::OnImageError) says,
+/// including [`Ignore`](meo_canvas_scene::OnImageError::Ignore). Turning the
+/// drawing off never turns the knowing off.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ImageWarning {
+    /// The URL that could not be resolved.
+    pub url: String,
+    /// The first node that asked for it, in node order.
+    ///
+    /// One warning per distinct source rather than per node: sixty nodes
+    /// drawing one dead URL is one thing that went wrong, and a caller
+    /// deduplicating a list we could have deduplicated is a worse surface.
+    pub node: NodeId,
+    /// What went wrong, for a program to branch on.
+    ///
+    /// The same classification a hard failure carries in
+    /// [`Error::SourceFetch`], so the two paths describe one event and a
+    /// caller moving between `throw` and `placeholder` reads the same reasons.
+    pub failure: FetchFailure,
+    /// What the HTTP client reported, for a person to read.
+    pub detail: String,
+    /// How many nodes in this scene named this source.
+    ///
+    /// **Deduplicated by URL, with the count beside it**, because one dead URL
+    /// asked for three times is one thing that went wrong and three identical
+    /// entries is noise. The URL is what locates a defect -- it is the only
+    /// thing that separates "the art is not uploaded yet" from "this path has
+    /// never been right" -- and the count says how much of the page it cost.
+    pub nodes: usize,
+}
+
+impl From<meo_canvas_scene::ImageFetchFailure> for FetchFailure {
+    /// **Matched exhaustively on purpose.** A variant added to either list
+    /// fails this build rather than a test, which is the same guarantee
+    /// `ColorType`'s two-sided mapping gives.
+    ///
+    /// Total, and it has no reason not to be: both sides carry the HTTP status
+    /// inside `Status`, so every variant maps to exactly one variant and
+    /// nothing is fabricated.
+    fn from(failure: meo_canvas_scene::ImageFetchFailure) -> Self {
+        use meo_canvas_scene::ImageFetchFailure as Wire;
+        match failure {
+            // The status travels inside the variant on both sides, so this is
+            // a rename rather than a reconstruction -- there is no absent-code
+            // case to invent a number for.
+            Wire::Status(code) => Self::Status(code),
+            Wire::HostNotFound => Self::HostNotFound,
+            Wire::BadUrl => Self::BadUrl,
+            Wire::Transport => Self::Transport,
+            Wire::TooLarge => Self::TooLarge,
+            Wire::Other => Self::Other,
+        }
+    }
+}
+
 /// Why a fetch failed, in the terms a caller can act on.
 ///
 /// **The classification and not the sentence.** [`Error::SourceFetch`] carries
@@ -105,12 +169,19 @@ use crate::measure::SceneMeasurer;
 /// meaning is not written down only moves the guesswork.
 ///
 /// **Only distinctions `ureq` reports are here.** There is deliberately no
-/// `Timeout`: `ureq` 3.4's default `Timeouts` leaves every field `None` except
-/// `await_100`, which applies to sending a body with `Expect: 100-continue`
-/// and so cannot arise from the `GET` this crate makes -- measured in
-/// `config.rs`, not read from the note beside it. A `Timeout` variant would be
-/// one that never occurred, and a caller branching on a distinction that is
-/// sometimes wrong makes worse decisions than one branching on fewer.
+/// `Timeout`: **deferred rather than impossible, and the note here used to say
+/// impossible.** `ureq` 3.4's own default `Timeouts` leaves every field `None`
+/// except `await_100`, which cannot arise from the `GET` this crate makes --
+/// measured in `config.rs` rather than read from the note beside it. But this
+/// crate sets a sixty-second global timeout of its own, `fetch_policy.rs`
+/// records it firing at 60.1 seconds and arriving as `Transport`, and the npm
+/// surface has an explicit timeout branch with its own message. The case
+/// occurs. What is deferred is the variant, and `#[non_exhaustive]` above is
+/// what makes adding one later a non-breaking change rather than a reason to
+/// widen the API inside an unrelated release.
+///
+/// Until then a timeout is `Transport`, which is where the crate's own already
+/// landed and whose advice -- retry -- is the right advice for one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FetchFailure {
@@ -251,6 +322,21 @@ pub enum Error {
     /// Bytes that no decoder recognises.
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
+
+    /// A decoder panicked while reading a source.
+    ///
+    /// **Distinct from [`Error::UndecodableImage`] so that it can never be
+    /// softened.** Bytes a decoder refuses are a fact about the bytes, and for
+    /// a URL that is the broken-image case a placeholder exists for. A decoder
+    /// that *panicked* is a fact about us: the input may have been perfectly
+    /// good, and drawing a tasteful grey rectangle over our own crash is how a
+    /// real defect ships quietly for a year.
+    ///
+    /// The two shared a variant until the soft-fail path existed, at which
+    /// point sharing one made a panic indistinguishable from a 404 to the code
+    /// deciding what may be downgraded.
+    #[error("a decoder panicked reading the image for node {}", .0.get())]
+    DecoderPanicked(NodeId),
 
     /// A font family the renderer's library does not hold.
     #[error("font family {0:?} is not registered")]
@@ -505,7 +591,13 @@ impl Renderer {
         let surface = surface.ok_or_else(|| {
             Error::Layout("a validated scene produced no page".to_owned())
         })?;
-        Ok(RenderedCanvas { surface })
+        Ok(RenderedCanvas {
+            surface,
+            // Moved out of the resolve tables rather than copied: the vector
+            // is empty on every render where nothing failed, and an empty
+            // `Vec` owns no allocation to move.
+            warnings: resolved.into_warnings(),
+        })
     }
 
     /// Renders a scene and encodes it once.
@@ -536,9 +628,26 @@ impl Renderer {
 #[derive(Debug)]
 pub struct RenderedCanvas {
     surface: Surface,
+    warnings: Vec<ImageWarning>,
 }
 
 impl RenderedCanvas {
+    /// Every image source that could not be resolved, in node order.
+    ///
+    /// **Empty is the ordinary answer and is always valid to ask for.** A
+    /// render where every source resolved returns an empty slice rather than
+    /// nothing, so `warnings().is_empty()` is a check a caller can write once
+    /// and never guard.
+    ///
+    /// One entry per distinct source rather than per node. Populated whatever
+    /// [`OnImageError`](meo_canvas_scene::OnImageError) the scene chose,
+    /// including [`Ignore`](meo_canvas_scene::OnImageError::Ignore): the
+    /// option decides what is drawn, never what is recorded.
+    #[must_use]
+    pub fn warnings(&self) -> &[ImageWarning] {
+        &self.warnings
+    }
+
     /// Encodes the painted pages in one format.
     ///
     /// Takes `&mut self` because encoding mutates: every encode entry point

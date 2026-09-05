@@ -37,6 +37,10 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
     engine: 'cpu',
     pageCount: 1,
     scale: 2,
+    // Always an array on the real surface, so the double is one too: a fake
+    // that could be `undefined` would let a `?.` into the code under test
+    // that the real object never needs.
+    warnings: [],
   }
   return { native, calls, wrote, released: () => released }
 }

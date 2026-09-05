@@ -13,10 +13,10 @@
  */
 
 import { resolveAddon } from './addon.js'
-import { encodeScene, type SideValue, type SurfaceOptions } from './arena.js'
+import { encodeScene, type FetchAttempt, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
 import { Box, type Children, type SceneNode } from './node.js'
-import type { ColorSpace, ColorType } from './index.js'
+import type { ColorSpace, ColorType, OnImageError } from './index.js'
 import type { Style } from './style.js'
 
 /**
@@ -316,6 +316,29 @@ export type RootProps = Style & {
    */
   readonly gpu?: boolean
   /**
+   * What to do when an image source cannot be resolved.
+   *
+   * Defaults to `'placeholder'`: a URL that cannot be fetched or decoded draws
+   * a neutral mark, the layout is unchanged, and the failure is recorded on
+   * {@link Canvas.warnings}. A `src` that is a path or a buffer fails the
+   * render whatever this says — the caller is holding that input and can check
+   * it before rendering, where a fetch's outcome does not exist until the
+   * render runs. As the report that prompted this put it:
+   *
+   * > a URL that is present and well-formed and answers 404 passes through it
+   * > untouched. Every consumer that writes this helper will write it with the
+   * > same blind spot, because the information it would need — whether the
+   * > fetch will succeed — does not exist at the point where the node is built.
+   *
+   * `'throw'` is the behaviour of every version before this one, for a caller
+   * whose URLs come from a manifest they control: there a 404 means their own
+   * deployment is broken and finishing the render hides it.
+   *
+   * `'ignore'` draws nothing at all — **and still records the warning**. Every
+   * setting records it. This chooses what is drawn, never what is known.
+   */
+  readonly onImageError?: OnImageError
+  /**
    * The pixel layout the canvas hands back.
    *
    * `raw` is written in it, and the encoded formats that carry a depth use it.
@@ -516,6 +539,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   // that decides when nothing was said.
   const surface: SurfaceOptions = {
     ...(props.gpu === undefined ? {} : { gpu: props.gpu }),
+    ...(props.onImageError === undefined ? {} : { onImageError: props.onImageError }),
     ...(props.colorType === undefined ? {} : { colorType: props.colorType }),
     ...(props.colorSpace === undefined ? {} : { colorSpace: props.colorSpace }),
   }
@@ -547,6 +571,19 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   if (arena.urls.length > 0) {
     const wanted = [...new Set(arena.urls)]
     const fetched = new Map<string, Uint8Array>()
+    // **Tolerated failures are recorded, not swallowed.** Under `'throw'` this
+    // stays empty and every `throw` below fires as it always did; otherwise a
+    // failure lands here with the reason this surface measured, crosses the
+    // arena, and comes back as a warning identical to the one a crate consumer
+    // gets for the same event. Without carrying the reason the renderer could
+    // only say "a URL failed", and the two surfaces would disagree about one
+    // real 404.
+    const attempts: FetchAttempt[] = []
+    const tolerated = (props.onImageError ?? 'placeholder') !== 'throw'
+    const failed = (attempt: FetchAttempt, error: TypeError): void => {
+      if (!tolerated) throw error
+      attempts.push(attempt)
+    }
     await Promise.all(
       wanted.map(async url => {
         const caller = props.httpOptions?.signal
@@ -560,19 +597,40 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
           // renderer chose and the other is the caller's own abort, and a
           // reader who cannot tell them apart looks in the wrong place.
           if (ceiling.aborted && !(caller?.aborted ?? false)) {
-            throw new TypeError(`cannot fetch ${JSON.stringify(url)}: it took longer than the ${FETCH_TIMEOUT_MS / 1000} seconds this renderer waits`, {
-              cause,
-            })
+            const detail = `it took longer than the ${FETCH_TIMEOUT_MS / 1000} seconds this renderer waits`
+            // `'transport'` rather than a timeout of its own: it is where the
+            // crate's own sixty-second policy already lands, so both surfaces
+            // agree, and `transport`'s advice — retry — is right for one.
+            failed({ url, failure: 'transport', detail }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`, { cause }))
+            return
           }
-          throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
+          // **A caller who aborted is not a missing image.** They asked for
+          // the render to stop, and answering with a tasteful placeholder
+          // would be ignoring the instruction rather than tolerating a fact
+          // about the world. This throws whatever the policy says, which is
+          // the same reasoning that keeps a path failure loud.
+          if (caller?.aborted ?? false) {
+            throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
+          }
+          failed({ url, failure: 'transport', detail: String(cause) }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause }))
+          return
         }
         if (!response.ok) {
-          throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${response.status} ${response.statusText}`)
+          const detail = `${response.status} ${response.statusText}`
+          failed({ url, failure: 'status', status: response.status, detail }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`))
+          return
         }
-        fetched.set(url, await bounded(url, response))
+        try {
+          fetched.set(url, await bounded(url, response))
+        } catch (cause) {
+          // `bounded` refuses a body past the limit, which is this renderer's
+          // number rather than the server's — a different event from a slow
+          // host and one a caller answers differently.
+          failed({ url, failure: 'too-large', detail: String(cause) }, cause as TypeError)
+        }
       }),
     )
-    arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched)
+    arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched, attempts)
   }
 
   const native = dependencies.renderer.paint(arena.slots, arena.values, {

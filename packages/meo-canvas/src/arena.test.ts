@@ -298,6 +298,14 @@ interface DecodedNode {
 }
 
 /** Reads one node and its subtree. */
+/** One failure classification, with its status behind the tag when there is one. */
+function readFailure(input: Cursor): { failure: string; status?: number } {
+  const tags = ['status', 'host-not-found', 'bad-url', 'transport', 'too-large', 'other']
+  const failure = tags[slot(input)]
+  if (failure === undefined) throw new RangeError('no such ImageFetchFailure')
+  return failure === 'status' ? { failure, status: slot(input) } : { failure }
+}
+
 function readNode(input: Cursor): DecodedNode {
   const kind = read(input, 'NodeTag') as string
 
@@ -420,6 +428,18 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
     gpu: read(input, 'Option<bool>'),
     colorType: read(input, 'Option<ColorType>'),
     colorSpace: read(input, 'Option<ColorSpace>'),
+    // Not an `Option`: the field is not optional on the other side, so its
+    // slot is always present and the default is a variant rather than an
+    // absence.
+    onImageError: read(input, 'OnImageError'),
+    // The attempts list, always written so offsets do not depend on failure.
+    attempts: Array.from({ length: slot(input) }, () => ({
+      url: read(input, 'String'),
+      // The status sits behind the `status` tag rather than beside it, so a
+      // classification without a code cannot be written or read.
+      ...readFailure(input),
+      detail: read(input, 'String'),
+    })),
   }
 
   const count = slot(input)

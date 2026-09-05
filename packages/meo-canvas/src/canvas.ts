@@ -53,6 +53,7 @@
 // transitively, and the package sits beside this one under both a hoisted and
 // an isolated layout only because it is a real dependency.
 import { MEDIA_TYPES, type Format } from './generated/media-types.js'
+import type { ImageWarning } from './index.js'
 
 export type { Format }
 
@@ -162,6 +163,8 @@ export interface NativeCanvas {
   readonly pageCount: number
   /** The device-pixel multiplier the pages were drawn at. */
   readonly scale: number
+  /** Every image source that could not be resolved, in node order. */
+  readonly warnings: readonly ImageWarning[]
 }
 
 /**
@@ -464,6 +467,25 @@ export class Canvas {
    */
   get scale(): number {
     return this.#native.scale
+  }
+
+  /**
+   * Every image source that could not be resolved, in node order.
+   *
+   * **Always an array**, so `canvas.warnings.length === 0` is a check you
+   * write once and never guard — empty is the ordinary answer, not a missing
+   * one. One entry per distinct source rather than per node, because sixty
+   * nodes drawing one dead URL is one thing that went wrong.
+   *
+   * Populated whatever `onImageError` on `Root` chose, **including
+   * `'ignore'`**. That option decides what is drawn, never what is known: a
+   * caller who finds the placeholder distracting keeps the diagnostic.
+   *
+   * A render that finishes with warnings is not one that succeeded quietly.
+   * Each entry is a picture that was asked for and did not arrive.
+   */
+  get warnings(): readonly ImageWarning[] {
+    return this.#native.warnings
   }
 
   /** Refuses a call on a surface that has been freed. */

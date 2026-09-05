@@ -47,6 +47,7 @@
 //! ```text
 //! scene    := "MCSC" u16(version) f32 f32 bool f32
 //!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
+//!             enum(on_image_error) list<attempt>(image_fetch_attempts)
 //!             list<u32>(pages) list<node>
 //!             ^magic         ^1   ^w  ^h  ^ch  ^scale
 //!
@@ -59,6 +60,7 @@
 //!                                                            -- Path: fill, stroke, line_width,
 //!                                                               fill_rule, cap, join, dash, offset
 //!
+//! attempt  := str(url) enum(failure) opt<u16>(status) str(detail)
 //! segment  := str textstyle
 //! source   := u8(0) str | u8(1) str | u8(2) bytes            -- Path | Url | Bytes
 //! paint    := u8(0) color | u8(1) gradient                   -- Solid | Gradient
@@ -144,7 +146,7 @@ pub(crate) use writer::Writer;
 use crate::{
     Scene,
     node::NodeId,
-    surface::{ColorSpace, ColorType},
+    surface::{ColorSpace, ColorType, ImageFetchAttempt, OnImageError},
 };
 
 /// The four bytes every encoded scene starts with.
@@ -158,7 +160,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 5;
+pub const VERSION: u16 = 6;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -339,6 +341,12 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     writer.opt(scene.gpu.as_ref());
     writer.opt(scene.color_type.as_ref());
     writer.opt(scene.color_space.as_ref());
+    // Not `opt`, because the field is not optional: the scene always has a
+    // policy and the default is a variant rather than an absence.
+    scene.on_image_error.write(&mut writer);
+    // Empty for every caller that does not fetch for itself, which is every
+    // Rust one -- so this costs one `u32` of zero on an ordinary scene.
+    writer.list(&scene.image_fetch_attempts);
     writer.list(&scene.pages);
     writer.list(&scene.nodes);
 }
@@ -375,6 +383,8 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let gpu: Option<bool> = input.opt()?;
     let color_type: Option<ColorType> = input.opt()?;
     let color_space: Option<ColorSpace> = input.opt()?;
+    let on_image_error = OnImageError::read(&mut input)?;
+    let image_fetch_attempts: Vec<ImageFetchAttempt> = input.list()?;
     let pages: Vec<NodeId> = input.list()?;
 
     let count = input.peek_u32()?;
@@ -398,6 +408,8 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
         gpu,
         color_type,
         color_space,
+        on_image_error,
+        image_fetch_attempts,
         nodes,
         pages,
     };
@@ -439,7 +451,9 @@ mod tests {
                 TextStyle, VerticalAlign,
             },
         },
-        surface::{ColorSpace, ColorType},
+        surface::{
+            ColorSpace, ColorType, ImageFetchAttempt, ImageFetchFailure,
+        },
     };
 
     /// Byte offset of the surface block, which follows magic, version, the
@@ -447,9 +461,12 @@ mod tests {
     /// floor or the height itself.
     const SURFACE_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 1 + 4;
 
-    /// Bytes the surface block occupies when all three fields are absent: one
-    /// discriminant each, and no payload behind any of them.
-    const ABSENT_SURFACE: usize = 3;
+    /// Bytes the surface block occupies when all three optional fields are
+    /// absent: one discriminant each, and no payload behind any of them --
+    /// plus the one byte `on_image_error` always occupies, which is not
+    /// optional and so has no absent form to be shorter than -- plus the four
+    /// bytes of the empty `image_fetch_attempts` list's count.
+    const ABSENT_SURFACE: usize = 3 + 1 + 4;
 
     /// Byte offset of the page list in a scene whose surface says nothing.
     const PAGES_OFFSET: usize = SURFACE_OFFSET + ABSENT_SURFACE;
@@ -761,6 +778,41 @@ mod tests {
 
         let decoded = decode(&encode(&scene));
         assert_eq!(decoded, Ok(scene));
+    }
+
+    /// A status cannot be separated from its classification on the wire.
+    ///
+    /// **The pairing is unrepresentable rather than validated.** It was two
+    /// fields once -- a classification and an `Option<u16>` beside it -- and
+    /// the combination "`Status`, no code" could be written, decoded, and then
+    /// only be dealt with by inventing a number. A consumer is documented to
+    /// branch on that number: retry a 5xx, do not retry a 4xx. Zero is neither
+    /// and reads as real.
+    #[test]
+    fn a_status_travels_inside_its_own_variant() {
+        let mut scene = Scene::new(Size::new(4.0, 4.0));
+        scene.image_fetch_attempts = vec![
+            ImageFetchAttempt {
+                url: "https://example.invalid/a.png".to_owned(),
+                failure: ImageFetchFailure::Status(404),
+                detail: "404 Not Found".to_owned(),
+            },
+            ImageFetchAttempt {
+                url: "https://example.invalid/b.png".to_owned(),
+                failure: ImageFetchFailure::Transport,
+                detail: "connection refused".to_owned(),
+            },
+        ];
+
+        let back =
+            decode(&encode(&scene)).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(back.image_fetch_attempts, scene.image_fetch_attempts);
+        // Named rather than left to the equality above: the code is the part
+        // that had nowhere to live before.
+        assert_eq!(
+            back.image_fetch_attempts[0].failure,
+            ImageFetchFailure::Status(404)
+        );
     }
 
     #[test]

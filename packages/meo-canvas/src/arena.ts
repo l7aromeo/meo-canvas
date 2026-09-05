@@ -49,8 +49,9 @@ import {
   VERTICAL_ALIGN,
 } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
+import { ON_IMAGE_ERROR } from './generated/arena-enums.js'
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
-import type { ColorSpace, ColorType, TrackSize } from './index.js'
+import type { ColorSpace, ColorType, OnImageError, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode } from './node.js'
 import type {
   BackgroundImage,
@@ -278,10 +279,69 @@ export interface SurfaceOptions {
   readonly colorType?: ColorType
   /** The colour space the surface composites in. */
   readonly colorSpace?: ColorSpace
+  /**
+   * What a render does when an image source cannot be resolved.
+   *
+   * Not optional, unlike the three above: they distinguish "the caller said
+   * nothing" from "the caller asked for the default" because the renderer has
+   * its own answer for them. This one does not — the policy is the scene's
+   * alone — so the default is a value rather than an absence.
+   */
+  readonly onImageError?: OnImageError
 }
 
+/**
+ * A fetch this surface attempted and could not complete.
+ *
+ * **Carries the reason, not only the fact.** Without it the renderer would
+ * have to synthesise a vaguer warning than a crate consumer gets for the same
+ * real-world 404, and the two public surfaces would describe one event
+ * differently.
+ */
+export type FetchAttempt = {
+  readonly url: string
+  readonly detail: string
+} & (
+  | {
+      /** The server answered, and this is what it answered with. */
+      readonly failure: 'status'
+      readonly status: number
+    }
+  | {
+      /** No response to have a status: the fetch never produced one. */
+      readonly failure: 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
+      readonly status?: undefined
+    }
+)
+
+/**
+ * The wire tag for each failure, written by hand.
+ *
+ * Not from the generated enum table: `ImageFetchFailure` carries a payload on
+ * `Status` and so is not a `wire_enum!`, which is what that table is generated
+ * from. The discriminants here are the same contract, and the Rust reader
+ * names them in the same order.
+ */
+const FAILURE_TAG = {
+  status: 0,
+  'host-not-found': 1,
+  'bad-url': 2,
+  transport: 3,
+  'too-large': 4,
+  other: 5,
+} as const
+
 /** Writes the header every arena opens with, and the page count. */
-function writeHeader(out: ArenaWriter, width: number, height: number, contentHeight: boolean, scale: number, surface: SurfaceOptions, pages: number): void {
+function writeHeader(
+  out: ArenaWriter,
+  width: number,
+  height: number,
+  contentHeight: boolean,
+  scale: number,
+  surface: SurfaceOptions,
+  pages: number,
+  attempts: readonly FetchAttempt[] = [],
+): void {
   out.slot(MAGIC)
   out.slot(VERSION)
   out.f32(width)
@@ -297,6 +357,31 @@ function writeHeader(out: ArenaWriter, width: number, height: number, contentHei
   out.optional(surface.gpu, gpu => out.slot(gpu ? 1 : 0))
   out.optional(surface.colorType, type => out.enum(variant(COLOR_TYPE, type, 'colorType')))
   out.optional(surface.colorSpace, space => out.enum(variant(COLOR_SPACE, space, 'colorSpace')))
+  // Written unconditionally, because the field is not optional on the other
+  // side. `'placeholder'` is the default the scene would take anyway; naming
+  // it here keeps the arena's shape fixed rather than making the reader's
+  // offset depend on whether the caller said anything.
+  out.enum(variant(ON_IMAGE_ERROR, surface.onImageError ?? 'placeholder', 'onImageError'))
+
+  // What this surface already tried to fetch and could not, with the reason it
+  // measured. Empty unless a URL failed, and it is written unconditionally so
+  // the reader's offsets do not depend on whether anything went wrong.
+  out.count(attempts.length)
+  for (const attempt of attempts) {
+    out.text(attempt.url)
+    // The status is written *behind* the tag rather than in a slot beside it,
+    // so a `'status'` with no code cannot be encoded. Two fields and a rule
+    // that they agree makes the disagreement representable, and the only thing
+    // to do with it downstream is invent a number a consumer is documented to
+    // branch on.
+    if (attempt.failure === 'status') {
+      out.slot(FAILURE_TAG.status)
+      out.slot(attempt.status)
+    } else {
+      out.slot(FAILURE_TAG[attempt.failure])
+    }
+    out.text(attempt.detail)
+  }
 
   out.count(pages)
 }
@@ -1486,10 +1571,11 @@ export function encodeScene(
   scale: number,
   surface: SurfaceOptions = {},
   fetched?: ReadonlyMap<string, Uint8Array>,
+  attempts: readonly FetchAttempt[] = [],
 ): Arena {
   const out = new ArenaWriter()
   out.fetched = fetched
-  writeHeader(out, width, height, contentHeight, scale, surface, pages.length)
+  writeHeader(out, width, height, contentHeight, scale, surface, pages.length, attempts)
   for (const page of pages) writeNode(out, page)
   return out.finish()
 }
