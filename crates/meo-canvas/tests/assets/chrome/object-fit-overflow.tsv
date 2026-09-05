@@ -29,3 +29,4 @@ none	20x20	60x60	80,80,20,20	80,80,20,20	inside	clip	0	ink
 contain	40x30	40x10	80,80,40,30	80,90,40,10	inside	clip	0	paper
 cover	40x30	40x10	80,80,40,30	40,80,120,30	spills	visible	0	ink
 cover	60x40	60x10	80,80,60,40	80,80,60,40	inside	clip	14	paper
+contain	80x80	40x40	80,80,80,80	80,80,80,80	inside	clip	20	paper

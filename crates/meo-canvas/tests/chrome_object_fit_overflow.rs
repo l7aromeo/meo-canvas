@@ -270,6 +270,17 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
         // Only where a radius could have cut it. With no radius the corner is
         // a statement about whether the fit reaches the corner at all, which
         // `contain` does not, and asserting on it would pin an accident.
+        //
+        // **The `contain` row with a radius is the one that looks redundant
+        // and is not.** A square source in a square box fills it exactly and
+        // overflows by nothing, so "clipped to the radius" and "clipped to the
+        // box" predict different pixels there and agree everywhere else. Three
+        // people made four attempts on `l7aromeo/meo-canvas#37` without
+        // running it, and a sixth hypothesis was written and nearly adopted:
+        // that the missing ring and the unrounded picture were one defect.
+        // They are two, and this row is what tells them apart. Measured
+        // without the clip, this case paints 6400 pixels -- the full square,
+        // corners intact -- and 5976 with it.
         if row.radius > 0.0 {
             let ours = if corner == (PAPER.0, PAPER.1, PAPER.2) {
                 "paper"

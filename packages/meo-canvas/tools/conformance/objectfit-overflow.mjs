@@ -73,6 +73,19 @@ const CASES = [
   // 14px curve -- paper there means the picture was clipped to the shape rather
   // than to its bounding rectangle.
   { fit: 'cover', box: { width: 60, height: 40 }, source: { width: 60, height: 10 }, radius: 14 },
+  // **The case that separates two defects sharing one symptom, and it looks
+  // trivially redundant.** A square source in a square box under `contain`
+  // scales by `min(sx, sy)` with both equal, so the picture fills the box
+  // exactly and nothing overflows. That is the point: every other case here
+  // uses a fit that overflows or a source that letterboxes, and neither can
+  // tell "clipped to the radius" from "clipped to the box" -- both mechanisms
+  // predict the same pixels. Only a picture that reaches the corners without
+  // exceeding them makes them disagree.
+  //
+  // Three people made four attempts on `l7aromeo/meo-canvas#37` and a fifth
+  // hypothesis was written here, all of them missing it. The instruments were
+  // fine; **the cases were not discriminating.**
+  { fit: 'contain', box: { width: 80, height: 80 }, source: { width: 40, height: 40 }, radius: 20 },
 ]
 
 const browser = await open()
