@@ -6,15 +6,32 @@
 // release is added and nothing reports it, where this cannot describe a
 // version that is not published or omit one that is.
 //
-// # Prereleases
+// # `latest/` is stable or absent
 //
-// This package publishes prereleases -- `v10.0.0-alpha.4` goes to npm's `next`
-// dist-tag, never `latest`. The site follows the same rule: every version gets
-// its own directory, and `latest/` is a copy of the newest version **without a
-// prerelease part**. While no such version exists, `latest/` follows the newest
-// prerelease and the page says so, because a reference for something is
-// better than a reference for nothing -- but the moment a stable version is
-// published it takes over, exactly as `npm install meo-canvas` would.
+// This package publishes prereleases -- `v10.0.0-alpha.5` goes to npm's `next`
+// dist-tag, never `latest`. The site follows the same rule exactly: every
+// version gets its own directory, and `latest/` is a copy of the newest
+// version **without a prerelease part**.
+//
+// **There is no fallback to the newest prerelease, and there used to be.**
+// `latest/` meaning "the newest thing we have" is a different promise from
+// `npm install meo-canvas`, and a reader who follows `latest/` has no way to
+// tell which promise they got. So while no stable version exists there is no
+// `latest/` directory, this page says so in a sentence, and it links the
+// newest prerelease by its own version instead -- which is honest about what
+// it is and still gets the visitor to a reference.
+//
+// That state is not hypothetical. No stable 10.x exists and none will before
+// 10.0.0, so the no-stable path is the only one that runs today.
+//
+// # Dates
+//
+// There are none, deliberately. A directory's mtime is the time the workflow
+// copied it, which is not when the version was published and is rewritten on
+// every deploy; the `gh-pages` checkout is `--depth=1`, so its history carries
+// no commit date for an older version either. The only real source is the
+// registry, and a landing page that needs the network to build is a landing
+// page that fails to build. A wrong date is worse than no date.
 //
 // Usage: node site-index.mjs <site-dir>
 
@@ -59,14 +76,45 @@ if (versions.length === 0) {
 // `latest` is a copy of a version rather than a symlink, because the Pages
 // artifact is a tarball and a symlink in it resolves to nothing. Which version
 // it copies is recorded beside it so this page can say so.
+//
+// **The stamp is the only source, with no fallback.** Reading `versions[0]`
+// when the stamp is missing is how the prerelease that the assemble step
+// deliberately did not copy would reappear in the markup, pointing at a
+// directory that is not there. Absent stamp means absent `latest/`, which is
+// exactly what the assemble step means by not writing one.
 const stampFile = join(site, 'latest', 'VERSION')
-const latest = existsSync(stampFile) ? readFileSync(stampFile, 'utf8').trim() : versions[0]
-const latestIsPrerelease = parse(latest)?.pre !== null
+const latest = existsSync(stampFile) ? readFileSync(stampFile, 'utf8').trim() : null
 
-const older = versions
-  .filter(version => version !== latest)
-  .map(version => `        <li><a href="${version}/">${version}</a>${parse(version).pre !== null ? ' <small>prerelease</small>' : ''}</li>`)
+// The rule, asserted rather than assumed. Both this file and the assemble step
+// in `docs.yml` decide what `latest/` is -- the step by copying, this by
+// describing -- and two implementations of one rule are two chances to get it
+// wrong. If a prerelease is ever stamped, fail here rather than render a page
+// that quietly contradicts the rule it is written to keep.
+if (latest !== null && parse(latest)?.pre !== null) {
+  process.stderr.write(`latest/VERSION names ${latest}, which is a prerelease; latest/ is stable or absent.\n`)
+  process.exit(1)
+}
+
+const newest = versions[0]
+const headline = latest ?? newest
+const headlineHref = latest ? 'latest/' : `${newest}/`
+
+const rows = versions
+  .map(version => {
+    const isPre = parse(version).pre !== null
+    const badge = isPre ? '<span class="tag pre">prerelease</span>' : '<span class="tag stable">stable</span>'
+    const here = version === latest ? '<span class="tag here">latest/</span>' : version === newest ? '<span class="tag here">newest</span>' : ''
+    return `          <li><a href="${version}/"><span class="v">${version}</span><span class="tags">${here}${badge}</span></a></li>`
+  })
   .join('\n')
+
+// The lede is the README's own opening sentence, verbatim. The repository has
+// already decided how to describe itself and a second description is a second
+// thing to keep in step -- which is the defect this release has hit twice.
+const LEDE =
+  'Server-side image generation for Node. Describe a layout the way you would ' +
+  'describe a page — boxes, rows, text, images, paths, charts — and get back ' +
+  'encoded bytes.'
 
 writeFileSync(
   join(site, 'index.html'),
@@ -76,55 +124,169 @@ writeFileSync(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>meo-canvas — JavaScript reference</title>
+    <meta name="description" content="${LEDE}" />
     <style>
-      :root { color-scheme: light dark; }
+      /* Self-contained on purpose: no CDN, no webfont, no script. This is a
+         static page on Pages and it renders with the network off. */
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfd;
+        --surface: #ffffff;
+        --ink: #16181d;
+        --muted: #5b6170;
+        --line: #e4e6ec;
+        --accent: #4f46e5;
+        --accent-soft: #eef0fe;
+        --pre-bg: #fff4e6;
+        --pre-ink: #9a4a08;
+        --stable-bg: #e7f8f0;
+        --stable-ink: #0a6045;
+        --shadow: 0 1px 2px rgba(16, 18, 26, 0.05), 0 8px 24px rgba(16, 18, 26, 0.05);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0c0e13;
+          --surface: #14171f;
+          --ink: #e9ebf1;
+          --muted: #949cae;
+          --line: #252a35;
+          --accent: #99a2ff;
+          --accent-soft: #1b1f33;
+          --pre-bg: #2b1d0f;
+          --pre-ink: #f5b862;
+          --stable-bg: #0e2a20;
+          --stable-ink: #5fd6a0;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+      }
+      * { box-sizing: border-box; }
       body {
-        margin: 0 auto; padding: 3rem 1.5rem; max-width: 42rem;
-        font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        margin: 0;
+        padding: 3rem 1.5rem 4rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
-      h1 { margin-bottom: 0.25rem; font-size: 1.6rem; }
-      p.lede { margin-top: 0; opacity: 0.75; }
-      .latest {
-        display: block; margin: 1.5rem 0; padding: 1rem 1.25rem;
-        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-        border-radius: 8px; text-decoration: none; font-weight: 600;
+      .page { max-width: 54rem; margin: 0 auto; }
+      .hero {
+        display: block; width: 100%; height: auto;
+        border: 1px solid var(--line); border-radius: 14px;
+        box-shadow: var(--shadow); background: var(--surface);
       }
-      .latest span { display: block; font-weight: 400; opacity: 0.7; font-size: 0.9rem; }
-      h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; }
-      ul { list-style: none; padding: 0; columns: 3; }
-      li { padding: 0.15rem 0; }
-      small { opacity: 0.6; }
-      a { color: inherit; }
-      footer { margin-top: 2.5rem; font-size: 0.9rem; opacity: 0.7; }
-      footer a { margin-right: 1rem; }
+      h1 {
+        margin: 2.25rem 0 0.4rem;
+        font-size: 2rem; line-height: 1.15; letter-spacing: -0.02em;
+      }
+      .lede { margin: 0; max-width: 40rem; color: var(--muted); font-size: 1.05rem; }
+      .headline {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem;
+        margin: 2rem 0 0; padding: 1.15rem 1.35rem;
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 12px; box-shadow: var(--shadow);
+        text-decoration: none; color: inherit;
+      }
+      .headline:hover { border-color: var(--accent); }
+      .headline .what { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); flex-basis: 100%; }
+      .headline .v { font-size: 1.35rem; font-weight: 650; letter-spacing: -0.01em; }
+      .headline .go { margin-left: auto; color: var(--accent); font-weight: 600; font-size: 0.9rem; }
+      .note {
+        margin: 0.9rem 0 0; padding: 0.85rem 1.1rem;
+        border-left: 3px solid var(--accent); background: var(--accent-soft);
+        border-radius: 0 8px 8px 0; color: var(--muted); font-size: 0.93rem;
+      }
+      .note strong { color: var(--ink); font-weight: 600; }
+      h2 {
+        margin: 2.5rem 0 0.75rem;
+        font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em;
+        color: var(--muted); font-weight: 650;
+      }
+      ul.releases { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+      ul.releases li + li { border-top: 1px solid var(--line); }
+      ul.releases a {
+        display: flex; align-items: center; gap: 0.75rem;
+        padding: 0.7rem 1.1rem; text-decoration: none; color: inherit;
+      }
+      ul.releases a:hover { background: var(--accent-soft); }
+      ul.releases .v { font-weight: 550; font-variant-numeric: tabular-nums; }
+      ul.releases .tags { margin-left: auto; display: flex; gap: 0.4rem; }
+      .tag {
+        padding: 0.12rem 0.5rem; border-radius: 999px;
+        font-size: 0.72rem; font-weight: 650; letter-spacing: 0.02em;
+      }
+      .tag.pre { background: var(--pre-bg); color: var(--pre-ink); }
+      .tag.stable { background: var(--stable-bg); color: var(--stable-ink); }
+      .tag.here { background: var(--accent-soft); color: var(--accent); }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+      footer {
+        margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+        display: flex; flex-wrap: wrap; gap: 1.25rem;
+        font-size: 0.9rem; color: var(--muted);
+      }
+      footer a { color: var(--muted); text-decoration: none; }
+      footer a:hover { color: var(--accent); }
+      @media (max-width: 34rem) {
+        body { padding: 1.5rem 1rem 3rem; }
+        h1 { font-size: 1.6rem; }
+        .headline .go { flex-basis: 100%; margin-left: 0; }
+      }
     </style>
   </head>
   <body>
-    <h1>meo-canvas</h1>
-    <p class="lede">
-      The JavaScript API reference, generated from the type declarations each
-      release ships. One page per published version.
-    </p>
+    <div class="page">
+      <!-- Drawn by meo-canvas. \`just brand\` renders these; see
+           docs/assets/brand/README.md. Dark and light follow the reader's own
+           setting rather than a toggle, and the PNG is there for anything that
+           will not take webp. -->
+      <picture>
+        <source media="(prefers-color-scheme: dark)" type="image/webp" srcset="assets/brand/banner-dark.webp" />
+        <source media="(prefers-color-scheme: light)" type="image/webp" srcset="assets/brand/banner-light.webp" />
+        <source type="image/webp" srcset="assets/brand/banner.webp" />
+        <img class="hero" src="assets/brand/banner.png" width="1280" height="468"
+             alt="Four easing curves animating side by side, each drawn by meo-canvas itself" />
+      </picture>
 
-    <a class="latest" href="latest/">
-      Latest — ${latest}
-      <span>${
-        latestIsPrerelease
-          ? 'A prerelease: on npm this is <code>meo-canvas@next</code>, not <code>latest</code>. <code>latest/</code> here will move to the first stable release.'
-          : 'Also at <code>latest/</code>, which follows the newest stable release — what <code>npm install meo-canvas</code> gives you.'
-      }</span>
-    </a>
+      <h1>meo-canvas</h1>
+      <p class="lede">${LEDE}</p>
 
-${older ? `    <h2>Every version</h2>\n    <ul>\n${older}\n    </ul>` : ''}
+      <a class="headline" href="${headlineHref}">
+        <span class="what">${latest ? 'Latest stable' : 'Newest release'}</span>
+        <span class="v">${headline}</span>
+        <span class="go">Read the reference →</span>
+      </a>
+${
+  latest
+    ? `      <p class="note">
+        Also at <code>latest/</code>, which follows the newest stable release —
+        what <code>npm install meo-canvas</code> gives you.
+      </p>`
+    : `      <p class="note">
+        <strong>No stable 10.x has been published yet</strong>, so there is no
+        <code>latest/</code> here. ${newest} is a prerelease: on npm it is
+        <code>meo-canvas@next</code> rather than <code>latest</code>, and a bare
+        <code>npm install meo-canvas</code> does not reach it.
+        <code>latest/</code> appears with the first stable release.
+      </p>`
+}
 
-    <footer>
-      <a href="https://github.com/l7aromeo/meo-canvas">Source</a>
-      <a href="https://docs.rs/meo-canvas">Rust reference</a>
-      <a href="https://www.npmjs.com/package/meo-canvas">npm</a>
-    </footer>
+      <h2>All releases</h2>
+      <ul class="releases">
+${rows}
+      </ul>
+
+      <footer>
+        <a href="https://github.com/l7aromeo/meo-canvas">Source</a>
+        <a href="https://docs.rs/meo-canvas">Rust reference</a>
+        <a href="https://www.npmjs.com/package/meo-canvas">npm</a>
+        <a href="https://crates.io/crates/meo-canvas">crates.io</a>
+      </footer>
+    </div>
   </body>
 </html>
 `,
 )
 
-process.stdout.write(`Indexed ${versions.length} version(s); latest is ${latest}${latestIsPrerelease ? ' (prerelease)' : ''}.\n`)
+process.stdout.write(
+  `Indexed ${versions.length} version(s); ` +
+    (latest ? `latest/ follows ${latest}.\n` : `no stable release, so no latest/ and the page says so; newest is ${newest}.\n`),
+)
