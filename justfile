@@ -547,7 +547,7 @@ build-js: ensure-deps
 # over an installed platform package.
 [doc("Build the native addon in release mode.")]
 addon-release:
-    cargo build --release -p meo-canvas-node --features "{{ host_features }}"
+    cargo build --locked --release -p meo-canvas-node --features "{{ host_features }}"
     @rm -f {{ addon_path }}
     @cp target/release/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }} (release)"
@@ -655,7 +655,7 @@ addon-container suffix:
         -v "$HOME/.cargo/registry":/root/.cargo/registry \
         -e CARGO_TARGET_DIR=/src/target/container/{{ suffix }} \
         "$tag" \
-        cargo build --release -p meo-canvas-node --features vulkan
+        cargo build --locked --release -p meo-canvas-node --features vulkan
 
     # The container ran as root, so everything it wrote under `target/container`
     # is root-owned. On a GitHub runner the cache action's `tar` then cannot
