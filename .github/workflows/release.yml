@@ -692,6 +692,21 @@ jobs:
             fi
             echo "${git_tag} already exists at this commit; not creating it again"
           else
+            # **An annotated tag records who made it, so the runner needs an
+            # identity.** Without one `git tag -a` exits 128 with "empty ident
+            # name" -- which is what happened on the first real release,
+            # 5 September 2026, run 33966045288: every package reached npm and
+            # the job then died here, leaving the version published with no tag
+            # and no release. A lightweight tag would not have needed this, and
+            # is exactly what was given up to keep the annotation; this is the
+            # cost of that trade, paid once.
+            #
+            # `github-actions[bot]` with its numeric noreply address is the
+            # identity GitHub attributes to the Actions bot, so the tag is
+            # attributed to the automation rather than to a person who did not
+            # make it.
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git tag -a "${git_tag}" -m "${NAME} ${VERSION}"
           fi
           # A no-op when the remote already has this exact tag, and a rejection
