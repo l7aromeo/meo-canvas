@@ -316,12 +316,33 @@ jobs:
           MATRIX: ${{ needs.targets.outputs.matrix }}
           PREFIX: ${{ needs.targets.outputs.prefix }}
         run: |
-          missing=0
-          for suffix in $(echo "$MATRIX" | node -e "
+          set -euo pipefail
+          suffixes=$(node -e "
             let raw = ''
             process.stdin.on('data', chunk => { raw += chunk })
             process.stdin.on('end', () => process.stdout.write(JSON.parse(raw).include.map(entry => entry.suffix).join(' ')))
-          "); do
+          " <<< "$MATRIX")
+
+          # **Counted before it is walked.** A `for` over an empty word list
+          # runs its body zero times and leaves `missing` at zero, so a node
+          # invocation that failed -- a matrix that did not parse, a schema that
+          # moved -- reported every target present having looked at none. The
+          # command substitution's own failure does not reach `set -e` from a
+          # `for` list either, so nothing else here would have said so.
+          count=$(printf '%s\n' $suffixes | grep -c . || true)
+          expected=$(node -e "
+            let raw = ''
+            process.stdin.on('data', chunk => { raw += chunk })
+            process.stdin.on('end', () => process.stdout.write(String(JSON.parse(raw).include.length)))
+          " <<< "$MATRIX")
+          if [ "$count" != "$expected" ] || [ "$count" -eq 0 ]; then
+            echo "::error::read ${count} targets from the matrix, expected ${expected}; this check looked at nothing"
+            exit 1
+          fi
+          echo "checking ${count} platform tarballs"
+
+          missing=0
+          for suffix in $suffixes; do
             file="artifacts/${PREFIX}-${suffix}-${VERSION}.tgz"
             if [ ! -f "$file" ]; then
               echo "missing $file"
@@ -361,6 +382,13 @@ jobs:
             # renamed file cannot make the check ask about a different package.
             name=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).name")
             version=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+            # Recorded whether it is published here or was already present:
+            # the next step waits for what the main package will depend on,
+            # and a package published by hand an hour ago is as much a
+            # dependency as one published a second ago. Written from the same
+            # `name` and `version` this loop read out of the tarball, so the
+            # wait cannot be asking about a different package than the publish.
+            echo "${name}@${version}" >> "$RUNNER_TEMP/platform-packages.txt"
             if npm view "${name}@${version}" version >/dev/null 2>&1; then
               echo "    ${name}@${version} is already on the registry; not publishing it again"
               continue
@@ -376,6 +404,131 @@ jobs:
               npm publish --provenance --access public --tag "$TAG" "./$file"
             fi
           done
+
+      # **Published and installable are not the same moment.** The main package
+      # pins all seven platform packages at an exact version, so publishing it
+      # while one of them is still propagating puts a package on the registry
+      # that cannot be installed -- and npm and pnpm would hide it, because they
+      # skip an optional dependency whose `os`/`cpu`/`libc` excludes the host
+      # and never ask the registry about it. **yarn resolves all seven before
+      # installing any**, and a 404 on one fails the whole install; AGENTS.md
+      # carries the `YN0035` transcript.
+      #
+      # `docs.yml` has waited for exactly this since it was written -- its
+      # comment says "published and installable are separated by propagation" --
+      # and the reasoning was applied to the docs deploy and never to the
+      # publish the docs deploy is downstream of.
+      #
+      # The names come from `platform-packages.txt`, which the loop above wrote
+      # out of each tarball's own `package.json`. Not a list written here: a
+      # target is already named in three places with a test asserting they
+      # agree, and a fourth list is the drift that rule exists to prevent.
+      - name: Wait for the platform packages to resolve
+        if: ${{ !inputs.dry_run }}
+        env:
+          MATRIX: ${{ needs.targets.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          list="$RUNNER_TEMP/platform-packages.txt"
+
+          # **A wait over nothing is not a wait.** An empty or short list would
+          # sail through every loop below and report success, which is the
+          # failure this file must not have: it would mean the main package is
+          # published against unresolved dependencies with a green step above
+          # saying otherwise. Checked against the matrix, which is the
+          # authoritative target list, rather than against a number written
+          # here.
+          expected=$(node -e "
+            let raw = ''
+            process.stdin.on('data', chunk => { raw += chunk })
+            process.stdin.on('end', () => process.stdout.write(String(JSON.parse(raw).include.length)))
+          " <<< "$MATRIX")
+          test -f "$list" || {
+            echo "::error::the publish step recorded no platform packages; it did not run, or its glob matched nothing"
+            exit 1
+          }
+          actual=$(wc -l < "$list" | tr -d ' ')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::recorded ${actual} platform packages, expected ${expected} from the build matrix"
+            cat "$list"
+            exit 1
+          fi
+          echo "waiting for ${actual} platform packages to resolve from the registry"
+
+          # **The loop waits on the fact, not on a clock.** Its exit condition
+          # is that every recorded name resolves at the exact version being
+          # published; if that happens in twenty seconds it takes twenty
+          # seconds. A fixed sleep long enough to be safe would make every
+          # release pay the worst case, and one short enough to be tolerable
+          # would be a guess that is wrong on the day the registry is slow.
+          #
+          # **Why the loop exists at all is measured, and the spread is the
+          # point.** Publish-to-resolvable across 5 September 2026, on our own
+          # packages: about 10 seconds, about 90, about 122, no more than 171,
+          # about 200 -- and one `E404` from `npm view` persisting over 100
+          # seconds after a publish that returned exit 0. **A twenty-fold
+          # spread, same registry, same session, same machine.** Method: `npm
+          # view <name>@<version> version` polled every 10 seconds, against the
+          # registry's own `time` field rather than a local clock.
+          #
+          # That spread is the argument for a heartbeat over any fixed wait. A
+          # sleep long enough to cover the slow end is mostly waste on the fast
+          # end, and one chosen to feel reasonable would eventually publish the
+          # main package into a window where its own pinned dependencies 404.
+          #
+          # **The readings say propagation is real; they do not say how long to
+          # wait.** The ceiling below is deliberately not derived from them --
+          # a handful of samples from one machine is a floor on the delay, not
+          # a distribution, and turning them into a bound would dress a guess as
+          # a measurement.
+          #
+          # **Every name is polled independently, and that is measured too.**
+          # Two packages published six seconds apart did not become resolvable
+          # together -- one at about 122 seconds while the other still was not
+          # -- so a gate that polled one and inferred the rest would pass on
+          # whichever landed first. Each round asks only about what is still
+          # missing, so the slowest name sets the wait rather than the sum of
+          # them.
+          remaining=$(cat "$list")
+          # **A hang-breaker, not a prediction.** Nothing here expects to wait
+          # half an hour; this exists so a publish that is genuinely broken
+          # fails with a message naming the packages that never appeared,
+          # instead of spinning until the job hits GitHub's own six-hour limit
+          # and leaves an error pointing at nothing. Generously past any
+          # propagation we have seen or have reason to expect.
+          ceiling=1800
+          deadline=$(( SECONDS + ceiling ))
+          while :; do
+            still=""
+            for entry in $remaining; do
+              if npm view "$entry" version >/dev/null 2>&1; then
+                echo "  $entry resolves"
+              else
+                still="${still} ${entry}"
+              fi
+            done
+            remaining=$(echo "$still" | tr -s ' ' | sed 's/^ //;s/ $//')
+            if [ -z "$remaining" ]; then
+              echo "every platform package resolves after ${SECONDS}s; publishing the main package"
+              exit 0
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              break
+            fi
+            # Said out loud every round: a slow run and a stuck one print the
+            # same nothing otherwise, and this is the only step in the file
+            # whose duration is not its own to decide.
+            echo "waited ${SECONDS}s, still waiting for:${still}"
+            sleep 15
+          done
+
+          # **Failing, not proceeding.** A wait that gives up and carries on is
+          # worse than no wait: it turns a release that is definitely broken
+          # into one that is broken sometimes, and the window it leaves is the
+          # one where an install of the main package cannot resolve.
+          echo "::error::these did not resolve within ${ceiling}s:${remaining}"
+          echo "::error::not publishing the main package against dependencies that cannot be installed"
+          exit 1
 
       - name: Publish the main package
         env:
