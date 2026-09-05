@@ -53,14 +53,16 @@ export const TARGETS = {
     libc: ['glibc'],
     rust: 'aarch64-unknown-linux-gnu',
     runner: 'ubuntu-24.04-arm',
-    // **Inherited from the x64 build and not yet measured on this one.** The
-    // floors are a property of an artefact, and no arm64 artefact exists yet.
-    // Declaring the sibling's numbers rather than omitting the key is the
-    // honest option of the two available: an absent `floors` means "no ELF
-    // floor to check here", which is true of darwin and win32 and false of
-    // this. If the arm64 artefact's real floors are higher, the release's
-    // assertion fails and names the symbol, which is the correction arriving
-    // through the mechanism built for it.
+    // **Inherited from the x64 build, and now measured on this one.** These
+    // were the sibling's numbers, declared rather than omitted because an
+    // absent `floors` means "no ELF floor to check here" -- true of darwin and
+    // win32 and false of this -- with the release's own assertion as the
+    // mechanism that would correct them.
+    //
+    // It did not have to: an `aarch64-unknown-linux-gnu` artefact built from
+    // `2b5f580` in `Dockerfile.glibc` reads exactly `GLIBC_2.28` and
+    // `GLIBCXX_3.4.21`, measured 5 September 2026. So the inherited pair were
+    // right, and are no longer inherited.
     floors: { glibc: '2.28', glibcxx: '3.4.21' },
   },
   // The musl pair carry no `floors`, and the reason differs from win32's. A
