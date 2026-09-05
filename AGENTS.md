@@ -365,8 +365,9 @@ JavaScript one had stopped, and the gate was green throughout. **When a change
 gives one surface a property rather than an output, the parity check for it has
 to be something other than the fixture bytes.**
 
-The instance is `crates/meo-canvas/src/root.rs:704`, where `to_file_with` was
-`to_buffer_with` followed by `std::fs::write`. The JavaScript surface took the
+The instance was `to_file_with` in `crates/meo-canvas/src/root.rs`, which was
+`to_buffer_with` followed by `std::fs::write` -- at line 704 when it was found,
+though the function is what to search for and the number is not. The JavaScript surface took the
 streaming write in `44359fa` and the Rust surface stayed on the buffer until
 `174fa4a`, both 5 September 2026 -- one commit apart rather than the interval
 that phrase suggests, and long enough regardless, because no run of `just
