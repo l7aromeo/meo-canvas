@@ -49,7 +49,7 @@ import {
   VERTICAL_ALIGN,
 } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
-import { IMAGE_FETCH_FAILURE, ON_IMAGE_ERROR } from './generated/arena-enums.js'
+import { ON_IMAGE_ERROR } from './generated/arena-enums.js'
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
 import type { ColorSpace, ColorType, OnImageError, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode } from './node.js'
@@ -298,12 +298,38 @@ export interface SurfaceOptions {
  * real-world 404, and the two public surfaces would describe one event
  * differently.
  */
-export interface FetchAttempt {
+export type FetchAttempt = {
   readonly url: string
-  readonly failure: 'status' | 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
-  readonly status?: number
   readonly detail: string
-}
+} & (
+  | {
+      /** The server answered, and this is what it answered with. */
+      readonly failure: 'status'
+      readonly status: number
+    }
+  | {
+      /** No response to have a status: the fetch never produced one. */
+      readonly failure: 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
+      readonly status?: undefined
+    }
+)
+
+/**
+ * The wire tag for each failure, written by hand.
+ *
+ * Not from the generated enum table: `ImageFetchFailure` carries a payload on
+ * `Status` and so is not a `wire_enum!`, which is what that table is generated
+ * from. The discriminants here are the same contract, and the Rust reader
+ * names them in the same order.
+ */
+const FAILURE_TAG = {
+  status: 0,
+  'host-not-found': 1,
+  'bad-url': 2,
+  transport: 3,
+  'too-large': 4,
+  other: 5,
+} as const
 
 /** Writes the header every arena opens with, and the page count. */
 function writeHeader(
@@ -343,8 +369,17 @@ function writeHeader(
   out.count(attempts.length)
   for (const attempt of attempts) {
     out.text(attempt.url)
-    out.enum(variant(IMAGE_FETCH_FAILURE, attempt.failure, 'failure'))
-    out.optional(attempt.status, status => out.slot(status))
+    // The status is written *behind* the tag rather than in a slot beside it,
+    // so a `'status'` with no code cannot be encoded. Two fields and a rule
+    // that they agree makes the disagreement representable, and the only thing
+    // to do with it downstream is invent a number a consumer is documented to
+    // branch on.
+    if (attempt.failure === 'status') {
+      out.slot(FAILURE_TAG.status)
+      out.slot(attempt.status)
+    } else {
+      out.slot(FAILURE_TAG[attempt.failure])
+    }
     out.text(attempt.detail)
   }
 

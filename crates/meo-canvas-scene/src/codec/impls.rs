@@ -1005,11 +1005,44 @@ impl Wire for Node {
     }
 }
 
+/// The discriminants are the wire contract, written out rather than derived.
+///
+/// `Status` is the only variant with a payload, and it is written immediately
+/// behind its tag -- so a `Status` without a code cannot be encoded and cannot
+/// be decoded, rather than being a combination somebody has to check for.
+impl Wire for ImageFetchFailure {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::Status(code) => {
+                out.u8(0);
+                out.u16(*code);
+            }
+            Self::HostNotFound => out.u8(1),
+            Self::BadUrl => out.u8(2),
+            Self::Transport => out.u8(3),
+            Self::TooLarge => out.u8(4),
+            Self::Other => out.u8(5),
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            0 => Ok(Self::Status(input.u16()?)),
+            1 => Ok(Self::HostNotFound),
+            2 => Ok(Self::BadUrl),
+            3 => Ok(Self::Transport),
+            4 => Ok(Self::TooLarge),
+            5 => Ok(Self::Other),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
+    }
+}
+
 impl Wire for ImageFetchAttempt {
     fn write(&self, out: &mut Writer<'_>) {
         out.str(&self.url);
         self.failure.write(out);
-        out.opt(self.status.as_ref());
         out.str(&self.detail);
     }
 
@@ -1017,7 +1050,6 @@ impl Wire for ImageFetchAttempt {
         Ok(Self {
             url: String::read(input)?,
             failure: ImageFetchFailure::read(input)?,
-            status: Option::<u16>::read(input)?,
             detail: String::read(input)?,
         })
     }

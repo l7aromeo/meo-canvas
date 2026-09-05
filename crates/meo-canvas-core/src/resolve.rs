@@ -73,7 +73,7 @@
 //! share nothing and contend for nothing **except the font registry**.
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet, hash_map::Entry},
     path::Path,
     sync::OnceLock,
 };
@@ -464,7 +464,7 @@ impl<'scene> Resolved<'scene> {
         // drawing one picture decoded it sixty times, which nothing pointed
         // at because every table was keyed by node and every node got the
         // right bytes -- just not the same ones.
-        let (once, warnings) = decode_sources(scene)?;
+        let (once, warnings, softened) = decode_sources(scene)?;
         resolved.warnings = warnings;
 
         for (id, node) in scene.nodes.iter().enumerate() {
@@ -483,7 +483,7 @@ impl<'scene> Resolved<'scene> {
                 // `Resolved::image` answers `None` and both the measurer and
                 // the painter take the arm they already have for an image they
                 // were never given. No new branch runs for one that resolved.
-                if let Some(decoded) = taken(&once, id, source)? {
+                if let Some(decoded) = taken(&once, &softened, id, source)? {
                     resolved.images.insert(id, decoded.at_frame(*frame, id)?);
                 }
             }
@@ -493,7 +493,9 @@ impl<'scene> Resolved<'scene> {
                 // its extent is not a layout input the way an image node's is,
                 // and the measure pass must not find it by asking for a node's
                 // image.
-                if let Some(decoded) = taken(&once, id, &background.source)? {
+                if let Some(decoded) =
+                    taken(&once, &softened, id, &background.source)?
+                {
                     resolved.backgrounds.insert(id, decoded);
                 }
             }
@@ -501,7 +503,7 @@ impl<'scene> Resolved<'scene> {
             // image is neither the node's own picture nor its background, and
             // a node may carry all three at once.
             if let Some(Mask::Image(source)) = node.effects.mask.as_ref()
-                && let Some(decoded) = taken(&once, id, source)?
+                && let Some(decoded) = taken(&once, &softened, id, source)?
             {
                 resolved.masks.insert(id, decoded);
             }
@@ -639,6 +641,7 @@ fn check_family(fonts: &Fonts, family: &str) -> Result<(), Error> {
 type Decoded<'scene> = (
     HashMap<&'scene ImageSource, DecodedImage>,
     Vec<ImageWarning>,
+    HashSet<&'scene ImageSource>,
 );
 
 fn decode_sources<'scene>(
@@ -677,6 +680,9 @@ fn decode_sources<'scene>(
     // which is what lets the diagnostic exist without the loaded path paying
     // for it.
     let mut warnings = Vec::new();
+    // Empty on every render where nothing fails, and `HashSet::new` does not
+    // allocate.
+    let mut softened: HashSet<&ImageSource> = HashSet::new();
     for ((source, node), result) in wanted.iter().zip(decoded) {
         match result {
             Ok(image) => {
@@ -690,32 +696,37 @@ fn decode_sources<'scene>(
             // future defect in our own decoders into a missing picture rather
             // than a failure.
             Err(error) => {
-                let Some(warning) =
-                    soft(scene, *node, source, error, seen[source])?
-                else {
-                    continue;
-                };
+                let warning = soft(scene, *node, source, error, seen[source])?;
+                // **Recorded as a fact, not inferred later from the source's
+                // type.** `taken` has to tell "softened on purpose" from
+                // "absent for a reason nobody noticed", and only this loop
+                // knows which it was.
+                softened.insert(*source);
                 warnings.push(warning);
             }
         }
     }
-    Ok((once, warnings))
+    Ok((once, warnings, softened))
 }
 
 /// Turns a failed source into a warning, or gives the error back.
 ///
-/// `Ok(None)` cannot happen and is not a state: the `?` above returns every
-/// error this does not soften, so the `Option` exists only to keep the caller's
-/// `let ... else` honest about the type. Softening is decided here rather than
-/// at the call site so that the rule -- which source, under which policy --
-/// lives in one place.
+/// **Two outcomes, and the type says so.** This returned
+/// `Result<Option<_>, _>` once, with a `None` no arm could produce -- and the
+/// caller answered it with a `continue`, which would have dropped a failed
+/// source silently the first time somebody added an arm that returned it. A
+/// type admitting a state its function cannot reach is the caller's problem
+/// tomorrow.
+///
+/// Softening is decided here rather than at the call site so that the rule --
+/// which source, under which policy -- lives in one place.
 fn soft(
     scene: &Scene,
     node: NodeId,
     source: &ImageSource,
     error: Error,
     nodes: usize,
-) -> Result<Option<ImageWarning>, Error> {
+) -> Result<ImageWarning, Error> {
     if scene.on_image_error == OnImageError::Throw {
         return Err(error);
     }
@@ -725,24 +736,24 @@ fn soft(
     match error {
         Error::SourceFetch {
             detail, failure, ..
-        } => Ok(Some(ImageWarning {
+        } => Ok(ImageWarning {
             url: url.clone(),
             node,
             failure,
             detail,
             nodes,
-        })),
+        }),
         // Fetched, and then would not decode. The bytes came from the world
         // rather than from the caller, so this is the same class of fact as a
         // 404 and softens with it.
-        Error::UndecodableImage(_) => Ok(Some(ImageWarning {
+        Error::UndecodableImage(_) => Ok(ImageWarning {
             url: url.clone(),
             node,
             failure: FetchFailure::Other,
             detail: "the bytes fetched are not an image any decoder here reads"
                 .to_owned(),
             nodes,
-        })),
+        }),
         // `UnresolvedSource` is the `net` feature being off, which is a build
         // decision rather than a fact about the world: a caller who did not
         // compile an HTTP client has not had a fetch fail, they have asked for
@@ -766,20 +777,15 @@ fn soft(
             else {
                 return Err(error);
             };
-            Ok(Some(ImageWarning {
+            // No reconstruction: the status travels inside the variant, so
+            // there is no absent-code case to invent a number for.
+            Ok(ImageWarning {
                 url: url.clone(),
                 node,
-                failure: match FetchFailure::from(attempt.failure) {
-                    // The wire enum carries no payload, so the status comes
-                    // from beside it rather than from the variant.
-                    FetchFailure::Status(_) => {
-                        FetchFailure::Status(attempt.status.unwrap_or(0))
-                    }
-                    other => other,
-                },
+                failure: FetchFailure::from(attempt.failure),
                 detail: attempt.detail.clone(),
                 nodes,
-            }))
+            })
         }
 
         // **Everything else stays loud, and the list above is the whole of
@@ -852,18 +858,26 @@ fn in_parallel(
 /// The decode a node asked for, taken from what was decoded up front.
 fn taken(
     once: &HashMap<&ImageSource, DecodedImage>,
+    softened: &HashSet<&ImageSource>,
     node: NodeId,
     source: &ImageSource,
 ) -> Result<Option<DecodedImage>, Error> {
     match once.get(source) {
         Some(image) => Ok(Some(image.clone())),
-        // Absent for one of two reasons, and they are not the same. A `Url`
-        // was softened above and is deliberately missing, which is how a
-        // failed node reaches layout and paint as "no image" through the
-        // `Option` both of them already match on. Anything else absent is this
+        // Absent for one of two reasons, and they are not the same.
+        //
+        // **Decided from what happened, not from what the source is.** A
+        // source `decode_sources` softened is deliberately missing, which is
+        // how a failed node reaches layout and paint as "no image" through the
+        // `Option` both already match on. Anything else absent is this
         // function's own invariant broken -- every source in the scene was
         // asked for -- and stays an error.
-        None if matches!(source, ImageSource::Url(_)) => Ok(None),
+        //
+        // Reading the source's *type* instead would have been the same
+        // silence this feature exists to prevent: a fourth image-bearing site
+        // added later and missed by `want` would be an error for a path and a
+        // blank for a URL, on a card that then looks finished.
+        None if softened.contains(source) => Ok(None),
         None => Err(Error::UndecodableImage(node)),
     }
 }
@@ -1141,7 +1155,7 @@ mod softening {
         let node = NodeId::ROOT;
 
         // Missing picture: softens.
-        assert!(matches!(
+        assert!(
             soft(
                 &scene,
                 node,
@@ -1152,13 +1166,15 @@ mod softening {
                     failure: crate::FetchFailure::Status(404),
                 },
                 1,
-            ),
-            Ok(Some(_))
-        ));
-        assert!(matches!(
-            soft(&scene, node, &source, Error::UndecodableImage(node), 1),
-            Ok(Some(_))
-        ));
+            )
+            .is_ok(),
+            "a 404 on a URL is the broken-image case and should soften"
+        );
+        assert!(
+            soft(&scene, node, &source, Error::UndecodableImage(node), 1)
+                .is_ok(),
+            "bytes a decoder refuses are a fact about the bytes"
+        );
 
         // **We are not working: stays loud.** A decoder that panicked says
         // nothing about the bytes -- they may have been perfect -- and a grey
@@ -1184,8 +1200,7 @@ mod softening {
             .image_fetch_attempts
             .push(meo_canvas_scene::ImageFetchAttempt {
                 url: "http://example.invalid/x.png".to_owned(),
-                failure: meo_canvas_scene::ImageFetchFailure::Status,
-                status: Some(404),
+                failure: meo_canvas_scene::ImageFetchFailure::Status(404),
                 detail: "404 Not Found".to_owned(),
             });
         let softened =
@@ -1193,7 +1208,7 @@ mod softening {
         assert!(
             matches!(
                 softened,
-                Ok(Some(ref warning)) if warning.failure == crate::FetchFailure::Status(404)
+                Ok(ref warning) if warning.failure == crate::FetchFailure::Status(404)
             ),
             "a recorded attempt should soften and keep its own reason: {softened:?}"
         );

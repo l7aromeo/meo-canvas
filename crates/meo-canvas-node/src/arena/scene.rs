@@ -24,7 +24,7 @@ use meo_canvas_scene::{
             TextDecoration, TextStroke, VerticalAlign,
         },
     },
-    surface::{ColorSpace, ColorType, ImageFetchFailure},
+    surface::{ColorSpace, ColorType},
 };
 
 use super::{ArenaError, Reader, value::ArenaValue};
@@ -75,7 +75,6 @@ arena_enum!(
     MaskShape,
     NodeTag,
     ObjectFit,
-    ImageFetchFailure,
     OnImageError,
     Overflow,
     PaintOrder,

@@ -138,12 +138,16 @@ impl From<meo_canvas_scene::ImageFetchFailure> for FetchFailure {
     /// fails this build rather than a test, which is the same guarantee
     /// `ColorType`'s two-sided mapping gives.
     ///
-    /// `Status` arrives without its code here and gains one from the attempt's
-    /// own `status` field, because the wire enum carries no payload.
+    /// Total, and it has no reason not to be: both sides carry the HTTP status
+    /// inside `Status`, so every variant maps to exactly one variant and
+    /// nothing is fabricated.
     fn from(failure: meo_canvas_scene::ImageFetchFailure) -> Self {
         use meo_canvas_scene::ImageFetchFailure as Wire;
         match failure {
-            Wire::Status => Self::Status(0),
+            // The status travels inside the variant on both sides, so this is
+            // a rename rather than a reconstruction -- there is no absent-code
+            // case to invent a number for.
+            Wire::Status(code) => Self::Status(code),
             Wire::HostNotFound => Self::HostNotFound,
             Wire::BadUrl => Self::BadUrl,
             Wire::Transport => Self::Transport,

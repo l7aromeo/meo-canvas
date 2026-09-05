@@ -451,7 +451,9 @@ mod tests {
                 TextStyle, VerticalAlign,
             },
         },
-        surface::{ColorSpace, ColorType},
+        surface::{
+            ColorSpace, ColorType, ImageFetchAttempt, ImageFetchFailure,
+        },
     };
 
     /// Byte offset of the surface block, which follows magic, version, the
@@ -776,6 +778,41 @@ mod tests {
 
         let decoded = decode(&encode(&scene));
         assert_eq!(decoded, Ok(scene));
+    }
+
+    /// A status cannot be separated from its classification on the wire.
+    ///
+    /// **The pairing is unrepresentable rather than validated.** It was two
+    /// fields once -- a classification and an `Option<u16>` beside it -- and
+    /// the combination "`Status`, no code" could be written, decoded, and then
+    /// only be dealt with by inventing a number. A consumer is documented to
+    /// branch on that number: retry a 5xx, do not retry a 4xx. Zero is neither
+    /// and reads as real.
+    #[test]
+    fn a_status_travels_inside_its_own_variant() {
+        let mut scene = Scene::new(Size::new(4.0, 4.0));
+        scene.image_fetch_attempts = vec![
+            ImageFetchAttempt {
+                url: "https://example.invalid/a.png".to_owned(),
+                failure: ImageFetchFailure::Status(404),
+                detail: "404 Not Found".to_owned(),
+            },
+            ImageFetchAttempt {
+                url: "https://example.invalid/b.png".to_owned(),
+                failure: ImageFetchFailure::Transport,
+                detail: "connection refused".to_owned(),
+            },
+        ];
+
+        let back =
+            decode(&encode(&scene)).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(back.image_fetch_attempts, scene.image_fetch_attempts);
+        // Named rather than left to the equality above: the code is the part
+        // that had nowhere to live before.
+        assert_eq!(
+            back.image_fetch_attempts[0].failure,
+            ImageFetchFailure::Status(404)
+        );
     }
 
     #[test]

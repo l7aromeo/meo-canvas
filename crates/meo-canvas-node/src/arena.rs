@@ -135,12 +135,38 @@ fn read_attempts(
     for _ in 0..count {
         out.push(ImageFetchAttempt {
             url: String::read(input)?,
-            failure: ImageFetchFailure::read(input)?,
-            status: Option::<u16>::read(input)?,
+            failure: read_failure(input)?,
             detail: String::read(input)?,
         });
     }
     Ok(out)
+}
+
+/// One failure classification, with its HTTP status behind the tag.
+///
+/// **The status lives inside `Status` rather than in a slot beside it**, so a
+/// `Status` with no code cannot be written and cannot be read. The alternative
+/// -- two fields and a rule that they agree -- makes the disagreement
+/// representable, and the only thing to do with it is invent a number that a
+/// consumer is documented to branch on.
+fn read_failure(
+    input: &mut Reader<'_>,
+) -> Result<ImageFetchFailure, ArenaError> {
+    let slot = input.offset();
+    let tag = input.bounded_integer(f64::from(u8::MAX))? as u8;
+    match tag {
+        0 => Ok(ImageFetchFailure::Status(u16::read(input)?)),
+        1 => Ok(ImageFetchFailure::HostNotFound),
+        2 => Ok(ImageFetchFailure::BadUrl),
+        3 => Ok(ImageFetchFailure::Transport),
+        4 => Ok(ImageFetchFailure::TooLarge),
+        5 => Ok(ImageFetchFailure::Other),
+        found => Err(ArenaError::UnknownTag {
+            slot,
+            what: "ImageFetchFailure",
+            found: f64::from(found),
+        }),
+    }
 }
 
 #[cfg(test)]
