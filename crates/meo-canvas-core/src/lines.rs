@@ -36,8 +36,12 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use meo_canvas_scene::style::text::{
-    FontStyle, FontVariant, LineHeight, ParagraphStyle, Spacing, TextSegment,
+use meo_canvas_scene::style::{
+    paint::Color,
+    text::{
+        FontStyle, FontVariant, LineHeight, ParagraphStyle, Spacing,
+        TextDecoration, TextSegment,
+    },
 };
 use meo_skia_canvas::{
     Canvas, CanvasOptions, Font, FontFeature, FontStretch, FontVariantCaps,
@@ -139,6 +143,21 @@ pub struct RunStyle {
     /// repository's own face, so a width measured without the features is the
     /// wrong width.
     pub variant: Vec<FontVariant>,
+    /// The colour the glyphs are filled with.
+    ///
+    /// **Here rather than on the node, because a run is what carries it.**
+    /// A segment declaring a colour changes its own ink and nothing else,
+    /// measured against Chrome 151: the paragraph's height and the span's box
+    /// are unmoved and only the pixels differ. The fields above are the ones
+    /// that were already here, and they are exactly the properties a segment
+    /// could carry before this -- everything else a caller set on a segment
+    /// had nowhere to travel and was silently discarded.
+    pub color: Color,
+    /// Underline, overline or strike, drawn with the run.
+    ///
+    /// Per-run for the same reason as [`RunStyle::color`] and by the same
+    /// measurement: a span's decoration marks that span's ink alone.
+    pub decoration: TextDecoration,
 }
 
 impl RunStyle {
@@ -161,6 +180,8 @@ impl RunStyle {
                 .font_variant
                 .clone()
                 .unwrap_or_else(|| base.font_variant.clone()),
+            color: style.color.unwrap_or(base.color),
+            decoration: style.text_decoration.unwrap_or(base.decoration),
         }
     }
 
@@ -174,6 +195,8 @@ impl RunStyle {
             weight: base.weight.get(),
             italic: matches!(base.style, FontStyle::Italic),
             variant: base.font_variant.clone(),
+            color: base.color,
+            decoration: base.decoration,
         }
     }
 
