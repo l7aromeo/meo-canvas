@@ -17,6 +17,17 @@ The same core does the work either way you reach it.
 
 Layout, text shaping, painting and encoding all happen in Rust. The Node surface describes a scene and asks for pixels; nothing is drawn in JavaScript.
 
+## Documentation
+
+The JavaScript API reference is at **<https://l7aromeo.github.io/meo-canvas/>**,
+one directory per published version, generated from the type declarations each
+release ships. `latest/` follows the newest **stable** release the way npm's
+`latest` dist-tag does — so while 10.x is in prerelease there is no `latest/`
+and the index says so.
+
+The Rust reference will be on docs.rs once the crate is published; it is not
+yet, so there is deliberately no link here rather than a dead one.
+
 ## Installation
 
 Rust:
