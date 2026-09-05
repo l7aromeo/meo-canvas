@@ -45,6 +45,12 @@ jobs:
   ci:
     name: ci (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Measured rather than picked: the last eight runs took 16 to 23 minutes,
+    # and the 52-minute one was the `meo-skia-canvas` 0.14.0 bump, which missed
+    # the Skia cache. So this is not a budget for the work -- it is the point
+    # past which a run has stopped rather than slowed, and without it the
+    # default is six hours of a runner.
+    timeout-minutes: 90
     strategy:
       # Every platform reports. Cancelling the set on one failure hides whether
       # the fault is the code or the backend, which is the first thing to know.

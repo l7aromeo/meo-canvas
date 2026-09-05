@@ -49,6 +49,21 @@ on:
 permissions:
   contents: read
 
+# **`cancel-in-progress` is conditional here, where `ci.yml` can say `true`
+# flatly.** There a superseded run describes code nobody has any more, so
+# cancelling it is free. Here half the triggers deploy: cancelling one of those
+# mid-flight can leave `gh-pages` pushed and the Pages artifact never uploaded,
+# and two publishes running at once race the same non-force push from two
+# shallow clones with no retry between them.
+#
+# So pull requests keep the cheap behaviour, grouped by ref and cancelling
+# their own supersedes, and every publishing path shares one group that queues
+# instead. Queueing costs a few minutes; cancelling costs a site that disagrees
+# with itself.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 defaults:
   run:
     shell: bash
@@ -57,6 +72,9 @@ jobs:
   build:
     name: reference (typedoc)
     runs-on: ubuntu-latest
+    # A minute is what this takes; the bound is on a hung install or a TypeDoc
+    # that never returns, not on the work.
+    timeout-minutes: 20
     outputs:
       version: ${{ steps.which.outputs.version }}
     steps:
@@ -120,6 +138,14 @@ jobs:
         with:
           name: reference
           path: target/jsdoc
+          # **The action's default is `warn`, and `warn` is wrong here.** This
+          # step runs only when a version is being published, so no pull
+          # request ever exercises it -- and with the default, a `target/jsdoc`
+          # that came out empty or moved would upload nothing, `publish` would
+          # download nothing, and `cp -r incoming site/${VERSION}` would deploy
+          # an empty reference from a run that was green throughout. The one
+          # path that can fail is the one no rehearsal covers.
+          if-no-files-found: error
           retention-days: 1
 
   publish:
@@ -127,6 +153,11 @@ jobs:
     needs: build
     if: needs.build.outputs.version != ''
     runs-on: ubuntu-latest
+    # Ten of these are the registry wait below, which fails on its own deadline
+    # and reports why. The rest is headroom for the deploy, and a bound on the
+    # case that deadline cannot see: an environment approval nobody grants,
+    # which would otherwise hold a runner for six hours.
+    timeout-minutes: 30
     permissions:
       contents: write
       pages: write
@@ -142,23 +173,76 @@ jobs:
       # prevent, so this waits for the registry to answer -- bounded, and loud
       # when the bound is hit, because a version that never appears is a
       # release that did not happen.
-      - name: Wait for the version to resolve from npm
+      - name: Wait for the release to be installable, not merely published
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           want="${VERSION#v}"
-          for attempt in $(seq 1 20); do
-            got=$(npm view "meo-canvas@${want}" version 2>/dev/null || true)
-            if [ "$got" = "$want" ]; then
-              echo "meo-canvas@${want} resolves from the registry"
-              exit 0
-            fi
-            echo "attempt ${attempt}: meo-canvas@${want} not yet on the registry"
-            sleep 30
+
+          # One deadline for the whole question rather than one per package.
+          # Ten minutes is the budget for "this release is installable"; a
+          # per-package budget would multiply by eight and turn one stuck
+          # registry entry into an eighty-minute job.
+          deadline=$(( $(date +%s) + 600 ))
+          resolves() {
+            until npm view "$1" version >/dev/null 2>&1; do
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::$1 did not resolve from npm within ten minutes; not publishing a reference for a version nobody can install"
+                exit 1
+              fi
+              echo "  waiting for $1"
+              sleep 15
+            done
+            echo "  $1 resolves"
+          }
+
+          resolves "meo-canvas@${want}"
+
+          # **The main package alone was never the question this step claimed
+          # to answer.** It said it was waiting so that `latest/` never
+          # describes a version `npm install` cannot give you -- and an install
+          # of `meo-canvas` also resolves the seven platform packages its
+          # `optionalDependencies` names. Checking one of eight was a green
+          # check for a claim eight times wider.
+          #
+          # **They are optional, which is what makes this necessary rather than
+          # tidy.** npm does not fail an install when it cannot resolve an
+          # `optionalDependencies` entry: it warns, succeeds, and leaves an
+          # installation with no addon that throws on the first render. So the
+          # failure this prevents does not look like a broken release. It looks
+          # like a broken library.
+          #
+          # **Read out of the published manifest rather than listed here.**
+          # Asking npm what that version declares is asking the question the
+          # claim is about; a list in this file would be a second place to keep
+          # in step with `packages/meo-canvas/package.json`, and reading the
+          # checkout would be wrong for a `workflow_dispatch` backfill, whose
+          # `repo/` is a branch rather than the tag being published.
+          #
+          # `jq` rather than `node`, for the reason `crates-io.yml` gives at its
+          # own version read: `npm` is on the image and this step already rests
+          # on that, but nothing here sets a Node up on purpose.
+          declared=$(npm view "meo-canvas@${want}" optionalDependencies --json)
+          test -n "$declared" || declared='{}'
+          platforms=$(printf '%s' "$declared" | jq -r 'to_entries[] | "\(.key)@\(.value)"')
+
+          # **Zero is a failed read, not an empty set.** Every 10.x ships seven
+          # platform packages, so no entries means the manifest did not parse
+          # or npm answered with nothing -- which is exactly the shape that
+          # would let this step pass having checked nothing, which is what it
+          # was doing before. A version that genuinely ships no platform
+          # package will have to change this line, and should have to.
+          count=$(printf '%s' "$platforms" | grep -c . || true)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::meo-canvas@${want} declared no optionalDependencies; this check looked at nothing"
+            exit 1
+          fi
+          echo "waiting on ${count} platform packages"
+
+          for spec in $platforms; do
+            resolves "$spec"
           done
-          echo "::error::meo-canvas@${want} did not resolve from npm in 10 minutes; not publishing a reference for a version nobody can install"
-          exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -190,8 +274,20 @@ jobs:
 
       # `latest/` is the newest **stable** version, the way npm's `latest`
       # dist-tag is; while none exists it follows the newest prerelease and
-      # the index says so. Chosen by `site-index.mjs`'s ordering, which knows
-      # that `v10.0.0` outranks `v10.0.0-alpha.4`.
+      # the index says so.
+      #
+      # **Chosen by the `node -e` below, and not by `site-index.mjs`.** This
+      # comment used to credit the script, which does not decide: the sort
+      # below picks `newest`, stamps it into `latest/VERSION`, and
+      # `site-index.mjs` reads that stamp -- its own `newer()` is the fallback
+      # for a site with no stamp, which this workflow never produces. So two
+      # orderings of the same version strings live in two files, and only this
+      # one moves what `latest/` points at.
+      #
+      # They agree today. The one below partitions the stable versions out
+      # first and so needs no rule for a stable version outranking a prerelease
+      # of the same triple, which is the rule `site-index.mjs` states
+      # explicitly. If either moves, move both.
       - name: Assemble the site
         env:
           VERSION: ${{ needs.build.outputs.version }}
