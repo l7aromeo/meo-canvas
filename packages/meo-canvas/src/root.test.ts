@@ -39,8 +39,6 @@ function fakeRenderer() {
         return native
       },
     },
-    writeFile: async () => undefined,
-    writeFileSync: () => undefined,
   }
   return { dependencies, painted }
 }

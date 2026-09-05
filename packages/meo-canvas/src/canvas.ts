@@ -164,12 +164,6 @@ export interface NativeCanvas {
   readonly scale: number
 }
 
-/** Writes bytes to a path. Supplied by the caller of {@link Canvas}. */
-export type WriteFile = (path: string, bytes: Uint8Array) => Promise<void>
-
-/** Writes bytes to a path, blocking. */
-export type WriteFileSync = (path: string, bytes: Uint8Array) => void
-
 /**
  * The format a filename's extension names.
  *
@@ -203,20 +197,18 @@ export class Canvas {
   /**
    * Wraps a native surface.
    *
-   * **The two filesystem arguments are no longer read, and are still accepted.**
-   * They were how bytes reached the disk when `toFile` encoded to a `Buffer`
-   * and handed it over. It does not: the file is written where it is encoded,
-   * so a page-spanning format streams into it instead of existing whole in
-   * memory first, and there is no buffer left for an injected writer to
-   * receive. The native surface is now the seam a test substitutes at, which is
-   * the same seam `encode` was always mocked through — one injection point
-   * instead of two.
+   * **One argument, where there were three.** The other two were a filesystem,
+   * injected so this class could be tested without a disk. They cannot survive
+   * the encode moving into the file: `toFile` no longer produces a buffer for
+   * anyone to write, so a caller supplying a writer would have been passing
+   * something nothing could call — a documented capability that silently did
+   * nothing.
    *
-   * Kept in the signature because removing them changes an exported type and
-   * the arity of a constructor this package ships, which is a decision about
-   * the public surface rather than about this method.
+   * The seam did not go, it moved. A test substitutes a {@link NativeCanvas},
+   * which is where `encode` was always mocked anyway, and a host without
+   * `node:fs` supplies one too. One injection point instead of two.
    */
-  constructor(native: NativeCanvas, _writeFile?: WriteFile, _writeFileSync?: WriteFileSync) {
+  constructor(native: NativeCanvas) {
     this.#native = native
   }
 

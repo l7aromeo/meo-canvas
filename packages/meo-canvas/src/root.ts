@@ -12,9 +12,6 @@
  * @packageDocumentation
  */
 
-import { writeFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
-
 import { resolveAddon } from './addon.js'
 import { encodeScene, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
@@ -376,25 +373,28 @@ export interface NativeRenderer {
   paint(slots: Float64Array, values: readonly SideValue[], options: PaintOptions): NativeCanvas
 }
 
-/** How the filesystem is reached. Injected so a caller without `node:fs` can supply their own. */
+/**
+ * What `Root` reaches for, injected so a caller can supply their own.
+ *
+ * **The filesystem used to be here too, and is not any more.** `toFile` writes
+ * the file where it encodes it rather than handing bytes back, so there is
+ * nothing left for an injected writer to receive; the native surface is the
+ * one seam, and it is the seam a test wanted anyway.
+ */
 export interface RootDependencies {
   /** What paints the scene. */
   readonly renderer: NativeRenderer
-  /** Writes bytes to a path. */
-  readonly writeFile: (path: string, bytes: Uint8Array) => Promise<void>
-  /** Writes bytes to a path, blocking. */
-  readonly writeFileSync: (path: string, bytes: Uint8Array) => void
 }
 
 /**
- * The addon, and the filesystem, which is what `Root` uses when told nothing.
+ * The addon, which is what `Root` uses when told nothing.
  *
  * Resolved on the first call rather than when this module loads: a caller who
  * supplies their own renderer — a test, or a host without a filesystem — should
  * not need the native module present to import the package.
  */
 function installed(): RootDependencies {
-  return { renderer: load(), writeFile, writeFileSync }
+  return { renderer: load() }
 }
 
 /** What `Root` calls into. */
@@ -574,5 +574,5 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
     fonts: props.fonts ?? [],
   })
 
-  return new Canvas(native, dependencies.writeFile, dependencies.writeFileSync)
+  return new Canvas(native)
 }

@@ -41,19 +41,16 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
   return { native, calls, wrote, released: () => released }
 }
 
-/** A canvas over a fake surface and a fake filesystem. */
+/**
+ * A canvas over a fake surface.
+ *
+ * There is no fake filesystem any more, and nothing here lost coverage by it:
+ * the file a `toFile` writes is recorded by the surface, in `fake`'s `wrote`,
+ * because that is where the write now happens. The object is kept rather than
+ * returning the canvas bare so the call sites below read the same.
+ */
 function canvasOver(native: NativeCanvas) {
-  const written: { path: string; bytes: Uint8Array }[] = []
-  const canvas = new Canvas(
-    native,
-    async (path, bytes) => {
-      written.push({ path, bytes })
-    },
-    (path, bytes) => {
-      written.push({ path, bytes })
-    },
-  )
-  return { canvas, written }
+  return { canvas: new Canvas(native) }
 }
 
 describe('encoding', () => {

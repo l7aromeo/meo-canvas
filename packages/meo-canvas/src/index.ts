@@ -234,7 +234,7 @@ export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOpti
 export type { SideValue } from './arena.js'
 
 export { Canvas } from './canvas.js'
-export type { EncodeOptions, Format, NativeCanvas, WriteFile, WriteFileSync } from './canvas.js'
+export type { EncodeOptions, Format, NativeCanvas } from './canvas.js'
 
 // The way into the colour helpers below. `mixColor` takes an `Rgba` and
 // `formatColor` writes one back out, so without a parse a caller holding a
