@@ -1323,6 +1323,28 @@ around it was rewritten for another reason on 5 September 2026 (`e94bf86`). The
 counterpart on `just example` is beside the parity rule; the general form is
 stated there.
 
+**A check that matches on text can match the checker.** `pgrep -f 'llvm-cov'`
+finds the polling loop, because the pattern is in that loop's own command line
+-- so `until ! pgrep -qf 'llvm-cov'; do sleep 60; done` never terminates and
+reports the work as still running long after it finished. Ten of these
+accumulated in one session on 6 September 2026, each keeping the others alive,
+and one of them was inside the check written to find the first nine.
+
+That last part is why it is written down rather than remembered. The failure
+does not announce itself as a category, so the instinct that produces it
+survives learning about it once, and the cleanup reproduces the bug. Match on
+identity instead -- a pid, `ps -o comm`, an exit status you arranged to be the
+one you read -- because a name can appear in a command that is only talking
+about the thing.
+
+The general rule the three of these share: **an exit status, or a match,
+describes the last thing that ran, which is only the thing you care about if
+you arranged for it to be.** `${PIPESTATUS[0]}` is bash's and expands to
+nothing in zsh; a watch chain ending in `gh run view` exits 0 for successfully
+printing a failing run; `git merge-base --is-ancestor` exits 1 both for "not an
+ancestor" and for a ref that does not exist. None of the three can report the
+thing being asked about, and all three read as an answer.
+
 **A correct shape buys its contents an assumption of care they have not
 earned.** The rules above are about instruments that report the wrong number.
 This one is about reading, and it is the reason a careful-looking thing is
