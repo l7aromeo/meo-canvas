@@ -188,6 +188,22 @@ jobs:
           cargo install --locked cargo-audit
           just audit
 
+      # The `net` feature, on the same reasoning as the advisory step above and
+      # placed beside it for that reason: whether the HTTP path compiles and
+      # passes is a fact about the code and not about the host, so three runners
+      # would buy three copies of one answer.
+      #
+      # **`just ci` does not build this and never has.** Every `--features` in
+      # the justfile names `metal` or `vulkan`, so `fetch_policy.rs` -- which
+      # carries `#![cfg(feature = "net")]` at file scope -- compiled to nothing
+      # on every runner, and the second arm of `net_feature.rs` never existed.
+      # It happens to pass today, which is why nothing noticed; that is a
+      # statement about today and this is what makes it a statement about every
+      # commit. See `just net-check` for the cost and the trade it accepts.
+      - name: Does the feature nothing else compiles still compile?
+        if: runner.os == 'Linux'
+        run: just net-check
+
       # An ordinary addon under vitest's threads pool, on the platform where the
       # *instrumented* one segfaults. It ran once without gating to answer which
       # of the two was at fault; it passed on 4 September 2026, so the crash is
