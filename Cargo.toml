@@ -30,7 +30,7 @@ meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0" }
 # `default-features = false` is what keeps its `node-addon` feature off, and so
 # keeps its `#[neon::main]` out of the graph: a `.node` addon has exactly one
 # module-init symbol, and `meo-canvas-node` owns it.
-meo-skia-canvas = { version = "0.14.0", default-features = false }
+meo-skia-canvas = { version = "0.14", default-features = false }
 
 # Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
 # `*const ()` handle the caller resolves, so it adds a surface with no
