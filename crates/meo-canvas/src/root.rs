@@ -709,7 +709,7 @@ impl Canvas {
     /// two surfaces write, and the bytes were never in question. What differed
     /// was how much memory it took to produce them.
     ///
-    /// # Why the file is created before the encode
+    /// # Why the path is opened before the encode
     ///
     /// So a path that cannot be written is still [`BuildError::Write`] with
     /// its [`std::io::ErrorKind`] intact — a missing directory, a permission
@@ -722,6 +722,28 @@ impl Canvas {
     /// It also fails sooner, which matters more the longer the export. What it
     /// does not cover is a failure *during* the write — a full disk — which
     /// arrives as [`BuildError::Render`] carrying the renderer's message.
+    ///
+    /// # Why the probe does not truncate, and does not leave a file behind
+    ///
+    /// **A failed encode must not destroy the file that was already there.**
+    /// `File::create` truncates, so probing with it would empty the caller's
+    /// previous render before attempting one that may be refused — and an
+    /// encode is refused for ordinary reasons this method documents. Losing
+    /// yesterday's output to a bad `EncodeOptions` is worse than losing the
+    /// error kind this probe exists to keep.
+    ///
+    /// So an existing path is opened for writing without truncating, which
+    /// asks the same question and answers it the same way. Truncation happens
+    /// where it is correct: in the renderer, on the success path.
+    ///
+    /// A path that does *not* exist is created and removed again, because the
+    /// only thing wanted from it was the filesystem's answer. Left in place it
+    /// would put a zero-byte file where a failed encode used to leave nothing.
+    /// That removal is the one error here that is swallowed, and it is safe to
+    /// swallow: it can only fail by leaving behind the empty file the
+    /// alternative design would have left anyway, and it can only ever touch a
+    /// file this call has just created — `create_new` is what makes that
+    /// atomic rather than a check and a hope.
     ///
     /// # Errors
     ///
@@ -736,10 +758,29 @@ impl Canvas {
         options: &EncodeOptions,
     ) -> Result<(), BuildError> {
         let path = path.as_ref();
-        // Created and dropped, not written through: the renderer opens the
-        // path itself. This is here to ask the filesystem the question while
-        // the answer is still an `io::Error`.
-        drop(std::fs::File::create(path).map_err(BuildError::Write)?);
+        // Opened and dropped, not written through: the renderer opens the path
+        // itself. This is here to ask the filesystem the question while the
+        // answer is still an `io::Error`. See the notes above for why it does
+        // not truncate and why it cleans up after itself.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(file) => {
+                drop(file);
+                drop(std::fs::remove_file(path));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                drop(
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .open(path)
+                        .map_err(BuildError::Write)?,
+                );
+            }
+            Err(error) => return Err(BuildError::Write(error)),
+        }
         Ok(self.painted.prepare_encode(format, options)?.write(path)?)
     }
 
@@ -867,8 +908,8 @@ mod tests {
 
     use super::{BuildError, PageInfo, Root, SequenceError};
     use crate::{
-        Box, ColorSpace, ColorType, Column, Format, Renderer, Row, Styled,
-        Text, hex_rgb, px,
+        Box, ColorSpace, ColorType, Column, EncodeOptions, Format, Renderer,
+        Row, Styled, Text, hex_rgb, px,
     };
 
     #[test]
@@ -960,6 +1001,80 @@ mod tests {
             .and_then(|cause| cause.downcast_ref::<std::io::Error>())
             .map(std::io::Error::kind);
         assert_eq!(kind, Some(std::io::ErrorKind::NotFound));
+    }
+
+    #[test]
+    fn a_refused_encode_leaves_the_previous_file_alone() {
+        // The failure this method's probe must not cause. `File::create`
+        // truncates, so probing with it emptied whatever was at the path
+        // before attempting an encode that may be refused -- and an encode is
+        // refused for ordinary reasons: `fps` on a still format is one, and
+        // that is a caller error, not a machine failure. Yesterday's render
+        // would be a zero-byte file and the only thing returned would be a
+        // message about frame timing.
+        let renderer = Renderer::new();
+        let mut canvas = Root::new(16.0)
+            .height(8.0)
+            .render(&renderer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let path = std::env::temp_dir().join("meo-canvas-not-clobbered.png");
+        canvas
+            .to_file(&path)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let before = std::fs::read(&path)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(!before.is_empty(), "the first write produced nothing");
+
+        // A frame rate means nothing to a PNG, which `EncodeOptions::validate`
+        // refuses before anything is drawn.
+        let refused = canvas.to_file_with(
+            &path,
+            Format::Png,
+            &EncodeOptions {
+                fps: Some(30.0),
+                ..EncodeOptions::default()
+            },
+        );
+        assert!(refused.is_err(), "a frame rate on a PNG was accepted");
+
+        let after = std::fs::read(&path)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(
+            after, before,
+            "a refused encode changed the file that was already there"
+        );
+        std::fs::remove_file(&path)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+    }
+
+    #[test]
+    fn a_refused_encode_leaves_no_file_where_there_was_none() {
+        // The other half: the probe creates a path that does not exist, so it
+        // has to remove it again. Left behind, a refused encode would put a
+        // zero-byte file where it used to put nothing at all.
+        let renderer = Renderer::new();
+        let mut canvas = Root::new(16.0)
+            .height(8.0)
+            .render(&renderer)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let path = std::env::temp_dir().join("meo-canvas-no-residue.png");
+        drop(std::fs::remove_file(&path));
+
+        let refused = canvas.to_file_with(
+            &path,
+            Format::Png,
+            &EncodeOptions {
+                fps: Some(30.0),
+                ..EncodeOptions::default()
+            },
+        );
+        assert!(refused.is_err(), "a frame rate on a PNG was accepted");
+        assert!(
+            !path.exists(),
+            "a refused encode left a file at a path that had none"
+        );
     }
 
     #[test]
