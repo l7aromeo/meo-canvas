@@ -111,7 +111,7 @@ describe('a glibc host', () => {
     // Only a Linux CI run, or this, catches it.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     const addon = { rendered: true }
-    injected.current = requiring({ 'meo-canvas-linux-x64-gnu': addon })
+    injected.current = requiring({ '@meo-canvas/linux-x64-gnu': addon })
 
     expect(resolveAddon()).toBe(addon)
   })
@@ -143,7 +143,7 @@ describe('a musl host', () => {
     // target expansion would have.
     host({ platform: 'linux', arch: 'x64' })
     const addon = { rendered: true }
-    injected.current = requiring({ 'meo-canvas-linux-x64-musl': addon })
+    injected.current = requiring({ '@meo-canvas/linux-x64-musl': addon })
 
     expect(resolveAddon()).toBe(addon)
   })
@@ -152,7 +152,7 @@ describe('a musl host', () => {
     // The collision the old `platform-arch` key would have had. A musl host
     // loading a glibc binary fails at first render rather than at install.
     host({ platform: 'linux', arch: 'x64' })
-    injected.current = requiring({ 'meo-canvas-linux-x64-gnu': { wrong: true } })
+    injected.current = requiring({ '@meo-canvas/linux-x64-gnu': { wrong: true } })
 
     expect(() => resolveAddon()).toThrow(/not found/)
   })
@@ -188,8 +188,8 @@ describe('a platform package that resolves and will not load', () => {
   it('says it is installed rather than that it was not found', () => {
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-gnu': dlopen('some loader complaint'),
-      'meo-canvas-linux-x64-gnu/package.json': {},
+      '@meo-canvas/linux-x64-gnu': dlopen('some loader complaint'),
+      '@meo-canvas/linux-x64-gnu/package.json': {},
     })
 
     // The distinction `require.resolve` exists to draw: `npm install` is the
@@ -207,8 +207,8 @@ describe('a platform package that resolves and will not load', () => {
     // branch honest rather than what keeps it alive.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-gnu': dlopen('libfontconfig.so.1: cannot open shared object file: No such file or directory'),
-      'meo-canvas-linux-x64-gnu/package.json': {},
+      '@meo-canvas/linux-x64-gnu': dlopen('libfontconfig.so.1: cannot open shared object file: No such file or directory'),
+      '@meo-canvas/linux-x64-gnu/package.json': {},
     })
 
     expect(() => resolveAddon()).toThrow(/libfontconfig\.so\.1/)
@@ -226,8 +226,8 @@ describe('a platform package that resolves and will not load', () => {
     // a `DT_NEEDED` nothing provides on `node:22-slim` and `node:22-alpine`.
     host({ platform: 'linux', arch: 'x64' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-musl': dlopen('Error loading shared library libstdc++.so.6: No such file or directory (needed by /app/meo-canvas.node)'),
-      'meo-canvas-linux-x64-musl/package.json': {},
+      '@meo-canvas/linux-x64-musl': dlopen('Error loading shared library libstdc++.so.6: No such file or directory (needed by /app/meo-canvas.node)'),
+      '@meo-canvas/linux-x64-musl/package.json': {},
     })
 
     expect(() => resolveAddon()).toThrow(/loading it needs libstdc\+\+\.so\.6/)
@@ -246,8 +246,8 @@ describe('a platform package that resolves and will not load', () => {
     // what `node:22-alpine` says when handed the glibc build.
     host({ platform: 'linux', arch: 'x64' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-musl': dlopen('Error loading shared library /app/meo-canvas.node: Exec format error'),
-      'meo-canvas-linux-x64-musl/package.json': {},
+      '@meo-canvas/linux-x64-musl': dlopen('Error loading shared library /app/meo-canvas.node: Exec format error'),
+      '@meo-canvas/linux-x64-musl/package.json': {},
     })
 
     expect(() => resolveAddon()).not.toThrow(/loading it needs/)
@@ -257,8 +257,8 @@ describe('a platform package that resolves and will not load', () => {
   it('says which command asks, for a library it has no package name for', () => {
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-gnu': dlopen('libmeo-nosuch.so.1: cannot open shared object file: No such file or directory'),
-      'meo-canvas-linux-x64-gnu/package.json': {},
+      '@meo-canvas/linux-x64-gnu': dlopen('libmeo-nosuch.so.1: cannot open shared object file: No such file or directory'),
+      '@meo-canvas/linux-x64-gnu/package.json': {},
     })
 
     expect(() => resolveAddon()).toThrow(/apt-file search/)
@@ -271,8 +271,8 @@ describe('a platform package that resolves and will not load', () => {
     // a manifest loads when the `.node` beside it does not.
     host({ platform: 'linux', arch: 'x64', glibc: '2.28' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-gnu': dlopen('version GLIBC_2.35 not found'),
-      'meo-canvas-linux-x64-gnu/package.json': { meoCanvas: { floors: { glibc: '2.35', glibcxx: '3.4.30' } } },
+      '@meo-canvas/linux-x64-gnu': dlopen('version GLIBC_2.35 not found'),
+      '@meo-canvas/linux-x64-gnu/package.json': { meoCanvas: { floors: { glibc: '2.35', glibcxx: '3.4.30' } } },
     })
 
     expect(() => resolveAddon()).toThrow(/needs glibc 2\.35 or newer/)
@@ -285,8 +285,8 @@ describe('a platform package that resolves and will not load', () => {
     // would be worse than the fact.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     injected.current = requiring({
-      'meo-canvas-linux-x64-gnu': dlopen('undefined symbol: _M_replace_cold'),
-      'meo-canvas-linux-x64-gnu/package.json': { meoCanvas: { floors: { glibc: '2.35' } } },
+      '@meo-canvas/linux-x64-gnu': dlopen('undefined symbol: _M_replace_cold'),
+      '@meo-canvas/linux-x64-gnu/package.json': { meoCanvas: { floors: { glibc: '2.35' } } },
     })
 
     expect(() => resolveAddon()).toThrow(/_M_replace_cold/)
@@ -299,7 +299,7 @@ describe('the override', () => {
     // named is how a test reports on code nobody asked it about.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     vi.stubEnv('MEO_CANVAS_ADDON', '/nowhere/addon.node')
-    injected.current = requiring({ 'meo-canvas-linux-x64-gnu': { wouldHaveWorked: true } })
+    injected.current = requiring({ '@meo-canvas/linux-x64-gnu': { wouldHaveWorked: true } })
 
     expect(() => resolveAddon()).toThrow(/MEO_CANVAS_ADDON is set to \/nowhere\/addon\.node/)
   })

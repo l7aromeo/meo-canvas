@@ -94,7 +94,7 @@ export function target(): string {
   // **`glibc` is the C library and `gnu` is the target suffix, and they are not
   // the same word.** npm's `libc` field takes `glibc`, and every triple that
   // names the same thing -- the Rust `x86_64-unknown-linux-gnu`, the package
-  // `meo-canvas-linux-x64-gnu` -- spells it `gnu`. Returning the library's name
+  // `@meo-canvas/linux-x64-gnu` -- spells it `gnu`. Returning the library's name
   // here produced `linux-x64-glibc`, which matches no key, so every glibc Linux
   // host was told no addon is published for it. musl is spelled the same in
   // both and hid the mismatch: the musl half of the keying worked.

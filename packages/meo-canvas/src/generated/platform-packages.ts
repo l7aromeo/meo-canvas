@@ -16,11 +16,11 @@
  * exactly the suffixes a release builds.
  */
 export const PLATFORM_PACKAGES: Readonly<Record<string, string>> = {
-  'darwin-arm64': 'meo-canvas-darwin-arm64',
-  'linux-arm64-gnu': 'meo-canvas-linux-arm64-gnu',
-  'linux-arm64-musl': 'meo-canvas-linux-arm64-musl',
-  'linux-x64-gnu': 'meo-canvas-linux-x64-gnu',
-  'linux-x64-musl': 'meo-canvas-linux-x64-musl',
-  'win32-arm64': 'meo-canvas-win32-arm64',
-  'win32-x64': 'meo-canvas-win32-x64',
+  'darwin-arm64': '@meo-canvas/darwin-arm64',
+  'linux-arm64-gnu': '@meo-canvas/linux-arm64-gnu',
+  'linux-arm64-musl': '@meo-canvas/linux-arm64-musl',
+  'linux-x64-gnu': '@meo-canvas/linux-x64-gnu',
+  'linux-x64-musl': '@meo-canvas/linux-x64-musl',
+  'win32-arm64': '@meo-canvas/win32-arm64',
+  'win32-x64': '@meo-canvas/win32-x64',
 }

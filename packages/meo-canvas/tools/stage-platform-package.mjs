@@ -177,7 +177,7 @@ export function manifest(suffix, version) {
     // `.node` does not**, which is exactly the moment the numbers are wanted.
     ...(target.floors === undefined ? {} : { meoCanvas: { floors: target.floors } }),
     // The binary is the whole package, and `main` is what makes
-    // `require('meo-canvas-darwin-arm64')` resolve to it rather than to a
+    // `require('@meo-canvas/darwin-arm64')` resolve to it rather than to a
     // directory with no entry point.
     main: 'meo-canvas.node',
     files: ['meo-canvas.node'],

@@ -42,11 +42,23 @@ describe('the platform target lists', () => {
 
   it('maps each host onto a package for its own platform', () => {
     // `darwin-arm64` must not resolve a linux binary. The host key is
-    // `platform-arch` and the package name ends in the target suffix, so the
-    // platform word has to appear in both.
+    // `platform-arch` and the package name is the target suffix under the
+    // main package's own scope, so the platform word has to appear in both.
     for (const [host, name] of Object.entries(PLATFORM_PACKAGES)) {
       const platform = host.split('-')[0] as string
-      expect(name.startsWith(`${PACKAGE.name}-${platform}`), `${host} resolves ${name}`).toBe(true)
+      expect(name.startsWith(`@${PACKAGE.name}/${platform}`), `${host} resolves ${name}`).toBe(true)
+    }
+  })
+
+  it('scopes every platform package under the main package, which is not scoped', () => {
+    // The shape npm's spam heuristic refused the unscoped names over, on
+    // 5 September 2026. Pinned in both directions because either half alone
+    // passes while the arrangement is wrong: a main package that became
+    // scoped would make `@${PACKAGE.name}/...` above read `@@scope/name/...`,
+    // and a platform package that lost its scope is a name nobody owns.
+    expect(PACKAGE.name.startsWith('@'), 'the main package is scoped').toBe(false)
+    for (const name of Object.keys(PACKAGE.optionalDependencies ?? {})) {
+      expect(name.startsWith(`@${PACKAGE.name}/`), `${name} is not under the scope`).toBe(true)
     }
   })
 
