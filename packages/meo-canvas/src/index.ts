@@ -102,7 +102,12 @@ export type GridAutoFlow = 'row' | 'column' | 'row-dense' | 'column-dense'
 export type TrackSize = number | 'auto' | `${number}px` | `${number}%` | `${number}fr`
 
 /**
- * The pixel layout a canvas composites in.
+ * The pixel layout a canvas hands back.
+ *
+ * **An output format rather than a compositing one.** The surface underneath
+ * composites at the renderer's own depth unless a float type is asked for, so
+ * `'Gray8'` is a request for single-channel output and not for a
+ * single-channel canvas.
  *
  * **Upstream's spellings, exactly, and they are not this package's house
  * style.** Every other keyword union here is ours to name; this one is already

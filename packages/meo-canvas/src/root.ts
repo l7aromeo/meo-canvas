@@ -319,12 +319,17 @@ export type RootProps = Style & {
    */
   readonly gpu?: boolean
   /**
-   * The pixel layout the canvas composites in.
+   * The pixel layout the canvas hands back.
    *
-   * Governs the precision everything is drawn at and the depth the encoded
-   * formats that carry one write. `'F32'` keeps colour outside sRGB rather than
-   * clipping it as it is drawn, at the cost of the GPU — no GPU composites
-   * float. Absent leaves it to the renderer.
+   * `raw` is written in it, and the encoded formats that carry a depth use it.
+   * **It is an output format rather than a compositing one**: the surface
+   * underneath composites at the renderer's own depth unless a float type is
+   * asked for, so `'Gray8'` is a request for single-channel output, not for a
+   * single-channel canvas.
+   *
+   * `'RGBAF32'` is the exception that also changes compositing — it keeps
+   * colour outside sRGB rather than clipping it as it is drawn, at the cost of
+   * the GPU, since no GPU composites float. Absent leaves it to the renderer.
    */
   readonly colorType?: ColorType
   /**
