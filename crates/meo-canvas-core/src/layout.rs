@@ -460,19 +460,23 @@ struct Definite {
 /// the box it resolves against is, which is why this is threaded down the tree
 /// rather than read off a single node.
 ///
-/// **`auto` counts as definite in the two cases flex layout settles it.** An
-/// item stretched across a row takes the line's cross size, and Chrome
-/// resolves a percentage against that. An item that `flex-grow`s in a column
-/// takes the line's remaining space, and **Chrome does not**: measured, a
-/// `min-height: 200%` child of a `flex-grow: 1` box inside a 120-tall column
-/// is 20 in Chrome and 240 here.
+/// **`auto` counts as definite in the two cases flex layout settles it**, and
+/// Chrome agrees on both. An item stretched across a row takes the line's
+/// cross size; an item that `flex-grow`s in a column takes the line's
+/// remaining space. Measured, a `min-height: 200%` child of a `flex-grow: 1`
+/// box inside a 120-tall column is **240 in Chrome and 240 here**.
 ///
-/// That second case is a deliberate divergence rather than an oversight.
-/// `chart.ts` sizes every bar as a percentage of a `flexGrow: 1` plot area, so
-/// the browser's rule would leave every bar at nothing -- which is exactly
-/// what an earlier version of this check did, and what the chart render tests
-/// caught. Matching Chrome there means changing how charts are built, which is
-/// a larger change than this one and belongs on its own.
+/// **An out-of-flow box is where that stops**, which is what `flex_settles_it`
+/// checks first: `flex-grow` on an absolutely positioned box does nothing,
+/// because it is not a flex item, so its `auto` height is its content's and a
+/// percentage inside it has nothing to resolve against. The same scene with
+/// the middle box absolutely positioned is **20 in Chrome and 20 here**.
+///
+/// Those two rows were once reported as a divergence -- 20 against 240 -- by a
+/// probe that gave Chrome an absolutely positioned box and this renderer a
+/// relative one. **Two scenes, one table.** The numbers are kept here because
+/// they are the pair that separates the cases, not because they ever
+/// disagreed.
 ///
 /// A `min-height` is deliberately not enough on its own: it bounds the height
 /// from below and leaves it content-sized above the bound, so the number is
