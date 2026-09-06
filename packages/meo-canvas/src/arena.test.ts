@@ -1836,3 +1836,55 @@ describe('the keywords this surface offers', () => {
     }
   })
 })
+
+describe('a value of the wrong type is refused where the property is still named', () => {
+  // **The writer is the only door these can arrive through.** The crate surface
+  // cannot express a string where a number goes -- Rust refuses it at compile
+  // time -- so refusing here repairs every case. That is not true of a value
+  // which is in-type on both surfaces, where the check has to move to the point
+  // the value is used.
+  //
+  // Before this, both of these reached the arena as `NaN` and came back as
+  // `slot 33 holds NaN, which is not an integer`. The slot number is an offset
+  // into a wire format the caller never saw, and it moves with the rest of the
+  // scene: the same mistake was measured as slot 33, 34 and 65 in three
+  // different trees. Nothing in that string can be searched for.
+
+  it('names the property and what it takes, rather than a slot', () => {
+    expect(() => throughTheAddon({ zIndex: 'auto' as unknown as number })).toThrow('zIndex is "auto"; it takes a whole number')
+  })
+
+  it('names both arms when the property takes a number or a keyword', () => {
+    // **A union, not an enum.** `fontWeight` takes a number *or* one of two
+    // keywords, so `variant`'s wording would list `normal, bold` and silently
+    // drop the numeric arm -- a message that confidently names an accepted set
+    // excluding the common case, which is worse than the slot number it
+    // replaces. `zIndex` has no keywords at all, so its refusal reads as a
+    // plain type. Two rows that look alike and are three patterns between
+    // them.
+    expect(() => throughTheAddon({ fontWeight: 'bolder' as unknown as number })).toThrow(
+      'fontWeight is "bolder"; it takes a number from 1 to 1000, or normal or bold',
+    )
+  })
+
+  it('renders what was passed so the caller can recognise it', () => {
+    expect(() => throughTheAddon({ zIndex: 1.5 })).toThrow('zIndex is 1.5;')
+    expect(() => throughTheAddon({ zIndex: NaN })).toThrow('zIndex is NaN;')
+    expect(() => throughTheAddon({ fontWeight: {} as unknown as number })).toThrow('fontWeight is an object;')
+  })
+
+  // **The values a truthiness guard eats.** `zIndex: 0` is a legitimate stacking
+  // order and `-2` is a legitimate one below the default; a refusal written as
+  // `if (!index)` or `if (index < 0)` passes every row above and breaks these.
+  it.each([0, -2, 3])('still writes zIndex %d', index => {
+    expect(throughTheAddon({ zIndex: index }).length).toBeGreaterThan(0)
+  })
+
+  it.each(['normal', 'bold'] as const)('still writes the keyword %s', keyword => {
+    expect(throughTheAddon({ fontWeight: keyword }).length).toBeGreaterThan(0)
+  })
+
+  it('still writes a numeric weight', () => {
+    expect(throughTheAddon({ fontWeight: 700 }).length).toBeGreaterThan(0)
+  })
+})

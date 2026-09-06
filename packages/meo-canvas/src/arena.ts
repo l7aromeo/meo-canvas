@@ -500,6 +500,51 @@ function keywordFor(name: string, table: Readonly<Record<string, number>>): stri
 }
 
 /**
+ * Renders a rejected value so a caller can recognise what they passed.
+ *
+ * `JSON.stringify` for a string, so `""` is visible rather than a gap;
+ * the literal for a finite number; `NaN` and `Infinity` spell themselves; and
+ * the kind of thing where the value itself would say nothing.
+ */
+function render(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'function') return 'a function'
+  if (value === null) return 'null'
+  if (typeof value === 'object') return 'an object'
+  // What is left is `boolean | symbol | bigint | undefined`, spelled out rather
+  // than reached through `String` on an `unknown`: a symbol has no string
+  // conversion worth printing, and the lint that refuses the general case is
+  // right that a bare `String(value)` here would one day meet an object.
+  if (typeof value === 'symbol') return 'a symbol'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'bigint') return `${value}n`
+  return 'undefined'
+}
+
+/**
+ * Refuses anything but a whole number, naming the property that was written.
+ *
+ * **Refused here rather than reported by the reader.** A value of the wrong
+ * type reaches the arena as `NaN` and comes back as `slot 33 holds NaN, which
+ * is not an integer` -- an offset into a wire format the caller never saw, and
+ * one that moves with the rest of the scene, so the same mistake produces
+ * different text in different trees. The writer is the last place that still
+ * knows the caller wrote `zIndex`.
+ *
+ * **And the writer is the only door these can arrive through.** The crate
+ * surface cannot express a string where a number goes: Rust refuses it at
+ * compile time. So refusing here repairs every case, which is not true of a
+ * value that is in-type on both surfaces.
+ */
+function whole(value: unknown, what: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new TypeError(`${what} is ${render(value)}; it takes a whole number`)
+  }
+  return value
+}
+
+/**
  * The number a keyword crosses as.
  *
  * Throws rather than defaults. A keyword the scene has no variant for is a
@@ -927,9 +972,17 @@ function writeList<T>(out: ArenaWriter, values: T | readonly T[], write: (value:
 }
 
 /** The number a font weight names: the two keywords are the numbers CSS gives them. */
-function packWeight(weight: FontWeight): number {
+function packWeight(weight: FontWeight, what: string): number {
   if (weight === 'normal') return 400
   if (weight === 'bold') return 700
+  // **A union, not an enum.** The property takes a number *or* one of two
+  // keywords, so listing the keywords alone -- which is what `variant` would
+  // do -- would confidently name an accepted set that excludes the numeric
+  // arm, and that is most of what callers pass. Worse than the message it
+  // replaces.
+  if (typeof weight !== 'number') {
+    throw new TypeError(`${what} is ${render(weight)}; it takes a number from 1 to 1000, or normal or bold`)
+  }
   return weight
 }
 
@@ -1247,7 +1300,7 @@ const PAINT_PROPERTIES: readonly Property[] = [
     index: 10,
     rust: 'z_index',
     keys: ['zIndex'],
-    write: (out, style) => out.optional(style.zIndex, index => out.integer(index)),
+    write: (out, style) => out.optional(style.zIndex, index => out.integer(whole(index, 'zIndex'))),
   },
 ]
 
@@ -1262,7 +1315,12 @@ const PAINT_PROPERTIES: readonly Property[] = [
 const TEXT_PROPERTIES: readonly Property[] = [
   { index: 0, rust: 'font_family', keys: ['fontFamily'], write: (out, style) => out.optional(style.fontFamily, family => out.text(family)) },
   { index: 1, rust: 'font_size', keys: ['fontSize'], write: (out, style) => out.optional(style.fontSize, size => out.f32(size)) },
-  { index: 2, rust: 'font_weight', keys: ['fontWeight'], write: (out, style) => out.optional(style.fontWeight, weight => out.integer(packWeight(weight))) },
+  {
+    index: 2,
+    rust: 'font_weight',
+    keys: ['fontWeight'],
+    write: (out, style) => out.optional(style.fontWeight, weight => out.integer(packWeight(weight, 'fontWeight'))),
+  },
   {
     index: 3,
     rust: 'font_style',

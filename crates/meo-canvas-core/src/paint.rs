@@ -1188,6 +1188,10 @@ fn draw_text(
     // Held at zero and added by hand: a space is a run of no width here, and
     // the gap between two words is arithmetic the alignment can redistribute.
     context.set_word_spacing(0.0);
+    // The node's decoration is the default every run inherits; a run that
+    // declares its own overrides it in `draw_run`. Set here as well as there
+    // because an empty paragraph draws no run and would otherwise carry
+    // whatever the previous node left on the context.
     set_text_decoration(context, style.decoration);
 
     let last = block.lines.len().saturating_sub(1);
@@ -1271,7 +1275,16 @@ fn draw_run(
     // the run would be drawn in a face the measurer did not measure.
     let (caps, features) = run.style.to_variant();
     context.set_font_variant(caps, &features);
-    context.set_fill_style(to_skia_color(style.color));
+    // **The run's colour, not the node's.** A segment that declares one is
+    // carried here and nowhere else: `RunStyle` is the only thing in the paint
+    // path that is per-segment, and before this field existed a segment's
+    // colour had no way to reach the drawing at all.
+    context.set_fill_style(to_skia_color(run.style.color));
+    set_text_decoration(context, run.style.decoration);
+    // Per run for the same reason as the colour above. The paragraph's value is
+    // still set before the block is drawn, because an inter-word space is
+    // measured against it and belongs to no run.
+    context.set_letter_spacing(run.style.letter_spacing);
 
     for shadow in &node.effects.text_shadows {
         context.save();
