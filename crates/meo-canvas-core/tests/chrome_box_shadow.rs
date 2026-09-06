@@ -475,8 +475,19 @@ const THRESHOLD: u8 = 6;
 ///
 /// Two Gaussians that agree on sigma still disagree on where their tails cross
 /// a threshold, and a step is one pixel. Two is the smallest number that all
-/// the agreeing rows fit inside; a wrong offset, a wrong spread or a corner
-/// that failed to grow all miss by more than that.
+/// the agreeing rows fit inside.
+///
+/// **What that costs is stated rather than implied: a defect of two steps or
+/// fewer is invisible here.** The comparison is `> TOLERANCE`, so a miss of
+/// exactly two passes. Measured, not reasoned: a renderer given a spurious
+/// **2px** spread fails no row in this table, and the same renderer at 3px
+/// fails eight of the nine cases. This comment used to say that a wrong
+/// offset, a wrong spread or a corner that failed to grow all miss by more
+/// than the tolerance, which is the claim the 2px run refutes.
+///
+/// Narrowing it is a decision about how much rasteriser disagreement to allow
+/// and moves every row, so a spread defect of exactly two steps wants a case
+/// built to show it rather than a tighter number here.
 const TOLERANCE: i32 = 2;
 
 /// One row of `shadow-extent.tsv`.
