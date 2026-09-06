@@ -77,7 +77,7 @@ use std::{cell::RefCell, rc::Rc};
 use arena::{SideValue, Values};
 use meo_canvas_core::{
     EncodeOptions, FetchFailure, ImageFormat, PreparedEncode, RenderedCanvas,
-    Renderer, Surface, SurfaceOptions,
+    Renderer, Surface, SurfaceOptions, chained,
 };
 use neon::{prelude::*, types::buffer::TypedArray};
 
@@ -142,13 +142,13 @@ fn render_off_thread(
     format: &str,
 ) -> Result<Vec<u8>, String> {
     let scene =
-        arena::decode(slots, values).map_err(|error| error.to_string())?;
+        arena::decode(slots, values).map_err(|error| chained(&error))?;
     let format = ImageFormat::from_extension(format)
         .ok_or_else(|| format!("no image format is called {format:?}"))?;
     let renderer = Renderer::new();
     renderer
         .render_to_buffer(&scene, format, &EncodeOptions::default())
-        .map_err(|error| error.to_string())
+        .map_err(|error| chained(&error))
 }
 
 /// The encode itself, on a rayon worker, with no V8 and no canvas in reach.
@@ -178,7 +178,7 @@ fn encode_off_thread(prepared: PreparedEncode) -> Result<Vec<u8>, String> {
         prepared
             .encode()
             .map(|image| image.bytes)
-            .map_err(|error| error.to_string())
+            .map_err(|error| chained(&error))
     }))
     .unwrap_or_else(|panic| {
         // Whatever `panic!` was given: a `&str` for a literal, a `String` for
@@ -208,7 +208,7 @@ fn write_off_thread(
     path: std::path::PathBuf,
 ) -> Result<(), String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        prepared.write(path).map_err(|error| error.to_string())
+        prepared.write(path).map_err(|error| chained(&error))
     }))
     .unwrap_or_else(|panic| {
         let detail = panic
@@ -246,7 +246,7 @@ fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
             ..SurfaceOptions::default()
         },
     )
-    .or_else(|error| cx.throw_error(error.to_string()))?;
+    .or_else(|error| cx.throw_error(chained(&error)))?;
 
     let object = cx.empty_object();
     let active = cx.string(probe.engine());
@@ -334,7 +334,7 @@ fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
     let (slots, values) = arguments(&mut cx)?;
     let scene = match arena::decode(&slots, &values) {
         Ok(scene) => scene,
-        Err(error) => return cx.throw_error(error.to_string()),
+        Err(error) => return cx.throw_error(chained(&error)),
     };
     let bytes = meo_canvas_scene::codec::encode(&scene);
     JsBuffer::from_slice(&mut cx, &bytes)
@@ -390,7 +390,7 @@ fn paint_options(
             // which is an argument error rather than a render error: the call
             // that named the file is still on the stack.
             if let Err(error) = renderer.register_font(&family, &path) {
-                return cx.throw_error(error.to_string());
+                return cx.throw_error(chained(&error));
             }
         }
     }
@@ -509,7 +509,7 @@ fn attach_writers<'a>(
             .and_then(|prepared| prepared.write(&path))
         {
             Ok(()) => Ok(cx.undefined()),
-            Err(error) => cx.throw_error(error.to_string()),
+            Err(error) => cx.throw_error(chained(&error)),
         }
     })?;
     surface.set(cx, "write", write)?;
@@ -530,7 +530,7 @@ fn attach_writers<'a>(
             };
             match canvas.prepare_encode(format, &options) {
                 Ok(prepared) => prepared,
-                Err(error) => return cx.throw_error(error.to_string()),
+                Err(error) => return cx.throw_error(chained(&error)),
             }
         };
 
@@ -639,11 +639,11 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
 
     let scene = match arena::decode(&slots, &values) {
         Ok(scene) => scene,
-        Err(error) => return cx.throw_error(error.to_string()),
+        Err(error) => return cx.throw_error(chained(&error)),
     };
     let canvas = match renderer.render(&scene) {
         Ok(canvas) => canvas,
-        Err(error) => return cx.throw_error(error.to_string()),
+        Err(error) => return cx.throw_error(chained(&error)),
     };
 
     let surface = cx.empty_object();
@@ -694,7 +694,7 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
         };
         match canvas.to_buffer(format, &options) {
             Ok(bytes) => JsBuffer::from_slice(&mut cx, &bytes),
-            Err(error) => cx.throw_error(error.to_string()),
+            Err(error) => cx.throw_error(chained(&error)),
         }
     })?;
     surface.set(&mut cx, "encode", encode)?;
@@ -729,7 +729,7 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
             };
             match canvas.prepare_encode(format, &options) {
                 Ok(prepared) => prepared,
-                Err(error) => return cx.throw_error(error.to_string()),
+                Err(error) => return cx.throw_error(chained(&error)),
             }
         };
 

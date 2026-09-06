@@ -78,6 +78,22 @@ const DEGREES_PER_TURN: f32 = 360.0;
 /// does -- twelve o'clock against three.
 const QUARTER_TURN_DEGREES: f32 = 90.0;
 
+/// Names the property a rendering failure came from, keeping the reason.
+///
+/// The backend says what went wrong and cannot say which property carried it:
+/// it is handed a string and never sees the scene. The call site knows the
+/// property and throws that away by stringifying into [`Error::Paint`], so this
+/// is the one place both halves are in scope.
+///
+/// **The reason is kept rather than replaced.** `invalid SVG path: could not
+/// parse SVG path data: "not a path"` already names the failure and quotes the
+/// input; what it lacks is which of `d` and `mask` was being parsed, and those
+/// two produce byte-identical text today from two different call sites. Writing
+/// a message of our own here would lose a good explanation to gain a name.
+fn in_property(property: &str, error: &impl core::fmt::Display) -> Error {
+    Error::Paint(format!("{property}: {error}"))
+}
+
 /// Everything about a surface that is not its size.
 ///
 /// Resolved values, not the scene's `Option`s: deciding between what a scene
@@ -887,7 +903,7 @@ fn enter_node(
     if let Some(filter) = node.effects.filter.as_deref() {
         context
             .set_filter_css(filter)
-            .map_err(|error| Error::Paint(error.to_string()))?;
+            .map_err(|error| in_property("filter", &error))?;
     }
 
     if needs_group {
@@ -1071,7 +1087,7 @@ fn paint_kind(
             line_dash_offset,
         } => {
             let drawn = Path2D::from_svg(data, to_skia_rule(*fill_rule))
-                .map_err(|error| Error::Paint(error.to_string()))?;
+                .map_err(|error| in_property("d", &error))?;
             // No box is the behaviour every path had before one existed:
             // absolute coordinates, shifted to where the node sits.
             let path = view_box.map_or_else(
@@ -4200,7 +4216,7 @@ fn draw_backdrop(
         context.reset_transform();
         context
             .set_filter_css(&scaled)
-            .map_err(|error| Error::Paint(error.to_string()))?;
+            .map_err(|error| in_property("backdropFilter", &error))?;
         context.draw_image_sized(&backdrop, left, top, width, height);
         Ok(())
     })(context);
@@ -4577,7 +4593,7 @@ fn draw_mask(
         Mask::Path { data, fill_rule } => {
             let rule = to_skia_rule(*fill_rule);
             let path = Path2D::from_svg(data, rule)
-                .map_err(|error| Error::Paint(error.to_string()))?
+                .map_err(|error| in_property("mask", &error))?
                 .offset(rect.origin.x, rect.origin.y);
             context.fill_path(&path, rule);
             Ok(())
