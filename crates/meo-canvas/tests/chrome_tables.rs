@@ -195,6 +195,7 @@ fn box_of(row: &Row, is_b: bool, painted: bool) -> Element {
         (true, false) => A_INK,
     };
     let mut element = Box::new()
+        .display(Display::Block)
         .size(px(50.0), px(34.0))
         .position_type(kind)
         .background_color(ink);
@@ -427,6 +428,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
     let padding = row["padding"].parse::<f32>().unwrap_or(0.0);
 
     let mut child = Box::new()
+        .display(Display::Block)
         .height(px(40.0))
         .box_sizing(if row["sizing"] == "border-box" {
             BoxSizing::BorderBox
@@ -781,6 +783,7 @@ fn clipper_of(
 
     let child_kind = position_letter(&row.code[2..3]);
     let mut child = Box::new()
+        .display(Display::Block)
         .size(px(50.0), px(40.0))
         .position_type(child_kind)
         .background_color(if paint_child {
@@ -1333,11 +1336,14 @@ fn flex_rects(justify: &str, align: &str) -> Vec<[f32; 4]> {
         .iter()
         .map(|(width, content, ink)| {
             Box::new()
+                .display(Display::Block)
                 .width(px(*width))
                 .background_color(*ink)
                 // The spacer, which gives the child a height without setting
                 // one.
-                .children(Box::new().height(px(*content)))
+                .children(
+                    Box::new().display(Display::Block).height(px(*content)),
+                )
         })
         .collect();
 
@@ -1500,9 +1506,12 @@ fn wrap_rects(wrap: &str) -> Vec<[f32; 4]> {
         .iter()
         .map(|(width, content, ink)| {
             Box::new()
+                .display(Display::Block)
                 .width(px(*width))
                 .background_color(*ink)
-                .children(Box::new().height(px(*content)))
+                .children(
+                    Box::new().display(Display::Block).height(px(*content)),
+                )
         })
         .collect();
 
@@ -1642,7 +1651,8 @@ fn grid_rects(flow: GridAutoFlow) -> Vec<Option<[f32; 4]>> {
         .iter()
         .enumerate()
         .map(|(index, ink)| {
-            let item = Box::new().background_color(*ink);
+            let item =
+                Box::new().display(Display::Block).background_color(*ink);
             match index {
                 // `span 3` and `span 2` with no start line: the placement is
                 // still the algorithm's, and only the size is ours.

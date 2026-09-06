@@ -35,7 +35,7 @@
 //! two would coincide and this box is 88 by 56, so the distinction is live.
 
 use meo_canvas::{
-    Box, Format, PositionType, Renderer, Root, Styled, hex_rgb, px,
+    Box, Display, Format, PositionType, Renderer, Root, Styled, hex_rgb, px,
     scene::{
         Gradient, GradientGeometry, GradientStop, Length, LinearDirection,
     },
@@ -155,6 +155,7 @@ fn drawn(geometry: GradientGeometry) -> Vec<u8> {
         .background_color(hex_rgb(0xff_ff_ff))
         .children(
             Box::new()
+                .display(Display::Block)
                 .position_type(PositionType::Relative)
                 .size(px(BOX.0), px(BOX.1))
                 .gradient(Gradient {
