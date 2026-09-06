@@ -674,7 +674,30 @@ export interface Style {
   readonly fontWeight?: FontWeight
   /** Upright or italic. Inherits. */
   readonly fontStyle?: FontStyle
-  /** The colour glyphs are drawn in, CSS's `color`. Inherits. */
+  /**
+   * The colour glyphs are drawn in, CSS's `color`. Inherits.
+   *
+   * **On an `Image` it is the tint an SVG source resolves `currentColor`
+   * against**, read from the node itself rather than inherited — a browser
+   * passes a page's `color` into inline SVG and not into an `<img>`, and this
+   * is the second kind.
+   *
+   * So one property has two behaviours, decided by the element: **it inherits
+   * into text and does not cross into an image's document.** That is CSS's own
+   * rule rather than an inconsistency here, and it is the kind of thing a
+   * later reader tidies into consistency and breaks.
+   *
+   * It recolours a document authored for `currentColor` and **leaves a
+   * hardcoded fill alone**: an icon whose paths say `fill="currentColor"`
+   * takes this colour, one whose paths say `fill="#000000"` stays black, and
+   * neither is an error. Set on a raster source it **is** an error, raised
+   * when the image is drawn: a bitmap has no `currentColor`, and ignoring the
+   * request would be the silent wrong picture.
+   *
+   * ```ts
+   * Image({ src: 'star.svg', width: 40, height: 40, color: '#e8c07a' })
+   * ```
+   */
   readonly color?: Color
   /** Horizontal alignment within the box. Inherits. */
   /**

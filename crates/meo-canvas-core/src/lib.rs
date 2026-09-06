@@ -341,6 +341,25 @@ pub enum Error {
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
 
+    /// A colour asked for on a source that is not a vector document.
+    ///
+    /// **Refused rather than ignored.** A colour recolours an SVG's
+    /// `currentColor`; a bitmap has no such thing, so a caller who set one on
+    /// a photograph has asked for something that cannot happen, and drawing
+    /// the photograph unchanged is the silent wrong picture this refusal
+    /// exists to prevent.
+    ///
+    /// **Raised at render rather than when the node is built**, because
+    /// neither surface knows what a source is until it is read: a path and a
+    /// URL are opaque, and only bytes could be sniffed.
+    #[error(
+        "node {} sets a colour on an image source that is not an SVG \
+         document; a colour recolours an SVG's `currentColor` and has no \
+         reading on a bitmap",
+        .0.get()
+    )]
+    TintOnRaster(NodeId),
+
     /// An SVG document that would not parse.
     ///
     /// **Separate from [`Error::UndecodableImage`] so the sniff earns its

@@ -972,7 +972,10 @@ fn paint_box(
         // tile smaller than the box is drawn from these pixels rather than
         // re-rasterised: a background is not the case this arm was built for,
         // and a second rasterisation per tile would be.
-        let image = raster_of(resolved, decoded, id, rect.size)?;
+        // No tint: `color` is a property of the node's own picture, and a
+        // background image is not that picture. A background that wanted one
+        // would be a second question with its own name.
+        let image = raster_of(resolved, decoded, id, rect.size, None)?;
         draw_background_image(context, paint, background, &image, rect)?;
     }
 
@@ -992,6 +995,7 @@ fn raster_of(
     decoded: &DecodedImage,
     node: NodeId,
     size: Size,
+    tint: Option<Color>,
 ) -> Result<meo_skia_canvas::Image, Error> {
     let scale = resolved.scene().scale;
     #[expect(
@@ -1001,7 +1005,7 @@ fn raster_of(
                   argument is a size on a page that has already been sized"
     )]
     let device = |extent: f32| (extent * scale).ceil().max(1.0) as u32;
-    decoded.raster((device(size.width), device(size.height)), node)
+    decoded.raster((device(size.width), device(size.height)), tint, node)
 }
 
 /// Draws whatever the node's kind is.
@@ -1088,7 +1092,14 @@ fn paint_kind(
             // 40x40 star drawn at 200 being sharp and being an upscale, which
             // is the whole argument for keeping the document rather than
             // turning it into pixels at decode time.
-            let image = raster_of(resolved, decoded, id, placed.size)?;
+            // **The node's own colour, not the inherited one.** A browser
+            // does not pass a page's `color` into an `<img>`: inline SVG takes
+            // it, an SVG loaded as an image resolves `currentColor` against
+            // its own document and falls back to black. This element is the
+            // second kind, which is also the shape v9's `Image({ color })`
+            // had.
+            let image =
+                raster_of(resolved, decoded, id, placed.size, node.text.color)?;
             context.save();
             let result = (|context: &mut Context2D| {
                 clip_to_rounded(
@@ -4690,7 +4701,7 @@ fn draw_mask(
         }
         Mask::Image(_) => {
             if let Some(decoded) = resolved.mask(id) {
-                let image = raster_of(resolved, decoded, id, rect.size)?;
+                let image = raster_of(resolved, decoded, id, rect.size, None)?;
                 context.draw_image_sized(
                     &image,
                     rect.origin.x,

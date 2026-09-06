@@ -424,13 +424,20 @@ struct Vector {
     /// both dimensions, measured on a scene with an explicit width and
     /// height.
     intrinsic: Size,
-    /// The last size this document was rasterised at, and the pixels.
+    /// The last size and colour this document was rasterised for, and the
+    /// pixels.
     ///
-    /// One entry rather than a map. A document is normally drawn at one size,
-    /// and re-rasterising is tens of microseconds against a parse of tens of
-    /// milliseconds -- so a second size costs a redraw rather than a reparse,
-    /// and a map would be machinery for a case nobody has.
-    raster: Option<((u32, u32), meo_skia_canvas::Image)>,
+    /// One entry rather than a map. A document is normally drawn once, and
+    /// re-rasterising is tens of microseconds against a parse of tens of
+    /// milliseconds -- so a second size or a second tint costs a redraw rather
+    /// than a reparse, and a map would be machinery for a case nobody has.
+    ///
+    /// **Keyed by the tint as well as the size**, because the tint belongs to
+    /// this drawing of the document rather than to the document: one decode is
+    /// shared by every node naming the source, so two nodes drawing the same
+    /// star in two colours would otherwise be one tinted document and the
+    /// second colour would lose.
+    raster: Option<((u32, u32), Option<Color>, meo_skia_canvas::Image)>,
 }
 
 /// **Written out because `meo_skia_canvas::Svg` has no `Debug`.** The document
@@ -441,7 +448,10 @@ impl std::fmt::Debug for Vector {
         formatter
             .debug_struct("Vector")
             .field("intrinsic", &self.intrinsic)
-            .field("raster", &self.raster.as_ref().map(|(size, _)| size))
+            .field(
+                "raster",
+                &self.raster.as_ref().map(|(size, tint, _)| (size, tint)),
+            )
             // The document itself is the field left out, and it is left out
             // because `meo_skia_canvas::Svg` has no `Debug` to call.
             .finish_non_exhaustive()
@@ -463,22 +473,47 @@ impl DecodedImage {
     pub(crate) fn raster(
         &self,
         size: (u32, u32),
+        tint: Option<Color>,
         node: NodeId,
     ) -> Result<meo_skia_canvas::Image, Error> {
         match &self.kind {
+            // **A colour has no reading on a bitmap, so it is refused rather
+            // than ignored.** The check is here and not on either writer
+            // because neither can tell: a writer sees a filename or a URL for
+            // two of the three source forms, and sniffing there as well as
+            // here would be two spellings of one rule. The cost is that a
+            // caller learns at render time, which is when the information
+            // exists.
+            Kind::Raster(_) if tint.is_some() => Err(Error::TintOnRaster(node)),
             Kind::Raster(image) => Ok(image.clone()),
             Kind::Vector(document) => {
                 let mut document = document.borrow_mut();
-                if let Some((made_at, image)) = &document.raster
+                if let Some((made_at, made_for, image)) = &document.raster
                     && *made_at == size
+                    && *made_for == tint
                 {
                     return Ok(image.clone());
+                }
+                // **Set before rasterising, and only when asked.** Calling
+                // with a default instead of not calling would make every
+                // future change to that default silently ours rather than the
+                // document's -- and the two are the same picture, so nothing
+                // downstream could tell them apart.
+                if let Some(color) = tint {
+                    document.svg.set_current_color(
+                        meo_skia_canvas::RgbaLinear::from_srgb8(
+                            color.r,
+                            color.g,
+                            color.b,
+                            f32::from(color.a) / 255.0,
+                        ),
+                    );
                 }
                 let image = document
                     .svg
                     .rasterize(size.0.max(1), size.1.max(1))
                     .map_err(|_| Error::UndecodableImage(node))?;
-                document.raster = Some((size, image.clone()));
+                document.raster = Some((size, tint, image.clone()));
                 Ok(image)
             }
         }
@@ -1982,10 +2017,10 @@ pub(crate) mod tests {
         let image = decoded(svg_source(SIZED_SVG))
             .unwrap_or_else(|error| unreachable!("{error}"));
         let small = image
-            .raster((40, 20), NodeId::ROOT)
+            .raster((40, 20), None, NodeId::ROOT)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let large = image
-            .raster((200, 100), NodeId::ROOT)
+            .raster((200, 100), None, NodeId::ROOT)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!((small.width(), small.height()), (40, 20));
         assert_eq!((large.width(), large.height()), (200, 100));
@@ -1993,7 +2028,7 @@ pub(crate) mod tests {
         // And the same size twice is the memo, which must hand back the same
         // pixels rather than a second rasterisation of them.
         let again = image
-            .raster((200, 100), NodeId::ROOT)
+            .raster((200, 100), None, NodeId::ROOT)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!((again.width(), again.height()), (200, 100));
     }
@@ -2007,7 +2042,7 @@ pub(crate) mod tests {
         let image = decoded(ImageSource::Bytes(RED_PNG.to_vec()))
             .unwrap_or_else(|error| unreachable!("{error}"));
         let asked = image
-            .raster((200, 100), NodeId::ROOT)
+            .raster((200, 100), None, NodeId::ROOT)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!((asked.width(), asked.height()), (4, 2));
     }

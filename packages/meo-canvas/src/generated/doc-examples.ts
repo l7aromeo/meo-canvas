@@ -76,6 +76,11 @@ export async function example_Gradient(): Promise<void> {
   const dial: Gradient = { type: 'conic', from: 90, stops: [{ offset: 0, color: '#f0c' }] }
 }
 
+/** `style.ts`. */
+export async function example_style(): Promise<void> {
+  Image({ src: 'star.svg', width: 40, height: 40, color: '#e8c07a' })
+}
+
 /** `README.md`. */
 export async function example_README_md(): Promise<void> {
 
