@@ -37,7 +37,12 @@ const THRESHOLD = 6
 /** Each case: what it is called, its `box-shadow`, and its `border-radius`. */
 const CASES = [
   ['none', 'none', 0],
-  ['hard', '0 0 0 0 #000', 0],
+  // Offset, because with no offset at all the shadow sits entirely behind the
+  // 50x50 box that casts it and every ray reads -1 -- the six values `none`
+  // reads, from a different rule. 4 and 4 keep the edge hard while putting ink
+  // where a ray can find it; the axes stay symmetric here and asymmetric in
+  // `offset`, which is the row that catches a renderer swapping them.
+  ['hard', '4px 4px 0 0 #000', 0],
   ['offset', '8px 4px 0 0 #000', 0],
   ['blur', '0 0 12px 0 #000', 0],
   ['spread', '0 0 0 6px #000', 0],

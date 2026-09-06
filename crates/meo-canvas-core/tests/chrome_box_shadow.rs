@@ -528,7 +528,12 @@ const fn ink(offset: (f32, f32), blur: f32, spread: f32) -> BoxShadow {
 fn extent_cases() -> Vec<(&'static str, f32, Vec<BoxShadow>)> {
     vec![
         ("none", 0.0, Vec::new()),
-        ("hard", 0.0, vec![ink((0.0, 0.0), 0.0, 0.0)]),
+        // Offset, not 0,0: with no offset the shadow sits entirely behind the
+        // box that casts it and reads what `none` reads, so the row could not
+        // fail for anything `none` did not already cover. The axes are equal
+        // here and unequal in `offset`, which is the row that catches a
+        // renderer swapping them.
+        ("hard", 0.0, vec![ink((4.0, 4.0), 0.0, 0.0)]),
         ("offset", 0.0, vec![ink((8.0, 4.0), 0.0, 0.0)]),
         ("blur", 0.0, vec![ink((0.0, 0.0), 12.0, 0.0)]),
         ("spread", 0.0, vec![ink((0.0, 0.0), 0.0, 6.0)]),
