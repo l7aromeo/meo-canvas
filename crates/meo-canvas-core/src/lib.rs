@@ -313,7 +313,7 @@ pub enum Error {
     },
 
     /// A local image path that cannot be read.
-    #[error("cannot read image at {path}")]
+    #[error("cannot read image at {path}{}", url_hint(path))]
     #[non_exhaustive]
     ImageRead {
         /// The path as the scene spelled it.
@@ -363,6 +363,33 @@ pub enum Error {
         /// What the encoder reported.
         detail: String,
     },
+}
+
+/// Schemes an image source is fetched over rather than opened.
+///
+/// The two the JavaScript surface pre-fetches and the `net` feature's client
+/// speaks. Anything else -- `file:`, a Windows drive letter, a bare relative
+/// path -- is a filename and is read as one.
+const FETCHED_SCHEMES: [&str; 2] = ["http://", "https://"];
+
+/// The sentence appended to [`Error::ImageRead`] when the path is a URL.
+///
+/// **A bare string source is a path**, and `ImageSource` is tagged, so
+/// `{ src: 'https://...' }` type-checks, is opened as a filename, and fails
+/// with a filesystem error quoting a URL. The classification is deliberate;
+/// without this sentence the message is what makes it read as a failure of the
+/// fetcher, and the reader looks at the network rather than at the spelling.
+fn url_hint(path: &str) -> &'static str {
+    if FETCHED_SCHEMES
+        .iter()
+        .any(|scheme| path.starts_with(scheme))
+    {
+        " -- a URL here is read as a filename; name it as a URL source \
+         (`{ url: ... }` in JavaScript, `ImageSource::Url` in Rust) to have it \
+         fetched"
+    } else {
+        ""
+    }
 }
 
 /// An error and every cause beneath it, as one sentence.
@@ -823,6 +850,35 @@ mod tests {
             chained(&missing).starts_with("cannot read image at /nope.png: ")
         );
         assert_ne!(chained(&missing), chained(&denied));
+    }
+
+    /// A URL read as a filename says so, and a filename does not.
+    ///
+    /// The pair is the point. Asserting only that the URL case carries the
+    /// sentence would pass if it were appended to every path, which would be
+    /// worse than saying nothing -- it would tell a caller their filename was
+    /// a URL.
+    #[test]
+    fn a_url_opened_as_a_path_says_which_mistake_it_was() {
+        let as_path = |path: &str| Error::ImageRead {
+            path: path.to_owned(),
+            source: std::io::Error::from(std::io::ErrorKind::NotFound),
+        };
+
+        let url = as_path("https://example.invalid/x.png").to_string();
+        assert!(url.contains("read as a filename"), "{url}");
+        assert!(url.contains("ImageSource::Url"), "{url}");
+
+        // A real path, and two shapes that are nearly one: a scheme this
+        // crate does not fetch, and a name that merely begins with the
+        // letters.
+        for quiet in ["/nope.png", "file:///nope.png", "https-notes.png"] {
+            let message = as_path(quiet).to_string();
+            assert!(
+                !message.contains("read as a filename"),
+                "{quiet} was called a URL: {message}"
+            );
+        }
     }
     use meo_canvas_scene::{
         ColorSpace, ColorType, Scene, Size,
