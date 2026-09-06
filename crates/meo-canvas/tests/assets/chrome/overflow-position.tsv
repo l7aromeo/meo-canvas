@@ -9,6 +9,11 @@
 #       P: S=static R=relative A=absolute K=sticky F=fixed
 #       C: S=static R=relative A=absolute F=fixed
 #       T: n=none t=transform:translateZ(0) on the clipper
+# outer sits at 40,40 on the page. That is not decoration: every `fixed`
+# row resolves against the viewport rather than against outer, so a page
+# that places outer anywhere else moves 36 of these 120 rows. The first
+# version of this tool put it at 0,0 and did exactly that.
+#
 # rect  the child's box minus outer's, x,y,w,h
 # abc   elementFromPoint at (60,45), (88,50), (60,68) relative to outer:
 #       c=child l=clipper o=outer b=body
