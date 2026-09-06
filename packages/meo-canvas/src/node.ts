@@ -360,6 +360,29 @@ const TEXT_KEYS = [...STYLE_KEYS, ...PARAGRAPH_KEYS, 'name'] as const satisfies 
 /* The proof that TEXT_KEYS is exactly `keyof TextProps`. */
 noPropLeftOver<Exclude<keyof TextProps, (typeof TEXT_KEYS)[number]>>()
 
+/** Every key {@link PathProps} accepts. */
+const PATH_KEYS = [
+  ...STYLE_KEYS,
+  'd',
+  'viewBox',
+  'preserveAspectRatio',
+  'fill',
+  'stroke',
+  'lineWidth',
+  'fillRule',
+  'lineCap',
+  'lineJoin',
+  'lineDash',
+  'lineDashOffset',
+  'name',
+] as const satisfies readonly (keyof PathProps)[]
+
+/* The proof that PATH_KEYS is exactly `keyof PathProps`. */
+noPropLeftOver<Exclude<keyof PathProps, (typeof PATH_KEYS)[number]>>()
+
+/** {@link PATH_KEYS} as a set, built once. */
+const PATH_KEY_SET: ReadonlySet<string> = new Set(PATH_KEYS)
+
 /** {@link TEXT_KEYS} as a set, built once. */
 const TEXT_KEY_SET: ReadonlySet<string> = new Set(TEXT_KEYS)
 
@@ -795,6 +818,7 @@ export type PathProps = Style & {
  * ```
  */
 export function Path(props: PathProps): SceneNode {
+  checkProps(props, PATH_KEY_SET, 'Path')
   return node('path', props, undefined, props.name, undefined, undefined, undefined, undefined, props.d)
 }
 

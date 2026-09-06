@@ -527,3 +527,31 @@ describe('a text props key it does not have', () => {
     expect(() => Text('hi', { name: 'x' })).not.toThrow() // its own
   })
 })
+
+describe('a path props key it does not have', () => {
+  it('refuses it', () => {
+    expect(() => Path({ d: 'M0 0', nonsense: 1 } as never)).toThrow('Path has no property "nonsense"')
+  })
+
+  // `PathProps` adds eleven of its own beside `Style`, so this is the list most
+  // likely to be written short — and the proof is what makes that a compile
+  // error rather than a silently narrower surface.
+  it('accepts the eleven it does have', () => {
+    expect(() =>
+      Path({
+        d: 'M0 0',
+        viewBox: [0, 0, 1, 1],
+        preserveAspectRatio: 'none',
+        fill: '#f00',
+        stroke: '#00f',
+        lineWidth: 2,
+        fillRule: 'evenodd',
+        lineCap: 'round',
+        lineJoin: 'bevel',
+        lineDash: [2, 2],
+        lineDashOffset: 1,
+        name: 'p',
+      }),
+    ).not.toThrow()
+  })
+})
