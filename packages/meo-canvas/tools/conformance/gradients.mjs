@@ -141,8 +141,13 @@ try {
     '#',
     '# case\tw\th\tpoint\tx\ty\tr\tg\tb\tt\tcss',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
-  process.stderr.write(`gradients: ${CASES.length} cases, ${rows.length} samples -> ${DESTINATION}\n`)
+  const written = table([...header, ...rows])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    process.stderr.write(`gradients: ${CASES.length} cases, ${rows.length} samples -> ${DESTINATION}\n`)
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }

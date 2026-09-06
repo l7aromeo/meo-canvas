@@ -159,7 +159,13 @@ try {
     '#',
     '# case\tray\tsteps',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
+  const written = table([...header, ...rows])
+  const writing = process.env['WRITE'] === '1'
+  if (writing) {
+    await writeFile(DESTINATION, written, 'utf8')
+  } else {
+    process.stdout.write(written)
+  }
 
   const profileHeader = [
     "# Chrome, through `just conformance`. The shape of a box-shadow's blur.",
@@ -182,9 +188,18 @@ try {
     '#',
     '# case\tray\tstep\tr\tg\tb',
   ]
-  await writeFile(PROFILE, table([...profileHeader, ...profile]), 'utf8')
-  process.stderr.write(`shadow extent: ${CASES.length} cases, ${rows.length} rays -> ${DESTINATION}\n`)
-  process.stderr.write(`shadow profile: ${profile.length} samples -> ${PROFILE}\n`)
+  // **Two tracked fixtures, not one.** `shadow-profile.tsv` is read by the same
+  // suites as `shadow-extent.tsv`, so it takes the same guard -- and the notes
+  // move inside it, because a line saying a file was written is a claim and a
+  // bare run does not write one.
+  const profiled = table([...profileHeader, ...profile])
+  if (writing) {
+    await writeFile(PROFILE, profiled, 'utf8')
+    process.stderr.write(`shadow extent: ${CASES.length} cases, ${rows.length} rays -> ${DESTINATION}\n`)
+    process.stderr.write(`shadow profile: ${profile.length} samples -> ${PROFILE}\n`)
+  } else {
+    process.stdout.write(profiled)
+  }
 } finally {
   await browser.close()
 }

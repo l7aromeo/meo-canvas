@@ -47,6 +47,29 @@ default:
 ensure-deps:
     @test -d node_modules || bun install --frozen-lockfile
 
+# The browser `conformance` measures with, checked only where it is needed.
+#
+# **Not folded into `ensure-deps`.** That recipe is on the path of `typecheck`,
+# `lint-check` and everything else that needs `node_modules`, and only this one
+# recipe drives a browser -- putting the check there makes every gate pay for a
+# probe it has no use for. The cost being weighed is *every recipe pays for a
+# browser check*, and it is written down because a taste question gets reversed
+# by someone who does not know it was weighed.
+#
+# `setup` installs it on a fresh clone. This exists so a clone that skipped
+# `setup` is told what is missing, rather than failing inside Playwright.
+#
+# **It asks Playwright where the binary is and looks.** The first spelling here
+# was `playwright install --dry-run chromium`, which reports what *would* be
+# installed and exits 0 whether or not anything is there -- a check that could
+# not fail, in a commit about a tool that did the wrong thing quietly. Measured
+# both ways before it was believed: with the browser present, exit 0; with
+# `PLAYWRIGHT_BROWSERS_PATH` pointed at nothing, `ENOENT` and exit 1.
+[private]
+ensure-browser:
+    @node -e 'import("playwright").then(async p => { const { accessSync } = await import("node:fs"); accessSync(p.chromium.executablePath()) })' > /dev/null 2>&1 \
+      || { echo "error: no chromium for Playwright -- run \`just setup\`, or \`npx playwright install chromium\`"; exit 1; }
+
 # The examples are a consumer of the package and carry their own lockfile.
 #
 # Their `meo-canvas` is a `file:` dependency, and bun installs one of those by
@@ -1121,19 +1144,19 @@ example: build-js addon
 # the browser reported rather than written down. Both rules exist because the
 # hand-written pages these replace got them wrong.
 [doc("Re-measure Chrome with Playwright and rewrite the conformance tables.")]
-conformance: ensure-deps
-    node packages/meo-canvas/tools/conformance/ellipsis.mjs
-    node packages/meo-canvas/tools/conformance/gradients.mjs
-    node packages/meo-canvas/tools/conformance/flex.mjs
-    node packages/meo-canvas/tools/conformance/borders.mjs
-    node packages/meo-canvas/tools/conformance/dotted.mjs
-    node packages/meo-canvas/tools/conformance/blend.mjs
-    node packages/meo-canvas/tools/conformance/boxshadow.mjs
-    node packages/meo-canvas/tools/conformance/shadowextent.mjs
-    node packages/meo-canvas/tools/conformance/objectfit.mjs
-    node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
-    node packages/meo-canvas/tools/conformance/grid.mjs
-    node packages/meo-canvas/tools/conformance/mincontent.mjs
+conformance: ensure-deps ensure-browser
+    WRITE=1 node packages/meo-canvas/tools/conformance/ellipsis.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/gradients.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/flex.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/borders.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/dotted.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/blend.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/boxshadow.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/shadowextent.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/objectfit.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/grid.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/mincontent.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/overflowposition.mjs
 
 [doc("Type-check the shipped TypeScript surface.")]

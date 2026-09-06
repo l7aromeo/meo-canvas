@@ -130,8 +130,13 @@ try {
     '#',
     '# fit\tw\th\trect\tmagenta\tcyan',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
-  process.stderr.write(`object fit: ${FITS.length} rules x ${BOXES.length} boxes -> ${DESTINATION}\n`)
+  const written = table([...header, ...rows])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    process.stderr.write(`object fit: ${FITS.length} rules x ${BOXES.length} boxes -> ${DESTINATION}\n`)
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }

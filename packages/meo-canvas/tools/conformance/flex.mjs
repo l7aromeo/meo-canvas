@@ -158,8 +158,13 @@ try {
     '#',
     '# justify\talign\tchild\tx\ty\tw\th',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
-  process.stderr.write(`flex alignment: ${JUSTIFY.length * ALIGN.length} cases, ${rows.length} rows -> ${DESTINATION}\n`)
+  const written = table([...header, ...rows])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    process.stderr.write(`flex alignment: ${JUSTIFY.length * ALIGN.length} cases, ${rows.length} rows -> ${DESTINATION}\n`)
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }
