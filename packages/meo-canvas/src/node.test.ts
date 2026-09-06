@@ -419,6 +419,86 @@ describe('a segment carrying a key it has no room for', () => {
   })
 })
 
+describe('a first argument that is not a props object', () => {
+  // **The same defect as an unknown key, one level out, in the file its repair
+  // was written in.** `checkProps` reads `Object.keys(props)`, and what that
+  // returns for a value which is not a props object decided the outcome
+  // entirely: `'hello'` has `"0"` through `"4"`, so the loop reported index zero
+  // as an unknown property and named the factory in a sentence that meant
+  // nothing; `42`, `true`, `[]`, `''` and a function have no own keys at all, so
+  // nothing objected and the node was built with default props and rendered.
+  // Measured at `851eb11`: `Box('')`, `Box(42)` and `Box({})` were
+  // indistinguishable in the output.
+
+  const notProps = {
+    'an empty string': '',
+    'a string with keys': 'hello',
+    'a number': 42,
+    'a boolean': true,
+    'a list': [],
+    'a function': () => {},
+    null: null,
+  }
+
+  describe.each(['Box', 'Row', 'Column', 'Grid', 'Image', 'Path'] as const)('%s', name => {
+    const factory = { Box, Row, Column, Grid, Image, Path }[name]
+    it.each(Object.entries(notProps))('refuses %s', (_label, value) => {
+      expect(() => factory(value as never)).toThrow(`${name} takes a props object`)
+    })
+  })
+
+  // **The two spellings the old code answered differently, asserted together.**
+  // One had keys and one did not, and that was the whole difference between a
+  // nonsense message and silence. Whatever they produce now, they produce the
+  // same thing.
+  it('answers a value with keys and a value without the same way', () => {
+    const withKeys = (): unknown => Box('hello' as never)
+    const without = (): unknown => Box(42 as never)
+    expect(withKeys).toThrow('Box takes a props object')
+    expect(without).toThrow('Box takes a props object')
+  })
+
+  it('no longer reports an index as an unknown property', () => {
+    expect(() => Box('hello' as never)).not.toThrow('has no property "0"')
+  })
+
+  // **A list is named as a list rather than as the object it technically is.**
+  // The mistake it comes from is specific -- a caller reaching for CSS's
+  // four-value shorthand -- and "an object" gives them nothing to correct.
+  it('names a list as a list', () => {
+    expect(() => Box([] as never)).toThrow('it was given a list')
+  })
+
+  it('names the two factories whose first argument is not props', () => {
+    expect(() => Text({ children: 'Hg' } as never)).toThrow('Text takes its text first and its props second')
+    expect(() => RichText({ children: 'Hg' } as never)).toThrow('RichText takes its segments first and its props second')
+    // The internal method names these used to arrive as.
+    expect(() => Text({} as never)).not.toThrow('side value')
+    expect(() => RichText({} as never)).not.toThrow('segments.every')
+  })
+
+  // **The rows a check that refused too much would fail.** Five of these
+  // factories default their props to `{}`, so a guard written against
+  // `arguments.length` or against `undefined` refuses the documented spelling
+  // and passes every row above.
+  it('still takes an omitted props argument', () => {
+    expect(() => Box()).not.toThrow()
+    expect(() => Row()).not.toThrow()
+    expect(() => Text('Hg')).not.toThrow()
+    expect(() => RichText(['Hg'])).not.toThrow()
+  })
+
+  it('still takes what each factory takes', () => {
+    expect(() => Box({})).not.toThrow()
+    expect(() => Box({ width: 4, height: 4 })).not.toThrow()
+    expect(() => Text('Hg', {})).not.toThrow()
+    expect(() => Text('', { fontSize: 12 })).not.toThrow()
+    expect(() => RichText([{ text: 'Hg' }])).not.toThrow()
+    expect(() => Image({ src: 'a.png' })).not.toThrow()
+    expect(() => Path({ d: 'M0 0 L4 4' })).not.toThrow()
+  })
+})
+
 describe('a container props key it does not have', () => {
   // **The same defect as a segment key, at a second of five sites.** An unknown
   // key was silently ignored on `Box`, `Text`, `Path` and the paragraph options

@@ -506,11 +506,17 @@ function keywordFor(name: string, table: Readonly<Record<string, number>>): stri
  * the literal for a finite number; `NaN` and `Infinity` spell themselves; and
  * the kind of thing where the value itself would say nothing.
  */
-function render(value: unknown): string {
+export function render(value: unknown): string {
   if (typeof value === 'string') return JSON.stringify(value)
   if (typeof value === 'number') return String(value)
   if (typeof value === 'function') return 'a function'
   if (value === null) return 'null'
+  // A list before the object it technically is. An array reported as "an
+  // object" is the same unhelpfulness this function exists to replace, and the
+  // mistake it comes from is specific: a caller reaching for CSS's four-value
+  // shorthand writes `padding: [8, 4]`, and being told that is an object gives
+  // them nothing to correct.
+  if (Array.isArray(value)) return 'a list'
   if (typeof value === 'object') return 'an object'
   // What is left is `boolean | symbol | bigint | undefined`, spelled out rather
   // than reached through `String` on an `unknown`: a symbol has no string

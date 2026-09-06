@@ -26,7 +26,7 @@
  * @packageDocumentation
  */
 
-import { PROPERTY_TABLES } from './arena.js'
+import { PROPERTY_TABLES, render } from './arena.js'
 import { STYLE_KEYS } from './style.js'
 import type { Color, Gradient, Style } from './style.js'
 
@@ -336,6 +336,20 @@ noPropLeftOver<Exclude<keyof ContainerProps, (typeof CONTAINER_KEYS)[number]>>()
  * on `Box`, `Text`, `Path` and the paragraph options alike.
  */
 function checkProps(props: object, allowed: ReadonlySet<string>, what: string): void {
+  // **The thing, before its keys.** Everything below reads `Object.keys(props)`,
+  // and what that returns for a value which is not a props object decides the
+  // outcome entirely: `'hello'` has `"0"` through `"4"`, so the loop reported
+  // index zero as an unknown property and named the factory in a sentence that
+  // meant nothing; `42`, `true`, `[]`, `''` and a function have no own keys at
+  // all, so the loop found nothing to object to and **the node was built with
+  // default props and rendered**. `Box('')`, `Box(42)` and `Box({})` were
+  // indistinguishable in the output.
+  //
+  // Which makes this the same defect as the one this function exists to stop,
+  // one level out: it checked the keys of a thing without checking the thing.
+  if (typeof props !== 'object' || props === null || Array.isArray(props)) {
+    throw new TypeError(`${what} takes a props object; it was given ${render(props)}`)
+  }
   for (const key of Object.keys(props)) {
     if (allowed.has(key)) continue
     throw new TypeError(`${what} has no property ${JSON.stringify(key)}`)
@@ -605,6 +619,14 @@ function paragraphOf(props: TextProps): ParagraphOptions | undefined {
  * ```
  */
 export function Text(content: string, props: TextProps = {}): SceneNode {
+  // **Checked here rather than left to the writer.** `Text` and `RichText` are
+  // the two factories whose first argument is not props, so they are the two a
+  // caller coming from `Box` and `Image` hands an object to -- and an object
+  // travelled all the way to the string table, arriving as `side value 0 is
+  // neither a string nor a Buffer`, an offset into a wire format nobody saw.
+  if (typeof content !== 'string') {
+    throw new TypeError(`Text takes its text first and its props second; it was given ${render(content)}`)
+  }
   checkProps(props, TEXT_KEY_SET, 'Text')
   return node('text', props, undefined, props.name, paragraphOf(props), content, undefined, undefined, undefined)
 }
@@ -616,6 +638,11 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * Each segment's own style overrides the node's for that run.
  */
 export function RichText(segments: readonly (TextSegment | string | number | bigint | boolean | null | undefined)[], props: TextProps = {}): SceneNode {
+  // The same, one step earlier than `Text`'s: a non-list reached
+  // `segments.every` and came back carrying that method's name.
+  if (!Array.isArray(segments)) {
+    throw new TypeError(`RichText takes its segments first and its props second; it was given ${render(segments)}`)
+  }
   checkProps(props, TEXT_KEY_SET, 'RichText')
   // **The same rule children get.** A segment list and a children list are the
   // same kind of list, and a caller building either from data hits the same

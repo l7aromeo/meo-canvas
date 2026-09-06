@@ -2045,6 +2045,18 @@ describe('a value no path handles is refused by the property that was written', 
   // who wrote `'50pc'` needs the list of suffixes, and a caller who wrote `{}`
   // needs to be told the kind is wrong. Replacing the second with the first
   // would make these fail.
+  // **A list is named as a list rather than as the object it technically is.**
+  // The mistake it comes from is specific -- a caller reaching for CSS's
+  // four-value shorthand -- and "an object" gives them nothing to correct.
+  it('names a list as a list wherever a value is rendered', () => {
+    expect(() => throughTheAddon({ padding: [8, 4] as unknown as number })).toThrow('padding is a list')
+    expect(() => throughTheAddon({ width: [] as unknown as number })).toThrow('width is a list')
+    expect(() => throughTheAddon({ zIndex: [] as unknown as number })).toThrow('zIndex is a list')
+    // And an object is still an object, so the arm added for lists did not
+    // swallow the case it sits in front of.
+    expect(() => throughTheAddon({ zIndex: {} as unknown as number })).toThrow('zIndex is an object')
+  })
+
   it('still tells a bad string which spellings exist', () => {
     expect(() => throughTheAddon({ width: '50pc' as unknown as number })).toThrow('"50pc" is not a size')
     expect(() => throughTheAddon({ padding: 'wide' as unknown as number })).toThrow('"wide" is not a length')
