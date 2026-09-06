@@ -228,6 +228,121 @@ export type BlendMode =
  */
 export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'none'
 
+/**
+ * Every key {@link Style} declares, as values a runtime check can use.
+ *
+ * **Written by hand and unable to drift, which is the point.** The generated
+ * arena property tables are the obvious source and they are the wrong one:
+ * measured, they carry **66 keys against `Style`'s 69**, because `objectFit`,
+ * `objectPosition` and `frame` travel in a node's payload rather than in a
+ * style group. A check built on those tables would refuse three valid
+ * properties — and nothing in this repository asserted the relationship, so no
+ * gate would have said so. They are generated against the encoder's slots, not
+ * against this surface's key set.
+ *
+ * {@link styleKeysAreExhaustive} is what makes a hand-written list safe. A key
+ * added to `Style` and not added here is a **compile error naming the key**; a
+ * key here that `Style` does not declare is refused by the `satisfies`. Both
+ * directions, both by name.
+ */
+export const STYLE_KEYS = [
+  'display',
+  'positionType',
+  'position',
+  'width',
+  'height',
+  'minWidth',
+  'minHeight',
+  'maxWidth',
+  'maxHeight',
+  'aspectRatio',
+  'margin',
+  'padding',
+  'border',
+  'flexDirection',
+  'flexWrap',
+  'flexGrow',
+  'flexShrink',
+  'flexBasis',
+  'justifyContent',
+  'alignItems',
+  'alignSelf',
+  'alignContent',
+  'gap',
+  'overflow',
+  'boxSizing',
+  'direction',
+  'gridTemplateColumns',
+  'columns',
+  'gridTemplateRows',
+  'gridAutoRows',
+  'gridAutoColumns',
+  'gridAutoFlow',
+  'gridColumn',
+  'gridRow',
+  'gridArea',
+  'backgroundColor',
+  'borderColor',
+  'borderStyle',
+  'borderRadius',
+  'opacity',
+  'mixBlendMode',
+  'dither',
+  'zIndex',
+  'fontFamily',
+  'fontSize',
+  'fontWeight',
+  'fontStyle',
+  'color',
+  'fontVariant',
+  'textAlign',
+  'textDecoration',
+  'verticalAlign',
+  'paintOrder',
+  'lineHeight',
+  'lineGap',
+  'letterSpacing',
+  'wordSpacing',
+  'gradient',
+  'backgroundImage',
+  'transform',
+  'boxShadow',
+  'textShadow',
+  'textStroke',
+  'mask',
+  'filter',
+  'backdropFilter',
+  'objectFit',
+  'objectPosition',
+  'frame',
+] as const satisfies readonly (keyof Style)[]
+
+/**
+ * Compiles only when `T` is `never`, and names what is left over when it is not.
+ *
+ * The `extends never` constraint is doing the work. An assertion written as
+ * `const _: Leftover = undefined as never` **cannot fail**, because `never` is
+ * assignable to everything — the first draft of this proof was written that way
+ * and passed a deliberately incomplete list without complaint.
+ */
+function noStyleKeyLeftOver<T extends never>(_leftOver?: T): void {}
+
+/** Keys `Style` declares that {@link STYLE_KEYS} omits. `never` when complete. */
+type StyleKeysNotListed = Exclude<keyof Style, (typeof STYLE_KEYS)[number]>
+
+/*
+ * The proof itself. Neither a test nor a lint: it fails `tsc`, so it fails
+ * every gate that typechecks, cannot be skipped, and fails where the key is
+ * added rather than where the list is later read.
+ *
+ * **A call rather than an exported function**, because an exported
+ * `styleKeysAreExhaustive` would be a public symbol nobody should call — and
+ * with a `declare`d helper it would have thrown `ReferenceError` if anyone
+ * did. The helper has a real, empty body and the call is what makes the
+ * constraint load-bearing.
+ */
+noStyleKeyLeftOver<StyleKeysNotListed>()
+
 /** What happens to content larger than its box. */
 export type Overflow = 'visible' | 'hidden' | 'scroll'
 
