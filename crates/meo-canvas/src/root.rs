@@ -290,7 +290,14 @@ impl Root {
             content_height: true,
             scale: Self::DEFAULT_SCALE,
             on_image_error: OnImageError::Placeholder,
-            style: Style::new(),
+            // **A page lays its children out as flex, and says so.** The
+            // scene's default is `block`, which is what a browser gives a
+            // `<div>`; a page root that inherited it would stack its children
+            // and stop honouring `gap` and the alignments, which is a change
+            // no caller asked for. The JavaScript surface names it the same
+            // way, through `Box`.
+            style: Style::new()
+                .display(meo_canvas_scene::style::layout::Display::Flex),
             name: None,
             gpu: None,
             color_type: None,

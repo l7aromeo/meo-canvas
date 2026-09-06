@@ -5784,23 +5784,45 @@ mod tests {
         assert!((start.y - 50.0).abs() < 0.01);
     }
 
+    /// Which parent a static child hangs from decides whether `z_index`
+    /// ranks it at all, so both parents are here.
+    ///
+    /// `stacks_by_z_index` gives a static child a stacking context only under
+    /// a flex or grid parent -- Flexbox §5.4 -- and under a block parent an
+    /// unpositioned child's `z_index` does not apply. **Before the scene's
+    /// default display became `block` this test built a flex parent without
+    /// saying so**, and the block half was untested: a change that ranked
+    /// every static child by `z_index`, in any parent, passed.
     #[test]
     fn children_draw_in_z_order_then_document_order() {
-        let mut scene = Scene::new(Size::new(10.0, 10.0));
-        let mut ids = Vec::new();
-        for z in [2_i32, -1, 0, 0] {
-            let id = scene
-                .push(NodeId::ROOT, Node::container())
-                .unwrap_or_else(|error| unreachable!("{error}"));
-            if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = Some(z);
+        let ordered = |display: Display| {
+            let mut scene = Scene::new(Size::new(10.0, 10.0));
+            if let Some(root) = scene.get_mut(NodeId::ROOT) {
+                root.layout.display = display;
             }
-            ids.push(id);
-        }
-        let ordered = ordered_ids(&scene, NodeId::ROOT);
+            let mut ids = Vec::new();
+            for z in [2_i32, -1, 0, 0] {
+                let id = scene
+                    .push(NodeId::ROOT, Node::container())
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                if let Some(node) = scene.get_mut(id) {
+                    node.paint.z_index = Some(z);
+                }
+                ids.push(id);
+            }
+            (ordered_ids(&scene, NodeId::ROOT), ids)
+        };
 
-        // -1 first, then the two zeroes in the order they were added, then 2.
-        assert_eq!(ordered, vec![ids[1], ids[2], ids[3], ids[0]]);
+        // A flex parent: -1 first, then the two zeroes in the order they were
+        // added, then 2.
+        let (flex, ids) = ordered(Display::Flex);
+        assert_eq!(flex, vec![ids[1], ids[2], ids[3], ids[0]]);
+
+        // A block parent: `z_index` does not apply to an unpositioned child,
+        // so all four paint in document order. This is the row that fails if
+        // the flex rule is applied everywhere.
+        let (block, ids) = ordered(Display::Block);
+        assert_eq!(block, vec![ids[0], ids[1], ids[2], ids[3]]);
     }
 
     #[test]

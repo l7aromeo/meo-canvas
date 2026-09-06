@@ -1583,12 +1583,22 @@ mod tests {
         }
     }
 
-    /// A scene with one page whose root is a plain box.
+    /// A scene with one page whose root is a plain box, laid out as flex.
+    ///
+    /// **The display is named because the scene's default is `block`**, which
+    /// is what a browser gives a `<div>`. Both public surfaces name `flex` on
+    /// every container they build, so a page a caller made is a flex
+    /// container; a scene assembled node by node, as these tests do, gets the
+    /// default and would otherwise stack its children. Naming it here keeps
+    /// these tests measuring what they were written to measure.
     fn scene_with_page(width: f32, height: f32) -> (Scene, NodeId) {
         let mut scene = Scene::new(Size::new(width, height));
         let page = scene
             .push_page()
             .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.display = Display::Flex;
+        }
         (scene, page)
     }
 
@@ -1977,6 +1987,12 @@ mod tests {
             let mut outer = Node::container();
             outer.layout.size =
                 (Dimension::Points(88.0), Dimension::Points(height));
+            // A wrap is a flex concept and the scene's default is `block`, so
+            // the container that wraps says which it is. Without this the
+            // children stack and `bottom_align_reversed_wraps` is never
+            // reached -- the guard at the top of it excludes anything that is
+            // not `Display::Flex`.
+            outer.layout.display = Display::Flex;
             outer.layout.flex_wrap = wrap;
             let outer = scene
                 .push(NodeId::ROOT, outer)
@@ -2545,12 +2561,19 @@ mod tests {
 
     #[test]
     fn the_scenes_defaults_are_csss_not_taffys() {
-        // The scene's `LayoutStyle::default()` is CSS's: a row direction and a
-        // shrink of 1. This is the test that fails if the mapping ever leans on
-        // `taffy::Style::default()` for a field the scene carries.
+        // The scene's `LayoutStyle::default()` is CSS's: a **block** display,
+        // a row direction and a shrink of 1. This is the test that fails if
+        // the mapping ever leans on `taffy::Style::default()` for a field the
+        // scene carries.
+        //
+        // **The display was `Flex` here and the name of this test was wrong
+        // about it**: CSS gives a `<div>` `block`, and taffy's own default is
+        // `Flex`, so the one field that disagreed with the name was the one
+        // that agreed with taffy. Both surfaces name `flex` on the containers
+        // they build, so nothing a caller writes changed when this did.
         let style = super::to_taffy_style(&LayoutStyle::default());
 
-        assert_eq!(style.display, taffy::Display::Flex);
+        assert_eq!(style.display, taffy::Display::Block);
         assert_eq!(style.flex_direction, taffy::FlexDirection::Row);
         // Compared against the scene's own value rather than a literal, and by
         // bits rather than by value: the claim is that the mapping passes the
