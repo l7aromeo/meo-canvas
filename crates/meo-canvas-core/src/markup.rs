@@ -80,11 +80,34 @@ const TAB: &str = "    ";
 ///
 /// # Where a value is not understood
 ///
-/// The property is **cleared** rather than left as it was, so the span falls
-/// back to what it inherits. `<size=wide>` does not keep an enclosing
-/// `<size=20>`. This is v1's behaviour at `text.canvas.ts:346-351`, where an
-/// unparseable size is set to `undefined`, and the other properties follow it
-/// so that one bad value behaves the same whichever tag carried it.
+/// **Only `size` clears.** An unparseable size falls back to what the span
+/// inherits, so `<size=30>a<size=wide>b` draws `b` at the node's own size.
+/// `color` and `weight` do not: `<color=red>a<color=zzz>b` draws `b` red, and
+/// the enclosing weight survives a `<weight=heavy>` the same way.
+///
+/// This is v1's behaviour on all three, **measured by running it rather than
+/// read from it**, because the source suggests the opposite. v1 validates one
+/// arm: `text.canvas.ts:351-357` runs `Number(value)` for `size` and assigns
+/// `undefined` when it is `NaN`. `color` and `weight` at `:341-349` assign the
+/// raw string with no validation, and it is the Canvas API that ignores an
+/// invalid assignment to `fillStyle` or `font`, leaving the previous value
+/// standing. So the citation above is accurate about `size` and about nothing
+/// else.
+///
+/// A value out of range and a value that will not parse are the same thing
+/// here, which is also v1's: `<weight=1500>` and `<weight=0>` keep the
+/// enclosing weight exactly as `<weight=heavy>` does.
+///
+/// A tag carrying no value is different again -- `<color>` clears, because v1
+/// assigns `undefined` for it -- and every case above raises a diagnostic
+/// naming what could not be used.
+///
+/// **v1 warned on one of the three and this restores that one warning**, not a
+/// facility it had. `text.canvas.ts:355` prints
+/// `Invalid numeric value for size tag: ...` to stderr, and nothing is printed
+/// for a bad weight or colour -- observed by running v1, not read from it. The
+/// asymmetry has the same cause as the fallbacks: `size` is the arm v1
+/// validates, so it is the only arm with anything to notice.
 ///
 /// # Tags this does not know
 ///
