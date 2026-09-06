@@ -35,7 +35,7 @@ use meo_canvas_scene::{
     style::{
         Dimension, Length,
         layout::LayoutStyle,
-        paint::{Color, ObjectFit},
+        paint::{BorderStyle, Color, ObjectFit},
     },
 };
 
@@ -139,6 +139,13 @@ fn render(
         };
         node.layout.border = Sides::all(border);
         node.layout.padding = Sides::all(Length::Points(padding));
+        // **`solid` named rather than inherited from the default**, which is
+        // what the Chrome side of this fixture already does --
+        // `objectfit-overflow.mjs` writes `border:${border}px solid #0000ff`,
+        // because in CSS a width paints nothing without a style. Ours has said
+        // the same by default; naming it here keeps these rows measuring the
+        // border they were generated with, whatever the default becomes.
+        node.paint.border_style = BorderStyle::Solid;
         node.paint.border_radius = Corners::all(radius);
         node.paint.border_color_all = Color::rgb(0, 0, 255);
         // The padding band is only visible if something paints it, and the
