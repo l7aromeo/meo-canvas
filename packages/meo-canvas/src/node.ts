@@ -144,8 +144,29 @@ function node(
  * it does in JSX and renders nothing when the condition fails. v1 allows both
  * for that reason, and a conditional written that way is how its users write
  * one — dropping it would break the idiom rather than tidy it.
+ *
+ * **`null` and `''` are members for the same reason, measured against React
+ * 19.2.8 rather than assumed.** `cond ? <X/> : null` is the other half of that
+ * idiom and the spelling a ternary produces, and `''` is what an empty string
+ * out of data looks like; React renders nothing for either. Both were type
+ * errors that also threw at runtime, so the two spellings of one conditional
+ * behaved differently — `&&` worked and `? :` did not.
+ *
+ * **`true` is a member too, and for a spelling rather than for its own sake.**
+ * `cond || node` yields `true` when `cond` is a truthy boolean, which is the
+ * same half-of-an-idiom asymmetry as `? :` — and React skips it. Admitting
+ * `false` while rejecting `true` would leave one spelling of a conditional
+ * working and its neighbour throwing, which is the shape this widening exists
+ * to remove.
+ *
+ * **`0` is deliberately not a member.** React renders it as the text `0`, which
+ * is a different decision from skipping it, and a caller who writes
+ * `items.length && …` meaning "when there are items" would get a visible zero
+ * rather than nothing. It stays an error, and the error is where to say so.
+ * `NaN` and `0n` render there too — measured, not assumed — and are out for the
+ * same reason. An empty array needs no member: it flattens to nothing already.
  */
-export type Child = SceneNode | false | undefined
+export type Child = SceneNode | boolean | null | undefined | ''
 
 /** One child, or many. */
 export type Children = Child | readonly Child[]
@@ -187,6 +208,20 @@ export type ContainerProps = Style & {
 const NO_CHILDREN: readonly SceneNode[] = Object.freeze([])
 
 /**
+ * Whether an entry in a children list or a segment list renders nothing.
+ *
+ * **One predicate for both lists**, because it is the same question asked of a
+ * container's children and of a paragraph's runs. They disagreed before this:
+ * children ignored `false` and `undefined` and segments ignored neither, so one
+ * caller building both from data met two behaviours for one mistake.
+ *
+ * `0` is absent on purpose — see {@link Child}.
+ */
+function ignorable(value: unknown): value is boolean | null | undefined | '' {
+  return value === false || value === true || value === undefined || value === null || value === ''
+}
+
+/**
  * The children a container actually has: one or many, with the falsy ones gone.
  *
  * Absent stays absent — a container that named no children has `undefined`,
@@ -199,13 +234,17 @@ const NO_CHILDREN: readonly SceneNode[] = Object.freeze([])
  */
 function toChildren(children: Children | undefined): readonly SceneNode[] | undefined {
   if (children === undefined) return undefined
-  if (children === false) return NO_CHILDREN
+  if (ignorable(children)) return NO_CHILDREN
   if (!Array.isArray(children)) return [children as SceneNode]
 
   const many = children as readonly Child[]
-  const kept = many.every(child => child !== false && child !== undefined)
-  if (kept) return many
-  return many.filter((child): child is SceneNode => child !== false && child !== undefined)
+  // The cast is what the inline comparison used to give for free: TypeScript
+  // infers a type predicate from a simple arrow and narrows the array through
+  // `every`, and it cannot do that through a call. Asserting here keeps the
+  // allocation-free fast path the doc above promises.
+  const kept = many.every(child => !ignorable(child))
+  if (kept) return many as readonly SceneNode[]
+  return many.filter((child): child is SceneNode => !ignorable(child))
 }
 
 /**
@@ -378,8 +417,15 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * The one case a single string cannot express: a sentence with one word bold.
  * Each segment's own style overrides the node's for that run.
  */
-export function RichText(segments: readonly TextSegment[], props: TextProps = {}): SceneNode {
-  return node('text', props, undefined, props.name, paragraphOf(props), undefined, segments, undefined, undefined)
+export function RichText(segments: readonly (TextSegment | boolean | null | undefined | '')[], props: TextProps = {}): SceneNode {
+  // **The same rule children get.** A segment list and a children list are the
+  // same kind of list, and a caller building either from data hits the same
+  // `null`. Before this, children ignored two of the four ignorable values and
+  // segments ignored none, so `[seg, cond && other]` worked in one and threw in
+  // the other.
+  const kept = segments.every(segment => !ignorable(segment))
+  const runs = kept ? (segments as readonly TextSegment[]) : segments.filter((segment): segment is TextSegment => !ignorable(segment))
+  return node('text', props, undefined, props.name, paragraphOf(props), undefined, runs, undefined, undefined)
 }
 
 /** What an image node accepts: its source, and its style, flat. */

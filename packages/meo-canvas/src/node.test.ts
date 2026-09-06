@@ -260,3 +260,62 @@ describe('paths', () => {
     expect(Path({ d: 'M2 8 L6 12 L14 3' }).d).toBe('M2 8 L6 12 L14 3')
   })
 })
+
+describe('the values a list ignores', () => {
+  // **The assertion is that the two lists agree, not that either skips four
+  // values.** A fix to segments alone satisfies "segments skip four" and lets
+  // children drift again later; only comparing the two columns catches that.
+  //
+  // Measured against React 19.2.8 before the repair: `null` and `''` render
+  // nothing there, `false` and `undefined` already did here, and `0` renders
+  // as the text `0` — which is why `0` is an error rather than a skip.
+  const ignorable = [false, undefined, null, ''] as const
+
+  it.each(ignorable)('a container drops %p from its children', value => {
+    const kept = Box({ children: [Box(), value] }).children
+    expect(kept).toHaveLength(1)
+  })
+
+  it.each(ignorable)('a paragraph drops %p from its segments', value => {
+    const runs = RichText([{ text: 'a' }, value]).segments
+    expect(runs).toHaveLength(1)
+  })
+
+  it('the two lists ignore exactly the same values', () => {
+    // The columns, built rather than asserted one by one, so a value added to
+    // one predicate and not the other fails here rather than in neither.
+    const children = ignorable.filter(value => Box({ children: [Box(), value] }).children?.length === 1)
+    const segments = ignorable.filter(value => RichText([{ text: 'a' }, value]).segments?.length === 1)
+    expect(segments).toEqual(children)
+    expect(children).toHaveLength(ignorable.length)
+  })
+
+  // **`0` is the row that keeps this honest.** React renders it as text, so
+  // skipping it would be a different decision from the one #44 measured, and a
+  // caller writing `items.length && …` would silently lose a visible zero.
+  // **The rows that keep the set honest.** React renders these as text, so
+  // skipping them would be a different decision from the one measured — and a
+  // caller writing `items.length && …` meaning "when there are items" would
+  // lose a visible zero rather than seeing nothing.
+  it.each([0, NaN])('neither list drops %p', value => {
+    const keep = value as unknown as undefined
+    expect(Box({ children: [Box(), keep] }).children).toHaveLength(2)
+    expect(RichText([{ text: 'a' }, keep]).segments).toHaveLength(2)
+  })
+
+  // The rows a filter that ate too much would fail. Without these, a predicate
+  // that returned true for everything passes every test above.
+  it('keeps the entries that are real', () => {
+    expect(Box({ children: [Box(), Box()] }).children).toHaveLength(2)
+    expect(RichText([{ text: 'a' }, { text: 'b' }]).segments).toHaveLength(2)
+  })
+
+  it("leaves '' alone when it is content rather than a child", () => {
+    // **The same literal, one argument apart, meaning two different things.**
+    // `''` in a child list is an ignorable entry; `''` as a paragraph's text is
+    // a legitimate empty string. A skip written too low in the stack swallows
+    // both.
+    expect(Text('').markup).toBe('')
+    expect(RichText([{ text: '' }]).segments).toHaveLength(1)
+  })
+})
