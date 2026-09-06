@@ -226,7 +226,24 @@ fn parse_weight(value: &str) -> Option<FontWeight> {
     if trimmed.eq_ignore_ascii_case("bold") {
         return Some(FontWeight::BOLD);
     }
-    trimmed.parse::<u16>().ok().map(FontWeight::new)
+    // **Out of range is refused, not clamped.** `FontWeight::new` clamps, and
+    // it has to: it is the only way to build the type, and the codec and the
+    // arena reach it with a value that has already passed a type gate
+    // (`codec/impls.rs:354` says so deliberately). Markup is the other case --
+    // a string somebody typed -- and CSS's rule for a declaration it cannot use
+    // is to drop it, leaving the property at whatever it already was. Clamping
+    // here produced the one class of answer in the whole tag survey that is
+    // *confidently wrong*: `<weight=1500>` rendered at 1000 and `<weight=0>` at
+    // 1, both plausible, neither what the caller asked for, and no way from the
+    // outside to tell them from a weight that was meant.
+    //
+    // The style surface is untouched on purpose: `fontWeight: 1500` still
+    // clamps, and whether it should drop as well is #47, open with the user.
+    // This change is correct under either answer there.
+    let weight = trimmed.parse::<u16>().ok()?;
+    (FontWeight::MIN..=FontWeight::MAX)
+        .contains(&weight)
+        .then(|| FontWeight::new(weight))
 }
 
 /// Parses a size in pixels.
@@ -463,6 +480,35 @@ mod tests {
         assert_eq!(
             parse("<weight=normal>x")[0].style.font_weight,
             Some(FontWeight::NORMAL)
+        );
+    }
+
+    #[test]
+    fn a_weight_outside_csss_range_drops_the_declaration() {
+        // Not clamped to the nearest legal weight. The bounds themselves still
+        // parse, which is what says the range is the range and not one narrower
+        // by an off-by-one.
+        assert_eq!(parse("<weight=1500>x")[0].style.font_weight, None);
+        assert_eq!(parse("<weight=0>x")[0].style.font_weight, None);
+        assert_eq!(
+            parse("<weight=1>x")[0].style.font_weight,
+            Some(FontWeight::new(FontWeight::MIN))
+        );
+        assert_eq!(
+            parse("<weight=1000>x")[0].style.font_weight,
+            Some(FontWeight::new(FontWeight::MAX))
+        );
+        // **Dropped here means cleared to the base, not "keeps the enclosing
+        // 700".** CSS ignores an invalid declaration and leaves the property at
+        // its computed value, which inside `<weight=700>` would be 700. This
+        // parser clears instead, and does so for *every* value it cannot use --
+        // a bad colour, a bad size, `<weight=heavy>` -- because that is v1's
+        // behaviour at `text.canvas.ts:346-351`, asserted one test below.
+        // Making an out-of-range number the single exception would be a
+        // second rule in a file with one.
+        assert_eq!(
+            parse("<weight=700>a<weight=1500>b")[1].style.font_weight,
+            None
         );
     }
 
