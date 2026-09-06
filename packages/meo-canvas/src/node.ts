@@ -342,6 +342,27 @@ function checkProps(props: object, allowed: ReadonlySet<string>, what: string): 
   }
 }
 
+/**
+ * Every key {@link ParagraphProps} declares.
+ *
+ * Named separately rather than folded into {@link TEXT_KEYS} because
+ * `TextProps` composes **three** sources, and a list built from one spread of
+ * everything cannot say which source a missing key came from.
+ */
+const PARAGRAPH_KEYS = ['maxLines', 'ellipsis'] as const satisfies readonly (keyof ParagraphProps)[]
+
+/* The proof that PARAGRAPH_KEYS is exactly `keyof ParagraphProps`. */
+noPropLeftOver<Exclude<keyof ParagraphProps, (typeof PARAGRAPH_KEYS)[number]>>()
+
+/** Every key {@link TextProps} accepts: `Style`, the paragraph options, and `name`. */
+const TEXT_KEYS = [...STYLE_KEYS, ...PARAGRAPH_KEYS, 'name'] as const satisfies readonly (keyof TextProps)[]
+
+/* The proof that TEXT_KEYS is exactly `keyof TextProps`. */
+noPropLeftOver<Exclude<keyof TextProps, (typeof TEXT_KEYS)[number]>>()
+
+/** {@link TEXT_KEYS} as a set, built once. */
+const TEXT_KEY_SET: ReadonlySet<string> = new Set(TEXT_KEYS)
+
 /** {@link CONTAINER_KEYS} as a set, built once. */
 const CONTAINER_KEY_SET: ReadonlySet<string> = new Set(CONTAINER_KEYS)
 
@@ -552,6 +573,7 @@ function paragraphOf(props: TextProps): ParagraphOptions | undefined {
  * ```
  */
 export function Text(content: string, props: TextProps = {}): SceneNode {
+  checkProps(props, TEXT_KEY_SET, 'Text')
   return node('text', props, undefined, props.name, paragraphOf(props), content, undefined, undefined, undefined)
 }
 
@@ -562,6 +584,7 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * Each segment's own style overrides the node's for that run.
  */
 export function RichText(segments: readonly (TextSegment | string | number | bigint | boolean | null | undefined)[], props: TextProps = {}): SceneNode {
+  checkProps(props, TEXT_KEY_SET, 'RichText')
   // **The same rule children get.** A segment list and a children list are the
   // same kind of list, and a caller building either from data hits the same
   // `null`. Before this, children ignored two of the four ignorable values and

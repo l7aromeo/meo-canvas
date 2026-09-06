@@ -506,3 +506,24 @@ describe('a wider props object narrowed to a container', () => {
     expect(containerPropsOf({})).toEqual({})
   })
 })
+
+describe('a text props key it does not have', () => {
+  // `TextProps` is `Style & ParagraphProps & { name }` — **three sources**, and
+  // the paragraph options are listed separately with a proof of their own. A
+  // list built from one spread of everything cannot say which source a missing
+  // key came from; with the split, dropping `ellipsis` fails twice, once at
+  // `PARAGRAPH_KEYS` and once at `TEXT_KEYS`.
+  it.each([
+    ['Text', () => Text('hi', { nonsense: 1 } as never)],
+    ['RichText', () => RichText([{ text: 'a' }], { nonsense: 1 } as never)],
+  ])('%s refuses it', (name, build) => {
+    expect(build).toThrow(`${name} has no property "nonsense"`)
+  })
+
+  it('accepts every source of its keys', () => {
+    expect(() => Text('hi')).not.toThrow()
+    expect(() => Text('hi', { maxLines: 2, ellipsis: '…' })).not.toThrow() // ParagraphProps
+    expect(() => Text('hi', { fontSize: 20 })).not.toThrow() // Style
+    expect(() => Text('hi', { name: 'x' })).not.toThrow() // its own
+  })
+})
