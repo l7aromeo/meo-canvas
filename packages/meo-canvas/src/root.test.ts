@@ -33,6 +33,7 @@ function fakeRenderer() {
     pageCount: 1,
     scale: 1,
     warnings: [],
+    diagnostics: [],
   }
   const dependencies: RootDependencies = {
     renderer: {

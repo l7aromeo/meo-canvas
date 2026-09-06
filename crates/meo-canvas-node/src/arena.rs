@@ -176,6 +176,7 @@ pub(crate) mod scene;
 pub(crate) mod value;
 
 use group::{BITS_PER_SLOT, Mask, arena_group, ascending};
+use meo_canvas_core::diagnostic::Diagnostic;
 use meo_canvas_scene::{
     ImageFetchAttempt, ImageFetchFailure, OnImageError, Scene, SceneError,
     Size,
@@ -457,6 +458,12 @@ pub(crate) struct Reader<'a> {
     slots: &'a [f64],
     values: &'a Values,
     offset: usize,
+    /// What the caller wrote that could not be used.
+    ///
+    /// Collected here because the decode is where this side parses markup, and
+    /// a dropped tag is indistinguishable from an absent one by the time the
+    /// scene exists. The same reason the caller's property name lives here.
+    found: Vec<Diagnostic>,
     /// The property being decoded, in the spelling its caller wrote.
     ///
     /// The decoder is positional and carries no field names of its own, which
@@ -603,6 +610,16 @@ pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
 impl<'a> Reader<'a> {
     /// Names the property whose value is about to be read.
     ///
+    /// Records what a nested parse could not use.
+    pub(crate) fn report(&mut self, found: Vec<Diagnostic>) {
+        self.found.extend(found);
+    }
+
+    /// Takes the diagnostics out, leaving the reader empty.
+    pub(crate) fn into_found(self) -> Vec<Diagnostic> {
+        self.found
+    }
+
     /// Called once per property by a group's decode, so an error raised
     /// anywhere beneath it can say what the caller set.
     pub(crate) const fn set_property(&mut self, property: &'static str) {
@@ -619,6 +636,7 @@ impl<'a> Reader<'a> {
             slots,
             values,
             offset: 0,
+            found: Vec::new(),
             property: None,
             #[cfg(test)]
             probe: None,
@@ -639,6 +657,7 @@ impl<'a> Reader<'a> {
             slots,
             values,
             offset: 0,
+            found: Vec::new(),
             property: None,
             probe: Some(fills),
         }
@@ -904,7 +923,17 @@ arena_group! {
 /// revision, ends early, holds a slot the format cannot read, names a side
 /// value that is not there, describes something that is not a forest of pages,
 /// or carries slots past the end of the scene.
-pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
+/// The scene an arena describes, and what the caller wrote that was unusable.
+///
+/// **Widened rather than given a reporting twin**, which is the opposite of
+/// `markup::parse_reporting` and for a reason that does not hold here: this
+/// crate is the addon, not a library anyone depends on, so there is no caller
+/// to spare a signature change -- and two entry points with no external users
+/// would be two things to keep in step for nobody.
+pub fn decode(
+    slots: &[f64],
+    values: &Values,
+) -> Result<(Scene, Vec<Diagnostic>), ArenaError> {
     let mut input = Reader::new(slots, values);
 
     let magic = input.slot()?;
@@ -964,7 +993,7 @@ pub fn decode(slots: &[f64], values: &Values) -> Result<Scene, ArenaError> {
     }
 
     scene.validate().map_err(ArenaError::InvalidScene)?;
-    Ok(scene)
+    Ok((scene, input.into_found()))
 }
 
 /// Reads one node and its subtree, appending them to the arena.
@@ -1053,7 +1082,12 @@ fn read_kind(
             // "Why a text node says which of the two it carries".
             let segments = match Option::<String>::read(input)? {
                 Some(markup) => {
-                    meo_canvas_core::markup::parse_paragraph(&markup)
+                    let (segments, found) =
+                        meo_canvas_core::markup::parse_paragraph_reporting(
+                            &markup,
+                        );
+                    input.report(found);
+                    segments
                 }
                 None => read_segments(input)?,
             };
@@ -1220,7 +1254,7 @@ mod tests {
     #[test]
     fn the_header_carries_the_surface() {
         let (slots, values) = minimal();
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         assert_eq!(scene.size, Size::new(40.0, 20.0));
@@ -1237,7 +1271,7 @@ mod tests {
         // Absent and stated are different scenes, and the header is where the
         // difference lives: `None` is the caller leaving it to the renderer.
         let (slots, values) = minimal();
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(scene.gpu, None);
         assert_eq!(scene.color_type, None);
@@ -1261,7 +1295,7 @@ mod tests {
             .slot(0.0)
             .slot(0.0)
             .finish();
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(scene.gpu, Some(false));
         assert_eq!(scene.color_type, Some(ColorType::F16));
@@ -1286,7 +1320,7 @@ mod tests {
             .slot(0.0)
             .finish();
 
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let node = &scene.nodes[0];
         assert_eq!(
@@ -1431,7 +1465,7 @@ mod tests {
             .slot(0.0) // children
             .finish();
 
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         match &scene.nodes[0].kind {
             NodeKind::Text {
@@ -1468,7 +1502,7 @@ mod tests {
             .slot(0.0) // name
             .slot(0.0) // children
             .finish();
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let NodeKind::Text { segments, .. } = &scene.nodes[0].kind else {
             unreachable!("expected text");
@@ -1490,7 +1524,7 @@ mod tests {
             .slot(0.0) // name
             .slot(0.0) // children
             .finish();
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let NodeKind::Text { segments, .. } = &scene.nodes[0].kind else {
             unreachable!("expected text");
@@ -1515,7 +1549,7 @@ mod tests {
             .slot(0.0)
             .finish();
 
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         let NodeKind::Text { segments, .. } = &scene.nodes[0].kind else {
             unreachable!("expected text");
@@ -1586,7 +1620,7 @@ mod tests {
             .slot(0.0)
             .finish();
 
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(
             scene.nodes[0].paint.background_color,
@@ -1650,7 +1684,7 @@ mod tests {
                 .slot(0.0)
                 .slot(0.0)
                 .finish();
-            let scene = decode(&slots, &values)
+            let (scene, _) = decode(&slots, &values)
                 .unwrap_or_else(|error| unreachable!("{written}: {error}"));
             assert_eq!(
                 scene.nodes[0].paint.background_color, expected,
@@ -1672,7 +1706,7 @@ mod tests {
             .slots(&[0.0, 0.0])
             .finish();
 
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(scene.len(), 3);
         assert_eq!(scene.nodes[0].children.len(), 2);
@@ -2317,7 +2351,7 @@ mod tests {
     #[test]
     fn an_arena_re_encodes_through_the_byte_format() {
         let (slots, values) = minimal();
-        let scene = decode(&slots, &values)
+        let (scene, _) = decode(&slots, &values)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         let bytes = meo_canvas_scene::codec::encode(&scene);

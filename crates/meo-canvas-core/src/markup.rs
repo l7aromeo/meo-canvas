@@ -49,7 +49,7 @@ use meo_canvas_scene::style::text::{
     FontStyle, FontWeight, TextSegment, TextStyle,
 };
 
-use crate::color::parse_color;
+use crate::{color::parse_color, diagnostic::Diagnostic};
 
 /// The spaces a `\t` becomes.
 ///
@@ -80,11 +80,34 @@ const TAB: &str = "    ";
 ///
 /// # Where a value is not understood
 ///
-/// The property is **cleared** rather than left as it was, so the span falls
-/// back to what it inherits. `<size=wide>` does not keep an enclosing
-/// `<size=20>`. This is v1's behaviour at `text.canvas.ts:346-351`, where an
-/// unparseable size is set to `undefined`, and the other properties follow it
-/// so that one bad value behaves the same whichever tag carried it.
+/// **Only `size` clears.** An unparseable size falls back to what the span
+/// inherits, so `<size=30>a<size=wide>b` draws `b` at the node's own size.
+/// `color` and `weight` do not: `<color=red>a<color=zzz>b` draws `b` red, and
+/// the enclosing weight survives a `<weight=heavy>` the same way.
+///
+/// This is v1's behaviour on all three, **measured by running it rather than
+/// read from it**, because the source suggests the opposite. v1 validates one
+/// arm: `text.canvas.ts:351-357` runs `Number(value)` for `size` and assigns
+/// `undefined` when it is `NaN`. `color` and `weight` at `:341-349` assign the
+/// raw string with no validation, and it is the Canvas API that ignores an
+/// invalid assignment to `fillStyle` or `font`, leaving the previous value
+/// standing. So the citation above is accurate about `size` and about nothing
+/// else.
+///
+/// A value out of range and a value that will not parse are the same thing
+/// here, which is also v1's: `<weight=1500>` and `<weight=0>` keep the
+/// enclosing weight exactly as `<weight=heavy>` does.
+///
+/// A tag carrying no value is different again -- `<color>` clears, because v1
+/// assigns `undefined` for it -- and every case above raises a diagnostic
+/// naming what could not be used.
+///
+/// **v1 warned on one of the three and this restores that one warning**, not a
+/// facility it had. `text.canvas.ts:355` prints
+/// `Invalid numeric value for size tag: ...` to stderr, and nothing is printed
+/// for a bad weight or colour -- observed by running v1, not read from it. The
+/// asymmetry has the same cause as the fallbacks: `size` is the arm v1
+/// validates, so it is the only arm with anything to notice.
 ///
 /// # Tags this does not know
 ///
@@ -109,6 +132,25 @@ const TAB: &str = "    ";
 /// ```
 #[must_use]
 pub fn parse(input: &str) -> Vec<TextSegment> {
+    parse_reporting(input).0
+}
+
+/// [`parse`], and what it could not use.
+///
+/// **Added beside the total form rather than replacing it**, because
+/// `parse` and [`parse_paragraph`] are this crate's public API and a caller
+/// who does not want diagnostics should not have to say so at every call. The
+/// two share one implementation, so they cannot disagree about what a tag
+/// means -- the total one calls this and drops the second half.
+#[must_use]
+pub fn parse_reporting(input: &str) -> (Vec<TextSegment>, Vec<Diagnostic>) {
+    let mut found = Vec::new();
+    let segments = walk(input, &mut found);
+    (segments, found)
+}
+
+/// The parse both entry points run.
+fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
     let text = unescape(input);
     let mut segments = Vec::new();
     let mut stack: Vec<TextStyle> = Vec::new();
@@ -133,10 +175,21 @@ pub fn parse(input: &str) -> Vec<TextSegment> {
 
         if tag.closing {
             // The name is not read, exactly as v1 does not read it.
-            style = stack.pop().unwrap_or_default();
+            style = stack.pop().unwrap_or_else(|| {
+                // Nothing was open. **Nobody writes this on purpose**, so a
+                // diagnostic here cannot become the noise a caller learns to
+                // ignore -- which is the argument that keeps the deliberate
+                // spellings quiet.
+                found.push(Diagnostic::new(
+                    format!("</{}>", tag.name),
+                    "closes a span that was never opened; it was ignored"
+                        .to_owned(),
+                ));
+                TextStyle::default()
+            });
         } else {
             stack.push(style.clone());
-            apply(&mut style, &tag);
+            apply(&mut style, &tag, found);
         }
     }
     push_run(&mut segments, &text[run_start..], &style);
@@ -161,6 +214,21 @@ pub fn parse(input: &str) -> Vec<TextSegment> {
 /// assert_eq!(markup::parse_paragraph("").len(), 1);
 /// assert_eq!(markup::parse_paragraph("")[0].text, "");
 /// ```
+#[must_use]
+pub fn parse_paragraph_reporting(
+    input: &str,
+) -> (Vec<TextSegment>, Vec<Diagnostic>) {
+    let (mut segments, found) = parse_reporting(input);
+    if segments.is_empty() {
+        segments.push(TextSegment {
+            text: String::new(),
+            style: TextStyle::default(),
+        });
+    }
+    (segments, found)
+}
+
+/// [`parse_paragraph_reporting`], with what it could not use discarded.
 #[must_use]
 pub fn parse_paragraph(input: &str) -> Vec<TextSegment> {
     let mut segments = parse(input);
@@ -199,16 +267,105 @@ struct Tag<'a> {
 }
 
 /// Applies an opening tag to the style in force.
-fn apply(style: &mut TextStyle, tag: &Tag<'_>) {
+fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
+    /// What a value tag carried, once read.
+    ///
+    /// Three outcomes and not two, because **an absent value and an unusable
+    /// one are different in v1** and the difference is observable. A tag with
+    /// no value assigns `undefined` there and clears; a tag whose value will
+    /// not parse assigns the raw string, which the canvas then ignores.
+    enum Read<T> {
+        /// The tag carried no value. Clears, as `<color>` does in v1.
+        Absent,
+        /// The value parsed.
+        Good(T),
+        /// The value did not parse. A diagnostic was raised for it.
+        Unusable,
+    }
+
+    /// One value tag: parse it, and say so when it will not parse.
+    ///
+    /// **The `None` a bad value produces and the `None` an absent property
+    /// produces are the same value one layer down**, so this is the last place
+    /// the two can be told apart. A diagnostic raised later would be guessing.
+    fn read<T>(
+        tag: &Tag<'_>,
+        parse: impl Fn(&str) -> Option<T>,
+        takes: &str,
+        found: &mut Vec<Diagnostic>,
+    ) -> Read<T> {
+        let Some(written) = tag.value else {
+            // **Reported although the clearing is deliberate and v1's.** The
+            // grammar this surface documents says a tag's value "may be
+            // double-quoted, single-quoted or bare" and never describes a tag
+            // without one, so a caller who reaches this is more likely to have
+            // lost a value than to be using an idiom nothing offers them. One
+            // who meant it loses nothing by being told.
+            found.push(Diagnostic::new(
+                format!("<{}>", tag.name),
+                "carries no value, so the property was cleared; write \
+                 `</...>` to close a span"
+                    .to_owned(),
+            ));
+            return Read::Absent;
+        };
+        if let Some(parsed) = parse(written) {
+            return Read::Good(parsed);
+        }
+        found.push(Diagnostic::new(
+            format!("<{}={written}>", tag.name),
+            format!("{takes}; the tag was ignored"),
+        ));
+        Read::Unusable
+    }
+
     match tag.name.as_str() {
-        "color" => style.color = tag.value.and_then(parse_color),
-        "weight" => style.font_weight = tag.value.and_then(parse_weight),
-        "size" => style.font_size = tag.value.and_then(parse_size),
+        // Colour and weight leave the enclosing value standing when the value
+        // is unusable, because that is what v1 does -- measured by running it,
+        // not inferred: `<color=red>a<color=notacolour>b` draws `b` red there.
+        "color" => match read(
+            tag,
+            parse_color,
+            "not a colour any CSS syntax spells",
+            found,
+        ) {
+            Read::Absent => style.color = None,
+            Read::Good(color) => style.color = Some(color),
+            Read::Unusable => {}
+        },
+        "weight" => match read(
+            tag,
+            parse_weight,
+            "not a weight; it takes 1 to 1000, or normal or bold",
+            found,
+        ) {
+            Read::Absent => style.font_weight = None,
+            Read::Good(weight) => style.font_weight = Some(weight),
+            Read::Unusable => {}
+        },
+        // Size clears, and **that is the one arm v1 validates**: it runs
+        // `Number(value)` and assigns `undefined` on `NaN`. Measured the same
+        // way -- `<size=30><size=wide>MMM` renders at the node's own size.
+        "size" => match read(
+            tag,
+            parse_size,
+            "not a size; it takes a positive number of pixels",
+            found,
+        ) {
+            Read::Absent | Read::Unusable => style.font_size = None,
+            Read::Good(size) => style.font_size = Some(size),
+        },
         "b" => style.font_weight = Some(FontWeight::BOLD),
         "i" => style.font_style = Some(FontStyle::Italic),
         // No default arm in v1's switch either: the tag is consumed, the stack
-        // still carries it, and its closing tag still pops.
-        _ => {}
+        // still carries it, and its closing tag still pops. What is new is that
+        // the caller is told -- the text renders identically to writing no tag
+        // at all, so nothing in the output could have told them.
+        other => found.push(Diagnostic::new(
+            format!("<{other}>"),
+            "not a tag this parser knows; its text is kept and the tag ignored"
+                .to_owned(),
+        )),
     }
 }
 
@@ -361,6 +518,12 @@ fn unescape(input: &str) -> String {
             '\\' => out.push('\\'),
             '\'' => out.push('\''),
             '"' => out.push('"'),
+            // **A translation, not a discard.** Every arm here maps an
+            // escape to what it means for laid-out text -- `\r`, `\f` and
+            // `\v` all become a newline, which is lossy and deliberate --
+            // and NUL and backspace mean no glyph, so they map to nothing.
+            // Nothing was written that could not be used, which is why this
+            // is silent where `<color>` is not.
             '0' | 'b' => {}
             // Everything else keeps both characters, the line terminators
             // included -- JavaScript's `.` matches none of `\n`, `\r`,
@@ -374,6 +537,61 @@ fn unescape(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::{parse_paragraph, parse_paragraph_reporting};
+
+    /// An unknown tag renders as if it were not written, and now says so.
+    ///
+    /// The ink is the point: `<nope>abc</nope> def` and `abc def` produce the
+    /// same segments, so **nothing in the output could tell a caller their tag
+    /// did nothing**. The diagnostic is the only thing that can.
+    #[test]
+    fn an_unknown_tag_is_reported_though_the_text_is_unchanged() {
+        let (with_tag, found) = parse_paragraph_reporting("<nope>abc</nope> d");
+        let plain = parse_paragraph("abc d");
+
+        let texts: Vec<&str> =
+            with_tag.iter().map(|run| run.text.as_str()).collect();
+        let same: Vec<&str> =
+            plain.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(texts.concat(), same.concat());
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].path, "<nope>");
+        assert!(found[0].detail.contains("not a tag this parser knows"));
+    }
+
+    /// A value that will not parse is reported, and a good one is not.
+    ///
+    /// The pair is the check. Asserting only the bad case would pass on a
+    /// parser that reported every tag, which would be noise a caller learns
+    /// to ignore -- and an ignored channel is the silence this exists to end.
+    #[test]
+    fn a_bad_value_is_reported_and_a_good_one_is_not() {
+        for (markup, path) in [
+            ("<color=zzz>a</color>", "<color=zzz>"),
+            ("<weight=heavy>a</weight>", "<weight=heavy>"),
+            ("<size=-4>a</size>", "<size=-4>"),
+        ] {
+            let (_, found) = parse_paragraph_reporting(markup);
+            assert_eq!(found.len(), 1, "{markup}: {found:?}");
+            assert_eq!(found[0].path, path, "{markup}");
+        }
+
+        for good in [
+            "<color=#ff0000>a</color>",
+            "<weight=700>a</weight>",
+            "<size=12>a</size>",
+            "<b>a</b>",
+            "plain text",
+        ] {
+            let (_, found) = parse_paragraph_reporting(good);
+            assert!(found.is_empty(), "{good} reported {found:?}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -498,37 +716,108 @@ mod tests {
             parse("<weight=1000>x")[0].style.font_weight,
             Some(FontWeight::new(FontWeight::MAX))
         );
-        // **Dropped here means cleared to the base, not "keeps the enclosing
-        // 700".** CSS ignores an invalid declaration and leaves the property at
-        // its computed value, which inside `<weight=700>` would be 700. This
-        // parser clears instead, and does so for *every* value it cannot use --
-        // a bad colour, a bad size, `<weight=heavy>` -- because that is v1's
-        // behaviour at `text.canvas.ts:346-351`, asserted one test below.
-        // Making an out-of-range number the single exception would be a
-        // second rule in a file with one.
+        // **Dropped means the declaration is ignored, so the enclosing weight
+        // stands** -- CSS's own meaning of dropping a declaration, and v1's
+        // too, measured rather than read. With a drawing first segment at an
+        // enclosing 400, `<weight=1001>`, `<weight=1500>` and `<weight=heavy>`
+        // all read 947 ink against 1123 for a weight that applies, and
+        // `<weight=1000>` applies -- so the boundary is CSS's and an
+        // out-of-range number is the same as an unparseable keyword.
+        //
+        // **Neither half of this arrived with the other, and neither is
+        // right alone.** Refusing an out-of-range value and keeping the
+        // enclosing one when a value is refused were written on separate
+        // branches against separate reasons. Alone, each gives a wrong answer
+        // for this input -- 1000 by clamping, or the base by clearing -- and
+        // only the pair matches v1. The test could not be written on either
+        // branch, which is why it is written here.
         assert_eq!(
             parse("<weight=700>a<weight=1500>b")[1].style.font_weight,
-            None
+            Some(FontWeight::new(700))
         );
     }
 
+    /// Only `size` clears on a value it cannot read. The other two do not.
+    ///
+    /// **v1 validates one of the three.** `text.canvas.ts:351-357` runs
+    /// `Number(value)` for `size` and assigns `undefined` when it is `NaN`;
+    /// `color` and `weight` at `:341-349` assign the raw string with no
+    /// validation at all. So the enclosing value surviving those two is **a
+    /// fact about the Canvas API rather than about v1's intent** -- an invalid
+    /// assignment to `fillStyle` or `font` is ignored and the previous value
+    /// stands, which is why reading v1's source suggests the opposite of what
+    /// running it shows.
+    ///
+    /// Measured by running v1, each row against a control that binds:
+    /// `<color=red>a<color=notacolour>b` draws `b` red where a valid inner
+    /// green draws it green; a bad weight leaves ink at the enclosing 900's
+    /// 410 where an explicit 400 gives 166; a bad size renders at the node's
+    /// own 7px where `<size=30>` gives 22px.
     #[test]
-    fn a_value_that_is_not_understood_clears_the_property() {
-        // Not "keeps the enclosing one". v1 assigns `undefined` on a bad size
-        // (`text.canvas.ts:346-351`), so the span falls back to what it
-        // inherits, and the other tags follow it.
+    fn only_a_size_clears_when_its_value_is_not_understood() {
         assert_eq!(
             parse("<size=20>a<size=wide>b</size>")[1].style.font_size,
             None
         );
         assert_eq!(
             parse("<weight=bold>a<weight=heavy>b")[1].style.font_weight,
-            None
+            Some(FontWeight::BOLD)
         );
         assert_eq!(
             parse("<color=red>a<color=notacolour>b")[1].style.color,
-            None
+            parse("<color=red>a")[0].style.color
         );
+    }
+
+    /// Every site that discards input reports, and the deliberate ones stay
+    /// quiet.
+    ///
+    /// **Enumerated from the walk rather than from a list of inputs**, because
+    /// a list can miss a site. The four value cases were found by a survey
+    /// organised around *what a bad value does*; these last two are about the
+    /// **absence** of a value or an opener, which is a different axis and is
+    /// why that frame could not see them.
+    ///
+    /// The quiet rows are the ones a caller writes on purpose: a literal `<`,
+    /// an unclosed span, and a tag name nothing matches are all visible in the
+    /// output, so the render itself is the report.
+    #[test]
+    fn every_discard_reports_and_nothing_else_does() {
+        let count =
+            |markup: &str| super::parse_paragraph_reporting(markup).1.len();
+
+        // Reported: something the caller wrote could not be used.
+        assert_eq!(count("<color=zzz>a</color>"), 1, "bad value");
+        assert_eq!(count("<nope>a</nope>"), 1, "unknown name");
+        assert_eq!(count("<color=red>a<color>b</color>"), 1, "no value");
+        assert_eq!(count("a</color>b"), 1, "close with no opener");
+
+        // Quiet: deliberate, and visible in the output either way.
+        assert_eq!(count("a < b"), 0, "a bare less-than renders literally");
+        assert_eq!(count("<>a"), 0, "an empty tag renders literally");
+        assert_eq!(count("<color=red>a"), 0, "an unclosed span runs on");
+        assert_eq!(count("<color=red>a</color>"), 0, "valid");
+        assert_eq!(count("plain"), 0, "no markup");
+
+        // `unescape` runs before any tag is read and never reports. Its arms
+        // are a translation table: `\r` becomes a newline and `\0` becomes
+        // nothing, both because that is what the character means once laid
+        // out. The row is here so the next enumeration over this file finds
+        // it already decided rather than re-deriving it.
+        assert_eq!(count(r"a\0b"), 0, "an escape is translated, not discarded");
+        assert_eq!(count(r"a\bb"), 0, "the same for backspace");
+    }
+
+    /// A tag carrying no value clears, which is not the same as one carrying
+    /// an unusable value.
+    ///
+    /// v1 assigns `undefined` for the first and the raw string for the second,
+    /// so the two part company on `color` and `weight`. Keeping them apart is
+    /// the whole reason `apply` reads three outcomes rather than two.
+    #[test]
+    fn a_tag_with_no_value_clears_where_an_unusable_one_does_not() {
+        assert_eq!(parse("<color=red>a<color>b")[1].style.color, None);
+        assert_eq!(parse("<weight=bold>a<weight>b")[1].style.font_weight, None);
     }
 
     #[test]
