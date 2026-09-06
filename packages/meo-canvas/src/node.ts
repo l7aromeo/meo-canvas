@@ -166,6 +166,8 @@ function node(
  * rather than nothing. It stays an error, and the error is where to say so.
  * `NaN` and `0n` render there too — measured, not assumed — and are out for the
  * same reason. An empty array needs no member: it flattens to nothing already.
+ * Skipping `0` silently would make this looser than React in the one
+ * direction where looser means quieter.
  */
 export type Child = SceneNode | boolean | null | undefined | ''
 

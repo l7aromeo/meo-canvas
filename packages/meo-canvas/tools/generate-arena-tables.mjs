@@ -90,18 +90,24 @@ function parseGroup(source, body) {
   const inner = braced(body.text, header.index + header[0].length - 1)
 
   const properties = []
-  // One entry per `N => field: Type,`. The type runs to the comma that closes
-  // the entry at depth zero, so a `Vec<(A, B)>` is not cut in half.
+  // One entry per `N => field as "caller": Type,`. The type runs to the comma
+  // that closes the entry at depth zero, so a `Vec<(A, B)>` is not cut in half.
+  //
+  // The caller name is required rather than optional. An entry without one
+  // does not match, so it is not collected, and the contiguity check below
+  // then names the gap -- which is the strictness the module doc asks for: a
+  // shape this does not recognise is an error, never a partial table.
   let cursor = 0
-  const entry = /(\d+)\s*=>\s*(\w+)\s*:/g
+  const entry = /(\d+)\s*=>\s*(\w+)\s+as\s+"([^"]+)"\s*:/g
   entry.lastIndex = 0
   let match
   while ((match = entry.exec(inner.text)) !== null) {
-    const [, index, field] = match
+    const [, index, field, caller] = match
     const type = readType(inner.text, entry.lastIndex)
     properties.push({
       index: Number(index),
       name: field,
+      caller,
       type: type.text.trim().replace(/\s+/g, ' '),
     })
     entry.lastIndex = type.end
@@ -179,6 +185,15 @@ function emit(groups, magic, version) {
     '  readonly index: number',
     "  /** The field's name in the scene type. */",
     '  readonly name: string',
+    '  /**',
+    '   * The style properties that feed it, as a caller spells them.',
+    '   *',
+    "   * Not the field's name: `border_color_all` is written `borderColor`, and",
+    '   * a slot several properties may feed names all of them -- `gridColumn or',
+    '   * gridArea`. This is what a failure reading the slot reports, so it has',
+    '   * to be the surface spelling rather than the scene one.',
+    '   */',
+    '  readonly caller: string',
     '  /** The Rust type, as the table spells it. */',
     '  readonly type: string',
     '}',
@@ -191,7 +206,10 @@ function emit(groups, magic, version) {
     lines.push(
       `/** \`${group.sceneType}\`, ${group.properties.length} properties in ${slots} mask slot${slots === 1 ? '' : 's'}. */`,
       `export const ${upper}: readonly ArenaProperty[] = [`,
-      ...group.properties.map(property => `  { index: ${property.index}, name: ${JSON.stringify(property.name)}, type: ${JSON.stringify(property.type)} },`),
+      ...group.properties.map(
+        property =>
+          `  { index: ${property.index}, name: ${JSON.stringify(property.name)}, caller: ${JSON.stringify(property.caller)}, type: ${JSON.stringify(property.type)} },`,
+      ),
       ']',
       '',
       `/** Mask slots \`${group.name}\` occupies. */`,

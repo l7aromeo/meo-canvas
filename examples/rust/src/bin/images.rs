@@ -6,7 +6,7 @@
 
 use meo_canvas::{
     Align, Box, Element, FlexDirection, Image, ObjectFit, Overflow, Root,
-    Styled, corners_all, hex_rgb, pct, px, sides,
+    Styled, corners_all, hex_rgb, pct, px, scene::BorderStyle, sides,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
@@ -79,6 +79,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                             .size(px(64.0), px(64.0))
                             .object_fit(ObjectFit::Cover)
                             .border(sides(4.0, 4.0, 4.0, 4.0))
+                            .border_style(BorderStyle::Solid)
                             .border_color(hex_rgb(0x28_50_dc)),
                     ),
                     cell(

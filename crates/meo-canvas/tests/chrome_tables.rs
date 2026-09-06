@@ -39,8 +39,8 @@
 use std::collections::BTreeMap;
 
 use meo_canvas::{
-    Box, BoxSizing, Display, Element, Format, PositionType, Renderer, Root,
-    Styled, hex_rgb, pct, px,
+    BorderStyle, Box, BoxSizing, Display, Element, Format, PositionType,
+    Renderer, Root, Styled, hex_rgb, pct, px,
     scene::{Color, GridAutoFlow, GridPlacement, TrackSize, Transform},
     sides,
 };
@@ -434,6 +434,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
             BoxSizing::ContentBox
         })
         .border(sides(border, border, border, border))
+        .border_style(BorderStyle::Solid)
         .border_color(Color::rgb(20, 20, 20))
         .padding(sides(px(padding), px(padding), px(padding), px(padding)))
         .background_color(B_INK);
