@@ -873,7 +873,18 @@ mod tests {
         // A real path, and two shapes that are nearly one: a scheme this
         // crate does not fetch, and a name that merely begins with the
         // letters.
-        for quiet in ["/nope.png", "file:///nope.png", "https-notes.png"] {
+        // `data:` is quiet here for one reason on this tree -- it matches
+        // neither prefix in `FETCHED_SCHEMES` -- and for a second once the
+        // dedicated `data:` error variant merges. **Two constructions
+        // guarantee it and either can be removed alone**: adding `data:` to
+        // that list, or folding the variant back into `ImageRead` to cut
+        // duplication, would each be an improvement that passes.
+        for quiet in [
+            "/nope.png",
+            "file:///nope.png",
+            "https-notes.png",
+            "data:image/png;base64,AAA",
+        ] {
             let message = as_path(quiet).to_string();
             assert!(
                 !message.contains("read as a filename"),
