@@ -184,7 +184,17 @@ addon:
 # that matters cannot fail.
 [doc("Run the Rust tests, the doctests and the golden fixtures.")]
 test:
-    cargo test --workspace
+    # `--no-fail-fast` so a red run names every failing target in the
+    # workspace rather than the first one. Reading the first as the whole set
+    # is what makes a mutation table wrong: a truncated failure list and a
+    # mutation that only broke one thing are the same output.
+    #
+    # **It completes this line and not the recipe.** The three runs below are
+    # separate lines, so a failure here still stops `just` before any of them
+    # -- the claim is "every failure in the workspace run", not "every failure
+    # in the gate". Making the recipe continue past a failure is a different
+    # change with a real cost, and this is not it.
+    cargo test --workspace --no-fail-fast
     cargo test -p meo-canvas-node --features "{{ host_features }}"
     cargo test -p meo-canvas --features "{{ host_features }}"
     # The golden fixtures pin `gpu` to false, and a build with no backend
