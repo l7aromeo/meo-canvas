@@ -184,7 +184,12 @@ impl RunStyle {
                 .font_family
                 .clone()
                 .unwrap_or_else(|| base.family.clone()),
-            size: style.font_size.unwrap_or(base.size),
+            // Through `usable` for the same reason `line_gap` is: a plain
+            // `f32` never met `spacing_pixels`, so an infinite size reached the
+            // measurement and collapsed the box around the paragraph. `1e30`
+            // measures fine and is clipped by the canvas, which is what says
+            // this is the arithmetic rather than the size.
+            size: bounded(style.font_size.unwrap_or(base.size)),
             weight: style.font_weight.unwrap_or(base.weight).get(),
             italic: matches!(
                 style.font_style.unwrap_or(base.style),
@@ -210,7 +215,7 @@ impl RunStyle {
     pub fn base(base: &ResolvedText) -> Self {
         Self {
             family: base.family.clone(),
-            size: base.size,
+            size: bounded(base.size),
             weight: base.weight.get(),
             italic: matches!(base.style, FontStyle::Italic),
             variant: base.font_variant.clone(),
@@ -609,12 +614,22 @@ impl Metrics {
             // pixels; a number is a multiple of *this* element's size, which
             // is why it survives resolution unresolved. A percentage cannot
             // arrive -- `ResolvedText` never holds one.
+            //
+            // **The `> 0.0` guards below are about sign and catch two of the
+            // three non-finite values by accident**: every comparison with
+            // `NaN` is false, so a `NaN` height falls to `None` and is dropped,
+            // and so does a negative one. `Infinity > 0.0` is true, so an
+            // infinite height went through and collapsed the box around the
+            // paragraph -- a guard that looks like cover because it happens to
+            // refuse most of what it was never checking for. `usable` is what
+            // actually checks it, and the products are passed through it too,
+            // since a finite multiple against an infinite size is infinite.
             line_height: match base.line_height {
                 Some(LineHeight::Number(multiple)) if multiple > 0.0 => {
-                    Some(multiple * base.size)
+                    Some(usable(multiple * bounded(base.size)))
                 }
                 Some(LineHeight::Length(pixels)) if pixels > 0.0 => {
-                    Some(pixels)
+                    Some(usable(pixels))
                 }
                 Some(LineHeight::Percent(share)) => {
                     // Resolution turns every percentage into a length, so
@@ -622,11 +637,25 @@ impl Metrics {
                     // to interpret. Treated as the length it would have been
                     // against this element's size, which is the same answer
                     // resolution would have produced.
-                    (share > 0.0).then_some(share * base.size)
+                    (share > 0.0).then_some(usable(share * bounded(base.size)))
                 }
                 _ => None,
             },
-            line_gap: base.line_gap,
+            // **Through `usable` for the reason the spacing fields are.**
+            // `line_gap` is a plain `f32` rather than a `Spacing`, so it does
+            // not pass through `spacing_pixels` and sat one line away from the
+            // check while `lines.rs`'s own multiplication --
+            // `line_gap * (lines.len() - 1)` -- turned a non-finite value into
+            // a non-finite paragraph height. Measured: a box shrink-wrapping
+            // five wrapped lines is 42px tall with no gap, 122px at `40`, and
+            // 200px at `1e30`, where the canvas clips it. At `NaN`, `Infinity`
+            // or `-Infinity` it is **0**, and only the first line draws.
+            //
+            // **No CSS ruling applies to this one.** `line-gap` is not a CSS
+            // property; it is ours, so there is no parse-versus-computed fork
+            // to wait on, and it takes the same answer as its neighbours
+            // because they are the same arithmetic.
+            line_gap: usable(base.line_gap),
         }
     }
 }
@@ -650,7 +679,7 @@ fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
     usable(pixels)
 }
 
-/// The furthest a spacing is allowed to push a glyph, in pixels.
+/// The largest pixel value a text measurement is allowed to carry.
 ///
 /// Chrome's own ceiling for a length is `3.35544e+07`, which is the top of its
 /// layout unit rather than anything about text, so this does not copy the
@@ -659,7 +688,7 @@ fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
 /// which is the whole reason a bound is needed instead of a plain saturation:
 /// one addition past it is infinity again and the collapse comes back one
 /// layer up.
-const SPACING_CEILING: f32 = 1.0e9;
+const PIXEL_CEILING: f32 = 1.0e9;
 
 // **The property the number has to have, checked where someone would change
 // it.** `f32::MAX` is the value a reader taking `1.0e9` for arbitrary would
@@ -669,7 +698,7 @@ const SPACING_CEILING: f32 = 1.0e9;
 // be read to be believed and this refuses to compile. 2048 glyphs is a line far
 // longer than any this engine lays out; the margin is the point.
 //
-// **It catches nothing the test module's `1.0e30 > SPACING_CEILING` does not
+// **It catches nothing the test module's `1.0e30 > PIXEL_CEILING` does not
 // already catch today, and it is here anyway.** That one exists to keep the
 // pass-through row's samples above the ceiling, so its threshold moves with a
 // list of test values rather than with anything about the arithmetic: edit
@@ -684,8 +713,8 @@ const SPACING_CEILING: f32 = 1.0e9;
 // failure is not on the path the value takes. The only thing that would have
 // refused it was an assertion written for a different row, which is to say
 // nothing was guarding this number on purpose.
-const _: () = assert!(SPACING_CEILING.is_finite());
-const _: () = assert!(SPACING_CEILING * 2048.0 < f32::MAX);
+const _: () = assert!(PIXEL_CEILING.is_finite());
+const _: () = assert!(PIXEL_CEILING * 2048.0 < f32::MAX);
 
 /// A resolved spacing with a value no layout can use replaced.
 ///
@@ -727,12 +756,29 @@ const _: () = assert!(SPACING_CEILING * 2048.0 < f32::MAX);
 /// negative infinity into something visible, and it is not meant to -- what it
 /// removes is the *non-finite* arithmetic, after which the value behaves like
 /// the finite neighbours it now sits between.
+/// The same bound, applied to infinities alone.
+///
+/// **`size` takes this rather than `usable`, and the difference is a ruling in
+/// flight rather than a preference.** Clamping an infinite size is settled --
+/// CSS has no `infinity` literal, `calc(infinity)` clamps, and no measured
+/// behaviour drops one. What a `NaN` size should do is not: dropping it gives
+/// the inherited size and clamping it gives zero, which is a blank, and those
+/// disagree about whether there is a defect at all. `usable` would answer that
+/// question by turning `NaN` into `0.0`, so `size` gets the half that is
+/// decided and keeps the half that is not.
+const fn bounded(pixels: f32) -> f32 {
+    if pixels.is_infinite() {
+        return PIXEL_CEILING.copysign(pixels);
+    }
+    pixels
+}
+
 const fn usable(pixels: f32) -> f32 {
     if pixels.is_nan() {
         return 0.0;
     }
     if pixels.is_infinite() {
-        return SPACING_CEILING.copysign(pixels);
+        return PIXEL_CEILING.copysign(pixels);
     }
     pixels
 }
@@ -1252,7 +1298,7 @@ mod tests {
     use meo_skia_canvas::TextEngine;
 
     use super::{
-        Line, METRICS_STRING, Metrics, Run, RunStyle, SPACING_CEILING,
+        Line, METRICS_STRING, Metrics, PIXEL_CEILING, Run, RunStyle,
         TextMeasurer, layout, line_width, pieces, spacing_pixels, wrap,
     };
     use crate::{
@@ -1347,7 +1393,7 @@ mod tests {
     fn a_spacing_that_overflows_while_resolving_is_clamped_too() {
         let resolved = spacing_pixels(Spacing::Em(1.0e30), 1.0e30);
         assert!(resolved.is_finite(), "{resolved} reached a measurement");
-        assert_eq!(resolved, SPACING_CEILING);
+        assert_eq!(resolved, PIXEL_CEILING);
     }
 
     /// An absurd finite spacing is left alone, to the bit.
@@ -1365,10 +1411,78 @@ mod tests {
         // The row says nothing unless the list crosses the ceiling, so that is
         // checked where it cannot rot: a `1e30` edited down to `1e3` one day
         // stops compiling rather than quietly making this vacuous.
-        const _: () = assert!(1.0e30 > SPACING_CEILING);
+        const _: () = assert!(1.0e30 > PIXEL_CEILING);
         for points in [0.0, 4.0, -4.0, 1.0e6, -1.0e6, 1.0e30, -1.0e30] {
             assert_eq!(spacing_pixels(Spacing::Points(points), 16.0), points);
         }
+    }
+
+    /// The line gap is checked too, and it is not a `Spacing`.
+    ///
+    /// **The field that sat one line from the check and was missed by it.**
+    /// Every other value in `Metrics` arrives through `spacing_pixels`;
+    /// `line_gap` is a plain `f32` and does not, so the repair for its
+    /// neighbours stopped just short of it. A non-finite gap multiplied by the
+    /// line count is a non-finite paragraph height, and the box shrink-wrapping
+    /// that paragraph lays out at zero.
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "zero is the value, not an approximation of it"
+    )]
+    fn a_line_gap_that_is_not_a_number_is_replaced_as_well() {
+        let mut base = style();
+        base.line_gap = f32::NAN;
+        assert_eq!(Metrics::of(&base).line_gap, 0.0);
+
+        base.line_gap = f32::INFINITY;
+        assert!(Metrics::of(&base).line_gap.is_finite());
+
+        // And a finite gap, however large, is still exactly what was asked for.
+        base.line_gap = 1.0e30;
+        assert_eq!(Metrics::of(&base).line_gap, 1.0e30);
+    }
+
+    /// An infinite line height and an infinite size are bounded too.
+    ///
+    /// **The two fields the `line_gap` repair would have missed.** The
+    /// mechanism is a type boundary rather than a field: `spacing_pixels`
+    /// covers the two `Spacing` fields and every plain `f32` is exempt by
+    /// construction, so the count of affected fields is however many of that
+    /// type exist. `line_height`'s own guard is `> 0.0`, which is about sign
+    /// and catches `NaN` and negatives only because every comparison with
+    /// `NaN` is false -- `Infinity > 0.0` is true, so it went through. A guard
+    /// that refuses most of what it was never checking for reads as cover.
+    #[test]
+    fn an_infinite_line_height_or_size_never_reaches_the_measurement() {
+        let mut base = style();
+        base.line_height = Some(LineHeight::Number(f32::INFINITY));
+        assert!(Metrics::of(&base).line_height.is_none_or(f32::is_finite));
+
+        // A finite multiple against an infinite size is infinite, so the
+        // product is checked and not only the two numbers behind it.
+        base.line_height = Some(LineHeight::Number(2.0));
+        base.size = f32::INFINITY;
+        assert!(Metrics::of(&base).line_height.is_none_or(f32::is_finite));
+        assert!(RunStyle::base(&base).size.is_finite());
+    }
+
+    /// A `NaN` size is left exactly as it is, and that is the point of the row.
+    ///
+    /// **The ruling on what a `NaN` should do is in flight**: dropping it gives
+    /// the inherited size, clamping it gives zero and a blank, and the two
+    /// disagree about whether there is a defect here at all. `size` takes
+    /// `bounded` rather than `usable` so the settled half -- infinities -- is
+    /// applied without answering the open half by accident.
+    ///
+    /// This fails the moment someone routes `size` through `usable`, which is
+    /// the tidying edit it invites, and it will keep failing until the ruling
+    /// lands and this row is rewritten deliberately.
+    #[test]
+    fn a_size_that_is_not_a_number_is_left_for_the_ruling() {
+        let mut base = style();
+        base.size = f32::NAN;
+        assert!(RunStyle::base(&base).size.is_nan());
     }
 
     /// And the metrics a paragraph is laid out with carry none of it either.
