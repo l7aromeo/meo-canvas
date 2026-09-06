@@ -27,6 +27,7 @@
  */
 
 import { PROPERTY_TABLES } from './arena.js'
+import { STYLE_KEYS } from './style.js'
 import type { Color, Gradient, Style } from './style.js'
 
 /** What a node draws. */
@@ -304,6 +305,70 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
 }
 
 /**
+ * Compiles only when `T` is `never`, and names what is left over when it is not.
+ *
+ * The `extends never` constraint is what does the work. An assertion written as
+ * `const _: Leftover = undefined as never` **cannot fail**, because `never` is
+ * assignable to everything.
+ */
+function noPropLeftOver<T extends never>(_leftOver?: T): void {}
+
+/**
+ * Every key {@link ContainerProps} accepts: `Style`'s, plus its own two.
+ *
+ * **The structural half is where drift lives now.** `STYLE_KEYS` is proved
+ * against `keyof Style`, so the sixty-nine cannot go stale; `children` and
+ * `name` are written here by hand and would, which is why this list carries a
+ * proof of its own rather than borrowing the one next door.
+ */
+const CONTAINER_KEYS = [...STYLE_KEYS, 'children', 'name'] as const satisfies readonly (keyof ContainerProps)[]
+
+/* The proof that CONTAINER_KEYS is exactly `keyof ContainerProps`. */
+noPropLeftOver<Exclude<keyof ContainerProps, (typeof CONTAINER_KEYS)[number]>>()
+
+/**
+ * Refuses a props key the factory does not have, naming it.
+ *
+ * **Checked at run time because the type system checks it almost nowhere.**
+ * Excess property checking fires on a fresh object literal and on nothing else,
+ * so a props object built from a variable, a spread or `JSON.parse` carries an
+ * unknown key straight through and the property is silently ignored -- measured
+ * on `Box`, `Text`, `Path` and the paragraph options alike.
+ */
+function checkProps(props: object, allowed: ReadonlySet<string>, what: string): void {
+  for (const key of Object.keys(props)) {
+    if (allowed.has(key)) continue
+    throw new TypeError(`${what} has no property ${JSON.stringify(key)}`)
+  }
+}
+
+/** {@link CONTAINER_KEYS} as a set, built once. */
+const CONTAINER_KEY_SET: ReadonlySet<string> = new Set(CONTAINER_KEYS)
+
+/**
+ * The container-shaped half of a wider props object.
+ *
+ * **For callers that legitimately hold more than a container takes.** `Root`'s
+ * props carry the surface options — `fonts`, `gpu`, `pages`, `scale` and the
+ * rest — alongside the page's own style, and it builds each page by handing
+ * that object to {@link Box}. Spreading it whole put ten keys into a node's
+ * style that the writer then ignored, which is the same defect this module now
+ * refuses from a caller: it was simply ours.
+ *
+ * Filtering through {@link CONTAINER_KEYS} rather than by naming the surface
+ * options is what keeps it correct — that list is proved equal to
+ * `keyof ContainerProps`, so a style property added later is carried here
+ * without anyone remembering to add it.
+ */
+export function containerPropsOf(props: object): ContainerProps {
+  const kept: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(props)) {
+    if (CONTAINER_KEY_SET.has(key)) kept[key] = value
+  }
+  return kept
+}
+
+/**
  * A plain container.
  *
  * Lays its children out as a row, following CSS's `display: flex` rather than
@@ -323,21 +388,25 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
  * room in it.
  */
 export function Box(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Box')
   return node('box', { display: 'flex', ...props }, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children run horizontally. */
 export function Row(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Row')
   return node('box', withDirection(props, 'row'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children run vertically. */
 export function Column(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Column')
   return node('box', withDirection(props, 'column'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children are placed on a grid. */
 export function Grid(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Grid')
   const style: Style = { display: 'grid', ...props }
   return node('box', style, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
@@ -524,7 +593,7 @@ export function RichText(segments: readonly (TextSegment | string | number | big
 const SEGMENT_KEYS: ReadonlySet<string> = new Set(['text', 'style'])
 
 /**
- * Every key the generated property tables carry, used only to decide whether a
+ * Keys the generated property tables carry, used **only** to decide whether a
  * suggestion is safe.
  *
  * **Deliberately not an allowlist.** Measured, the union is 66 keys where
@@ -535,10 +604,16 @@ const SEGMENT_KEYS: ReadonlySet<string> = new Set(['text', 'style'])
  * **The direction matters and only one of them is sound.** A key *in* the
  * table is certainly a style property; a key *absent* from it may still be
  * one. So the set is safe for deciding whether to suggest a fix and unsafe for
- * deciding whether to refuse a key — the next reader will see it used for the
- * first and reach for it for the second.
+ * deciding whether to refuse a key.
+ *
+ * **`STYLE_KEYS` in `style.ts` is the complete list and is not this.** That one
+ * is proved equal to `keyof Style` and is what a *refusal* uses. This one stays
+ * narrower on purpose: `objectFit`, `objectPosition` and `frame` are style keys
+ * that mean nothing on a segment, so suggesting `style: { objectFit }` would
+ * typecheck and do nothing — a confidently wrong suggestion, which is the thing
+ * the gate on this set exists to prevent.
  */
-const STYLE_KEYS: ReadonlySet<string> = new Set(Object.values(PROPERTY_TABLES).flatMap(properties => properties.flatMap(property => property.keys)))
+const SUGGESTIBLE_KEYS: ReadonlySet<string> = new Set(Object.values(PROPERTY_TABLES).flatMap(properties => properties.flatMap(property => property.keys)))
 
 /**
  * Refuses a segment carrying a key `TextSegment` does not have.
@@ -564,7 +639,7 @@ function checkSegment(segment: TextSegment, at: number): void {
     // fix. A key they do not carry might be a typo for anything, and a
     // confidently wrong suggestion is worse than none: a caller who follows it
     // writes a second broken call.
-    const suggestion = STYLE_KEYS.has(key) ? ` — did you mean style: { ${key} }?` : ''
+    const suggestion = SUGGESTIBLE_KEYS.has(key) ? ` — did you mean style: { ${key} }?` : ''
     throw new TypeError(`segments[${at}] has no property ${JSON.stringify(key)}; a segment takes text and style${suggestion}`)
   }
 }
