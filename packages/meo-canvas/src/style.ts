@@ -225,6 +225,17 @@ export type BlendMode =
  * rather than skipping the paint: a node with `border: 4` and no style set
  * neither draws a border nor reserves room for one, so its content is not
  * inset. Write `'solid'` to get a line.
+ *
+ * **This default follows CSS and {@link Style.display}'s does not, and both are
+ * chosen.** A container defaults to `'flex'` where CSS's initial `display` is
+ * `inline`, because these defaults belong to a scene-building API rather than
+ * to a document language. `BorderStyle` was decided the other way, against that
+ * argument, on the grounds that a border is a thing a caller asks for rather
+ * than a thing they switch off.
+ *
+ * The pair is recorded here so that neither is "corrected" into agreement with
+ * the other: they answer the same question differently on purpose, and changing
+ * either is a change of intent rather than a tidy-up.
  */
 export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'none'
 
@@ -767,6 +778,17 @@ export interface Style {
   /**
    * How the border is drawn. Defaults to `'none'`, which draws no border and
    * reserves no space for one however wide {@link Style.border} is.
+   *
+   * **One style for all four edges, where {@link Style.border} and
+   * {@link Style.borderColor} are per-edge.** CSS has four `border-*-style`
+   * longhands and this has none, so a border drawn on three edges is spelled
+   * through the widths — `border: { right: 4, bottom: 4, left: 4 }` — rather
+   * than by turning one edge's style off. Measured: an omitted or zero edge
+   * draws nothing *and* reserves nothing, which is what `'none'` does for the
+   * whole node.
+   *
+   * So the capability is there and the spelling is not uniform: borders come on
+   * with a style and one edge goes off with a width.
    */
   readonly borderStyle?: BorderStyle
   /** Corner radii. */
