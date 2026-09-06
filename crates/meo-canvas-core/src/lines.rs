@@ -47,7 +47,7 @@ use meo_skia_canvas::{
     Canvas, CanvasOptions, Font, FontFeature, FontStretch, FontVariantCaps,
 };
 
-use crate::resolve::ResolvedText;
+use crate::{FINITE_CEILING, resolve::ResolvedText};
 
 /// The string every face measurement is taken with.
 ///
@@ -679,43 +679,6 @@ fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
     usable(pixels)
 }
 
-/// The largest pixel value a text measurement is allowed to carry.
-///
-/// Chrome's own ceiling for a length is `3.35544e+07`, which is the top of its
-/// layout unit rather than anything about text, so this does not copy the
-/// number -- but it does copy the property that makes it work: **a bound small
-/// enough that summing it across a line stays finite.** `f32::MAX` fails that,
-/// which is the whole reason a bound is needed instead of a plain saturation:
-/// one addition past it is infinity again and the collapse comes back one
-/// layer up.
-const PIXEL_CEILING: f32 = 1.0e9;
-
-// **The property the number has to have, checked where someone would change
-// it.** `f32::MAX` is the value a reader taking `1.0e9` for arbitrary would
-// reach for, and it puts the collapse straight back: one sum past it is
-// infinity, so the failure is not on the path the ceiling takes but in the
-// addition after it. Asserted rather than tested, because a test would have to
-// be read to be believed and this refuses to compile. 2048 glyphs is a line far
-// longer than any this engine lays out; the margin is the point.
-//
-// **It catches nothing the test module's `1.0e30 > PIXEL_CEILING` does not
-// already catch today, and it is here anyway.** That one exists to keep the
-// pass-through row's samples above the ceiling, so its threshold moves with a
-// list of test values rather than with anything about the arithmetic: edit
-// `1.0e30` out of that list and the only guard on this number goes with it.
-// This one is tied to the property instead, and sits where the number is
-// rather than three hundred lines away in a test whose subject is something
-// else.
-//
-// **It is here because the wrong value was proposed out loud.** A reviewer
-// reading `1.0e9` as arbitrary suggested `f32::MAX`, on the reasoning that the
-// finite path was already exercised -- true, and beside the point, because the
-// failure is not on the path the value takes. The only thing that would have
-// refused it was an assertion written for a different row, which is to say
-// nothing was guarding this number on purpose.
-const _: () = assert!(PIXEL_CEILING.is_finite());
-const _: () = assert!(PIXEL_CEILING * 2048.0 < f32::MAX);
-
 /// A resolved spacing with a value no layout can use replaced.
 ///
 /// **The collapse this prevents is not the one it looks like.** A non-finite
@@ -768,7 +731,7 @@ const _: () = assert!(PIXEL_CEILING * 2048.0 < f32::MAX);
 /// decided and keeps the half that is not.
 const fn bounded(pixels: f32) -> f32 {
     if pixels.is_infinite() {
-        return PIXEL_CEILING.copysign(pixels);
+        return FINITE_CEILING.copysign(pixels);
     }
     pixels
 }
@@ -778,7 +741,7 @@ const fn usable(pixels: f32) -> f32 {
         return 0.0;
     }
     if pixels.is_infinite() {
-        return PIXEL_CEILING.copysign(pixels);
+        return FINITE_CEILING.copysign(pixels);
     }
     pixels
 }
@@ -1298,10 +1261,11 @@ mod tests {
     use meo_skia_canvas::TextEngine;
 
     use super::{
-        Line, METRICS_STRING, Metrics, PIXEL_CEILING, Run, RunStyle,
-        TextMeasurer, layout, line_width, pieces, spacing_pixels, wrap,
+        Line, METRICS_STRING, Metrics, Run, RunStyle, TextMeasurer, layout,
+        line_width, pieces, spacing_pixels, wrap,
     };
     use crate::{
+        FINITE_CEILING,
         measure::build_paragraph,
         resolve::{
             ResolvedText,
@@ -1393,7 +1357,7 @@ mod tests {
     fn a_spacing_that_overflows_while_resolving_is_clamped_too() {
         let resolved = spacing_pixels(Spacing::Em(1.0e30), 1.0e30);
         assert!(resolved.is_finite(), "{resolved} reached a measurement");
-        assert_eq!(resolved, PIXEL_CEILING);
+        assert_eq!(resolved, FINITE_CEILING);
     }
 
     /// An absurd finite spacing is left alone, to the bit.
@@ -1411,7 +1375,7 @@ mod tests {
         // The row says nothing unless the list crosses the ceiling, so that is
         // checked where it cannot rot: a `1e30` edited down to `1e3` one day
         // stops compiling rather than quietly making this vacuous.
-        const _: () = assert!(1.0e30 > PIXEL_CEILING);
+        const _: () = assert!(1.0e30 > FINITE_CEILING);
         for points in [0.0, 4.0, -4.0, 1.0e6, -1.0e6, 1.0e30, -1.0e30] {
             assert_eq!(spacing_pixels(Spacing::Points(points), 16.0), points);
         }
