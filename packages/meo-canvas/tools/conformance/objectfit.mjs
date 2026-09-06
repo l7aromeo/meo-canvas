@@ -22,8 +22,30 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/chrome/object-fit.tsv')
 const SOURCE = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/fit-marks.png')
 
-/** The box every rule places its picture in. */
-const BOX = { width: 72, height: 72 }
+/** The boxes every rule places its picture in.
+ *
+ * **72 is not enough on its own, and the fixture it produced could not fail for
+ * one of its five rules.** CSS defines `scale-down` as the smaller of `none`
+ * and `contain`, so wherever the picture already fits they are the same rule by
+ * definition -- and an 8x4 source fits a 72x72 box. The two rows came out
+ * byte-identical, correctly, and a renderer implementing `scale-down` as `none`
+ * passed the table, its walker, and everything built on them.
+ *
+ * The boxes below 8 wide are where the two separate: `none` crops the picture
+ * to the box, `scale-down` shrinks it to fit.
+ *
+ * **6 and not 4.** A 4x4 box halves an eight-pixel source, and this renderer
+ * scales with a smoothing filter where Chrome is pinned to
+ * `image-rendering: pixelated` -- so the magenta column arrives blended past
+ * any tolerance that can still tell the source's four colours apart, and the
+ * mark columns read `-` here against Chrome's `magenta`. The rectangles agree
+ * at 4 exactly; it is the marks that stop being readable. 6 separates the two
+ * rules in the rectangle AND in both marks, which is the row worth committing.
+ */
+const BOXES = [
+  { width: 72, height: 72 },
+  { width: 6, height: 6 },
+]
 
 /** What the box is painted with, so the picture's own extent can be found. */
 const CELL = [240, 240, 240]
@@ -39,54 +61,57 @@ try {
   const picture = await readFile(SOURCE)
   const source = `data:image/png;base64,${picture.toString('base64')}`
   const rows = []
-  await browser.page.setViewportSize(BOX)
 
-  for (const fit of FITS) {
-    await browser.page.evaluate(
-      ({ box, source, fit }) => {
-        document.body.innerHTML = ''
-        const cell = document.createElement('div')
-        cell.style.cssText = `position:absolute;left:0;top:0;width:${box.width}px;height:${box.height}px;background:#f0f0f0;overflow:hidden;`
-        const image = document.createElement('img')
-        image.style.cssText = `display:block;width:${box.width}px;height:${box.height}px;object-fit:${fit};image-rendering:pixelated;`
-        image.src = source
-        cell.append(image)
-        document.body.append(cell)
-      },
-      { box: BOX, source, fit },
-    )
-    // Waited for by the harness rather than by this page: a shot taken before
-    // decode measures an empty box and reports every fit as drawing nothing.
-    await settle(browser.page)
+  for (const BOX of BOXES) {
+    await browser.page.setViewportSize(BOX)
 
-    const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...BOX } }))
-    let box = null
-    for (let y = 0; y < BOX.height; y += 1) {
-      for (let x = 0; x < BOX.width; x += 1) {
-        const [r, g, b] = pixel(shot, x, y)
-        if (r === CELL[0] && g === CELL[1] && b === CELL[2]) continue
-        box = box === null ? [x, y, x, y] : [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)]
-      }
-    }
+    for (const fit of FITS) {
+      await browser.page.evaluate(
+        ({ box, source, fit }) => {
+          document.body.innerHTML = ''
+          const cell = document.createElement('div')
+          cell.style.cssText = `position:absolute;left:0;top:0;width:${box.width}px;height:${box.height}px;background:#f0f0f0;overflow:hidden;`
+          const image = document.createElement('img')
+          image.style.cssText = `display:block;width:${box.width}px;height:${box.height}px;object-fit:${fit};image-rendering:pixelated;`
+          image.src = source
+          cell.append(image)
+          document.body.append(cell)
+        },
+        { box: BOX, source, fit },
+      )
+      // Waited for by the harness rather than by this page: a shot taken before
+      // decode measures an empty box and reports every fit as drawing nothing.
+      await settle(browser.page)
 
-    const has = ink => {
+      const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...BOX } }))
+      let box = null
       for (let y = 0; y < BOX.height; y += 1) {
         for (let x = 0; x < BOX.width; x += 1) {
           const [r, g, b] = pixel(shot, x, y)
-          if (r === ink[0] && g === ink[1] && b === ink[2]) return true
+          if (r === CELL[0] && g === CELL[1] && b === CELL[2]) continue
+          box = box === null ? [x, y, x, y] : [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)]
         }
       }
-      return false
-    }
 
-    const rect = box === null ? 'absent' : `${box[0]},${box[1]},${box[2] - box[0] + 1},${box[3] - box[1] + 1}`
-    rows.push([fit, BOX.width, BOX.height, rect, has(MAGENTA) ? 'magenta' : '-', has(CYAN) ? 'cyan' : '-'].join('\t'))
+      const has = ink => {
+        for (let y = 0; y < BOX.height; y += 1) {
+          for (let x = 0; x < BOX.width; x += 1) {
+            const [r, g, b] = pixel(shot, x, y)
+            if (r === ink[0] && g === ink[1] && b === ink[2]) return true
+          }
+        }
+        return false
+      }
+
+      const rect = box === null ? 'absent' : `${box[0]},${box[1]},${box[2] - box[0] + 1},${box[3] - box[1] + 1}`
+      rows.push([fit, BOX.width, BOX.height, rect, has(MAGENTA) ? 'magenta' : '-', has(CYAN) ? 'cyan' : '-'].join('\t'))
+    }
   }
 
   const header = [
     '# Chrome, through `just conformance`. Where each object-fit rule puts a picture.',
     '#',
-    `# An <img> of ${BOX.width}x${BOX.height} on a #f0f0f0 cell, source `,
+    `# An <img> on a #f0f0f0 cell at ${BOXES.map(box => `${box.width}x${box.height}`).join(', ')}, source `,
     '# `crates/meo-canvas/tests/assets/fit-marks.png` — eight by four, magenta at its',
     '# own x=0 and cyan at x=7. Those two columns are what separate `fill` from',
     '# `cover`: both fill the box and differ only in what they CUT, so a symmetric',
@@ -98,10 +123,15 @@ try {
     '# `image-rendering: pixelated`, so an eight-pixel-wide source scaled to 72 keeps',
     '# its columns readable instead of blending them into their neighbours.',
     '#',
+    '# **More than one box size, because at 72 the source fits and `scale-down` IS',
+    '# `none`** -- the same rule by definition, not by coincidence. The boxes below',
+    '# eight wide are where the two separate: `none` crops, `scale-down` shrinks.',
+    '# A table with only the 72 rows cannot fail for `scale-down` at all.',
+    '#',
     '# fit\tw\th\trect\tmagenta\tcyan',
   ]
   await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
-  process.stderr.write(`object fit: ${rows.length} rules -> ${DESTINATION}\n`)
+  process.stderr.write(`object fit: ${FITS.length} rules x ${BOXES.length} boxes -> ${DESTINATION}\n`)
 } finally {
   await browser.close()
 }

@@ -1,6 +1,6 @@
 # Chrome, through `just conformance`. Where each object-fit rule puts a picture.
 #
-# An <img> of 72x72 on a #f0f0f0 cell, source 
+# An <img> on a #f0f0f0 cell at 72x72, 6x6, source 
 # `crates/meo-canvas/tests/assets/fit-marks.png` — eight by four, magenta at its
 # own x=0 and cyan at x=7. Those two columns are what separate `fill` from
 # `cover`: both fill the box and differ only in what they CUT, so a symmetric
@@ -12,9 +12,19 @@
 # `image-rendering: pixelated`, so an eight-pixel-wide source scaled to 72 keeps
 # its columns readable instead of blending them into their neighbours.
 #
+# **More than one box size, because at 72 the source fits and `scale-down` IS
+# `none`** -- the same rule by definition, not by coincidence. The boxes below
+# eight wide are where the two separate: `none` crops, `scale-down` shrinks.
+# A table with only the 72 rows cannot fail for `scale-down` at all.
+#
 # fit	w	h	rect	magenta	cyan
 fill	72	72	0,0,72,72	magenta	cyan
 contain	72	72	0,18,72,36	magenta	cyan
 cover	72	72	0,0,72,72	-	-
 none	72	72	32,34,8,4	magenta	cyan
 scale-down	72	72	32,34,8,4	magenta	cyan
+fill	6	6	0,0,6,6	magenta	cyan
+contain	6	6	0,2,6,3	magenta	cyan
+cover	6	6	0,0,6,6	-	-
+none	6	6	0,1,6,4	-	-
+scale-down	6	6	0,2,6,3	magenta	cyan
