@@ -946,28 +946,17 @@ fn overflow_rows(text: &str) -> Vec<Overflow<'_>> {
         .collect()
 }
 
-/// What a row that has started agreeing with Chrome should say.
-fn stale(code: &str) -> String {
-    format!(
-        "{code}: now agrees with Chrome. That is a fix -- delete the row from \
-         KNOWN_OVERFLOW"
-    )
-}
-
-#[test]
-fn overflow_against_position_matches_chrome() {
-    let text = include_str!("assets/chrome/overflow-position.tsv");
-    let rows = overflow_rows(text);
-
-    // **The table has to be able to tell a `relative` child from a `static`
-    // one.** For 120 rows it could not: an in-flow child was placed by margins
-    // and never given an inset, and `position: relative` with no offsets *is*
-    // `position: static`, so a renderer that ignored `relative` entirely passed
-    // every row. The fifth letter is what fixed that, and this asks the
-    // property rather than the row count -- delete the `i` rows for tidiness
-    // and this fails by name instead of the suite going quietly back to
-    // passing for the wrong reason.
-    let separates = rows.iter().any(|row| {
+/// Whether the table can tell a `relative` child from a `static` one.
+///
+/// **For 120 rows it could not.** An in-flow child was placed by margins and
+/// never given an inset, and `position: relative` with no offsets *is*
+/// `position: static`, so a renderer that ignored `relative` entirely passed
+/// every row. The fifth letter is what fixed that, and this asks the property
+/// rather than the row count -- delete every offset row for tidiness and the
+/// caller fails by name instead of the suite going quietly back to passing for
+/// the wrong reason.
+fn separates_relative_from_static(rows: &[Overflow<'_>]) -> bool {
+    rows.iter().any(|row| {
         &row.code[2..3] == "S"
             && rows.iter().any(|other| {
                 other.code[0..2] == row.code[0..2]
@@ -986,9 +975,24 @@ fn overflow_against_position_matches_chrome() {
                         })
                         || other.probes != row.probes)
             })
-    });
+    })
+}
+
+/// What a row that has started agreeing with Chrome should say.
+fn stale(code: &str) -> String {
+    format!(
+        "{code}: now agrees with Chrome. That is a fix -- delete the row from \
+         KNOWN_OVERFLOW"
+    )
+}
+
+#[test]
+fn overflow_against_position_matches_chrome() {
+    let text = include_str!("assets/chrome/overflow-position.tsv");
+    let rows = overflow_rows(text);
+
     assert!(
-        separates,
+        separates_relative_from_static(&rows),
         "no pair of rows differing only in the child's position separates \
          `relative` from `static`, so the table cannot fail for `relative`: \
          without an inset the two are the same box in the same place"
@@ -997,6 +1001,7 @@ fn overflow_against_position_matches_chrome() {
     let mut geometry = Vec::new();
     let mut painted = Vec::new();
     let mut off_the_page = 0_usize;
+    let mut compared = 0_usize;
     let mut clipped = 0_usize;
     let mut uncomparable = 0_usize;
 
@@ -1049,6 +1054,7 @@ fn overflow_against_position_matches_chrome() {
         }
 
         let Some(seen) = probes_of(row) else { continue };
+        compared += 1;
         let known = KNOWN_OVERFLOW.contains(&row.code);
         if seen != row.probes && !known {
             painted.push(format!(
@@ -1074,6 +1080,31 @@ fn overflow_against_position_matches_chrome() {
         rows.len(),
         off_the_page,
         KNOWN_OVERFLOW.len()
+    );
+    // **Every row has to have been compared.** Each of the three ways out of
+    // the loop above is a `continue`, and a row that leaves that way is
+    // reported in the summary and in nothing else -- so a renderer drawing
+    // *nothing* takes all 240 of them and the walker passes. Measured, not
+    // supposed: setting the child to `Display::None` gives `240 rows, 240
+    // placed off the page` and a green test. That is a check that cannot fail,
+    // and it was found by a control written for an unrelated survey.
+    //
+    // The three numbers are exact today, so pinning them costs nothing: a row
+    // that starts being skipped is either a renderer that stopped drawing or a
+    // scene that stopped being comparable, and both want a person.
+    assert_eq!(
+        compared,
+        rows.len(),
+        "{} of {} rows were skipped rather than compared: {off_the_page} \
+         placed off the page, {uncomparable} with geometry that differs. A row \
+         nobody compares cannot fail",
+        rows.len() - compared,
+        rows.len()
+    );
+    assert_eq!(
+        off_the_page, 0,
+        "a child that draws nothing is a defect rather than an exclusion: \
+         Chrome reports a rectangle for every row"
     );
     assert!(
         geometry.is_empty() && painted.is_empty(),
