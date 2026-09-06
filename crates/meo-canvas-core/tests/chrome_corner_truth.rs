@@ -32,7 +32,10 @@ use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
     Corners, Scene, Sides, Size,
     node::{Node, NodeId, NodeKind},
-    style::{Dimension, paint::Color},
+    style::{
+        Dimension,
+        paint::{BorderStyle, Color},
+    },
 };
 
 /// The page, so "outside the box" is one value and nothing else is.
@@ -110,6 +113,9 @@ fn corner(
         node.layout.size =
             (Dimension::Points(size.0), Dimension::Points(size.1));
         node.layout.border = border;
+        // Explicit because `BorderStyle::None` is the default and would give
+        // this scene no border at all -- and no corner to measure.
+        node.paint.border_style = BorderStyle::Solid;
         node.paint.background_color = Color::rgb(FILL.0, FILL.1, FILL.2);
         node.paint.border_radius = radius;
         node.paint.border_color_all = Color::rgb(120, 120, 120);

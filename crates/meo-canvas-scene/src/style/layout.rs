@@ -262,13 +262,25 @@ pub struct GridPlacement {
 
 /// Everything the layout pass reads off a node.
 ///
-/// The defaults are CSS's, not Yoga's: [`Display::Flex`],
-/// [`FlexDirection::Row`] and a `flex_shrink` of `1.0`. Yoga's raw defaults are
-/// a column direction and a shrink of `0`, so a bare box changes meaning
-/// between the two. The TypeScript `Column` and `Row` factories already
-/// override the shrink to `1`, which makes CSS's value the one their own trees
-/// use; following CSS makes the bare case agree with the named ones instead of
-/// inheriting an exception.
+/// Two of the three interesting defaults are CSS's rather than Yoga's:
+/// [`FlexDirection::Row`] and a `flex_shrink` of `1.0`, where Yoga's raw
+/// defaults are a column direction and a shrink of `0`, so a bare box would
+/// change meaning between the two. The TypeScript `Column` and `Row` factories
+/// already override the shrink to `1`, which makes CSS's value the one their
+/// own trees use; following CSS makes the bare case agree with the named ones
+/// instead of inheriting an exception.
+///
+/// The third, [`Display::Flex`], is **Yoga's default and not CSS's** -- CSS's
+/// initial `display` is `inline`, which this crate has no node for. It is kept
+/// because a scene is a tree of boxes rather than a run of inline content, so
+/// there is nothing for `inline` to mean here.
+///
+/// What that costs a reader is worth stating, because the shape of the tree
+/// depends on it: a container with no `display` lays its children out as flex
+/// items, so a text child shrink-wraps to its content where a web author's
+/// `div` would fill the line. Measured, a text node under a default parent
+/// draws the same ink at every `textAlign`, and only under [`Display::Block`]
+/// does alignment move it. Reach for `Block` to get the familiar behaviour.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutStyle {
     /// Layout mode for this node's children.
@@ -350,7 +362,7 @@ pub struct LayoutStyle {
 impl Default for LayoutStyle {
     fn default() -> Self {
         Self {
-            display: Display::Flex,
+            display: Display::Block,
             position_type: PositionType::Static,
             inset: Sides::all(None),
             size: (Dimension::Auto, Dimension::Auto),
@@ -436,7 +448,12 @@ mod tests {
     #[test]
     fn defaults_follow_css_not_yoga() {
         let style = LayoutStyle::default();
-        assert_eq!(style.display, Display::Flex);
+        // **`block`, which is what a browser gives a `<div>`.** taffy's own
+        // default is `Flex`, so this was the one field whose value agreed with
+        // taffy while the test's name claimed CSS. Both public surfaces name
+        // `flex` on every container they build, so nothing a caller writes
+        // depends on this.
+        assert_eq!(style.display, Display::Block);
         assert_eq!(style.flex_direction, FlexDirection::Row);
         assert!((style.flex_shrink - 1.0).abs() < f32::EPSILON);
         assert!((style.flex_grow - 0.0).abs() < f32::EPSILON);

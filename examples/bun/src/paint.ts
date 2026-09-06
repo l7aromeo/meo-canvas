@@ -82,8 +82,8 @@ const canvas = await Root({
     // Borders: one colour, four colours, the two dashed styles, and a radius,
     // which is the only one that changes the box's shape.
     row([
-      cell({ border: 6, borderColor: FROM }),
-      cell({ border: 6, borderColor: { top: FROM, right: TO, bottom: '#228844', left: '#cc4422' } }),
+      cell({ border: 6, borderStyle: 'solid', borderColor: FROM }),
+      cell({ border: 6, borderStyle: 'solid', borderColor: { top: FROM, right: TO, bottom: '#228844', left: '#cc4422' } }),
       cell({ border: 4, borderColor: FROM, borderStyle: 'dashed' }),
       cell({ border: 4, borderColor: FROM, borderStyle: 'dotted' }),
       cell({
@@ -164,7 +164,7 @@ const canvas = await Root({
           },
         },
       }),
-      filled({ border: 6, borderColor: TO, mask: { shape: 'circle' } }),
+      filled({ border: 6, borderStyle: 'solid', borderColor: TO, mask: { shape: 'circle' } }),
     ]),
     // A background image, and the three things that travel with it. The picture
     // is eight by four, so a tile is small enough that the repeat is a pattern

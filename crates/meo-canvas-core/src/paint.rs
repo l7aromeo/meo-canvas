@@ -78,6 +78,22 @@ const DEGREES_PER_TURN: f32 = 360.0;
 /// does -- twelve o'clock against three.
 const QUARTER_TURN_DEGREES: f32 = 90.0;
 
+/// Names the property a rendering failure came from, keeping the reason.
+///
+/// The backend says what went wrong and cannot say which property carried it:
+/// it is handed a string and never sees the scene. The call site knows the
+/// property and throws that away by stringifying into [`Error::Paint`], so this
+/// is the one place both halves are in scope.
+///
+/// **The reason is kept rather than replaced.** `invalid SVG path: could not
+/// parse SVG path data: "not a path"` already names the failure and quotes the
+/// input; what it lacks is which of `d` and `mask` was being parsed, and those
+/// two produce byte-identical text today from two different call sites. Writing
+/// a message of our own here would lose a good explanation to gain a name.
+fn in_property(property: &str, error: &impl core::fmt::Display) -> Error {
+    Error::Paint(format!("{property}: {error}"))
+}
+
 /// Everything about a surface that is not its size.
 ///
 /// Resolved values, not the scene's `Option`s: deciding between what a scene
@@ -887,7 +903,7 @@ fn enter_node(
     if let Some(filter) = node.effects.filter.as_deref() {
         context
             .set_filter_css(filter)
-            .map_err(|error| Error::Paint(error.to_string()))?;
+            .map_err(|error| in_property("filter", &error))?;
     }
 
     if needs_group {
@@ -1071,7 +1087,7 @@ fn paint_kind(
             line_dash_offset,
         } => {
             let drawn = Path2D::from_svg(data, to_skia_rule(*fill_rule))
-                .map_err(|error| Error::Paint(error.to_string()))?;
+                .map_err(|error| in_property("d", &error))?;
             // No box is the behaviour every path had before one existed:
             // absolute coordinates, shifted to where the node sits.
             let path = view_box.map_or_else(
@@ -1188,6 +1204,10 @@ fn draw_text(
     // Held at zero and added by hand: a space is a run of no width here, and
     // the gap between two words is arithmetic the alignment can redistribute.
     context.set_word_spacing(0.0);
+    // The node's decoration is the default every run inherits; a run that
+    // declares its own overrides it in `draw_run`. Set here as well as there
+    // because an empty paragraph draws no run and would otherwise carry
+    // whatever the previous node left on the context.
     set_text_decoration(context, style.decoration);
 
     let last = block.lines.len().saturating_sub(1);
@@ -1271,7 +1291,16 @@ fn draw_run(
     // the run would be drawn in a face the measurer did not measure.
     let (caps, features) = run.style.to_variant();
     context.set_font_variant(caps, &features);
-    context.set_fill_style(to_skia_color(style.color));
+    // **The run's colour, not the node's.** A segment that declares one is
+    // carried here and nowhere else: `RunStyle` is the only thing in the paint
+    // path that is per-segment, and before this field existed a segment's
+    // colour had no way to reach the drawing at all.
+    context.set_fill_style(to_skia_color(run.style.color));
+    set_text_decoration(context, run.style.decoration);
+    // Per run for the same reason as the colour above. The paragraph's value is
+    // still set before the block is drawn, because an inter-word space is
+    // measured against it and belongs to no run.
+    context.set_letter_spacing(run.style.letter_spacing);
 
     for shadow in &node.effects.text_shadows {
         context.save();
@@ -1354,7 +1383,7 @@ fn gap_count(line: &Line) -> usize {
 fn content_box(node: &Node, rect: Rect) -> Rect {
     // The used width, not the declared one, so the content box starts where
     // layout reserved room for it.
-    let border = used_border(node.layout.border);
+    let border = used_border(node.layout.border, node.paint.border_style);
     let padding = &node.layout.padding;
     let left = border.left + resolve_length(padding.left, rect.size.width);
     let right = border.right + resolve_length(padding.right, rect.size.width);
@@ -1479,6 +1508,15 @@ fn apply_transform(
 }
 
 /// Adds the node's box, rounded if it has radii, as the current path.
+/// One corner radius, with a value Skia cannot use dropped to a square corner.
+const fn usable_radius(radius: f32) -> f32 {
+    if radius.is_finite() && radius > 0.0 {
+        radius
+    } else {
+        0.0
+    }
+}
+
 fn box_path(
     context: &mut Context2D,
     radii: Corners<f32>,
@@ -1498,12 +1536,22 @@ fn box_path_continuing(
     radii: Corners<f32>,
     rect: Rect,
 ) -> Result<(), Error> {
+    // **A radius that is not a usable number is dropped here, where it is
+    // used.** Skia refuses the whole rectangle for a non-finite radius --
+    // `invalid rect: Rect { .. }`, thrown out of a paint that was going to
+    // succeed -- and a negative radius is invalid CSS that Chrome drops to
+    // zero. Both become a square corner, which is what the browser draws.
+    //
+    // Layout normalises the same way at `to_taffy_style`, and this is the
+    // second door rather than a duplicate: a corner radius is never a layout
+    // input, so nothing in that pass sees it.
     let corners = [
-        radii.top_left,
-        radii.top_right,
-        radii.bottom_right,
-        radii.bottom_left,
+        usable_radius(radii.top_left),
+        usable_radius(radii.top_right),
+        usable_radius(radii.bottom_right),
+        usable_radius(radii.bottom_left),
     ];
+
     // A square box is a rounded one with every radius at zero, **not**
     // `Context2D::rect`. The two add contours by different mechanisms —
     // `rect` calls Skia's `add_rect`, and `round_rect_elliptical` calls
@@ -1983,7 +2031,7 @@ fn draw_border(
 ) -> Result<(), Error> {
     let paint = &node.paint;
     // As `content_box`: the painter draws the width layout reserved.
-    let widths = used_border(node.layout.border);
+    let widths = used_border(node.layout.border, node.paint.border_style);
     if widths.top <= 0.0
         && widths.right <= 0.0
         && widths.bottom <= 0.0
@@ -2012,7 +2060,16 @@ fn draw_border(
     let inner = inner_box(rect, widths);
 
     // Dashes and dots are strokes, not a ring: a fill has no rhythm to break.
-    if !matches!(paint.border_style, BorderStyle::Solid) {
+    //
+    // Named rather than written as "not solid" so that `BorderStyle::None`
+    // cannot route here. It cannot reach this line today -- `used_border`
+    // returns zeros for it and the guard above has already returned -- but a
+    // negated match would send it to the dash stroker the moment that gate
+    // moved, and a border with no style would come back as dashes.
+    if matches!(
+        paint.border_style,
+        BorderStyle::Dashed | BorderStyle::Dotted
+    ) {
         return stroke_broken_border(context, node, rect, widths);
     }
 
@@ -4200,7 +4257,7 @@ fn draw_backdrop(
         context.reset_transform();
         context
             .set_filter_css(&scaled)
-            .map_err(|error| Error::Paint(error.to_string()))?;
+            .map_err(|error| in_property("backdropFilter", &error))?;
         context.draw_image_sized(&backdrop, left, top, width, height);
         Ok(())
     })(context);
@@ -4577,7 +4634,7 @@ fn draw_mask(
         Mask::Path { data, fill_rule } => {
             let rule = to_skia_rule(*fill_rule);
             let path = Path2D::from_svg(data, rule)
-                .map_err(|error| Error::Paint(error.to_string()))?
+                .map_err(|error| in_property("mask", &error))?
                 .offset(rect.origin.x, rect.origin.y);
             context.fill_path(&path, rule);
             Ok(())
@@ -4640,6 +4697,60 @@ mod tests {
     /// two-colour case, through `foreignObject` to canvas and `getImageData`.
     /// Ours are read from a transparent page, so the alpha channel is the
     /// coverage with nothing composited under it.
+    /// A corner radius Skia cannot use is a square corner, not a failed paint.
+    ///
+    /// **This is the one row of the bad-value grid that threw rather than
+    /// drawing the wrong thing.** `border-radius: NaN` reached Skia, which
+    /// refused the whole rectangle -- `invalid rect: Rect { .. }` -- so a
+    /// render that was going to succeed returned an error instead. Chrome
+    /// drops the declaration and computes `0px`.
+    ///
+    /// The radius is normalised in `box_path_continuing` rather than beside
+    /// the layout normalisation, because a corner radius is never a layout
+    /// input: the two are the same rule at the two places values are used.
+    mod unusable_radius {
+        use meo_canvas_scene::{
+            Corners, Scene, Size,
+            node::{Node, NodeId, NodeKind},
+            style::{Dimension, paint::Color},
+        };
+
+        use crate::{ImageFormat, Renderer, encode::EncodeOptions};
+
+        fn paints(radius: f32) -> bool {
+            let mut scene = Scene::new(Size::new(40.0, 30.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(40.0), Dimension::Points(30.0));
+                node.paint.background_color = Color::rgb(255, 0, 0);
+                node.paint.border_radius = Corners::all(radius);
+            }
+            let mut renderer = Renderer::new();
+            renderer.set_gpu(false);
+            renderer
+                .render_to_buffer(
+                    &scene,
+                    ImageFormat::Png,
+                    &EncodeOptions::default(),
+                )
+                .is_ok()
+        }
+
+        #[test]
+        fn a_non_finite_or_negative_radius_paints_a_square_corner() {
+            for radius in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -20.0] {
+                assert!(paints(radius), "radius {radius} refused the paint");
+            }
+            // The control: a radius that is usable still paints, so the test
+            // cannot be satisfied by a renderer that succeeds at everything
+            // because it draws nothing.
+            assert!(paints(8.0));
+        }
+    }
+
     mod corner_seam {
         use meo_canvas_scene::{
             Corners, Scene, Sides, Size,
@@ -5711,23 +5822,45 @@ mod tests {
         assert!((start.y - 50.0).abs() < 0.01);
     }
 
+    /// Which parent a static child hangs from decides whether `z_index`
+    /// ranks it at all, so both parents are here.
+    ///
+    /// `stacks_by_z_index` gives a static child a stacking context only under
+    /// a flex or grid parent -- Flexbox §5.4 -- and under a block parent an
+    /// unpositioned child's `z_index` does not apply. **Before the scene's
+    /// default display became `block` this test built a flex parent without
+    /// saying so**, and the block half was untested: a change that ranked
+    /// every static child by `z_index`, in any parent, passed.
     #[test]
     fn children_draw_in_z_order_then_document_order() {
-        let mut scene = Scene::new(Size::new(10.0, 10.0));
-        let mut ids = Vec::new();
-        for z in [2_i32, -1, 0, 0] {
-            let id = scene
-                .push(NodeId::ROOT, Node::container())
-                .unwrap_or_else(|error| unreachable!("{error}"));
-            if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = Some(z);
+        let ordered = |display: Display| {
+            let mut scene = Scene::new(Size::new(10.0, 10.0));
+            if let Some(root) = scene.get_mut(NodeId::ROOT) {
+                root.layout.display = display;
             }
-            ids.push(id);
-        }
-        let ordered = ordered_ids(&scene, NodeId::ROOT);
+            let mut ids = Vec::new();
+            for z in [2_i32, -1, 0, 0] {
+                let id = scene
+                    .push(NodeId::ROOT, Node::container())
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                if let Some(node) = scene.get_mut(id) {
+                    node.paint.z_index = Some(z);
+                }
+                ids.push(id);
+            }
+            (ordered_ids(&scene, NodeId::ROOT), ids)
+        };
 
-        // -1 first, then the two zeroes in the order they were added, then 2.
-        assert_eq!(ordered, vec![ids[1], ids[2], ids[3], ids[0]]);
+        // A flex parent: -1 first, then the two zeroes in the order they were
+        // added, then 2.
+        let (flex, ids) = ordered(Display::Flex);
+        assert_eq!(flex, vec![ids[1], ids[2], ids[3], ids[0]]);
+
+        // A block parent: `z_index` does not apply to an unpositioned child,
+        // so all four paint in document order. This is the row that fails if
+        // the flex rule is applied everywhere.
+        let (block, ids) = ordered(Display::Block);
+        assert_eq!(block, vec![ids[0], ids[1], ids[2], ids[3]]);
     }
 
     #[test]
@@ -6187,7 +6320,7 @@ mod tests {
     /// Renders one bordered box and returns its pixels, eight bits per
     /// channel.
     fn bordered_corner(top: f32, left: f32, radius: f32) -> Vec<u8> {
-        use meo_canvas_scene::style::paint::Color;
+        use meo_canvas_scene::style::paint::{BorderStyle, Color};
 
         let mut scene = Scene::new(Size::new(60.0, 60.0));
         if let Some(root) = scene.get_mut(NodeId::ROOT) {
@@ -6216,6 +6349,7 @@ mod tests {
                 background_color: FILL,
                 border_radius: meo_canvas_scene::Corners::all(radius),
                 border_color_all: BORDER,
+                border_style: BorderStyle::Solid,
                 border_color: meo_canvas_scene::Sides {
                     top: Some(BORDER),
                     right: Some(BORDER),
@@ -6264,7 +6398,10 @@ mod tests {
     /// division decides which colour a part of the ring takes, and where
     /// every part takes the same colour it must not be visible at all.
     fn reference_ring(top: f32, left: f32, radius: f32) -> Vec<u8> {
-        use meo_canvas_scene::{Point, style::paint::Color};
+        use meo_canvas_scene::{
+            Point,
+            style::paint::{BorderStyle, Color},
+        };
 
         let rect = Rect::new(Point::new(0.0, 0.0), Size::new(60.0, 60.0));
         let widths = meo_canvas_scene::Sides {
@@ -6277,6 +6414,7 @@ mod tests {
             background_color: FILL,
             border_radius: meo_canvas_scene::Corners::all(radius),
             border_color_all: BORDER,
+            border_style: BorderStyle::Solid,
             ..PaintStyle::default()
         };
 

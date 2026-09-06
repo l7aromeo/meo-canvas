@@ -7,7 +7,7 @@
 
 use meo_canvas::{
     Box, BoxSizing, Display, Element, FlexDirection, Root, Styled, hex_rgb, px,
-    sides,
+    scene::BorderStyle, sides,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
@@ -52,10 +52,12 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
             bar(red, 100.0)
                 .box_sizing(BoxSizing::BorderBox)
                 .border(sides(6.0, 6.0, 6.0, 6.0))
+                .border_style(BorderStyle::Solid)
                 .border_color(hex_rgb(0x14_14_1e)),
             bar(blue, 100.0)
                 .box_sizing(BoxSizing::ContentBox)
                 .border(sides(6.0, 6.0, 6.0, 6.0))
+                .border_style(BorderStyle::Solid)
                 .border_color(hex_rgb(0x14_14_1e)),
         ]);
 

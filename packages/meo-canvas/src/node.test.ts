@@ -52,17 +52,15 @@ describe('styles', () => {
   it('are written flat, in the props', () => {
     // The property a caller writes is the property, not a key inside a `style`
     // object. v1 spells it this way and a ported tree should not have to move.
-    expect(Box({ gap: 16 }).style).toEqual({ gap: 16 })
+    expect(Box({ gap: 16 }).style).toEqual({ display: 'flex', gap: 16 })
     expect(Text('x', { fontSize: 24 }).style).toEqual({ fontSize: 24 })
   })
 
-  it('are read rather than copied', () => {
-    // No spread and no per-node merge: both cost per node on a path that has to
-    // stay cheap, and the defaults already exist in Rust. The factories that
-    // name no direction of their own store the caller's own object.
+  it('are read rather than copied, except by the containers that name a display', () => {
+    // `Text`, `Image` and `Path` store the caller's own object: they name
+    // nothing of their own, so there is nothing to spread.
     const props = { gap: 16 }
 
-    expect(Box(props).style).toBe(props)
     expect(Text('x', props).style).toBe(props)
 
     const image = { src: 'a.png', gap: 16 }
@@ -70,16 +68,32 @@ describe('styles', () => {
 
     expect(Image(image).style).toBe(image)
     expect(Path(path).style).toBe(path)
+
+    // **`Box` copies now, and the reason the old comment gave for not copying
+    // was never measured.** It said a spread "costs per node on a path that
+    // has to stay cheap" -- while `Row` and `Column` had always spread, on
+    // every call, in every example. Measured: 0.03 to 0.08 microseconds per
+    // container, 3.1 ms across a hundred thousand of them, against a build of
+    // 90 ms and a render of 8 to 22 ms for a tree of six thousand. It is not
+    // visible next to the work it precedes.
+    //
+    // What it buys is that a `Box` is a flex container whatever the scene's
+    // default becomes, which is the defect the default move would otherwise
+    // have introduced: `gap`, `align_items` and `justify_content` silently
+    // stopping.
+    expect(Box(props).style).not.toBe(props)
+    expect(Box(props).style).toEqual({ display: 'flex', gap: 16 })
   })
 
   it('carry the props that are not style properties, which nothing reads', () => {
-    // The consequence of storing the props object itself. `children` and `name`
-    // are not style property names, and the encoder looks up only the names in
-    // its own table, so the extra keys cost a read that never happens — which is
-    // what buys the absent copy above.
+    // The consequence of carrying the props object rather than a filtered
+    // copy. `children` and `name` are not style property names, and the
+    // encoder looks up only the names in its own table, so the extra keys cost
+    // a read that never happens.
     const child = Text('x')
 
     expect(Box({ children: [child], name: 'card' }).style).toEqual({
+      display: 'flex',
       children: [child],
       name: 'card',
     })
@@ -88,16 +102,19 @@ describe('styles', () => {
   it('are copied once by the factories that name a direction, and the caller wins', () => {
     // `Row` and `Column` mean a direction, so they write one. Spreading the
     // caller's props after the default is what keeps an explicit value.
-    expect(Row().style).toEqual({ flexDirection: 'row' })
-    expect(Column().style).toEqual({ flexDirection: 'column' })
+    expect(Row().style).toEqual({ display: 'flex', flexDirection: 'row' })
+    expect(Column().style).toEqual({ display: 'flex', flexDirection: 'column' })
     expect(Grid().style).toEqual({ display: 'grid' })
 
-    expect(Row({ flexDirection: 'column' }).style).toEqual({ flexDirection: 'column' })
+    expect(Row({ flexDirection: 'column' }).style).toEqual({ display: 'flex', flexDirection: 'column' })
     expect(Grid({ display: 'flex' }).style).toEqual({ display: 'flex' })
+
+    // A caller who wants a block container says so, and wins over the factory.
+    expect(Box({ display: 'block' }).style).toEqual({ display: 'block' })
   })
 
   it('keep the caller’s other properties when a direction is added', () => {
-    expect(Row({ gap: 8 }).style).toEqual({ flexDirection: 'row', gap: 8 })
+    expect(Row({ gap: 8 }).style).toEqual({ display: 'flex', flexDirection: 'row', gap: 8 })
   })
 
   it('take a style object spread into the props', () => {
@@ -107,6 +124,7 @@ describe('styles', () => {
     const theme: Style = { backgroundColor: '#101014', padding: 24 }
 
     expect(Box({ ...theme, gap: 16 }).style).toEqual({
+      display: 'flex',
       backgroundColor: '#101014',
       padding: 24,
       gap: 16,
@@ -258,5 +276,145 @@ describe('images', () => {
 describe('paths', () => {
   it('carry their data', () => {
     expect(Path({ d: 'M2 8 L6 12 L14 3' }).d).toBe('M2 8 L6 12 L14 3')
+  })
+})
+
+describe('the values a list ignores', () => {
+  // **The assertion is that the two lists agree, not that either skips four
+  // values.** A fix to segments alone satisfies "segments skip four" and lets
+  // children drift again later; only comparing the two columns catches that.
+  //
+  // Measured against React 19.2.8 before the repair: `null` and `''` render
+  // nothing there, `false` and `undefined` already did here, and `0` renders
+  // as the text `0` — which is why `0` is an error rather than a skip.
+  const ignorable = [false, true, undefined, null] as const
+
+  it.each(ignorable)('a container drops %p from its children', value => {
+    const kept = Box({ children: [Box(), value] }).children
+    expect(kept).toHaveLength(1)
+  })
+
+  it.each(ignorable)('a paragraph drops %p from its segments', value => {
+    const runs = RichText([{ text: 'a' }, value]).segments
+    expect(runs).toHaveLength(1)
+  })
+
+  it('the two lists ignore exactly the same values', () => {
+    // The columns, built rather than asserted one by one, so a value added to
+    // one predicate and not the other fails here rather than in neither.
+    const children = ignorable.filter(value => Box({ children: [Box(), value] }).children?.length === 1)
+    const segments = ignorable.filter(value => RichText([{ text: 'a' }, value]).segments?.length === 1)
+    expect(segments).toEqual(children)
+    expect(children).toHaveLength(ignorable.length)
+  })
+
+  // **`0` is the row that keeps this honest.** React renders it as text, so
+  // skipping it would be a different decision from the one #44 measured, and a
+  // caller writing `items.length && …` would silently lose a visible zero.
+  // **The rows that keep the set honest.** React renders these as text, so
+  // skipping them would be a different decision from the one measured — and a
+  // caller writing `items.length && …` meaning "when there are items" would
+  // lose a visible zero rather than seeing nothing.
+  it.each([0, NaN, 42, -1, 3.5, Infinity, 'hi', ' ', ''])('neither list drops %p', value => {
+    // No cast: these are legal children now, which is the change.
+    expect(Box({ children: [Box(), value] }).children).toHaveLength(2)
+    expect(RichText([{ text: 'a' }, value]).segments).toHaveLength(2)
+  })
+
+  it('a string, number or bigint child becomes a text node', () => {
+    const kids = Box({ children: [0, 'hi', 12n] }).children
+    expect(kids).toHaveLength(3)
+    expect(kids?.map(child => child.kind)).toEqual(['text', 'text', 'text'])
+    // `String()`, as React uses — so a bigint loses its `n`, and a non-finite
+    // number renders its spelling rather than being dropped by a finiteness
+    // guard nobody measured.
+    expect(kids?.map(child => child.segments?.[0]?.text)).toEqual(['0', 'hi', '12'])
+  })
+
+  it('a text child is literal, not markup', () => {
+    // **`Text`'s content is parsed as markup; a text child is not.** Measured:
+    // `Text('<b>bold</b> rest')` draws bolded text at ink 565 where the literal
+    // path draws the tags at 820. Building this on `Text` would silently
+    // reinterpret a caller's angle brackets, and nothing would fail until
+    // somebody's data contained one.
+    const child = Box({ children: '<b>x</b>' }).children?.[0]
+    expect(child?.markup).toBeUndefined()
+    expect(child?.segments?.[0]?.text).toBe('<b>x</b>')
+  })
+
+  // **React's line, and the one thing that must not become permissive.**
+  it('a plain object still throws', () => {
+    expect(() => Box({ children: [{} as never] })).toThrow('it takes a node, a string or a number')
+  })
+
+  // The middle row of a three-valued control. React skips these *with a
+  // console warning*; the only warning channel here is typed `ImageWarning`,
+  // so they are skipped silently and the divergence is in the diagnostic.
+  it.each([() => {}, Symbol('s')])('skips %p rather than refusing it', value => {
+    expect(Box({ children: [Box(), value as unknown as undefined] }).children).toHaveLength(1)
+  })
+
+  // The rows a filter that ate too much would fail. Without these, a predicate
+  // that returned true for everything passes every test above.
+  it('keeps the entries that are real', () => {
+    expect(Box({ children: [Box(), Box()] }).children).toHaveLength(2)
+    expect(RichText([{ text: 'a' }, { text: 'b' }]).segments).toHaveLength(2)
+  })
+
+  it("leaves '' alone when it is content rather than a child", () => {
+    // **The same literal, one argument apart, meaning two different things.**
+    // `''` in a child list is an ignorable entry; `''` as a paragraph's text is
+    // a legitimate empty string. A skip written too low in the stack swallows
+    // both.
+    expect(Text('').markup).toBe('')
+    expect(RichText([{ text: '' }]).segments).toHaveLength(1)
+  })
+})
+
+describe('a segment carrying a key it has no room for', () => {
+  // **Refused at the writer because the type system refuses it almost
+  // nowhere.** Excess property checking fires on a fresh object literal and on
+  // nothing else. Measured across nine spellings, two were caught at compile
+  // time and seven were not — including `rows.map(r => ({ text, fontSize }))`,
+  // which is the case `RichText` exists for. All nine discarded the styling
+  // silently at runtime.
+  it('refuses a flat style key and names the segment', () => {
+    expect(() => RichText([{ text: 'hi', fontSize: 30 } as never])).toThrow('segments[0] has no property "fontSize"')
+  })
+
+  it('refuses it however the object was built', () => {
+    // The route the type gate cannot see, and the one that matters.
+    const rows = [{ label: 'hi', size: 30 }]
+    expect(() => RichText(rows.map(row => ({ text: row.label, fontSize: row.size })) as never)).toThrow('has no property "fontSize"')
+  })
+
+  it('names the index, so one bad run in twenty is findable', () => {
+    expect(() => RichText([{ text: 'a' }, { text: 'b' }, { text: 'c', color: '#f00' } as never])).toThrow('segments[2]')
+  })
+
+  // **The suggestion is offered only where it is certainly right.** A key the
+  // generated tables carry is a style property; one they do not carry might be
+  // a typo for anything, and a confidently wrong suggestion sends the caller to
+  // write a second broken call.
+  it('suggests the nested spelling for a real style key', () => {
+    expect(() => RichText([{ text: 'hi', fontSize: 30 } as never])).toThrow('did you mean style: { fontSize }?')
+  })
+
+  it('suggests nothing for a key that is not a style property', () => {
+    expect(() => RichText([{ text: 'hi', zzz: 1 } as never])).toThrow(/has no property "zzz"/)
+    expect(() => RichText([{ text: 'hi', zzz: 1 } as never])).not.toThrow(/did you mean/)
+  })
+
+  // The rows a check that refused everything would fail.
+  it('accepts the spellings that are correct', () => {
+    expect(() => RichText([{ text: 'hi' }])).not.toThrow()
+    expect(() => RichText([{ text: 'hi', style: { fontSize: 30 } }])).not.toThrow()
+    expect(() => RichText([])).not.toThrow()
+  })
+
+  it('checks only the segments it kept', () => {
+    // An ignorable entry is dropped before the key check, so a `null` beside a
+    // good segment must not be inspected for keys it could never have.
+    expect(() => RichText([{ text: 'hi' }, null])).not.toThrow()
   })
 })

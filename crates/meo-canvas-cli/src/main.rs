@@ -61,7 +61,9 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use meo_canvas_core::{Error, ImageFormat, Renderer, encode::EncodeOptions};
+use meo_canvas_core::{
+    Error, ImageFormat, Renderer, chained, encode::EncodeOptions,
+};
 use meo_canvas_scene::Scene;
 
 /// An input or output file could not be read or written.
@@ -180,7 +182,11 @@ fn explain(error: &Error) -> String {
         Error::UnresolvedSource(_) if cfg!(not(feature = "net")) => {
             format!("{error}; build with `--features net` to fetch it")
         }
-        other => other.to_string(),
+        // The chain, not just this variant's own sentence: `Error::Scene` and
+        // `Error::ImageRead` carry their cause as `#[source]`, and a command
+        // line that printed only the outer message told a caller a font or an
+        // image failed without saying why.
+        other => chained(other),
     }
 }
 

@@ -321,6 +321,8 @@ pub enum ArenaError {
     },
     /// A side value of the wrong kind for the property that named it.
     WrongValueKind {
+        /// The property the caller set, where the decode knows it.
+        property: Option<&'static str>,
         /// The slot the index was read from.
         slot: usize,
         /// What the property wanted.
@@ -335,6 +337,8 @@ pub enum ArenaError {
     },
     /// A colour string no CSS colour syntax matches.
     UnreadableColor {
+        /// The property the caller set, where the decode knows it.
+        property: Option<&'static str>,
         /// The slot the string's index was read from.
         slot: usize,
         /// What the writer sent.
@@ -386,15 +390,41 @@ impl core::fmt::Display for ArenaError {
                 index,
                 length,
             } => write!(f, "slot {slot} names side value {index} of {length}"),
-            Self::WrongValueKind { slot, wanted } => {
-                write!(f, "slot {slot} names a side value that is not {wanted}")
-            }
-            Self::UnreadableColor { slot, found } => {
-                write!(
-                    f,
-                    "slot {slot} names {found:?}, which is not a colour any \
-                     CSS syntax spells"
-                )
+            Self::WrongValueKind {
+                property,
+                slot,
+                wanted,
+            } => match property {
+                Some(name) => {
+                    write!(f, "{name} is not {wanted}")
+                }
+                None => {
+                    write!(
+                        f,
+                        "slot {slot} names a side value that is not {wanted}"
+                    )
+                }
+            },
+            Self::UnreadableColor {
+                property,
+                slot,
+                found,
+            } => {
+                // The sentence is kept and only what precedes it changes. It
+                // explains the failure well; the offset it led with was the
+                // part a caller could not act on.
+                match property {
+                    Some(name) => write!(
+                        f,
+                        "{name} is {found:?}, which is not a colour any CSS \
+                         syntax spells"
+                    ),
+                    None => write!(
+                        f,
+                        "slot {slot} names {found:?}, which is not a colour \
+                         any CSS syntax spells"
+                    ),
+                }
             }
             Self::TooManyNodes { found, limit } => {
                 write!(
@@ -427,6 +457,18 @@ pub(crate) struct Reader<'a> {
     slots: &'a [f64],
     values: &'a Values,
     offset: usize,
+    /// The property being decoded, in the spelling its caller wrote.
+    ///
+    /// The decoder is positional and carries no field names of its own, which
+    /// is why its errors quoted arena offsets. An offset is a position in a
+    /// wire format the caller never saw, and it moves with the rest of the
+    /// scene -- the same mistake in two different trees produced two different
+    /// numbers, so the message could not be searched for or matched on.
+    ///
+    /// `None` outside a group -- a node tag, a child count -- where there is
+    /// no caller property and inventing one would be worse than the
+    /// offset.
+    property: Option<&'static str>,
     /// The values a probe stream hands back, if this reader is one.
     ///
     /// `None` for every reader outside a probe, which is every reader the
@@ -559,11 +601,25 @@ pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
 }
 
 impl<'a> Reader<'a> {
+    /// Names the property whose value is about to be read.
+    ///
+    /// Called once per property by a group's decode, so an error raised
+    /// anywhere beneath it can say what the caller set.
+    pub(crate) const fn set_property(&mut self, property: &'static str) {
+        self.property = Some(property);
+    }
+
+    /// The property being decoded, if the decode is inside one.
+    pub(crate) const fn property(&self) -> Option<&'static str> {
+        self.property
+    }
+
     const fn new(slots: &'a [f64], values: &'a Values) -> Self {
         Self {
             slots,
             values,
             offset: 0,
+            property: None,
             #[cfg(test)]
             probe: None,
         }
@@ -583,6 +639,7 @@ impl<'a> Reader<'a> {
             slots,
             values,
             offset: 0,
+            property: None,
             probe: Some(fills),
         }
     }
@@ -713,6 +770,7 @@ impl<'a> Reader<'a> {
         match self.values.0.get(index) {
             Some(SideValue::Text(text)) => Ok(text.clone()),
             Some(SideValue::Bytes(_)) => Err(ArenaError::WrongValueKind {
+                property: self.property(),
                 slot,
                 wanted: "a string",
             }),
@@ -733,6 +791,7 @@ impl<'a> Reader<'a> {
         match self.values.0.get(index) {
             Some(SideValue::Bytes(bytes)) => Ok(bytes.clone()),
             Some(SideValue::Text(_)) => Err(ArenaError::WrongValueKind {
+                property: self.property(),
                 slot,
                 wanted: "a buffer",
             }),
@@ -748,89 +807,89 @@ impl<'a> Reader<'a> {
 arena_group! {
     /// Everything the layout pass reads.
     pub(crate) mod layout for meo_canvas_scene::style::layout::LayoutStyle {
-        0 => display: meo_canvas_scene::style::layout::Display,
-        1 => position_type: meo_canvas_scene::style::layout::PositionType,
-        2 => inset: meo_canvas_scene::Sides<Option<Length>>,
-        3 => size: (meo_canvas_scene::Dimension, meo_canvas_scene::Dimension),
-        4 => min_size: (meo_canvas_scene::Dimension, meo_canvas_scene::Dimension),
-        5 => max_size: (meo_canvas_scene::Dimension, meo_canvas_scene::Dimension),
-        6 => aspect_ratio: Option<f32>,
-        7 => margin: meo_canvas_scene::Sides<meo_canvas_scene::Dimension>,
-        8 => padding: meo_canvas_scene::Sides<Length>,
-        9 => border: meo_canvas_scene::Sides<f32>,
-        10 => flex_direction: meo_canvas_scene::style::layout::FlexDirection,
-        11 => flex_wrap: meo_canvas_scene::style::layout::FlexWrap,
-        12 => flex_grow: f32,
-        13 => flex_shrink: f32,
-        14 => flex_basis: meo_canvas_scene::Dimension,
-        15 => justify_content: Option<meo_canvas_scene::style::layout::Justify>,
-        16 => align_items: Option<meo_canvas_scene::style::layout::Align>,
-        17 => align_self: Option<meo_canvas_scene::style::layout::Align>,
-        18 => align_content: Option<meo_canvas_scene::style::layout::Align>,
-        19 => gap: (Length, Length),
-        20 => overflow: (
+        0 => display as "display": meo_canvas_scene::style::layout::Display,
+        1 => position_type as "positionType": meo_canvas_scene::style::layout::PositionType,
+        2 => inset as "position": meo_canvas_scene::Sides<Option<Length>>,
+        3 => size as "width or height": (meo_canvas_scene::Dimension, meo_canvas_scene::Dimension),
+        4 => min_size as "minWidth or minHeight": (meo_canvas_scene::Dimension, meo_canvas_scene::Dimension),
+        5 => max_size as "maxWidth or maxHeight": (meo_canvas_scene::Dimension, meo_canvas_scene::Dimension),
+        6 => aspect_ratio as "aspectRatio": Option<f32>,
+        7 => margin as "margin": meo_canvas_scene::Sides<meo_canvas_scene::Dimension>,
+        8 => padding as "padding": meo_canvas_scene::Sides<Length>,
+        9 => border as "border": meo_canvas_scene::Sides<f32>,
+        10 => flex_direction as "flexDirection": meo_canvas_scene::style::layout::FlexDirection,
+        11 => flex_wrap as "flexWrap": meo_canvas_scene::style::layout::FlexWrap,
+        12 => flex_grow as "flexGrow": f32,
+        13 => flex_shrink as "flexShrink": f32,
+        14 => flex_basis as "flexBasis": meo_canvas_scene::Dimension,
+        15 => justify_content as "justifyContent": Option<meo_canvas_scene::style::layout::Justify>,
+        16 => align_items as "alignItems": Option<meo_canvas_scene::style::layout::Align>,
+        17 => align_self as "alignSelf": Option<meo_canvas_scene::style::layout::Align>,
+        18 => align_content as "alignContent": Option<meo_canvas_scene::style::layout::Align>,
+        19 => gap as "gap": (Length, Length),
+        20 => overflow as "overflow": (
             meo_canvas_scene::style::layout::Overflow,
             meo_canvas_scene::style::layout::Overflow
         ),
-        21 => box_sizing: meo_canvas_scene::style::layout::BoxSizing,
-        22 => direction: meo_canvas_scene::style::layout::Direction,
-        23 => grid_template_columns: Vec<meo_canvas_scene::style::layout::TrackSize>,
-        24 => grid_template_rows: Vec<meo_canvas_scene::style::layout::TrackSize>,
-        25 => grid_auto_rows: Option<meo_canvas_scene::style::layout::TrackSize>,
-        26 => grid_auto_columns: Option<meo_canvas_scene::style::layout::TrackSize>,
-        27 => grid_auto_flow: meo_canvas_scene::style::layout::GridAutoFlow,
-        28 => grid_column: meo_canvas_scene::style::layout::GridPlacement,
-        29 => grid_row: meo_canvas_scene::style::layout::GridPlacement,
+        21 => box_sizing as "boxSizing": meo_canvas_scene::style::layout::BoxSizing,
+        22 => direction as "direction": meo_canvas_scene::style::layout::Direction,
+        23 => grid_template_columns as "gridTemplateColumns": Vec<meo_canvas_scene::style::layout::TrackSize>,
+        24 => grid_template_rows as "gridTemplateRows": Vec<meo_canvas_scene::style::layout::TrackSize>,
+        25 => grid_auto_rows as "gridAutoRows": Option<meo_canvas_scene::style::layout::TrackSize>,
+        26 => grid_auto_columns as "gridAutoColumns": Option<meo_canvas_scene::style::layout::TrackSize>,
+        27 => grid_auto_flow as "gridAutoFlow": meo_canvas_scene::style::layout::GridAutoFlow,
+        28 => grid_column as "gridColumn": meo_canvas_scene::style::layout::GridPlacement,
+        29 => grid_row as "gridRow": meo_canvas_scene::style::layout::GridPlacement,
     }
 }
 
 arena_group! {
     /// Everything that fills, outlines or composites the box.
     pub(crate) mod paint for meo_canvas_scene::style::paint::PaintStyle {
-        0 => background_color: meo_canvas_scene::style::paint::Color,
-        1 => gradient: Option<meo_canvas_scene::style::paint::Gradient>,
-        2 => background_image: Option<meo_canvas_scene::style::paint::BackgroundImage>,
-        3 => border_color: meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::Color>>,
-        4 => border_color_all: meo_canvas_scene::style::paint::Color,
-        5 => border_style: meo_canvas_scene::style::paint::BorderStyle,
-        6 => border_radius: meo_canvas_scene::Corners<f32>,
-        7 => opacity: f32,
-        8 => blend_mode: meo_canvas_scene::style::paint::BlendMode,
-        9 => dither: bool,
-        10 => z_index: Option<i32>,
+        0 => background_color as "backgroundColor": meo_canvas_scene::style::paint::Color,
+        1 => gradient as "gradient": Option<meo_canvas_scene::style::paint::Gradient>,
+        2 => background_image as "backgroundImage": Option<meo_canvas_scene::style::paint::BackgroundImage>,
+        3 => border_color as "borderColor": meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::Color>>,
+        4 => border_color_all as "borderColor": meo_canvas_scene::style::paint::Color,
+        5 => border_style as "borderStyle": meo_canvas_scene::style::paint::BorderStyle,
+        6 => border_radius as "borderRadius": meo_canvas_scene::Corners<f32>,
+        7 => opacity as "opacity": f32,
+        8 => blend_mode as "mixBlendMode": meo_canvas_scene::style::paint::BlendMode,
+        9 => dither as "dither": bool,
+        10 => z_index as "zIndex": Option<i32>,
     }
 }
 
 arena_group! {
     /// Glyph styling, which inherits to descendants.
     pub(crate) mod text for meo_canvas_scene::style::text::TextStyle {
-        0 => font_family: Option<String>,
-        1 => font_size: Option<f32>,
-        2 => font_weight: Option<meo_canvas_scene::style::text::FontWeight>,
-        3 => font_style: Option<meo_canvas_scene::style::text::FontStyle>,
-        4 => color: Option<meo_canvas_scene::style::paint::Color>,
-        5 => text_align: Option<meo_canvas_scene::style::text::TextAlign>,
-        6 => text_decoration: Option<meo_canvas_scene::style::text::TextDecoration>,
-        7 => vertical_align: Option<meo_canvas_scene::style::text::VerticalAlign>,
-        8 => paint_order: Option<meo_canvas_scene::style::PaintOrder>,
-        9 => line_height: Option<meo_canvas_scene::style::text::LineHeight>,
-        10 => line_gap: Option<f32>,
-        11 => letter_spacing: Option<meo_canvas_scene::style::text::Spacing>,
-        12 => word_spacing: Option<meo_canvas_scene::style::text::Spacing>,
-        13 => font_variant: Option<Vec<meo_canvas_scene::style::text::FontVariant>>,
-        14 => text_stroke: Option<meo_canvas_scene::style::text::TextStroke>,
+        0 => font_family as "fontFamily": Option<String>,
+        1 => font_size as "fontSize": Option<f32>,
+        2 => font_weight as "fontWeight": Option<meo_canvas_scene::style::text::FontWeight>,
+        3 => font_style as "fontStyle": Option<meo_canvas_scene::style::text::FontStyle>,
+        4 => color as "color": Option<meo_canvas_scene::style::paint::Color>,
+        5 => text_align as "textAlign": Option<meo_canvas_scene::style::text::TextAlign>,
+        6 => text_decoration as "textDecoration": Option<meo_canvas_scene::style::text::TextDecoration>,
+        7 => vertical_align as "verticalAlign": Option<meo_canvas_scene::style::text::VerticalAlign>,
+        8 => paint_order as "paintOrder": Option<meo_canvas_scene::style::PaintOrder>,
+        9 => line_height as "lineHeight": Option<meo_canvas_scene::style::text::LineHeight>,
+        10 => line_gap as "lineGap": Option<f32>,
+        11 => letter_spacing as "letterSpacing": Option<meo_canvas_scene::style::text::Spacing>,
+        12 => word_spacing as "wordSpacing": Option<meo_canvas_scene::style::text::Spacing>,
+        13 => font_variant as "fontVariant": Option<Vec<meo_canvas_scene::style::text::FontVariant>>,
+        14 => text_stroke as "textStroke": Option<meo_canvas_scene::style::text::TextStroke>,
     }
 }
 
 arena_group! {
     /// What is applied after the node and its children are drawn.
     pub(crate) mod effects for meo_canvas_scene::style::effect::Effects {
-        0 => transform: Option<meo_canvas_scene::style::effect::Transform>,
-        1 => box_shadows: Vec<meo_canvas_scene::style::effect::BoxShadow>,
-        2 => text_shadows: Vec<meo_canvas_scene::style::effect::TextShadow>,
-        3 => mask: Option<meo_canvas_scene::style::effect::Mask>,
-        4 => filter: Option<String>,
-        5 => backdrop_filter: Option<String>,
+        0 => transform as "transform": Option<meo_canvas_scene::style::effect::Transform>,
+        1 => box_shadows as "boxShadow": Vec<meo_canvas_scene::style::effect::BoxShadow>,
+        2 => text_shadows as "textShadow": Vec<meo_canvas_scene::style::effect::TextShadow>,
+        3 => mask as "mask": Option<meo_canvas_scene::style::effect::Mask>,
+        4 => filter as "filter": Option<String>,
+        5 => backdrop_filter as "backdropFilter": Option<String>,
     }
 }
 
@@ -1645,6 +1704,81 @@ mod tests {
         ));
     }
 
+    /// A colour failure names the property the caller wrote, not the field.
+    ///
+    /// The two spellings differ for eleven of the sixty-two properties, and
+    /// `border_color_all` is the one that bites: a caller writes `borderColor`,
+    /// there is no `borderColorAll` on the surface, and a message naming it
+    /// sends them grepping their own source for a property that does not exist.
+    /// Deriving the name from the Rust field produced exactly that, which is
+    /// why the table carries the caller's spelling instead.
+    ///
+    /// The slot form is asserted beside it because it is what a read outside a
+    /// group still produces, and a repair that removed it would leave those
+    /// errors with no location at all.
+    #[test]
+    fn a_colour_failure_names_the_caller_s_property() {
+        let named = ArenaError::UnreadableColor {
+            property: Some("borderColor"),
+            slot: 33,
+            found: "potato".to_owned(),
+        };
+        let anonymous = ArenaError::UnreadableColor {
+            property: None,
+            slot: 33,
+            found: "potato".to_owned(),
+        };
+
+        assert_eq!(
+            named.to_string(),
+            r#"borderColor is "potato", which is not a colour any CSS syntax spells"#
+        );
+        assert!(!named.to_string().contains("slot"));
+        assert!(!named.to_string().contains("borderColorAll"));
+
+        assert_eq!(
+            anonymous.to_string(),
+            r#"slot 33 names "potato", which is not a colour any CSS syntax spells"#
+        );
+
+        // The same split on the sibling variant. It is the one that makes the
+        // other fifty-eight names reachable: only four properties in the
+        // tables read a colour, so without this the column would be carried by
+        // every row and observable on four of them.
+        assert_eq!(
+            ArenaError::WrongValueKind {
+                property: Some("width or height"),
+                slot: 3,
+                wanted: "a string",
+            }
+            .to_string(),
+            "width or height is not a string"
+        );
+        assert_eq!(
+            ArenaError::WrongValueKind {
+                property: None,
+                slot: 3,
+                wanted: "a string",
+            }
+            .to_string(),
+            "slot 3 names a side value that is not a string"
+        );
+    }
+
+    /// Every property in the tables carries a caller-facing name.
+    ///
+    /// The macro requires it, so this cannot fail while the crate compiles --
+    /// which is the point. The name is written beside the field in the table
+    /// that defines the wire format, so adding a property without one is a
+    /// build error rather than a message that quotes an arena offset.
+    #[test]
+    fn every_group_property_carries_a_caller_name() {
+        assert_eq!(layout::NAMES.len(), layout::COUNT);
+        assert_eq!(paint::NAMES.len(), paint::COUNT);
+        assert_eq!(text::NAMES.len(), text::COUNT);
+        assert_eq!(effects::NAMES.len(), effects::COUNT);
+    }
+
     #[test]
     fn every_error_says_what_is_wrong() {
         use core::error::Error as _;
@@ -1690,6 +1824,7 @@ mod tests {
             }
             .to_string(),
             ArenaError::WrongValueKind {
+                property: None,
                 slot: 1,
                 wanted: "a string",
             }

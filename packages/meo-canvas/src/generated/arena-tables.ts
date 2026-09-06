@@ -23,42 +23,51 @@ export interface ArenaProperty {
   readonly index: number
   /** The field's name in the scene type. */
   readonly name: string
+  /**
+   * The style properties that feed it, as a caller spells them.
+   *
+   * Not the field's name: `border_color_all` is written `borderColor`, and
+   * a slot several properties may feed names all of them -- `gridColumn or
+   * gridArea`. This is what a failure reading the slot reports, so it has
+   * to be the surface spelling rather than the scene one.
+   */
+  readonly caller: string
   /** The Rust type, as the table spells it. */
   readonly type: string
 }
 
 /** `meo_canvas_scene::style::layout::LayoutStyle`, 30 properties in 1 mask slot. */
 export const LAYOUT: readonly ArenaProperty[] = [
-  { index: 0, name: "display", type: "meo_canvas_scene::style::layout::Display" },
-  { index: 1, name: "position_type", type: "meo_canvas_scene::style::layout::PositionType" },
-  { index: 2, name: "inset", type: "meo_canvas_scene::Sides<Option<Length>>" },
-  { index: 3, name: "size", type: "(meo_canvas_scene::Dimension, meo_canvas_scene::Dimension)" },
-  { index: 4, name: "min_size", type: "(meo_canvas_scene::Dimension, meo_canvas_scene::Dimension)" },
-  { index: 5, name: "max_size", type: "(meo_canvas_scene::Dimension, meo_canvas_scene::Dimension)" },
-  { index: 6, name: "aspect_ratio", type: "Option<f32>" },
-  { index: 7, name: "margin", type: "meo_canvas_scene::Sides<meo_canvas_scene::Dimension>" },
-  { index: 8, name: "padding", type: "meo_canvas_scene::Sides<Length>" },
-  { index: 9, name: "border", type: "meo_canvas_scene::Sides<f32>" },
-  { index: 10, name: "flex_direction", type: "meo_canvas_scene::style::layout::FlexDirection" },
-  { index: 11, name: "flex_wrap", type: "meo_canvas_scene::style::layout::FlexWrap" },
-  { index: 12, name: "flex_grow", type: "f32" },
-  { index: 13, name: "flex_shrink", type: "f32" },
-  { index: 14, name: "flex_basis", type: "meo_canvas_scene::Dimension" },
-  { index: 15, name: "justify_content", type: "Option<meo_canvas_scene::style::layout::Justify>" },
-  { index: 16, name: "align_items", type: "Option<meo_canvas_scene::style::layout::Align>" },
-  { index: 17, name: "align_self", type: "Option<meo_canvas_scene::style::layout::Align>" },
-  { index: 18, name: "align_content", type: "Option<meo_canvas_scene::style::layout::Align>" },
-  { index: 19, name: "gap", type: "(Length, Length)" },
-  { index: 20, name: "overflow", type: "( meo_canvas_scene::style::layout::Overflow, meo_canvas_scene::style::layout::Overflow )" },
-  { index: 21, name: "box_sizing", type: "meo_canvas_scene::style::layout::BoxSizing" },
-  { index: 22, name: "direction", type: "meo_canvas_scene::style::layout::Direction" },
-  { index: 23, name: "grid_template_columns", type: "Vec<meo_canvas_scene::style::layout::TrackSize>" },
-  { index: 24, name: "grid_template_rows", type: "Vec<meo_canvas_scene::style::layout::TrackSize>" },
-  { index: 25, name: "grid_auto_rows", type: "Option<meo_canvas_scene::style::layout::TrackSize>" },
-  { index: 26, name: "grid_auto_columns", type: "Option<meo_canvas_scene::style::layout::TrackSize>" },
-  { index: 27, name: "grid_auto_flow", type: "meo_canvas_scene::style::layout::GridAutoFlow" },
-  { index: 28, name: "grid_column", type: "meo_canvas_scene::style::layout::GridPlacement" },
-  { index: 29, name: "grid_row", type: "meo_canvas_scene::style::layout::GridPlacement" },
+  { index: 0, name: "display", caller: "display", type: "meo_canvas_scene::style::layout::Display" },
+  { index: 1, name: "position_type", caller: "positionType", type: "meo_canvas_scene::style::layout::PositionType" },
+  { index: 2, name: "inset", caller: "position", type: "meo_canvas_scene::Sides<Option<Length>>" },
+  { index: 3, name: "size", caller: "width or height", type: "(meo_canvas_scene::Dimension, meo_canvas_scene::Dimension)" },
+  { index: 4, name: "min_size", caller: "minWidth or minHeight", type: "(meo_canvas_scene::Dimension, meo_canvas_scene::Dimension)" },
+  { index: 5, name: "max_size", caller: "maxWidth or maxHeight", type: "(meo_canvas_scene::Dimension, meo_canvas_scene::Dimension)" },
+  { index: 6, name: "aspect_ratio", caller: "aspectRatio", type: "Option<f32>" },
+  { index: 7, name: "margin", caller: "margin", type: "meo_canvas_scene::Sides<meo_canvas_scene::Dimension>" },
+  { index: 8, name: "padding", caller: "padding", type: "meo_canvas_scene::Sides<Length>" },
+  { index: 9, name: "border", caller: "border", type: "meo_canvas_scene::Sides<f32>" },
+  { index: 10, name: "flex_direction", caller: "flexDirection", type: "meo_canvas_scene::style::layout::FlexDirection" },
+  { index: 11, name: "flex_wrap", caller: "flexWrap", type: "meo_canvas_scene::style::layout::FlexWrap" },
+  { index: 12, name: "flex_grow", caller: "flexGrow", type: "f32" },
+  { index: 13, name: "flex_shrink", caller: "flexShrink", type: "f32" },
+  { index: 14, name: "flex_basis", caller: "flexBasis", type: "meo_canvas_scene::Dimension" },
+  { index: 15, name: "justify_content", caller: "justifyContent", type: "Option<meo_canvas_scene::style::layout::Justify>" },
+  { index: 16, name: "align_items", caller: "alignItems", type: "Option<meo_canvas_scene::style::layout::Align>" },
+  { index: 17, name: "align_self", caller: "alignSelf", type: "Option<meo_canvas_scene::style::layout::Align>" },
+  { index: 18, name: "align_content", caller: "alignContent", type: "Option<meo_canvas_scene::style::layout::Align>" },
+  { index: 19, name: "gap", caller: "gap", type: "(Length, Length)" },
+  { index: 20, name: "overflow", caller: "overflow", type: "( meo_canvas_scene::style::layout::Overflow, meo_canvas_scene::style::layout::Overflow )" },
+  { index: 21, name: "box_sizing", caller: "boxSizing", type: "meo_canvas_scene::style::layout::BoxSizing" },
+  { index: 22, name: "direction", caller: "direction", type: "meo_canvas_scene::style::layout::Direction" },
+  { index: 23, name: "grid_template_columns", caller: "gridTemplateColumns", type: "Vec<meo_canvas_scene::style::layout::TrackSize>" },
+  { index: 24, name: "grid_template_rows", caller: "gridTemplateRows", type: "Vec<meo_canvas_scene::style::layout::TrackSize>" },
+  { index: 25, name: "grid_auto_rows", caller: "gridAutoRows", type: "Option<meo_canvas_scene::style::layout::TrackSize>" },
+  { index: 26, name: "grid_auto_columns", caller: "gridAutoColumns", type: "Option<meo_canvas_scene::style::layout::TrackSize>" },
+  { index: 27, name: "grid_auto_flow", caller: "gridAutoFlow", type: "meo_canvas_scene::style::layout::GridAutoFlow" },
+  { index: 28, name: "grid_column", caller: "gridColumn", type: "meo_canvas_scene::style::layout::GridPlacement" },
+  { index: 29, name: "grid_row", caller: "gridRow", type: "meo_canvas_scene::style::layout::GridPlacement" },
 ]
 
 /** Mask slots `layout` occupies. */
@@ -66,17 +75,17 @@ export const LAYOUT_MASK_SLOTS = 1
 
 /** `meo_canvas_scene::style::paint::PaintStyle`, 11 properties in 1 mask slot. */
 export const PAINT: readonly ArenaProperty[] = [
-  { index: 0, name: "background_color", type: "meo_canvas_scene::style::paint::Color" },
-  { index: 1, name: "gradient", type: "Option<meo_canvas_scene::style::paint::Gradient>" },
-  { index: 2, name: "background_image", type: "Option<meo_canvas_scene::style::paint::BackgroundImage>" },
-  { index: 3, name: "border_color", type: "meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::Color>>" },
-  { index: 4, name: "border_color_all", type: "meo_canvas_scene::style::paint::Color" },
-  { index: 5, name: "border_style", type: "meo_canvas_scene::style::paint::BorderStyle" },
-  { index: 6, name: "border_radius", type: "meo_canvas_scene::Corners<f32>" },
-  { index: 7, name: "opacity", type: "f32" },
-  { index: 8, name: "blend_mode", type: "meo_canvas_scene::style::paint::BlendMode" },
-  { index: 9, name: "dither", type: "bool" },
-  { index: 10, name: "z_index", type: "Option<i32>" },
+  { index: 0, name: "background_color", caller: "backgroundColor", type: "meo_canvas_scene::style::paint::Color" },
+  { index: 1, name: "gradient", caller: "gradient", type: "Option<meo_canvas_scene::style::paint::Gradient>" },
+  { index: 2, name: "background_image", caller: "backgroundImage", type: "Option<meo_canvas_scene::style::paint::BackgroundImage>" },
+  { index: 3, name: "border_color", caller: "borderColor", type: "meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::Color>>" },
+  { index: 4, name: "border_color_all", caller: "borderColor", type: "meo_canvas_scene::style::paint::Color" },
+  { index: 5, name: "border_style", caller: "borderStyle", type: "meo_canvas_scene::style::paint::BorderStyle" },
+  { index: 6, name: "border_radius", caller: "borderRadius", type: "meo_canvas_scene::Corners<f32>" },
+  { index: 7, name: "opacity", caller: "opacity", type: "f32" },
+  { index: 8, name: "blend_mode", caller: "mixBlendMode", type: "meo_canvas_scene::style::paint::BlendMode" },
+  { index: 9, name: "dither", caller: "dither", type: "bool" },
+  { index: 10, name: "z_index", caller: "zIndex", type: "Option<i32>" },
 ]
 
 /** Mask slots `paint` occupies. */
@@ -84,21 +93,21 @@ export const PAINT_MASK_SLOTS = 1
 
 /** `meo_canvas_scene::style::text::TextStyle`, 15 properties in 1 mask slot. */
 export const TEXT: readonly ArenaProperty[] = [
-  { index: 0, name: "font_family", type: "Option<String>" },
-  { index: 1, name: "font_size", type: "Option<f32>" },
-  { index: 2, name: "font_weight", type: "Option<meo_canvas_scene::style::text::FontWeight>" },
-  { index: 3, name: "font_style", type: "Option<meo_canvas_scene::style::text::FontStyle>" },
-  { index: 4, name: "color", type: "Option<meo_canvas_scene::style::paint::Color>" },
-  { index: 5, name: "text_align", type: "Option<meo_canvas_scene::style::text::TextAlign>" },
-  { index: 6, name: "text_decoration", type: "Option<meo_canvas_scene::style::text::TextDecoration>" },
-  { index: 7, name: "vertical_align", type: "Option<meo_canvas_scene::style::text::VerticalAlign>" },
-  { index: 8, name: "paint_order", type: "Option<meo_canvas_scene::style::PaintOrder>" },
-  { index: 9, name: "line_height", type: "Option<meo_canvas_scene::style::text::LineHeight>" },
-  { index: 10, name: "line_gap", type: "Option<f32>" },
-  { index: 11, name: "letter_spacing", type: "Option<meo_canvas_scene::style::text::Spacing>" },
-  { index: 12, name: "word_spacing", type: "Option<meo_canvas_scene::style::text::Spacing>" },
-  { index: 13, name: "font_variant", type: "Option<Vec<meo_canvas_scene::style::text::FontVariant>>" },
-  { index: 14, name: "text_stroke", type: "Option<meo_canvas_scene::style::text::TextStroke>" },
+  { index: 0, name: "font_family", caller: "fontFamily", type: "Option<String>" },
+  { index: 1, name: "font_size", caller: "fontSize", type: "Option<f32>" },
+  { index: 2, name: "font_weight", caller: "fontWeight", type: "Option<meo_canvas_scene::style::text::FontWeight>" },
+  { index: 3, name: "font_style", caller: "fontStyle", type: "Option<meo_canvas_scene::style::text::FontStyle>" },
+  { index: 4, name: "color", caller: "color", type: "Option<meo_canvas_scene::style::paint::Color>" },
+  { index: 5, name: "text_align", caller: "textAlign", type: "Option<meo_canvas_scene::style::text::TextAlign>" },
+  { index: 6, name: "text_decoration", caller: "textDecoration", type: "Option<meo_canvas_scene::style::text::TextDecoration>" },
+  { index: 7, name: "vertical_align", caller: "verticalAlign", type: "Option<meo_canvas_scene::style::text::VerticalAlign>" },
+  { index: 8, name: "paint_order", caller: "paintOrder", type: "Option<meo_canvas_scene::style::PaintOrder>" },
+  { index: 9, name: "line_height", caller: "lineHeight", type: "Option<meo_canvas_scene::style::text::LineHeight>" },
+  { index: 10, name: "line_gap", caller: "lineGap", type: "Option<f32>" },
+  { index: 11, name: "letter_spacing", caller: "letterSpacing", type: "Option<meo_canvas_scene::style::text::Spacing>" },
+  { index: 12, name: "word_spacing", caller: "wordSpacing", type: "Option<meo_canvas_scene::style::text::Spacing>" },
+  { index: 13, name: "font_variant", caller: "fontVariant", type: "Option<Vec<meo_canvas_scene::style::text::FontVariant>>" },
+  { index: 14, name: "text_stroke", caller: "textStroke", type: "Option<meo_canvas_scene::style::text::TextStroke>" },
 ]
 
 /** Mask slots `text` occupies. */
@@ -106,12 +115,12 @@ export const TEXT_MASK_SLOTS = 1
 
 /** `meo_canvas_scene::style::effect::Effects`, 6 properties in 1 mask slot. */
 export const EFFECTS: readonly ArenaProperty[] = [
-  { index: 0, name: "transform", type: "Option<meo_canvas_scene::style::effect::Transform>" },
-  { index: 1, name: "box_shadows", type: "Vec<meo_canvas_scene::style::effect::BoxShadow>" },
-  { index: 2, name: "text_shadows", type: "Vec<meo_canvas_scene::style::effect::TextShadow>" },
-  { index: 3, name: "mask", type: "Option<meo_canvas_scene::style::effect::Mask>" },
-  { index: 4, name: "filter", type: "Option<String>" },
-  { index: 5, name: "backdrop_filter", type: "Option<String>" },
+  { index: 0, name: "transform", caller: "transform", type: "Option<meo_canvas_scene::style::effect::Transform>" },
+  { index: 1, name: "box_shadows", caller: "boxShadow", type: "Vec<meo_canvas_scene::style::effect::BoxShadow>" },
+  { index: 2, name: "text_shadows", caller: "textShadow", type: "Vec<meo_canvas_scene::style::effect::TextShadow>" },
+  { index: 3, name: "mask", caller: "mask", type: "Option<meo_canvas_scene::style::effect::Mask>" },
+  { index: 4, name: "filter", caller: "filter", type: "Option<String>" },
+  { index: 5, name: "backdrop_filter", caller: "backdropFilter", type: "Option<String>" },
 ]
 
 /** Mask slots `effects` occupies. */

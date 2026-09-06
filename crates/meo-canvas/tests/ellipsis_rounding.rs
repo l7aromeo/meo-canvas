@@ -41,7 +41,8 @@
 //! land badly. A render on it passes either side of this defect.
 
 use meo_canvas::{
-    Column, Element, Format, Renderer, Root, Row, Styled, Text, hex_rgb, px,
+    BorderStyle, Column, Element, Format, Renderer, Root, Row, Styled, Text,
+    hex_rgb, px,
     scene::{Align, Justify, LineHeight, Overflow},
     sides,
 };
@@ -125,6 +126,7 @@ fn render(
         Shape::Clipped => Column::new()
             .width(px(width))
             .border(sides(2.0, 2.0, 2.0, 2.0))
+            .border_style(BorderStyle::Solid)
             .border_color(hex_rgb(0xe7_00_0b))
             .overflow(Overflow::Hidden)
             .children(row(8.0)),

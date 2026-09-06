@@ -64,6 +64,7 @@ export const BORDER_STYLE = {
   Solid: 0,
   Dashed: 1,
   Dotted: 2,
+  None: 3,
 } as const
 
 /** `meo_canvas_scene::style::layout::BoxSizing`. */

@@ -47,6 +47,7 @@ use meo_canvas_scene::{
             GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
             PositionType, TrackSize,
         },
+        paint::BorderStyle,
     },
 };
 // The one trait imported from taffy rather than named through it:
@@ -199,6 +200,17 @@ where
         &mut to_scene,
         &mut orphans,
         &mut viewport,
+        // **The page's own height is definite unless the caller asked for a
+        // content height**, in which case the page is as tall as what is in it
+        // and a percentage against it has nothing to resolve against -- the
+        // same condition as any other content-sized box, one level up.
+        //
+        // The page has no parent, so both answers are the same one: nothing
+        // above it is content-sized.
+        Definite {
+            parent: !scene.content_height,
+            own: !scene.content_height,
+        },
     )?;
     for node in viewport.into_iter().chain(orphans) {
         tree.add_child(root, node)
@@ -395,7 +407,9 @@ fn bottom_align_reversed_wraps(
         };
         // The used width, as everywhere else: this inset has to agree with
         // the room taffy reserved, or the stack lands on the wrong edge.
-        let inset = used_border_width(node.layout.border.bottom) + padding;
+        let inset = used_border(node.layout.border, node.paint.border_style)
+            .bottom
+            + padding;
         let content_bottom = rect.bottom() - inset;
         let shift = content_bottom - bottom;
         if shift >= 0.0 {
@@ -427,6 +441,92 @@ fn bottom_align_reversed_wraps(
 ///
 /// An explicit size on the page root is honoured, so a caller who wants a page
 /// smaller than the surface can still say so.
+/// **Two answers, one level apart.**
+///
+/// `parent` is what this node's own percentages resolve against; `own` is what
+/// its children's do. Threading a single value for both was wrong by exactly
+/// one level -- a percentage on a child of a content-sized box survived,
+/// because the *child* had a declared height, which is not the question being
+/// asked.
+#[derive(Debug, Clone, Copy)]
+struct Definite {
+    /// Whether the containing block's height is definite.
+    parent: bool,
+    /// Whether this node's height is, for the children inside it.
+    own: bool,
+}
+
+/// Whether a child's height is one a percentage inside it can resolve against.
+///
+/// Definite means the number is known before the child's own contents are laid
+/// out. A declared length is definite; a percentage is definite exactly when
+/// the box it resolves against is, which is why this is threaded down the tree
+/// rather than read off a single node.
+///
+/// **`auto` counts as definite in the two cases flex layout settles it**, and
+/// Chrome agrees on both. An item stretched across a row takes the line's
+/// cross size; an item that `flex-grow`s in a column takes the line's
+/// remaining space. Measured, a `min-height: 200%` child of a `flex-grow: 1`
+/// box inside a 120-tall column is **240 in Chrome and 240 here**.
+///
+/// **An out-of-flow box is where that stops**, which is what `flex_settles_it`
+/// checks first: `flex-grow` on an absolutely positioned box does nothing,
+/// because it is not a flex item, so its `auto` height is its content's and a
+/// percentage inside it has nothing to resolve against. The same scene with
+/// the middle box absolutely positioned is **20 in Chrome and 20 here**.
+///
+/// Those two rows were once reported as a divergence -- 20 against 240 -- by a
+/// probe that gave Chrome an absolutely positioned box and this renderer a
+/// relative one. **Two scenes, one table.** The numbers are kept here because
+/// they are the pair that separates the cases, not because they ever
+/// disagreed.
+///
+/// A `min-height` is deliberately not enough on its own: it bounds the height
+/// from below and leaves it content-sized above the bound, so the number is
+/// still not known until the children are laid out.
+fn child_height_is_definite(
+    parent: &meo_canvas_scene::node::Node,
+    child: &meo_canvas_scene::node::Node,
+    parent_is_definite: bool,
+) -> bool {
+    match child.layout.size.1 {
+        Dimension::Points(_) => true,
+        Dimension::Percent(_) => parent_is_definite,
+        Dimension::Auto => parent_is_definite && flex_settles_it(parent, child),
+    }
+}
+
+/// Whether flex layout gives this child a height its own contents did not.
+fn flex_settles_it(
+    parent: &meo_canvas_scene::node::Node,
+    child: &meo_canvas_scene::node::Node,
+) -> bool {
+    // **An out-of-flow box is not a flex item.** Neither `align-items` nor a
+    // grow factor reaches it, so an `auto` height is its content's height and
+    // a percentage inside it has nothing to resolve against. Measured: a
+    // `min-height: 200%` child of an absolutely positioned, content-sized box
+    // is 20 in Chrome, not 40.
+    if matches!(
+        child.layout.position_type,
+        PositionType::Absolute | PositionType::Fixed
+    ) {
+        return false;
+    }
+    match parent.layout.flex_direction {
+        FlexDirection::Column | FlexDirection::ColumnReverse => {
+            child.layout.flex_grow > 0.0
+        }
+        FlexDirection::Row | FlexDirection::RowReverse => {
+            // The cross axis, where the default is to stretch: a child with no
+            // height of its own takes the line's.
+            matches!(
+                child.layout.align_self.or(parent.layout.align_items),
+                Some(Align::Stretch) | None
+            )
+        }
+    }
+}
+
 fn pin_page_root(
     scene: &Scene,
     page: NodeId,
@@ -437,7 +537,7 @@ fn pin_page_root(
         Error::Layout(format!("node {} is not in the scene", page.get()))
     })?;
 
-    let mut style = to_taffy_style(&source.layout);
+    let mut style = to_taffy_style(&source.layout, source.paint.border_style);
     if style.size.width.is_auto() {
         style.size.width =
             taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
@@ -538,12 +638,37 @@ fn build(
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
     orphans: &mut Vec<taffy::NodeId>,
     captive: &mut Vec<taffy::NodeId>,
+    heights: Definite,
 ) -> Result<taffy::NodeId, Error> {
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
 
-    let style = to_taffy_style(&source.layout);
+    let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    // **A percentage against an indefinite containing block resolves to
+    // `auto`**, which for a size is no size and for a minimum or maximum is no
+    // constraint. taffy resolves it against the parent's height whether or not
+    // layout had definitely established one, so a child of a content-sized box
+    // got a number where the browser gets nothing.
+    //
+    // Only the block axis: a shrink-to-fit box still has a definite inline
+    // size to resolve against, and the six inline-axis percentages measured
+    // against the same container agree with Chrome already.
+    //
+    // Asked of the scene's own values rather than of the converted ones,
+    // because taffy's types do not answer "were you a percentage" and a
+    // round-trip through them would be a second place to keep in step.
+    if !heights.parent {
+        if matches!(source.layout.size.1, Dimension::Percent(_)) {
+            style.size.height = taffy::Dimension::auto();
+        }
+        if matches!(source.layout.min_size.1, Dimension::Percent(_)) {
+            style.min_size.height = taffy::LengthPercentageAuto::auto();
+        }
+        if matches!(source.layout.max_size.1, Dimension::Percent(_)) {
+            style.max_size.height = taffy::LengthPercentageAuto::auto();
+        }
+    }
 
     let mut children: Vec<taffy::NodeId> = Vec::new();
     // Absolute descendants from anywhere beneath here that have not yet met a
@@ -567,6 +692,12 @@ fn build(
                 to_scene,
                 &mut unclaimed,
                 &mut captured,
+                // A dangling id has no style to read, so it inherits this
+                // node's answers rather than being given ones of its own.
+                Definite {
+                    parent: heights.own,
+                    own: heights.own,
+                },
             )?);
             continue;
         };
@@ -581,6 +712,14 @@ fn build(
             to_scene,
             &mut unclaimed,
             &mut captured,
+            Definite {
+                parent: heights.own,
+                own: child_height_is_definite(
+                    source,
+                    child_source,
+                    heights.own,
+                ),
+            },
         )?;
         match child_source.layout.position_type {
             PositionType::Fixed => captured.push(built),
@@ -700,7 +839,10 @@ const fn to_available(space: taffy::AvailableSpace) -> Available {
 /// Every field the scene carries is written, none is left to taffy's default.
 /// See the module documentation for why.
 #[must_use]
-pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
+pub fn to_taffy_style(
+    layout: &LayoutStyle,
+    border_style: BorderStyle,
+) -> taffy::Style {
     taffy::Style {
         display: to_display(layout.display),
         box_sizing: to_box_sizing(layout.box_sizing),
@@ -713,35 +855,41 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
 
         inset: to_taffy_inset(layout),
         size: taffy::Size {
-            width: to_dimension(layout.size.0),
-            height: to_dimension(layout.size.1),
+            width: to_dimension(sized(layout.size.0)),
+            height: to_dimension(sized(layout.size.1)),
         },
         min_size: taffy::Size {
-            width: to_auto_length(layout.min_size.0),
-            height: to_auto_length(layout.min_size.1),
+            width: to_auto_length(sized(layout.min_size.0)),
+            height: to_auto_length(sized(layout.min_size.1)),
         },
         max_size: taffy::Size {
-            width: to_auto_length(layout.max_size.0),
-            height: to_auto_length(layout.max_size.1),
+            width: to_auto_length(sized(layout.max_size.0)),
+            height: to_auto_length(sized(layout.max_size.1)),
         },
-        aspect_ratio: layout.aspect_ratio,
+        aspect_ratio: layout.aspect_ratio.filter(|ratio| {
+            // A ratio is a positive finite number or it is not a ratio.
+            // Chrome drops `0`, `-2`, `NaN` and `Infinity` alike and keeps the
+            // declared size; applying any of them abandons that size and
+            // shrinks the box to its content.
+            ratio.is_finite() && *ratio > 0.0
+        }),
 
         margin: taffy::Rect {
-            left: to_auto_length(layout.margin.left),
-            right: to_auto_length(layout.margin.right),
-            top: to_auto_length(layout.margin.top),
-            bottom: to_auto_length(layout.margin.bottom),
+            left: to_auto_length(margin(layout.margin.left)),
+            right: to_auto_length(margin(layout.margin.right)),
+            top: to_auto_length(margin(layout.margin.top)),
+            bottom: to_auto_length(margin(layout.margin.bottom)),
         },
         padding: taffy::Rect {
-            left: to_length(layout.padding.left),
-            right: to_length(layout.padding.right),
-            top: to_length(layout.padding.top),
-            bottom: to_length(layout.padding.bottom),
+            left: to_length(spacing(layout.padding.left)),
+            right: to_length(spacing(layout.padding.right)),
+            top: to_length(spacing(layout.padding.top)),
+            bottom: to_length(spacing(layout.padding.bottom)),
         },
         // `snapped` is gone rather than composed: a used border width is a
         // whole number and a whole number is already on the grid.
         border: {
-            let used = used_border(layout.border);
+            let used = used_border(layout.border, border_style);
             taffy::Rect {
                 left: taffy::LengthPercentage::length(used.left),
                 right: taffy::LengthPercentage::length(used.right),
@@ -761,15 +909,20 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
         // the two orders are each right in their own vocabulary and only the
         // crossing has to know.
         gap: taffy::Size {
-            width: to_length(layout.gap.1),
-            height: to_length(layout.gap.0),
+            width: to_length(spacing(layout.gap.1)),
+            height: to_length(spacing(layout.gap.0)),
         },
 
         flex_direction: to_flex_direction(layout.flex_direction),
         flex_wrap: to_flex_wrap(layout.flex_wrap),
-        flex_grow: layout.flex_grow,
-        flex_shrink: layout.flex_shrink,
-        flex_basis: to_dimension(layout.flex_basis),
+        // A negative or non-finite factor is not a factor. Dropped, each to
+        // its own initial value rather than to a shared one -- CSS's initial
+        // `flex-grow` is 0 and its initial `flex-shrink` is 1, and a factor
+        // that fell back to the wrong one would be a second defect wearing the
+        // first one's repair.
+        flex_grow: factor(layout.flex_grow, 0.0),
+        flex_shrink: factor(layout.flex_shrink, 1.0),
+        flex_basis: to_dimension(sized(layout.flex_basis)),
 
         grid_template_columns: layout
             .grid_template_columns
@@ -1062,7 +1215,18 @@ fn to_dimension(dimension: Dimension) -> taffy::Dimension {
 /// it does for a percentage line height. This is the one place the used value
 /// is computed, and both readers -- layout here and the painter -- go through
 /// it, so the two cannot drift apart.
-pub(crate) fn used_border(border: Sides<f32>) -> Sides<f32> {
+pub(crate) fn used_border(
+    border: Sides<f32>,
+    style: BorderStyle,
+) -> Sides<f32> {
+    // `none` is a used width of zero, not a paint that is skipped. Gating here
+    // rather than at the painter is what keeps layout and paint agreeing: both
+    // reach the used width through this function, so a border that draws
+    // nothing also reserves nothing, which is the half of CSS's rule that no
+    // comparison of ink can see.
+    if style == BorderStyle::None {
+        return Sides::all(0.0);
+    }
     Sides {
         left: used_border_width(border.left),
         right: used_border_width(border.right),
@@ -1073,6 +1237,11 @@ pub(crate) fn used_border(border: Sides<f32>) -> Sides<f32> {
 
 /// One edge of [`used_border`].
 fn used_border_width(width: f32) -> f32 {
+    // `NaN <= 0.0` is false, so a non-finite width would otherwise reach
+    // `floor().max(1.0)` and stay non-finite all the way into the border box.
+    if !width.is_finite() {
+        return 0.0;
+    }
     if width <= 0.0 {
         0.0
     } else {
@@ -1097,10 +1266,108 @@ fn to_auto_length(dimension: Dimension) -> taffy::LengthPercentageAuto {
     }
 }
 
+/// A size, min-size, max-size or flex basis with an unusable value dropped.
+///
+/// # Why the layout pass rather than the boundary a value arrives at
+///
+/// **The two public surfaces reach here by different doors.** A JavaScript
+/// caller's number crosses the wire and is decoded by
+/// `meo_canvas_scene::codec`; a Rust caller writes `Length::Points(f32)` and
+/// never touches the codec at all. A check placed at either door repairs one
+/// surface and leaves the other exactly as it was -- measured, not assumed:
+/// the same 64 bad-value cells fail identically through both.
+///
+/// So the check is here, where the two doors meet, which is also where the
+/// browser puts it: an invalid declaration is dropped when the property is
+/// used, not when the stylesheet is parsed.
+///
+/// # What "unusable" means, per property
+///
+/// Chrome's rule is one rule -- an invalid value is dropped and the property
+/// takes its unset value -- and the work is in knowing what is invalid where.
+/// **A negative `margin` and a negative inset are valid CSS and are kept.**
+/// Everything else measured against Chrome 151 refuses a negative, and every
+/// property refuses a non-finite number.
+const fn sized(dimension: Dimension) -> Dimension {
+    match dimension {
+        Dimension::Points(points) if !points.is_finite() || points < 0.0 => {
+            Dimension::Auto
+        }
+        Dimension::Percent(fraction)
+            if !fraction.is_finite() || fraction < 0.0 =>
+        {
+            Dimension::Auto
+        }
+        kept => kept,
+    }
+}
+
+/// A margin edge with an unusable value dropped.
+///
+/// **A negative margin is valid CSS and survives**: it pulls the box outside
+/// its parent, which is what it is for. Only a non-finite value is dropped,
+/// and it falls back to zero rather than to `auto` -- `auto` on a margin
+/// absorbs free space, so dropping to it would centre a box that asked for
+/// nothing of the kind.
+const fn margin(dimension: Dimension) -> Dimension {
+    match dimension {
+        Dimension::Points(points) if !points.is_finite() => {
+            Dimension::Points(0.0)
+        }
+        Dimension::Percent(fraction) if !fraction.is_finite() => {
+            Dimension::Points(0.0)
+        }
+        kept => kept,
+    }
+}
+
+/// A padding or gap length with an unusable value dropped.
+///
+/// Both refuse negatives in CSS and both have an initial value of zero, so
+/// there is one fallback rather than a choice.
+const fn spacing(length: Length) -> Length {
+    match length {
+        Length::Points(points) if !points.is_finite() || points < 0.0 => {
+            Length::ZERO
+        }
+        Length::Percent(fraction)
+            if !fraction.is_finite() || fraction < 0.0 =>
+        {
+            Length::ZERO
+        }
+        kept => kept,
+    }
+}
+
+/// A flex factor with an unusable value dropped to the initial value given.
+///
+/// The caller passes the initial value because CSS's differ: `flex-grow`
+/// starts at 0 and `flex-shrink` at 1.
+fn factor(value: f32, initial: f32) -> f32 {
+    if value.is_finite() && value >= 0.0 {
+        value
+    } else {
+        initial
+    }
+}
+
+/// An inset edge with an unusable value dropped.
+///
+/// **A negative inset is valid CSS**, the same as a negative margin: it moves
+/// the box the other way. A non-finite one becomes absence, which for an inset
+/// is `auto` -- the edge taffy places rather than an edge pinned anywhere.
+const fn inset(edge: Option<Length>) -> Option<Length> {
+    match edge {
+        Some(Length::Points(points)) if !points.is_finite() => None,
+        Some(Length::Percent(fraction)) if !fraction.is_finite() => None,
+        kept => kept,
+    }
+}
+
 /// One `inset` edge, where absence is `auto` -- the edge taffy is free to place
 /// rather than an edge pinned at zero.
-fn to_inset(inset: Option<Length>) -> taffy::LengthPercentageAuto {
-    match inset {
+fn to_inset(edge: Option<Length>) -> taffy::LengthPercentageAuto {
+    match inset(edge) {
         None => taffy::LengthPercentageAuto::auto(),
         Some(Length::Points(points)) => {
             taffy::LengthPercentageAuto::length(snapped(points))
@@ -1239,6 +1506,7 @@ mod tests {
                 GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
                 PositionType, TrackSize,
             },
+            paint::BorderStyle,
         },
     };
 
@@ -1333,12 +1601,22 @@ mod tests {
         }
     }
 
-    /// A scene with one page whose root is a plain box.
+    /// A scene with one page whose root is a plain box, laid out as flex.
+    ///
+    /// **The display is named because the scene's default is `block`**, which
+    /// is what a browser gives a `<div>`. Both public surfaces name `flex` on
+    /// every container they build, so a page a caller made is a flex
+    /// container; a scene assembled node by node, as these tests do, gets the
+    /// default and would otherwise stack its children. Naming it here keeps
+    /// these tests measuring what they were written to measure.
     fn scene_with_page(width: f32, height: f32) -> (Scene, NodeId) {
         let mut scene = Scene::new(Size::new(width, height));
         let page = scene
             .push_page()
             .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.display = Display::Flex;
+        }
         (scene, page)
     }
 
@@ -1435,6 +1713,10 @@ mod tests {
         root.layout.size = (Dimension::Points(40.0), Dimension::Points(20.0));
         root.layout.box_sizing = BoxSizing::ContentBox;
         root.layout.border = Sides::all(3.5);
+        // Without a style the used width is zero and this test rounds nothing
+        // -- it would pass and stop measuring, inside the function the style
+        // gate lives in.
+        root.paint.border_style = BorderStyle::Solid;
 
         let result = solved(&scene, page);
         let solved_root = result
@@ -1698,14 +1980,14 @@ mod tests {
         };
 
         assert_eq!(
-            super::to_taffy_style(&style).inset,
+            super::to_taffy_style(&style, BorderStyle::Solid).inset,
             taffy::Rect::auto(),
             "a static inset is dropped"
         );
 
         style.position_type = PositionType::Relative;
         assert_eq!(
-            super::to_taffy_style(&style).inset.top,
+            super::to_taffy_style(&style, BorderStyle::Solid).inset.top,
             taffy::LengthPercentageAuto::length(30.0),
             "a relative inset is not"
         );
@@ -1727,6 +2009,12 @@ mod tests {
             let mut outer = Node::container();
             outer.layout.size =
                 (Dimension::Points(88.0), Dimension::Points(height));
+            // A wrap is a flex concept and the scene's default is `block`, so
+            // the container that wraps says which it is. Without this the
+            // children stack and `bottom_align_reversed_wraps` is never
+            // reached -- the guard at the top of it excludes anything that is
+            // not `Display::Flex`.
+            outer.layout.display = Display::Flex;
             outer.layout.flex_wrap = wrap;
             let outer = scene
                 .push(NodeId::ROOT, outer)
@@ -2122,7 +2410,7 @@ mod tests {
             ..LayoutStyle::default()
         };
 
-        let style = super::to_taffy_style(&layout);
+        let style = super::to_taffy_style(&layout, BorderStyle::Solid);
 
         assert_eq!(style.gap.width, taffy::LengthPercentage::length(9.0));
         assert_eq!(style.gap.height, taffy::LengthPercentage::length(4.0));
@@ -2144,14 +2432,179 @@ mod tests {
         );
     }
 
+    /// Every cell of the bad-value grid that layout owns, in one place.
+    ///
+    /// **Each row fails if the normalisation is removed**, which is the point:
+    /// measured against Chrome 151, an invalid declaration is dropped and the
+    /// property takes its unset value, and before this the values reached
+    /// taffy untouched -- 23 of 48 sampled cells drew nothing at all.
+    /// A percentage against a content-sized parent is no constraint at all.
+    ///
+    /// **Both halves are here on purpose.** Dropping every percentage passes
+    /// the indefinite row and breaks the definite ones -- measured against
+    /// that repair, a `min-height: 200%` child of a 60, 120 and 200 tall box
+    /// gave 20 where Chrome gives 120, 240 and 400 -- so the definite rows are
+    /// what makes this test constrain the fix rather than restate it.
+    #[test]
+    fn a_percentage_height_resolves_only_against_a_definite_one() {
+        fn probe(parent_height: Dimension) -> f32 {
+            let (mut scene, page) = scene_with_page(400.0, 400.0);
+            let parent = scene
+                .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(parent) {
+                node.layout.size = (Dimension::Points(200.0), parent_height);
+                node.layout.align_items = Some(Align::FlexStart);
+                // **Without this the page stretches it and `auto` stops being
+                // indefinite**: a stretched flex item has a definite cross
+                // size, so the percentage would resolve against the page's 400
+                // and this row would be measuring the page rather than the
+                // parent. Chrome does the same, which is why the browser probe
+                // for this row sets `align-items: flex-start` as well.
+                node.layout.align_self = Some(Align::FlexStart);
+            }
+            let child = scene
+                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(child) {
+                node.layout.size =
+                    (Dimension::Points(30.0), Dimension::Points(20.0));
+                node.layout.min_size =
+                    (Dimension::Auto, Dimension::Percent(2.0));
+            }
+            solved(&scene, page)
+                .get(child)
+                .map_or(0.0, |rect| rect.size.height)
+        }
+
+        // A content-sized parent: Chrome ignores the percentage, and so does
+        // this -- the child keeps the 20 it declared. Compared by bits, as the
+        // rest of this module does: every number here is a length taffy passed
+        // through rather than one it computed, so the claim is identity.
+        assert_eq!(probe(Dimension::Auto).to_bits(), 20.0_f32.to_bits());
+        // A definite parent: the percentage resolves against it. These are the
+        // rows a blanket "ignore percentages" repair breaks.
+        assert_eq!(
+            probe(Dimension::Points(60.0)).to_bits(),
+            120.0_f32.to_bits()
+        );
+        assert_eq!(
+            probe(Dimension::Points(120.0)).to_bits(),
+            240.0_f32.to_bits()
+        );
+    }
+
+    #[test]
+    fn an_unusable_value_is_dropped_where_it_becomes_layout_input() {
+        let bad = [f32::INFINITY, f32::NAN, -20.0];
+        for value in bad {
+            let style = LayoutStyle {
+                size: (Dimension::Points(value), Dimension::Points(value)),
+                min_size: (Dimension::Points(value), Dimension::Points(value)),
+                max_size: (Dimension::Points(value), Dimension::Points(value)),
+                flex_basis: Dimension::Points(value),
+                aspect_ratio: Some(value),
+                flex_grow: value,
+                flex_shrink: value,
+                padding: Sides::all(Length::Points(value)),
+                gap: (Length::Points(value), Length::Points(value)),
+                border: Sides::all(value),
+                ..LayoutStyle::default()
+            };
+            // **`Solid` is load-bearing here.** A `None` border is zeroed
+            // inside `used_border` whatever its width was, so the
+            // `taffy.border.top` assertion below would pass without the
+            // non-finite guard it exists to pin -- a change that removed
+            // that guard would still be green. Simplifying this to the
+            // default deletes a test without touching one.
+            let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
+
+            assert_eq!(taffy.size.width, taffy::Dimension::auto(), "{value}");
+            assert_eq!(
+                taffy.min_size.height,
+                taffy::LengthPercentageAuto::auto()
+            );
+            assert_eq!(
+                taffy.max_size.width,
+                taffy::LengthPercentageAuto::auto()
+            );
+            assert_eq!(taffy.flex_basis, taffy::Dimension::auto());
+            assert_eq!(taffy.aspect_ratio, None, "{value}");
+            // The two factors fall back to *their own* initial values, which
+            // differ: a shrink that fell back to 0 would stop overflowing
+            // items shrinking at all. Compared by bits rather than by value,
+            // because the claim is that the fallback is passed through
+            // untouched -- identity, not nearness.
+            assert_eq!(taffy.flex_grow.to_bits(), 0.0_f32.to_bits(), "{value}");
+            assert_eq!(
+                taffy.flex_shrink.to_bits(),
+                1.0_f32.to_bits(),
+                "{value}"
+            );
+            assert_eq!(
+                taffy.padding.left,
+                taffy::LengthPercentage::length(0.0)
+            );
+            assert_eq!(taffy.gap.width, taffy::LengthPercentage::length(0.0));
+            assert_eq!(taffy.border.top, taffy::LengthPercentage::length(0.0));
+        }
+    }
+
+    /// The other half, and the half a blanket repair breaks.
+    ///
+    /// **A negative margin and a negative inset are valid CSS**, measured
+    /// against Chrome and kept. A repair that rejected every negative would
+    /// pass the test above and fail this one -- which is the whole reason it
+    /// is written as its own test rather than as more rows in that one.
+    #[test]
+    fn a_negative_margin_and_a_negative_inset_survive() {
+        let style = LayoutStyle {
+            position_type: PositionType::Relative,
+            margin: Sides::all(Dimension::Points(-20.0)),
+            inset: Sides::all(Some(Length::Points(-20.0))),
+            ..LayoutStyle::default()
+        };
+        // `Solid` because this test says nothing about borders and a style
+        // that zeroed them would make that silence look like a result.
+        let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
+
+        assert_eq!(
+            taffy.margin.left,
+            taffy::LengthPercentageAuto::length(-20.0)
+        );
+        assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::length(-20.0));
+
+        // And a non-finite one is still dropped -- a margin to zero rather
+        // than to `auto`, which would absorb free space and centre a box that
+        // asked for nothing of the kind; an inset to `auto`, which is absence.
+        let broken = LayoutStyle {
+            position_type: PositionType::Relative,
+            margin: Sides::all(Dimension::Points(f32::NAN)),
+            inset: Sides::all(Some(Length::Points(f32::INFINITY))),
+            ..LayoutStyle::default()
+        };
+        let taffy = super::to_taffy_style(&broken, BorderStyle::Solid);
+
+        assert_eq!(taffy.margin.left, taffy::LengthPercentageAuto::length(0.0));
+        assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::auto());
+    }
+
     #[test]
     fn the_scenes_defaults_are_csss_not_taffys() {
-        // The scene's `LayoutStyle::default()` is CSS's: a row direction and a
-        // shrink of 1. This is the test that fails if the mapping ever leans on
-        // `taffy::Style::default()` for a field the scene carries.
-        let style = super::to_taffy_style(&LayoutStyle::default());
+        // The scene's `LayoutStyle::default()` is CSS's: a **block** display,
+        // a row direction and a shrink of 1. This is the test that fails if
+        // the mapping ever leans on `taffy::Style::default()` for a field the
+        // scene carries.
+        //
+        // **The display was `Flex` here and the name of this test was wrong
+        // about it**: CSS gives a `<div>` `block`, and taffy's own default is
+        // `Flex`, so the one field that disagreed with the name was the one
+        // that agreed with taffy. Both surfaces name `flex` on the containers
+        // they build, so nothing a caller writes changed when this did.
+        let style =
+            super::to_taffy_style(&LayoutStyle::default(), BorderStyle::Solid);
 
-        assert_eq!(style.display, taffy::Display::Flex);
+        assert_eq!(style.display, taffy::Display::Block);
         assert_eq!(style.flex_direction, taffy::FlexDirection::Row);
         // Compared against the scene's own value rather than a literal, and by
         // bits rather than by value: the claim is that the mapping passes the

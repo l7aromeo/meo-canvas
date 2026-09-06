@@ -116,6 +116,7 @@ fn borders_per_edge() -> Scene {
             .position_type(PositionType::Relative)
             .size(px(120.0), px(80.0))
             .border(border)
+            .border_style(BorderStyle::Solid)
             .background_color(hex_rgb(background))
             .border_radius_corners(radius)
     };
@@ -871,6 +872,7 @@ fn borders_square() -> Scene {
             .position_type(PositionType::Relative)
             .size(px(56.0), px(56.0))
             .border(border)
+            .border_style(BorderStyle::Solid)
             .border_radius_corners(radius)
             .border_color(hex_rgb(0x28_50_dc))
             .background_color(hex_rgb(0xdc_28_28))

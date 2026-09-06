@@ -811,6 +811,7 @@ fn glyph_paint_cases() -> Vec<Case> {
                 line()
                     .size(px(64.0), px(48.0))
                     .border(sides(8.0, 8.0, 8.0, 8.0))
+                    .border_style(BorderStyle::Solid)
                     .border_color(Color::rgba(0, 0, 0, 0))
             },
             without: || line().size(px(64.0), px(48.0)),

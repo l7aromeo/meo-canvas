@@ -1134,6 +1134,7 @@ conformance: ensure-deps
     node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
     node packages/meo-canvas/tools/conformance/grid.mjs
     node packages/meo-canvas/tools/conformance/mincontent.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/overflowposition.mjs
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps

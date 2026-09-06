@@ -295,7 +295,11 @@ pub enum Error {
     /// [`meo_canvas_scene::codec::decode`] checks this, so a scene read from
     /// bytes cannot fail here; a scene a Rust caller assembled by writing
     /// `Scene::nodes` directly can.
-    #[error("the scene cannot be drawn: {0}")]
+    /// The cause is **not** interpolated here, and that is the convention
+    /// rather than an omission. Every `#[source]` is rendered once, by the
+    /// walk at the Neon boundary; a variant that also wrote `{0}` would print
+    /// its cause twice for a JavaScript caller and once for a Rust one.
+    #[error("the scene cannot be drawn")]
     Scene(#[source] meo_canvas_scene::SceneError),
 
     /// A font file that cannot be read or parsed.
@@ -359,6 +363,26 @@ pub enum Error {
         /// What the encoder reported.
         detail: String,
     },
+}
+
+/// An error and every cause beneath it, as one sentence.
+///
+/// `thiserror`'s `Display` renders only the `#[error(...)]` string, so a cause
+/// held as `#[source]` reaches a caller only if something walks the chain. A
+/// Rust caller can walk it; a JavaScript caller receives one string and the
+/// command line prints one line, so both need this.
+///
+/// **It lives here rather than at either boundary because a variant must not
+/// interpolate its own cause.** [`Error::Scene`] used to write `{0}` by hand;
+/// once one surface walked the chain that printed twice there and once
+/// everywhere else. One walk, one definition, and every `#[source]` rendered
+/// exactly once wherever an error is shown.
+#[must_use]
+pub fn chained(error: &dyn std::error::Error) -> String {
+    core::iter::successors(Some(error), |current| current.source())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 impl Error {
@@ -758,12 +782,54 @@ impl RenderedCanvas {
 
 #[cfg(test)]
 mod tests {
+
+    /// A cause held as `#[source]` reaches the message, and reaches it once.
+    ///
+    /// Both halves matter and they pull against each other: the walk is what
+    /// puts the cause in front of a caller, and a variant interpolating its own
+    /// cause is what would print it twice. Asserting the variant's own
+    /// `Display` alongside the walked form is what stops either half being
+    /// restored without the other -- putting `{0}` back on `Error::Scene`
+    /// fails the first assertion, removing the walk fails the second.
+    #[test]
+    fn a_source_reaches_the_message_exactly_once() {
+        let error = Error::Scene(meo_canvas_scene::SceneError::NoPages);
+        let cause = meo_canvas_scene::SceneError::NoPages.to_string();
+
+        assert_eq!(error.to_string(), "the scene cannot be drawn");
+        assert_eq!(
+            chained(&error),
+            format!("the scene cannot be drawn: {cause}")
+        );
+        assert_eq!(chained(&error).matches(&cause).count(), 1);
+    }
+
+    /// The io cause of an unreadable image is what separates three failures.
+    ///
+    /// Without the walk these three differ only by the path, which is the one
+    /// thing the caller already knew.
+    #[test]
+    fn an_image_read_names_which_filesystem_failure_it_was() {
+        let missing = Error::ImageRead {
+            path: "/nope.png".to_owned(),
+            source: std::io::Error::from(std::io::ErrorKind::NotFound),
+        };
+        let denied = Error::ImageRead {
+            path: "/nope.png".to_owned(),
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        };
+
+        assert!(
+            chained(&missing).starts_with("cannot read image at /nope.png: ")
+        );
+        assert_ne!(chained(&missing), chained(&denied));
+    }
     use meo_canvas_scene::{
         ColorSpace, ColorType, Scene, Size,
         node::{Node, NodeId},
     };
 
-    use super::{EncodeOptions, Error, ImageFormat, Renderer};
+    use super::{EncodeOptions, Error, ImageFormat, Renderer, chained};
     use crate::resolve::tests::{TEST_FAMILY, TEST_FONT};
 
     /// A scene of `pages` pages, each carrying one text node.

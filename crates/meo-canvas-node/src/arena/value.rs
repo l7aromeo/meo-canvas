@@ -184,8 +184,12 @@ impl ArenaValue for Color {
         let slot = input.offset();
         let index = input.index()?;
         let text = input.text(index, slot)?;
-        parse_color(&text)
-            .ok_or(ArenaError::UnreadableColor { slot, found: text })
+        let property = input.property();
+        parse_color(&text).ok_or(ArenaError::UnreadableColor {
+            property,
+            slot,
+            found: text,
+        })
     }
 }
 

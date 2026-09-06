@@ -630,6 +630,57 @@ describe('the property tables', () => {
     }
   })
 
+  it('spell a property the way a caller writes it, in both tables', () => {
+    // The Rust decoder names the failing property out of its own table and
+    // cannot read this one: it reports `borderColor` for a field the scene
+    // calls `border_color_all`. So the surface spelling exists twice, and the
+    // copy in the Rust is a bare string literal where `keys` below is
+    // `readonly (keyof Style)[]` and therefore checked against `Style` itself.
+    //
+    // The two are not the same datum, which is why this is a rule about them
+    // rather than an equality. `keys` is every spelling that routes to the
+    // slot, and it drives presence; the Rust name is the one spelling a
+    // failure reports. They part company on six rows, in two ways:
+    //
+    //   gridColumn / gridArea    two spellings of one property
+    //   width / height           two properties sharing one slot
+    //
+    // An alias names the primary, because a caller who wrote `gridArea` is
+    // better served by one name they can look up than by two they must choose
+    // between. A symmetric pair names both, because naming one half is
+    // confidently wrong half the time -- a caller who wrote `height` and reads
+    // `width is ...` has been misdirected, where `width or height` is merely
+    // broad. That is the `borderColorAll` rule applied one level in.
+    //
+    // What is checkable here is that every name is a real key and that the
+    // names lead with the primary. Which subset a row carries beyond that is a
+    // judgement: `size as "width"` satisfies both clauses and misdirects a
+    // caller who wrote `height`, because nothing declares which rows are
+    // symmetric pairs and which are aliases.
+    //
+    // That gap is unreachable while it stands. A name is only ever printed by
+    // a variant that reads a side value, and the three symmetric rows are
+    // `Dimension`s, which read none. **It opens the moment a numeric variant
+    // carries the property** -- a change someone will make for an unrelated
+    // reason, and at that point this check needs the distinction declared
+    // rather than inferred from the key order.
+    for (const { key, table } of GROUPS) {
+      for (const property of PROPERTY_TABLES[key] ?? []) {
+        const generated = table.find(entry => entry.index === property.index)
+        const named = (generated?.caller ?? '').split(' or ')
+        const where = `${key}.${property.rust}`
+
+        expect(named, `${where} names no property`).not.toEqual([''])
+        for (const name of named) {
+          expect(property.keys, `${where} names \`${name}\`, which is not one of its keys`).toContain(name)
+        }
+        // Ordered from the primary, so naming only the alias -- or only the
+        // second half of a pair -- fails rather than reading as a choice.
+        expect(named, `${where} does not lead with its primary key`).toEqual(property.keys.slice(0, named.length))
+      }
+    }
+  })
+
   it('partition every property the scene carries', () => {
     for (const { key, table } of GROUPS) {
       const spelt = new Set((PROPERTY_TABLES[key] ?? []).map(property => property.rust))
@@ -665,7 +716,11 @@ describe('the property tables', () => {
 
 /** Encodes one box carrying `style`, and reads it back. */
 function roundTrip(style: Style): DecodedNode {
-  const arena = encodeScene([Box(style)], SIZE[0], SIZE[1], false, SCALE)
+  // **A bare container, so the probe carries only what the case sets.** `Box`
+  // names `display: flex` — the scene's default is `block` and a `Box` is a
+  // flex container — and this file's assertions are about what the *wire*
+  // carries for a property, not about what a factory adds.
+  const arena = encodeScene([bare(style)], SIZE[0], SIZE[1], false, SCALE)
   const decoded = decode(arena.slots, arena.values)
 
   expect(decoded.size).toEqual(SIZE)
@@ -689,8 +744,9 @@ describe('a property crosses as itself', () => {
       const page = roundTrip(probe)
       const carried = page.groups[expected.group] ?? {}
 
-      // Exactly this property, and nothing else. A writer that set a
-      // neighbouring bit as well would still compare equal on the value.
+      // Exactly this property and what the factory always writes, and
+      // nothing else. A writer that set a neighbouring bit as well would
+      // still compare equal on the value.
       expect(Object.keys(carried)).toEqual([rust])
       expect(carried[rust]).toEqual(expected.value)
 
@@ -867,6 +923,26 @@ describe('a mask slot', () => {
     expect(() => out.patchMask(at, [2 ** MASK_BITS])).toThrow(/holds 53 bits/)
   })
 })
+
+/**
+ * A container carrying only what the caller names.
+ *
+ * `Box` names `display: flex`, because the scene's default is `block` and a
+ * `Box` is a flex container. These tests are about what the *wire* carries for
+ * a property — a shorthand expanding, an optional staying absent — so the
+ * factory's own display would be noise in every expectation. An absent
+ * optional writes no slot, so a case that names a display still gets one.
+ */
+function bare(props: Parameters<typeof Box>[0] = {}): SceneNode {
+  const built = Box(props)
+  if (props.display !== undefined) return built
+  // Dropped rather than passed as `undefined`: `exactOptionalPropertyTypes`
+  // makes an explicit `undefined` a different thing from an absent key, and it
+  // is the absent key this wants.
+  const style = { ...built.style }
+  delete style.display
+  return { ...built, style }
+}
 
 /** Encodes one page and reads it back, without asserting the header. */
 function page(node: SceneNode): DecodedNode {
@@ -1049,8 +1125,8 @@ describe('the effects', () => {
   it('take one shadow or many', () => {
     // v1 takes `BoxShadowProps | BoxShadowProps[]`, so a caller writing one
     // does not wrap it. The scene holds a list either way.
-    const one = page(Box({ boxShadow: { offsetY: 2 } })).groups.effects
-    const two = page(Box({ boxShadow: [{ offsetY: 2 }, { offsetY: 4 }] })).groups.effects
+    const one = page(bare({ boxShadow: { offsetY: 2 } })).groups.effects
+    const two = page(bare({ boxShadow: [{ offsetY: 2 }, { offsetY: 4 }] })).groups.effects
 
     expect((one?.box_shadows as unknown[]).length).toBe(1)
     expect((two?.box_shadows as unknown[]).length).toBe(2)
@@ -1060,7 +1136,7 @@ describe('the effects', () => {
     // A shadow that names only an offset is black, unblurred, unspread and not
     // inset — the same values the scene's `Default` gives, stated here because
     // the wire shape is fixed and every field is written whatever was said.
-    expect(page(Box({ boxShadow: { offsetY: 2 } })).groups.effects).toEqual({
+    expect(page(bare({ boxShadow: { offsetY: 2 } })).groups.effects).toEqual({
       box_shadows: [{ inset: false, offset_x: 0, offset_y: 2, blur: 0, spread: 0, color: { r: 0, g: 0, b: 0, a: 255 } }],
     })
   })
@@ -1069,7 +1145,7 @@ describe('the effects', () => {
     // CSS's `transform-origin` default, and the scene's. A transform naming
     // only a rotation still writes six values, so the defaults have to be the
     // scene's rather than zeroes — a `scale` of zero is not no scale.
-    expect(page(Box({ transform: { rotate: 90 } })).groups.effects).toEqual({
+    expect(page(bare({ transform: { rotate: 90 } })).groups.effects).toEqual({
       transform: {
         translate_x: { tag: 'points', value: 0 },
         translate_y: { tag: 'points', value: 0 },
@@ -1085,8 +1161,8 @@ describe('the effects', () => {
   })
 
   it('let a per-axis scale win over the one that sets both', () => {
-    const both = page(Box({ transform: { scale: 2 } })).groups.effects
-    const mixed = page(Box({ transform: { scale: 2, scaleY: 3 } })).groups.effects
+    const both = page(bare({ transform: { scale: 2 } })).groups.effects
+    const mixed = page(bare({ transform: { scale: 2, scaleY: 3 } })).groups.effects
 
     expect(both?.transform).toMatchObject({ scale_x: 2, scale_y: 2 })
     expect(mixed?.transform).toMatchObject({ scale_x: 2, scale_y: 3 })
@@ -1094,17 +1170,17 @@ describe('the effects', () => {
 
   it('read a bare string mask as path data', () => {
     // v1's shorthand for `{ path }`, and the fill rule CSS starts from.
-    expect(page(Box({ mask: 'M0 0 L4 4' })).groups.effects).toEqual({
+    expect(page(bare({ mask: 'M0 0 L4 4' })).groups.effects).toEqual({
       mask: { tag: 'path', data: 'M0 0 L4 4', fillRule: 'NonZero' },
     })
-    expect(page(Box({ mask: { path: 'M0 0', fillRule: 'evenodd' } })).groups.effects).toEqual({
+    expect(page(bare({ mask: { path: 'M0 0', fillRule: 'evenodd' } })).groups.effects).toEqual({
       mask: { tag: 'path', data: 'M0 0', fillRule: 'EvenOdd' },
     })
   })
 })
 
 describe('a gradient', () => {
-  const of = (gradient: Gradient): unknown => page(Box({ gradient })).groups.paint?.gradient
+  const of = (gradient: Gradient): unknown => page(bare({ gradient })).groups.paint?.gradient
 
   it('resolves a named direction to the angle it means', () => {
     // Eight names, clockwise from twelve. The scene holds an angle or two
@@ -1170,14 +1246,14 @@ describe('a gradient', () => {
   })
 
   it('can be the alpha of a mask', () => {
-    expect(page(Box({ mask: { gradient: { type: 'radial', colors: ['#000000ff', '#00000000'] } } })).groups.effects).toMatchObject({
+    expect(page(bare({ mask: { gradient: { type: 'radial', colors: ['#000000ff', '#00000000'] } } })).groups.effects).toMatchObject({
       mask: { tag: 'gradient', value: { geometry: { kind: 'Radial' } } },
     })
   })
 })
 
 describe('a background image', () => {
-  const of = (backgroundImage: BackgroundImage): unknown => page(Box({ backgroundImage })).groups.paint?.background_image
+  const of = (backgroundImage: BackgroundImage): unknown => page(bare({ backgroundImage })).groups.paint?.background_image
 
   it('reads a bare string as a local path and tiles both ways', () => {
     expect(of({ src: 'texture.png' })).toEqual({
@@ -1211,7 +1287,7 @@ describe('a background image', () => {
 
 describe('the shorthands', () => {
   it('spread one value across four edges', () => {
-    expect(page(Box({ padding: 4 })).groups.layout).toEqual({
+    expect(page(bare({ padding: 4 })).groups.layout).toEqual({
       padding: Array.from({ length: 4 }, () => ({ tag: 'points', value: 4 })),
     })
   })
@@ -1220,7 +1296,7 @@ describe('the shorthands', () => {
     // Not a shared zero: `padding` defaults to zero and `position` to nothing
     // at all, and an inset of zero pins that edge where absence leaves it to
     // the flow.
-    expect(page(Box({ padding: { top: 4 } })).groups.layout).toEqual({
+    expect(page(bare({ padding: { top: 4 } })).groups.layout).toEqual({
       padding: [
         { tag: 'points', value: 4 },
         { tag: 'points', value: 0 },
@@ -1228,20 +1304,20 @@ describe('the shorthands', () => {
         { tag: 'points', value: 0 },
       ],
     })
-    expect(page(Box({ position: { top: 4 } })).groups.layout).toEqual({
+    expect(page(bare({ position: { top: 4 } })).groups.layout).toEqual({
       inset: [{ tag: 'points', value: 4 }, null, null, null],
     })
   })
 
   it('take one gap for both axes, and name them apart when asked', () => {
-    expect(page(Box({ gap: 4 })).groups.layout).toEqual({
+    expect(page(bare({ gap: 4 })).groups.layout).toEqual({
       gap: [
         { tag: 'points', value: 4 },
         { tag: 'points', value: 4 },
       ],
     })
     // `(row, column)`, following CSS's shorthand rather than taffy's order.
-    expect(page(Box({ gap: { row: 4, column: 9 } })).groups.layout).toEqual({
+    expect(page(bare({ gap: { row: 4, column: 9 } })).groups.layout).toEqual({
       gap: [
         { tag: 'points', value: 4 },
         { tag: 'points', value: 9 },
@@ -1250,19 +1326,19 @@ describe('the shorthands', () => {
   })
 
   it('name a corner at a time', () => {
-    expect(page(Box({ borderRadius: { topLeft: 4, bottomRight: 9 } })).groups.paint).toEqual({
+    expect(page(bare({ borderRadius: { topLeft: 4, bottomRight: 9 } })).groups.paint).toEqual({
       border_radius: [4, 0, 9, 0],
     })
   })
 
   it('read a size in either unit, and `auto` as neither', () => {
-    expect(page(Box({ width: '50%', height: 'auto' })).groups.layout).toEqual({
+    expect(page(bare({ width: '50%', height: 'auto' })).groups.layout).toEqual({
       size: [{ tag: 'percent', value: 0.5 }, { tag: 'auto' }],
     })
   })
 
   it('take a track list in each of its spellings', () => {
-    expect(page(Box({ gridTemplateColumns: [1, '2px', '25%', '4fr', 'auto'] })).groups.layout).toEqual({
+    expect(page(bare({ gridTemplateColumns: [1, '2px', '25%', '4fr', 'auto'] })).groups.layout).toEqual({
       grid_template_columns: [
         { tag: 'points', value: 1 },
         { tag: 'points', value: 2 },
@@ -1276,9 +1352,9 @@ describe('the shorthands', () => {
   })
 
   it('take a spacing in each of its spellings', () => {
-    expect(page(Box({ letterSpacing: 'normal' })).groups.text).toEqual({ letter_spacing: { tag: 'normal' } })
-    expect(page(Box({ letterSpacing: '2px' })).groups.text).toEqual({ letter_spacing: { tag: 'points', value: 2 } })
-    expect(page(Box({ letterSpacing: '0.5em' })).groups.text).toEqual({ letter_spacing: { tag: 'em', value: 0.5 } })
+    expect(page(bare({ letterSpacing: 'normal' })).groups.text).toEqual({ letter_spacing: { tag: 'normal' } })
+    expect(page(bare({ letterSpacing: '2px' })).groups.text).toEqual({ letter_spacing: { tag: 'points', value: 2 } })
+    expect(page(bare({ letterSpacing: '0.5em' })).groups.text).toEqual({ letter_spacing: { tag: 'em', value: 0.5 } })
   })
 
   it('read every hex colour form', () => {
@@ -1291,7 +1367,7 @@ describe('the shorthands', () => {
     ]
 
     for (const [written, channels] of forms) {
-      expect(page(Box({ backgroundColor: written })).groups.paint, written).toEqual({ background_color: channels })
+      expect(page(bare({ backgroundColor: written })).groups.paint, written).toEqual({ background_color: channels })
     }
   })
 
@@ -1299,17 +1375,17 @@ describe('the shorthands', () => {
     // One property on the surface, two in the scene: a fallback colour beside
     // per-edge overrides. The split is the wire format's convenience, so it
     // does not reach the caller.
-    expect(page(Box({ borderColor: '#f0c' })).groups.paint).toEqual({
+    expect(page(bare({ borderColor: '#f0c' })).groups.paint).toEqual({
       border_color_all: { r: 0xff, g: 0, b: 0xcc, a: 0xff },
     })
-    expect(page(Box({ borderColor: { top: '#f0c' } })).groups.paint).toEqual({
+    expect(page(bare({ borderColor: { top: '#f0c' } })).groups.paint).toEqual({
       border_color: [{ r: 0xff, g: 0, b: 0xcc, a: 0xff }, null, null, null],
     })
   })
 
   it('write a grid placement’s halves independently', () => {
-    expect(page(Box({ gridColumn: { start: 2 } })).groups.layout).toEqual({ grid_column: { start: 2, span: null } })
-    expect(page(Box({ gridRow: { span: 3 } })).groups.layout).toEqual({ grid_row: { start: null, span: 3 } })
+    expect(page(bare({ gridColumn: { start: 2 } })).groups.layout).toEqual({ grid_column: { start: 2, span: null } })
+    expect(page(bare({ gridRow: { span: 3 } })).groups.layout).toEqual({ grid_row: { start: null, span: 3 } })
   })
 })
 
@@ -1324,22 +1400,22 @@ describe('a scene', () => {
 
 describe('a half-written shorthand', () => {
   it('takes the axis that was named and leaves the other automatic', () => {
-    expect(page(Box({ width: 4 })).groups.layout).toEqual({ size: [{ tag: 'points', value: 4 }, { tag: 'auto' }] })
-    expect(page(Box({ height: 4 })).groups.layout).toEqual({ size: [{ tag: 'auto' }, { tag: 'points', value: 4 }] })
-    expect(page(Box({ minWidth: 4 })).groups.layout).toEqual({ min_size: [{ tag: 'points', value: 4 }, { tag: 'auto' }] })
-    expect(page(Box({ minHeight: 4 })).groups.layout).toEqual({ min_size: [{ tag: 'auto' }, { tag: 'points', value: 4 }] })
-    expect(page(Box({ maxWidth: 4 })).groups.layout).toEqual({ max_size: [{ tag: 'points', value: 4 }, { tag: 'auto' }] })
-    expect(page(Box({ maxHeight: 4 })).groups.layout).toEqual({ max_size: [{ tag: 'auto' }, { tag: 'points', value: 4 }] })
+    expect(page(bare({ width: 4 })).groups.layout).toEqual({ size: [{ tag: 'points', value: 4 }, { tag: 'auto' }] })
+    expect(page(bare({ height: 4 })).groups.layout).toEqual({ size: [{ tag: 'auto' }, { tag: 'points', value: 4 }] })
+    expect(page(bare({ minWidth: 4 })).groups.layout).toEqual({ min_size: [{ tag: 'points', value: 4 }, { tag: 'auto' }] })
+    expect(page(bare({ minHeight: 4 })).groups.layout).toEqual({ min_size: [{ tag: 'auto' }, { tag: 'points', value: 4 }] })
+    expect(page(bare({ maxWidth: 4 })).groups.layout).toEqual({ max_size: [{ tag: 'points', value: 4 }, { tag: 'auto' }] })
+    expect(page(bare({ maxHeight: 4 })).groups.layout).toEqual({ max_size: [{ tag: 'auto' }, { tag: 'points', value: 4 }] })
   })
 
   it('takes the gap axis that was named and leaves the other at nothing', () => {
-    expect(page(Box({ gap: { row: 4 } })).groups.layout).toEqual({
+    expect(page(bare({ gap: { row: 4 } })).groups.layout).toEqual({
       gap: [
         { tag: 'points', value: 4 },
         { tag: 'points', value: 0 },
       ],
     })
-    expect(page(Box({ gap: { column: 4 } })).groups.layout).toEqual({
+    expect(page(bare({ gap: { column: 4 } })).groups.layout).toEqual({
       gap: [
         { tag: 'points', value: 0 },
         { tag: 'points', value: 4 },
@@ -1348,7 +1424,7 @@ describe('a half-written shorthand', () => {
   })
 
   it('takes the edges and corners that were named', () => {
-    expect(page(Box({ padding: { right: 4 } })).groups.layout).toEqual({
+    expect(page(bare({ padding: { right: 4 } })).groups.layout).toEqual({
       padding: [
         { tag: 'points', value: 0 },
         { tag: 'points', value: 4 },
@@ -1356,7 +1432,7 @@ describe('a half-written shorthand', () => {
         { tag: 'points', value: 0 },
       ],
     })
-    expect(page(Box({ borderRadius: { topRight: 4, bottomLeft: 9 } })).groups.paint).toEqual({ border_radius: [0, 4, 0, 9] })
+    expect(page(bare({ borderRadius: { topRight: 4, bottomLeft: 9 } })).groups.paint).toEqual({ border_radius: [0, 4, 0, 9] })
   })
 })
 
@@ -1366,7 +1442,7 @@ describe('the positioned values', () => {
     // they differ in where they resolve rather than in when they paint, so a
     // mix-up between two of them is invisible in paint order and visible only
     // in a rendered position.
-    const of = (positionType: PositionType): unknown => page(Box({ positionType })).groups.layout?.position_type
+    const of = (positionType: PositionType): unknown => page(bare({ positionType })).groups.layout?.position_type
 
     expect(of('static')).toBe('Static')
     expect(of('relative')).toBe('Relative')
@@ -1393,14 +1469,14 @@ describe('an offset with no position type', () => {
     // v1 has no equivalent, because Yoga's default is `Relative`: a ported tree
     // that positioned things stops positioning them. That is a porting note,
     // not a defect in the codec.
-    const decoded = page(Box({ position: { top: 4 } }))
+    const decoded = page(bare({ position: { top: 4 } }))
 
     expect(decoded.groups.layout).toEqual({ inset: [{ tag: 'points', value: 4 }, null, null, null] })
     expect(decoded.groups.layout?.position_type).toBeUndefined()
   })
 
   it('does what the caller meant once the type is named', () => {
-    expect(page(Box({ position: { top: 4 }, positionType: 'relative' })).groups.layout).toEqual({
+    expect(page(bare({ position: { top: 4 }, positionType: 'relative' })).groups.layout).toEqual({
       inset: [{ tag: 'points', value: 4 }, null, null, null],
       position_type: 'Relative',
     })
@@ -1411,18 +1487,18 @@ describe('the one keyword CSS and the scene spell differently', () => {
   it('crosses as the variant the scene declares', () => {
     // CSS writes `nowrap` as a single word; the scene writes the concept
     // `NoWrap`. The derivation has one exception and this is it.
-    expect(page(Box({ flexWrap: 'nowrap' })).groups.layout).toEqual({ flex_wrap: 'NoWrap' })
+    expect(page(bare({ flexWrap: 'nowrap' })).groups.layout).toEqual({ flex_wrap: 'NoWrap' })
   })
 
   it('is offered back under its CSS spelling when something else is refused', () => {
-    expect(() => page(Box({ flexWrap: 'reverse' as 'wrap' }))).toThrow(/it takes nowrap, wrap, wrap-reverse/)
+    expect(() => page(bare({ flexWrap: 'reverse' as 'wrap' }))).toThrow(/it takes nowrap, wrap, wrap-reverse/)
   })
 })
 
 describe('a boolean', () => {
   it('crosses as itself either way', () => {
-    expect(page(Box({ dither: true })).groups.paint).toEqual({ dither: true })
-    expect(page(Box({ dither: false })).groups.paint).toEqual({ dither: false })
+    expect(page(bare({ dither: true })).groups.paint).toEqual({ dither: true })
+    expect(page(bare({ dither: false })).groups.paint).toEqual({ dither: false })
   })
 })
 
@@ -1430,7 +1506,7 @@ describe('a number that is not one', () => {
   it('is refused rather than written as NaN', () => {
     // `'abc%'` ends in a percent sign and parses to `NaN`. Writing it would put
     // a value in the arena that has no JSON spelling and no meaning.
-    expect(() => page(Box({ padding: 'abc%' as '1%' }))).toThrow(/not a length/)
+    expect(() => page(bare({ padding: 'abc%' as '1%' }))).toThrow(/not a length/)
   })
 })
 
@@ -1447,7 +1523,7 @@ describe('a number that is not one', () => {
  * here and checking the encoder's against it.
  */
 const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
-  __kind_box: Box(),
+  __kind_box: bare(),
   // From `RichText`, not `Text`: the case pins built runs, and `Text` now sets
   // the markup discriminant instead. The second run styles nothing on purpose —
   // an empty style still writes its mask, and that is the slot a writer skips.
@@ -1622,7 +1698,7 @@ function bytesOf(node: SceneNode): string {
 
 /** The bytes the addon writes for a scene carrying `style`. */
 function throughTheAddon(style: Style): string {
-  return bytesOf(Box(style))
+  return bytesOf(bare(style))
 }
 
 describe('the bytes Rust writes for the same scene', () => {
@@ -1712,7 +1788,7 @@ const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
       'luminosity',
     ],
   ],
-  ['BorderStyle', ['solid', 'dashed', 'dotted']],
+  ['BorderStyle', ['solid', 'dashed', 'dotted', 'none']],
   // The two whose keywords are upstream's rather than this package's, and which
   // upstream spells differently from each other: a pixel layout has no CSS
   // vocabulary to borrow, a colour space does. Both carry aliases, so these two
@@ -1809,5 +1885,57 @@ describe('the keywords this surface offers', () => {
       // upstream's aliases, so `'rgba'` and `'RGBA8888'` are both `Uint8`.
       expect([...new Set(reached)].sort(), `${name}`).toEqual(variants.slice().sort())
     }
+  })
+})
+
+describe('a value of the wrong type is refused where the property is still named', () => {
+  // **The writer is the only door these can arrive through.** The crate surface
+  // cannot express a string where a number goes -- Rust refuses it at compile
+  // time -- so refusing here repairs every case. That is not true of a value
+  // which is in-type on both surfaces, where the check has to move to the point
+  // the value is used.
+  //
+  // Before this, both of these reached the arena as `NaN` and came back as
+  // `slot 33 holds NaN, which is not an integer`. The slot number is an offset
+  // into a wire format the caller never saw, and it moves with the rest of the
+  // scene: the same mistake was measured as slot 33, 34 and 65 in three
+  // different trees. Nothing in that string can be searched for.
+
+  it('names the property and what it takes, rather than a slot', () => {
+    expect(() => throughTheAddon({ zIndex: 'auto' as unknown as number })).toThrow('zIndex is "auto"; it takes a whole number')
+  })
+
+  it('names both arms when the property takes a number or a keyword', () => {
+    // **A union, not an enum.** `fontWeight` takes a number *or* one of two
+    // keywords, so `variant`'s wording would list `normal, bold` and silently
+    // drop the numeric arm -- a message that confidently names an accepted set
+    // excluding the common case, which is worse than the slot number it
+    // replaces. `zIndex` has no keywords at all, so its refusal reads as a
+    // plain type. Two rows that look alike and are three patterns between
+    // them.
+    expect(() => throughTheAddon({ fontWeight: 'bolder' as unknown as number })).toThrow(
+      'fontWeight is "bolder"; it takes a number from 1 to 1000, or normal or bold',
+    )
+  })
+
+  it('renders what was passed so the caller can recognise it', () => {
+    expect(() => throughTheAddon({ zIndex: 1.5 })).toThrow('zIndex is 1.5;')
+    expect(() => throughTheAddon({ zIndex: NaN })).toThrow('zIndex is NaN;')
+    expect(() => throughTheAddon({ fontWeight: {} as unknown as number })).toThrow('fontWeight is an object;')
+  })
+
+  // **The values a truthiness guard eats.** `zIndex: 0` is a legitimate stacking
+  // order and `-2` is a legitimate one below the default; a refusal written as
+  // `if (!index)` or `if (index < 0)` passes every row above and breaks these.
+  it.each([0, -2, 3])('still writes zIndex %d', index => {
+    expect(throughTheAddon({ zIndex: index }).length).toBeGreaterThan(0)
+  })
+
+  it.each(['normal', 'bold'] as const)('still writes the keyword %s', keyword => {
+    expect(throughTheAddon({ fontWeight: keyword }).length).toBeGreaterThan(0)
+  })
+
+  it('still writes a numeric weight', () => {
+    expect(throughTheAddon({ fontWeight: 700 }).length).toBeGreaterThan(0)
   })
 })
