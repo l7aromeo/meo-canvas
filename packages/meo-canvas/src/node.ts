@@ -380,6 +380,15 @@ const PATH_KEYS = [
 /* The proof that PATH_KEYS is exactly `keyof PathProps`. */
 noPropLeftOver<Exclude<keyof PathProps, (typeof PATH_KEYS)[number]>>()
 
+/** Every key {@link ImageProps} accepts. */
+const IMAGE_KEYS = [...STYLE_KEYS, 'src', 'name'] as const satisfies readonly (keyof ImageProps)[]
+
+/* The proof that IMAGE_KEYS is exactly `keyof ImageProps`. */
+noPropLeftOver<Exclude<keyof ImageProps, (typeof IMAGE_KEYS)[number]>>()
+
+/** {@link IMAGE_KEYS} as a set, built once. */
+const IMAGE_KEY_SET: ReadonlySet<string> = new Set(IMAGE_KEYS)
+
 /** {@link PATH_KEYS} as a set, built once. */
 const PATH_KEY_SET: ReadonlySet<string> = new Set(PATH_KEYS)
 
@@ -713,6 +722,7 @@ export type ImageProps = Style & {
  * ```
  */
 export function Image(props: ImageProps): SceneNode {
+  checkProps(props, IMAGE_KEY_SET, 'Image')
   const src = typeof props.src === 'string' ? { path: props.src } : props.src
   return node('image', props, undefined, props.name, undefined, undefined, undefined, src, undefined)
 }

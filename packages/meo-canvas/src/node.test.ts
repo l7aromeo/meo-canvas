@@ -555,3 +555,21 @@ describe('a path props key it does not have', () => {
     ).not.toThrow()
   })
 })
+
+describe('an image props key it does not have', () => {
+  it('refuses it', () => {
+    expect(() => Image({ src: 'x', nonsense: 1 } as never)).toThrow('Image has no property "nonsense"')
+  })
+
+  it('accepts the keys it does have', () => {
+    expect(() => Image({ src: 'x', name: 'i' })).not.toThrow()
+  })
+
+  // `objectFit`, `objectPosition` and `frame` are the three keys `Style`
+  // declares that the generated property tables do not carry, and they are an
+  // image's own business — so this is the factory where a table-derived
+  // allowlist would have refused valid code most visibly.
+  it('accepts the three style keys the generated tables omit', () => {
+    expect(() => Image({ src: 'x', objectFit: 'cover', objectPosition: [0, 0], frame: 2 })).not.toThrow()
+  })
+})
