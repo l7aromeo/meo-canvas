@@ -299,6 +299,32 @@ fn an_outer_shadow_does_not_reach_inside_the_box() {
     {
         let plain = render(&clip_cell(background, Vec::new()));
         let cast = render(&clip_cell(background, vec![clip_shadow(false)]));
+
+        // **The shadow has to exist before its absence inside means
+        // anything.** Every point below compares the two renders and passes
+        // when they agree -- which two blank pages do, so with `draw`
+        // returning before it read the scene this test passed unchanged. One
+        // point just outside the border edge, where a shadow offset one down
+        // and blurred by two must land, is what separates "the shadow stays
+        // out of the box" from "there is no shadow".
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the cell is a whole number of pixels, like every other \
+                      coordinate here"
+        )]
+        let below = (
+            CLIP_INSET as usize + (CLIP_BOX.0 as usize) / 2,
+            CLIP_INSET as usize + CLIP_BOX.1 as usize + 1,
+        );
+        assert_ne!(
+            at(&plain, CLIP_CELL.0, below),
+            at(&cast, CLIP_CELL.0, below),
+            "{name}: the two renders agree just outside the box as well, so \
+             nothing was cast and the interior points below are comparing two \
+             identical pictures"
+        );
+
         for (point_name, point) in &points {
             let bare = at(&plain, CLIP_CELL.0, *point);
             let shadowed = at(&cast, CLIP_CELL.0, *point);
