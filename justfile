@@ -145,7 +145,7 @@ ci:
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs conformance-writes test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -1443,6 +1443,17 @@ docs-js: build-js
     # Presence by the package, not the `.bin` shim, whose filename differs per platform.
     test -f "$tool/node_modules/typedoc/package.json" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
+
+# Fail if a conformance tool writes a tracked fixture unguarded.
+#
+# **This runs where its subject cannot.** `conformance` is deliberately outside
+# `ci` -- it drives a browser and produces a diff a person reads -- so nothing in
+# the gate executes those tools, and one added later could rewrite a fixture on
+# any invocation with nothing to notice. The check is static, so it has none of
+# that constraint and belongs here even though the tools do not.
+[doc("Fail if a conformance tool writes a fixture without a WRITE guard.")]
+conformance-writes:
+    node packages/meo-canvas/tools/conformance-writes.mjs
 
 # The half of the reference `docs-js` cannot see.
 #

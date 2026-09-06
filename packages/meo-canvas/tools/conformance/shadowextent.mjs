@@ -160,8 +160,7 @@ try {
     '# case\tray\tsteps',
   ]
   const written = table([...header, ...rows])
-  const writing = process.env['WRITE'] === '1'
-  if (writing) {
+  if (process.env['WRITE'] === '1') {
     await writeFile(DESTINATION, written, 'utf8')
   } else {
     process.stdout.write(written)
@@ -193,7 +192,7 @@ try {
   // move inside it, because a line saying a file was written is a claim and a
   // bare run does not write one.
   const profiled = table([...profileHeader, ...profile])
-  if (writing) {
+  if (process.env['WRITE'] === '1') {
     await writeFile(PROFILE, profiled, 'utf8')
     process.stderr.write(`shadow extent: ${CASES.length} cases, ${rows.length} rays -> ${DESTINATION}\n`)
     process.stderr.write(`shadow profile: ${profile.length} samples -> ${PROFILE}\n`)
