@@ -199,6 +199,17 @@ where
         &mut to_scene,
         &mut orphans,
         &mut viewport,
+        // **The page's own height is definite unless the caller asked for a
+        // content height**, in which case the page is as tall as what is in it
+        // and a percentage against it has nothing to resolve against -- the
+        // same condition as any other content-sized box, one level up.
+        //
+        // The page has no parent, so both answers are the same one: nothing
+        // above it is content-sized.
+        Definite {
+            parent: !scene.content_height,
+            own: !scene.content_height,
+        },
     )?;
     for node in viewport.into_iter().chain(orphans) {
         tree.add_child(root, node)
@@ -427,6 +438,88 @@ fn bottom_align_reversed_wraps(
 ///
 /// An explicit size on the page root is honoured, so a caller who wants a page
 /// smaller than the surface can still say so.
+/// **Two answers, one level apart.**
+///
+/// `parent` is what this node's own percentages resolve against; `own` is what
+/// its children's do. Threading a single value for both was wrong by exactly
+/// one level -- a percentage on a child of a content-sized box survived,
+/// because the *child* had a declared height, which is not the question being
+/// asked.
+#[derive(Debug, Clone, Copy)]
+struct Definite {
+    /// Whether the containing block's height is definite.
+    parent: bool,
+    /// Whether this node's height is, for the children inside it.
+    own: bool,
+}
+
+/// Whether a child's height is one a percentage inside it can resolve against.
+///
+/// Definite means the number is known before the child's own contents are laid
+/// out. A declared length is definite; a percentage is definite exactly when
+/// the box it resolves against is, which is why this is threaded down the tree
+/// rather than read off a single node.
+///
+/// **`auto` counts as definite in the two cases flex layout settles it.** An
+/// item stretched across a row takes the line's cross size, and Chrome
+/// resolves a percentage against that. An item that `flex-grow`s in a column
+/// takes the line's remaining space, and **Chrome does not**: measured, a
+/// `min-height: 200%` child of a `flex-grow: 1` box inside a 120-tall column
+/// is 20 in Chrome and 240 here.
+///
+/// That second case is a deliberate divergence rather than an oversight.
+/// `chart.ts` sizes every bar as a percentage of a `flexGrow: 1` plot area, so
+/// the browser's rule would leave every bar at nothing -- which is exactly
+/// what an earlier version of this check did, and what the chart render tests
+/// caught. Matching Chrome there means changing how charts are built, which is
+/// a larger change than this one and belongs on its own.
+///
+/// A `min-height` is deliberately not enough on its own: it bounds the height
+/// from below and leaves it content-sized above the bound, so the number is
+/// still not known until the children are laid out.
+fn child_height_is_definite(
+    parent: &meo_canvas_scene::node::Node,
+    child: &meo_canvas_scene::node::Node,
+    parent_is_definite: bool,
+) -> bool {
+    match child.layout.size.1 {
+        Dimension::Points(_) => true,
+        Dimension::Percent(_) => parent_is_definite,
+        Dimension::Auto => parent_is_definite && flex_settles_it(parent, child),
+    }
+}
+
+/// Whether flex layout gives this child a height its own contents did not.
+fn flex_settles_it(
+    parent: &meo_canvas_scene::node::Node,
+    child: &meo_canvas_scene::node::Node,
+) -> bool {
+    // **An out-of-flow box is not a flex item.** Neither `align-items` nor a
+    // grow factor reaches it, so an `auto` height is its content's height and
+    // a percentage inside it has nothing to resolve against. Measured: a
+    // `min-height: 200%` child of an absolutely positioned, content-sized box
+    // is 20 in Chrome, not 40.
+    if matches!(
+        child.layout.position_type,
+        PositionType::Absolute | PositionType::Fixed
+    ) {
+        return false;
+    }
+    match parent.layout.flex_direction {
+        FlexDirection::Column | FlexDirection::ColumnReverse => {
+            child.layout.flex_grow > 0.0
+        }
+        FlexDirection::Row | FlexDirection::RowReverse => {
+            // The cross axis, where the default is to stretch: a child with no
+            // height of its own takes the line's.
+            matches!(
+                child.layout.align_self.or(parent.layout.align_items),
+                Some(Align::Stretch) | None
+            )
+        }
+    }
+}
+
 fn pin_page_root(
     scene: &Scene,
     page: NodeId,
@@ -538,12 +631,37 @@ fn build(
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
     orphans: &mut Vec<taffy::NodeId>,
     captive: &mut Vec<taffy::NodeId>,
+    heights: Definite,
 ) -> Result<taffy::NodeId, Error> {
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
 
-    let style = to_taffy_style(&source.layout);
+    let mut style = to_taffy_style(&source.layout);
+    // **A percentage against an indefinite containing block resolves to
+    // `auto`**, which for a size is no size and for a minimum or maximum is no
+    // constraint. taffy resolves it against the parent's height whether or not
+    // layout had definitely established one, so a child of a content-sized box
+    // got a number where the browser gets nothing.
+    //
+    // Only the block axis: a shrink-to-fit box still has a definite inline
+    // size to resolve against, and the six inline-axis percentages measured
+    // against the same container agree with Chrome already.
+    //
+    // Asked of the scene's own values rather than of the converted ones,
+    // because taffy's types do not answer "were you a percentage" and a
+    // round-trip through them would be a second place to keep in step.
+    if !heights.parent {
+        if matches!(source.layout.size.1, Dimension::Percent(_)) {
+            style.size.height = taffy::Dimension::auto();
+        }
+        if matches!(source.layout.min_size.1, Dimension::Percent(_)) {
+            style.min_size.height = taffy::LengthPercentageAuto::auto();
+        }
+        if matches!(source.layout.max_size.1, Dimension::Percent(_)) {
+            style.max_size.height = taffy::LengthPercentageAuto::auto();
+        }
+    }
 
     let mut children: Vec<taffy::NodeId> = Vec::new();
     // Absolute descendants from anywhere beneath here that have not yet met a
@@ -567,6 +685,12 @@ fn build(
                 to_scene,
                 &mut unclaimed,
                 &mut captured,
+                // A dangling id has no style to read, so it inherits this
+                // node's answers rather than being given ones of its own.
+                Definite {
+                    parent: heights.own,
+                    own: heights.own,
+                },
             )?);
             continue;
         };
@@ -581,6 +705,14 @@ fn build(
             to_scene,
             &mut unclaimed,
             &mut captured,
+            Definite {
+                parent: heights.own,
+                own: child_height_is_definite(
+                    source,
+                    child_source,
+                    heights.own,
+                ),
+            },
         )?;
         match child_source.layout.position_type {
             PositionType::Fixed => captured.push(built),
@@ -2264,6 +2396,62 @@ mod tests {
     /// measured against Chrome 151, an invalid declaration is dropped and the
     /// property takes its unset value, and before this the values reached
     /// taffy untouched -- 23 of 48 sampled cells drew nothing at all.
+    /// A percentage against a content-sized parent is no constraint at all.
+    ///
+    /// **Both halves are here on purpose.** Dropping every percentage passes
+    /// the indefinite row and breaks the definite ones -- measured against
+    /// that repair, a `min-height: 200%` child of a 60, 120 and 200 tall box
+    /// gave 20 where Chrome gives 120, 240 and 400 -- so the definite rows are
+    /// what makes this test constrain the fix rather than restate it.
+    #[test]
+    fn a_percentage_height_resolves_only_against_a_definite_one() {
+        fn probe(parent_height: Dimension) -> f32 {
+            let (mut scene, page) = scene_with_page(400.0, 400.0);
+            let parent = scene
+                .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(parent) {
+                node.layout.size = (Dimension::Points(200.0), parent_height);
+                node.layout.align_items = Some(Align::FlexStart);
+                // **Without this the page stretches it and `auto` stops being
+                // indefinite**: a stretched flex item has a definite cross
+                // size, so the percentage would resolve against the page's 400
+                // and this row would be measuring the page rather than the
+                // parent. Chrome does the same, which is why the browser probe
+                // for this row sets `align-items: flex-start` as well.
+                node.layout.align_self = Some(Align::FlexStart);
+            }
+            let child = scene
+                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(child) {
+                node.layout.size =
+                    (Dimension::Points(30.0), Dimension::Points(20.0));
+                node.layout.min_size =
+                    (Dimension::Auto, Dimension::Percent(2.0));
+            }
+            solved(&scene, page)
+                .get(child)
+                .map_or(0.0, |rect| rect.size.height)
+        }
+
+        // A content-sized parent: Chrome ignores the percentage, and so does
+        // this -- the child keeps the 20 it declared. Compared by bits, as the
+        // rest of this module does: every number here is a length taffy passed
+        // through rather than one it computed, so the claim is identity.
+        assert_eq!(probe(Dimension::Auto).to_bits(), 20.0_f32.to_bits());
+        // A definite parent: the percentage resolves against it. These are the
+        // rows a blanket "ignore percentages" repair breaks.
+        assert_eq!(
+            probe(Dimension::Points(60.0)).to_bits(),
+            120.0_f32.to_bits()
+        );
+        assert_eq!(
+            probe(Dimension::Points(120.0)).to_bits(),
+            240.0_f32.to_bits()
+        );
+    }
+
     #[test]
     fn an_unusable_value_is_dropped_where_it_becomes_layout_input() {
         let bad = [f32::INFINITY, f32::NAN, -20.0];
