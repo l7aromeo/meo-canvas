@@ -437,14 +437,22 @@ fn push(
 pub struct Box;
 
 impl Box {
-    /// A container with nothing set.
+    /// A container, with `display: flex` set explicitly.
+    ///
+    /// **Named rather than inherited.** The scene's default display is
+    /// `block`, which is what a browser gives a `<div>`; a `Box` that laid its
+    /// children out as a block would stop honouring `gap`, `align_items` and
+    /// `justify_content` without saying so. Relying on the default for it was
+    /// what made the two sides of every conformance table agree by coincidence
+    /// rather than because both were told the same thing.
     #[must_use]
     #[expect(
         clippy::new_ret_no_self,
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
-    pub const fn new() -> Element {
+    pub fn new() -> Element {
         Element::new(NodeKind::Box)
+            .display(meo_canvas_scene::style::layout::Display::Flex)
     }
 }
 
@@ -471,6 +479,7 @@ impl Row {
     )]
     pub fn new() -> Element {
         Element::new(NodeKind::Box)
+            .display(meo_canvas_scene::style::layout::Display::Flex)
             .flex_direction(meo_canvas_scene::style::layout::FlexDirection::Row)
     }
 }
@@ -488,9 +497,11 @@ impl Column {
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new() -> Element {
-        Element::new(NodeKind::Box).flex_direction(
-            meo_canvas_scene::style::layout::FlexDirection::Column,
-        )
+        Element::new(NodeKind::Box)
+            .display(meo_canvas_scene::style::layout::Display::Flex)
+            .flex_direction(
+                meo_canvas_scene::style::layout::FlexDirection::Column,
+            )
     }
 }
 

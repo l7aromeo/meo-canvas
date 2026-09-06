@@ -1479,6 +1479,15 @@ fn apply_transform(
 }
 
 /// Adds the node's box, rounded if it has radii, as the current path.
+/// One corner radius, with a value Skia cannot use dropped to a square corner.
+const fn usable_radius(radius: f32) -> f32 {
+    if radius.is_finite() && radius > 0.0 {
+        radius
+    } else {
+        0.0
+    }
+}
+
 fn box_path(
     context: &mut Context2D,
     radii: Corners<f32>,
@@ -1498,12 +1507,22 @@ fn box_path_continuing(
     radii: Corners<f32>,
     rect: Rect,
 ) -> Result<(), Error> {
+    // **A radius that is not a usable number is dropped here, where it is
+    // used.** Skia refuses the whole rectangle for a non-finite radius --
+    // `invalid rect: Rect { .. }`, thrown out of a paint that was going to
+    // succeed -- and a negative radius is invalid CSS that Chrome drops to
+    // zero. Both become a square corner, which is what the browser draws.
+    //
+    // Layout normalises the same way at `to_taffy_style`, and this is the
+    // second door rather than a duplicate: a corner radius is never a layout
+    // input, so nothing in that pass sees it.
     let corners = [
-        radii.top_left,
-        radii.top_right,
-        radii.bottom_right,
-        radii.bottom_left,
+        usable_radius(radii.top_left),
+        usable_radius(radii.top_right),
+        usable_radius(radii.bottom_right),
+        usable_radius(radii.bottom_left),
     ];
+
     // A square box is a rounded one with every radius at zero, **not**
     // `Context2D::rect`. The two add contours by different mechanisms —
     // `rect` calls Skia's `add_rect`, and `round_rect_elliptical` calls
@@ -4640,6 +4659,60 @@ mod tests {
     /// two-colour case, through `foreignObject` to canvas and `getImageData`.
     /// Ours are read from a transparent page, so the alpha channel is the
     /// coverage with nothing composited under it.
+    /// A corner radius Skia cannot use is a square corner, not a failed paint.
+    ///
+    /// **This is the one row of the bad-value grid that threw rather than
+    /// drawing the wrong thing.** `border-radius: NaN` reached Skia, which
+    /// refused the whole rectangle -- `invalid rect: Rect { .. }` -- so a
+    /// render that was going to succeed returned an error instead. Chrome
+    /// drops the declaration and computes `0px`.
+    ///
+    /// The radius is normalised in `box_path_continuing` rather than beside
+    /// the layout normalisation, because a corner radius is never a layout
+    /// input: the two are the same rule at the two places values are used.
+    mod unusable_radius {
+        use meo_canvas_scene::{
+            Corners, Scene, Size,
+            node::{Node, NodeId, NodeKind},
+            style::{Dimension, paint::Color},
+        };
+
+        use crate::{ImageFormat, Renderer, encode::EncodeOptions};
+
+        fn paints(radius: f32) -> bool {
+            let mut scene = Scene::new(Size::new(40.0, 30.0));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(40.0), Dimension::Points(30.0));
+                node.paint.background_color = Color::rgb(255, 0, 0);
+                node.paint.border_radius = Corners::all(radius);
+            }
+            let mut renderer = Renderer::new();
+            renderer.set_gpu(false);
+            renderer
+                .render_to_buffer(
+                    &scene,
+                    ImageFormat::Png,
+                    &EncodeOptions::default(),
+                )
+                .is_ok()
+        }
+
+        #[test]
+        fn a_non_finite_or_negative_radius_paints_a_square_corner() {
+            for radius in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -20.0] {
+                assert!(paints(radius), "radius {radius} refused the paint");
+            }
+            // The control: a radius that is usable still paints, so the test
+            // cannot be satisfied by a renderer that succeeds at everything
+            // because it draws nothing.
+            assert!(paints(8.0));
+        }
+    }
+
     mod corner_seam {
         use meo_canvas_scene::{
             Corners, Scene, Sides, Size,
@@ -5711,23 +5784,45 @@ mod tests {
         assert!((start.y - 50.0).abs() < 0.01);
     }
 
+    /// Which parent a static child hangs from decides whether `z_index`
+    /// ranks it at all, so both parents are here.
+    ///
+    /// `stacks_by_z_index` gives a static child a stacking context only under
+    /// a flex or grid parent -- Flexbox §5.4 -- and under a block parent an
+    /// unpositioned child's `z_index` does not apply. **Before the scene's
+    /// default display became `block` this test built a flex parent without
+    /// saying so**, and the block half was untested: a change that ranked
+    /// every static child by `z_index`, in any parent, passed.
     #[test]
     fn children_draw_in_z_order_then_document_order() {
-        let mut scene = Scene::new(Size::new(10.0, 10.0));
-        let mut ids = Vec::new();
-        for z in [2_i32, -1, 0, 0] {
-            let id = scene
-                .push(NodeId::ROOT, Node::container())
-                .unwrap_or_else(|error| unreachable!("{error}"));
-            if let Some(node) = scene.get_mut(id) {
-                node.paint.z_index = Some(z);
+        let ordered = |display: Display| {
+            let mut scene = Scene::new(Size::new(10.0, 10.0));
+            if let Some(root) = scene.get_mut(NodeId::ROOT) {
+                root.layout.display = display;
             }
-            ids.push(id);
-        }
-        let ordered = ordered_ids(&scene, NodeId::ROOT);
+            let mut ids = Vec::new();
+            for z in [2_i32, -1, 0, 0] {
+                let id = scene
+                    .push(NodeId::ROOT, Node::container())
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                if let Some(node) = scene.get_mut(id) {
+                    node.paint.z_index = Some(z);
+                }
+                ids.push(id);
+            }
+            (ordered_ids(&scene, NodeId::ROOT), ids)
+        };
 
-        // -1 first, then the two zeroes in the order they were added, then 2.
-        assert_eq!(ordered, vec![ids[1], ids[2], ids[3], ids[0]]);
+        // A flex parent: -1 first, then the two zeroes in the order they were
+        // added, then 2.
+        let (flex, ids) = ordered(Display::Flex);
+        assert_eq!(flex, vec![ids[1], ids[2], ids[3], ids[0]]);
+
+        // A block parent: `z_index` does not apply to an unpositioned child,
+        // so all four paint in document order. This is the row that fails if
+        // the flex rule is applied everywhere.
+        let (block, ids) = ordered(Display::Block);
+        assert_eq!(block, vec![ids[0], ids[1], ids[2], ids[3]]);
     }
 
     #[test]

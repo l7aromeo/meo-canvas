@@ -52,17 +52,15 @@ describe('styles', () => {
   it('are written flat, in the props', () => {
     // The property a caller writes is the property, not a key inside a `style`
     // object. v1 spells it this way and a ported tree should not have to move.
-    expect(Box({ gap: 16 }).style).toEqual({ gap: 16 })
+    expect(Box({ gap: 16 }).style).toEqual({ display: 'flex', gap: 16 })
     expect(Text('x', { fontSize: 24 }).style).toEqual({ fontSize: 24 })
   })
 
-  it('are read rather than copied', () => {
-    // No spread and no per-node merge: both cost per node on a path that has to
-    // stay cheap, and the defaults already exist in Rust. The factories that
-    // name no direction of their own store the caller's own object.
+  it('are read rather than copied, except by the containers that name a display', () => {
+    // `Text`, `Image` and `Path` store the caller's own object: they name
+    // nothing of their own, so there is nothing to spread.
     const props = { gap: 16 }
 
-    expect(Box(props).style).toBe(props)
     expect(Text('x', props).style).toBe(props)
 
     const image = { src: 'a.png', gap: 16 }
@@ -70,16 +68,32 @@ describe('styles', () => {
 
     expect(Image(image).style).toBe(image)
     expect(Path(path).style).toBe(path)
+
+    // **`Box` copies now, and the reason the old comment gave for not copying
+    // was never measured.** It said a spread "costs per node on a path that
+    // has to stay cheap" -- while `Row` and `Column` had always spread, on
+    // every call, in every example. Measured: 0.03 to 0.08 microseconds per
+    // container, 3.1 ms across a hundred thousand of them, against a build of
+    // 90 ms and a render of 8 to 22 ms for a tree of six thousand. It is not
+    // visible next to the work it precedes.
+    //
+    // What it buys is that a `Box` is a flex container whatever the scene's
+    // default becomes, which is the defect the default move would otherwise
+    // have introduced: `gap`, `align_items` and `justify_content` silently
+    // stopping.
+    expect(Box(props).style).not.toBe(props)
+    expect(Box(props).style).toEqual({ display: 'flex', gap: 16 })
   })
 
   it('carry the props that are not style properties, which nothing reads', () => {
-    // The consequence of storing the props object itself. `children` and `name`
-    // are not style property names, and the encoder looks up only the names in
-    // its own table, so the extra keys cost a read that never happens — which is
-    // what buys the absent copy above.
+    // The consequence of carrying the props object rather than a filtered
+    // copy. `children` and `name` are not style property names, and the
+    // encoder looks up only the names in its own table, so the extra keys cost
+    // a read that never happens.
     const child = Text('x')
 
     expect(Box({ children: [child], name: 'card' }).style).toEqual({
+      display: 'flex',
       children: [child],
       name: 'card',
     })
@@ -88,16 +102,19 @@ describe('styles', () => {
   it('are copied once by the factories that name a direction, and the caller wins', () => {
     // `Row` and `Column` mean a direction, so they write one. Spreading the
     // caller's props after the default is what keeps an explicit value.
-    expect(Row().style).toEqual({ flexDirection: 'row' })
-    expect(Column().style).toEqual({ flexDirection: 'column' })
+    expect(Row().style).toEqual({ display: 'flex', flexDirection: 'row' })
+    expect(Column().style).toEqual({ display: 'flex', flexDirection: 'column' })
     expect(Grid().style).toEqual({ display: 'grid' })
 
-    expect(Row({ flexDirection: 'column' }).style).toEqual({ flexDirection: 'column' })
+    expect(Row({ flexDirection: 'column' }).style).toEqual({ display: 'flex', flexDirection: 'column' })
     expect(Grid({ display: 'flex' }).style).toEqual({ display: 'flex' })
+
+    // A caller who wants a block container says so, and wins over the factory.
+    expect(Box({ display: 'block' }).style).toEqual({ display: 'block' })
   })
 
   it('keep the caller’s other properties when a direction is added', () => {
-    expect(Row({ gap: 8 }).style).toEqual({ flexDirection: 'row', gap: 8 })
+    expect(Row({ gap: 8 }).style).toEqual({ display: 'flex', flexDirection: 'row', gap: 8 })
   })
 
   it('take a style object spread into the props', () => {
@@ -107,6 +124,7 @@ describe('styles', () => {
     const theme: Style = { backgroundColor: '#101014', padding: 24 }
 
     expect(Box({ ...theme, gap: 16 }).style).toEqual({
+      display: 'flex',
       backgroundColor: '#101014',
       padding: 24,
       gap: 16,

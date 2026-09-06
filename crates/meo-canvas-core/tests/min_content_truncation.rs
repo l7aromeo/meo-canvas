@@ -35,7 +35,7 @@ use meo_canvas_scene::{
     node::{Node, NodeId, NodeKind},
     style::{
         Dimension, Length,
-        layout::{FlexDirection, Justify},
+        layout::{Display, FlexDirection, Justify},
         text::{
             FontWeight, LineHeight, ParagraphStyle, TextSegment, TextStyle,
         },
@@ -217,6 +217,10 @@ fn row(width: f32, clamp_label: bool) -> (f32, f32) {
         .unwrap_or_else(|error| unreachable!("{error}"));
     if let Some(node) = scene.get_mut(row) {
         node.layout.size = (Dimension::Points(width), Dimension::Auto);
+        // A row is a flex container and says so: the scene's default display
+        // is `block`, which both public surfaces override on every container
+        // they build. A scene assembled node by node, as this one is, does not.
+        node.layout.display = Display::Flex;
         node.layout.flex_direction = FlexDirection::Row;
         node.layout.justify_content = Some(Justify::SpaceBetween);
         node.layout.gap = (Length::Points(8.0), Length::ZERO);

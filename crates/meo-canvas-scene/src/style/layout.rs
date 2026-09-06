@@ -350,7 +350,7 @@ pub struct LayoutStyle {
 impl Default for LayoutStyle {
     fn default() -> Self {
         Self {
-            display: Display::Flex,
+            display: Display::Block,
             position_type: PositionType::Static,
             inset: Sides::all(None),
             size: (Dimension::Auto, Dimension::Auto),
@@ -436,7 +436,12 @@ mod tests {
     #[test]
     fn defaults_follow_css_not_yoga() {
         let style = LayoutStyle::default();
-        assert_eq!(style.display, Display::Flex);
+        // **`block`, which is what a browser gives a `<div>`.** taffy's own
+        // default is `Flex`, so this was the one field whose value agreed with
+        // taffy while the test's name claimed CSS. Both public surfaces name
+        // `flex` on every container they build, so nothing a caller writes
+        // depends on this.
+        assert_eq!(style.display, Display::Block);
         assert_eq!(style.flex_direction, FlexDirection::Row);
         assert!((style.flex_shrink - 1.0).abs() < f32::EPSILON);
         assert!((style.flex_grow - 0.0).abs() < f32::EPSILON);
