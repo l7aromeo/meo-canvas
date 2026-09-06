@@ -661,6 +661,32 @@ fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
 /// layer up.
 const SPACING_CEILING: f32 = 1.0e9;
 
+// **The property the number has to have, checked where someone would change
+// it.** `f32::MAX` is the value a reader taking `1.0e9` for arbitrary would
+// reach for, and it puts the collapse straight back: one sum past it is
+// infinity, so the failure is not on the path the ceiling takes but in the
+// addition after it. Asserted rather than tested, because a test would have to
+// be read to be believed and this refuses to compile. 2048 glyphs is a line far
+// longer than any this engine lays out; the margin is the point.
+//
+// **It catches nothing the test module's `1.0e30 > SPACING_CEILING` does not
+// already catch today, and it is here anyway.** That one exists to keep the
+// pass-through row's samples above the ceiling, so its threshold moves with a
+// list of test values rather than with anything about the arithmetic: edit
+// `1.0e30` out of that list and the only guard on this number goes with it.
+// This one is tied to the property instead, and sits where the number is
+// rather than three hundred lines away in a test whose subject is something
+// else.
+//
+// **It is here because the wrong value was proposed out loud.** A reviewer
+// reading `1.0e9` as arbitrary suggested `f32::MAX`, on the reasoning that the
+// finite path was already exercised -- true, and beside the point, because the
+// failure is not on the path the value takes. The only thing that would have
+// refused it was an assertion written for a different row, which is to say
+// nothing was guarding this number on purpose.
+const _: () = assert!(SPACING_CEILING.is_finite());
+const _: () = assert!(SPACING_CEILING * 2048.0 < f32::MAX);
+
 /// A resolved spacing with a value no layout can use replaced.
 ///
 /// **The collapse this prevents is not the one it looks like.** A non-finite
