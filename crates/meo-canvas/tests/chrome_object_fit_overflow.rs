@@ -35,7 +35,7 @@ use meo_canvas_scene::{
     style::{
         Dimension, Length,
         layout::LayoutStyle,
-        paint::{Color, ObjectFit},
+        paint::{BorderStyle, Color, ObjectFit},
     },
 };
 
@@ -138,6 +138,11 @@ fn render(
             ..LayoutStyle::default()
         };
         node.layout.border = Sides::all(border);
+        // The Chrome side writes `border:...px solid`, because in CSS a width
+        // paints nothing without a style. Naming it here says the same thing,
+        // and keeps every row of the fixture describing a bordered element now
+        // that `BorderStyle::None` is the default.
+        node.paint.border_style = BorderStyle::Solid;
         node.layout.padding = Sides::all(Length::Points(padding));
         node.paint.border_radius = Corners::all(radius);
         node.paint.border_color_all = Color::rgb(0, 0, 255);

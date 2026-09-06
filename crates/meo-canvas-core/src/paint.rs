@@ -1370,7 +1370,7 @@ fn gap_count(line: &Line) -> usize {
 fn content_box(node: &Node, rect: Rect) -> Rect {
     // The used width, not the declared one, so the content box starts where
     // layout reserved room for it.
-    let border = used_border(node.layout.border);
+    let border = used_border(node.layout.border, node.paint.border_style);
     let padding = &node.layout.padding;
     let left = border.left + resolve_length(padding.left, rect.size.width);
     let right = border.right + resolve_length(padding.right, rect.size.width);
@@ -1999,7 +1999,7 @@ fn draw_border(
 ) -> Result<(), Error> {
     let paint = &node.paint;
     // As `content_box`: the painter draws the width layout reserved.
-    let widths = used_border(node.layout.border);
+    let widths = used_border(node.layout.border, node.paint.border_style);
     if widths.top <= 0.0
         && widths.right <= 0.0
         && widths.bottom <= 0.0
@@ -2028,7 +2028,16 @@ fn draw_border(
     let inner = inner_box(rect, widths);
 
     // Dashes and dots are strokes, not a ring: a fill has no rhythm to break.
-    if !matches!(paint.border_style, BorderStyle::Solid) {
+    //
+    // Named rather than written as "not solid" so that `BorderStyle::None`
+    // cannot route here. It cannot reach this line today -- `used_border`
+    // returns zeros for it and the guard above has already returned -- but a
+    // negated match would send it to the dash stroker the moment that gate
+    // moved, and a border with no style would come back as dashes.
+    if matches!(
+        paint.border_style,
+        BorderStyle::Dashed | BorderStyle::Dotted
+    ) {
         return stroke_broken_border(context, node, rect, widths);
     }
 
@@ -6203,7 +6212,7 @@ mod tests {
     /// Renders one bordered box and returns its pixels, eight bits per
     /// channel.
     fn bordered_corner(top: f32, left: f32, radius: f32) -> Vec<u8> {
-        use meo_canvas_scene::style::paint::Color;
+        use meo_canvas_scene::style::paint::{BorderStyle, Color};
 
         let mut scene = Scene::new(Size::new(60.0, 60.0));
         if let Some(root) = scene.get_mut(NodeId::ROOT) {
@@ -6232,6 +6241,7 @@ mod tests {
                 background_color: FILL,
                 border_radius: meo_canvas_scene::Corners::all(radius),
                 border_color_all: BORDER,
+                border_style: BorderStyle::Solid,
                 border_color: meo_canvas_scene::Sides {
                     top: Some(BORDER),
                     right: Some(BORDER),
@@ -6280,7 +6290,10 @@ mod tests {
     /// division decides which colour a part of the ring takes, and where
     /// every part takes the same colour it must not be visible at all.
     fn reference_ring(top: f32, left: f32, radius: f32) -> Vec<u8> {
-        use meo_canvas_scene::{Point, style::paint::Color};
+        use meo_canvas_scene::{
+            Point,
+            style::paint::{BorderStyle, Color},
+        };
 
         let rect = Rect::new(Point::new(0.0, 0.0), Size::new(60.0, 60.0));
         let widths = meo_canvas_scene::Sides {
@@ -6293,6 +6306,7 @@ mod tests {
             background_color: FILL,
             border_radius: meo_canvas_scene::Corners::all(radius),
             border_color_all: BORDER,
+            border_style: BorderStyle::Solid,
             ..PaintStyle::default()
         };
 

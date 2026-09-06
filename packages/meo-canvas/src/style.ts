@@ -218,8 +218,15 @@ export type BlendMode =
   | 'color'
   | 'luminosity'
 
-/** Whether a border is solid, dashed or dotted. */
-export type BorderStyle = 'solid' | 'dashed' | 'dotted'
+/**
+ * How a border's line is drawn, or that it is not drawn.
+ *
+ * `'none'` is the initial value, as in CSS, and it zeroes the *used* width
+ * rather than skipping the paint: a node with `border: 4` and no style set
+ * neither draws a border nor reserves room for one, so its content is not
+ * inset. Write `'solid'` to get a line.
+ */
+export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'none'
 
 /** What happens to content larger than its box. */
 export type Overflow = 'visible' | 'hidden' | 'scroll'
@@ -642,7 +649,10 @@ export interface Style {
    * this surface.
    */
   readonly borderColor?: Sides<Color>
-  /** Whether the border is solid, dashed or dotted. */
+  /**
+   * How the border is drawn. Defaults to `'none'`, which draws no border and
+   * reserves no space for one however wide {@link Style.border} is.
+   */
   readonly borderStyle?: BorderStyle
   /** Corner radii. */
   readonly borderRadius?: Corners

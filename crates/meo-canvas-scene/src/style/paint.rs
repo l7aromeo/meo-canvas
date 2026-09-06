@@ -71,6 +71,14 @@ wire_enum! {
         Dashed = 1,
         /// A run of dots, shorter and more numerous than the dashes.
         Dotted = 2,
+        /// No line, and no width either.
+        ///
+        /// CSS's initial value, and CSS's meaning: the style forces the used
+        /// border width to zero, so a node with a declared width and this
+        /// style neither paints a border nor reserves room for one. It is not
+        /// a paint-time skip -- the content box is not inset, which is the
+        /// half of the rule a screenshot cannot show.
+        None = 3,
     }
 }
 
@@ -389,6 +397,19 @@ pub struct PaintStyle {
     pub z_index: Option<i32>,
 }
 
+/// The defaults follow what a browser computes, not what CSS names as initial.
+///
+/// `border_style` is [`BorderStyle::None`], which is both -- CSS's initial
+/// value and what Chrome gives an element that names no style. Where the two
+/// part company the browser wins, and `display` is the case that shows why:
+/// CSS's initial `display` is `inline`, and a scene is a tree of boxes with no
+/// node for inline layout, so the initial value is not representable here at
+/// all. What is representable is what Chrome gives a `div`.
+///
+/// **A default that cannot be reached by writing the value explicitly is not a
+/// default**, which is the rule `z_index` above is written to. This is the
+/// same rule one level up: a default nobody can name in CSS terms is one a
+/// caller cannot reason about from what they know.
 impl Default for PaintStyle {
     fn default() -> Self {
         Self {
@@ -397,7 +418,7 @@ impl Default for PaintStyle {
             background_image: None,
             border_color: Sides::all(None),
             border_color_all: Color::BLACK,
-            border_style: BorderStyle::Solid,
+            border_style: BorderStyle::None,
             border_radius: Corners::all(0.0),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
@@ -428,7 +449,7 @@ mod tests {
         let style = PaintStyle::default();
         assert!(style.background_color.is_invisible());
         assert_eq!(style.blend_mode, BlendMode::Normal);
-        assert_eq!(style.border_style, BorderStyle::Solid);
+        assert_eq!(style.border_style, BorderStyle::None);
         assert_eq!(style.border_color_all, Color::BLACK);
         assert!((style.opacity - 1.0).abs() < f32::EPSILON);
         assert!(!style.dither);
@@ -439,7 +460,7 @@ mod tests {
 
     #[test]
     fn every_paint_enum_lists_its_variants() {
-        assert_eq!(BorderStyle::ALL.len(), 3);
+        assert_eq!(BorderStyle::ALL.len(), 4);
         assert_eq!(BlendMode::ALL.len(), 16);
         assert_eq!(GradientKind::ALL.len(), 3);
         assert_eq!(ObjectFit::ALL.len(), 5);

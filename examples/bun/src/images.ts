@@ -51,7 +51,7 @@ const canvas = await Root({
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'none', objectPosition: ['0%', '0%'] })),
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'none', objectPosition: ['100%', '100%'] })),
         // An image is a box: it should take a border and a radius like one.
-        cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'cover', border: 4, borderColor: '#2850dc' })),
+        cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'cover', border: 4, borderStyle: 'solid', borderColor: '#2850dc' })),
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'cover', borderRadius: 20 })),
       ],
     }),

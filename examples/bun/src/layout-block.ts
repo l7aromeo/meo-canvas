@@ -41,8 +41,8 @@ const canvas = await Root({
     panel([bar(RED, 60), bar(BLUE, 60, { margin: { top: 8, bottom: 8, left: 30 } }), bar(GREEN, 60)]),
     // Box sizing: the same declared width, one counting its border and one not.
     panel([
-      bar(RED, 100, { boxSizing: 'border-box', border: 6, borderColor: '#14141e' }),
-      bar(BLUE, 100, { boxSizing: 'content-box', border: 6, borderColor: '#14141e' }),
+      bar(RED, 100, { boxSizing: 'border-box', border: 6, borderStyle: 'solid', borderColor: '#14141e' }),
+      bar(BLUE, 100, { boxSizing: 'content-box', border: 6, borderStyle: 'solid', borderColor: '#14141e' }),
     ]),
   ],
 })

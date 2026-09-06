@@ -47,6 +47,7 @@ use meo_canvas_scene::{
             GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
             PositionType, TrackSize,
         },
+        paint::BorderStyle,
     },
 };
 // The one trait imported from taffy rather than named through it:
@@ -395,7 +396,9 @@ fn bottom_align_reversed_wraps(
         };
         // The used width, as everywhere else: this inset has to agree with
         // the room taffy reserved, or the stack lands on the wrong edge.
-        let inset = used_border_width(node.layout.border.bottom) + padding;
+        let inset = used_border(node.layout.border, node.paint.border_style)
+            .bottom
+            + padding;
         let content_bottom = rect.bottom() - inset;
         let shift = content_bottom - bottom;
         if shift >= 0.0 {
@@ -437,7 +440,7 @@ fn pin_page_root(
         Error::Layout(format!("node {} is not in the scene", page.get()))
     })?;
 
-    let mut style = to_taffy_style(&source.layout);
+    let mut style = to_taffy_style(&source.layout, source.paint.border_style);
     if style.size.width.is_auto() {
         style.size.width =
             taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
@@ -543,7 +546,7 @@ fn build(
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
 
-    let style = to_taffy_style(&source.layout);
+    let style = to_taffy_style(&source.layout, source.paint.border_style);
 
     let mut children: Vec<taffy::NodeId> = Vec::new();
     // Absolute descendants from anywhere beneath here that have not yet met a
@@ -700,7 +703,10 @@ const fn to_available(space: taffy::AvailableSpace) -> Available {
 /// Every field the scene carries is written, none is left to taffy's default.
 /// See the module documentation for why.
 #[must_use]
-pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
+pub fn to_taffy_style(
+    layout: &LayoutStyle,
+    border_style: BorderStyle,
+) -> taffy::Style {
     taffy::Style {
         display: to_display(layout.display),
         box_sizing: to_box_sizing(layout.box_sizing),
@@ -741,7 +747,7 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
         // `snapped` is gone rather than composed: a used border width is a
         // whole number and a whole number is already on the grid.
         border: {
-            let used = used_border(layout.border);
+            let used = used_border(layout.border, border_style);
             taffy::Rect {
                 left: taffy::LengthPercentage::length(used.left),
                 right: taffy::LengthPercentage::length(used.right),
@@ -1062,7 +1068,18 @@ fn to_dimension(dimension: Dimension) -> taffy::Dimension {
 /// it does for a percentage line height. This is the one place the used value
 /// is computed, and both readers -- layout here and the painter -- go through
 /// it, so the two cannot drift apart.
-pub(crate) fn used_border(border: Sides<f32>) -> Sides<f32> {
+pub(crate) fn used_border(
+    border: Sides<f32>,
+    style: BorderStyle,
+) -> Sides<f32> {
+    // `none` is a used width of zero, not a paint that is skipped. Gating here
+    // rather than at the painter is what keeps layout and paint agreeing: both
+    // reach the used width through this function, so a border that draws
+    // nothing also reserves nothing, which is the half of CSS's rule that no
+    // comparison of ink can see.
+    if style == BorderStyle::None {
+        return Sides::all(0.0);
+    }
     Sides {
         left: used_border_width(border.left),
         right: used_border_width(border.right),
@@ -1239,6 +1256,7 @@ mod tests {
                 GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
                 PositionType, TrackSize,
             },
+            paint::BorderStyle,
         },
     };
 
@@ -1435,6 +1453,10 @@ mod tests {
         root.layout.size = (Dimension::Points(40.0), Dimension::Points(20.0));
         root.layout.box_sizing = BoxSizing::ContentBox;
         root.layout.border = Sides::all(3.5);
+        // Without a style the used width is zero and this test rounds nothing
+        // -- it would pass and stop measuring, inside the function the style
+        // gate lives in.
+        root.paint.border_style = BorderStyle::Solid;
 
         let result = solved(&scene, page);
         let solved_root = result
@@ -1698,14 +1720,14 @@ mod tests {
         };
 
         assert_eq!(
-            super::to_taffy_style(&style).inset,
+            super::to_taffy_style(&style, BorderStyle::Solid).inset,
             taffy::Rect::auto(),
             "a static inset is dropped"
         );
 
         style.position_type = PositionType::Relative;
         assert_eq!(
-            super::to_taffy_style(&style).inset.top,
+            super::to_taffy_style(&style, BorderStyle::Solid).inset.top,
             taffy::LengthPercentageAuto::length(30.0),
             "a relative inset is not"
         );
@@ -2122,7 +2144,7 @@ mod tests {
             ..LayoutStyle::default()
         };
 
-        let style = super::to_taffy_style(&layout);
+        let style = super::to_taffy_style(&layout, BorderStyle::Solid);
 
         assert_eq!(style.gap.width, taffy::LengthPercentage::length(9.0));
         assert_eq!(style.gap.height, taffy::LengthPercentage::length(4.0));
@@ -2149,7 +2171,8 @@ mod tests {
         // The scene's `LayoutStyle::default()` is CSS's: a row direction and a
         // shrink of 1. This is the test that fails if the mapping ever leans on
         // `taffy::Style::default()` for a field the scene carries.
-        let style = super::to_taffy_style(&LayoutStyle::default());
+        let style =
+            super::to_taffy_style(&LayoutStyle::default(), BorderStyle::Solid);
 
         assert_eq!(style.display, taffy::Display::Flex);
         assert_eq!(style.flex_direction, taffy::FlexDirection::Row);

@@ -1763,7 +1763,7 @@ const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
       'luminosity',
     ],
   ],
-  ['BorderStyle', ['solid', 'dashed', 'dotted']],
+  ['BorderStyle', ['solid', 'dashed', 'dotted', 'none']],
   // The two whose keywords are upstream's rather than this package's, and which
   // upstream spells differently from each other: a pixel layout has no CSS
   // vocabulary to borrow, a colour space does. Both carry aliases, so these two

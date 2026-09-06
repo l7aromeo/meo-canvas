@@ -118,15 +118,19 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
             // Borders: one colour, four colours, the two dashed styles, and a
             // radius, which is the only one that changes the box's shape.
             row(vec![
-                cell().border(sides(6.0, 6.0, 6.0, 6.0)).border_color(FROM),
-                cell().border(sides(6.0, 6.0, 6.0, 6.0)).border_color_sides(
-                    sides(
+                cell()
+                    .border(sides(6.0, 6.0, 6.0, 6.0))
+                    .border_style(BorderStyle::Solid)
+                    .border_color(FROM),
+                cell()
+                    .border(sides(6.0, 6.0, 6.0, 6.0))
+                    .border_style(BorderStyle::Solid)
+                    .border_color_sides(sides(
                         Some(FROM),
                         Some(TO),
                         Some(hex_rgb(0x22_88_44)),
                         Some(hex_rgb(0xcc_44_22)),
-                    ),
-                ),
+                    )),
                 cell()
                     .border(sides(4.0, 4.0, 4.0, 4.0))
                     .border_color(FROM)
@@ -269,6 +273,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                 })),
                 filled()
                     .border(sides(6.0, 6.0, 6.0, 6.0))
+                    .border_style(BorderStyle::Solid)
                     .border_color(TO)
                     .mask(Mask::Shape(MaskShape::Circle)),
             ]),
