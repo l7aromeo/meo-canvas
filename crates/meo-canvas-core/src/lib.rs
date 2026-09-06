@@ -323,6 +323,20 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    /// A `data:` image source that is not a well-formed data URI.
+    ///
+    /// **Separate from [`Error::ImageRead`], which is where this used to
+    /// land.** A `data:` URI carries its own bytes and names no file, so
+    /// reading it as a path failed in `std::fs::read` and reported `cannot
+    /// read image at data:image/svg+xml;base64,PHN2...` -- a filesystem error
+    /// quoting something that was never a filename.
+    #[error("cannot read a data: image source: {detail}")]
+    #[non_exhaustive]
+    DataUri {
+        /// What is wrong with it, and what the form takes.
+        detail: String,
+    },
+
     /// Bytes that no decoder recognises.
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),

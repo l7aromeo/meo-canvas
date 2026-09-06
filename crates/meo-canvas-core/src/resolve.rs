@@ -78,6 +78,10 @@ use std::{
     sync::OnceLock,
 };
 
+use base64::{
+    Engine as _,
+    engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
+};
 use meo_canvas_scene::{
     OnImageError, Scene, Size,
     node::{ImageSource, NodeId, NodeKind},
@@ -733,6 +737,15 @@ fn soft(
     let ImageSource::Url(url) = source else {
         return Err(error);
     };
+    // **A `data:` URI in a `Url` wrapper is still the caller's own bytes.**
+    // Nothing was fetched, so there is no 404 to draw a placeholder for, and
+    // the rule the arms below rest on -- that what came from the world may
+    // soften and what came from the caller may not -- puts it with `Bytes`.
+    // Without this the wrapper alone would decide, and the same payload would
+    // soften as `{ url }` and throw as a bare string.
+    if is_data_uri(url) {
+        return Err(error);
+    }
     match error {
         Error::SourceFetch {
             detail, failure, ..
@@ -1095,6 +1108,102 @@ const fn classify(error: &ureq::Error) -> FetchFailure {
     }
 }
 
+/// The prefix that makes a source string carry its own bytes rather than name
+/// a place to read them from.
+const DATA_URI: &str = "data:";
+
+/// The base64 a `data:` URI carries.
+///
+/// Padding is **indifferent** rather than required: RFC 2397 does not say, and
+/// a caller pasting from a tool that trims `=` is not making a different
+/// statement about the bytes. Whitespace is stripped before decoding for the
+/// same reason -- a URI wrapped across lines in a source file is the same URI.
+const DATA_URI_BASE64: GeneralPurpose = GeneralPurpose::new(
+    &base64::alphabet::STANDARD,
+    GeneralPurposeConfig::new()
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
+
+/// Whether a source string carries its own bytes.
+///
+/// **Asked of `Path` and of `Url` alike.** A bare string is a path on both
+/// public surfaces, so this is where a `data:` URI arrives; and
+/// `{ url: "data:..." }` is the same statement in a different wrapper, which
+/// must not reach the fetch machinery either.
+fn is_data_uri(source: &str) -> bool {
+    source.starts_with(DATA_URI)
+}
+
+/// The bytes a `data:` URI carries, or what is wrong with it.
+///
+/// `data:[<media-type>][;base64],<payload>`. **The media type is read and not
+/// trusted**: the decoder that receives these bytes sniffs them, so a caller
+/// who writes `image/png` over JPEG bytes renders a JPEG, as a browser does.
+/// Trusting it would refuse working input on the strength of a label.
+fn data_uri_bytes(uri: &str) -> Result<Vec<u8>, Error> {
+    let body = uri.strip_prefix(DATA_URI).unwrap_or(uri);
+    let Some((meta, payload)) = body.split_once(',') else {
+        return Err(Error::DataUri {
+            detail: format!(
+                "{uri:.40?} has no comma; a data URI is \
+                 data:[<media-type>][;base64],<payload>"
+            ),
+        });
+    };
+
+    if meta.trim_end().to_ascii_lowercase().ends_with(";base64") {
+        let compact: Vec<u8> = payload
+            .bytes()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .collect();
+        return DATA_URI_BASE64.decode(&compact).map_err(|error| {
+            Error::DataUri {
+                detail: format!(
+                    "it declares `;base64` and its payload is not valid \
+                     base64: {error}"
+                ),
+            }
+        });
+    }
+
+    percent_decode(payload)
+}
+
+/// The payload of a `data:` URI that did not declare `;base64`.
+///
+/// **Strict about `%`**, where a browser's own leniency varies: a `%` that is
+/// not followed by two hexadecimal digits is a payload the caller did not mean
+/// to write, and passing it through as a literal renders bytes nobody asked
+/// for rather than saying so.
+fn percent_decode(payload: &str) -> Result<Vec<u8>, Error> {
+    let bytes = payload.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' {
+            let hex = bytes.get(at + 1..at + 3).and_then(|pair| {
+                std::str::from_utf8(pair)
+                    .ok()
+                    .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+            });
+            let Some(byte) = hex else {
+                return Err(Error::DataUri {
+                    detail: format!(
+                        "its payload has a `%` at {at} that is not followed by \
+                         two hexadecimal digits"
+                    ),
+                });
+            };
+            out.push(byte);
+            at += 3;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    Ok(out)
+}
+
 fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
     // The `Path` arm owns what it read and the `Bytes` arm borrows what the
     // caller already holds, so only the one that has to allocate does. Making
@@ -1104,6 +1213,16 @@ fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
     let read;
     let bytes: &[u8] = match source {
         ImageSource::Bytes(bytes) => bytes,
+        // Before the filesystem, and before the fetch arms below: a `data:`
+        // URI names no file and no host. It reached `std::fs::read` until
+        // this arm existed, and failed as a missing file quoting a string that
+        // was never a filename.
+        ImageSource::Path(source) | ImageSource::Url(source)
+            if is_data_uri(source) =>
+        {
+            read = data_uri_bytes(source)?;
+            &read
+        }
         ImageSource::Path(path) => {
             read = std::fs::read(path).map_err(|source| Error::ImageRead {
                 path: path.clone(),
@@ -1251,8 +1370,9 @@ mod softening {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use base64::Engine as _;
     use meo_canvas_scene::{
-        Scene, Size,
+        OnImageError, Scene, Size,
         node::{ImageSource, Node, NodeId, NodeKind},
         style::{
             paint::Color,
@@ -1260,7 +1380,9 @@ pub(crate) mod tests {
         },
     };
 
-    use super::{Fonts, LineHeight, Resolved, ResolvedText, is_local};
+    use super::{
+        DATA_URI_BASE64, Fonts, LineHeight, Resolved, ResolvedText, is_local,
+    };
     use crate::Error;
 
     /// Chrome's four kinds, declared and inherited, measured by MC Main.
@@ -1512,6 +1634,156 @@ pub(crate) mod tests {
         assert_eq!(image.intrinsic_size(), Size::new(4.0, 2.0));
         assert!(resolved.image(NodeId::ROOT).is_none());
         assert!(!format!("{image:?}").is_empty());
+    }
+
+    /// The same 4x2 red PNG as a `data:` URI, base64 and percent-encoded.
+    ///
+    /// Built from `RED_PNG` rather than pasted, so the two forms cannot drift
+    /// from the bytes they are supposed to carry -- a hand-copied payload that
+    /// decodes to *something* would pass every assertion below while carrying
+    /// a different picture.
+    fn red_png_data_uri(base64: bool) -> String {
+        if base64 {
+            format!("data:image/png;base64,{}", DATA_URI_BASE64.encode(RED_PNG))
+        } else {
+            // Hex by hand rather than through `format!` per byte: the
+            // lint against building a string from formatted pieces is
+            // right, and two table lookups are clearer than the escape
+            // hatch would be.
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            let mut out = String::from("data:image/png,");
+            for byte in RED_PNG {
+                out.push('%');
+                out.push(char::from(HEX[usize::from(byte >> 4)]));
+                out.push(char::from(HEX[usize::from(byte & 0x0F)]));
+            }
+            out
+        }
+    }
+
+    fn decoded_size(source: ImageSource) -> Result<Size, Error> {
+        let mut scene = Scene::new(Size::ZERO);
+        let node = scene
+            .push(NodeId::ROOT, image_node(source))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        Resolved::new(&scene, &Fonts::new()).map(|resolved| {
+            resolved
+                .image(node)
+                .unwrap_or_else(|| unreachable!("the node is an image"))
+                .intrinsic_size()
+        })
+    }
+
+    #[test]
+    fn a_data_uri_carries_its_own_bytes_in_either_encoding() {
+        // Both encodings, and both wrappers: a bare string is a `Path` on both
+        // public surfaces, and `{ url: "data:..." }` is the same statement in
+        // a different one. The four have to agree, because the difference
+        // between them is spelling rather than meaning.
+        for (name, source) in [
+            ("base64 path", ImageSource::Path(red_png_data_uri(true))),
+            ("base64 url", ImageSource::Url(red_png_data_uri(true))),
+            ("percent path", ImageSource::Path(red_png_data_uri(false))),
+            ("percent url", ImageSource::Url(red_png_data_uri(false))),
+        ] {
+            assert_eq!(
+                decoded_size(source).ok(),
+                Some(Size::new(4.0, 2.0)),
+                "{name} did not decode to the picture it carries"
+            );
+        }
+    }
+
+    #[test]
+    fn a_data_uri_that_is_not_one_says_what_the_form_takes() {
+        let refused = |uri: &str| {
+            let error = decoded_size(ImageSource::Path(uri.to_owned()))
+                .err()
+                .unwrap_or_else(|| unreachable!("{uri} should not decode"));
+            let text = error.to_string();
+            // Never a filesystem error quoting something that is not a
+            // filename, which is what this issue was.
+            assert!(
+                !text.contains("cannot read image at"),
+                "{uri} was reported as a file: {text}"
+            );
+            text
+        };
+
+        assert!(
+            refused("data:image/png;base64").contains("has no comma"),
+            "a data URI with no comma should say so"
+        );
+        assert!(
+            refused("data:image/png;base64,not base64!!").contains("base64"),
+            "a bad base64 payload should name base64"
+        );
+        assert!(
+            refused("data:image/png,%ZZ").contains("hexadecimal"),
+            "a bad escape should say what a `%` takes"
+        );
+        // Decodes, and is not a picture: that is the existing variant, because
+        // by then it is bytes like any other.
+        assert!(
+            matches!(
+                decoded_size(ImageSource::Path(
+                    "data:text/plain;base64,aGVsbG8=".to_owned()
+                )),
+                Err(Error::UndecodableImage(_))
+            ),
+            "bytes that are not an image should be the undecodable case"
+        );
+    }
+
+    #[test]
+    fn a_path_with_a_comma_in_it_is_still_a_path() {
+        // **The row the over-broad mutation is for.** A predicate written as
+        // "contains a comma" is right for every data URI anybody would type
+        // and wrong for `/tmp/logo,v2.png`, which is a filename people write.
+        // Without this the mutation failed only my own message test, which is
+        // a check on the error text rather than on the classification.
+        let error =
+            decoded_size(ImageSource::Path("/nope,comma.png".to_owned()))
+                .err()
+                .unwrap_or_else(|| unreachable!("that path does not exist"));
+        assert!(
+            matches!(error, Error::ImageRead { .. }),
+            "a path with a comma was classified as something else: {error}"
+        );
+    }
+
+    #[test]
+    fn a_data_uris_media_type_is_read_and_not_trusted() {
+        // A PNG announced as a JPEG still renders, as it does in a browser:
+        // the decoder sniffs the bytes it is given. Refusing on the strength
+        // of the label would reject working input for a caller's typo.
+        let uri = red_png_data_uri(true).replace("image/png", "image/jpeg");
+        assert_eq!(
+            decoded_size(ImageSource::Path(uri)).ok(),
+            Some(Size::new(4.0, 2.0))
+        );
+    }
+
+    #[test]
+    fn a_data_uri_is_never_softened_by_the_image_error_policy() {
+        // The wrapper alone must not decide. `{ url }` softens a 404 into a
+        // placeholder; a `data:` URI in the same wrapper was never fetched, so
+        // it stays an error under both policies -- otherwise the identical
+        // payload would soften as `{ url }` and throw as a bare string.
+        for source in [
+            ImageSource::Url("data:image/png;base64,!!!".to_owned()),
+            ImageSource::Url("data:text/plain;base64,aGVsbG8=".to_owned()),
+        ] {
+            let mut scene = Scene::new(Size::ZERO);
+            scene.on_image_error = OnImageError::Placeholder;
+            scene
+                .push(NodeId::ROOT, image_node(source))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            assert!(
+                Resolved::new(&scene, &Fonts::new()).is_err(),
+                "a data: URI softened into a placeholder"
+            );
+        }
     }
 
     #[test]
