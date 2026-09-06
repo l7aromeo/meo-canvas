@@ -41,6 +41,7 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
     // that could be `undefined` would let a `?.` into the code under test
     // that the real object never needs.
     warnings: [],
+    diagnostics: [],
   }
   return { native, calls, wrote, released: () => released }
 }

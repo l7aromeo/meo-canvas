@@ -53,7 +53,7 @@
 // transitively, and the package sits beside this one under both a hoisted and
 // an isolated layout only because it is a real dependency.
 import { MEDIA_TYPES, type Format } from './generated/media-types.js'
-import type { ImageWarning } from './index.js'
+import type { Diagnostic, ImageWarning } from './index.js'
 
 export type { Format }
 
@@ -165,6 +165,8 @@ export interface NativeCanvas {
   readonly scale: number
   /** Every image source that could not be resolved, in node order. */
   readonly warnings: readonly ImageWarning[]
+  /** What the input said that could not be used. */
+  readonly diagnostics: readonly Diagnostic[]
 }
 
 /**
@@ -486,6 +488,25 @@ export class Canvas {
    */
   get warnings(): readonly ImageWarning[] {
     return this.#native.warnings
+  }
+
+  /**
+   * What this render's input said that could not be used.
+   *
+   * **Separate from {@link Canvas.warnings}, and the distinction is the
+   * point.** A warning says the world did not answer — a fetch that failed. A
+   * diagnostic says the input did not say what it meant, which is the
+   * caller's to fix and not the network's.
+   *
+   * The case these exist for is one where the render is *correct*:
+   * `<color=#ff00>` is conformant, four-digit `#RGBA`, yellow at alpha zero,
+   * and a caller who truncated `#ff0000` sees blank text either way. Nothing
+   * in the picture can tell them apart.
+   *
+   * **Always an array**, as `warnings` is.
+   */
+  get diagnostics(): readonly Diagnostic[] {
+    return this.#native.diagnostics
   }
 
   /** Refuses a call on a surface that has been freed. */

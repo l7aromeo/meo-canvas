@@ -49,7 +49,7 @@ use meo_canvas_scene::style::text::{
     FontStyle, FontWeight, TextSegment, TextStyle,
 };
 
-use crate::color::parse_color;
+use crate::{color::parse_color, diagnostic::Diagnostic};
 
 /// The spaces a `\t` becomes.
 ///
@@ -109,6 +109,25 @@ const TAB: &str = "    ";
 /// ```
 #[must_use]
 pub fn parse(input: &str) -> Vec<TextSegment> {
+    parse_reporting(input).0
+}
+
+/// [`parse`], and what it could not use.
+///
+/// **Added beside the total form rather than replacing it**, because
+/// `parse` and [`parse_paragraph`] are this crate's public API and a caller
+/// who does not want diagnostics should not have to say so at every call. The
+/// two share one implementation, so they cannot disagree about what a tag
+/// means -- the total one calls this and drops the second half.
+#[must_use]
+pub fn parse_reporting(input: &str) -> (Vec<TextSegment>, Vec<Diagnostic>) {
+    let mut found = Vec::new();
+    let segments = walk(input, &mut found);
+    (segments, found)
+}
+
+/// The parse both entry points run.
+fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
     let text = unescape(input);
     let mut segments = Vec::new();
     let mut stack: Vec<TextStyle> = Vec::new();
@@ -136,7 +155,7 @@ pub fn parse(input: &str) -> Vec<TextSegment> {
             style = stack.pop().unwrap_or_default();
         } else {
             stack.push(style.clone());
-            apply(&mut style, &tag);
+            apply(&mut style, &tag, found);
         }
     }
     push_run(&mut segments, &text[run_start..], &style);
@@ -161,6 +180,21 @@ pub fn parse(input: &str) -> Vec<TextSegment> {
 /// assert_eq!(markup::parse_paragraph("").len(), 1);
 /// assert_eq!(markup::parse_paragraph("")[0].text, "");
 /// ```
+#[must_use]
+pub fn parse_paragraph_reporting(
+    input: &str,
+) -> (Vec<TextSegment>, Vec<Diagnostic>) {
+    let (mut segments, found) = parse_reporting(input);
+    if segments.is_empty() {
+        segments.push(TextSegment {
+            text: String::new(),
+            style: TextStyle::default(),
+        });
+    }
+    (segments, found)
+}
+
+/// [`parse_paragraph_reporting`], with what it could not use discarded.
 #[must_use]
 pub fn parse_paragraph(input: &str) -> Vec<TextSegment> {
     let mut segments = parse(input);
@@ -199,16 +233,65 @@ struct Tag<'a> {
 }
 
 /// Applies an opening tag to the style in force.
-fn apply(style: &mut TextStyle, tag: &Tag<'_>) {
+fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
+    /// One value tag: parse it, and say so when it will not parse.
+    ///
+    /// **The `None` a bad value produces and the `None` an absent property
+    /// produces are the same value one layer down**, so this is the last place
+    /// the two can be told apart. A diagnostic raised later would be guessing.
+    fn value<T>(
+        tag: &Tag<'_>,
+        parse: impl Fn(&str) -> Option<T>,
+        takes: &str,
+        found: &mut Vec<Diagnostic>,
+    ) -> Option<T> {
+        let written = tag.value?;
+        let parsed = parse(written);
+        if parsed.is_none() {
+            found.push(Diagnostic::new(
+                format!("<{}={written}>", tag.name),
+                format!("{takes}; the tag was ignored"),
+            ));
+        }
+        parsed
+    }
+
     match tag.name.as_str() {
-        "color" => style.color = tag.value.and_then(parse_color),
-        "weight" => style.font_weight = tag.value.and_then(parse_weight),
-        "size" => style.font_size = tag.value.and_then(parse_size),
+        "color" => {
+            style.color = value(
+                tag,
+                parse_color,
+                "not a colour any CSS syntax spells",
+                found,
+            );
+        }
+        "weight" => {
+            style.font_weight = value(
+                tag,
+                parse_weight,
+                "not a weight; it takes 1 to 1000, or normal or bold",
+                found,
+            );
+        }
+        "size" => {
+            style.font_size = value(
+                tag,
+                parse_size,
+                "not a size; it takes a positive number of pixels",
+                found,
+            );
+        }
         "b" => style.font_weight = Some(FontWeight::BOLD),
         "i" => style.font_style = Some(FontStyle::Italic),
         // No default arm in v1's switch either: the tag is consumed, the stack
-        // still carries it, and its closing tag still pops.
-        _ => {}
+        // still carries it, and its closing tag still pops. What is new is that
+        // the caller is told -- the text renders identically to writing no tag
+        // at all, so nothing in the output could have told them.
+        other => found.push(Diagnostic::new(
+            format!("<{other}>"),
+            "not a tag this parser knows; its text is kept and the tag ignored"
+                .to_owned(),
+        )),
     }
 }
 
@@ -357,6 +440,61 @@ fn unescape(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::{parse_paragraph, parse_paragraph_reporting};
+
+    /// An unknown tag renders as if it were not written, and now says so.
+    ///
+    /// The ink is the point: `<nope>abc</nope> def` and `abc def` produce the
+    /// same segments, so **nothing in the output could tell a caller their tag
+    /// did nothing**. The diagnostic is the only thing that can.
+    #[test]
+    fn an_unknown_tag_is_reported_though_the_text_is_unchanged() {
+        let (with_tag, found) = parse_paragraph_reporting("<nope>abc</nope> d");
+        let plain = parse_paragraph("abc d");
+
+        let texts: Vec<&str> =
+            with_tag.iter().map(|run| run.text.as_str()).collect();
+        let same: Vec<&str> =
+            plain.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(texts.concat(), same.concat());
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].path, "<nope>");
+        assert!(found[0].detail.contains("not a tag this parser knows"));
+    }
+
+    /// A value that will not parse is reported, and a good one is not.
+    ///
+    /// The pair is the check. Asserting only the bad case would pass on a
+    /// parser that reported every tag, which would be noise a caller learns
+    /// to ignore -- and an ignored channel is the silence this exists to end.
+    #[test]
+    fn a_bad_value_is_reported_and_a_good_one_is_not() {
+        for (markup, path) in [
+            ("<color=zzz>a</color>", "<color=zzz>"),
+            ("<weight=heavy>a</weight>", "<weight=heavy>"),
+            ("<size=-4>a</size>", "<size=-4>"),
+        ] {
+            let (_, found) = parse_paragraph_reporting(markup);
+            assert_eq!(found.len(), 1, "{markup}: {found:?}");
+            assert_eq!(found[0].path, path, "{markup}");
+        }
+
+        for good in [
+            "<color=#ff0000>a</color>",
+            "<weight=700>a</weight>",
+            "<size=12>a</size>",
+            "<b>a</b>",
+            "plain text",
+        ] {
+            let (_, found) = parse_paragraph_reporting(good);
+            assert!(found.is_empty(), "{good} reported {found:?}");
+        }
+    }
 }
 
 #[cfg(test)]

@@ -75,6 +75,7 @@
 
 pub mod animate;
 pub mod color;
+pub mod diagnostic;
 pub mod encode;
 pub mod layout;
 pub mod lines;
