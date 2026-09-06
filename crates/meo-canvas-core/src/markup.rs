@@ -234,53 +234,81 @@ struct Tag<'a> {
 
 /// Applies an opening tag to the style in force.
 fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
+    /// What a value tag carried, once read.
+    ///
+    /// Three outcomes and not two, because **an absent value and an unusable
+    /// one are different in v1** and the difference is observable. A tag with
+    /// no value assigns `undefined` there and clears; a tag whose value will
+    /// not parse assigns the raw string, which the canvas then ignores.
+    enum Read<T> {
+        /// The tag carried no value. Clears, as `<color>` does in v1.
+        Absent,
+        /// The value parsed.
+        Good(T),
+        /// The value did not parse. A diagnostic was raised for it.
+        Unusable,
+    }
+
     /// One value tag: parse it, and say so when it will not parse.
     ///
     /// **The `None` a bad value produces and the `None` an absent property
     /// produces are the same value one layer down**, so this is the last place
     /// the two can be told apart. A diagnostic raised later would be guessing.
-    fn value<T>(
+    fn read<T>(
         tag: &Tag<'_>,
         parse: impl Fn(&str) -> Option<T>,
         takes: &str,
         found: &mut Vec<Diagnostic>,
-    ) -> Option<T> {
-        let written = tag.value?;
-        let parsed = parse(written);
-        if parsed.is_none() {
-            found.push(Diagnostic::new(
-                format!("<{}={written}>", tag.name),
-                format!("{takes}; the tag was ignored"),
-            ));
+    ) -> Read<T> {
+        let Some(written) = tag.value else {
+            return Read::Absent;
+        };
+        if let Some(parsed) = parse(written) {
+            return Read::Good(parsed);
         }
-        parsed
+        found.push(Diagnostic::new(
+            format!("<{}={written}>", tag.name),
+            format!("{takes}; the tag was ignored"),
+        ));
+        Read::Unusable
     }
 
     match tag.name.as_str() {
-        "color" => {
-            style.color = value(
-                tag,
-                parse_color,
-                "not a colour any CSS syntax spells",
-                found,
-            );
-        }
-        "weight" => {
-            style.font_weight = value(
-                tag,
-                parse_weight,
-                "not a weight; it takes 1 to 1000, or normal or bold",
-                found,
-            );
-        }
-        "size" => {
-            style.font_size = value(
-                tag,
-                parse_size,
-                "not a size; it takes a positive number of pixels",
-                found,
-            );
-        }
+        // Colour and weight leave the enclosing value standing when the value
+        // is unusable, because that is what v1 does -- measured by running it,
+        // not inferred: `<color=red>a<color=notacolour>b` draws `b` red there.
+        "color" => match read(
+            tag,
+            parse_color,
+            "not a colour any CSS syntax spells",
+            found,
+        ) {
+            Read::Absent => style.color = None,
+            Read::Good(color) => style.color = Some(color),
+            Read::Unusable => {}
+        },
+        "weight" => match read(
+            tag,
+            parse_weight,
+            "not a weight; it takes 1 to 1000, or normal or bold",
+            found,
+        ) {
+            Read::Absent => style.font_weight = None,
+            Read::Good(weight) => style.font_weight = Some(weight),
+            Read::Unusable => {}
+        },
+        // Size clears, and **that is the one arm v1 validates**: it runs
+        // `Number(value)` and assigns `undefined` on `NaN`. Measured the same
+        // way -- `<size=30><size=wide>MMM` renders at the node's own size.
+        "size" => match read(
+            tag,
+            parse_size,
+            "not a size; it takes a positive number of pixels",
+            found,
+        ) {
+            Read::Absent | Read::Unusable => style.font_size = None,
+            Read::Good(size) => style.font_size = Some(size),
+        },
         "b" => style.font_weight = Some(FontWeight::BOLD),
         "i" => style.font_style = Some(FontStyle::Italic),
         // No default arm in v1's switch either: the tag is consumed, the stack
@@ -604,23 +632,48 @@ mod tests {
         );
     }
 
+    /// Only `size` clears on a value it cannot read. The other two do not.
+    ///
+    /// **v1 validates one of the three.** `text.canvas.ts:351-357` runs
+    /// `Number(value)` for `size` and assigns `undefined` when it is `NaN`;
+    /// `color` and `weight` at `:341-349` assign the raw string with no
+    /// validation at all. So the enclosing value surviving those two is **a
+    /// fact about the Canvas API rather than about v1's intent** -- an invalid
+    /// assignment to `fillStyle` or `font` is ignored and the previous value
+    /// stands, which is why reading v1's source suggests the opposite of what
+    /// running it shows.
+    ///
+    /// Measured by running v1, each row against a control that binds:
+    /// `<color=red>a<color=notacolour>b` draws `b` red where a valid inner
+    /// green draws it green; a bad weight leaves ink at the enclosing 900's
+    /// 410 where an explicit 400 gives 166; a bad size renders at the node's
+    /// own 7px where `<size=30>` gives 22px.
     #[test]
-    fn a_value_that_is_not_understood_clears_the_property() {
-        // Not "keeps the enclosing one". v1 assigns `undefined` on a bad size
-        // (`text.canvas.ts:346-351`), so the span falls back to what it
-        // inherits, and the other tags follow it.
+    fn only_a_size_clears_when_its_value_is_not_understood() {
         assert_eq!(
             parse("<size=20>a<size=wide>b</size>")[1].style.font_size,
             None
         );
         assert_eq!(
             parse("<weight=bold>a<weight=heavy>b")[1].style.font_weight,
-            None
+            Some(FontWeight::BOLD)
         );
         assert_eq!(
             parse("<color=red>a<color=notacolour>b")[1].style.color,
-            None
+            parse("<color=red>a")[0].style.color
         );
+    }
+
+    /// A tag carrying no value clears, which is not the same as one carrying
+    /// an unusable value.
+    ///
+    /// v1 assigns `undefined` for the first and the raw string for the second,
+    /// so the two part company on `color` and `weight`. Keeping them apart is
+    /// the whole reason `apply` reads three outcomes rather than two.
+    #[test]
+    fn a_tag_with_no_value_clears_where_an_unusable_one_does_not() {
+        assert_eq!(parse("<color=red>a<color>b")[1].style.color, None);
+        assert_eq!(parse("<weight=bold>a<weight>b")[1].style.font_weight, None);
     }
 
     #[test]
