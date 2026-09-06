@@ -144,6 +144,15 @@ function node(
  * it does in JSX and renders nothing when the condition fails. v1 allows both
  * for that reason, and a conditional written that way is how its users write
  * one — dropping it would break the idiom rather than tidy it.
+ *
+ * `0` is not a member, and it is the exclusion worth defending rather than
+ * assuming. React renders it, so a reader arriving from JSX has met
+ * `count && Text('…')` putting a bare `0` on the page when the count is zero —
+ * a mistake that costs nothing to make and shows up as a stray character
+ * rather than as an error. Refusing it here is the loud form of the same
+ * answer: `count > 0 && Text('…')` is what the author meant, and the compiler
+ * says so before anything renders. Skipping it silently would make this looser
+ * than React in the one direction where looser means quieter.
  */
 export type Child = SceneNode | false | undefined
 

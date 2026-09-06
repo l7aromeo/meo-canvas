@@ -262,13 +262,25 @@ pub struct GridPlacement {
 
 /// Everything the layout pass reads off a node.
 ///
-/// The defaults are CSS's, not Yoga's: [`Display::Flex`],
-/// [`FlexDirection::Row`] and a `flex_shrink` of `1.0`. Yoga's raw defaults are
-/// a column direction and a shrink of `0`, so a bare box changes meaning
-/// between the two. The TypeScript `Column` and `Row` factories already
-/// override the shrink to `1`, which makes CSS's value the one their own trees
-/// use; following CSS makes the bare case agree with the named ones instead of
-/// inheriting an exception.
+/// Two of the three interesting defaults are CSS's rather than Yoga's:
+/// [`FlexDirection::Row`] and a `flex_shrink` of `1.0`, where Yoga's raw
+/// defaults are a column direction and a shrink of `0`, so a bare box would
+/// change meaning between the two. The TypeScript `Column` and `Row` factories
+/// already override the shrink to `1`, which makes CSS's value the one their
+/// own trees use; following CSS makes the bare case agree with the named ones
+/// instead of inheriting an exception.
+///
+/// The third, [`Display::Flex`], is **Yoga's default and not CSS's** -- CSS's
+/// initial `display` is `inline`, which this crate has no node for. It is kept
+/// because a scene is a tree of boxes rather than a run of inline content, so
+/// there is nothing for `inline` to mean here.
+///
+/// What that costs a reader is worth stating, because the shape of the tree
+/// depends on it: a container with no `display` lays its children out as flex
+/// items, so a text child shrink-wraps to its content where a web author's
+/// `div` would fill the line. Measured, a text node under a default parent
+/// draws the same ink at every `textAlign`, and only under [`Display::Block`]
+/// does alignment move it. Reach for `Block` to get the familiar behaviour.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutStyle {
     /// Layout mode for this node's children.
