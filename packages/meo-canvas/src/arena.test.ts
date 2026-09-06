@@ -1905,6 +1905,29 @@ describe('a value of the wrong type is refused where the property is still named
     expect(() => throughTheAddon({ zIndex: 'auto' as unknown as number })).toThrow('zIndex is "auto"; it takes a whole number')
   })
 
+  it('refuses a weight outside the range CSS defines, naming it', () => {
+    // **Two halves, and only the first was reported.** `1500` and `0` are
+    // in-type and out of range, and the codec clamped them with nothing said --
+    // the element rendered at a weight nobody asked for. `-100` and `1.5` came
+    // back as `slot 30 holds …`, an offset into a wire format the caller never
+    // saw, because `packWeight` tested the type and returned the number
+    // unchecked: the range and the integer-ness were never anyone's job on this
+    // side.
+    for (const weight of [1500, 0, -100, 1.5, NaN, Infinity]) {
+      const write = (): unknown => throughTheAddon({ fontWeight: weight })
+      expect(write).toThrow('fontWeight')
+      expect(write).toThrow('1 to 1000')
+      expect(write).not.toThrow('slot')
+    }
+  })
+
+  // The rows a check that refused too much would fail. `1` and `1000` are the
+  // bounds themselves, and a guard written as `> 0 && < 1000` passes every row
+  // above and breaks both of these.
+  it.each([1, 1000, 400, 700])('still writes the weight %d', weight => {
+    expect(throughTheAddon({ fontWeight: weight }).length).toBeGreaterThan(0)
+  })
+
   it('names both arms when the property takes a number or a keyword', () => {
     // **A union, not an enum.** `fontWeight` takes a number *or* one of two
     // keywords, so `variant`'s wording would list `normal, bold` and silently

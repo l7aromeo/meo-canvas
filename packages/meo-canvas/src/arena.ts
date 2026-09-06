@@ -1084,6 +1084,28 @@ function packWeight(weight: FontWeight, what: string): number {
   if (typeof weight !== 'number') {
     throw new TypeError(`${what} is ${render(weight)}; it takes a number from 1 to 1000, or normal or bold`)
   }
+  // **The range and the integer-ness, which were never anyone's job on this
+  // side.** The line above tests the *type* and returned the number unchecked,
+  // so `1500` and `0` reached the codec and were clamped there with nothing
+  // said -- the element rendered at a weight nobody asked for -- while `-100`
+  // and `1.5` came back as `slot 30 holds …`, an offset into a wire format the
+  // caller never saw. Not overlooked: unassigned.
+  //
+  // **`NaN` and `Infinity` are refused here too, and neither is an exception to
+  // a rule elsewhere.** This property does not travel through `decimal` or
+  // `measured` -- it is called straight from its row -- so the guards that name
+  // a `NaN` in this file never see it, and before this it came back as
+  // `slot 32 holds NaN, which is not an integer`. It is named now, by the check
+  // below, which is a plainer repair than routing it through a second one.
+  //
+  // **An infinite weight is refused rather than bounded, and that does not
+  // contradict bounding infinities elsewhere.** A length has no upper bound of
+  // its own, so an infinity has to be given one and *as large as possible* is a
+  // meaning. A weight's range is part of the property: `1500` is refused here
+  // and an infinity is the same mistake with a larger number.
+  if (!Number.isInteger(weight) || weight < 1 || weight > 1000) {
+    throw new TypeError(`${what} is ${render(weight)}; it takes a whole number from 1 to 1000, or normal or bold`)
+  }
   return weight
 }
 
