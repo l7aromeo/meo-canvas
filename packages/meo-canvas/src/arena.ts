@@ -558,15 +558,21 @@ function whole(value: unknown, what: string): number {
  * slot, and `Number(null)` is `0` -- so the element rendered fully transparent
  * and nothing was reported. `fontSize: null` blanked the text the same way.
  *
- * **`NaN` is admitted on purpose.** `typeof NaN === 'number'`, so it passes
- * here and travels unchanged. A Rust caller constructs `f32::NAN` directly, so
- * refusing it at this writer would close one door of two and read as a whole
- * repair; where that value is refused is a question for the side that consumes
- * it. What cannot exist on the crate surface at all -- `null`, an object, a
- * function, a symbol -- is what this refuses.
+ * **`NaN` is refused and `Infinity` is not, and the predicate is the whole
+ * difference.** `typeof NaN === 'number'`, so it passed every guard here until
+ * it was named: a check about the *type* cannot see it. `Number.isNaN(value)`
+ * is what sees it, and `!Number.isFinite(value)` -- which reads as the same
+ * intent and is one word shorter -- would take `Infinity` with it.
+ *
+ * **`Infinity` is deliberately not refused here.** It is bounded on the other
+ * side, where a finite ceiling gives it a meaning; refusing it here would make
+ * that unreachable, and the picture would not change until someone went looking
+ * for it. The two values are answered differently because they mean different
+ * things: an infinity means *as large as possible*, and a `NaN` means nothing
+ * at any door.
  */
 function decimal(value: unknown, what: string): number {
-  if (typeof value !== 'number') {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
     throw new TypeError(`${what} is ${render(value)}; it takes a number`)
   }
   return value
@@ -592,7 +598,7 @@ function words(value: unknown, what: string, takes: string): string {
  * the wrong kind, and only one of them is helped by a list of suffixes.
  */
 function measured(value: unknown, what: string, takes: string): number | string {
-  if (typeof value !== 'number' && typeof value !== 'string') {
+  if ((typeof value !== 'number' && typeof value !== 'string') || Number.isNaN(value)) {
     throw new TypeError(`${what} is ${render(value)}; it takes ${takes}`)
   }
   return value

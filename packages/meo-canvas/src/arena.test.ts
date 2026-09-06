@@ -2030,14 +2030,33 @@ describe('a value no path handles is refused by the property that was written', 
     })
   })
 
-  // **The row that says the change landed on the right side of the doors
-  // rule.** `NaN` is a valid `f32` and a Rust caller constructs one directly,
-  // so a writer-side refusal would shut one door of two and read as a whole
-  // repair. `typeof NaN === 'number'`, so it passes every guard above and
-  // travels unchanged. Written as `Number.isFinite` the guards would pass every
-  // other row here and fail this one, which is the only reason it is here.
-  it.each(['width', 'flexBasis', 'padding', 'gap', 'opacity', 'fontSize', 'flexGrow'])('still lets %s carry NaN to the far side', key => {
-    expect(() => throughTheAddon({ [key]: NaN })).not.toThrow()
+  // **`NaN` is refused here and `Infinity` is not, and the predicate is the
+  // whole difference.** `typeof NaN === 'number'`, so it passed every guard
+  // above until it was named: a check about the *type* cannot see it.
+  // `Number.isNaN(value)` sees it; `!Number.isFinite(value)`, which reads as
+  // the same intent and is one word shorter, would take `Infinity` with it.
+  it.each(['width', 'flexBasis', 'padding', 'gap', 'opacity', 'fontSize', 'flexGrow', 'letterSpacing', 'lineHeight', 'lineGap', 'aspectRatio'])(
+    'refuses %s: NaN, naming the property',
+    key => {
+      const write = (): unknown => throughTheAddon({ [key]: NaN })
+      expect(write).toThrow(key)
+      expect(write).toThrow('NaN')
+    },
+  )
+
+  // **The pair that says the change stayed on its own side of the surface.**
+  // An infinity is bounded in the core, where a finite ceiling gives it a
+  // meaning; refusing it here would leave that clamp correct and unreachable,
+  // undone from the other surface by a commit whose subject says it is about
+  // `NaN`. The first row alone would pass a writer that let `Infinity` through
+  // to a core that had stopped clamping it, which is why the second is here.
+  it.each(['width', 'flexBasis', 'padding', 'gap', 'opacity', 'fontSize', 'flexGrow'])('still lets %s carry Infinity to the far side', key => {
+    expect(() => throughTheAddon({ [key]: Infinity })).not.toThrow()
+  })
+
+  it('writes an infinite value as something finite rather than dropping it', () => {
+    expect(throughTheAddon({ width: Infinity }).length).toBeGreaterThan(0)
+    expect(throughTheAddon({ width: Infinity })).not.toEqual(throughTheAddon({}))
   })
 
   // **A bad string is a different mistake and keeps its own wording.** The

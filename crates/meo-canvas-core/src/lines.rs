@@ -189,7 +189,15 @@ impl RunStyle {
             // measurement and collapsed the box around the paragraph. `1e30`
             // measures fine and is clipped by the canvas, which is what says
             // this is the arithmetic rather than the size.
-            size: bounded(style.font_size.unwrap_or(base.size)),
+            //
+            // **This took the infinity half only until the `NaN` half was
+            // ruled on**, through a `bounded` that clamped infinities and left
+            // `NaN` alone, because turning a `NaN` size into zero *is* one of
+            // the two answers the ruling was choosing between and a helper's
+            // default is no way to pick it. The ruling refuses `NaN` at the
+            // writer and neutralises it here, so the two halves are the same
+            // answer again and `bounded` is gone.
+            size: usable(style.font_size.unwrap_or(base.size)),
             weight: style.font_weight.unwrap_or(base.weight).get(),
             italic: matches!(
                 style.font_style.unwrap_or(base.style),
@@ -215,7 +223,7 @@ impl RunStyle {
     pub fn base(base: &ResolvedText) -> Self {
         Self {
             family: base.family.clone(),
-            size: bounded(base.size),
+            size: usable(base.size),
             weight: base.weight.get(),
             italic: matches!(base.style, FontStyle::Italic),
             variant: base.font_variant.clone(),
@@ -626,7 +634,7 @@ impl Metrics {
             // since a finite multiple against an infinite size is infinite.
             line_height: match base.line_height {
                 Some(LineHeight::Number(multiple)) if multiple > 0.0 => {
-                    Some(usable(multiple * bounded(base.size)))
+                    Some(usable(multiple * usable(base.size)))
                 }
                 Some(LineHeight::Length(pixels)) if pixels > 0.0 => {
                     Some(usable(pixels))
@@ -637,7 +645,7 @@ impl Metrics {
                     // to interpret. Treated as the length it would have been
                     // against this element's size, which is the same answer
                     // resolution would have produced.
-                    (share > 0.0).then_some(usable(share * bounded(base.size)))
+                    (share > 0.0).then_some(usable(share * usable(base.size)))
                 }
                 _ => None,
             },
@@ -719,23 +727,6 @@ fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
 /// negative infinity into something visible, and it is not meant to -- what it
 /// removes is the *non-finite* arithmetic, after which the value behaves like
 /// the finite neighbours it now sits between.
-/// The same bound, applied to infinities alone.
-///
-/// **`size` takes this rather than `usable`, and the difference is a ruling in
-/// flight rather than a preference.** Clamping an infinite size is settled --
-/// CSS has no `infinity` literal, `calc(infinity)` clamps, and no measured
-/// behaviour drops one. What a `NaN` size should do is not: dropping it gives
-/// the inherited size and clamping it gives zero, which is a blank, and those
-/// disagree about whether there is a defect at all. `usable` would answer that
-/// question by turning `NaN` into `0.0`, so `size` gets the half that is
-/// decided and keeps the half that is not.
-const fn bounded(pixels: f32) -> f32 {
-    if pixels.is_infinite() {
-        return FINITE_CEILING.copysign(pixels);
-    }
-    pixels
-}
-
 const fn usable(pixels: f32) -> f32 {
     if pixels.is_nan() {
         return 0.0;
@@ -1431,22 +1422,24 @@ mod tests {
         assert!(RunStyle::base(&base).size.is_finite());
     }
 
-    /// A `NaN` size is left exactly as it is, and that is the point of the row.
+    /// A `NaN` size is neutralised, which this file spent a commit not doing.
     ///
-    /// **The ruling on what a `NaN` should do is in flight**: dropping it gives
-    /// the inherited size, clamping it gives zero and a blank, and the two
-    /// disagree about whether there is a defect here at all. `size` takes
-    /// `bounded` rather than `usable` so the settled half -- infinities -- is
-    /// applied without answering the open half by accident.
-    ///
-    /// This fails the moment someone routes `size` through `usable`, which is
-    /// the tidying edit it invites, and it will keep failing until the ruling
-    /// lands and this row is rewritten deliberately.
+    /// **The row that replaces a parking test.** While the ruling was open,
+    /// `size` took a helper that clamped infinities and left `NaN` untouched,
+    /// and a test asserted the `NaN` was still a `NaN` -- not because that was
+    /// right, but because the tidy edit that would have changed it was also the
+    /// edit that answered the open question. The ruling is in: refused at the
+    /// writer, where a refusal can be reported; neutralised here, where it
+    /// cannot.
     #[test]
-    fn a_size_that_is_not_a_number_is_left_for_the_ruling() {
+    #[expect(
+        clippy::float_cmp,
+        reason = "zero is the value, not an approximation of it"
+    )]
+    fn a_size_that_is_not_a_number_is_neutralised() {
         let mut base = style();
         base.size = f32::NAN;
-        assert!(RunStyle::base(&base).size.is_nan());
+        assert_eq!(RunStyle::base(&base).size, 0.0);
     }
 
     /// And the metrics a paragraph is laid out with carry none of it either.
