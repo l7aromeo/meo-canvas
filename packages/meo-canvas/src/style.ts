@@ -225,8 +225,134 @@ export type BlendMode =
  * rather than skipping the paint: a node with `border: 4` and no style set
  * neither draws a border nor reserves room for one, so its content is not
  * inset. Write `'solid'` to get a line.
+ *
+ * **This default follows CSS and {@link Style.display}'s does not, and both are
+ * chosen.** A container defaults to `'flex'` where CSS's initial `display` is
+ * `inline`, because these defaults belong to a scene-building API rather than
+ * to a document language. `BorderStyle` was decided the other way, against that
+ * argument, on the grounds that a border is a thing a caller asks for rather
+ * than a thing they switch off.
+ *
+ * The pair is recorded here so that neither is "corrected" into agreement with
+ * the other: they answer the same question differently on purpose, and changing
+ * either is a change of intent rather than a tidy-up.
  */
 export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'none'
+
+/**
+ * Every key {@link Style} declares, as values a runtime check can use.
+ *
+ * **Written by hand and unable to drift, which is the point.** The generated
+ * arena property tables are the obvious source and they are the wrong one:
+ * measured, they carry **66 keys against `Style`'s 69**, because `objectFit`,
+ * `objectPosition` and `frame` travel in a node's payload rather than in a
+ * style group. A check built on those tables would refuse three valid
+ * properties — and nothing in this repository asserted the relationship, so no
+ * gate would have said so. They are generated against the encoder's slots, not
+ * against this surface's key set.
+ *
+ * {@link styleKeysAreExhaustive} is what makes a hand-written list safe. A key
+ * added to `Style` and not added here is a **compile error naming the key**; a
+ * key here that `Style` does not declare is refused by the `satisfies`. Both
+ * directions, both by name.
+ */
+export const STYLE_KEYS = [
+  'display',
+  'positionType',
+  'position',
+  'width',
+  'height',
+  'minWidth',
+  'minHeight',
+  'maxWidth',
+  'maxHeight',
+  'aspectRatio',
+  'margin',
+  'padding',
+  'border',
+  'flexDirection',
+  'flexWrap',
+  'flexGrow',
+  'flexShrink',
+  'flexBasis',
+  'justifyContent',
+  'alignItems',
+  'alignSelf',
+  'alignContent',
+  'gap',
+  'overflow',
+  'boxSizing',
+  'direction',
+  'gridTemplateColumns',
+  'columns',
+  'gridTemplateRows',
+  'gridAutoRows',
+  'gridAutoColumns',
+  'gridAutoFlow',
+  'gridColumn',
+  'gridRow',
+  'gridArea',
+  'backgroundColor',
+  'borderColor',
+  'borderStyle',
+  'borderRadius',
+  'opacity',
+  'mixBlendMode',
+  'dither',
+  'zIndex',
+  'fontFamily',
+  'fontSize',
+  'fontWeight',
+  'fontStyle',
+  'color',
+  'fontVariant',
+  'textAlign',
+  'textDecoration',
+  'verticalAlign',
+  'paintOrder',
+  'lineHeight',
+  'lineGap',
+  'letterSpacing',
+  'wordSpacing',
+  'gradient',
+  'backgroundImage',
+  'transform',
+  'boxShadow',
+  'textShadow',
+  'textStroke',
+  'mask',
+  'filter',
+  'backdropFilter',
+  'objectFit',
+  'objectPosition',
+  'frame',
+] as const satisfies readonly (keyof Style)[]
+
+/**
+ * Compiles only when `T` is `never`, and names what is left over when it is not.
+ *
+ * The `extends never` constraint is doing the work. An assertion written as
+ * `const _: Leftover = undefined as never` **cannot fail**, because `never` is
+ * assignable to everything — the first draft of this proof was written that way
+ * and passed a deliberately incomplete list without complaint.
+ */
+function noStyleKeyLeftOver<T extends never>(_leftOver?: T): void {}
+
+/** Keys `Style` declares that {@link STYLE_KEYS} omits. `never` when complete. */
+type StyleKeysNotListed = Exclude<keyof Style, (typeof STYLE_KEYS)[number]>
+
+/*
+ * The proof itself. Neither a test nor a lint: it fails `tsc`, so it fails
+ * every gate that typechecks, cannot be skipped, and fails where the key is
+ * added rather than where the list is later read.
+ *
+ * **A call rather than an exported function**, because an exported
+ * `styleKeysAreExhaustive` would be a public symbol nobody should call — and
+ * with a `declare`d helper it would have thrown `ReferenceError` if anyone
+ * did. The helper has a real, empty body and the call is what makes the
+ * constraint load-bearing.
+ */
+noStyleKeyLeftOver<StyleKeysNotListed>()
 
 /** What happens to content larger than its box. */
 export type Overflow = 'visible' | 'hidden' | 'scroll'
@@ -652,6 +778,17 @@ export interface Style {
   /**
    * How the border is drawn. Defaults to `'none'`, which draws no border and
    * reserves no space for one however wide {@link Style.border} is.
+   *
+   * **One style for all four edges, where {@link Style.border} and
+   * {@link Style.borderColor} are per-edge.** CSS has four `border-*-style`
+   * longhands and this has none, so a border drawn on three edges is spelled
+   * through the widths — `border: { right: 4, bottom: 4, left: 4 }` — rather
+   * than by turning one edge's style off. Measured: an omitted or zero edge
+   * draws nothing *and* reserves nothing, which is what `'none'` does for the
+   * whole node.
+   *
+   * So the capability is there and the spelling is not uniform: borders come on
+   * with a style and one edge goes off with a width.
    */
   readonly borderStyle?: BorderStyle
   /** Corner radii. */
@@ -674,7 +811,30 @@ export interface Style {
   readonly fontWeight?: FontWeight
   /** Upright or italic. Inherits. */
   readonly fontStyle?: FontStyle
-  /** The colour glyphs are drawn in, CSS's `color`. Inherits. */
+  /**
+   * The colour glyphs are drawn in, CSS's `color`. Inherits.
+   *
+   * **On an `Image` it is the tint an SVG source resolves `currentColor`
+   * against**, read from the node itself rather than inherited — a browser
+   * passes a page's `color` into inline SVG and not into an `<img>`, and this
+   * is the second kind.
+   *
+   * So one property has two behaviours, decided by the element: **it inherits
+   * into text and does not cross into an image's document.** That is CSS's own
+   * rule rather than an inconsistency here, and it is the kind of thing a
+   * later reader tidies into consistency and breaks.
+   *
+   * It recolours a document authored for `currentColor` and **leaves a
+   * hardcoded fill alone**: an icon whose paths say `fill="currentColor"`
+   * takes this colour, one whose paths say `fill="#000000"` stays black, and
+   * neither is an error. Set on a raster source it **is** an error, raised
+   * when the image is drawn: a bitmap has no `currentColor`, and ignoring the
+   * request would be the silent wrong picture.
+   *
+   * ```ts
+   * Image({ src: 'star.svg', width: 40, height: 40, color: '#e8c07a' })
+   * ```
+   */
   readonly color?: Color
   /** Horizontal alignment within the box. Inherits. */
   /**

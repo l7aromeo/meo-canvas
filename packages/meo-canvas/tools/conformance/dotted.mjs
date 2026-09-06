@@ -384,7 +384,12 @@ try {
     )
   }
 
-  await writeFile(DESTINATION, table(rows))
+  const written = table(rows)
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }

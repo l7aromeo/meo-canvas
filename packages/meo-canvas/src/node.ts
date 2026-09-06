@@ -26,7 +26,8 @@
  * @packageDocumentation
  */
 
-import { PROPERTY_TABLES } from './arena.js'
+import { PROPERTY_TABLES, render } from './arena.js'
+import { STYLE_KEYS } from './style.js'
 import type { Color, Gradient, Style } from './style.js'
 
 /** What a node draws. */
@@ -304,6 +305,137 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
 }
 
 /**
+ * Compiles only when `T` is `never`, and names what is left over when it is not.
+ *
+ * The `extends never` constraint is what does the work. An assertion written as
+ * `const _: Leftover = undefined as never` **cannot fail**, because `never` is
+ * assignable to everything.
+ */
+function noPropLeftOver<T extends never>(_leftOver?: T): void {}
+
+/**
+ * Every key {@link ContainerProps} accepts: `Style`'s, plus its own two.
+ *
+ * **The structural half is where drift lives now.** `STYLE_KEYS` is proved
+ * against `keyof Style`, so the sixty-nine cannot go stale; `children` and
+ * `name` are written here by hand and would, which is why this list carries a
+ * proof of its own rather than borrowing the one next door.
+ */
+const CONTAINER_KEYS = [...STYLE_KEYS, 'children', 'name'] as const satisfies readonly (keyof ContainerProps)[]
+
+/* The proof that CONTAINER_KEYS is exactly `keyof ContainerProps`. */
+noPropLeftOver<Exclude<keyof ContainerProps, (typeof CONTAINER_KEYS)[number]>>()
+
+/**
+ * Refuses a props key the factory does not have, naming it.
+ *
+ * **Checked at run time because the type system checks it almost nowhere.**
+ * Excess property checking fires on a fresh object literal and on nothing else,
+ * so a props object built from a variable, a spread or `JSON.parse` carries an
+ * unknown key straight through and the property is silently ignored -- measured
+ * on `Box`, `Text`, `Path` and the paragraph options alike.
+ */
+function checkProps(props: object, allowed: ReadonlySet<string>, what: string): void {
+  // **The thing, before its keys.** Everything below reads `Object.keys(props)`,
+  // and what that returns for a value which is not a props object decides the
+  // outcome entirely: `'hello'` has `"0"` through `"4"`, so the loop reported
+  // index zero as an unknown property and named the factory in a sentence that
+  // meant nothing; `42`, `true`, `[]`, `''` and a function have no own keys at
+  // all, so the loop found nothing to object to and **the node was built with
+  // default props and rendered**. `Box('')`, `Box(42)` and `Box({})` were
+  // indistinguishable in the output.
+  //
+  // Which makes this the same defect as the one this function exists to stop,
+  // one level out: it checked the keys of a thing without checking the thing.
+  if (typeof props !== 'object' || props === null || Array.isArray(props)) {
+    throw new TypeError(`${what} takes a props object; it was given ${render(props)}`)
+  }
+  for (const key of Object.keys(props)) {
+    if (allowed.has(key)) continue
+    throw new TypeError(`${what} has no property ${JSON.stringify(key)}`)
+  }
+}
+
+/**
+ * Every key {@link ParagraphProps} declares.
+ *
+ * Named separately rather than folded into {@link TEXT_KEYS} because
+ * `TextProps` composes **three** sources, and a list built from one spread of
+ * everything cannot say which source a missing key came from.
+ */
+const PARAGRAPH_KEYS = ['maxLines', 'ellipsis'] as const satisfies readonly (keyof ParagraphProps)[]
+
+/* The proof that PARAGRAPH_KEYS is exactly `keyof ParagraphProps`. */
+noPropLeftOver<Exclude<keyof ParagraphProps, (typeof PARAGRAPH_KEYS)[number]>>()
+
+/** Every key {@link TextProps} accepts: `Style`, the paragraph options, and `name`. */
+const TEXT_KEYS = [...STYLE_KEYS, ...PARAGRAPH_KEYS, 'name'] as const satisfies readonly (keyof TextProps)[]
+
+/* The proof that TEXT_KEYS is exactly `keyof TextProps`. */
+noPropLeftOver<Exclude<keyof TextProps, (typeof TEXT_KEYS)[number]>>()
+
+/** Every key {@link PathProps} accepts. */
+const PATH_KEYS = [
+  ...STYLE_KEYS,
+  'd',
+  'viewBox',
+  'preserveAspectRatio',
+  'fill',
+  'stroke',
+  'lineWidth',
+  'fillRule',
+  'lineCap',
+  'lineJoin',
+  'lineDash',
+  'lineDashOffset',
+  'name',
+] as const satisfies readonly (keyof PathProps)[]
+
+/* The proof that PATH_KEYS is exactly `keyof PathProps`. */
+noPropLeftOver<Exclude<keyof PathProps, (typeof PATH_KEYS)[number]>>()
+
+/** Every key {@link ImageProps} accepts. */
+const IMAGE_KEYS = [...STYLE_KEYS, 'src', 'name'] as const satisfies readonly (keyof ImageProps)[]
+
+/* The proof that IMAGE_KEYS is exactly `keyof ImageProps`. */
+noPropLeftOver<Exclude<keyof ImageProps, (typeof IMAGE_KEYS)[number]>>()
+
+/** {@link IMAGE_KEYS} as a set, built once. */
+const IMAGE_KEY_SET: ReadonlySet<string> = new Set(IMAGE_KEYS)
+
+/** {@link PATH_KEYS} as a set, built once. */
+const PATH_KEY_SET: ReadonlySet<string> = new Set(PATH_KEYS)
+
+/** {@link TEXT_KEYS} as a set, built once. */
+const TEXT_KEY_SET: ReadonlySet<string> = new Set(TEXT_KEYS)
+
+/** {@link CONTAINER_KEYS} as a set, built once. */
+const CONTAINER_KEY_SET: ReadonlySet<string> = new Set(CONTAINER_KEYS)
+
+/**
+ * The container-shaped half of a wider props object.
+ *
+ * **For callers that legitimately hold more than a container takes.** `Root`'s
+ * props carry the surface options — `fonts`, `gpu`, `pages`, `scale` and the
+ * rest — alongside the page's own style, and it builds each page by handing
+ * that object to {@link Box}. Spreading it whole put ten keys into a node's
+ * style that the writer then ignored, which is the same defect this module now
+ * refuses from a caller: it was simply ours.
+ *
+ * Filtering through {@link CONTAINER_KEYS} rather than by naming the surface
+ * options is what keeps it correct — that list is proved equal to
+ * `keyof ContainerProps`, so a style property added later is carried here
+ * without anyone remembering to add it.
+ */
+export function containerPropsOf(props: object): ContainerProps {
+  const kept: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(props)) {
+    if (CONTAINER_KEY_SET.has(key)) kept[key] = value
+  }
+  return kept
+}
+
+/**
  * A plain container.
  *
  * Lays its children out as a row, following CSS's `display: flex` rather than
@@ -323,21 +455,25 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
  * room in it.
  */
 export function Box(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Box')
   return node('box', { display: 'flex', ...props }, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children run horizontally. */
 export function Row(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Row')
   return node('box', withDirection(props, 'row'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children run vertically. */
 export function Column(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Column')
   return node('box', withDirection(props, 'column'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
 /** A container whose children are placed on a grid. */
 export function Grid(props: ContainerProps = {}): SceneNode {
+  checkProps(props, CONTAINER_KEY_SET, 'Grid')
   const style: Style = { display: 'grid', ...props }
   return node('box', style, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
@@ -483,6 +619,15 @@ function paragraphOf(props: TextProps): ParagraphOptions | undefined {
  * ```
  */
 export function Text(content: string, props: TextProps = {}): SceneNode {
+  // **Checked here rather than left to the writer.** `Text` and `RichText` are
+  // the two factories whose first argument is not props, so they are the two a
+  // caller coming from `Box` and `Image` hands an object to -- and an object
+  // travelled all the way to the string table, arriving as `side value 0 is
+  // neither a string nor a Buffer`, an offset into a wire format nobody saw.
+  if (typeof content !== 'string') {
+    throw new TypeError(`Text takes its text first and its props second; it was given ${render(content)}`)
+  }
+  checkProps(props, TEXT_KEY_SET, 'Text')
   return node('text', props, undefined, props.name, paragraphOf(props), content, undefined, undefined, undefined)
 }
 
@@ -493,6 +638,12 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * Each segment's own style overrides the node's for that run.
  */
 export function RichText(segments: readonly (TextSegment | string | number | bigint | boolean | null | undefined)[], props: TextProps = {}): SceneNode {
+  // The same, one step earlier than `Text`'s: a non-list reached
+  // `segments.every` and came back carrying that method's name.
+  if (!Array.isArray(segments)) {
+    throw new TypeError(`RichText takes its segments first and its props second; it was given ${render(segments)}`)
+  }
+  checkProps(props, TEXT_KEY_SET, 'RichText')
   // **The same rule children get.** A segment list and a children list are the
   // same kind of list, and a caller building either from data hits the same
   // `null`. Before this, children ignored two of the four ignorable values and
@@ -524,7 +675,7 @@ export function RichText(segments: readonly (TextSegment | string | number | big
 const SEGMENT_KEYS: ReadonlySet<string> = new Set(['text', 'style'])
 
 /**
- * Every key the generated property tables carry, used only to decide whether a
+ * Keys the generated property tables carry, used **only** to decide whether a
  * suggestion is safe.
  *
  * **Deliberately not an allowlist.** Measured, the union is 66 keys where
@@ -535,10 +686,16 @@ const SEGMENT_KEYS: ReadonlySet<string> = new Set(['text', 'style'])
  * **The direction matters and only one of them is sound.** A key *in* the
  * table is certainly a style property; a key *absent* from it may still be
  * one. So the set is safe for deciding whether to suggest a fix and unsafe for
- * deciding whether to refuse a key — the next reader will see it used for the
- * first and reach for it for the second.
+ * deciding whether to refuse a key.
+ *
+ * **`STYLE_KEYS` in `style.ts` is the complete list and is not this.** That one
+ * is proved equal to `keyof Style` and is what a *refusal* uses. This one stays
+ * narrower on purpose: `objectFit`, `objectPosition` and `frame` are style keys
+ * that mean nothing on a segment, so suggesting `style: { objectFit }` would
+ * typecheck and do nothing — a confidently wrong suggestion, which is the thing
+ * the gate on this set exists to prevent.
  */
-const STYLE_KEYS: ReadonlySet<string> = new Set(Object.values(PROPERTY_TABLES).flatMap(properties => properties.flatMap(property => property.keys)))
+const SUGGESTIBLE_KEYS: ReadonlySet<string> = new Set(Object.values(PROPERTY_TABLES).flatMap(properties => properties.flatMap(property => property.keys)))
 
 /**
  * Refuses a segment carrying a key `TextSegment` does not have.
@@ -564,7 +721,7 @@ function checkSegment(segment: TextSegment, at: number): void {
     // fix. A key they do not carry might be a typo for anything, and a
     // confidently wrong suggestion is worse than none: a caller who follows it
     // writes a second broken call.
-    const suggestion = STYLE_KEYS.has(key) ? ` — did you mean style: { ${key} }?` : ''
+    const suggestion = SUGGESTIBLE_KEYS.has(key) ? ` — did you mean style: { ${key} }?` : ''
     throw new TypeError(`segments[${at}] has no property ${JSON.stringify(key)}; a segment takes text and style${suggestion}`)
   }
 }
@@ -592,6 +749,7 @@ export type ImageProps = Style & {
  * ```
  */
 export function Image(props: ImageProps): SceneNode {
+  checkProps(props, IMAGE_KEY_SET, 'Image')
   const src = typeof props.src === 'string' ? { path: props.src } : props.src
   return node('image', props, undefined, props.name, undefined, undefined, undefined, src, undefined)
 }
@@ -697,6 +855,7 @@ export type PathProps = Style & {
  * ```
  */
 export function Path(props: PathProps): SceneNode {
+  checkProps(props, PATH_KEY_SET, 'Path')
   return node('path', props, undefined, props.name, undefined, undefined, undefined, undefined, props.d)
 }
 
