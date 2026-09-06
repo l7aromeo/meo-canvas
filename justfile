@@ -122,7 +122,7 @@ ci:
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -1420,6 +1420,21 @@ docs-js: build-js
     # Presence by the package, not the `.bin` shim, whose filename differs per platform.
     test -f "$tool/node_modules/typedoc/package.json" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
+
+# The half of the reference `docs-js` cannot see.
+#
+# TypeDoc's model is the exported surface, so a doc comment separated from a
+# module-private declaration is not undercounted there -- it is absent. This
+# asserts the **set** of private declarations carrying no doc, not its size,
+# which is what lets it catch a doc *moved* from one to another: the total is
+# unchanged and the set is not.
+#
+# The baseline is a named list rather than a number, so a reader sees which
+# declarations are exceptions -- mostly easing coefficients, where a sentence
+# would be noise -- and a new one is a visible edit rather than a count moving.
+[doc("Fail if a module-private declaration lost its doc comment.")]
+private-docs:
+    node packages/meo-canvas/tools/private-docs.mjs
 
 # Compare v1's prop surface against v2's.
 #
