@@ -639,14 +639,76 @@ impl Metrics {
               other is one it has never heard of."
 )]
 fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
-    match spacing {
+    let pixels = match spacing {
         Spacing::Normal => 0.0,
         Spacing::Points(points) => points,
         Spacing::Em(em) => em * font_size,
         // `Spacing` is `#[non_exhaustive]`; an unknown spelling adds nothing,
         // which is what `Normal` already means.
         _ => 0.0,
+    };
+    usable(pixels)
+}
+
+/// The furthest a spacing is allowed to push a glyph, in pixels.
+///
+/// Chrome's own ceiling for a length is `3.35544e+07`, which is the top of its
+/// layout unit rather than anything about text, so this does not copy the
+/// number -- but it does copy the property that makes it work: **a bound small
+/// enough that summing it across a line stays finite.** `f32::MAX` fails that,
+/// which is the whole reason a bound is needed instead of a plain saturation:
+/// one addition past it is infinity again and the collapse comes back one
+/// layer up.
+const SPACING_CEILING: f32 = 1.0e9;
+
+/// A resolved spacing with a value no layout can use replaced.
+///
+/// **The collapse this prevents is not the one it looks like.** A non-finite
+/// letter spacing does not make the text small or invisible: it poisons the
+/// *measurement*, so a box shrink-wrapping that text lays out at zero and
+/// takes its own background, border and siblings' positions down with it.
+/// Measured at `93a00d7` -- the same box is 704px wide at `letterSpacing: 4`,
+/// 4267px at `1e6`, and 0 at `NaN`.
+///
+/// **An absurd finite value is left exactly as it was**, and this is written as
+/// two early returns rather than a `clamp` for that reason alone. `1e6` and
+/// `1e30` both paint today and the box grows to match; a `clamp` against the
+/// ceiling would have quietly pulled `1e30` down to it and changed a render
+/// nothing asked about. This is not a plausibility check -- nothing here
+/// decides a caller's spacing is too large to have meant. Only a value
+/// arithmetic cannot carry is replaced.
+///
+/// **Infinity is clamped rather than dropped, and that is not a coin toss.**
+/// CSS has no `infinity` literal -- `calc(infinity)` is the only way to write
+/// one -- and `calc` clamps. So there is no measured Chrome behaviour under
+/// which an infinite value is dropped, and dropping it is a divergence with no
+/// defence available rather than a reading of an ambiguous rule.
+///
+/// **`NaN` becomes zero, which is `normal`.** Chrome answers a NaN two ways
+/// depending on how it arose -- a `NaN` keyword is a parse error and the
+/// declaration is dropped, a NaN out of `calc` is clamped -- and which one an
+/// API float resembles is a ruling in flight rather than a fact to read off.
+/// For this property the computed answer is measured and it is exactly this
+/// one: Chrome 151 renders `letter-spacing: calc(0/0 * 1px)` as `normal`, in a
+/// 36x14 box identical to declaring nothing. If the ruling goes the other way
+/// the fallback is `base.letter_spacing`, which `RunStyle::of` already has in
+/// hand at its call.
+///
+/// **A large negative spacing still collapses the box's width, and that is
+/// Chrome's answer too, not a leftover.** `letter-spacing: -1000000px` and
+/// `calc(-infinity * 1px)` both give Chrome a `0 x 14` box: the width goes to
+/// zero and the line box keeps its height. So the clamp here does not rescue a
+/// negative infinity into something visible, and it is not meant to -- what it
+/// removes is the *non-finite* arithmetic, after which the value behaves like
+/// the finite neighbours it now sits between.
+const fn usable(pixels: f32) -> f32 {
+    if pixels.is_nan() {
+        return 0.0;
     }
+    if pixels.is_infinite() {
+        return SPACING_CEILING.copysign(pixels);
+    }
+    pixels
 }
 
 /// Splits a segment into words and the whitespace between them.
@@ -1164,8 +1226,8 @@ mod tests {
     use meo_skia_canvas::TextEngine;
 
     use super::{
-        Line, METRICS_STRING, Metrics, Run, RunStyle, TextMeasurer, layout,
-        line_width, pieces, wrap,
+        Line, METRICS_STRING, Metrics, Run, RunStyle, SPACING_CEILING,
+        TextMeasurer, layout, line_width, pieces, spacing_pixels, wrap,
     };
     use crate::{
         measure::build_paragraph,
@@ -1190,6 +1252,114 @@ mod tests {
             text: text.to_owned(),
             style: TextStyle::default(),
         }]
+    }
+
+    /// A spacing no arithmetic can carry never reaches a measurement.
+    ///
+    /// The equalities below are exact on purpose and the lint is turned off for
+    /// them by name: `0.0` is the value `normal` resolves to rather than an
+    /// approximation of it, and the pass-through row asserts a number arrived
+    /// *unchanged*, which a tolerance would stop saying.
+    ///
+    /// Not a message defect. A non-finite letter spacing poisons the
+    /// *measurement*, so a box shrink-wrapping that text lays out at zero and
+    /// takes its background, its border and its siblings' positions with it --
+    /// measured at `93a00d7` as a 704px box at `letterSpacing: 4` and a 0px box
+    /// at `NaN`. A paint-side check would have left that standing.
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "the point of these rows is that a value is exactly what it \
+                  was, or exactly what `normal` resolves to; a tolerance would \
+                  pass a repair that shifted every spacing slightly"
+    )]
+    fn a_spacing_that_is_not_a_number_resolves_to_normal() {
+        assert_eq!(spacing_pixels(Spacing::Points(f32::NAN), 16.0), 0.0);
+        assert_eq!(spacing_pixels(Spacing::Em(f32::NAN), 16.0), 0.0);
+        // Which is what `normal` already resolves to, so the two agree rather
+        // than merely both being zero.
+        assert_eq!(
+            spacing_pixels(Spacing::Points(f32::NAN), 16.0),
+            spacing_pixels(Spacing::Normal, 16.0),
+        );
+    }
+
+    /// An infinite spacing is clamped, and clamping is not a coin toss here.
+    ///
+    /// CSS has no `infinity` literal -- `calc(infinity)` is the only spelling
+    /// -- and `calc` clamps, so there is no measured Chrome behaviour under
+    /// which an infinite value is dropped. Chrome 151 gives
+    /// `calc(-infinity * 1px)` as `-3.35544e+07px`, a clamp rather than a
+    /// dropped declaration.
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "the two directions are the same magnitude exactly, which is \
+                  what says the sign is carried rather than recomputed"
+    )]
+    fn an_infinite_spacing_is_clamped_and_keeps_its_direction() {
+        let up = spacing_pixels(Spacing::Points(f32::INFINITY), 16.0);
+        let down = spacing_pixels(Spacing::Points(f32::NEG_INFINITY), 16.0);
+        assert!(up.is_finite() && down.is_finite());
+        assert!(up > 0.0, "an infinite spacing pushes glyphs apart: {up}");
+        assert!(down < 0.0, "a negative one pulls them together: {down}");
+        assert_eq!(up, -down, "the two directions are the same distance");
+    }
+
+    /// The product is what is checked, not the two numbers that made it.
+    ///
+    /// **This is the row an input-side check fails and every other row here
+    /// passes.** `Em` multiplies by the run's own font size, so two finite
+    /// values overflow to infinity between them; a guard written against
+    /// `spacing` rather than against what it resolved to would let that
+    /// through and the collapse would come back for one spelling only.
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "the clamped value is the ceiling itself, exactly"
+    )]
+    fn a_spacing_that_overflows_while_resolving_is_clamped_too() {
+        let resolved = spacing_pixels(Spacing::Em(1.0e30), 1.0e30);
+        assert!(resolved.is_finite(), "{resolved} reached a measurement");
+        assert_eq!(resolved, SPACING_CEILING);
+    }
+
+    /// An absurd finite spacing is left alone, to the bit.
+    ///
+    /// The ceiling bounds what a non-finite value becomes; it is not a
+    /// plausibility check, and nothing here decides a caller's spacing is too
+    /// large to have meant. Written as a `clamp` this would have pulled `1e30`
+    /// down to the ceiling and changed a render nothing asked about.
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "unchanged means unchanged, to the bit"
+    )]
+    fn a_finite_spacing_is_carried_through_unchanged() {
+        // The row says nothing unless the list crosses the ceiling, so that is
+        // checked where it cannot rot: a `1e30` edited down to `1e3` one day
+        // stops compiling rather than quietly making this vacuous.
+        const _: () = assert!(1.0e30 > SPACING_CEILING);
+        for points in [0.0, 4.0, -4.0, 1.0e6, -1.0e6, 1.0e30, -1.0e30] {
+            assert_eq!(spacing_pixels(Spacing::Points(points), 16.0), points);
+        }
+    }
+
+    /// And the metrics a paragraph is laid out with carry none of it either.
+    ///
+    /// `spacing_pixels` is private and three call sites reach it; this is the
+    /// one that says the repair is on the path a scene actually takes rather
+    /// than only in the helper.
+    #[test]
+    #[expect(clippy::float_cmp, reason = "`normal` resolves to exactly zero")]
+    fn resolved_metrics_are_finite_whatever_the_style_asked_for() {
+        let mut base = style();
+        base.letter_spacing = Spacing::Points(f32::NAN);
+        base.word_spacing = Spacing::Points(f32::NEG_INFINITY);
+        let metrics = Metrics::of(&base);
+        assert_eq!(metrics.letter_spacing, 0.0);
+        assert!(metrics.word_spacing.is_finite());
+        assert!(metrics.word_spacing < 0.0);
     }
 
     /// One scene the two line-box models are both asked about.
