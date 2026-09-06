@@ -478,6 +478,12 @@ fn unescape(input: &str) -> String {
             '\\' => out.push('\\'),
             '\'' => out.push('\''),
             '"' => out.push('"'),
+            // **A translation, not a discard.** Every arm here maps an
+            // escape to what it means for laid-out text -- `\r`, `\f` and
+            // `\v` all become a newline, which is lossy and deliberate --
+            // and NUL and backspace mean no glyph, so they map to nothing.
+            // Nothing was written that could not be used, which is why this
+            // is silent where `<color>` is not.
             '0' | 'b' => {}
             // Everything else keeps both characters, the line terminators
             // included -- JavaScript's `.` matches none of `\n`, `\r`,
@@ -716,6 +722,14 @@ mod tests {
         assert_eq!(count("<color=red>a"), 0, "an unclosed span runs on");
         assert_eq!(count("<color=red>a</color>"), 0, "valid");
         assert_eq!(count("plain"), 0, "no markup");
+
+        // `unescape` runs before any tag is read and never reports. Its arms
+        // are a translation table: `\r` becomes a newline and `\0` becomes
+        // nothing, both because that is what the character means once laid
+        // out. The row is here so the next enumeration over this file finds
+        // it already decided rather than re-deriving it.
+        assert_eq!(count(r"a\0b"), 0, "an escape is translated, not discarded");
+        assert_eq!(count(r"a\bb"), 0, "the same for backspace");
     }
 
     /// A tag carrying no value clears, which is not the same as one carrying
