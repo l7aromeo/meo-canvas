@@ -30,6 +30,12 @@ export default tseslint.config(
       'packages/*/src/generated/**',
       'release/**',
       'coverage/**',
+      // Agent scratch: probes and reports, gitignored at `.gitignore`. They are
+      // browser snippets run through a headless Chrome, so `document` and
+      // `getComputedStyle` are undefined to a lint that reads them as Node.
+      // eslint does not read `.gitignore`, so the two lists are kept in step by
+      // hand.
+      '.tmp/**',
       // Config files at the root belong to no TypeScript project.
       '*.config.mts',
       '*.config.mjs',

@@ -185,3 +185,6 @@ examples/*/out/
 # What `just pack` writes: two tarballs and the staged platform package, one of
 # them a 51 MB binary. A release is built from a commit, never committed.
 release/
+
+# Evaluation scratch: agent-owned reports, merged by hand, never committed
+.tmp/

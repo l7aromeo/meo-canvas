@@ -34,3 +34,7 @@ packages/*/src/generated
 # the fixtures above, and for the same reason: reformatting them turns the next
 # real measurement change into a diff nobody can read.
 crates/*/tests/assets
+
+# Agent scratch: probes and reports written during a session, gitignored and
+# never shipped. Formatting them is churn in files that are deleted.
+.tmp
