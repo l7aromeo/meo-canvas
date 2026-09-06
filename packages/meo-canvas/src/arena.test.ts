@@ -1939,3 +1939,134 @@ describe('a value of the wrong type is refused where the property is still named
     expect(throughTheAddon({ fontWeight: 700 }).length).toBeGreaterThan(0)
   })
 })
+
+describe('a value no path handles is refused by the property that was written', () => {
+  // **The neighbouring case to the one above, and it was not covered by it.**
+  // `zIndex: 'auto'` is the wrong *type* for a property that parses nothing;
+  // `width: {}` is the wrong type for a property that parses a string tail. The
+  // second reached `value.endsWith` and came back as
+  // `value.endsWith is not a function` -- the name of a step inside a length
+  // parser, which names neither the property nor the value and cannot be
+  // searched for. Measured across every writer rather than every property: 69
+  // style keys share about a dozen writers, so a per-key table would have
+  // repeated one row twelve times and still missed the writers no key in the
+  // sample used.
+
+  const unhandled = { '{}': {}, '[]': [], null: null, true: true, 'a function': () => {} } as const
+
+  // **`{}` is not on this list and that is not an oversight.** `padding` and
+  // `gap` take named edges, so an object with none of them named is a real
+  // spelling meaning every edge takes its default. A list is not a spelling
+  // this surface has, and it was the shape that vanished silently.
+  const unshaped = { '[]': [], null: null, true: true, 'a function': () => {} } as const
+
+  describe('the writers that read the tail of a string', () => {
+    it.each([
+      ['width', "a number of pixels, a '…%' string, or 'auto'"],
+      ['flexBasis', "a number of pixels, a '…%' string, or 'auto'"],
+      ['letterSpacing', "a number, '…px', '…em' or 'normal'"],
+      ['lineHeight', "a number, '…px' or '…%'"],
+    ])('%s names itself and what it takes', (key, takes) => {
+      for (const value of Object.values(unhandled)) {
+        const write = () => throughTheAddon({ [key]: value })
+        expect(write).toThrow(key)
+        expect(write).toThrow(takes)
+        // The assertion that says which defect this is. Without it the row
+        // passes on a message that happens to contain the key by accident.
+        expect(write).not.toThrow('endsWith')
+      }
+    })
+  })
+
+  describe('the writers that take one value or named edges', () => {
+    it.each(['padding', 'margin', 'gap'])('%s names itself for a shape it has no reading of', key => {
+      for (const value of Object.values(unshaped)) {
+        const write = () => throughTheAddon({ [key]: value })
+        expect(write).toThrow(key)
+        expect(write).not.toThrow('endsWith')
+      }
+    })
+
+    // The other half of the same rule, and the row that fails if the shape
+    // check is written as `typeof value === 'object'` and left there.
+    it.each(['padding', 'margin', 'gap'])('still writes %s with no edge named', key => {
+      expect(throughTheAddon({ [key]: {} }).length).toBeGreaterThan(0)
+    })
+
+    it.each(['padding', 'margin'])('still writes %s with some edges named', key => {
+      expect(throughTheAddon({ [key]: { top: 4, left: 2 } }).length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('the writers that split a keyword', () => {
+    it.each(['flexDirection', 'textAlign'])('%s names itself, not the split', key => {
+      for (const value of Object.values(unhandled)) {
+        const write = () => throughTheAddon({ [key]: value })
+        expect(write).toThrow(key)
+        expect(write).not.toThrow('split')
+      }
+    })
+  })
+
+  describe('the writers that pushed the value into a slot unread', () => {
+    // **The silent half, and the reason this is not only a message defect.**
+    // `out.f32` takes whatever it is given, and the reader turns it into a
+    // number on the way out: `opacity: null` arrived as `0` and rendered the
+    // element invisible, `fontSize: null` blanked the text, and neither said
+    // anything. Verified before the fix by hash, not by eye -- `opacity: null`
+    // and `opacity: 0` produced byte-identical PNGs.
+    it.each(['opacity', 'fontSize', 'flexGrow', 'flexShrink', 'lineGap', 'aspectRatio'])('%s is refused rather than coerced', key => {
+      for (const value of Object.values(unhandled)) {
+        expect(() => throughTheAddon({ [key]: value })).toThrow(`${key} is`)
+      }
+    })
+
+    it.each(['backgroundColor', 'color', 'fontFamily', 'filter'])('%s names itself, not a side value', key => {
+      for (const value of Object.values(unhandled)) {
+        const write = () => throughTheAddon({ [key]: value })
+        expect(write).toThrow(key)
+        expect(write).not.toThrow('side value')
+      }
+    })
+  })
+
+  // **The row that says the change landed on the right side of the doors
+  // rule.** `NaN` is a valid `f32` and a Rust caller constructs one directly,
+  // so a writer-side refusal would shut one door of two and read as a whole
+  // repair. `typeof NaN === 'number'`, so it passes every guard above and
+  // travels unchanged. Written as `Number.isFinite` the guards would pass every
+  // other row here and fail this one, which is the only reason it is here.
+  it.each(['width', 'flexBasis', 'padding', 'gap', 'opacity', 'fontSize', 'flexGrow'])('still lets %s carry NaN to the far side', key => {
+    expect(() => throughTheAddon({ [key]: NaN })).not.toThrow()
+  })
+
+  // **A bad string is a different mistake and keeps its own wording.** The
+  // guards sit above the throws these exercise, not in place of them: a caller
+  // who wrote `'50pc'` needs the list of suffixes, and a caller who wrote `{}`
+  // needs to be told the kind is wrong. Replacing the second with the first
+  // would make these fail.
+  it('still tells a bad string which spellings exist', () => {
+    expect(() => throughTheAddon({ width: '50pc' as unknown as number })).toThrow('"50pc" is not a size')
+    expect(() => throughTheAddon({ padding: 'wide' as unknown as number })).toThrow('"wide" is not a length')
+    expect(() => throughTheAddon({ letterSpacing: 'loose' as unknown as number })).toThrow('"loose" is not a spacing')
+    expect(() => throughTheAddon({ lineHeight: '1.5' as unknown as number })).toThrow('"1.5" is not a line height')
+    expect(() => throughTheAddon({ flexDirection: 'sideways' as unknown as 'row' })).toThrow('flexDirection has no value "sideways"')
+  })
+
+  it.each([
+    ['width', 10],
+    ['width', '50%'],
+    ['flexBasis', 'auto'],
+    ['padding', 4],
+    ['gap', 6],
+    ['opacity', 0],
+    ['fontSize', 12],
+    ['flexGrow', 1],
+    ['borderRadius', 8],
+    ['backgroundColor', '#f00'],
+    ['lineHeight', 1.5],
+    ['letterSpacing', 'normal'],
+  ])('still writes %s: %s', (key, value) => {
+    expect(throughTheAddon({ [key]: value }).length).toBeGreaterThan(0)
+  })
+})
