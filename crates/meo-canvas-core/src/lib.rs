@@ -341,6 +341,17 @@ pub enum Error {
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
 
+    /// An SVG document that would not parse.
+    ///
+    /// **Separate from [`Error::UndecodableImage`] so the sniff earns its
+    /// place.** Bytes that reach the SVG parser have already been refused by
+    /// every raster decoder *and* looked like a document, so telling a caller
+    /// only that nothing reads them describes the raster decoders and not the
+    /// thing that actually failed. A caller whose icon has a stray tag wants
+    /// to hear about the tag.
+    #[error("the SVG document for node {} did not parse", .0.get())]
+    UnparsableSvg(NodeId),
+
     /// A decoder panicked while reading a source.
     ///
     /// **Distinct from [`Error::UndecodableImage`] so that it can never be

@@ -965,13 +965,43 @@ fn paint_box(
     }
 
     if let Some(background) = paint.background_image.as_ref()
-        && let Some(image) = resolved.background(id).map(DecodedImage::inner)
+        && let Some(decoded) = resolved.background(id)
     {
-        draw_background_image(context, paint, background, image, rect)?;
+        // The box it is painted into, which is what a vector document is
+        // rasterised at. `background-size` may then tile or inset it, and a
+        // tile smaller than the box is drawn from these pixels rather than
+        // re-rasterised: a background is not the case this arm was built for,
+        // and a second rasterisation per tile would be.
+        let image = raster_of(resolved, decoded, id, rect.size)?;
+        draw_background_image(context, paint, background, &image, rect)?;
     }
 
     draw_border(context, node, rect)?;
     Ok(())
+}
+
+/// Pixels for a decoded source, at the size it is about to be drawn.
+///
+/// **The size is in device pixels, not layout pixels.** A vector document is
+/// rasterised at exactly what is asked for, so asking in layout pixels would
+/// draw a page at `scale: 2` from a raster half the resolution of the surface
+/// -- the upscale this whole arm exists to avoid. A raster source ignores the
+/// size and hands back the pixels the file carried.
+fn raster_of(
+    resolved: &Resolved<'_>,
+    decoded: &DecodedImage,
+    node: NodeId,
+    size: Size,
+) -> Result<meo_skia_canvas::Image, Error> {
+    let scale = resolved.scene().scale;
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a rasterisation is a whole number of pixels, and the \
+                  argument is a size on a page that has already been sized"
+    )]
+    let device = |extent: f32| (extent * scale).ceil().max(1.0) as u32;
+    decoded.raster((device(size.width), device(size.height)), node)
 }
 
 /// Draws whatever the node's kind is.
@@ -1000,8 +1030,7 @@ fn paint_kind(
             // branch: the `Option` match below is the one every image node has
             // always paid for, and everything the placeholder costs is inside
             // the arm a resolved image never enters.
-            let Some(image) = resolved.image(id).map(DecodedImage::inner)
-            else {
+            let Some(decoded) = resolved.image(id) else {
                 if resolved.scene().on_image_error == OnImageError::Placeholder
                 {
                     draw_missing(
@@ -1012,8 +1041,7 @@ fn paint_kind(
                 }
                 return Ok(());
             };
-            let intrinsic =
-                Size::new(image.width() as f32, image.height() as f32);
+            let intrinsic = decoded.intrinsic_size();
             // **Clipped, because CSS clips replaced content and this did not.**
             // `fit_image`'s own note says the destination may be larger than
             // the box and "the caller crops"; this caller did not, so a
@@ -1054,6 +1082,13 @@ fn paint_kind(
             // by the inset it sits inside -- see `clip_to_rounded`, which
             // carries the measurement.
             let placed = fit_image(intrinsic, content, *fit, *position);
+            // **Rasterised at the size it is drawn, not at the size it
+            // states.** For a raster source these are the same pixels either
+            // way; for a vector document this is the difference between a
+            // 40x40 star drawn at 200 being sharp and being an upscale, which
+            // is the whole argument for keeping the document rather than
+            // turning it into pixels at decode time.
+            let image = raster_of(resolved, decoded, id, placed.size)?;
             context.save();
             let result = (|context: &mut Context2D| {
                 clip_to_rounded(
@@ -1062,7 +1097,7 @@ fn paint_kind(
                     content,
                 )?;
                 context.draw_image_sized(
-                    image,
+                    &image,
                     placed.origin.x,
                     placed.origin.y,
                     placed.size.width,
@@ -4654,9 +4689,10 @@ fn draw_mask(
             })
         }
         Mask::Image(_) => {
-            if let Some(image) = resolved.mask(id).map(DecodedImage::inner) {
+            if let Some(decoded) = resolved.mask(id) {
+                let image = raster_of(resolved, decoded, id, rect.size)?;
                 context.draw_image_sized(
-                    image,
+                    &image,
                     rect.origin.x,
                     rect.origin.y,
                     rect.size.width,

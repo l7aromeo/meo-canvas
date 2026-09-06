@@ -73,8 +73,10 @@
 //! share nothing and contend for nothing **except the font registry**.
 
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet, hash_map::Entry},
     path::Path,
+    rc::Rc,
     sync::OnceLock,
 };
 
@@ -95,6 +97,7 @@ use meo_canvas_scene::{
         },
     },
 };
+use meo_skia_canvas::image::Svg;
 
 use crate::{Error, FetchFailure, ImageWarning};
 
@@ -375,16 +378,110 @@ impl ResolvedText {
     }
 }
 
-/// A decoded raster image, and what the layout pass needs to know about it.
+/// A decoded image, and what the layout pass needs to know about it.
+///
+/// **Two kinds, because a vector document is not a bitmap.** A raster source
+/// decodes once into pixels of a fixed size; an SVG has an intrinsic size and
+/// a rasterisation that takes the size it is drawn at, so the document is kept
+/// and pixels are made at each use.
+///
+/// **This type is `Clone` and not `Send`.** `Clone` because every node drawing
+/// a source gets its own handle to the one decode; `!Send` because
+/// `meo_skia_canvas::Svg` wraps `SkSVGDOM`, which is neither `Send` nor `Sync`
+/// -- so a parsed document cannot leave the thread that parsed it, and
+/// [`Resolved`] cannot either. The alternative was to keep the XML and parse
+/// again on the drawing thread, which is a second 21 ms parse of every
+/// document on every render, because the layout pass asks for
+/// [`Self::intrinsic_size`] before the paint pass exists.
 #[derive(Debug, Clone)]
 pub struct DecodedImage {
-    image: meo_skia_canvas::Image,
+    kind: Kind,
+}
+
+/// What a decoded source turned out to be.
+#[derive(Debug, Clone)]
+enum Kind {
+    /// Pixels, at the size the file states.
+    Raster(meo_skia_canvas::Image),
+    /// A parsed document, shared by every node that names this source.
+    ///
+    /// `Rc` rather than a fresh document per node: `taken` clones one decode
+    /// per node, and a document is expensive to parse and cheap to share.
+    /// `RefCell` because [`meo_skia_canvas::Svg::rasterize`] takes `&mut
+    /// self` -- it sets the container size on the document before drawing --
+    /// and because the raster it produces is memoised beside it.
+    Vector(Rc<RefCell<Vector>>),
+}
+
+/// A parsed SVG document and the last raster made from it.
+struct Vector {
+    /// The document itself.
+    svg: Svg,
+    /// Its own size, which is what an `Auto` box takes.
+    ///
+    /// Read once at parse time rather than asked of the document each time:
+    /// the layout pass asks for it twice per node even when the caller states
+    /// both dimensions, measured on a scene with an explicit width and
+    /// height.
+    intrinsic: Size,
+    /// The last size this document was rasterised at, and the pixels.
+    ///
+    /// One entry rather than a map. A document is normally drawn at one size,
+    /// and re-rasterising is tens of microseconds against a parse of tens of
+    /// milliseconds -- so a second size costs a redraw rather than a reparse,
+    /// and a map would be machinery for a case nobody has.
+    raster: Option<((u32, u32), meo_skia_canvas::Image)>,
+}
+
+/// **Written out because `meo_skia_canvas::Svg` has no `Debug`.** The document
+/// itself has nothing a reader wants anyway; what identifies one here is the
+/// size it states and whether it has been rasterised yet.
+impl std::fmt::Debug for Vector {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Vector")
+            .field("intrinsic", &self.intrinsic)
+            .field("raster", &self.raster.as_ref().map(|(size, _)| size))
+            // The document itself is the field left out, and it is left out
+            // because `meo_skia_canvas::Svg` has no `Debug` to call.
+            .finish_non_exhaustive()
+    }
 }
 
 impl DecodedImage {
-    /// The decoded bitmap, for the paint pass.
-    pub(crate) const fn inner(&self) -> &meo_skia_canvas::Image {
-        &self.image
+    /// Pixels for the paint pass, at the size they will be drawn.
+    ///
+    /// A raster source ignores the size -- its pixels are what the file
+    /// carried, and scaling them is the drawing call's business. A vector
+    /// source is rasterised at exactly this size, which is the whole reason
+    /// the document is kept rather than turned into pixels at decode time.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UndecodableImage`] naming the node when a document
+    /// cannot be rasterised at the size asked for.
+    pub(crate) fn raster(
+        &self,
+        size: (u32, u32),
+        node: NodeId,
+    ) -> Result<meo_skia_canvas::Image, Error> {
+        match &self.kind {
+            Kind::Raster(image) => Ok(image.clone()),
+            Kind::Vector(document) => {
+                let mut document = document.borrow_mut();
+                if let Some((made_at, image)) = &document.raster
+                    && *made_at == size
+                {
+                    return Ok(image.clone());
+                }
+                let image = document
+                    .svg
+                    .rasterize(size.0.max(1), size.1.max(1))
+                    .map_err(|_| Error::UndecodableImage(node))?;
+                document.raster = Some((size, image.clone()));
+                Ok(image)
+            }
+        }
     }
 
     /// The frame a node asked for, or this image unchanged.
@@ -406,22 +503,41 @@ impl DecodedImage {
         let Some(index) = frame.map(|index| index as usize) else {
             return Ok(self);
         };
-        if index == 0 || self.image.frame_count() <= 1 {
+        // **A document has one frame, and asking for a later one is the same
+        // mistake as asking for the fourth frame of a two-frame GIF.** SVG
+        // animation is not rasterised here, so saying yes by drawing the only
+        // frame there is would be the silent wrong picture this property
+        // exists to refuse.
+        let Kind::Raster(image) = &self.kind else {
+            return if index == 0 {
+                Ok(self)
+            } else {
+                Err(Error::UndecodableImage(node))
+            };
+        };
+        if index == 0 || image.frame_count() <= 1 {
             return Ok(self);
         }
-        if index >= self.image.frame_count() {
+        if index >= image.frame_count() {
             return Err(Error::UndecodableImage(node));
         }
-        self.image
+        image
             .frame(index)
-            .map(|image| Self { image })
+            .map(|image| Self {
+                kind: Kind::Raster(image),
+            })
             .map_err(|_| Error::UndecodableImage(node))
     }
 
     /// The image's own size in pixels, which is what an `Auto` box takes.
     #[must_use]
     pub fn intrinsic_size(&self) -> Size {
-        Size::new(self.image.width() as f32, self.image.height() as f32)
+        match &self.kind {
+            Kind::Raster(image) => {
+                Size::new(image.width() as f32, image.height() as f32)
+            }
+            Kind::Vector(document) => document.borrow().intrinsic,
+        }
     }
 }
 
@@ -677,7 +793,15 @@ fn decode_sources<'scene>(
         }
     }
 
-    let decoded = in_parallel(&wanted);
+    // **Parsed here rather than on the workers.** Reading and raster-decoding
+    // stay parallel; an SVG comes back as bytes and is parsed on this thread,
+    // because a parsed document is neither `Send` nor `Sync` and cannot be
+    // carried out of a worker at all.
+    let decoded: Vec<Result<DecodedImage, Error>> = in_parallel(&wanted)
+        .into_iter()
+        .zip(wanted.iter())
+        .map(|(fetched, (_, node))| fetched.and_then(|it| parsed(it, *node)))
+        .collect();
     let mut once = HashMap::with_capacity(decoded.len());
     // **`Vec::new` does not allocate.** A render where every source resolves
     // never pushes, so this costs three words of stack and no heap at all --
@@ -758,15 +882,19 @@ fn soft(
         }),
         // Fetched, and then would not decode. The bytes came from the world
         // rather than from the caller, so this is the same class of fact as a
-        // 404 and softens with it.
-        Error::UndecodableImage(_) => Ok(ImageWarning {
-            url: url.clone(),
-            node,
-            failure: FetchFailure::Other,
-            detail: "the bytes fetched are not an image any decoder here reads"
-                .to_owned(),
-            nodes,
-        }),
+        // 404 and softens with it. An SVG that would not parse is the same
+        // fact about the same bytes, said more precisely.
+        Error::UndecodableImage(_) | Error::UnparsableSvg(_) => {
+            Ok(ImageWarning {
+                url: url.clone(),
+                node,
+                failure: FetchFailure::Other,
+                detail:
+                    "the bytes fetched are not an image any decoder here reads"
+                        .to_owned(),
+                nodes,
+            })
+        }
         // `UnresolvedSource` is the `net` feature being off, which is a build
         // decision rather than a fact about the world: a caller who did not
         // compile an HTTP client has not had a fetch fail, they have asked for
@@ -826,7 +954,7 @@ fn soft(
 /// independent and were serial; the measurement is owed and is not here.
 fn in_parallel(
     wanted: &[(&ImageSource, NodeId)],
-) -> Vec<Result<DecodedImage, Error>> {
+) -> Vec<Result<Fetched, Error>> {
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
         .min(wanted.len().max(1));
@@ -837,7 +965,7 @@ fn in_parallel(
             .collect();
     }
 
-    let mut out: Vec<Result<DecodedImage, Error>> = Vec::new();
+    let mut out: Vec<Result<Fetched, Error>> = Vec::new();
     std::thread::scope(|scope| {
         let handles: Vec<_> = wanted
             .chunks(wanted.len().div_ceil(threads))
@@ -1204,7 +1332,37 @@ fn percent_decode(payload: &str) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
-fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
+/// What a worker can hand back, which is not always a decoded image.
+///
+/// **A parsed SVG cannot cross a thread** -- `meo_skia_canvas::Svg` wraps
+/// `SkSVGDOM`, which is neither `Send` nor `Sync` -- so the bytes come back
+/// instead and the caller parses them. Bytes are `Send`, and reading the file
+/// stays where the parallelism is.
+enum Fetched {
+    /// Pixels, decoded on the worker.
+    Raster(meo_skia_canvas::Image),
+    /// Bytes that no raster decoder read and that look like an SVG document.
+    Vector(Vec<u8>),
+}
+
+/// Whether these bytes look like an SVG document.
+///
+/// **A gate in front of the parser rather than the thing that decides.** The
+/// raster decoders are asked first, so this only ever sees bytes they refused;
+/// what it does is separate "not an image at all" from "an SVG that will not
+/// parse", which are different sentences for the caller. A file that starts
+/// with an XML declaration or a comment before its root is still an SVG, so
+/// the leading bytes are skipped rather than matched exactly.
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let head = &bytes[..bytes.len().min(1024)];
+    let text = String::from_utf8_lossy(head);
+    let text = text.trim_start();
+    text.starts_with("<svg")
+        || (text.starts_with("<?xml") || text.starts_with("<!--"))
+            && text.contains("<svg")
+}
+
+fn decode(node: NodeId, source: &ImageSource) -> Result<Fetched, Error> {
     // The `Path` arm owns what it read and the `Bytes` arm borrows what the
     // caller already holds, so only the one that has to allocate does. Making
     // both arms `Vec<u8>` reads more evenly and copies the whole file: a 5 MB
@@ -1243,9 +1401,36 @@ fn decode(node: NodeId, source: &ImageSource) -> Result<DecodedImage, Error> {
         ImageSource::Url(_) => return Err(Error::UnresolvedSource(node)),
     };
 
-    meo_skia_canvas::Image::from_encoded(bytes)
-        .map(|image| DecodedImage { image })
-        .map_err(|_| Error::UndecodableImage(node))
+    if let Ok(image) = meo_skia_canvas::Image::from_encoded(bytes) {
+        return Ok(Fetched::Raster(image));
+    }
+    if looks_like_svg(bytes) {
+        return Ok(Fetched::Vector(bytes.to_vec()));
+    }
+    Err(Error::UndecodableImage(node))
+}
+
+/// Parses what a worker handed back, on the thread that will draw it.
+fn parsed(fetched: Fetched, node: NodeId) -> Result<DecodedImage, Error> {
+    match fetched {
+        Fetched::Raster(image) => Ok(DecodedImage {
+            kind: Kind::Raster(image),
+        }),
+        Fetched::Vector(bytes) => {
+            let xml = std::str::from_utf8(&bytes)
+                .map_err(|_| Error::UnparsableSvg(node))?;
+            let svg =
+                Svg::parse(xml).map_err(|_| Error::UnparsableSvg(node))?;
+            let size = svg.intrinsic_size();
+            Ok(DecodedImage {
+                kind: Kind::Vector(Rc::new(RefCell::new(Vector {
+                    intrinsic: Size::new(size.width, size.height),
+                    svg,
+                    raster: None,
+                }))),
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1381,7 +1566,8 @@ pub(crate) mod tests {
     };
 
     use super::{
-        DATA_URI_BASE64, Fonts, LineHeight, Resolved, ResolvedText, is_local,
+        DATA_URI_BASE64, DecodedImage, Fonts, LineHeight, Resolved,
+        ResolvedText, is_local,
     };
     use crate::Error;
 
@@ -1732,6 +1918,139 @@ pub(crate) mod tests {
                 Err(Error::UndecodableImage(_))
             ),
             "bytes that are not an image should be the undecodable case"
+        );
+    }
+
+    /// A 40x20 document that states its size, and the same drawing with only
+    /// a `viewBox`.
+    ///
+    /// `currentColor` rather than a literal, because it is what the tint in
+    /// #28b will set and what this build must leave alone: with nothing
+    /// setting a colour, SVG's initial `color` is black and that is what these
+    /// assertions see.
+    const SIZED_SVG: &str = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20" "#,
+        r#"viewBox="0 0 40 20"><rect width="40" height="20" "#,
+        r#"fill="currentColor"/></svg>"#
+    );
+    const AUTOSIZED_SVG: &str = concat!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">"#,
+        r#"<rect width="40" height="20" fill="currentColor"/></svg>"#
+    );
+
+    fn svg_source(xml: &str) -> ImageSource {
+        ImageSource::Bytes(xml.as_bytes().to_vec())
+    }
+
+    fn decoded(source: ImageSource) -> Result<DecodedImage, Error> {
+        let mut scene = Scene::new(Size::ZERO);
+        let node = scene
+            .push(NodeId::ROOT, image_node(source))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        Resolved::new(&scene, &Fonts::new()).map(|resolved| {
+            resolved
+                .image(node)
+                .unwrap_or_else(|| unreachable!("the node is an image"))
+                .clone()
+        })
+    }
+
+    #[test]
+    fn an_svg_source_reports_the_size_the_document_states() {
+        let sized = decoded(svg_source(SIZED_SVG))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(sized.intrinsic_size(), Size::new(40.0, 20.0));
+
+        // A document with no stated size still has an extent, derived from its
+        // `viewBox`. Layout has to be given a number either way, and the pair
+        // is what says the sized one is not answering by accident.
+        let autosized = decoded(svg_source(AUTOSIZED_SVG))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(
+            autosized.intrinsic_size().width > 0.0,
+            "an autosized document reported no width"
+        );
+    }
+
+    #[test]
+    fn an_svg_is_rasterised_at_the_size_it_is_drawn() {
+        // **The pair a single-size golden cannot make.** A document
+        // rasterised once and stretched would report the small size at both
+        // asks; these are two rasterisations, so the pixels differ in count as
+        // well as in scale. Without this row a renderer that rasterised at 40
+        // and drew at 200 passes.
+        let image = decoded(svg_source(SIZED_SVG))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let small = image
+            .raster((40, 20), NodeId::ROOT)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let large = image
+            .raster((200, 100), NodeId::ROOT)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!((small.width(), small.height()), (40, 20));
+        assert_eq!((large.width(), large.height()), (200, 100));
+
+        // And the same size twice is the memo, which must hand back the same
+        // pixels rather than a second rasterisation of them.
+        let again = image
+            .raster((200, 100), NodeId::ROOT)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!((again.width(), again.height()), (200, 100));
+    }
+
+    #[test]
+    fn a_raster_source_ignores_the_size_it_is_asked_for() {
+        // The other arm of `raster`: pixels that came from a file are what the
+        // file carried, whatever size the drawing call wants. Without this the
+        // vector row above would pass for an implementation that resized
+        // everything.
+        let image = decoded(ImageSource::Bytes(RED_PNG.to_vec()))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let asked = image
+            .raster((200, 100), NodeId::ROOT)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!((asked.width(), asked.height()), (4, 2));
+    }
+
+    #[test]
+    fn an_svg_that_will_not_parse_says_it_was_an_svg() {
+        // The sniff's whole purpose: these bytes were refused by every raster
+        // decoder *and* looked like a document, so the caller hears about the
+        // document rather than about the decoders.
+        let broken = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect";
+        assert!(
+            matches!(decoded(svg_source(broken)), Err(Error::UnparsableSvg(_))),
+            "a malformed document did not fail as an SVG"
+        );
+        // And bytes that look like nothing stay the other variant.
+        assert!(
+            matches!(
+                decoded(ImageSource::Bytes(b"not a picture".to_vec())),
+                Err(Error::UndecodableImage(_))
+            ),
+            "bytes that are not a document should not fail as an SVG"
+        );
+    }
+
+    #[test]
+    fn a_document_has_one_frame() {
+        // A frame index past the only frame is refused rather than answered
+        // with that frame, which is the rule the raster arm already has for a
+        // two-frame GIF asked for its fourth.
+        let mut scene = Scene::new(Size::ZERO);
+        let mut node = image_node(svg_source(SIZED_SVG));
+        if let NodeKind::Image { frame, .. } = &mut node.kind {
+            *frame = Some(3);
+        }
+        scene
+            .push(NodeId::ROOT, node)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(
+            matches!(
+                Resolved::new(&scene, &Fonts::new()),
+                Err(Error::UndecodableImage(_))
+            ),
+            "a document answered for a frame it does not have"
         );
     }
 
