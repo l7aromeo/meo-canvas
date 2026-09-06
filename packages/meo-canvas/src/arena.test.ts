@@ -630,6 +630,57 @@ describe('the property tables', () => {
     }
   })
 
+  it('spell a property the way a caller writes it, in both tables', () => {
+    // The Rust decoder names the failing property out of its own table and
+    // cannot read this one: it reports `borderColor` for a field the scene
+    // calls `border_color_all`. So the surface spelling exists twice, and the
+    // copy in the Rust is a bare string literal where `keys` below is
+    // `readonly (keyof Style)[]` and therefore checked against `Style` itself.
+    //
+    // The two are not the same datum, which is why this is a rule about them
+    // rather than an equality. `keys` is every spelling that routes to the
+    // slot, and it drives presence; the Rust name is the one spelling a
+    // failure reports. They part company on six rows, in two ways:
+    //
+    //   gridColumn / gridArea    two spellings of one property
+    //   width / height           two properties sharing one slot
+    //
+    // An alias names the primary, because a caller who wrote `gridArea` is
+    // better served by one name they can look up than by two they must choose
+    // between. A symmetric pair names both, because naming one half is
+    // confidently wrong half the time -- a caller who wrote `height` and reads
+    // `width is ...` has been misdirected, where `width or height` is merely
+    // broad. That is the `borderColorAll` rule applied one level in.
+    //
+    // What is checkable here is that every name is a real key and that the
+    // names lead with the primary. Which subset a row carries beyond that is a
+    // judgement: `size as "width"` satisfies both clauses and misdirects a
+    // caller who wrote `height`, because nothing declares which rows are
+    // symmetric pairs and which are aliases.
+    //
+    // That gap is unreachable while it stands. A name is only ever printed by
+    // a variant that reads a side value, and the three symmetric rows are
+    // `Dimension`s, which read none. **It opens the moment a numeric variant
+    // carries the property** -- a change someone will make for an unrelated
+    // reason, and at that point this check needs the distinction declared
+    // rather than inferred from the key order.
+    for (const { key, table } of GROUPS) {
+      for (const property of PROPERTY_TABLES[key] ?? []) {
+        const generated = table.find(entry => entry.index === property.index)
+        const named = (generated?.caller ?? '').split(' or ')
+        const where = `${key}.${property.rust}`
+
+        expect(named, `${where} names no property`).not.toEqual([''])
+        for (const name of named) {
+          expect(property.keys, `${where} names \`${name}\`, which is not one of its keys`).toContain(name)
+        }
+        // Ordered from the primary, so naming only the alias -- or only the
+        // second half of a pair -- fails rather than reading as a choice.
+        expect(named, `${where} does not lead with its primary key`).toEqual(property.keys.slice(0, named.length))
+      }
+    }
+  })
+
   it('partition every property the scene carries', () => {
     for (const { key, table } of GROUPS) {
       const spelt = new Set((PROPERTY_TABLES[key] ?? []).map(property => property.rust))

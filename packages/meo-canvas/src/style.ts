@@ -99,9 +99,10 @@ export type Corners =
  * `(string & {})` is what keeps every other syntax accepted alongside them —
  * without it the union would refuse strings the renderer takes. **No
  * TypeScript type can spell CSS colour syntax**, so the type cannot be the
- * check: an unreadable colour is refused by the renderer, quoting what it
- * received — `slot 12 names "potato", which is not a colour any CSS syntax
- * spells` — rather than described by a shape the compiler wanted.
+ * check: an unreadable colour is refused by the renderer, naming the property
+ * and quoting what it received — `borderColor is "potato", which is not a
+ * colour any CSS syntax spells` — rather than described by a shape the
+ * compiler wanted.
  */
 export type Color =
   | `#${string}`
@@ -584,6 +585,10 @@ export interface Style {
    * Naming both this and {@link Style.gridTemplateColumns} is refused rather
    * than resolved by precedence: a caller who wrote both meant one of them,
    * and nothing here can tell which.
+   *
+   * Being sugar, it has no separate identity once it reaches the renderer, so
+   * a failure reading these tracks names `gridTemplateColumns` however they
+   * were written.
    */
   readonly columns?: number
   /** The grid's row tracks. */
@@ -609,6 +614,10 @@ export interface Style {
    *
    * Naming this beside either of those is refused, for the reason
    * {@link Style.columns} is.
+   *
+   * Adding nothing to the wire means it has no identity there either, so a
+   * failure reading a placement names `gridColumn` or `gridRow` — the axis it
+   * was reading — rather than the shorthand that supplied it.
    */
   readonly gridArea?: readonly [number, number, number, number]
 

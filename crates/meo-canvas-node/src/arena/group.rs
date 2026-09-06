@@ -125,6 +125,13 @@ pub(crate) const fn ascending(indices: &[u32]) -> bool {
 /// check that the indices ascend and fit that mask, and the reader that
 /// applies the present properties onto the group's `Default`.
 ///
+/// Each property carries the name a **caller** writes, which is not always the
+/// Rust field's: `border_color_all` is `borderColor` and `blend_mode` is
+/// `mixBlendMode`. It lives here rather than being derived, because a
+/// derivation is right for fifty-one of sixty-two and silently wrong for the
+/// rest -- and a table of exceptions elsewhere is a second definition that can
+/// drift from this one.
+///
 /// Indices are written explicitly at each property, as `wire_enum!` writes
 /// discriminants in the scene crate and for the same reason: a position-derived
 /// index renumbers every later property when one is inserted, and the number is
@@ -133,7 +140,7 @@ macro_rules! arena_group {
     (
         $(#[$meta:meta])*
         $vis:vis mod $name:ident for $target:ty {
-            $( $index:literal => $field:ident : $ty:ty ),+ $(,)?
+            $( $index:literal => $field:ident as $caller:literal : $ty:ty ),+ $(,)?
         }
     ) => {
         $(#[$meta])*
@@ -261,6 +268,15 @@ macro_rules! arena_group {
                 let mut value = <$target>::default();
                 $(
                     if mask.has($index) {
+                        // The one place a property's decode begins, so the one
+                        // place its name is known. The name is written beside
+                        // the field in the table that defines the wire format,
+                        // because Rust's spelling is not always the caller's:
+                        // `border_color_all` is `borderColor`, `blend_mode` is
+                        // `mixBlendMode`, and a message naming a property that
+                        // does not exist on the surface sends a caller looking
+                        // through their own source for it.
+                        input.set_property($caller);
                         value.$field = ArenaValue::read(input)?;
                     }
                 )+
