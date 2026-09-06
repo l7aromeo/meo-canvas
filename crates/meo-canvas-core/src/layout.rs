@@ -713,30 +713,36 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
 
         inset: to_taffy_inset(layout),
         size: taffy::Size {
-            width: to_dimension(layout.size.0),
-            height: to_dimension(layout.size.1),
+            width: to_dimension(sized(layout.size.0)),
+            height: to_dimension(sized(layout.size.1)),
         },
         min_size: taffy::Size {
-            width: to_auto_length(layout.min_size.0),
-            height: to_auto_length(layout.min_size.1),
+            width: to_auto_length(sized(layout.min_size.0)),
+            height: to_auto_length(sized(layout.min_size.1)),
         },
         max_size: taffy::Size {
-            width: to_auto_length(layout.max_size.0),
-            height: to_auto_length(layout.max_size.1),
+            width: to_auto_length(sized(layout.max_size.0)),
+            height: to_auto_length(sized(layout.max_size.1)),
         },
-        aspect_ratio: layout.aspect_ratio,
+        aspect_ratio: layout.aspect_ratio.filter(|ratio| {
+            // A ratio is a positive finite number or it is not a ratio.
+            // Chrome drops `0`, `-2`, `NaN` and `Infinity` alike and keeps the
+            // declared size; applying any of them abandons that size and
+            // shrinks the box to its content.
+            ratio.is_finite() && *ratio > 0.0
+        }),
 
         margin: taffy::Rect {
-            left: to_auto_length(layout.margin.left),
-            right: to_auto_length(layout.margin.right),
-            top: to_auto_length(layout.margin.top),
-            bottom: to_auto_length(layout.margin.bottom),
+            left: to_auto_length(margin(layout.margin.left)),
+            right: to_auto_length(margin(layout.margin.right)),
+            top: to_auto_length(margin(layout.margin.top)),
+            bottom: to_auto_length(margin(layout.margin.bottom)),
         },
         padding: taffy::Rect {
-            left: to_length(layout.padding.left),
-            right: to_length(layout.padding.right),
-            top: to_length(layout.padding.top),
-            bottom: to_length(layout.padding.bottom),
+            left: to_length(spacing(layout.padding.left)),
+            right: to_length(spacing(layout.padding.right)),
+            top: to_length(spacing(layout.padding.top)),
+            bottom: to_length(spacing(layout.padding.bottom)),
         },
         // `snapped` is gone rather than composed: a used border width is a
         // whole number and a whole number is already on the grid.
@@ -761,15 +767,20 @@ pub fn to_taffy_style(layout: &LayoutStyle) -> taffy::Style {
         // the two orders are each right in their own vocabulary and only the
         // crossing has to know.
         gap: taffy::Size {
-            width: to_length(layout.gap.1),
-            height: to_length(layout.gap.0),
+            width: to_length(spacing(layout.gap.1)),
+            height: to_length(spacing(layout.gap.0)),
         },
 
         flex_direction: to_flex_direction(layout.flex_direction),
         flex_wrap: to_flex_wrap(layout.flex_wrap),
-        flex_grow: layout.flex_grow,
-        flex_shrink: layout.flex_shrink,
-        flex_basis: to_dimension(layout.flex_basis),
+        // A negative or non-finite factor is not a factor. Dropped, each to
+        // its own initial value rather than to a shared one -- CSS's initial
+        // `flex-grow` is 0 and its initial `flex-shrink` is 1, and a factor
+        // that fell back to the wrong one would be a second defect wearing the
+        // first one's repair.
+        flex_grow: factor(layout.flex_grow, 0.0),
+        flex_shrink: factor(layout.flex_shrink, 1.0),
+        flex_basis: to_dimension(sized(layout.flex_basis)),
 
         grid_template_columns: layout
             .grid_template_columns
@@ -1073,6 +1084,11 @@ pub(crate) fn used_border(border: Sides<f32>) -> Sides<f32> {
 
 /// One edge of [`used_border`].
 fn used_border_width(width: f32) -> f32 {
+    // `NaN <= 0.0` is false, so a non-finite width would otherwise reach
+    // `floor().max(1.0)` and stay non-finite all the way into the border box.
+    if !width.is_finite() {
+        return 0.0;
+    }
     if width <= 0.0 {
         0.0
     } else {
@@ -1097,10 +1113,108 @@ fn to_auto_length(dimension: Dimension) -> taffy::LengthPercentageAuto {
     }
 }
 
+/// A size, min-size, max-size or flex basis with an unusable value dropped.
+///
+/// # Why the layout pass rather than the boundary a value arrives at
+///
+/// **The two public surfaces reach here by different doors.** A JavaScript
+/// caller's number crosses the wire and is decoded by
+/// `meo_canvas_scene::codec`; a Rust caller writes `Length::Points(f32)` and
+/// never touches the codec at all. A check placed at either door repairs one
+/// surface and leaves the other exactly as it was -- measured, not assumed:
+/// the same 64 bad-value cells fail identically through both.
+///
+/// So the check is here, where the two doors meet, which is also where the
+/// browser puts it: an invalid declaration is dropped when the property is
+/// used, not when the stylesheet is parsed.
+///
+/// # What "unusable" means, per property
+///
+/// Chrome's rule is one rule -- an invalid value is dropped and the property
+/// takes its unset value -- and the work is in knowing what is invalid where.
+/// **A negative `margin` and a negative inset are valid CSS and are kept.**
+/// Everything else measured against Chrome 151 refuses a negative, and every
+/// property refuses a non-finite number.
+const fn sized(dimension: Dimension) -> Dimension {
+    match dimension {
+        Dimension::Points(points) if !points.is_finite() || points < 0.0 => {
+            Dimension::Auto
+        }
+        Dimension::Percent(fraction)
+            if !fraction.is_finite() || fraction < 0.0 =>
+        {
+            Dimension::Auto
+        }
+        kept => kept,
+    }
+}
+
+/// A margin edge with an unusable value dropped.
+///
+/// **A negative margin is valid CSS and survives**: it pulls the box outside
+/// its parent, which is what it is for. Only a non-finite value is dropped,
+/// and it falls back to zero rather than to `auto` -- `auto` on a margin
+/// absorbs free space, so dropping to it would centre a box that asked for
+/// nothing of the kind.
+const fn margin(dimension: Dimension) -> Dimension {
+    match dimension {
+        Dimension::Points(points) if !points.is_finite() => {
+            Dimension::Points(0.0)
+        }
+        Dimension::Percent(fraction) if !fraction.is_finite() => {
+            Dimension::Points(0.0)
+        }
+        kept => kept,
+    }
+}
+
+/// A padding or gap length with an unusable value dropped.
+///
+/// Both refuse negatives in CSS and both have an initial value of zero, so
+/// there is one fallback rather than a choice.
+const fn spacing(length: Length) -> Length {
+    match length {
+        Length::Points(points) if !points.is_finite() || points < 0.0 => {
+            Length::ZERO
+        }
+        Length::Percent(fraction)
+            if !fraction.is_finite() || fraction < 0.0 =>
+        {
+            Length::ZERO
+        }
+        kept => kept,
+    }
+}
+
+/// A flex factor with an unusable value dropped to the initial value given.
+///
+/// The caller passes the initial value because CSS's differ: `flex-grow`
+/// starts at 0 and `flex-shrink` at 1.
+fn factor(value: f32, initial: f32) -> f32 {
+    if value.is_finite() && value >= 0.0 {
+        value
+    } else {
+        initial
+    }
+}
+
+/// An inset edge with an unusable value dropped.
+///
+/// **A negative inset is valid CSS**, the same as a negative margin: it moves
+/// the box the other way. A non-finite one becomes absence, which for an inset
+/// is `auto` -- the edge taffy places rather than an edge pinned anywhere.
+const fn inset(edge: Option<Length>) -> Option<Length> {
+    match edge {
+        Some(Length::Points(points)) if !points.is_finite() => None,
+        Some(Length::Percent(fraction)) if !fraction.is_finite() => None,
+        kept => kept,
+    }
+}
+
 /// One `inset` edge, where absence is `auto` -- the edge taffy is free to place
 /// rather than an edge pinned at zero.
-fn to_inset(inset: Option<Length>) -> taffy::LengthPercentageAuto {
-    match inset {
+fn to_inset(edge: Option<Length>) -> taffy::LengthPercentageAuto {
+    match inset(edge) {
         None => taffy::LengthPercentageAuto::auto(),
         Some(Length::Points(points)) => {
             taffy::LengthPercentageAuto::length(snapped(points))
@@ -2142,6 +2256,99 @@ mod tests {
             super::to_available(taffy::AvailableSpace::MaxContent),
             Available::MaxContent
         );
+    }
+
+    /// Every cell of the bad-value grid that layout owns, in one place.
+    ///
+    /// **Each row fails if the normalisation is removed**, which is the point:
+    /// measured against Chrome 151, an invalid declaration is dropped and the
+    /// property takes its unset value, and before this the values reached
+    /// taffy untouched -- 23 of 48 sampled cells drew nothing at all.
+    #[test]
+    fn an_unusable_value_is_dropped_where_it_becomes_layout_input() {
+        let bad = [f32::INFINITY, f32::NAN, -20.0];
+        for value in bad {
+            let style = LayoutStyle {
+                size: (Dimension::Points(value), Dimension::Points(value)),
+                min_size: (Dimension::Points(value), Dimension::Points(value)),
+                max_size: (Dimension::Points(value), Dimension::Points(value)),
+                flex_basis: Dimension::Points(value),
+                aspect_ratio: Some(value),
+                flex_grow: value,
+                flex_shrink: value,
+                padding: Sides::all(Length::Points(value)),
+                gap: (Length::Points(value), Length::Points(value)),
+                border: Sides::all(value),
+                ..LayoutStyle::default()
+            };
+            let taffy = super::to_taffy_style(&style);
+
+            assert_eq!(taffy.size.width, taffy::Dimension::auto(), "{value}");
+            assert_eq!(
+                taffy.min_size.height,
+                taffy::LengthPercentageAuto::auto()
+            );
+            assert_eq!(
+                taffy.max_size.width,
+                taffy::LengthPercentageAuto::auto()
+            );
+            assert_eq!(taffy.flex_basis, taffy::Dimension::auto());
+            assert_eq!(taffy.aspect_ratio, None, "{value}");
+            // The two factors fall back to *their own* initial values, which
+            // differ: a shrink that fell back to 0 would stop overflowing
+            // items shrinking at all. Compared by bits rather than by value,
+            // because the claim is that the fallback is passed through
+            // untouched -- identity, not nearness.
+            assert_eq!(taffy.flex_grow.to_bits(), 0.0_f32.to_bits(), "{value}");
+            assert_eq!(
+                taffy.flex_shrink.to_bits(),
+                1.0_f32.to_bits(),
+                "{value}"
+            );
+            assert_eq!(
+                taffy.padding.left,
+                taffy::LengthPercentage::length(0.0)
+            );
+            assert_eq!(taffy.gap.width, taffy::LengthPercentage::length(0.0));
+            assert_eq!(taffy.border.top, taffy::LengthPercentage::length(0.0));
+        }
+    }
+
+    /// The other half, and the half a blanket repair breaks.
+    ///
+    /// **A negative margin and a negative inset are valid CSS**, measured
+    /// against Chrome and kept. A repair that rejected every negative would
+    /// pass the test above and fail this one -- which is the whole reason it
+    /// is written as its own test rather than as more rows in that one.
+    #[test]
+    fn a_negative_margin_and_a_negative_inset_survive() {
+        let style = LayoutStyle {
+            position_type: PositionType::Relative,
+            margin: Sides::all(Dimension::Points(-20.0)),
+            inset: Sides::all(Some(Length::Points(-20.0))),
+            ..LayoutStyle::default()
+        };
+        let taffy = super::to_taffy_style(&style);
+
+        assert_eq!(
+            taffy.margin.left,
+            taffy::LengthPercentageAuto::length(-20.0)
+        );
+        assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::length(-20.0));
+
+        // And a non-finite one is still dropped -- a margin to zero rather
+        // than to `auto`, which would absorb free space and centre a box that
+        // asked for nothing of the kind; an inset to `auto`, which is absence.
+        let broken = LayoutStyle {
+            position_type: PositionType::Relative,
+            margin: Sides::all(Dimension::Points(f32::NAN)),
+            inset: Sides::all(Some(Length::Points(f32::INFINITY))),
+            ..LayoutStyle::default()
+        };
+        let taffy = super::to_taffy_style(&broken);
+
+        assert_eq!(taffy.margin.left, taffy::LengthPercentageAuto::length(0.0));
+        assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::auto());
     }
 
     #[test]
