@@ -1700,6 +1700,64 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"))
     }
 
+    /// A box as wide as the ceiling still fills the space it is given.
+    ///
+    /// **The row that was missing when `FINITE_CEILING` was chosen, and the
+    /// only one that tells its value from the one it replaced.** The two
+    /// `const` assertions beside the constant bound it from above -- they
+    /// refuse `f32::MAX` -- and nothing bounded it from below, so a mutation
+    /// putting it back to `1.0e9` failed no test at all.
+    ///
+    /// **The mechanism is not the one that looked obvious, and this is the
+    /// experiment that killed it.** The tempting story was `snapped`, which
+    /// multiplies by a grid of 64: `2^25 * 64` is exactly `2^31`, which
+    /// explains Chrome's ceiling and would have explained ours. It predicts
+    /// trouble at `2^18`, where `x * 64` leaves `f32`'s exact-integer range,
+    /// and at `2^25`. **Both are clean.** Swept by named boundary rather than
+    /// by magnitude: `2^17` through `2^27` all fill their container, and the
+    /// snap is not what degrades.
+    ///
+    /// What degrades is a band starting just above `2^27`: `134_217_912` is the
+    /// first width measured short, where the box lays out eight pixels inside a
+    /// two-hundred pixel container while the siblings stay squeezed to nothing,
+    /// so the eight are blank rather than theirs. Above `2^32` it vanishes
+    /// entirely -- the last working value and the first failing one round to
+    /// `2^32` and to the next representable `f32` above it.
+    ///
+    /// **Those numbers are the rendered surface's, counted in painted pixels,
+    /// and this assertion is one layer down at the solved rectangle**, so their
+    /// thresholds are not required to agree and are not claimed to: `2^31`
+    /// paints a full container and fails here. The property is the same
+    /// property -- does a box of this width fill the space it is given -- and
+    /// each layer answers it about itself.
+    ///
+    /// So the ceiling has to sit where the behaviour is uniform, **and `1.0e9`
+    /// is `2^29.9`, inside the band.** Reverting the constant to it fails this
+    /// row with `a box of 1000000000 laid out 192 wide in a 200 container`,
+    /// which is the discrimination that was missing.
+    #[test]
+    fn a_box_as_wide_as_the_ceiling_still_fills_its_container() {
+        let (mut scene, page) = scene_with_page(200.0, 100.0);
+        let child = scene
+            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(child) {
+            node.layout.size =
+                (Dimension::Points(FINITE_CEILING), Dimension::Points(20.0));
+        }
+
+        let width = solved(&scene, page)
+            .get(child)
+            .map_or(0.0, |rect| rect.size.width);
+
+        // Equal to the container, not merely large: the failure this catches is
+        // a box eight pixels short of one, which every "greater than" passes.
+        assert!(
+            (width - 200.0).abs() < f32::EPSILON,
+            "a box of {FINITE_CEILING} laid out {width} wide in a 200 container"
+        );
+    }
+
     #[test]
     fn page_root_fills_the_scene() {
         let (scene, page) = scene_with_page(200.0, 100.0);
