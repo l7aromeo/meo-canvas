@@ -152,7 +152,18 @@ fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
 
         if tag.closing {
             // The name is not read, exactly as v1 does not read it.
-            style = stack.pop().unwrap_or_default();
+            style = stack.pop().unwrap_or_else(|| {
+                // Nothing was open. **Nobody writes this on purpose**, so a
+                // diagnostic here cannot become the noise a caller learns to
+                // ignore -- which is the argument that keeps the deliberate
+                // spellings quiet.
+                found.push(Diagnostic::new(
+                    format!("</{}>", tag.name),
+                    "closes a span that was never opened; it was ignored"
+                        .to_owned(),
+                ));
+                TextStyle::default()
+            });
         } else {
             stack.push(style.clone());
             apply(&mut style, &tag, found);
@@ -261,6 +272,18 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
         found: &mut Vec<Diagnostic>,
     ) -> Read<T> {
         let Some(written) = tag.value else {
+            // **Reported although the clearing is deliberate and v1's.** The
+            // grammar this surface documents says a tag's value "may be
+            // double-quoted, single-quoted or bare" and never describes a tag
+            // without one, so a caller who reaches this is more likely to have
+            // lost a value than to be using an idiom nothing offers them. One
+            // who meant it loses nothing by being told.
+            found.push(Diagnostic::new(
+                format!("<{}>", tag.name),
+                "carries no value, so the property was cleared; write \
+                 `</...>` to close a span"
+                    .to_owned(),
+            ));
             return Read::Absent;
         };
         if let Some(parsed) = parse(written) {
@@ -662,6 +685,37 @@ mod tests {
             parse("<color=red>a<color=notacolour>b")[1].style.color,
             parse("<color=red>a")[0].style.color
         );
+    }
+
+    /// Every site that discards input reports, and the deliberate ones stay
+    /// quiet.
+    ///
+    /// **Enumerated from the walk rather than from a list of inputs**, because
+    /// a list can miss a site. The four value cases were found by a survey
+    /// organised around *what a bad value does*; these last two are about the
+    /// **absence** of a value or an opener, which is a different axis and is
+    /// why that frame could not see them.
+    ///
+    /// The quiet rows are the ones a caller writes on purpose: a literal `<`,
+    /// an unclosed span, and a tag name nothing matches are all visible in the
+    /// output, so the render itself is the report.
+    #[test]
+    fn every_discard_reports_and_nothing_else_does() {
+        let count =
+            |markup: &str| super::parse_paragraph_reporting(markup).1.len();
+
+        // Reported: something the caller wrote could not be used.
+        assert_eq!(count("<color=zzz>a</color>"), 1, "bad value");
+        assert_eq!(count("<nope>a</nope>"), 1, "unknown name");
+        assert_eq!(count("<color=red>a<color>b</color>"), 1, "no value");
+        assert_eq!(count("a</color>b"), 1, "close with no opener");
+
+        // Quiet: deliberate, and visible in the output either way.
+        assert_eq!(count("a < b"), 0, "a bare less-than renders literally");
+        assert_eq!(count("<>a"), 0, "an empty tag renders literally");
+        assert_eq!(count("<color=red>a"), 0, "an unclosed span runs on");
+        assert_eq!(count("<color=red>a</color>"), 0, "valid");
+        assert_eq!(count("plain"), 0, "no markup");
     }
 
     /// A tag carrying no value clears, which is not the same as one carrying
