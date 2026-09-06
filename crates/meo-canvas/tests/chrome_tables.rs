@@ -456,6 +456,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
         // padding around it, which shares the child's background.
         child = child.children(
             Box::new()
+                .display(Display::Block)
                 .size(pct(100.0), pct(100.0))
                 .background_color(Color::rgb(240, 200, 40)),
         );
@@ -1350,6 +1351,10 @@ fn flex_rects(justify: &str, align: &str) -> Vec<[f32; 4]> {
     let page = render(
         FLEX_BOX,
         Box::new()
+            // Flex, and said rather than inherited from `Box::new`'s default:
+            // Chrome's own markup sets `display:flex` here, so this is the
+            // property being measured rather than a stand-in.
+            .display(Display::Flex)
             .size(px(FLEX_BOX.0), px(FLEX_BOX.1))
             .justify_content(justify_of(justify))
             .align_items(align_of(align))
@@ -1518,6 +1523,10 @@ fn wrap_rects(wrap: &str) -> Vec<[f32; 4]> {
     let page = render(
         FLEX_WRAP_PAGE,
         Box::new()
+            // As above: Chrome sets `display:flex` on the wrap container, so
+            // this states the property rather than inheriting a default that
+            // happens to match.
+            .display(Display::Flex)
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(FLEX_WRAP_AT)), None, None, Some(px(0.0))))
             .size(px(FLEX_WRAP_BOX.0), px(FLEX_WRAP_BOX.1))
