@@ -319,3 +319,51 @@ describe('the values a list ignores', () => {
     expect(RichText([{ text: '' }]).segments).toHaveLength(1)
   })
 })
+
+describe('a segment carrying a key it has no room for', () => {
+  // **Refused at the writer because the type system refuses it almost
+  // nowhere.** Excess property checking fires on a fresh object literal and on
+  // nothing else. Measured across nine spellings, two were caught at compile
+  // time and seven were not — including `rows.map(r => ({ text, fontSize }))`,
+  // which is the case `RichText` exists for. All nine discarded the styling
+  // silently at runtime.
+  it('refuses a flat style key and names the segment', () => {
+    expect(() => RichText([{ text: 'hi', fontSize: 30 } as never])).toThrow('segments[0] has no property "fontSize"')
+  })
+
+  it('refuses it however the object was built', () => {
+    // The route the type gate cannot see, and the one that matters.
+    const rows = [{ label: 'hi', size: 30 }]
+    expect(() => RichText(rows.map(row => ({ text: row.label, fontSize: row.size })) as never)).toThrow('has no property "fontSize"')
+  })
+
+  it('names the index, so one bad run in twenty is findable', () => {
+    expect(() => RichText([{ text: 'a' }, { text: 'b' }, { text: 'c', color: '#f00' } as never])).toThrow('segments[2]')
+  })
+
+  // **The suggestion is offered only where it is certainly right.** A key the
+  // generated tables carry is a style property; one they do not carry might be
+  // a typo for anything, and a confidently wrong suggestion sends the caller to
+  // write a second broken call.
+  it('suggests the nested spelling for a real style key', () => {
+    expect(() => RichText([{ text: 'hi', fontSize: 30 } as never])).toThrow('did you mean style: { fontSize }?')
+  })
+
+  it('suggests nothing for a key that is not a style property', () => {
+    expect(() => RichText([{ text: 'hi', zzz: 1 } as never])).toThrow(/has no property "zzz"/)
+    expect(() => RichText([{ text: 'hi', zzz: 1 } as never])).not.toThrow(/did you mean/)
+  })
+
+  // The rows a check that refused everything would fail.
+  it('accepts the spellings that are correct', () => {
+    expect(() => RichText([{ text: 'hi' }])).not.toThrow()
+    expect(() => RichText([{ text: 'hi', style: { fontSize: 30 } }])).not.toThrow()
+    expect(() => RichText([])).not.toThrow()
+  })
+
+  it('checks only the segments it kept', () => {
+    // An ignorable entry is dropped before the key check, so a `null` beside a
+    // good segment must not be inspected for keys it could never have.
+    expect(() => RichText([{ text: 'hi' }, null])).not.toThrow()
+  })
+})

@@ -26,6 +26,7 @@
  * @packageDocumentation
  */
 
+import { PROPERTY_TABLES } from './arena.js'
 import type { Color, Gradient, Style } from './style.js'
 
 /** What a node draws. */
@@ -425,7 +426,59 @@ export function RichText(segments: readonly (TextSegment | boolean | null | unde
   // the other.
   const kept = segments.every(segment => !ignorable(segment))
   const runs = kept ? (segments as readonly TextSegment[]) : segments.filter((segment): segment is TextSegment => !ignorable(segment))
+  runs.forEach(checkSegment)
   return node('text', props, undefined, props.name, paragraphOf(props), undefined, runs, undefined, undefined)
+}
+
+/**
+ * The two keys a segment has. Anything else is a mistake with no other reading.
+ */
+const SEGMENT_KEYS: ReadonlySet<string> = new Set(['text', 'style'])
+
+/**
+ * Every key the generated property tables carry, used only to decide whether a
+ * suggestion is safe.
+ *
+ * **Deliberately not an allowlist.** Measured, the union is 66 keys where
+ * `Style` declares 69: `objectFit`, `objectPosition` and `frame` are carried
+ * in a node's payload rather than in a style group, so a check built on this
+ * set would refuse three valid properties.
+ *
+ * **The direction matters and only one of them is sound.** A key *in* the
+ * table is certainly a style property; a key *absent* from it may still be
+ * one. So the set is safe for deciding whether to suggest a fix and unsafe for
+ * deciding whether to refuse a key — the next reader will see it used for the
+ * first and reach for it for the second.
+ */
+const STYLE_KEYS: ReadonlySet<string> = new Set(Object.values(PROPERTY_TABLES).flatMap(properties => properties.flatMap(property => property.keys)))
+
+/**
+ * Refuses a segment carrying a key `TextSegment` does not have.
+ *
+ * **Checked here because the type system checks it almost nowhere.** Excess
+ * property checking fires on a *fresh object literal* and on nothing else, so
+ * `RichText([{ text, fontSize }])` is caught and every other route is not —
+ * a variable, a spread, `JSON.parse`, and most of all
+ * `rows.map(r => ({ text: r.label, fontSize: r.size }))`, which is the case
+ * `RichText` exists for. Measured: two of nine spellings rejected at compile
+ * time, and the styling silently discarded at runtime for all nine.
+ *
+ * **The suggestion is worth the extra clause.** The mistake is almost always
+ * flat-versus-nested, and unlike most bad input the correct spelling is
+ * derivable from the wrong one — so the message can state the fix rather than
+ * the rule.
+ */
+function checkSegment(segment: TextSegment, at: number): void {
+  for (const key of Object.keys(segment)) {
+    if (SEGMENT_KEYS.has(key)) continue
+    // **The suggestion only where it is certainly right.** A key the generated
+    // property tables carry is a style property, so `style: { key }` is the
+    // fix. A key they do not carry might be a typo for anything, and a
+    // confidently wrong suggestion is worse than none: a caller who follows it
+    // writes a second broken call.
+    const suggestion = STYLE_KEYS.has(key) ? ` — did you mean style: { ${key} }?` : ''
+    throw new TypeError(`segments[${at}] has no property ${JSON.stringify(key)}; a segment takes text and style${suggestion}`)
+  }
 }
 
 /** What an image node accepts: its source, and its style, flat. */
