@@ -132,8 +132,13 @@ try {
     }
   }
 
-  await writeFile(DESTINATION, table(lines), 'utf8')
-  console.log(`wrote ${DESTINATION}`)
+  const written = table(lines)
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    console.log(`wrote ${DESTINATION}`)
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }

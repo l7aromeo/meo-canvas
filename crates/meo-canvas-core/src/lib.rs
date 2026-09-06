@@ -84,6 +84,50 @@ pub mod measure;
 pub mod paint;
 pub mod resolve;
 
+/// The largest magnitude a clamped value is allowed to reach.
+///
+/// **Two quantities share it and neither is the reason for the number.** An
+/// infinite length and an infinite flex factor both have to become something
+/// finite, and what a bound needs is not to be the largest representable value
+/// but to survive the arithmetic downstream of it: a spacing summed across a
+/// line, a length summed across a row of siblings, a set of grow factors added
+/// together.
+///
+/// **Measured, in this engine, not read off another one.** Sweeping a `width`
+/// by magnitude puts the cliff between `1e9` and `1e10` -- `1e8` fills its
+/// container and `1e10` collapses it, with `1e9` already one pixel-row short of
+/// the clean answer. `3.3554432e7` sits three orders below that. A flex factor
+/// is untroubled to `1e38`, because it is unitless and is not summed into a
+/// geometry, so the pixel constraint is the binding one and the factor takes
+/// the same bound for free.
+///
+/// **Chrome's own ceiling is this magnitude and that is a coincidence worth
+/// stating rather than resting on.** `2^25` is the top of its layout unit -- an
+/// internal of another engine's geometry, which would be meaningless here and
+/// would not stay correct if theirs changed. What is taken from Chrome is the
+/// property, not the number.
+///
+/// **So do not align this to Chrome's exact value.** The magnitudes agreeing is
+/// what makes that edit look like tidying, and it would replace a number this
+/// engine measured with one that means nothing here — the same move that put a
+/// wrong Chrome attribution into `layout::sized`'s doc, which this commit
+/// removes. If the cliff moves, re-run the sweep and set this from that.
+pub(crate) const FINITE_CEILING: f32 = 3.355_443_2e7;
+
+// **The property the number has to have, checked where someone would change
+// it.** `f32::MAX` is what a reader taking this for arbitrary would reach for,
+// and it puts back the collapse these clamps exist to remove: one sum past it
+// is infinity again, so the failure is not on the path the value takes but in
+// the addition after it. Asserted rather than tested, because a test has to be
+// read to be believed and this refuses to compile.
+//
+// It is here because the wrong value was proposed out loud: a reviewer reading
+// the previous ceiling as arbitrary suggested `f32::MAX`, on the reasoning that
+// the finite path was already exercised -- true, and beside the point. 2048 is
+// a line, or a row of siblings, far longer than any this engine lays out.
+const _: () = assert!(FINITE_CEILING.is_finite());
+const _: () = assert!(FINITE_CEILING * 2048.0 < f32::MAX);
+
 pub use color::parse_color;
 pub use encode::{EncodeOptions, EncodedImage, ImageFormat, PreparedEncode};
 pub use layout::LayoutResult;

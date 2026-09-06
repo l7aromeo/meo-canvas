@@ -86,8 +86,13 @@ try {
     '#',
     '# flow\titem\tx\ty\tw\th',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
-  process.stderr.write(`grid placement: ${FLOWS.length} flows, ${rows.length} rows -> ${DESTINATION}\n`)
+  const written = table([...header, ...rows])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    process.stderr.write(`grid placement: ${FLOWS.length} flows, ${rows.length} rows -> ${DESTINATION}\n`)
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }

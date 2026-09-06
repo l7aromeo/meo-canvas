@@ -47,6 +47,29 @@ default:
 ensure-deps:
     @test -d node_modules || bun install --frozen-lockfile
 
+# The browser `conformance` measures with, checked only where it is needed.
+#
+# **Not folded into `ensure-deps`.** That recipe is on the path of `typecheck`,
+# `lint-check` and everything else that needs `node_modules`, and only this one
+# recipe drives a browser -- putting the check there makes every gate pay for a
+# probe it has no use for. The cost being weighed is *every recipe pays for a
+# browser check*, and it is written down because a taste question gets reversed
+# by someone who does not know it was weighed.
+#
+# `setup` installs it on a fresh clone. This exists so a clone that skipped
+# `setup` is told what is missing, rather than failing inside Playwright.
+#
+# **It asks Playwright where the binary is and looks.** The first spelling here
+# was `playwright install --dry-run chromium`, which reports what *would* be
+# installed and exits 0 whether or not anything is there -- a check that could
+# not fail, in a commit about a tool that did the wrong thing quietly. Measured
+# both ways before it was believed: with the browser present, exit 0; with
+# `PLAYWRIGHT_BROWSERS_PATH` pointed at nothing, `ENOENT` and exit 1.
+[private]
+ensure-browser:
+    @node -e 'import("playwright").then(async p => { const { accessSync } = await import("node:fs"); accessSync(p.chromium.executablePath()) })' > /dev/null 2>&1 \
+      || { echo "error: no chromium for Playwright -- run \`just setup\`, or \`npx playwright install chromium\`"; exit 1; }
+
 # The examples are a consumer of the package and carry their own lockfile.
 #
 # Their `meo-canvas` is a `file:` dependency, and bun installs one of those by
@@ -122,7 +145,7 @@ ci:
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs conformance-writes test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -1131,19 +1154,19 @@ example: build-js addon
 # the browser reported rather than written down. Both rules exist because the
 # hand-written pages these replace got them wrong.
 [doc("Re-measure Chrome with Playwright and rewrite the conformance tables.")]
-conformance: ensure-deps
-    node packages/meo-canvas/tools/conformance/ellipsis.mjs
-    node packages/meo-canvas/tools/conformance/gradients.mjs
-    node packages/meo-canvas/tools/conformance/flex.mjs
-    node packages/meo-canvas/tools/conformance/borders.mjs
-    node packages/meo-canvas/tools/conformance/dotted.mjs
-    node packages/meo-canvas/tools/conformance/blend.mjs
-    node packages/meo-canvas/tools/conformance/boxshadow.mjs
-    node packages/meo-canvas/tools/conformance/shadowextent.mjs
-    node packages/meo-canvas/tools/conformance/objectfit.mjs
-    node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
-    node packages/meo-canvas/tools/conformance/grid.mjs
-    node packages/meo-canvas/tools/conformance/mincontent.mjs
+conformance: ensure-deps ensure-browser
+    WRITE=1 node packages/meo-canvas/tools/conformance/ellipsis.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/gradients.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/flex.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/borders.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/dotted.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/blend.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/boxshadow.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/shadowextent.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/objectfit.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/grid.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/mincontent.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/overflowposition.mjs
 
 [doc("Type-check the shipped TypeScript surface.")]
@@ -1430,6 +1453,32 @@ docs-js: build-js
     # Presence by the package, not the `.bin` shim, whose filename differs per platform.
     test -f "$tool/node_modules/typedoc/package.json" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
+
+# Fail if a conformance tool writes a tracked fixture unguarded.
+#
+# **This runs where its subject cannot.** `conformance` is deliberately outside
+# `ci` -- it drives a browser and produces a diff a person reads -- so nothing in
+# the gate executes those tools, and one added later could rewrite a fixture on
+# any invocation with nothing to notice. The check is static, so it has none of
+# that constraint and belongs here even though the tools do not.
+[doc("Fail if a conformance tool writes a fixture without a WRITE guard.")]
+conformance-writes:
+    node packages/meo-canvas/tools/conformance-writes.mjs
+
+# The half of the reference `docs-js` cannot see.
+#
+# TypeDoc's model is the exported surface, so a doc comment separated from a
+# module-private declaration is not undercounted there -- it is absent. This
+# asserts the **set** of private declarations carrying no doc, not its size,
+# which is what lets it catch a doc *moved* from one to another: the total is
+# unchanged and the set is not.
+#
+# The baseline is a named list rather than a number, so a reader sees which
+# declarations are exceptions -- mostly easing coefficients, where a sentence
+# would be noise -- and a new one is a visible edit rather than a count moving.
+[doc("Fail if a module-private declaration lost its doc comment.")]
+private-docs:
+    node packages/meo-canvas/tools/private-docs.mjs
 
 # Compare v1's prop surface against v2's.
 #

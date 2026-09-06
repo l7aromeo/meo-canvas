@@ -15,7 +15,7 @@
 import { resolveAddon } from './addon.js'
 import { encodeScene, type FetchAttempt, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
-import { Box, type Children, type SceneNode } from './node.js'
+import { Box, containerPropsOf, type Children, type SceneNode } from './node.js'
 import type { ColorSpace, ColorType, OnImageError } from './index.js'
 import type { Style } from './style.js'
 
@@ -501,7 +501,7 @@ async function pages(props: RootProps): Promise<readonly SceneNode[]> {
   const builder = props.children
 
   if (!isBuilder(builder)) {
-    return [Box({ ...props, children: builder })]
+    return [Box({ ...containerPropsOf(props), children: builder })]
   }
 
   const built: SceneNode[] = []
@@ -511,7 +511,7 @@ async function pages(props: RootProps): Promise<readonly SceneNode[]> {
     // service a caller did not ask for.
 
     const children = await builder(pageInfo(index, count, fps))
-    built.push(Box({ ...props, children }))
+    built.push(Box({ ...containerPropsOf(props), children }))
   }
   return built
 }
