@@ -287,7 +287,7 @@ describe('the values a list ignores', () => {
   // Measured against React 19.2.8 before the repair: `null` and `''` render
   // nothing there, `false` and `undefined` already did here, and `0` renders
   // as the text `0` — which is why `0` is an error rather than a skip.
-  const ignorable = [false, undefined, null, ''] as const
+  const ignorable = [false, true, undefined, null] as const
 
   it.each(ignorable)('a container drops %p from its children', value => {
     const kept = Box({ children: [Box(), value] }).children
@@ -315,10 +315,43 @@ describe('the values a list ignores', () => {
   // skipping them would be a different decision from the one measured — and a
   // caller writing `items.length && …` meaning "when there are items" would
   // lose a visible zero rather than seeing nothing.
-  it.each([0, NaN])('neither list drops %p', value => {
-    const keep = value as unknown as undefined
-    expect(Box({ children: [Box(), keep] }).children).toHaveLength(2)
-    expect(RichText([{ text: 'a' }, keep]).segments).toHaveLength(2)
+  it.each([0, NaN, 42, -1, 3.5, Infinity, 'hi', ' ', ''])('neither list drops %p', value => {
+    // No cast: these are legal children now, which is the change.
+    expect(Box({ children: [Box(), value] }).children).toHaveLength(2)
+    expect(RichText([{ text: 'a' }, value]).segments).toHaveLength(2)
+  })
+
+  it('a string, number or bigint child becomes a text node', () => {
+    const kids = Box({ children: [0, 'hi', 12n] }).children
+    expect(kids).toHaveLength(3)
+    expect(kids?.map(child => child.kind)).toEqual(['text', 'text', 'text'])
+    // `String()`, as React uses — so a bigint loses its `n`, and a non-finite
+    // number renders its spelling rather than being dropped by a finiteness
+    // guard nobody measured.
+    expect(kids?.map(child => child.segments?.[0]?.text)).toEqual(['0', 'hi', '12'])
+  })
+
+  it('a text child is literal, not markup', () => {
+    // **`Text`'s content is parsed as markup; a text child is not.** Measured:
+    // `Text('<b>bold</b> rest')` draws bolded text at ink 565 where the literal
+    // path draws the tags at 820. Building this on `Text` would silently
+    // reinterpret a caller's angle brackets, and nothing would fail until
+    // somebody's data contained one.
+    const child = Box({ children: '<b>x</b>' }).children?.[0]
+    expect(child?.markup).toBeUndefined()
+    expect(child?.segments?.[0]?.text).toBe('<b>x</b>')
+  })
+
+  // **React's line, and the one thing that must not become permissive.**
+  it('a plain object still throws', () => {
+    expect(() => Box({ children: [{} as never] })).toThrow('it takes a node, a string or a number')
+  })
+
+  // The middle row of a three-valued control. React skips these *with a
+  // console warning*; the only warning channel here is typed `ImageWarning`,
+  // so they are skipped silently and the divergence is in the diagnostic.
+  it.each([() => {}, Symbol('s')])('skips %p rather than refusing it', value => {
+    expect(Box({ children: [Box(), value as unknown as undefined] }).children).toHaveLength(1)
   })
 
   // The rows a filter that ate too much would fail. Without these, a predicate

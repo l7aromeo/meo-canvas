@@ -169,7 +169,7 @@ function node(
  * Skipping `0` silently would make this looser than React in the one
  * direction where looser means quieter.
  */
-export type Child = SceneNode | boolean | null | undefined | ''
+export type Child = SceneNode | string | number | bigint | boolean | null | undefined
 
 /** One child, or many. */
 export type Children = Child | readonly Child[]
@@ -220,8 +220,61 @@ const NO_CHILDREN: readonly SceneNode[] = Object.freeze([])
  *
  * `0` is absent on purpose — see {@link Child}.
  */
-function ignorable(value: unknown): value is boolean | null | undefined | '' {
-  return value === false || value === true || value === undefined || value === null || value === ''
+function ignorable(value: unknown): value is boolean | null | undefined | ((...args: never[]) => unknown) | symbol {
+  // **`''` is deliberately absent.** A string child becomes a text node, so an
+  // empty one becomes an empty text node — which renders byte-identically to no
+  // children at all, measured. Skipping it as well would be a special case for
+  // a value that already disappears.
+  //
+  // **A function or a symbol is skipped rather than refused**, which is what
+  // React does. React also warns; the only warning channel here is typed
+  // `ImageWarning`, so there is nowhere to put one that is not about an image.
+  // The divergence is in the diagnostic, not in the render.
+  return value === false || value === true || value === undefined || value === null || typeof value === 'function' || typeof value === 'symbol'
+}
+
+/**
+ * A string, number or bigint child, as the text node React renders it as.
+ *
+ * **A single-segment `RichText`, never `Text`.** `Text`'s content is markup and
+ * the renderer parses it, so a caller's angle brackets would be reinterpreted:
+ * measured, `Text('<b>bold</b> rest')` draws bolded text at ink 565 where
+ * `RichText([{ text: … }])` draws the tags literally at 820. React's text child
+ * is literal, and a silent reinterpretation of somebody's data is exactly the
+ * failure this change exists to remove.
+ *
+ * `String()` rather than a format, because that is what React uses -- so
+ * `NaN` and `Infinity` render as their spellings and a bigint loses its `n`.
+ */
+function textChild(value: string | number | bigint): SceneNode {
+  return RichText([{ text: String(value) }])
+}
+
+/**
+ * One child as a node: a string or number becomes text, a node stays itself.
+ *
+ * **A plain object throws**, which is React's line and the one thing that must
+ * not become permissive along with the rest. Functions and symbols never reach
+ * here -- they are filtered as ignorable, because React skips them.
+ */
+function asNode(child: Child): SceneNode {
+  if (typeof child === 'string' || typeof child === 'number' || typeof child === 'bigint') {
+    return textChild(child)
+  }
+  if (isNode(child)) return child
+  throw new TypeError(`a child is ${typeof child === 'object' ? 'an object' : String(child)}; it takes a node, a string or a number`)
+}
+
+/**
+ * Whether a value is one of this package's nodes rather than a plain object.
+ *
+ * **`kind` is the discriminator** and every factory sets it. A plain object
+ * reaching a children list is a mistake React refuses outright, and refusing it
+ * here means the caller hears about it rather than meeting a decoder error four
+ * layers down.
+ */
+function isNode(value: unknown): value is SceneNode {
+  return typeof value === 'object' && value !== null && 'kind' in value
 }
 
 /**
@@ -238,16 +291,16 @@ function ignorable(value: unknown): value is boolean | null | undefined | '' {
 function toChildren(children: Children | undefined): readonly SceneNode[] | undefined {
   if (children === undefined) return undefined
   if (ignorable(children)) return NO_CHILDREN
-  if (!Array.isArray(children)) return [children as SceneNode]
+  if (!Array.isArray(children)) return [asNode(children as Child)]
 
   const many = children as readonly Child[]
-  // The cast is what the inline comparison used to give for free: TypeScript
-  // infers a type predicate from a simple arrow and narrows the array through
-  // `every`, and it cannot do that through a call. Asserting here keeps the
-  // allocation-free fast path the doc above promises.
-  const kept = many.every(child => !ignorable(child))
-  if (kept) return many as readonly SceneNode[]
-  return many.filter((child): child is SceneNode => !ignorable(child))
+  // The fast path stays allocation-free for the common case: an array that is
+  // already all nodes is handed straight through.
+  // `every` with a type guard narrows the array, so neither branch needs an
+  // assertion — the guard is doing the work the casts used to.
+  const plain = many.every(child => isNode(child))
+  if (plain) return many
+  return many.filter(child => !ignorable(child)).map(child => asNode(child))
 }
 
 /**
@@ -439,14 +492,28 @@ export function Text(content: string, props: TextProps = {}): SceneNode {
  * The one case a single string cannot express: a sentence with one word bold.
  * Each segment's own style overrides the node's for that run.
  */
-export function RichText(segments: readonly (TextSegment | boolean | null | undefined | '')[], props: TextProps = {}): SceneNode {
+export function RichText(segments: readonly (TextSegment | string | number | bigint | boolean | null | undefined)[], props: TextProps = {}): SceneNode {
   // **The same rule children get.** A segment list and a children list are the
   // same kind of list, and a caller building either from data hits the same
   // `null`. Before this, children ignored two of the four ignorable values and
   // segments ignored none, so `[seg, cond && other]` worked in one and threw in
   // the other.
-  const kept = segments.every(segment => !ignorable(segment))
-  const runs = kept ? (segments as readonly TextSegment[]) : segments.filter((segment): segment is TextSegment => !ignorable(segment))
+  // **The same rule children get, including the conversion.** A string in a
+  // children list becomes a text node; a string in a segment list becomes a
+  // run with that text. Keeping only the *skipping* in step would have left
+  // `''` ignorable in one list and a broken segment in the other -- which the
+  // agreement test caught the moment `''` stopped being ignorable.
+  // **The pass-through is deliberate and a test pins it**: a list needing
+  // neither filtering nor conversion is handed on as it stands, so the common
+  // case allocates nothing.
+  const plain = segments.every(segment => typeof segment === 'object' && segment !== null)
+  const runs = plain
+    ? segments
+    : segments
+        .filter(segment => !ignorable(segment))
+        .map(segment =>
+          typeof segment === 'string' || typeof segment === 'number' || typeof segment === 'bigint' ? { text: String(segment) } : (segment as TextSegment),
+        )
   runs.forEach(checkSegment)
   return node('text', props, undefined, props.name, paragraphOf(props), undefined, runs, undefined, undefined)
 }
