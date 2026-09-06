@@ -1281,6 +1281,10 @@ fn draw_run(
     // colour had no way to reach the drawing at all.
     context.set_fill_style(to_skia_color(run.style.color));
     set_text_decoration(context, run.style.decoration);
+    // Per run for the same reason as the colour above. The paragraph's value is
+    // still set before the block is drawn, because an inter-word space is
+    // measured against it and belongs to no run.
+    context.set_letter_spacing(run.style.letter_spacing);
 
     for shadow in &node.effects.text_shadows {
         context.save();

@@ -158,6 +158,20 @@ pub struct RunStyle {
     /// Per-run for the same reason as [`RunStyle::color`] and by the same
     /// measurement: a span's decoration marks that span's ink alone.
     pub decoration: TextDecoration,
+    /// Extra space after each of this run's characters, **already in pixels**.
+    ///
+    /// **Resolved here rather than carried as a `Spacing`, because an `em`
+    /// resolves against the size of the element that declares it.** A segment
+    /// that sets both a font size and an `em` spacing must resolve the spacing
+    /// against its own size, not the paragraph's -- so the resolution happens
+    /// in [`RunStyle::of`], where the merged size is already known. Passing
+    /// the paragraph's already-resolved pixels down would be right only
+    /// for a segment that does not change its size.
+    ///
+    /// **Inter-word spaces keep the paragraph's value**, which is why
+    /// [`Metrics::letter_spacing`] still exists: a space between two runs
+    /// belongs to neither of them.
+    pub letter_spacing: f32,
 }
 
 impl RunStyle {
@@ -182,6 +196,11 @@ impl RunStyle {
                 .unwrap_or_else(|| base.font_variant.clone()),
             color: style.color.unwrap_or(base.color),
             decoration: style.text_decoration.unwrap_or(base.decoration),
+            letter_spacing: spacing_pixels(
+                style.letter_spacing.unwrap_or(base.letter_spacing),
+                // The run's own size, for the reason the field documents.
+                style.font_size.unwrap_or(base.size),
+            ),
         }
     }
 
@@ -197,6 +216,7 @@ impl RunStyle {
             variant: base.font_variant.clone(),
             color: base.color,
             decoration: base.decoration,
+            letter_spacing: spacing_pixels(base.letter_spacing, base.size),
         }
     }
 
@@ -703,8 +723,7 @@ pub fn wrap(
                 continue;
             }
 
-            let width =
-                measurer.run_width(&style, metrics.letter_spacing, piece);
+            let width = measurer.run_width(&style, style.letter_spacing, piece);
             let advance = if runs.last().is_some_and(Run::is_space) {
                 gap + width
             } else {
