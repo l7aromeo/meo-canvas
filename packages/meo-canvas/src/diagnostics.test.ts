@@ -51,4 +51,33 @@ describe('markup the renderer could not use', () => {
     const good = await render('<color=#ff0000>abc</color>')
     expect(good.found).toHaveLength(0)
   })
+
+  it('says which of two identically written tags it means', async () => {
+    // Both tags are spelled the same way, so `path` and `detail` are equal
+    // strings and the reports are indistinguishable without the offset.
+    const markup = '<color=zzz>a</color><color=zzz>b</color>'
+    const { found } = await render(markup)
+
+    expect(found).toHaveLength(2)
+    expect(found[0]?.path).toBe(found[1]?.path)
+
+    // Sliced rather than compared against an expected index: an integer here
+    // would be this test recomputing the parser's arithmetic, and would agree
+    // whenever both were wrong the same way.
+    for (const one of found) {
+      expect(one.offset).toBeTypeOf('number')
+      expect(markup.slice(one.offset)).toMatch(new RegExp(`^${one.path}`))
+    }
+    expect(found[0]?.offset).toBeLessThan(found[1]?.offset as number)
+  })
+
+  it('leaves the offset off a report that did not come from markup', async () => {
+    // Nothing raises one yet — every diagnostic today is a markup tag — so
+    // this pins the shape rather than a producer: the property is optional
+    // and absent, never `null`, so `'offset' in d` and `d.offset !== undefined`
+    // cannot disagree.
+    const { found } = await render('<color=zzz>abc</color>')
+    expect(found).toHaveLength(1)
+    expect(found[0]).not.toHaveProperty('offset', null)
+  })
 })

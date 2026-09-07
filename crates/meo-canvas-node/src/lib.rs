@@ -571,6 +571,14 @@ fn diagnostics_array<'cx>(
         entry.set(cx, "path", path)?;
         let detail = cx.string(&one.detail);
         entry.set(cx, "detail", detail)?;
+        // **Absent rather than `null`.** The property is optional on the
+        // TypeScript side, and a diagnostic that did not come from markup has
+        // no place to point at -- `'offset' in d` and `d.offset !== undefined`
+        // then agree, where a `null` would make one of them lie.
+        if let Some(offset) = one.offset {
+            let offset = cx.number(offset as f64);
+            entry.set(cx, "offset", offset)?;
+        }
         out.set(cx, u32::try_from(index).unwrap_or(u32::MAX), entry)?;
     }
     Ok(out)

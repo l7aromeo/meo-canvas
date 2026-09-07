@@ -158,12 +158,26 @@ fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
     let mut run_start = 0;
     let mut cursor = 0;
 
+    // **The tags in `input` and in `text` line up one for one**, so a
+    // diagnostic can name a byte in the string the caller wrote rather than in
+    // the one this function derived. No arm of `unescape` emits `<`, and an
+    // escape it does not know keeps both characters -- `\<` stays `\<` -- so a
+    // `<` is never invented and never hidden. `source_from` walks `input`'s
+    // `<` in step with `text`'s.
+    //
+    // `at` is `None` only if that correspondence breaks, which needs a new
+    // `unescape` arm to emit or swallow a `<`. The offset is dropped rather
+    // than guessed if it ever does.
+    let mut source_from = 0;
+
     let bytes = text.as_bytes();
     while cursor < bytes.len() {
         if bytes[cursor] != b'<' {
             cursor += 1;
             continue;
         }
+        let at = input[source_from..].find('<').map(|rel| source_from + rel);
+        source_from = at.map_or(source_from, |found| found + 1);
         let Some((tag, end)) = scan_tag(&text, cursor) else {
             cursor += 1;
             continue;
@@ -180,16 +194,17 @@ fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
                 // diagnostic here cannot become the noise a caller learns to
                 // ignore -- which is the argument that keeps the deliberate
                 // spellings quiet.
-                found.push(Diagnostic::new(
+                found.push(reported(
                     format!("</{}>", tag.name),
                     "closes a span that was never opened; it was ignored"
                         .to_owned(),
+                    at,
                 ));
                 TextStyle::default()
             });
         } else {
             stack.push(style.clone());
-            apply(&mut style, &tag, found);
+            apply(&mut style, &tag, at, found);
         }
     }
     push_run(&mut segments, &text[run_start..], &style);
@@ -242,6 +257,20 @@ pub fn parse_paragraph(input: &str) -> Vec<TextSegment> {
 }
 
 /// Records a run of text under the style in force, unless the run is empty.
+/// A diagnostic carrying the tag's place in the caller's string, where one
+/// is known.
+///
+/// Every site here has a position, so `None` means the correspondence in
+/// [`walk`] broke rather than that this tag had no place. Reporting without
+/// the offset is the right answer either way: the caller still learns what
+/// was wrong, and an offset that might be wrong is worse than none.
+fn reported(path: String, detail: String, at: Option<usize>) -> Diagnostic {
+    match at {
+        Some(offset) => Diagnostic::at(path, detail, offset),
+        None => Diagnostic::new(path, detail),
+    }
+}
+
 fn push_run(segments: &mut Vec<TextSegment>, text: &str, style: &TextStyle) {
     if text.is_empty() {
         return;
@@ -267,7 +296,12 @@ struct Tag<'a> {
 }
 
 /// Applies an opening tag to the style in force.
-fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
+fn apply(
+    style: &mut TextStyle,
+    tag: &Tag<'_>,
+    at: Option<usize>,
+    found: &mut Vec<Diagnostic>,
+) {
     /// What a value tag carried, once read.
     ///
     /// Three outcomes and not two, because **an absent value and an unusable
@@ -292,6 +326,7 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
         tag: &Tag<'_>,
         parse: impl Fn(&str) -> Option<T>,
         takes: &str,
+        at: Option<usize>,
         found: &mut Vec<Diagnostic>,
     ) -> Read<T> {
         let Some(written) = tag.value else {
@@ -301,20 +336,22 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
             // without one, so a caller who reaches this is more likely to have
             // lost a value than to be using an idiom nothing offers them. One
             // who meant it loses nothing by being told.
-            found.push(Diagnostic::new(
+            found.push(reported(
                 format!("<{}>", tag.name),
                 "carries no value, so the property was cleared; write \
                  `</...>` to close a span"
                     .to_owned(),
+                at,
             ));
             return Read::Absent;
         };
         if let Some(parsed) = parse(written) {
             return Read::Good(parsed);
         }
-        found.push(Diagnostic::new(
+        found.push(reported(
             format!("<{}={written}>", tag.name),
             format!("{takes}; the tag was ignored"),
+            at,
         ));
         Read::Unusable
     }
@@ -327,6 +364,7 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
             tag,
             parse_color,
             "not a colour any CSS syntax spells",
+            at,
             found,
         ) {
             Read::Absent => style.color = None,
@@ -337,6 +375,7 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
             tag,
             parse_weight,
             "not a weight; it takes 1 to 1000, or normal or bold",
+            at,
             found,
         ) {
             Read::Absent => style.font_weight = None,
@@ -350,6 +389,7 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
             tag,
             parse_size,
             "not a size; it takes a positive number of pixels",
+            at,
             found,
         ) {
             Read::Absent | Read::Unusable => style.font_size = None,
@@ -361,10 +401,11 @@ fn apply(style: &mut TextStyle, tag: &Tag<'_>, found: &mut Vec<Diagnostic>) {
         // still carries it, and its closing tag still pops. What is new is that
         // the caller is told -- the text renders identically to writing no tag
         // at all, so nothing in the output could have told them.
-        other => found.push(Diagnostic::new(
+        other => found.push(reported(
             format!("<{other}>"),
             "not a tag this parser knows; its text is kept and the tag ignored"
                 .to_owned(),
+            at,
         )),
     }
 }
@@ -557,6 +598,102 @@ fn unescape(input: &str) -> String {
 #[cfg(test)]
 mod diagnostic_tests {
     use super::{parse_paragraph, parse_paragraph_reporting};
+
+    /// The offset, checked by slicing rather than by comparing an integer.
+    ///
+    /// An expected index would be this test computing the parser's own
+    /// arithmetic a second time, and would agree whenever both are wrong the
+    /// same way. Slicing the caller's own string and requiring the tag to
+    /// begin there cannot: it fails unless the offset points at the tag.
+    fn starts_at(input: &str, found: &super::Diagnostic) -> bool {
+        let Some(offset) = found.offset else {
+            return false;
+        };
+        input
+            .get(offset..)
+            .is_some_and(|rest| rest.starts_with(&found.path))
+    }
+
+    /// Which of three identical-looking tags was the bad one.
+    ///
+    /// **The two inputs below report byte-identical diagnostics without an
+    /// offset** -- `<color=zzz>` and nothing else -- so a caller could not tell
+    /// the middle tag from the first. That is the gap: not that the report is
+    /// vague, but that two different inputs produce the same one.
+    #[test]
+    fn the_offset_separates_two_inputs_that_report_the_same_thing() {
+        let middle_bad =
+            "<color=red>a</color><color=zzz>b</color><color=blue>c";
+        let first_bad = "<color=zzz>a</color><color=red>b</color><color=blue>c";
+
+        let (_, from_middle) = parse_paragraph_reporting(middle_bad);
+        let (_, from_first) = parse_paragraph_reporting(first_bad);
+
+        assert_eq!(from_middle.len(), 1, "{from_middle:?}");
+        assert_eq!(from_first.len(), 1, "{from_first:?}");
+        assert_eq!(
+            from_middle[0].path, from_first[0].path,
+            "the paths are identical, which is why the offset has to differ"
+        );
+
+        assert!(starts_at(middle_bad, &from_middle[0]), "{from_middle:?}");
+        assert!(starts_at(first_bad, &from_first[0]), "{from_first:?}");
+        assert_ne!(from_middle[0].offset, from_first[0].offset);
+    }
+
+    /// Two tags spelled the same way, both unusable, told apart.
+    ///
+    /// Without the offset these two diagnostics are equal values, so no
+    /// assertion about either could distinguish them.
+    #[test]
+    fn two_tags_written_alike_report_different_places() {
+        let input = "<color=zzz>a</color><color=zzz>b</color>";
+        let (_, found) = parse_paragraph_reporting(input);
+
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[0].path, found[1].path);
+        assert!(starts_at(input, &found[0]), "{found:?}");
+        assert!(starts_at(input, &found[1]), "{found:?}");
+        assert!(found[0].offset < found[1].offset, "{found:?}");
+    }
+
+    /// An escape before the tag moves it in the caller's string and not in
+    /// the parser's.
+    ///
+    /// **This is the test that fails if the offset comes from the scanner's
+    /// cursor.** `\t` is two bytes as written and four once resolved, and the
+    /// parser walks the resolved text, so a cursor taken from there points
+    /// two bytes past the tag for every escape that precedes it. Slicing the
+    /// original string is what catches it.
+    #[test]
+    fn an_escape_before_a_tag_does_not_move_its_offset() {
+        let input = r"\tone\ttwo<color=zzz>x</color>";
+        let (_, found) = parse_paragraph_reporting(input);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(starts_at(input, &found[0]), "{found:?}");
+    }
+
+    /// An escaped `<` is text, and the tag after it still counts from the
+    /// caller's string.
+    ///
+    /// `\<` is not an escape the parser knows, so it keeps both characters and
+    /// the `<` still opens a tag -- which is what makes the tags in the two
+    /// strings line up at all. A parser change that swallowed `\<` would move
+    /// every offset after it, and this is what would say so.
+    ///
+    /// **The leading `\t` is what makes this discriminate.** Without it the
+    /// input and the resolved text are the same string, so every candidate
+    /// offset agrees and the case proves nothing; the `\t` shifts the resolved
+    /// text by two and separates them.
+    #[test]
+    fn an_escaped_opener_still_lines_the_tags_up() {
+        let input = r"\t\<color=red> then <color=zzz>b</color>";
+        let (_, found) = parse_paragraph_reporting(input);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(starts_at(input, &found[0]), "{found:?}");
+    }
 
     /// An unknown tag renders as if it were not written, and now says so.
     ///
