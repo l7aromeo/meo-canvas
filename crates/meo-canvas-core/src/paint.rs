@@ -2552,8 +2552,9 @@ fn stroke_broken_border(
     // Opaque only: undivided, both sides draw the corner mark and it lands on
     // itself, which is exact at full opacity and doubles through a
     // translucent colour. Chrome draws it once at every opacity, so a
-    // translucent square corner is still wrong -- see `#27`, where the mark
-    // becomes owned by one edge rather than drawn by both.
+    // translucent square corner is still wrong. The repair is to make the mark
+    // owned by one edge rather than drawn by both, which is unfiled at the time
+    // of writing.
     let undivided = per_side && uniform_edges(paint, widths);
 
     for (edge, (width, colour)) in [
