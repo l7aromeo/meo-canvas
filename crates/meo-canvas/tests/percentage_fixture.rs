@@ -109,7 +109,7 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
                 }),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"));
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
 
     let directory = std::path::Path::new(DESTINATION);
     std::fs::create_dir_all(directory)?;

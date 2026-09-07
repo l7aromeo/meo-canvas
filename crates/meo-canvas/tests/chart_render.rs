@@ -55,7 +55,7 @@ fn pixels(chart: Element) -> (usize, Vec<u8>) {
 /// with the drawing would be thicker on a taller page and the same on both if
 /// it does not, so one page cannot answer the question and two can.
 fn pixels_at(chart: Element, size: (f32, f32)) -> (usize, Vec<u8>) {
-    let scene = chart.into_scene(size.0, size.1).unwrap_or_else(|error| {
+    let (scene, _) = chart.into_scene(size.0, size.1).unwrap_or_else(|error| {
         unreachable!("the chart is not a scene: {error}")
     });
     let mut renderer = Renderer::new();
