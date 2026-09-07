@@ -394,9 +394,24 @@ fn parse_weight(value: &str) -> Option<FontWeight> {
     // 1, both plausible, neither what the caller asked for, and no way from the
     // outside to tell them from a weight that was meant.
     //
-    // The style surface is untouched on purpose: `fontWeight: 1500` still
-    // clamps, and whether it should drop as well is #47, open with the user.
-    // This change is correct under either answer there.
+    // **Three layers, three answers, and they agree rather than conflict.**
+    // A reader who finds a clamp for one property and a refusal for the same
+    // property will assume one of them is a bug, so the reason is here:
+    //
+    //   markup      `<weight=1500>`      refused; the enclosing weight stands
+    //   typed API   `fontWeight: 1500`   throws at the writer, before the wire
+    //   codec       `FontWeight::new`    clamps, deliberately
+    //
+    // What differs is what each layer is holding. The two writing sides take a
+    // value somebody typed, so they can refuse it and say which property was
+    // wrong. The codec takes bytes that already crossed a wire, where refusing
+    // means failing a decode over a value a browser would have clamped -- and
+    // `codec/impls.rs` says so at its own call site.
+    //
+    // So `FontWeight::new` clamping is not a laxness this arm works around. It
+    // is the only constructor, and it is right for the caller it was written
+    // for; this arm is the other caller, and the range check belongs here
+    // rather than in the type.
     let weight = trimmed.parse::<u16>().ok()?;
     (FontWeight::MIN..=FontWeight::MAX)
         .contains(&weight)
