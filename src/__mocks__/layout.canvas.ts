@@ -25,7 +25,10 @@ export const BoxNode = vi.fn(function (this: any, props: any) {
   this.setLayout = vi.fn()
   this._renderContent = vi.fn()
 })
-// Define render on the prototype so it can be spied on
+// `render` is defined on each mock class's own prototype rather than inherited from `BoxNode`'s.
+// vitest 5 refuses to spy on a property a subject does not own, so a suite reaching for
+// `vi.spyOn(ColumnNode.prototype, 'render')` -- which is how the root's rendering is swallowed --
+// failed with "The property render is not defined on the object" against an inherited one.
 BoxNode.prototype.render = vi.fn()
 
 // Mock the actual ColumnNode class, inheriting from mocked BoxNode
@@ -33,14 +36,15 @@ export const ColumnNode = vi.fn(function (this: any, props: any) {
   // Call BoxNode constructor to set up properties
   Object.assign(this, new BoxNode({ name: 'Column', ...props }))
 })
-// ColumnNode.prototype will inherit render from BoxNode.prototype due to setPrototypeOf
 Object.setPrototypeOf(ColumnNode.prototype, BoxNode.prototype)
+ColumnNode.prototype.render = vi.fn()
 
 // Mock the actual RowNode class, inheriting from mocked BoxNode
 export const RowNode = vi.fn(function (this: any, props: any) {
   Object.assign(this, new BoxNode({ name: 'Row', ...props }))
 })
 Object.setPrototypeOf(RowNode.prototype, BoxNode.prototype)
+RowNode.prototype.render = vi.fn()
 
 // Mock the factory functions
 export const Box = vi.fn((props: any) => new BoxNode(props))
@@ -70,7 +74,9 @@ export const __mocks__ = {
     BoxNode.mockClear()
     BoxNode.prototype.render.mockClear() // Clear the prototype render mock
     ColumnNode.mockClear()
+    ColumnNode.prototype.render.mockClear()
     RowNode.mockClear()
+    RowNode.prototype.render.mockClear()
     Box.mockClear()
     Column.mockClear()
     Row.mockClear()
