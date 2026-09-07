@@ -215,6 +215,21 @@ export interface Diagnostic {
   readonly path: string
   /** What was wrong with it, and what was done instead. */
   readonly detail: string
+  /**
+   * Where in the markup it was, as a byte offset into the string that was
+   * passed in, or absent for a diagnostic that did not come from markup.
+   *
+   * The offset of the tag's `<`, so the tag begins at that index of the
+   * original string. Two tags spelled the same way are otherwise
+   * indistinguishable: `'<color=zzz>a</color><color=zzz>b</color>'` reports
+   * the same `path` twice.
+   *
+   * **There is no end.** A backslash escape inside a tag changes its length
+   * between the string as written and the text the parser scans, so a length
+   * would be right only for tags containing no escapes — and nothing would
+   * mark the ones where it lies.
+   */
+  readonly offset?: number
 }
 
 /**
