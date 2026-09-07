@@ -1336,6 +1336,7 @@ dependencies = [
 name = "meo-canvas-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "criterion",
  "csscolorparser",
  "gif",

@@ -195,6 +195,7 @@ fn box_of(row: &Row, is_b: bool, painted: bool) -> Element {
         (true, false) => A_INK,
     };
     let mut element = Box::new()
+        .display(Display::Block)
         .size(px(50.0), px(34.0))
         .position_type(kind)
         .background_color(ink);
@@ -427,6 +428,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
     let padding = row["padding"].parse::<f32>().unwrap_or(0.0);
 
     let mut child = Box::new()
+        .display(Display::Block)
         .height(px(40.0))
         .box_sizing(if row["sizing"] == "border-box" {
             BoxSizing::BorderBox
@@ -454,6 +456,7 @@ fn sized(row: &Row, with_content: bool) -> Element {
         // padding around it, which shares the child's background.
         child = child.children(
             Box::new()
+                .display(Display::Block)
                 .size(pct(100.0), pct(100.0))
                 .background_color(Color::rgb(240, 200, 40)),
         );
@@ -666,7 +669,8 @@ const fn read_space(bytes: &[u8], from: usize) -> usize {
 
 /// The overflow rows this renderer answers differently from Chrome today.
 ///
-/// **Empty: all 120 rows agree.** Kept with its history rather than deleted,
+/// **Empty: all 240 rows agree**, the 120 measured by hand and the 120 offset
+/// rows added with the fifth letter. Kept with its history rather than deleted,
 /// because an empty list with no history is a list nobody knows the shape of.
 ///
 /// It has held two sets. The first was fifty-one rows and **every one of them
@@ -718,7 +722,7 @@ const PAGE_INK: Color = Color::rgb(247, 247, 251);
 
 /// One row of the overflow table.
 struct Overflow<'a> {
-    /// The four axis letters, `OPCT`.
+    /// The five axis letters, `OPCTI`.
     code: &'a str,
     /// The child's box, minus `outer`'s: `x, y, w, h`.
     rect: [f32; 4],
@@ -746,7 +750,23 @@ fn position_letter(letter: &str) -> PositionType {
     }
 }
 
-/// The clipper and its child, built from a row's four letters.
+/// The offsets a row's fifth letter names, as `(top, left)`.
+///
+/// Written on the child whatever its position type is. That a `static` child
+/// **ignores** them is the property the letter was added to measure -- the
+/// `PositionType::Static` arm of `layout.rs` returns `Rect::auto()` and until
+/// this letter existed nothing in the suite could see it do so -- and
+/// withholding the offsets from the static rows would assume that answer
+/// instead of measuring it.
+fn offsets_of(code: &str) -> Option<(f32, f32)> {
+    match &code[4..5] {
+        "i" => Some((6.0, 8.0)),
+        "n" => Some((-6.0, -8.0)),
+        _ => None,
+    }
+}
+
+/// The clipper and its child, built from a row's five letters.
 ///
 /// `clip` is false for the render that measures where the child *is*: Chrome
 /// reports a layout rectangle, which a clip does not move, and reading a
@@ -764,6 +784,7 @@ fn clipper_of(
 
     let child_kind = position_letter(&row.code[2..3]);
     let mut child = Box::new()
+        .display(Display::Block)
         .size(px(50.0), px(40.0))
         .position_type(child_kind)
         .background_color(if paint_child {
@@ -772,9 +793,20 @@ fn clipper_of(
             Color::rgba(0, 0, 0, 0)
         });
     child = if out_of_flow(child_kind) {
+        // Already placed by insets, so the table generates no offset rows for
+        // it: an offset here would restate a scene the table has.
         child.position(sides(Some(px(20.0)), None, None, Some(px(30.0))))
     } else {
-        child.margin(sides(px(20.0), px(0.0), px(0.0), px(30.0)))
+        let placed = child.margin(sides(px(20.0), px(0.0), px(0.0), px(30.0)));
+        match offsets_of(row.code) {
+            Some((top, left)) => placed.position(sides(
+                Some(px(top)),
+                None,
+                None,
+                Some(px(left)),
+            )),
+            None => placed,
+        }
     };
 
     let clipper_kind = position_letter(&row.code[1..2]);
@@ -918,6 +950,38 @@ fn overflow_rows(text: &str) -> Vec<Overflow<'_>> {
         .collect()
 }
 
+/// Whether the table can tell a `relative` child from a `static` one.
+///
+/// **For 120 rows it could not.** An in-flow child was placed by margins and
+/// never given an inset, and `position: relative` with no offsets *is*
+/// `position: static`, so a renderer that ignored `relative` entirely passed
+/// every row. The fifth letter is what fixed that, and this asks the property
+/// rather than the row count -- delete every offset row for tidiness and the
+/// caller fails by name instead of the suite going quietly back to passing for
+/// the wrong reason.
+fn separates_relative_from_static(rows: &[Overflow<'_>]) -> bool {
+    rows.iter().any(|row| {
+        &row.code[2..3] == "S"
+            && rows.iter().any(|other| {
+                other.code[0..2] == row.code[0..2]
+                    && &other.code[2..3] == "R"
+                    && other.code[3..] == row.code[3..]
+                    && (other
+                        .rect
+                        .iter()
+                        .zip(row.rect.iter())
+                        // Both sides came out of the same file as decimal
+                        // text, so equality is the question and the bits are
+                        // how it is asked without a tolerance that would let a
+                        // genuinely equal pair look different.
+                        .any(|(theirs, ours)| {
+                            theirs.to_bits() != ours.to_bits()
+                        })
+                        || other.probes != row.probes)
+            })
+    })
+}
+
 /// What a row that has started agreeing with Chrome should say.
 fn stale(code: &str) -> String {
     format!(
@@ -929,13 +993,23 @@ fn stale(code: &str) -> String {
 #[test]
 fn overflow_against_position_matches_chrome() {
     let text = include_str!("assets/chrome/overflow-position.tsv");
+    let rows = overflow_rows(text);
+
+    assert!(
+        separates_relative_from_static(&rows),
+        "no pair of rows differing only in the child's position separates \
+         `relative` from `static`, so the table cannot fail for `relative`: \
+         without an inset the two are the same box in the same place"
+    );
+
     let mut geometry = Vec::new();
     let mut painted = Vec::new();
     let mut off_the_page = 0_usize;
+    let mut compared = 0_usize;
     let mut clipped = 0_usize;
     let mut uncomparable = 0_usize;
 
-    for row in &overflow_rows(text) {
+    for row in &rows {
         // A `fixed` **child** is placed against the viewport there and the page
         // here, and Chrome measured every case where the flow happened to put
         // it -- so its rectangle minus `outer`'s carries an offset that varies
@@ -984,6 +1058,7 @@ fn overflow_against_position_matches_chrome() {
         }
 
         let Some(seen) = probes_of(row) else { continue };
+        compared += 1;
         let known = KNOWN_OVERFLOW.contains(&row.code);
         if seen != row.probes && !known {
             painted.push(format!(
@@ -1006,9 +1081,34 @@ fn overflow_against_position_matches_chrome() {
          {uncomparable} whose geometry differs so the probes were not compared, \
          {clipped} whose rectangle is clipped and so answered by the probes \
          alone, {} known disagreements pinned",
-        overflow_rows(text).len(),
+        rows.len(),
         off_the_page,
         KNOWN_OVERFLOW.len()
+    );
+    // **Every row has to have been compared.** Each of the three ways out of
+    // the loop above is a `continue`, and a row that leaves that way is
+    // reported in the summary and in nothing else -- so a renderer drawing
+    // *nothing* takes all 240 of them and the walker passes. Measured, not
+    // supposed: setting the child to `Display::None` gives `240 rows, 240
+    // placed off the page` and a green test. That is a check that cannot fail,
+    // and it was found by a control written for an unrelated survey.
+    //
+    // The three numbers are exact today, so pinning them costs nothing: a row
+    // that starts being skipped is either a renderer that stopped drawing or a
+    // scene that stopped being comparable, and both want a person.
+    assert_eq!(
+        compared,
+        rows.len(),
+        "{} of {} rows were skipped rather than compared: {off_the_page} \
+         placed off the page, {uncomparable} with geometry that differs. A row \
+         nobody compares cannot fail",
+        rows.len() - compared,
+        rows.len()
+    );
+    assert_eq!(
+        off_the_page, 0,
+        "a child that draws nothing is a defect rather than an exclusion: \
+         Chrome reports a rectangle for every row"
     );
     assert!(
         geometry.is_empty() && painted.is_empty(),
@@ -1237,17 +1337,24 @@ fn flex_rects(justify: &str, align: &str) -> Vec<[f32; 4]> {
         .iter()
         .map(|(width, content, ink)| {
             Box::new()
+                .display(Display::Block)
                 .width(px(*width))
                 .background_color(*ink)
                 // The spacer, which gives the child a height without setting
                 // one.
-                .children(Box::new().height(px(*content)))
+                .children(
+                    Box::new().display(Display::Block).height(px(*content)),
+                )
         })
         .collect();
 
     let page = render(
         FLEX_BOX,
         Box::new()
+            // Flex, and said rather than inherited from `Box::new`'s default:
+            // Chrome's own markup sets `display:flex` here, so this is the
+            // property being measured rather than a stand-in.
+            .display(Display::Flex)
             .size(px(FLEX_BOX.0), px(FLEX_BOX.1))
             .justify_content(justify_of(justify))
             .align_items(align_of(align))
@@ -1404,15 +1511,22 @@ fn wrap_rects(wrap: &str) -> Vec<[f32; 4]> {
         .iter()
         .map(|(width, content, ink)| {
             Box::new()
+                .display(Display::Block)
                 .width(px(*width))
                 .background_color(*ink)
-                .children(Box::new().height(px(*content)))
+                .children(
+                    Box::new().display(Display::Block).height(px(*content)),
+                )
         })
         .collect();
 
     let page = render(
         FLEX_WRAP_PAGE,
         Box::new()
+            // As above: Chrome sets `display:flex` on the wrap container, so
+            // this states the property rather than inheriting a default that
+            // happens to match.
+            .display(Display::Flex)
             .position_type(PositionType::Absolute)
             .position(sides(Some(px(FLEX_WRAP_AT)), None, None, Some(px(0.0))))
             .size(px(FLEX_WRAP_BOX.0), px(FLEX_WRAP_BOX.1))
@@ -1546,7 +1660,8 @@ fn grid_rects(flow: GridAutoFlow) -> Vec<Option<[f32; 4]>> {
         .iter()
         .enumerate()
         .map(|(index, ink)| {
-            let item = Box::new().background_color(*ink);
+            let item =
+                Box::new().display(Display::Block).background_color(*ink);
             match index {
                 // `span 3` and `span 2` with no start line: the placement is
                 // still the algorithm's, and only the size is ours.

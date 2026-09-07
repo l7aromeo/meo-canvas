@@ -506,11 +506,17 @@ function keywordFor(name: string, table: Readonly<Record<string, number>>): stri
  * the literal for a finite number; `NaN` and `Infinity` spell themselves; and
  * the kind of thing where the value itself would say nothing.
  */
-function render(value: unknown): string {
+export function render(value: unknown): string {
   if (typeof value === 'string') return JSON.stringify(value)
   if (typeof value === 'number') return String(value)
   if (typeof value === 'function') return 'a function'
   if (value === null) return 'null'
+  // A list before the object it technically is. An array reported as "an
+  // object" is the same unhelpfulness this function exists to replace, and the
+  // mistake it comes from is specific: a caller reaching for CSS's four-value
+  // shorthand writes `padding: [8, 4]`, and being told that is an object gives
+  // them nothing to correct.
+  if (Array.isArray(value)) return 'a list'
   if (typeof value === 'object') return 'an object'
   // What is left is `boolean | symbol | bigint | undefined`, spelled out rather
   // than reached through `String` on an `unknown`: a symbol has no string
@@ -545,6 +551,73 @@ function whole(value: unknown, what: string): number {
 }
 
 /**
+ * Refuses anything but a number, naming the property that was written.
+ *
+ * `whole`'s neighbour for the properties that take a fraction. Without it
+ * `opacity: null` reached `out.f32`, which pushes whatever it is given into a
+ * slot, and `Number(null)` is `0` -- so the element rendered fully transparent
+ * and nothing was reported. `fontSize: null` blanked the text the same way.
+ *
+ * **`NaN` is refused and `Infinity` is not, and the predicate is the whole
+ * difference.** `typeof NaN === 'number'`, so it passed every guard here until
+ * it was named: a check about the *type* cannot see it. `Number.isNaN(value)`
+ * is what sees it, and `!Number.isFinite(value)` -- which reads as the same
+ * intent and is one word shorter -- would take `Infinity` with it.
+ *
+ * **`Infinity` is deliberately not refused here.** It is bounded on the other
+ * side, where a finite ceiling gives it a meaning; refusing it here would make
+ * that unreachable, and the picture would not change until someone went looking
+ * for it. The two values are answered differently because they mean different
+ * things: an infinity means *as large as possible*, and a `NaN` means nothing
+ * at any door.
+ */
+function decimal(value: unknown, what: string): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new TypeError(`${what} is ${render(value)}; it takes a number`)
+  }
+  return value
+}
+
+/** Refuses anything but a string, naming the property and what it spells. */
+function words(value: unknown, what: string, takes: string): string {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${what} is ${render(value)}; it takes ${takes}`)
+  }
+  return value
+}
+
+/**
+ * Refuses a value that is neither a number nor a string, naming the property.
+ *
+ * The guard the `write*` helpers below share. Each of them tries the number
+ * first and then reads the tail of a string, so anything else reached
+ * `value.endsWith` and came back as `value.endsWith is not a function` -- the
+ * name of a parser's internal step, which no caller can search for or act on.
+ * The string throw each helper already carries is untouched and still says
+ * which spellings exist: a *bad string* is a different mistake from a value of
+ * the wrong kind, and only one of them is helped by a list of suffixes.
+ */
+function measured(value: unknown, what: string, takes: string): number | string {
+  if ((typeof value !== 'number' && typeof value !== 'string') || Number.isNaN(value)) {
+    throw new TypeError(`${what} is ${render(value)}; it takes ${takes}`)
+  }
+  return value
+}
+
+/**
+ * The value, or `fallback` where the caller wrote nothing at all.
+ *
+ * `??` where this is used instead, because `??` cannot tell *unset* from
+ * `null`: `style.width ?? 'auto'` turned `width: null` into `auto` and the
+ * declaration vanished with nothing said, while `fontWeight: null` two rows
+ * away was refused by name. One of those had to move, and refusing is the
+ * older of the two -- `efeb61e` settled it for the properties it reached.
+ */
+function defaulted<T>(value: T | undefined, fallback: T): T {
+  return value === undefined ? fallback : value
+}
+
+/**
  * The number a keyword crosses as.
  *
  * Throws rather than defaults. A keyword the scene has no variant for is a
@@ -552,12 +625,21 @@ function whole(value: unknown, what: string): number {
  * zeroth variant would make it arrive as a different value.
  */
 export function variant(table: Readonly<Record<string, number>>, keyword: string, what: string): number {
-  const found = table[variantName(keyword, table)]
-  if (found === undefined) {
-    const taken = Object.keys(table)
+  const taken = (): string =>
+    Object.keys(table)
       .map(name => keywordFor(name, table))
       .join(', ')
-    throw new TypeError(`${what} has no value ${JSON.stringify(keyword)}; it takes ${taken}`)
+  // Refused before the lookup, because `variantName` reaches for
+  // `keyword.split` and a value that is not a string came back carrying that
+  // method's name instead of this property's. The list of keywords is built
+  // inside the two failing branches rather than above them: every enum in the
+  // scene crosses this line on every write, and only the mistakes need it.
+  if (typeof keyword !== 'string') {
+    throw new TypeError(`${what} is ${render(keyword)}; it takes ${taken()}`)
+  }
+  const found = table[variantName(keyword, table)]
+  if (found === undefined) {
+    throw new TypeError(`${what} has no value ${JSON.stringify(keyword)}; it takes ${taken()}`)
   }
   return found
 }
@@ -591,7 +673,8 @@ function suffixed(value: string, unit: string): number | undefined {
 }
 
 /** Writes a length: a tag, then the value. */
-function writeLength(out: ArenaWriter, value: Length): void {
+function writeLength(out: ArenaWriter, value: Length, what: string): void {
+  measured(value, what, "a number of pixels or a '…%' string")
   if (typeof value === 'number') {
     out.enum(0)
     out.f32(value)
@@ -612,7 +695,8 @@ function writeLength(out: ArenaWriter, value: Length): void {
  * pair unconditionally rather than branching — and a fixed width is what lets
  * the reader skip a property it does not recognise.
  */
-function writeDimension(out: ArenaWriter, value: Dimension): void {
+function writeDimension(out: ArenaWriter, value: Dimension, what: string): void {
+  measured(value, what, "a number of pixels, a '…%' string, or 'auto'")
   if (value === 'auto') {
     out.enum(0)
     out.f32(0)
@@ -632,7 +716,8 @@ function writeDimension(out: ArenaWriter, value: Dimension): void {
 }
 
 /** Writes a grid track size: a tag, then the value. */
-function writeTrack(out: ArenaWriter, value: TrackSize): void {
+function writeTrack(out: ArenaWriter, value: TrackSize, what: string): void {
+  measured(value, what, "a number, 'auto', '…px', '…%' or '…fr'")
   if (value === 'auto') {
     out.enum(0)
     out.f32(0)
@@ -665,7 +750,8 @@ function writeTrack(out: ArenaWriter, value: TrackSize): void {
 }
 
 /** Writes letter or word spacing: a tag, then the value. */
-function writeSpacing(out: ArenaWriter, value: Spacing): void {
+function writeSpacing(out: ArenaWriter, value: Spacing, what: string): void {
+  measured(value, what, "a number, '…px', '…em' or 'normal'")
   if (value === 'normal') {
     out.enum(0)
     out.f32(0)
@@ -704,7 +790,8 @@ function writeSpacing(out: ArenaWriter, value: Spacing): void {
  * recomputes it against its own size. Measured in Chrome, a 16px parent
  * declaring for a 32px child: `1.5` inherits as 48, `150%` inherits as 24.
  */
-function writeLineHeight(out: ArenaWriter, value: LineHeight): void {
+function writeLineHeight(out: ArenaWriter, value: LineHeight, what: string): void {
+  measured(value, what, "a number, '…px' or '…%'")
   if (typeof value === 'number') {
     out.enum(0)
     out.f32(value)
@@ -732,7 +819,15 @@ function writeLineHeight(out: ArenaWriter, value: LineHeight): void {
  * zero points and `inset` to nothing at all, and writing one where the other
  * belongs would change what the layout does.
  */
-function writeSides<T>(value: Sides<T>, fallback: T, write: (value: T) => void): void {
+function writeSides<T>(value: Sides<T>, fallback: T, what: string, write: (value: T) => void): void {
+  // **A list is the one wrong shape this would otherwise swallow.** CSS's
+  // shorthand takes up to four values and a caller reaches for `[8, 4]`; an
+  // array is an object with no `top`, so every edge took the fallback and the
+  // declaration was dropped without a word. A single value and the named form
+  // are both real spellings; a list is not one yet.
+  if (Array.isArray(value)) {
+    throw new TypeError(`${what} is a list; it takes one value or named edges`)
+  }
   if (typeof value !== 'object' || value === null) {
     for (let edge = 0; edge < 4; edge += 1) write(value)
     return
@@ -745,15 +840,21 @@ function writeSides<T>(value: Sides<T>, fallback: T, write: (value: T) => void):
 }
 
 /** Writes the four corners, in `top-left top-right bottom-right bottom-left` order. */
-function writeCorners(out: ArenaWriter, value: Corners): void {
+function writeCorners(out: ArenaWriter, value: Corners, what: string): void {
   if (typeof value === 'number') {
     for (let corner = 0; corner < 4; corner += 1) out.f32(value)
     return
   }
-  out.f32(value.topLeft ?? 0)
-  out.f32(value.topRight ?? 0)
-  out.f32(value.bottomRight ?? 0)
-  out.f32(value.bottomLeft ?? 0)
+  // Named before it is read. A value that is not a number and not an object of
+  // corners reached `value.topLeft` and gave either a null dereference or four
+  // silent zeroes, which is a radius the caller did not write.
+  if (typeof value !== 'object' || value === null) {
+    throw new TypeError(`${what} is ${render(value)}; it takes a number or named corners`)
+  }
+  out.f32(decimal(value.topLeft ?? 0, `${what} topLeft`))
+  out.f32(decimal(value.topRight ?? 0, `${what} topRight`))
+  out.f32(decimal(value.bottomRight ?? 0, `${what} bottomRight`))
+  out.f32(decimal(value.bottomLeft ?? 0, `${what} bottomLeft`))
 }
 
 /** Black, which is what a shadow with no colour is. */
@@ -769,15 +870,15 @@ const SHADOW_BLACK = '#000000'
  * scale at all.
  */
 function writeTransform(out: ArenaWriter, value: Transform): void {
-  writeLength(out, value.translateX ?? 0)
-  writeLength(out, value.translateY ?? 0)
+  writeLength(out, value.translateX ?? 0, 'transform translateX')
+  writeLength(out, value.translateY ?? 0, 'transform translateY')
   out.f32(value.rotate ?? 0)
   // `scale` sets both axes and a per-axis value beside it wins, which is v1's
   // rule and the only place these two spellings meet.
   out.f32(value.scaleX ?? value.scale ?? 1)
   out.f32(value.scaleY ?? value.scale ?? 1)
-  writeLength(out, value.originX ?? '50%')
-  writeLength(out, value.originY ?? '50%')
+  writeLength(out, value.originX ?? '50%', 'transform originX')
+  writeLength(out, value.originY ?? '50%', 'transform originY')
 }
 
 /** Writes one box shadow. */
@@ -835,7 +936,7 @@ function writeDirection(out: ArenaWriter, value: GradientDirection): void {
     return
   }
   out.enum(1)
-  for (const point of value) writeLength(out, point)
+  for (const point of value) writeLength(out, point, 'a gradient direction')
 }
 
 /**
@@ -862,8 +963,8 @@ function writeGradient(out: ArenaWriter, value: Gradient): void {
   } else {
     // The middle of the box, which is what CSS defaults to and what the scene
     // documents `(0.5, 0.5)` as.
-    writeLength(out, value.at?.x ?? '50%')
-    writeLength(out, value.at?.y ?? '50%')
+    writeLength(out, value.at?.x ?? '50%', 'gradient at.x')
+    writeLength(out, value.at?.y ?? '50%', 'gradient at.y')
     if (value.type === 'conic') out.f32(value.from ?? 0)
   }
 
@@ -921,14 +1022,14 @@ function writeBackgroundSize(out: ArenaWriter, value: BackgroundSize): void {
 
   out.enum(0)
   if (typeof value === 'object') {
-    writeDimension(out, value.width ?? 'auto')
-    writeDimension(out, value.height ?? 'auto')
+    writeDimension(out, value.width ?? 'auto', 'backgroundImage size.width')
+    writeDimension(out, value.height ?? 'auto', 'backgroundImage size.height')
     return
   }
   // A bare value sizes the width and leaves the height to the picture's own
   // proportions, which is v1's reading and CSS's one-value form.
-  writeDimension(out, value)
-  writeDimension(out, 'auto')
+  writeDimension(out, value, 'backgroundImage size')
+  writeDimension(out, 'auto', 'backgroundImage size')
 }
 
 /** Writes a background image: its source, how it tiles, how big, and where. */
@@ -936,8 +1037,8 @@ function writeBackgroundImage(out: ArenaWriter, value: BackgroundImage): void {
   writeSource(out, value.src)
   out.enum(variant(BACKGROUND_REPEAT, value.repeat ?? 'repeat', 'backgroundImage repeat'))
   writeBackgroundSize(out, value.size ?? {})
-  writeLength(out, value.position?.x ?? 0)
-  writeLength(out, value.position?.y ?? 0)
+  writeLength(out, value.position?.x ?? 0, 'backgroundImage position.x')
+  writeLength(out, value.position?.y ?? 0, 'backgroundImage position.y')
 }
 
 /** Writes a mask: a tag, then whatever that arm carries. */
@@ -982,6 +1083,28 @@ function packWeight(weight: FontWeight, what: string): number {
   // replaces.
   if (typeof weight !== 'number') {
     throw new TypeError(`${what} is ${render(weight)}; it takes a number from 1 to 1000, or normal or bold`)
+  }
+  // **The range and the integer-ness, which were never anyone's job on this
+  // side.** The line above tests the *type* and returned the number unchecked,
+  // so `1500` and `0` reached the codec and were clamped there with nothing
+  // said -- the element rendered at a weight nobody asked for -- while `-100`
+  // and `1.5` came back as `slot 30 holds …`, an offset into a wire format the
+  // caller never saw. Not overlooked: unassigned.
+  //
+  // **`NaN` and `Infinity` are refused here too, and neither is an exception to
+  // a rule elsewhere.** This property does not travel through `decimal` or
+  // `measured` -- it is called straight from its row -- so the guards that name
+  // a `NaN` in this file never see it, and before this it came back as
+  // `slot 32 holds NaN, which is not an integer`. It is named now, by the check
+  // below, which is a plainer repair than routing it through a second one.
+  //
+  // **An infinite weight is refused rather than bounded, and that does not
+  // contradict bounding infinities elsewhere.** A length has no upper bound of
+  // its own, so an infinity has to be given one and *as large as possible* is a
+  // meaning. A weight's range is part of the property: `1500` is refused here
+  // and an infinity is the same mistake with a larger number.
+  if (!Number.isInteger(weight) || weight < 1 || weight > 1000) {
+    throw new TypeError(`${what} is ${render(weight)}; it takes a whole number from 1 to 1000, or normal or bold`)
   }
   return weight
 }
@@ -1043,15 +1166,17 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     // absent rather than zero: an inset of zero pins that edge to the
     // container's, which is a different thing from leaving it to the flow.
     write: (out, style) =>
-      writeSides(style.position as Sides<Length>, undefined as Length | undefined, edge => out.optional(edge, length => writeLength(out, length))),
+      writeSides(style.position as Sides<Length>, undefined as Length | undefined, 'an inset', edge =>
+        out.optional(edge, length => writeLength(out, length, 'an inset')),
+      ),
   },
   {
     index: 3,
     rust: 'size',
     keys: ['width', 'height'],
     write: (out, style) => {
-      writeDimension(out, style.width ?? 'auto')
-      writeDimension(out, style.height ?? 'auto')
+      writeDimension(out, defaulted(style.width, 'auto'), 'width')
+      writeDimension(out, defaulted(style.height, 'auto'), 'height')
     },
   },
   {
@@ -1059,8 +1184,8 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     rust: 'min_size',
     keys: ['minWidth', 'minHeight'],
     write: (out, style) => {
-      writeDimension(out, style.minWidth ?? 'auto')
-      writeDimension(out, style.minHeight ?? 'auto')
+      writeDimension(out, defaulted(style.minWidth, 'auto'), 'minWidth')
+      writeDimension(out, defaulted(style.minHeight, 'auto'), 'minHeight')
     },
   },
   {
@@ -1068,24 +1193,34 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     rust: 'max_size',
     keys: ['maxWidth', 'maxHeight'],
     write: (out, style) => {
-      writeDimension(out, style.maxWidth ?? 'auto')
-      writeDimension(out, style.maxHeight ?? 'auto')
+      writeDimension(out, defaulted(style.maxWidth, 'auto'), 'maxWidth')
+      writeDimension(out, defaulted(style.maxHeight, 'auto'), 'maxHeight')
     },
   },
-  { index: 6, rust: 'aspect_ratio', keys: ['aspectRatio'], write: (out, style) => out.optional(style.aspectRatio, ratio => out.f32(ratio)) },
+  {
+    index: 6,
+    rust: 'aspect_ratio',
+    keys: ['aspectRatio'],
+    write: (out, style) => out.optional(style.aspectRatio, ratio => out.f32(decimal(ratio, 'aspectRatio'))),
+  },
   {
     index: 7,
     rust: 'margin',
     keys: ['margin'],
-    write: (out, style) => writeSides(style.margin as Sides<Dimension>, 0, edge => writeDimension(out, edge)),
+    write: (out, style) => writeSides(style.margin as Sides<Dimension>, 0, 'margin', edge => writeDimension(out, edge, 'margin')),
   },
   {
     index: 8,
     rust: 'padding',
     keys: ['padding'],
-    write: (out, style) => writeSides(style.padding as Sides<Length>, 0, edge => writeLength(out, edge)),
+    write: (out, style) => writeSides(style.padding as Sides<Length>, 0, 'padding', edge => writeLength(out, edge, 'padding')),
   },
-  { index: 9, rust: 'border', keys: ['border'], write: (out, style) => writeSides(style.border as Sides<number>, 0, edge => out.f32(edge)) },
+  {
+    index: 9,
+    rust: 'border',
+    keys: ['border'],
+    write: (out, style) => writeSides(style.border as Sides<number>, 0, 'border', edge => out.f32(decimal(edge, 'border'))),
+  },
   {
     index: 10,
     rust: 'flex_direction',
@@ -1093,9 +1228,9 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     write: (out, style) => out.enum(variant(FLEX_DIRECTION, style.flexDirection as string, 'flexDirection')),
   },
   { index: 11, rust: 'flex_wrap', keys: ['flexWrap'], write: (out, style) => out.enum(variant(FLEX_WRAP, style.flexWrap as string, 'flexWrap')) },
-  { index: 12, rust: 'flex_grow', keys: ['flexGrow'], write: (out, style) => out.f32(style.flexGrow as number) },
-  { index: 13, rust: 'flex_shrink', keys: ['flexShrink'], write: (out, style) => out.f32(style.flexShrink as number) },
-  { index: 14, rust: 'flex_basis', keys: ['flexBasis'], write: (out, style) => writeDimension(out, style.flexBasis as Dimension) },
+  { index: 12, rust: 'flex_grow', keys: ['flexGrow'], write: (out, style) => out.f32(decimal(style.flexGrow, 'flexGrow')) },
+  { index: 13, rust: 'flex_shrink', keys: ['flexShrink'], write: (out, style) => out.f32(decimal(style.flexShrink, 'flexShrink')) },
+  { index: 14, rust: 'flex_basis', keys: ['flexBasis'], write: (out, style) => writeDimension(out, style.flexBasis as Dimension, 'flexBasis') },
   {
     index: 15,
     rust: 'justify_content',
@@ -1129,13 +1264,21 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     // scene's order is the one this side writes.
     write: (out, style) => {
       const gap = style.gap as Length | { readonly row?: Length; readonly column?: Length }
+      // `null` is an object to `typeof` and an array is one too, so both read
+      // `.row` off something that has none: one threw with the name of the
+      // field, the other wrote two zeroes and said nothing. Refused above the
+      // shape test rather than inside it, because narrowing an array out of
+      // the named form leaves it in the arm that takes a single value.
+      if (gap === null || Array.isArray(gap)) {
+        throw new TypeError(`gap is ${render(gap)}; it takes a number of pixels, a '…%' string, or named row and column`)
+      }
       if (typeof gap === 'object') {
-        writeLength(out, gap.row ?? 0)
-        writeLength(out, gap.column ?? 0)
+        writeLength(out, defaulted(gap.row, 0), 'rowGap')
+        writeLength(out, defaulted(gap.column, 0), 'columnGap')
         return
       }
-      writeLength(out, gap)
-      writeLength(out, gap)
+      writeLength(out, gap, 'gap')
+      writeLength(out, gap, 'gap')
     },
   },
   {
@@ -1169,13 +1312,13 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     index: 25,
     rust: 'grid_auto_rows',
     keys: ['gridAutoRows'],
-    write: (out, style) => out.optional(style.gridAutoRows, track => writeTrack(out, track)),
+    write: (out, style) => out.optional(style.gridAutoRows, track => writeTrack(out, track, 'gridAutoRows')),
   },
   {
     index: 26,
     rust: 'grid_auto_columns',
     keys: ['gridAutoColumns'],
-    write: (out, style) => out.optional(style.gridAutoColumns, track => writeTrack(out, track)),
+    write: (out, style) => out.optional(style.gridAutoColumns, track => writeTrack(out, track, 'gridAutoColumns')),
   },
   {
     index: 27,
@@ -1247,7 +1390,7 @@ function placement(style: Style, axis: 'row' | 'column'): GridPlacement | undefi
 /** Writes a track list: the count, then each track. */
 function writeTracks(out: ArenaWriter, tracks: readonly TrackSize[]): void {
   out.count(tracks.length)
-  for (const track of tracks) writeTrack(out, track)
+  for (const track of tracks) writeTrack(out, track, 'a grid track')
 }
 
 /** Writes a grid placement: an optional line, then an optional span. */
@@ -1265,7 +1408,12 @@ function writePlacement(out: ArenaWriter, placement: GridPlacement | undefined):
  * the edge form to `border_color`, and no v2-only name reaches the surface.
  */
 const PAINT_PROPERTIES: readonly Property[] = [
-  { index: 0, rust: 'background_color', keys: ['backgroundColor'], write: (out, style) => out.text(style.backgroundColor as Color) },
+  {
+    index: 0,
+    rust: 'background_color',
+    keys: ['backgroundColor'],
+    write: (out, style) => out.text(words(style.backgroundColor, 'backgroundColor', 'a colour')),
+  },
   { index: 1, rust: 'gradient', keys: ['gradient'], write: (out, style) => out.optional(style.gradient, value => writeGradient(out, value)) },
   {
     index: 2,
@@ -1278,18 +1426,21 @@ const PAINT_PROPERTIES: readonly Property[] = [
     rust: 'border_color',
     keys: ['borderColor'],
     present: style => perEdge(style.borderColor),
-    write: (out, style) => writeSides(style.borderColor as Sides<Color>, undefined as Color | undefined, edge => out.optional(edge, color => out.text(color))),
+    write: (out, style) =>
+      writeSides(style.borderColor as Sides<Color>, undefined as Color | undefined, 'borderColor', edge =>
+        out.optional(edge, color => out.text(words(color, 'borderColor', 'a colour'))),
+      ),
   },
   {
     index: 4,
     rust: 'border_color_all',
     keys: ['borderColor'],
     present: style => style.borderColor !== undefined && !perEdge(style.borderColor),
-    write: (out, style) => out.text(style.borderColor as Color),
+    write: (out, style) => out.text(words(style.borderColor, 'borderColor', 'a colour')),
   },
   { index: 5, rust: 'border_style', keys: ['borderStyle'], write: (out, style) => out.enum(variant(BORDER_STYLE, style.borderStyle as string, 'borderStyle')) },
-  { index: 6, rust: 'border_radius', keys: ['borderRadius'], write: (out, style) => writeCorners(out, style.borderRadius as Corners) },
-  { index: 7, rust: 'opacity', keys: ['opacity'], write: (out, style) => out.f32(style.opacity as number) },
+  { index: 6, rust: 'border_radius', keys: ['borderRadius'], write: (out, style) => writeCorners(out, style.borderRadius as Corners, 'borderRadius') },
+  { index: 7, rust: 'opacity', keys: ['opacity'], write: (out, style) => out.f32(decimal(style.opacity, 'opacity')) },
   { index: 8, rust: 'blend_mode', keys: ['mixBlendMode'], write: (out, style) => out.enum(variant(BLEND_MODE, style.mixBlendMode as string, 'mixBlendMode')) },
   { index: 9, rust: 'dither', keys: ['dither'], write: (out, style) => out.bool(style.dither as boolean) },
   // Optional on the wire because CSS's `auto` is not a number: `Some(0)` and
@@ -1313,8 +1464,13 @@ const PAINT_PROPERTIES: readonly Property[] = [
  * mask bit alone would not have said enough.
  */
 const TEXT_PROPERTIES: readonly Property[] = [
-  { index: 0, rust: 'font_family', keys: ['fontFamily'], write: (out, style) => out.optional(style.fontFamily, family => out.text(family)) },
-  { index: 1, rust: 'font_size', keys: ['fontSize'], write: (out, style) => out.optional(style.fontSize, size => out.f32(size)) },
+  {
+    index: 0,
+    rust: 'font_family',
+    keys: ['fontFamily'],
+    write: (out, style) => out.optional(style.fontFamily, family => out.text(words(family, 'fontFamily', 'a registered font name'))),
+  },
+  { index: 1, rust: 'font_size', keys: ['fontSize'], write: (out, style) => out.optional(style.fontSize, size => out.f32(decimal(size, 'fontSize'))) },
   {
     index: 2,
     rust: 'font_weight',
@@ -1327,7 +1483,7 @@ const TEXT_PROPERTIES: readonly Property[] = [
     keys: ['fontStyle'],
     write: (out, style) => out.optional(style.fontStyle, value => out.enum(variant(FONT_STYLE, value, 'fontStyle'))),
   },
-  { index: 4, rust: 'color', keys: ['color'], write: (out, style) => out.optional(style.color, color => out.text(color)) },
+  { index: 4, rust: 'color', keys: ['color'], write: (out, style) => out.optional(style.color, color => out.text(words(color, 'color', 'a colour'))) },
   {
     index: 5,
     rust: 'text_align',
@@ -1352,10 +1508,25 @@ const TEXT_PROPERTIES: readonly Property[] = [
     keys: ['paintOrder'],
     write: (out, style) => out.optional(style.paintOrder, value => out.enum(variant(PAINT_ORDER, value, 'paintOrder'))),
   },
-  { index: 9, rust: 'line_height', keys: ['lineHeight'], write: (out, style) => out.optional(style.lineHeight, height => writeLineHeight(out, height)) },
-  { index: 10, rust: 'line_gap', keys: ['lineGap'], write: (out, style) => out.optional(style.lineGap, gap => out.f32(gap)) },
-  { index: 11, rust: 'letter_spacing', keys: ['letterSpacing'], write: (out, style) => out.optional(style.letterSpacing, value => writeSpacing(out, value)) },
-  { index: 12, rust: 'word_spacing', keys: ['wordSpacing'], write: (out, style) => out.optional(style.wordSpacing, value => writeSpacing(out, value)) },
+  {
+    index: 9,
+    rust: 'line_height',
+    keys: ['lineHeight'],
+    write: (out, style) => out.optional(style.lineHeight, height => writeLineHeight(out, height, 'lineHeight')),
+  },
+  { index: 10, rust: 'line_gap', keys: ['lineGap'], write: (out, style) => out.optional(style.lineGap, gap => out.f32(decimal(gap, 'lineGap'))) },
+  {
+    index: 11,
+    rust: 'letter_spacing',
+    keys: ['letterSpacing'],
+    write: (out, style) => out.optional(style.letterSpacing, value => writeSpacing(out, value, 'letterSpacing')),
+  },
+  {
+    index: 12,
+    rust: 'word_spacing',
+    keys: ['wordSpacing'],
+    write: (out, style) => out.optional(style.wordSpacing, value => writeSpacing(out, value, 'wordSpacing')),
+  },
   {
     index: 13,
     rust: 'font_variant',
@@ -1397,8 +1568,13 @@ const EFFECTS_PROPERTIES: readonly Property[] = [
     write: (out, style) => writeList(out, style.textShadow as TextShadow | readonly TextShadow[], shadow => writeTextShadow(out, shadow)),
   },
   { index: 3, rust: 'mask', keys: ['mask'], write: (out, style) => out.optional(style.mask, value => writeMask(out, value)) },
-  { index: 4, rust: 'filter', keys: ['filter'], write: (out, style) => out.optional(style.filter, value => out.text(value)) },
-  { index: 5, rust: 'backdrop_filter', keys: ['backdropFilter'], write: (out, style) => out.optional(style.backdropFilter, value => out.text(value)) },
+  { index: 4, rust: 'filter', keys: ['filter'], write: (out, style) => out.optional(style.filter, value => out.text(words(value, 'filter', 'a CSS filter'))) },
+  {
+    index: 5,
+    rust: 'backdrop_filter',
+    keys: ['backdropFilter'],
+    write: (out, style) => out.optional(style.backdropFilter, value => out.text(words(value, 'backdropFilter', 'a CSS filter'))),
+  },
 ]
 
 /** How many mask slots a group of this many properties needs. */
@@ -1538,8 +1714,8 @@ function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | un
   // bit. This is the seam, and it belongs here rather than in the surface.
   out.enum(variant(OBJECT_FIT, style?.objectFit ?? 'fill', 'objectFit'))
   const position = style?.objectPosition ?? CENTRED
-  writeLength(out, position[0])
-  writeLength(out, position[1])
+  writeLength(out, position[0], 'objectPosition x')
+  writeLength(out, position[1], 'objectPosition y')
   out.optional(style?.frame, frame => out.integer(frame))
 }
 

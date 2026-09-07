@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { Box, Column, DEFAULT_ELLIPSIS, Grid, Image, NODE_KEYS, Path, RichText, Row, Text, type SceneNode } from './node.js'
+import { Box, Column, containerPropsOf, DEFAULT_ELLIPSIS, Grid, Image, NODE_KEYS, Path, RichText, Row, Text, type SceneNode } from './node.js'
 import type { Style } from './style.js'
 
 /** One of every factory, for the checks that must hold across all of them. */
@@ -416,5 +416,240 @@ describe('a segment carrying a key it has no room for', () => {
     // An ignorable entry is dropped before the key check, so a `null` beside a
     // good segment must not be inspected for keys it could never have.
     expect(() => RichText([{ text: 'hi' }, null])).not.toThrow()
+  })
+})
+
+describe('a first argument that is not a props object', () => {
+  // **The same defect as an unknown key, one level out, in the file its repair
+  // was written in.** `checkProps` reads `Object.keys(props)`, and what that
+  // returns for a value which is not a props object decided the outcome
+  // entirely: `'hello'` has `"0"` through `"4"`, so the loop reported index zero
+  // as an unknown property and named the factory in a sentence that meant
+  // nothing; `42`, `true`, `[]`, `''` and a function have no own keys at all, so
+  // nothing objected and the node was built with default props and rendered.
+  // Measured at `851eb11`: `Box('')`, `Box(42)` and `Box({})` were
+  // indistinguishable in the output.
+
+  const notProps = {
+    'an empty string': '',
+    'a string with keys': 'hello',
+    'a number': 42,
+    'a boolean': true,
+    'a list': [],
+    'a function': () => {},
+    null: null,
+  }
+
+  describe.each(['Box', 'Row', 'Column', 'Grid', 'Image', 'Path'] as const)('%s', name => {
+    const factory = { Box, Row, Column, Grid, Image, Path }[name]
+    it.each(Object.entries(notProps))('refuses %s', (_label, value) => {
+      expect(() => factory(value as never)).toThrow(`${name} takes a props object`)
+    })
+  })
+
+  // **The two spellings the old code answered differently, asserted together.**
+  // One had keys and one did not, and that was the whole difference between a
+  // nonsense message and silence. Whatever they produce now, they produce the
+  // same thing.
+  it('answers a value with keys and a value without the same way', () => {
+    const withKeys = (): unknown => Box('hello' as never)
+    const without = (): unknown => Box(42 as never)
+    expect(withKeys).toThrow('Box takes a props object')
+    expect(without).toThrow('Box takes a props object')
+  })
+
+  it('no longer reports an index as an unknown property', () => {
+    expect(() => Box('hello' as never)).not.toThrow('has no property "0"')
+  })
+
+  // **A list is named as a list rather than as the object it technically is.**
+  // The mistake it comes from is specific -- a caller reaching for CSS's
+  // four-value shorthand -- and "an object" gives them nothing to correct.
+  it('names a list as a list', () => {
+    expect(() => Box([] as never)).toThrow('it was given a list')
+  })
+
+  it('names the two factories whose first argument is not props', () => {
+    expect(() => Text({ children: 'Hg' } as never)).toThrow('Text takes its text first and its props second')
+    expect(() => RichText({ children: 'Hg' } as never)).toThrow('RichText takes its segments first and its props second')
+    // The internal method names these used to arrive as.
+    expect(() => Text({} as never)).not.toThrow('side value')
+    expect(() => RichText({} as never)).not.toThrow('segments.every')
+  })
+
+  // **The rows a check that refused too much would fail.** Five of these
+  // factories default their props to `{}`, so a guard written against
+  // `arguments.length` or against `undefined` refuses the documented spelling
+  // and passes every row above.
+  it('still takes an omitted props argument', () => {
+    expect(() => Box()).not.toThrow()
+    expect(() => Row()).not.toThrow()
+    expect(() => Text('Hg')).not.toThrow()
+    expect(() => RichText(['Hg'])).not.toThrow()
+  })
+
+  it('still takes what each factory takes', () => {
+    expect(() => Box({})).not.toThrow()
+    expect(() => Box({ width: 4, height: 4 })).not.toThrow()
+    expect(() => Text('Hg', {})).not.toThrow()
+    expect(() => Text('', { fontSize: 12 })).not.toThrow()
+    expect(() => RichText([{ text: 'Hg' }])).not.toThrow()
+    expect(() => Image({ src: 'a.png' })).not.toThrow()
+    expect(() => Path({ d: 'M0 0 L4 4' })).not.toThrow()
+  })
+})
+
+describe('a container props key it does not have', () => {
+  // **The same defect as a segment key, at a second of five sites.** An unknown
+  // key was silently ignored on `Box`, `Text`, `Path` and the paragraph options
+  // as well as on a `TextSegment` — one defect filed twice from two lanes,
+  // because each of us met the instance in our own area.
+  //
+  // The allowlist is `STYLE_KEYS` plus this factory's two structural keys, and
+  // both halves carry an exhaustiveness proof: `STYLE_KEYS` against
+  // `keyof Style` in `style.ts`, and the whole list against
+  // `keyof ContainerProps` here. A key added to either and not listed is a
+  // compile error naming the key.
+
+  it.each(['Box', 'Row', 'Column', 'Grid'] as const)('%s refuses a key it has no room for', name => {
+    const factory = { Box, Row, Column, Grid }[name]
+    expect(() => factory({ nonsenseKey: 1 } as never)).toThrow(`${name} has no property "nonsenseKey"`)
+  })
+
+  it('refuses the v1 spelling that was silently ignored', () => {
+    // The case A filed: `templateColumns` is v1's name and the current one is
+    // `gridTemplateColumns`. It was dropped without a word and the grid fell
+    // back to auto-placement, so a caller got a laid-out tree that was quietly
+    // not the one they described.
+    expect(() => Grid({ display: 'grid', templateColumns: [40, 60] } as never)).toThrow('Grid has no property "templateColumns"')
+  })
+
+  it('refuses it however the props object was built', () => {
+    // Excess property checking sees a fresh literal and nothing else, so this
+    // route compiles clean and is the one the check exists for.
+    const props = { display: 'grid', templateColumns: [40, 60] }
+    expect(() => Grid(props as never)).toThrow('has no property "templateColumns"')
+  })
+
+  // The rows a check that refused too much would fail. Without them a predicate
+  // that threw on everything passes every row above.
+  it('accepts the keys a container has', () => {
+    expect(() => Box()).not.toThrow()
+    expect(() => Box({})).not.toThrow()
+    expect(() => Box({ width: 10, height: 10, children: [], name: 'x' })).not.toThrow()
+    expect(() => Grid({ display: 'grid', gridTemplateColumns: [40, 60] })).not.toThrow()
+  })
+
+  it('accepts a style key that lives in a payload rather than a style group', () => {
+    // `objectFit`, `objectPosition` and `frame` are declared on `Style` and are
+    // absent from the generated property tables. A list derived from those
+    // tables would refuse them, which is why the list is proved against
+    // `keyof Style` instead of built from the tables.
+    expect(() => Column({ objectFit: 'cover' })).not.toThrow()
+    expect(() => Column({ objectPosition: [0, 0] })).not.toThrow()
+    expect(() => Column({ frame: 1 })).not.toThrow()
+  })
+})
+
+describe('a wider props object narrowed to a container', () => {
+  // **The first caller this check caught was us.** `Root` holds the surface
+  // options — `fonts`, `gpu`, `pages`, `scale` and the rest — beside the page's
+  // own style, and it built each page by handing that whole object to `Box`.
+  // Ten keys went into a node's style and the writer ignored them, which is
+  // precisely the defect the container check refuses from a caller.
+
+  it('keeps the container keys and drops the rest', () => {
+    const wide = {
+      width: 100,
+      backgroundColor: '#f00',
+      name: 'page',
+      gpu: true,
+      fonts: [],
+      pages: 3,
+      scale: 2,
+    }
+    expect(containerPropsOf(wide)).toEqual({
+      width: 100,
+      backgroundColor: '#f00',
+      name: 'page',
+    })
+  })
+
+  it('carries a style key that is not in the generated tables', () => {
+    // `objectFit` is on `Style` and absent from the arena property tables, so a
+    // filter built on those tables would drop it here rather than refuse it
+    // loudly — a silent narrowing, which is worse than the spread it replaced.
+    expect(containerPropsOf({ objectFit: 'cover', gpu: true })).toEqual({ objectFit: 'cover' })
+  })
+
+  it('does not invent keys the caller did not pass', () => {
+    expect(containerPropsOf({})).toEqual({})
+  })
+})
+
+describe('a text props key it does not have', () => {
+  // `TextProps` is `Style & ParagraphProps & { name }` — **three sources**, and
+  // the paragraph options are listed separately with a proof of their own. A
+  // list built from one spread of everything cannot say which source a missing
+  // key came from; with the split, dropping `ellipsis` fails twice, once at
+  // `PARAGRAPH_KEYS` and once at `TEXT_KEYS`.
+  it.each([
+    ['Text', () => Text('hi', { nonsense: 1 } as never)],
+    ['RichText', () => RichText([{ text: 'a' }], { nonsense: 1 } as never)],
+  ])('%s refuses it', (name, build) => {
+    expect(build).toThrow(`${name} has no property "nonsense"`)
+  })
+
+  it('accepts every source of its keys', () => {
+    expect(() => Text('hi')).not.toThrow()
+    expect(() => Text('hi', { maxLines: 2, ellipsis: '…' })).not.toThrow() // ParagraphProps
+    expect(() => Text('hi', { fontSize: 20 })).not.toThrow() // Style
+    expect(() => Text('hi', { name: 'x' })).not.toThrow() // its own
+  })
+})
+
+describe('a path props key it does not have', () => {
+  it('refuses it', () => {
+    expect(() => Path({ d: 'M0 0', nonsense: 1 } as never)).toThrow('Path has no property "nonsense"')
+  })
+
+  // `PathProps` adds eleven of its own beside `Style`, so this is the list most
+  // likely to be written short — and the proof is what makes that a compile
+  // error rather than a silently narrower surface.
+  it('accepts the eleven it does have', () => {
+    expect(() =>
+      Path({
+        d: 'M0 0',
+        viewBox: [0, 0, 1, 1],
+        preserveAspectRatio: 'none',
+        fill: '#f00',
+        stroke: '#00f',
+        lineWidth: 2,
+        fillRule: 'evenodd',
+        lineCap: 'round',
+        lineJoin: 'bevel',
+        lineDash: [2, 2],
+        lineDashOffset: 1,
+        name: 'p',
+      }),
+    ).not.toThrow()
+  })
+})
+
+describe('an image props key it does not have', () => {
+  it('refuses it', () => {
+    expect(() => Image({ src: 'x', nonsense: 1 } as never)).toThrow('Image has no property "nonsense"')
+  })
+
+  it('accepts the keys it does have', () => {
+    expect(() => Image({ src: 'x', name: 'i' })).not.toThrow()
+  })
+
+  // `objectFit`, `objectPosition` and `frame` are the three keys `Style`
+  // declares that the generated property tables do not carry, and they are an
+  // image's own business — so this is the factory where a table-derived
+  // allowlist would have refused valid code most visibly.
+  it('accepts the three style keys the generated tables omit', () => {
+    expect(() => Image({ src: 'x', objectFit: 'cover', objectPosition: [0, 0], frame: 2 })).not.toThrow()
   })
 })

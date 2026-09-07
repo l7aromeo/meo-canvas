@@ -198,6 +198,26 @@ export interface ImageWarning {
 }
 
 /**
+ * Something the caller wrote that the renderer could not use.
+ *
+ * Raised where the mistake is still visible: a value that was dropped and a
+ * value that was never written are the same absence one layer down, so the
+ * only place that can tell them apart is the one that did the dropping.
+ */
+export interface Diagnostic {
+  /**
+   * Where the value was, as it was written.
+   *
+   * A path rather than a property name, because a value nested inside another
+   * has no single name that would find it — `<color=zzz>` for markup,
+   * `segments[0].fontSize` for a run.
+   */
+  readonly path: string
+  /** What was wrong with it, and what was done instead. */
+  readonly detail: string
+}
+
+/**
  * The colour space a canvas composites in.
  *
  * Upstream's spellings, for the reason {@link ColorType} takes upstream's —

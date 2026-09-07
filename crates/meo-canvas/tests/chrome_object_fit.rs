@@ -27,8 +27,8 @@
 //! a claim about any particular pixel.
 
 use meo_canvas::{
-    Align, Box, Format, Image, ObjectFit, Overflow, PositionType, Renderer,
-    Root, Styled, hex_rgb, px,
+    Align, Box, Display, Format, Image, ObjectFit, Overflow, PositionType,
+    Renderer, Root, Styled, hex_rgb, px,
 };
 
 /// The source: eight by four, magenta at its own `x = 0`, cyan at `x = 7`.
@@ -83,6 +83,7 @@ fn drawn(fit: ObjectFit, cell: f32) -> ([u32; 4], bool, bool) {
         .align_items(Align::Center)
         .children(
             Box::new()
+                .display(Display::Block)
                 .position_type(PositionType::Relative)
                 .size(px(cell), px(cell))
                 .overflow(Overflow::Hidden)

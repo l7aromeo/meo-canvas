@@ -151,6 +151,19 @@ fn an_all_zero_chart_draws_nothing_rather_than_failing() {
         "an all-zero chart drew {} columns",
         columns.len()
     );
+
+    // **The same scan, on a chart that must draw.** An absence is only
+    // evidence beside a presence: with `draw` returning early this test passed
+    // unchanged, because a renderer that paints nothing satisfies "nothing was
+    // painted" and the assertion above cannot tell its own subject from a
+    // broken painter. One non-zero value is the difference between the two.
+    let (stride, buffer) = pixels(two_bars(vec![0.0, 1.0]));
+    let drawn = inked(stride, &buffer, 119, true);
+    assert!(
+        !drawn.is_empty(),
+        "the control drew nothing either, so the row above is measuring the \
+         renderer rather than the all-zero case"
+    );
 }
 
 #[test]
@@ -251,6 +264,14 @@ fn a_pie_stays_circular_in_a_box_that_is_not_square() {
     let row = inked(stride, &buffer, height / 2, true);
     let column = inked(stride, &buffer, stride / 2, false);
     let (wide, tall) = (row.len(), column.len());
+    // Both spans first, because `0.abs_diff(0)` is 0 and a blank page is a
+    // perfect circle by that measure: this test passed with `draw` returning
+    // before it read the scene.
+    assert!(
+        wide > 0 && tall > 0,
+        "the pie drew {wide} across and {tall} down, so there is no pie to \
+         call circular"
+    );
     assert!(
         wide.abs_diff(tall) <= 2,
         "the pie is {wide} across and {tall} down, so it is an ellipse"

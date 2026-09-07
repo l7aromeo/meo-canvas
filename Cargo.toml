@@ -57,6 +57,12 @@ taffy = { version = "0.14", default-features = false, features = [
 # workspace resolves and one the backend resolves agree by construction rather
 # than by two implementations tracking CSS Color 4 in parallel. It is already in
 # the graph through that dependency; naming it here adds no crate, only an edge.
+# Decoding the payload of a `data:` image source. Already in the graph under
+# the `net` feature -- ureq depends on it -- and named here so a build without
+# `net` gets the same decoder rather than a hand-written one. Untrusted input
+# is where a decoder's padding, whitespace and alphabet edges get found by a
+# caller rather than by us.
+base64 = "0.23"
 csscolorparser = "0.8"
 
 neon = "1.1"

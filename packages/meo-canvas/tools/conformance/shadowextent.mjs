@@ -37,7 +37,12 @@ const THRESHOLD = 6
 /** Each case: what it is called, its `box-shadow`, and its `border-radius`. */
 const CASES = [
   ['none', 'none', 0],
-  ['hard', '0 0 0 0 #000', 0],
+  // Offset, because with no offset at all the shadow sits entirely behind the
+  // 50x50 box that casts it and every ray reads -1 -- the six values `none`
+  // reads, from a different rule. 4 and 4 keep the edge hard while putting ink
+  // where a ray can find it; the axes stay symmetric here and asymmetric in
+  // `offset`, which is the row that catches a renderer swapping them.
+  ['hard', '4px 4px 0 0 #000', 0],
   ['offset', '8px 4px 0 0 #000', 0],
   ['blur', '0 0 12px 0 #000', 0],
   ['spread', '0 0 0 6px #000', 0],
@@ -159,7 +164,12 @@ try {
     '#',
     '# case\tray\tsteps',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
+  const written = table([...header, ...rows])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+  } else {
+    process.stdout.write(written)
+  }
 
   const profileHeader = [
     "# Chrome, through `just conformance`. The shape of a box-shadow's blur.",
@@ -182,9 +192,18 @@ try {
     '#',
     '# case\tray\tstep\tr\tg\tb',
   ]
-  await writeFile(PROFILE, table([...profileHeader, ...profile]), 'utf8')
-  process.stderr.write(`shadow extent: ${CASES.length} cases, ${rows.length} rays -> ${DESTINATION}\n`)
-  process.stderr.write(`shadow profile: ${profile.length} samples -> ${PROFILE}\n`)
+  // **Two tracked fixtures, not one.** `shadow-profile.tsv` is read by the same
+  // suites as `shadow-extent.tsv`, so it takes the same guard -- and the notes
+  // move inside it, because a line saying a file was written is a claim and a
+  // bare run does not write one.
+  const profiled = table([...profileHeader, ...profile])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(PROFILE, profiled, 'utf8')
+    process.stderr.write(`shadow extent: ${CASES.length} cases, ${rows.length} rays -> ${DESTINATION}\n`)
+    process.stderr.write(`shadow profile: ${profile.length} samples -> ${PROFILE}\n`)
+  } else {
+    process.stdout.write(profiled)
+  }
 } finally {
   await browser.close()
 }

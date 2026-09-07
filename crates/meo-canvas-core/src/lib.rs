@@ -75,6 +75,7 @@
 
 pub mod animate;
 pub mod color;
+pub mod diagnostic;
 pub mod encode;
 pub mod layout;
 pub mod lines;
@@ -82,6 +83,50 @@ pub mod markup;
 pub mod measure;
 pub mod paint;
 pub mod resolve;
+
+/// The largest magnitude a clamped value is allowed to reach.
+///
+/// **Two quantities share it and neither is the reason for the number.** An
+/// infinite length and an infinite flex factor both have to become something
+/// finite, and what a bound needs is not to be the largest representable value
+/// but to survive the arithmetic downstream of it: a spacing summed across a
+/// line, a length summed across a row of siblings, a set of grow factors added
+/// together.
+///
+/// **Measured, in this engine, not read off another one.** Sweeping a `width`
+/// by magnitude puts the cliff between `1e9` and `1e10` -- `1e8` fills its
+/// container and `1e10` collapses it, with `1e9` already one pixel-row short of
+/// the clean answer. `3.3554432e7` sits three orders below that. A flex factor
+/// is untroubled to `1e38`, because it is unitless and is not summed into a
+/// geometry, so the pixel constraint is the binding one and the factor takes
+/// the same bound for free.
+///
+/// **Chrome's own ceiling is this magnitude and that is a coincidence worth
+/// stating rather than resting on.** `2^25` is the top of its layout unit -- an
+/// internal of another engine's geometry, which would be meaningless here and
+/// would not stay correct if theirs changed. What is taken from Chrome is the
+/// property, not the number.
+///
+/// **So do not align this to Chrome's exact value.** The magnitudes agreeing is
+/// what makes that edit look like tidying, and it would replace a number this
+/// engine measured with one that means nothing here — the same move that put a
+/// wrong Chrome attribution into `layout::sized`'s doc, which this commit
+/// removes. If the cliff moves, re-run the sweep and set this from that.
+pub(crate) const FINITE_CEILING: f32 = 3.355_443_2e7;
+
+// **The property the number has to have, checked where someone would change
+// it.** `f32::MAX` is what a reader taking this for arbitrary would reach for,
+// and it puts back the collapse these clamps exist to remove: one sum past it
+// is infinity again, so the failure is not on the path the value takes but in
+// the addition after it. Asserted rather than tested, because a test has to be
+// read to be believed and this refuses to compile.
+//
+// It is here because the wrong value was proposed out loud: a reviewer reading
+// the previous ceiling as arbitrary suggested `f32::MAX`, on the reasoning that
+// the finite path was already exercised -- true, and beside the point. 2048 is
+// a line, or a row of siblings, far longer than any this engine lays out.
+const _: () = assert!(FINITE_CEILING.is_finite());
+const _: () = assert!(FINITE_CEILING * 2048.0 < f32::MAX);
 
 pub use color::parse_color;
 pub use encode::{EncodeOptions, EncodedImage, ImageFormat, PreparedEncode};
@@ -313,7 +358,7 @@ pub enum Error {
     },
 
     /// A local image path that cannot be read.
-    #[error("cannot read image at {path}")]
+    #[error("cannot read image at {path}{}", url_hint(path))]
     #[non_exhaustive]
     ImageRead {
         /// The path as the scene spelled it.
@@ -323,9 +368,53 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    /// A `data:` image source that is not a well-formed data URI.
+    ///
+    /// **Separate from [`Error::ImageRead`], which is where this used to
+    /// land.** A `data:` URI carries its own bytes and names no file, so
+    /// reading it as a path failed in `std::fs::read` and reported `cannot
+    /// read image at data:image/svg+xml;base64,PHN2...` -- a filesystem error
+    /// quoting something that was never a filename.
+    #[error("cannot read a data: image source: {detail}")]
+    #[non_exhaustive]
+    DataUri {
+        /// What is wrong with it, and what the form takes.
+        detail: String,
+    },
+
     /// Bytes that no decoder recognises.
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
+
+    /// A colour asked for on a source that is not a vector document.
+    ///
+    /// **Refused rather than ignored.** A colour recolours an SVG's
+    /// `currentColor`; a bitmap has no such thing, so a caller who set one on
+    /// a photograph has asked for something that cannot happen, and drawing
+    /// the photograph unchanged is the silent wrong picture this refusal
+    /// exists to prevent.
+    ///
+    /// **Raised at render rather than when the node is built**, because
+    /// neither surface knows what a source is until it is read: a path and a
+    /// URL are opaque, and only bytes could be sniffed.
+    #[error(
+        "node {} sets a colour on an image source that is not an SVG \
+         document; a colour recolours an SVG's `currentColor` and has no \
+         reading on a bitmap",
+        .0.get()
+    )]
+    TintOnRaster(NodeId),
+
+    /// An SVG document that would not parse.
+    ///
+    /// **Separate from [`Error::UndecodableImage`] so the sniff earns its
+    /// place.** Bytes that reach the SVG parser have already been refused by
+    /// every raster decoder *and* looked like a document, so telling a caller
+    /// only that nothing reads them describes the raster decoders and not the
+    /// thing that actually failed. A caller whose icon has a stray tag wants
+    /// to hear about the tag.
+    #[error("the SVG document for node {} did not parse", .0.get())]
+    UnparsableSvg(NodeId),
 
     /// A decoder panicked while reading a source.
     ///
@@ -363,6 +452,33 @@ pub enum Error {
         /// What the encoder reported.
         detail: String,
     },
+}
+
+/// Schemes an image source is fetched over rather than opened.
+///
+/// The two the JavaScript surface pre-fetches and the `net` feature's client
+/// speaks. Anything else -- `file:`, a Windows drive letter, a bare relative
+/// path -- is a filename and is read as one.
+const FETCHED_SCHEMES: [&str; 2] = ["http://", "https://"];
+
+/// The sentence appended to [`Error::ImageRead`] when the path is a URL.
+///
+/// **A bare string source is a path**, and `ImageSource` is tagged, so
+/// `{ src: 'https://...' }` type-checks, is opened as a filename, and fails
+/// with a filesystem error quoting a URL. The classification is deliberate;
+/// without this sentence the message is what makes it read as a failure of the
+/// fetcher, and the reader looks at the network rather than at the spelling.
+fn url_hint(path: &str) -> &'static str {
+    if FETCHED_SCHEMES
+        .iter()
+        .any(|scheme| path.starts_with(scheme))
+    {
+        " -- a URL here is read as a filename; name it as a URL source \
+         (`{ url: ... }` in JavaScript, `ImageSource::Url` in Rust) to have it \
+         fetched"
+    } else {
+        ""
+    }
 }
 
 /// An error and every cause beneath it, as one sentence.
@@ -823,6 +939,46 @@ mod tests {
             chained(&missing).starts_with("cannot read image at /nope.png: ")
         );
         assert_ne!(chained(&missing), chained(&denied));
+    }
+
+    /// A URL read as a filename says so, and a filename does not.
+    ///
+    /// The pair is the point. Asserting only that the URL case carries the
+    /// sentence would pass if it were appended to every path, which would be
+    /// worse than saying nothing -- it would tell a caller their filename was
+    /// a URL.
+    #[test]
+    fn a_url_opened_as_a_path_says_which_mistake_it_was() {
+        let as_path = |path: &str| Error::ImageRead {
+            path: path.to_owned(),
+            source: std::io::Error::from(std::io::ErrorKind::NotFound),
+        };
+
+        let url = as_path("https://example.invalid/x.png").to_string();
+        assert!(url.contains("read as a filename"), "{url}");
+        assert!(url.contains("ImageSource::Url"), "{url}");
+
+        // A real path, and two shapes that are nearly one: a scheme this
+        // crate does not fetch, and a name that merely begins with the
+        // letters.
+        // `data:` is quiet here for one reason on this tree -- it matches
+        // neither prefix in `FETCHED_SCHEMES` -- and for a second once the
+        // dedicated `data:` error variant merges. **Two constructions
+        // guarantee it and either can be removed alone**: adding `data:` to
+        // that list, or folding the variant back into `ImageRead` to cut
+        // duplication, would each be an improvement that passes.
+        for quiet in [
+            "/nope.png",
+            "file:///nope.png",
+            "https-notes.png",
+            "data:image/png;base64,AAA",
+        ] {
+            let message = as_path(quiet).to_string();
+            assert!(
+                !message.contains("read as a filename"),
+                "{quiet} was called a URL: {message}"
+            );
+        }
     }
     use meo_canvas_scene::{
         ColorSpace, ColorType, Scene, Size,

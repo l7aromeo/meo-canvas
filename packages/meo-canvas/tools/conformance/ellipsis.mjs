@@ -93,8 +93,13 @@ try {
     '#',
     '# text\tsize\twidth\tfull width\tdrawn\tdrawn width',
   ]
-  await writeFile(DESTINATION, table([...header, ...rows]), 'utf8')
-  process.stderr.write(`ellipsis: ${rows.length} cases -> ${DESTINATION}\n`)
+  const written = table([...header, ...rows])
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    process.stderr.write(`ellipsis: ${rows.length} cases -> ${DESTINATION}\n`)
+  } else {
+    process.stdout.write(written)
+  }
 } finally {
   await browser.close()
 }

@@ -22,6 +22,7 @@
 //! `children`, and that set never grows: a new property is a new entry in the
 //! property table, not a method on seven types.
 
+use meo_canvas_core::diagnostic::Diagnostic;
 use meo_canvas_scene::{
     Length, Scene, SceneError, Size,
     node::{ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, PathPaint},
@@ -552,15 +553,55 @@ impl Text {
     /// Use [`Text::rich`] for content that must not be interpreted, or that
     /// carries styles the five tags cannot name.
     #[must_use]
+    /// # What it does not tell you
+    ///
+    /// **A tag this parser does not know, and a value it cannot read, are
+    /// dropped silently here.** `<nope>a</nope> b` renders exactly as `a b`
+    /// does, so nothing in the output can tell a caller their tag did nothing.
+    ///
+    /// This constructor parses eagerly and returns an [`Element`], which has
+    /// nowhere to put that report. [`Text::new_reporting`] is the same
+    /// constructor handing it back:
+    ///
+    /// ```
+    /// use meo_canvas::Text;
+    ///
+    /// let (text, found) = Text::new_reporting("<nope>a</nope> b");
+    /// assert_eq!(found.len(), 1);
+    /// assert_eq!(found[0].path, "<nope>");
+    /// ```
     #[expect(
         clippy::new_ret_no_self,
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new(content: impl Into<String>) -> Element {
-        Element::new(NodeKind::Text {
-            segments: meo_canvas_core::markup::parse_paragraph(&content.into()),
-            paragraph: ParagraphStyle::default(),
-        })
+        Self::new_reporting(content).0
+    }
+
+    /// [`Text::new`], and what the markup parser could not use.
+    ///
+    /// **Beside the total form rather than replacing it**, for the reason
+    /// `parse_reporting` is: a caller who does not want the report should not
+    /// have to say so at every call, and chaining
+    /// `Text::new("...").with_style(...)` is the shape this surface is built
+    /// around. Taking the pair gives that up for one call, which is the price
+    /// of knowing.
+    ///
+    /// The two share one implementation, so they cannot disagree about what a
+    /// tag means.
+    #[must_use]
+    pub fn new_reporting(
+        content: impl Into<String>,
+    ) -> (Element, Vec<Diagnostic>) {
+        let (segments, found) =
+            meo_canvas_core::markup::parse_paragraph_reporting(&content.into());
+        (
+            Element::new(NodeKind::Text {
+                segments,
+                paragraph: ParagraphStyle::default(),
+            }),
+            found,
+        )
     }
 
     /// Text made of runs that differ in style, given directly.

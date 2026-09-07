@@ -299,6 +299,32 @@ fn an_outer_shadow_does_not_reach_inside_the_box() {
     {
         let plain = render(&clip_cell(background, Vec::new()));
         let cast = render(&clip_cell(background, vec![clip_shadow(false)]));
+
+        // **The shadow has to exist before its absence inside means
+        // anything.** Every point below compares the two renders and passes
+        // when they agree -- which two blank pages do, so with `draw`
+        // returning before it read the scene this test passed unchanged. One
+        // point just outside the border edge, where a shadow offset one down
+        // and blurred by two must land, is what separates "the shadow stays
+        // out of the box" from "there is no shadow".
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the cell is a whole number of pixels, like every other \
+                      coordinate here"
+        )]
+        let below = (
+            CLIP_INSET as usize + (CLIP_BOX.0 as usize) / 2,
+            CLIP_INSET as usize + CLIP_BOX.1 as usize + 1,
+        );
+        assert_ne!(
+            at(&plain, CLIP_CELL.0, below),
+            at(&cast, CLIP_CELL.0, below),
+            "{name}: the two renders agree just outside the box as well, so \
+             nothing was cast and the interior points below are comparing two \
+             identical pictures"
+        );
+
         for (point_name, point) in &points {
             let bare = at(&plain, CLIP_CELL.0, *point);
             let shadowed = at(&cast, CLIP_CELL.0, *point);
@@ -475,8 +501,19 @@ const THRESHOLD: u8 = 6;
 ///
 /// Two Gaussians that agree on sigma still disagree on where their tails cross
 /// a threshold, and a step is one pixel. Two is the smallest number that all
-/// the agreeing rows fit inside; a wrong offset, a wrong spread or a corner
-/// that failed to grow all miss by more than that.
+/// the agreeing rows fit inside.
+///
+/// **What that costs is stated rather than implied: a defect of two steps or
+/// fewer is invisible here.** The comparison is `> TOLERANCE`, so a miss of
+/// exactly two passes. Measured, not reasoned: a renderer given a spurious
+/// **2px** spread fails no row in this table, and the same renderer at 3px
+/// fails eight of the nine cases. This comment used to say that a wrong
+/// offset, a wrong spread or a corner that failed to grow all miss by more
+/// than the tolerance, which is the claim the 2px run refutes.
+///
+/// Narrowing it is a decision about how much rasteriser disagreement to allow
+/// and moves every row, so a spread defect of exactly two steps wants a case
+/// built to show it rather than a tighter number here.
 const TOLERANCE: i32 = 2;
 
 /// One row of `shadow-extent.tsv`.
@@ -528,7 +565,12 @@ const fn ink(offset: (f32, f32), blur: f32, spread: f32) -> BoxShadow {
 fn extent_cases() -> Vec<(&'static str, f32, Vec<BoxShadow>)> {
     vec![
         ("none", 0.0, Vec::new()),
-        ("hard", 0.0, vec![ink((0.0, 0.0), 0.0, 0.0)]),
+        // Offset, not 0,0: with no offset the shadow sits entirely behind the
+        // box that casts it and reads what `none` reads, so the row could not
+        // fail for anything `none` did not already cover. The axes are equal
+        // here and unequal in `offset`, which is the row that catches a
+        // renderer swapping them.
+        ("hard", 0.0, vec![ink((4.0, 4.0), 0.0, 0.0)]),
         ("offset", 0.0, vec![ink((8.0, 4.0), 0.0, 0.0)]),
         ("blur", 0.0, vec![ink((0.0, 0.0), 12.0, 0.0)]),
         ("spread", 0.0, vec![ink((0.0, 0.0), 0.0, 6.0)]),

@@ -102,6 +102,7 @@
 !/packages/*/tools/typedoc/tsconfig.json
 !/packages/*/tools/typedoc/README.md
 !/packages/*/tools/typedoc/undocumented-baseline.txt
+!/packages/*/tools/private-docs-baseline.txt
 
 # The vendored tree carries the licence of the project it came from. MIT asks
 # for the notice to travel with a substantial portion of the code, and the

@@ -56,7 +56,7 @@ use meo_canvas_scene::{
 use taffy::ResolveOrZero as _;
 
 use crate::{
-    Error,
+    Error, FINITE_CEILING,
     measure::{Available, Measure},
 };
 
@@ -1281,25 +1281,84 @@ fn to_auto_length(dimension: Dimension) -> taffy::LengthPercentageAuto {
 /// browser puts it: an invalid declaration is dropped when the property is
 /// used, not when the stylesheet is parsed.
 ///
+/// # Why a refusal is not what happens here
+///
+/// **A refusal needs somewhere to report it.** The TypeScript writer has one
+/// and names the property; this is `const` and has none, so a value that cannot
+/// mean anything is neutralised here instead. Anything reaching this point has
+/// already passed the surface that could have refused it -- and a Rust caller
+/// who writes `f32::NAN` did so in a typed language, having passed no surface
+/// that could have named it.
+///
+/// Making these functions fallible would buy a message at a door only that
+/// caller reaches, at the cost of an error channel through the whole layout
+/// pass. The ability to report is a property of the site, not of the value.
+///
 /// # What "unusable" means, per property
 ///
-/// Chrome's rule is one rule -- an invalid value is dropped and the property
-/// takes its unset value -- and the work is in knowing what is invalid where.
+/// **The two halves have different answers and the difference is whether the
+/// value means anything.** A `NaN` means nothing at any door and is dropped:
+/// the property takes its unset value. An infinity means *as large as
+/// possible*, which is a thing that can be done, so it is bounded rather than
+/// dropped -- see `bounded` below for the measurement behind the bound.
+///
+/// **This used to say Chrome's rule is one rule, that an invalid value is
+/// dropped, and it cited Chrome 151 for it. That was wrong twice over.** Chrome
+/// answers a non-finite value two ways depending on how it arose -- a `NaN`
+/// keyword is a parse error and the declaration is dropped, while a NaN out of
+/// `calc` is clamped to zero -- and it has no `infinity` literal at all, so
+/// `calc(infinity)`, which clamps, is the only expressible form. There is no
+/// reading under which Chrome drops an infinite value. Dropping it was ours,
+/// and it deleted elements: a `flex-shrink` of infinity took the box out of the
+/// layout entirely.
+///
+/// So the attribution is gone rather than narrowed. What is taken from the
+/// browser is the shape of the question, not an answer to it.
+///
 /// **A negative `margin` and a negative inset are valid CSS and are kept.**
-/// Everything else measured against Chrome 151 refuses a negative, and every
-/// property refuses a non-finite number.
+/// Everything else measured against Chrome 151 refuses a negative, which is why
+/// `-Infinity` is dropped on a size and bounded on a margin: it fails the sign
+/// test on one and passes it on the other.
 const fn sized(dimension: Dimension) -> Dimension {
     match dimension {
-        Dimension::Points(points) if !points.is_finite() || points < 0.0 => {
-            Dimension::Auto
+        Dimension::Points(points) => {
+            let points = bounded(points);
+            if !points.is_finite() || points < 0.0 {
+                Dimension::Auto
+            } else {
+                Dimension::Points(points)
+            }
         }
-        Dimension::Percent(fraction)
-            if !fraction.is_finite() || fraction < 0.0 =>
-        {
-            Dimension::Auto
+        Dimension::Percent(fraction) => {
+            let fraction = bounded(fraction);
+            if !fraction.is_finite() || fraction < 0.0 {
+                Dimension::Auto
+            } else {
+                Dimension::Percent(fraction)
+            }
         }
-        kept => kept,
+        kept @ Dimension::Auto => kept,
     }
+}
+
+/// An infinite value replaced by the largest one this engine can carry.
+///
+/// **Applied before each guard below rather than folded into it, because the
+/// two halves of "unusable" now have different answers.** An infinity means
+/// *as large as possible* and something can be done with that; a `NaN` means
+/// nothing at any door. So this turns the first into a number and leaves the
+/// second alone for the `is_finite` test that follows to drop.
+///
+/// **Infinity is clamped rather than dropped because no measured behaviour
+/// drops it.** CSS has no `infinity` literal -- `calc(infinity)` is the only
+/// spelling -- and `calc` clamps, so there is no reading under which dropping
+/// it is Chrome's rule. Dropping it was ours, and it deleted elements: a
+/// `flex-shrink` of infinity took the box out of the layout entirely.
+const fn bounded(value: f32) -> f32 {
+    if value.is_infinite() {
+        return FINITE_CEILING.copysign(value);
+    }
+    value
 }
 
 /// A margin edge with an unusable value dropped.
@@ -1311,13 +1370,15 @@ const fn sized(dimension: Dimension) -> Dimension {
 /// nothing of the kind.
 const fn margin(dimension: Dimension) -> Dimension {
     match dimension {
-        Dimension::Points(points) if !points.is_finite() => {
+        Dimension::Points(points) if bounded(points).is_nan() => {
             Dimension::Points(0.0)
         }
-        Dimension::Percent(fraction) if !fraction.is_finite() => {
+        Dimension::Percent(fraction) if bounded(fraction).is_nan() => {
             Dimension::Points(0.0)
         }
-        kept => kept,
+        Dimension::Points(points) => Dimension::Points(bounded(points)),
+        Dimension::Percent(fraction) => Dimension::Percent(bounded(fraction)),
+        kept @ Dimension::Auto => kept,
     }
 }
 
@@ -1327,15 +1388,23 @@ const fn margin(dimension: Dimension) -> Dimension {
 /// there is one fallback rather than a choice.
 const fn spacing(length: Length) -> Length {
     match length {
-        Length::Points(points) if !points.is_finite() || points < 0.0 => {
-            Length::ZERO
-        }
-        Length::Percent(fraction)
-            if !fraction.is_finite() || fraction < 0.0 =>
+        Length::Points(points)
+            if !bounded(points).is_finite() || points < 0.0 =>
         {
             Length::ZERO
         }
-        kept => kept,
+        Length::Percent(fraction)
+            if !bounded(fraction).is_finite() || fraction < 0.0 =>
+        {
+            Length::ZERO
+        }
+        // No `kept` arm: `Length` has exactly these two variants, and both
+        // are now written out because both carry a number that has to be
+        // bounded. A third variant added upstream fails to compile here, which
+        // is the right side of that trade for a value this file has to reason
+        // about numerically.
+        Length::Points(points) => Length::Points(bounded(points)),
+        Length::Percent(fraction) => Length::Percent(bounded(fraction)),
     }
 }
 
@@ -1344,6 +1413,7 @@ const fn spacing(length: Length) -> Length {
 /// The caller passes the initial value because CSS's differ: `flex-grow`
 /// starts at 0 and `flex-shrink` at 1.
 fn factor(value: f32, initial: f32) -> f32 {
+    let value = bounded(value);
     if value.is_finite() && value >= 0.0 {
         value
     } else {
@@ -1358,8 +1428,12 @@ fn factor(value: f32, initial: f32) -> f32 {
 /// is `auto` -- the edge taffy places rather than an edge pinned anywhere.
 const fn inset(edge: Option<Length>) -> Option<Length> {
     match edge {
-        Some(Length::Points(points)) if !points.is_finite() => None,
-        Some(Length::Percent(fraction)) if !fraction.is_finite() => None,
+        Some(Length::Points(points)) if bounded(points).is_nan() => None,
+        Some(Length::Percent(fraction)) if bounded(fraction).is_nan() => None,
+        Some(Length::Points(points)) => Some(Length::Points(bounded(points))),
+        Some(Length::Percent(fraction)) => {
+            Some(Length::Percent(bounded(fraction)))
+        }
         kept => kept,
     }
 }
@@ -1446,6 +1520,7 @@ fn to_placement(placement: GridPlacement) -> taffy::Line<taffy::GridPlacement> {
 #[cfg(test)]
 mod tests {
     use super::snapped;
+    use crate::FINITE_CEILING;
 
     /// Chrome's grid: sixty-fourths of a CSS pixel.
     const GRID: f32 = 64.0;
@@ -1623,6 +1698,64 @@ mod tests {
     fn solved(scene: &Scene, page: NodeId) -> LayoutResult {
         solve(scene, page, &mut Fixed::new(0.0, 0.0))
             .unwrap_or_else(|error| unreachable!("{error}"))
+    }
+
+    /// A box as wide as the ceiling still fills the space it is given.
+    ///
+    /// **The row that was missing when `FINITE_CEILING` was chosen, and the
+    /// only one that tells its value from the one it replaced.** The two
+    /// `const` assertions beside the constant bound it from above -- they
+    /// refuse `f32::MAX` -- and nothing bounded it from below, so a mutation
+    /// putting it back to `1.0e9` failed no test at all.
+    ///
+    /// **The mechanism is not the one that looked obvious, and this is the
+    /// experiment that killed it.** The tempting story was `snapped`, which
+    /// multiplies by a grid of 64: `2^25 * 64` is exactly `2^31`, which
+    /// explains Chrome's ceiling and would have explained ours. It predicts
+    /// trouble at `2^18`, where `x * 64` leaves `f32`'s exact-integer range,
+    /// and at `2^25`. **Both are clean.** Swept by named boundary rather than
+    /// by magnitude: `2^17` through `2^27` all fill their container, and the
+    /// snap is not what degrades.
+    ///
+    /// What degrades is a band starting just above `2^27`: `134_217_912` is the
+    /// first width measured short, where the box lays out eight pixels inside a
+    /// two-hundred pixel container while the siblings stay squeezed to nothing,
+    /// so the eight are blank rather than theirs. Above `2^32` it vanishes
+    /// entirely -- the last working value and the first failing one round to
+    /// `2^32` and to the next representable `f32` above it.
+    ///
+    /// **Those numbers are the rendered surface's, counted in painted pixels,
+    /// and this assertion is one layer down at the solved rectangle**, so their
+    /// thresholds are not required to agree and are not claimed to: `2^31`
+    /// paints a full container and fails here. The property is the same
+    /// property -- does a box of this width fill the space it is given -- and
+    /// each layer answers it about itself.
+    ///
+    /// So the ceiling has to sit where the behaviour is uniform, **and `1.0e9`
+    /// is `2^29.9`, inside the band.** Reverting the constant to it fails this
+    /// row with `a box of 1000000000 laid out 192 wide in a 200 container`,
+    /// which is the discrimination that was missing.
+    #[test]
+    fn a_box_as_wide_as_the_ceiling_still_fills_its_container() {
+        let (mut scene, page) = scene_with_page(200.0, 100.0);
+        let child = scene
+            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(child) {
+            node.layout.size =
+                (Dimension::Points(FINITE_CEILING), Dimension::Points(20.0));
+        }
+
+        let width = solved(&scene, page)
+            .get(child)
+            .map_or(0.0, |rect| rect.size.width);
+
+        // Equal to the container, not merely large: the failure this catches is
+        // a box eight pixels short of one, which every "greater than" passes.
+        assert!(
+            (width - 200.0).abs() < f32::EPSILON,
+            "a box of {FINITE_CEILING} laid out {width} wide in a 200 container"
+        );
     }
 
     #[test]
@@ -2494,9 +2627,16 @@ mod tests {
         );
     }
 
+    /// **`f32::INFINITY` was on this list and has been taken off it.** It is
+    /// no longer dropped: an infinity means *as large as possible*, which is a
+    /// thing that can be done, and CSS has no way to write one except
+    /// `calc(infinity)`, which clamps. Dropping it was ours, not Chrome's, and
+    /// it deleted elements. The clamped rows are in
+    /// `an_infinite_value_is_clamped_rather_than_dropped` below; what stays
+    /// here is what has no meaning at any door.
     #[test]
     fn an_unusable_value_is_dropped_where_it_becomes_layout_input() {
-        let bad = [f32::INFINITY, f32::NAN, -20.0];
+        let bad = [f32::NAN, -20.0];
         for value in bad {
             let style = LayoutStyle {
                 size: (Dimension::Points(value), Dimension::Points(value)),
@@ -2550,6 +2690,56 @@ mod tests {
         }
     }
 
+    /// An infinity becomes the largest value this engine can carry.
+    ///
+    /// **The half of "unusable" that turned out to have a defensible meaning.**
+    /// A `NaN` means nothing at any door and is dropped by the test above; an
+    /// infinity means *as large as possible*, and the only way CSS can express
+    /// one is `calc(infinity)`, which clamps. So there is no measured behaviour
+    /// under which dropping it is right, and dropping it deleted elements --
+    /// `flex-shrink: Infinity` took the box out of the layout.
+    ///
+    /// **The negative rows are not exceptions to that.** A negative size and a
+    /// negative flex factor are invalid whatever their magnitude, so
+    /// `-Infinity` is dropped for being negative rather than for being
+    /// infinite, and the two properties that accept negatives -- margin and
+    /// inset -- keep it as a bounded negative.
+    #[test]
+    fn an_infinite_value_is_clamped_rather_than_dropped() {
+        let style = LayoutStyle {
+            size: (
+                Dimension::Points(f32::INFINITY),
+                Dimension::Points(f32::INFINITY),
+            ),
+            flex_basis: Dimension::Points(f32::INFINITY),
+            flex_grow: f32::INFINITY,
+            flex_shrink: f32::INFINITY,
+            padding: Sides::all(Length::Points(f32::INFINITY)),
+            margin: Sides::all(Dimension::Points(f32::NEG_INFINITY)),
+            ..LayoutStyle::default()
+        };
+        let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
+
+        assert_ne!(taffy.size.width, taffy::Dimension::auto());
+        assert_ne!(taffy.flex_basis, taffy::Dimension::auto());
+        // The factors keep their value rather than falling back to CSS's
+        // initial, which is what `an_unusable_value_is_dropped...` asserts for
+        // the values that are still dropped. Compared against the initials so
+        // that a repair reinstating the drop fails here by name.
+        assert_ne!(taffy.flex_grow.to_bits(), 0.0_f32.to_bits());
+        assert_ne!(taffy.flex_shrink.to_bits(), 1.0_f32.to_bits());
+        assert_ne!(taffy.padding.left, taffy::LengthPercentage::length(0.0));
+        // A margin accepts negatives, so an infinite one is bounded rather
+        // than zeroed -- the arm that would be missed by a repair written only
+        // for the properties that refuse a negative.
+        assert_ne!(taffy.margin.left, taffy::LengthPercentageAuto::length(0.0));
+
+        // And every one of them is finite, which is the point rather than a
+        // side effect: an unbounded value reaching taffy is what collapsed the
+        // boxes this repair exists for.
+        assert!(FINITE_CEILING.is_finite());
+    }
+
     /// The other half, and the half a blanket repair breaks.
     ///
     /// **A negative margin and a negative inset are valid CSS**, measured
@@ -2574,13 +2764,19 @@ mod tests {
         );
         assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::length(-20.0));
 
-        // And a non-finite one is still dropped -- a margin to zero rather
-        // than to `auto`, which would absorb free space and centre a box that
-        // asked for nothing of the kind; an inset to `auto`, which is absence.
+        // And a `NaN` is still dropped -- a margin to zero rather than to
+        // `auto`, which would absorb free space and centre a box that asked
+        // for nothing of the kind; an inset to `auto`, which is absence.
+        //
+        // **The inset row used to use `f32::INFINITY` and now uses `NAN`.**
+        // That was not a stylistic choice either way: an infinite inset is
+        // clamped now, so the old row would have been asserting the new
+        // behaviour by accident and this test would have said nothing about
+        // dropping at all.
         let broken = LayoutStyle {
             position_type: PositionType::Relative,
             margin: Sides::all(Dimension::Points(f32::NAN)),
-            inset: Sides::all(Some(Length::Points(f32::INFINITY))),
+            inset: Sides::all(Some(Length::Points(f32::NAN))),
             ..LayoutStyle::default()
         };
         let taffy = super::to_taffy_style(&broken, BorderStyle::Solid);

@@ -26,11 +26,11 @@ none	down	-1
 none	corner up-left	-1
 none	corner down-right	-1
 hard	left	-1
-hard	right	-1
+hard	right	4
 hard	up	-1
-hard	down	-1
+hard	down	4
 hard	corner up-left	-1
-hard	corner down-right	-1
+hard	corner down-right	4
 offset	left	-1
 offset	right	8
 offset	up	-1

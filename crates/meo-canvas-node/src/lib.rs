@@ -77,7 +77,7 @@ use std::{cell::RefCell, rc::Rc};
 use arena::{SideValue, Values};
 use meo_canvas_core::{
     EncodeOptions, FetchFailure, ImageFormat, PreparedEncode, RenderedCanvas,
-    Renderer, Surface, SurfaceOptions, chained,
+    Renderer, Surface, SurfaceOptions, chained, diagnostic::Diagnostic,
 };
 use neon::{prelude::*, types::buffer::TypedArray};
 
@@ -141,7 +141,9 @@ fn render_off_thread(
     values: &Values,
     format: &str,
 ) -> Result<Vec<u8>, String> {
-    let scene =
+    // Dropped: this path returns bytes to a worker thread and has no object
+    // to hang them on. The render path below surfaces them.
+    let (scene, _) =
         arena::decode(slots, values).map_err(|error| chained(&error))?;
     let format = ImageFormat::from_extension(format)
         .ok_or_else(|| format!("no image format is called {format:?}"))?;
@@ -332,8 +334,10 @@ const PROBE_SCALE: f32 = 1.0;
 /// tick to save nothing.
 fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
     let (slots, values) = arguments(&mut cx)?;
-    let scene = match arena::decode(&slots, &values) {
-        Ok(scene) => scene,
+    // Dropped: this returns the encoded scene, not a canvas, so there is
+    // nowhere for a report to go.
+    let (scene, _) = match arena::decode(&slots, &values) {
+        Ok(decoded) => decoded,
         Err(error) => return cx.throw_error(chained(&error)),
     };
     let bytes = meo_canvas_scene::codec::encode(&scene);
@@ -555,6 +559,23 @@ fn attach_writers<'a>(
 /// `warnings.length === 0` once and never guards it. The classification
 /// crosses as a keyword with the HTTP code beside it when there is one, so a
 /// caller branches on a value rather than reading a number out of a sentence.
+/// The diagnostics as an array of `{ path, detail }`.
+fn diagnostics_array<'cx>(
+    cx: &mut FunctionContext<'cx>,
+    found: &[Diagnostic],
+) -> JsResult<'cx, JsArray> {
+    let out = cx.empty_array();
+    for (index, one) in found.iter().enumerate() {
+        let entry = cx.empty_object();
+        let path = cx.string(&one.path);
+        entry.set(cx, "path", path)?;
+        let detail = cx.string(&one.detail);
+        entry.set(cx, "detail", detail)?;
+        out.set(cx, u32::try_from(index).unwrap_or(u32::MAX), entry)?;
+    }
+    Ok(out)
+}
+
 fn warnings_array<'cx>(
     cx: &mut FunctionContext<'cx>,
     canvas: &RenderedCanvas,
@@ -637,8 +658,8 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     let (slots, values) = arguments(&mut cx)?;
     let renderer = paint_options(&mut cx, 2)?;
 
-    let scene = match arena::decode(&slots, &values) {
-        Ok(scene) => scene,
+    let (scene, diagnostics) = match arena::decode(&slots, &values) {
+        Ok(decoded) => decoded,
         Err(error) => return cx.throw_error(chained(&error)),
     };
     let canvas = match renderer.render(&scene) {
@@ -673,6 +694,11 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     // where what went wrong during the render cannot change afterwards.
     let warnings = warnings_array(&mut cx, &canvas)?;
     surface.set(&mut cx, "warnings", warnings)?;
+    // Beside the warnings and not merged with them: a warning says the world
+    // did not answer, a diagnostic says the input did not say what it meant,
+    // and a caller acts on the two differently.
+    let reported = diagnostics_array(&mut cx, &diagnostics)?;
+    surface.set(&mut cx, "diagnostics", reported)?;
 
     let painted: Painted = Rc::new(RefCell::new(Some(canvas)));
 
