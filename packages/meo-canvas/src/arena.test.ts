@@ -582,7 +582,7 @@ const PROBES: Readonly<Record<string, Style>> = {
   z_index: { zIndex: 1 },
   // `'100%'`, not the `'25%'` the kind cases use: this case's percentages come
   // from `PROBE_FILL`, which is `1.0` for every property, so the probe has to
-  // match it. That is the blind spot #22 closes — a hundredfold units error is
+  // match it. That is the blind spot this case closes — a hundredfold units error is
   // invisible at exactly this value — and the probe cannot step out of it
   // alone, because the bytes it is compared against are written from the fill.
   gradient: {

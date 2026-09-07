@@ -145,7 +145,7 @@ ci:
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs conformance-writes test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs conformance-writes issue-refs test addon test-js coverage coverage-js example runtime-free unused
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
@@ -1453,6 +1453,16 @@ docs-js: build-js
     # Presence by the package, not the `.bin` shim, whose filename differs per platform.
     test -f "$tool/node_modules/typedoc/package.json" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
+
+# Fail if a comment names an issue without naming its repository.
+#
+# **A bare `#N` resolves, which is what makes it worse than a dead link.** Three
+# in this tree pointed at merged pull requests about other things, and ten more
+# named taffy's numbers in our numbering. A reader lands somewhere real and
+# nothing says it is the wrong place.
+[doc("Fail if a comment names an issue without naming its repository.")]
+issue-refs:
+    node packages/meo-canvas/tools/issue-refs.mjs
 
 # Fail if a conformance tool writes a tracked fixture unguarded.
 #
