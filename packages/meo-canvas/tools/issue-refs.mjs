@@ -10,12 +10,18 @@
 // used the qualified form before this existed, and they are the only two that
 // could not go wrong.
 //
-// **It reads comments, not files.** `#0008` and `#808080` are colours in test
-// tables, `"#1122 33 44"` is arena input, and `["#12", "#12345"]` are strings a
-// parser must reject — none is a reference, and none is in a comment. Excluding
-// them by their spelling would be a rule about how a colour looks, which is the
-// fault this file exists to avoid: the property is *a reader could follow this*,
-// and only comment text is read.
+// **It reads comments, not files.** Short hex colours in `color.rs`'s tables,
+// the arena's byte-string inputs, and the malformed colours `unit.rs` requires a
+// parser to reject all look like references and are none of them: every one sits
+// in a string literal. Excluding them by their spelling would be a rule about how
+// a colour looks, which is the fault this file exists to avoid — the property is
+// *a reader could follow this*, and only comment text poses it.
+//
+// **The literals are named there and not here, and that is not squeamishness.**
+// This file is read by the check it defines, so an example written in this
+// comment is a violation of the rule it illustrates. The first version of this
+// header held four, and they were invisible until the file was committed: the
+// scan lists files from git, so while it was untracked it did not read itself.
 //
 // **What it does not do.** It lexes rather than parses the Rust: line comments,
 // block comments, ordinary strings and raw strings, which is every form this
@@ -28,7 +34,7 @@ import { execFileSync } from 'node:child_process'
 /** How many qualified references the tree holds today. */
 const FLOOR = 2
 
-/** A reference someone could follow: `#12`, but not `#1a2b` and not `#123456`. */
+/** A reference someone could follow: a hash, then one to five decimal digits. */
 const REFERENCE = /(?<!\w)(?<qualified>[\w.-]+\/[\w.-]+)?#(?<number>\d{1,5})(?!\w)/gu
 
 /** The comment text of a JavaScript-family or Rust source, as `[line, text]`. */
@@ -97,7 +103,11 @@ function hashCommentsOf(source) {
     .filter(([, text]) => /^\s*#/u.test(text))
 }
 
-const files = execFileSync('git', ['ls-files', '*.rs', '*.ts', '*.mjs', '*.mts', 'justfile'], {
+// `--others --exclude-standard` as well as the tracked set: a file added and not
+// yet committed is exactly the file most likely to carry a new reference, and
+// listing only what git already knows about is how this check first passed on a
+// tree containing its own violations.
+const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '*.rs', '*.ts', '*.mjs', '*.mts', 'justfile'], {
   encoding: 'utf8',
 })
   .split('\n')
