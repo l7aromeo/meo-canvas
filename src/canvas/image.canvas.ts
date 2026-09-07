@@ -63,6 +63,44 @@ export class ImageNode extends BoxNode {
       objectPosition: { Left: '50%', Top: '50%' },
       ...props,
     }
+
+    this.node.setMeasureFunc(this.measureImage.bind(this))
+  }
+
+  /**
+   * The size this node takes when nothing else decides one, which is the source's own.
+   *
+   * CSS uses a replaced element's intrinsic dimensions as its used size, so an `<img>` with no
+   * width or height is as big as the file says. Only the ratio was handed to Yoga here, and a ratio
+   * is a relationship between the axes rather than a size: pinning one gave the other, and pinning
+   * neither gave nothing at all. An unsized image in a `Row`, or in a box shrink-wrapping around
+   * it, laid out at zero and drew nothing.
+   *
+   * Measured rather than set as a width, because an intrinsic size is one the layout may still
+   * overrule. Writing `width` would end the cross-axis stretch that puts an unsized image across
+   * its parent -- which is what CSS does there too, and what this already got right.
+   */
+  private measureImage(
+    widthConstraint: number,
+    widthMode: (typeof Style.MeasureMode)[keyof typeof Style.MeasureMode],
+    heightConstraint: number,
+    heightMode: (typeof Style.MeasureMode)[keyof typeof Style.MeasureMode],
+  ): { width: number; height: number } {
+    // Nothing to measure before the source has loaded, or after it failed to. The node keeps
+    // whatever the caller gave it, which is what it did before any of this.
+    if (!(this.naturalWidth > 0) || !(this.naturalHeight > 0)) return { width: 0, height: 0 }
+
+    /** One axis: an exact constraint wins, a ceiling clamps, and nothing at all leaves it natural. */
+    const axis = (natural: number, constraint: number, mode: (typeof Style.MeasureMode)[keyof typeof Style.MeasureMode]) => {
+      if (mode === Style.MeasureMode.Exactly) return constraint
+      if (mode === Style.MeasureMode.AtMost) return Math.min(natural, constraint)
+      return natural
+    }
+
+    return {
+      width: axis(this.naturalWidth, widthConstraint, widthMode),
+      height: axis(this.naturalHeight, heightConstraint, heightMode),
+    }
   }
 
   /**
