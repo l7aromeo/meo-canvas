@@ -17,6 +17,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['packages/meo-canvas/src/**/*.test.ts'],
+    // The default reporter, plus one that says so when a failing run looks like
+    // a busy machine. It prints nothing unless every failure is a timeout, so a
+    // real break is never explained away as load.
+    reporters: ['default', new URL('packages/meo-canvas/tools/contention-reporter.mjs', import.meta.url).pathname],
     coverage: {
       provider: 'v8',
       // Everything the package ships, whether a test reached it or not. Without
