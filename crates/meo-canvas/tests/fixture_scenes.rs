@@ -76,7 +76,7 @@ fn block_stacking() -> Scene {
                 .background_color(hex_rgb(0x28_50_dc)),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The same two boxes, positioned rather than static.
@@ -102,7 +102,7 @@ fn block_stacking_relative() -> Scene {
                 .background_color(hex_rgb(0x28_50_dc)),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Three boxes whose borders differ per edge, in width, colour and radius.
@@ -153,7 +153,7 @@ fn borders_per_edge() -> Scene {
                 .border_color(hex_rgb(0x78_78_78)),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Four shadows: an offset one, a blurred one, a spread one, and an inset one.
@@ -225,7 +225,7 @@ fn box_shadow() -> Scene {
             }),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Four overlapping cards whose paint order is decided by `z_index`.
@@ -252,7 +252,7 @@ fn z_order() -> Scene {
             card(74.0, Color::rgba(250, 200, 40, 230)),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The same overflowing child in a clipping box and an unclipped one.
@@ -290,7 +290,7 @@ fn overflow_clip() -> Scene {
                 .children(child()),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The picture every `object-fit` cell draws.
@@ -352,7 +352,7 @@ fn object_fit() -> Scene {
             cell(ObjectFit::ScaleDown),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The three gradient geometries, sharing one ramp.
@@ -401,7 +401,7 @@ fn gradients() -> Scene {
             }),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// One string at three sizes, chosen for what hangs below the baseline.
@@ -427,7 +427,7 @@ fn text_descenders() -> Scene {
         .background_color(hex_rgb(0xff_ff_ff))
         .children([line(14.0, 400), line(22.0, 400), line(34.0, 700)])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Two rows of mixed type sizes, one aligned on baselines and one on tops.
@@ -469,7 +469,7 @@ fn baseline_alignment() -> Scene {
             row(Align::FlexStart, "align-items: flex-start - control row"),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// A negative-`z_index` child under three parents, two of which must hoist it.
@@ -535,7 +535,7 @@ fn stacking_hoist() -> Scene {
                 .opacity(0.99),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The image `mask-kinds` reads for its alpha.
@@ -623,7 +623,7 @@ fn mask_kinds() -> Scene {
             ),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Three translucent panels over the same stripes, two of them filtered.
@@ -698,7 +698,7 @@ fn backdrop_filter() -> Scene {
             ),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The same line of text in three boxes taller than it is, aligned three ways.
@@ -756,7 +756,7 @@ fn vertical_align() -> Scene {
             ),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The six ways a background picture tiles, beside the one that does not.
@@ -838,7 +838,7 @@ fn background_tiling() -> Scene {
             ),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// A bordered box with square corners, beside two that are not square.
@@ -896,7 +896,7 @@ fn borders_square() -> Scene {
                 .name("square, per-edge widths - the third branch"),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// One gradient in each of the four roles a gradient has, over their controls.
@@ -987,7 +987,7 @@ fn gradient_as_paint() -> Scene {
             flat_roles(&cell, &path),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The row where every role takes the gradient.
@@ -1168,7 +1168,7 @@ fn gradient_linear() -> Scene {
             ]),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Every `BlendMode`, each over the same backdrop, with the backdrop alone.
@@ -1266,7 +1266,7 @@ fn blend_modes() -> Scene {
             ]),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Five cross-axis alignments and the wrapping the matrix cannot show.
@@ -1374,7 +1374,7 @@ fn flex_alignment() -> Scene {
                 ]),
         ])
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// Where the fixtures live, relative to this crate.
@@ -1412,7 +1412,7 @@ fn borders_dashed_square() -> Scene {
                 ),
         )
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 /// The same border above the threshold, where the run goes round the path.
@@ -1440,7 +1440,7 @@ fn borders_dashed_radius() -> Scene {
                 .name("radius 8 at width 4 -- one run around the path"),
         )
         .into_scene()
-        .unwrap_or_else(|error| unreachable!("{error}"))
+        .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
 }
 
 const FIXTURES: &str = "../../fixtures";

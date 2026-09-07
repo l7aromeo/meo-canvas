@@ -13,8 +13,10 @@ const WIDTH: f32 = 200.0;
 
 /// A scene from a root, or the error that stopped it.
 fn scene_of(root: Root) -> meo_canvas::scene::Scene {
-    root.into_scene()
-        .unwrap_or_else(|error| unreachable!("the root did not build: {error}"))
+    root.into_scene().map_or_else(
+        |error| unreachable!("the root did not build: {error}"),
+        |(scene, _)| scene,
+    )
 }
 
 #[test]

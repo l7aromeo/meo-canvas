@@ -85,9 +85,10 @@ fn ours() -> Vec<u8> {
         .height(120.0)
         .children(chart)
         .into_scene()
-        .unwrap_or_else(|error| {
-            unreachable!("the scene did not assemble: {error}")
-        });
+        .map_or_else(
+            |error| unreachable!("the scene did not assemble: {error}"),
+            |(scene, _)| scene,
+        );
     codec::encode(&scene)
 }
 
@@ -232,9 +233,10 @@ fn encoded(chart: Element) -> Vec<u8> {
         .height(120.0)
         .children(chart)
         .into_scene()
-        .unwrap_or_else(|error| {
-            unreachable!("the scene did not assemble: {error}")
-        });
+        .map_or_else(
+            |error| unreachable!("the scene did not assemble: {error}"),
+            |(scene, _)| scene,
+        );
     codec::encode(&scene)
 }
 

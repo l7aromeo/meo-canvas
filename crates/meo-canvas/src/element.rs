@@ -12,8 +12,11 @@
 //!     Text::new("Bandung").color(hex_rgb(0x88_88_90)),
 //! ]);
 //!
-//! let scene = card.into_scene(320.0, 180.0)?;
+//! // The markup in each `Text` is parsed here rather than in `Text::new`,
+//! // so this is also where anything the parser could not use is reported.
+//! let (scene, diagnostics) = card.into_scene(320.0, 180.0)?;
 //! assert_eq!(scene.nodes.len(), 3);
+//! assert!(diagnostics.is_empty());
 //! # Ok::<(), meo_canvas_scene::SceneError>(())
 //! ```
 //!
@@ -35,6 +38,43 @@ use meo_canvas_scene::{
 
 use crate::{Style, Styled};
 
+/// What an element draws, before the tree is walked.
+///
+/// **Not [`NodeKind`], because one case is not resolved yet.** `Text::new`
+/// takes markup and the markup is parsed during the walk, so between the
+/// constructor and `into_scene` a text node holds a string rather than the
+/// runs the scene stores. Everything else is already a scene node and passes
+/// through untouched.
+///
+/// The alternative was a second field on [`Element`] holding the unparsed
+/// markup beside a `kind` that claimed to be a scene node -- two
+/// representations of one paragraph, which is the thing
+/// [`NodeKind::Text`]'s own documentation exists to prevent, moved one layer
+/// up rather than removed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ElementKind {
+    /// A node the scene already describes.
+    Node(NodeKind),
+    /// Text whose markup has not been parsed yet.
+    ///
+    /// Parsed during the walk that [`Element::into_scene`] runs, in its
+    /// `write_page`, which is the only place that can hand the diagnostics
+    /// anywhere -- a constructor returns an `Element` and has nowhere to put
+    /// them.
+    Markup {
+        /// The markup as the caller wrote it.
+        content: String,
+        /// Properties of the paragraph as a whole.
+        paragraph: ParagraphStyle,
+    },
+}
+
+impl From<NodeKind> for ElementKind {
+    fn from(kind: NodeKind) -> Self {
+        Self::Node(kind)
+    }
+}
+
 /// One node of the tree, with its style and its children.
 ///
 /// Produced by the node constructors rather than written directly, though the
@@ -42,7 +82,7 @@ use crate::{Style, Styled};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Element {
     /// What this node draws.
-    pub kind: NodeKind,
+    pub kind: ElementKind,
     /// How it is styled.
     pub style: Style,
     /// Its children, in paint order before `z_index` applies.
@@ -56,7 +96,7 @@ impl Element {
     #[must_use]
     pub const fn new(kind: NodeKind) -> Self {
         Self {
-            kind,
+            kind: ElementKind::Node(kind),
             style: Style::new(),
             children: Vec::new(),
             name: None,
@@ -194,7 +234,7 @@ impl Element {
         self,
         width: f32,
         height: f32,
-    ) -> Result<Scene, SceneError> {
+    ) -> Result<(Scene, Vec<Diagnostic>), SceneError> {
         // **The runtime half of the promise the type already makes.** The
         // signature refuses `pct(50.0)` here, with a `compile_fail` doctest
         // saying why a percentage of nothing has no meaning; a `NaN` or a
@@ -206,8 +246,25 @@ impl Element {
 
         let mut scene = Scene::new(size);
         let root = scene.root().ok_or(SceneError::NoPages)?;
-        write_page(&mut scene, root, self)?;
-        Ok(scene)
+        let mut found = Vec::new();
+        write_page(&mut scene, root, self, &mut found)?;
+        Ok((scene, found))
+    }
+}
+
+impl Element {
+    /// The paragraph style of a text node, whichever form it is in.
+    ///
+    /// **Both arms carry one**, because `max_lines` and `ellipsis` are set by
+    /// chaining onto a constructor and the markup arm is what `Text::new`
+    /// returns. Reaching only [`ElementKind::Node`] would make those two
+    /// builders silently do nothing on the commonest way to make text.
+    const fn paragraph_mut(&mut self) -> Option<&mut ParagraphStyle> {
+        match &mut self.kind {
+            ElementKind::Node(NodeKind::Text { paragraph, .. })
+            | ElementKind::Markup { paragraph, .. } => Some(paragraph),
+            ElementKind::Node(_) => None,
+        }
     }
 }
 
@@ -321,12 +378,34 @@ where
 ///
 /// Shared by [`Element::into_scene`] and [`crate::Canvas`], so a page means the
 /// same thing whether one was built or several.
+/// Turns an element's kind into the scene's, parsing markup on the way.
+///
+/// **The facade's only parse site.** A constructor cannot report -- it returns
+/// an `Element` and has nowhere to put a diagnostic -- so the parse waits for
+/// the walk, which is the first point that has both the markup and somewhere
+/// for what it could not use to go.
+fn resolve(kind: ElementKind, found: &mut Vec<Diagnostic>) -> NodeKind {
+    match kind {
+        ElementKind::Node(node) => node,
+        ElementKind::Markup { content, paragraph } => {
+            let (segments, reported) =
+                meo_canvas_core::markup::parse_paragraph_reporting(&content);
+            found.extend(reported);
+            NodeKind::Text {
+                segments,
+                paragraph,
+            }
+        }
+    }
+}
+
 pub(crate) fn write_page(
     scene: &mut Scene,
     root: NodeId,
     element: Element,
+    found: &mut Vec<Diagnostic>,
 ) -> Result<(), SceneError> {
-    let mut kind = element.kind;
+    let mut kind = resolve(element.kind, found);
     apply_image_style(&mut kind, &element.style);
     let (layout, paint, text, effects) = element.style.into_parts();
     if let Some(node) = scene.get_mut(root) {
@@ -339,7 +418,7 @@ pub(crate) fn write_page(
     }
 
     for child in element.children {
-        push(scene, root, child)?;
+        push(scene, root, child, found)?;
     }
     Ok(())
 }
@@ -380,8 +459,9 @@ fn push(
     scene: &mut Scene,
     parent: NodeId,
     element: Element,
+    found: &mut Vec<Diagnostic>,
 ) -> Result<NodeId, SceneError> {
-    let mut kind = element.kind;
+    let mut kind = resolve(element.kind, found);
     apply_image_style(&mut kind, &element.style);
     let (layout, paint, text, effects) = element.style.into_parts();
     let mut node = Node::new(kind);
@@ -393,7 +473,7 @@ fn push(
 
     let id = scene.push(parent, node)?;
     for child in element.children {
-        push(scene, id, child)?;
+        push(scene, id, child, found)?;
     }
     Ok(id)
 }
@@ -552,56 +632,45 @@ impl Text {
     ///
     /// Use [`Text::rich`] for content that must not be interpreted, or that
     /// carries styles the five tags cannot name.
-    #[must_use]
-    /// # What it does not tell you
     ///
-    /// **A tag this parser does not know, and a value it cannot read, are
-    /// dropped silently here.** `<nope>a</nope> b` renders exactly as `a b`
-    /// does, so nothing in the output can tell a caller their tag did nothing.
+    /// # What it could not use
     ///
-    /// This constructor parses eagerly and returns an [`Element`], which has
-    /// nowhere to put that report. [`Text::new_reporting`] is the same
-    /// constructor handing it back:
+    /// **The markup is not parsed here.** This constructor stores the string
+    /// and [`Element::into_scene`] parses it during the walk, which is the
+    /// first point that has both the markup and somewhere to put what it
+    /// could not use -- a constructor returns an `Element` and has nowhere.
+    ///
+    /// So a tag this parser does not know, or a value it cannot read, is
+    /// reported by the call that builds the scene rather than by this one:
     ///
     /// ```
-    /// use meo_canvas::Text;
+    /// use meo_canvas::{Element, Text};
     ///
-    /// let (text, found) = Text::new_reporting("<nope>a</nope> b");
+    /// let (_scene, found) = Text::new("<nope>a</nope> b")
+    ///     .into_scene(100.0, 20.0)
+    ///     .unwrap_or_else(|error| unreachable!("{error}"));
+    ///
     /// assert_eq!(found.len(), 1);
     /// assert_eq!(found[0].path, "<nope>");
     /// ```
+    ///
+    /// Without that, `<nope>a</nope> b` renders exactly as `a b` does and
+    /// nothing in the output can tell a caller their tag did nothing.
+    #[must_use]
     #[expect(
         clippy::new_ret_no_self,
         reason = "the node types are constructors for `Element`, not types a caller holds"
     )]
     pub fn new(content: impl Into<String>) -> Element {
-        Self::new_reporting(content).0
-    }
-
-    /// [`Text::new`], and what the markup parser could not use.
-    ///
-    /// **Beside the total form rather than replacing it**, for the reason
-    /// `parse_reporting` is: a caller who does not want the report should not
-    /// have to say so at every call, and chaining
-    /// `Text::new("...").with_style(...)` is the shape this surface is built
-    /// around. Taking the pair gives that up for one call, which is the price
-    /// of knowing.
-    ///
-    /// The two share one implementation, so they cannot disagree about what a
-    /// tag means.
-    #[must_use]
-    pub fn new_reporting(
-        content: impl Into<String>,
-    ) -> (Element, Vec<Diagnostic>) {
-        let (segments, found) =
-            meo_canvas_core::markup::parse_paragraph_reporting(&content.into());
-        (
-            Element::new(NodeKind::Text {
-                segments,
+        Element {
+            kind: ElementKind::Markup {
+                content: content.into(),
                 paragraph: ParagraphStyle::default(),
-            }),
-            found,
-        )
+            },
+            style: Style::new(),
+            children: Vec::new(),
+            name: None,
+        }
     }
 
     /// Text made of runs that differ in style, given directly.
@@ -725,7 +794,7 @@ impl Element {
     /// ```
     #[must_use]
     pub const fn max_lines(mut self, lines: u32) -> Self {
-        if let NodeKind::Text { paragraph, .. } = &mut self.kind {
+        if let Some(paragraph) = self.paragraph_mut() {
             paragraph.max_lines = Some(lines);
         }
         self
@@ -749,7 +818,7 @@ impl Element {
     /// ```
     #[must_use]
     pub fn ellipsis(mut self, marker: impl Into<String>) -> Self {
-        if let NodeKind::Text { paragraph, .. } = &mut self.kind {
+        if let Some(paragraph) = self.paragraph_mut() {
             paragraph.ellipsis = Some(marker.into());
         }
         self
@@ -767,7 +836,7 @@ impl Element {
     /// ```
     #[must_use]
     pub fn fill(mut self, paint: Option<PathPaint>) -> Self {
-        if let NodeKind::Path { fill, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { fill, .. }) = &mut self.kind {
             *fill = paint;
         }
         self
@@ -792,7 +861,9 @@ impl Element {
         mut self,
         view: Option<(f32, f32, f32, f32)>,
     ) -> Self {
-        if let NodeKind::Path { view_box, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { view_box, .. }) =
+            &mut self.kind
+        {
             *view_box = view;
         }
         self
@@ -818,7 +889,9 @@ impl Element {
     /// ```
     #[must_use]
     pub const fn stretch(mut self, stretched: bool) -> Self {
-        if let NodeKind::Path { stretch, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { stretch, .. }) =
+            &mut self.kind
+        {
             *stretch = stretched;
         }
         self
@@ -827,7 +900,8 @@ impl Element {
     /// How a path's outline is painted. `None` leaves it unstroked.
     #[must_use]
     pub fn stroke(mut self, paint: Option<PathPaint>) -> Self {
-        if let NodeKind::Path { stroke, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { stroke, .. }) = &mut self.kind
+        {
             *stroke = paint;
         }
         self
@@ -836,7 +910,9 @@ impl Element {
     /// How wide a path's stroke is drawn, in logical pixels.
     #[must_use]
     pub const fn line_width(mut self, width: f32) -> Self {
-        if let NodeKind::Path { line_width, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { line_width, .. }) =
+            &mut self.kind
+        {
             *line_width = width;
         }
         self
@@ -845,7 +921,9 @@ impl Element {
     /// Which side of a path's winding counts as inside.
     #[must_use]
     pub const fn fill_rule(mut self, rule: FillRule) -> Self {
-        if let NodeKind::Path { fill_rule, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { fill_rule, .. }) =
+            &mut self.kind
+        {
             *fill_rule = rule;
         }
         self
@@ -854,7 +932,9 @@ impl Element {
     /// How a path's stroke ends are drawn.
     #[must_use]
     pub const fn line_cap(mut self, cap: LineCap) -> Self {
-        if let NodeKind::Path { line_cap, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { line_cap, .. }) =
+            &mut self.kind
+        {
             *line_cap = cap;
         }
         self
@@ -863,7 +943,9 @@ impl Element {
     /// How a path's stroke corners are drawn.
     #[must_use]
     pub const fn line_join(mut self, join: LineJoin) -> Self {
-        if let NodeKind::Path { line_join, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { line_join, .. }) =
+            &mut self.kind
+        {
             *line_join = join;
         }
         self
@@ -872,7 +954,9 @@ impl Element {
     /// Alternating dash and gap lengths. Empty draws a solid line.
     #[must_use]
     pub fn line_dash(mut self, pattern: impl IntoIterator<Item = f32>) -> Self {
-        if let NodeKind::Path { line_dash, .. } = &mut self.kind {
+        if let ElementKind::Node(NodeKind::Path { line_dash, .. }) =
+            &mut self.kind
+        {
             *line_dash = pattern.into_iter().collect();
         }
         self
@@ -881,9 +965,9 @@ impl Element {
     /// How far into the dash pattern the stroke begins.
     #[must_use]
     pub const fn line_dash_offset(mut self, offset: f32) -> Self {
-        if let NodeKind::Path {
+        if let ElementKind::Node(NodeKind::Path {
             line_dash_offset, ..
-        } = &mut self.kind
+        }) = &mut self.kind
         {
             *line_dash_offset = offset;
         }
@@ -942,12 +1026,14 @@ mod tests {
         },
     };
 
-    use super::{Box, Column, Element, Grid, Image, Path, Row, Text};
+    use super::{
+        Box, Column, Element, ElementKind, Grid, Image, Path, Row, Text,
+    };
     use crate::{Style, Styled, hex_rgb, pct, px};
 
     #[test]
     fn a_paragraph_setter_writes_the_node_and_not_the_style() {
-        let NodeKind::Text { paragraph, .. } =
+        let ElementKind::Markup { paragraph, .. } =
             Text::new("x").max_lines(2).ellipsis("…").kind
         else {
             unreachable!("Text::new builds a text node");
@@ -958,7 +1044,7 @@ mod tests {
 
     #[test]
     fn a_path_setter_writes_every_part_of_the_payload() {
-        let NodeKind::Path {
+        let ElementKind::Node(NodeKind::Path {
             fill,
             stroke,
             line_width,
@@ -968,7 +1054,7 @@ mod tests {
             line_dash,
             line_dash_offset,
             ..
-        } = Path::d("M0 0 L4 4")
+        }) = Path::d("M0 0 L4 4")
             .fill(None)
             .stroke(Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))))
             .line_width(2.5)
@@ -997,10 +1083,10 @@ mod tests {
         // alternatives are worse: a panic makes a typo fatal, and a `Result`
         // puts error handling on every line of a builder chain.
         let box_node = Box::new().max_lines(2).ellipsis("…").line_width(9.0);
-        assert_eq!(box_node.kind, NodeKind::Box);
+        assert_eq!(box_node.kind, ElementKind::Node(NodeKind::Box));
 
         // And a path setter on a text node leaves the paragraph alone.
-        let NodeKind::Text { paragraph, .. } =
+        let ElementKind::Markup { paragraph, .. } =
             Text::new("x").line_width(9.0).kind
         else {
             unreachable!("Text::new builds a text node");
@@ -1008,16 +1094,33 @@ mod tests {
         assert_eq!(paragraph, ParagraphStyle::default());
     }
 
+    /// The runs a text element produces, read from the scene it builds.
+    ///
+    /// **Through `into_scene` rather than off `.kind`**, because the markup is
+    /// parsed during the walk now. A test reading the constructor would be
+    /// asserting that the string was stored, which is not the claim any of
+    /// these make.
+    fn runs_of(
+        element: Element,
+    ) -> Vec<meo_canvas_scene::style::text::TextSegment> {
+        let (scene, _) = element
+            .into_scene(100.0, 40.0)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let root = scene
+            .get(scene.pages[0])
+            .unwrap_or_else(|| unreachable!("the page has a root"));
+        match &root.kind {
+            NodeKind::Text { segments, .. } => segments.clone(),
+            other => unreachable!("expected text, found {other:?}"),
+        }
+    }
+
     #[test]
     fn text_new_reads_its_string_as_markup() {
         // The parser lives in `meo-canvas-core`, below every surface, so a
         // Rust caller gets a bold run where a literal `<b>` would otherwise
         // reach the glyphs.
-        let NodeKind::Text { segments, .. } =
-            Text::new("plain <b>bold</b>").kind
-        else {
-            unreachable!("Text::new builds a text node");
-        };
+        let segments = runs_of(Text::new("plain <b>bold</b>"));
         let texts: Vec<&str> =
             segments.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(texts, vec!["plain ", "bold"]);
@@ -1027,11 +1130,8 @@ mod tests {
 
     #[test]
     fn text_rich_reads_nothing_so_a_literal_angle_bracket_survives() {
-        let NodeKind::Text { segments, .. } =
-            Text::rich([("a <b> b".to_owned(), Style::new())]).kind
-        else {
-            unreachable!("Text::rich builds a text node");
-        };
+        let segments =
+            runs_of(Text::rich([("a <b> b".to_owned(), Style::new())]));
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].text, "a <b> b");
     }
@@ -1040,9 +1140,7 @@ mod tests {
     fn text_that_says_nothing_is_still_a_paragraph() {
         // A string of nothing but tags parses to no runs. The node still has
         // to be a paragraph, so one empty run stands in for it.
-        let NodeKind::Text { segments, .. } = Text::new("<b></b>").kind else {
-            unreachable!("Text::new builds a text node");
-        };
+        let segments = runs_of(Text::new("<b></b>"));
         assert_eq!(segments.len(), 1);
         assert!(segments[0].text.is_empty());
     }
@@ -1055,7 +1153,7 @@ mod tests {
         let scene = Box::new()
             .with_style(Style::new().background_color(hex_rgb(0x10_10_14)))
             .into_scene(100.0, 50.0)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+            .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
 
         assert_eq!(scene.nodes.len(), 1);
         assert_eq!(scene.size.width.to_bits(), 100.0_f32.to_bits());
@@ -1103,7 +1201,7 @@ mod tests {
                 Row::new().children([Text::new("two"), Text::new("three")]),
             ])
             .into_scene(10.0, 10.0)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+            .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
 
         // Root, "one", the row, "two", "three".
         assert_eq!(scene.nodes.len(), 5);
@@ -1302,7 +1400,7 @@ mod tests {
         let image = Image::path("a.png").with_style(styled.clone());
         let scene = image
             .into_scene(10.0, 10.0)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+            .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
         let root = scene
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the page has a root"));
@@ -1320,7 +1418,7 @@ mod tests {
         let boxed = Box::new().with_style(styled);
         let scene = boxed
             .into_scene(10.0, 10.0)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+            .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
         let root = scene
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the page has a root"));
@@ -1340,7 +1438,9 @@ mod tests {
 
         for (element, expected) in cases {
             match element.kind {
-                NodeKind::Image { source, .. } => assert_eq!(source, expected),
+                ElementKind::Node(NodeKind::Image { source, .. }) => {
+                    assert_eq!(source, expected);
+                }
                 other => unreachable!("expected an image, found {other:?}"),
             }
         }
@@ -1348,20 +1448,18 @@ mod tests {
 
     #[test]
     fn text_carries_its_content_and_rich_text_carries_a_run_per_segment() {
-        match Text::new("hello").kind {
-            NodeKind::Text { segments, .. } => {
-                assert_eq!(segments.len(), 1);
-                assert_eq!(segments[0].text, "hello");
-            }
-            other => unreachable!("expected text, found {other:?}"),
-        }
+        // Through the walk: `Text::new` stores the markup and the parse
+        // happens in `into_scene`, so the runs exist only once a scene does.
+        let segments = runs_of(Text::new("hello"));
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "hello");
 
         let rich = Text::rich([
             ("plain ".to_owned(), Style::new()),
             ("bold".to_owned(), Style::new().bold()),
         ]);
         match rich.kind {
-            NodeKind::Text { segments, .. } => {
+            ElementKind::Node(NodeKind::Text { segments, .. }) => {
                 assert_eq!(segments.len(), 2);
                 assert!(segments[0].style.font_weight.is_none());
                 assert!(segments[1].style.font_weight.is_some());
@@ -1373,7 +1471,9 @@ mod tests {
     #[test]
     fn a_path_carries_its_data() {
         match Path::d("M0 0 L1 1").kind {
-            NodeKind::Path { data, .. } => assert_eq!(data, "M0 0 L1 1"),
+            ElementKind::Node(NodeKind::Path { data, .. }) => {
+                assert_eq!(data, "M0 0 L1 1");
+            }
             other => unreachable!("expected a path, found {other:?}"),
         }
     }
@@ -1385,7 +1485,7 @@ mod tests {
         // `compile_fail` example on `into_scene` is the check that it does.
         let scene = Box::new()
             .into_scene(120.0, 40.0)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+            .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
 
         assert_eq!(scene.size.width.to_bits(), 120.0_f32.to_bits());
         assert_eq!(scene.size.height.to_bits(), 40.0_f32.to_bits());

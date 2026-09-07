@@ -19,7 +19,7 @@
 //!         ]),
 //!     ]);
 //!
-//! let scene = card.into_scene(360.0, 112.0)?;
+//! let (scene, _diagnostics) = card.into_scene(360.0, 112.0)?;
 //! # Ok::<(), meo_canvas_scene::SceneError>(())
 //! ```
 //!

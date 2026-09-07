@@ -28,7 +28,7 @@ use std::{fmt, path::Path};
 
 use meo_canvas_core::{
     EncodeOptions, Error, ImageFormat, ImageWarning, PreparedEncode,
-    RenderedCanvas, Renderer,
+    RenderedCanvas, Renderer, diagnostic::Diagnostic,
 };
 use meo_canvas_scene::{OnImageError, Scene, SceneError, Size};
 
@@ -502,7 +502,7 @@ impl Root {
     /// Returns [`BuildError::Sequence`] when the page count contradicts itself,
     /// and [`BuildError::Scene`] when the pages together hold more nodes than
     /// the codec can address.
-    pub fn into_scene(self) -> Result<Scene, BuildError> {
+    pub fn into_scene(self) -> Result<(Scene, Vec<Diagnostic>), BuildError> {
         let (count, fps) = self.sequence().map_err(BuildError::Sequence)?;
 
         // The width came from `Root::new`, which is a `const fn` returning
@@ -534,11 +534,16 @@ impl Root {
             }
         };
 
+        // One list across every page: a caller fixing their markup does not
+        // care which page carried it.
+        let mut found: Vec<Diagnostic> = Vec::new();
+
         // `Scene::new` already made one page, so the first tree styles it and
         // every later one adds its own root.
         let write = |scene: &mut Scene,
                      first: bool,
-                     children: Vec<Element>|
+                     children: Vec<Element>,
+                     found: &mut Vec<Diagnostic>|
          -> Result<(), BuildError> {
             let root = if first {
                 scene
@@ -547,22 +552,22 @@ impl Root {
             } else {
                 scene.push_page().map_err(BuildError::Scene)?
             };
-            write_page(scene, root, page_root(children))
+            write_page(scene, root, page_root(children), found)
                 .map_err(BuildError::Scene)
         };
 
         match &self.content {
             Content::Fixed(children) => {
-                write(&mut scene, true, children.clone())?;
+                write(&mut scene, true, children.clone(), &mut found)?;
             }
             Content::Built(builder) => {
                 for index in 0..count {
                     let children = builder(PageInfo::new(index, count, fps));
-                    write(&mut scene, index == 0, children)?;
+                    write(&mut scene, index == 0, children, &mut found)?;
                 }
             }
         }
-        Ok(scene)
+        Ok((scene, found))
     }
 
     /// Paints every page and returns the canvas to encode from.
@@ -583,9 +588,10 @@ impl Root {
     /// renderer does not hold, an image it cannot read, a URL it does not
     /// fetch.
     pub fn render(self, renderer: &Renderer) -> Result<Canvas, BuildError> {
-        let scene = self.into_scene()?;
+        let (scene, diagnostics) = self.into_scene()?;
         Ok(Canvas {
             painted: renderer.render(&scene)?,
+            diagnostics,
         })
     }
 }
@@ -610,9 +616,26 @@ impl Styled for Root {
 pub struct Canvas {
     /// The painted pages.
     painted: RenderedCanvas,
+    /// What the caller's markup said that could not be used.
+    ///
+    /// Raised while the scene was built, which is before this canvas existed,
+    /// and carried here because this is the first place a caller who used
+    /// [`Root::render`] can be handed them. A caller who builds the scene
+    /// themselves takes them from [`Root::into_scene`] instead.
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Canvas {
+    /// What this render's markup said that could not be used.
+    ///
+    /// **Separate from an image warning**, which reports that the world did
+    /// not answer. A diagnostic reports that the input did not say what it
+    /// meant, which is the caller's to fix rather than the network's.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
     /// Encodes the canvas and returns the bytes.
     ///
     /// # Errors
@@ -1211,7 +1234,7 @@ mod tests {
     /// The scene `root` describes, or the failure it reports.
     fn scene_of(root: Root) -> meo_canvas_scene::Scene {
         root.into_scene()
-            .unwrap_or_else(|error| unreachable!("{error}"))
+            .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene)
     }
 
     #[test]
