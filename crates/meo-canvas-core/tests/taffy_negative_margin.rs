@@ -71,10 +71,10 @@
 //!
 //! Both live defects are <https://github.com/DioxusLabs/taffy/issues/1162> and
 //! <https://github.com/DioxusLabs/taffy/issues/1163>, closed together by PR
-//! #1164 -- *apply main-axis margin after flex-basis floor in intrinsic
-//! contributions* -- merged as `adef6dd`. **`adef6dd` is two commits ahead of
-//! the `v0.14.0` tag**, published the day before it merged, so neither fix is
-//! in the release `Cargo.toml` requires and both pins below still hold.
+//! DioxusLabs/taffy#1164 -- *apply main-axis margin after flex-basis floor in
+//! intrinsic contributions* -- merged as `adef6dd`. **`adef6dd` is two commits
+//! ahead of the `v0.14.0` tag**, published the day before it merged, so neither
+//! fix is in the release `Cargo.toml` requires and both pins below still hold.
 //!
 //! One expression is the cause of both: an item's content contribution read
 //! `(inner + margin).max(flex_basis)`, and a flex basis is a border-box size
@@ -92,9 +92,9 @@
 //! <https://github.com/DioxusLabs/taffy/issues/1151>, *intrinsic flex sizing
 //! with negative margins* -- a negative margin on a **non-shrinking** item
 //! applied as `child x max(0, 1 + margin)` instead of `child + margin`. PR
-//! #1152 fixes it and `0.14.0` carries it, which `Cargo.toml` requires, so
-//! [`the_rows_taffy_gets_right_agree_with_chrome`] asserts Chrome's numbers for
-//! those rows rather than taffy's.
+//! DioxusLabs/taffy#1152 fixes it and `0.14.0` carries it, which `Cargo.toml`
+//! requires, so [`the_rows_taffy_gets_right_agree_with_chrome`] asserts
+//! Chrome's numbers for those rows rather than taffy's.
 //!
 //! **That fix moves one `max`.** Two expressions were meant to be the same
 //! quantity: the divisor read `max(1, flex_shrink * inner_flex_basis)` while
@@ -103,9 +103,10 @@
 //! so the margin comes back scaled by the item's size.
 //!
 //! **Sharing a region and a symptom is not evidence of sharing a cause.** The
-//! growing case reproduces identically on `0.13.0`, on #1152's branch head
-//! `d680af5`, and on released `0.14.0` -- three measurements that say #1152 was
-//! never going to fix it, and #1164 is why.
+//! growing case reproduces identically on `0.13.0`, on DioxusLabs/taffy#1152's
+//! branch head `d680af5`, and on released `0.14.0` -- three measurements that
+//! say DioxusLabs/taffy#1152 was never going to fix it, and
+//! DioxusLabs/taffy#1164 is why.
 
 use taffy::{
     geometry::Point,
@@ -189,9 +190,9 @@ fn the_rows_taffy_gets_right_agree_with_chrome() {
     // one disagreement cannot be explained by the two engines meaning
     // different things by these properties.
     //
-    // The four fractional rows are the ones #1152 fixes, so they are also the
-    // check that `Cargo.toml`'s floor is doing its job: on `0.13.0` they read
-    // 375, 250, 0 and 0.
+    // The four fractional rows are the ones DioxusLabs/taffy#1152 fixes, so
+    // they are also the check that `Cargo.toml`'s floor is doing its job:
+    // on `0.13.0` they read 375, 250, 0 and 0.
     for (shrink, top, chrome) in [
         (1.0_f32, -24.0_f32, 476.0_f32),
         (0.0, 0.0, 500.0),
@@ -282,12 +283,14 @@ fn a_growing_child_has_its_negative_margin_ignored_instead() {
     // `display: flex; flex-direction: column; width: 903px; height: auto;
     // align-items: flex-start`, child `476x500`, reading the parent's
     // `getBoundingClientRect().height`. **The taffy values are this test's
-    // own**, measured the same on released `0.13.0`, on #1152's branch head
-    // `d680af5`, and on released `0.14.0` -- identical on all three, so **this
-    // is pre-existing and not a regression from #1152**.
+    // own**, measured the same on released `0.13.0`, on DioxusLabs/taffy#1152's
+    // branch head `d680af5`, and on released `0.14.0` -- identical on all
+    // three, so **this is pre-existing and not a regression from
+    // DioxusLabs/taffy#1152**.
     //
-    // **Filed as #1162, fixed on `main` by PR #1164, and in no release.** The
-    // module documentation says why that keeps this pinned.
+    // **Filed as DioxusLabs/taffy#1162, fixed on `main` by PR
+    // DioxusLabs/taffy#1164, and in no release.** The module documentation
+    // says why that keeps this pinned.
     for (grow, shrink, margin, taffy, chrome) in [
         (1.0_f32, 0.0_f32, -24.0_f32, 500.0_f32, 476.0_f32),
         (1.0, 0.0, -0.5, 500.0, 499.5),

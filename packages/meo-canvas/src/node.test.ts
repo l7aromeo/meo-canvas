@@ -309,7 +309,8 @@ describe('the values a list ignores', () => {
   })
 
   // **`0` is the row that keeps this honest.** React renders it as text, so
-  // skipping it would be a different decision from the one #44 measured, and a
+  // skipping it would be a different decision from the one
+  // `l7aromeo/meo-canvas#44` measured, and a
   // caller writing `items.length && …` would silently lose a visible zero.
   // **The rows that keep the set honest.** React renders these as text, so
   // skipping them would be a different decision from the one measured — and a
