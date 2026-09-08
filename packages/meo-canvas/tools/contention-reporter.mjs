@@ -54,7 +54,7 @@ export default class ContentionReporter {
         `Load average ${shape(this.#started)} at the start and ${shape(now)} now, on ${availableParallelism()} cores.\n` +
         'On a quiet box no test in this suite reaches a second. A failure set that is entirely timeouts is\n' +
         'the signature of a contended machine rather than a broken tree -- run `just test-js` alone to tell\n' +
-        'them apart, and see tools/contention-reporter.mts for the measurements behind this line.\n',
+        'them apart, and see tools/contention-reporter.mjs for the measurements behind this line.\n',
     )
   }
 }
