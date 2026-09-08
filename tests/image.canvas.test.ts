@@ -3,6 +3,7 @@ import type { CanvasRenderingContext2D } from 'meo-skia-canvas'
 import type { ImageProps } from '@/canvas/canvas.type.js'
 import { Direction } from 'yoga-layout'
 import { Style } from '@/constant/common.const.js'
+import { createTestGradient } from './helpers/mock-canvas-context.js'
 
 // --- Mock setup ---
 
@@ -81,8 +82,8 @@ const createMockCtx = (): CanvasRenderingContext2D => {
     imageSmoothingEnabled: true,
     imageSmoothingQuality: 'high',
     globalCompositeOperation: 'source-over',
-    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn(), interpolation: 'srgb' as const, hueInterpolation: 'shorter' as const })),
-    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn(), interpolation: 'srgb' as const, hueInterpolation: 'shorter' as const })),
+    createLinearGradient: vi.fn(() => createTestGradient()),
+    createRadialGradient: vi.fn(() => createTestGradient()),
   }
   return ctx as CanvasRenderingContext2D
 }

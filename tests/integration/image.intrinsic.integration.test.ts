@@ -19,6 +19,8 @@ import { join } from 'node:path'
 const PAGE = 200
 const NATURAL = { width: 40, height: 20 }
 const SOURCE = join(process.cwd(), 'tests/fixtures/images/objectfit-40x20.png')
+/** `30pt` by `40px`: two axes in different units, so each resolves by its own rule. */
+const MIXED_UNITS = join(process.cwd(), 'tests/fixtures/images/mixed-units.svg')
 
 /** The rectangle the image covers, read as anything that is not the page's white. */
 async function drawn(tree: CanvasElement) {
@@ -72,6 +74,13 @@ describe('an image the layout does not size', () => {
   it('takes the axis it was given, and the other from the ratio', async () => {
     expect(await drawn(Column({ children: Image({ src: SOURCE, width: 80 }) }))).toEqual({ width: 80, height: 40 })
     expect(await drawn(Row({ children: Image({ src: SOURCE, height: 20 }) }))).toEqual(NATURAL)
+  })
+
+  it("lays out an SVG at the size CSS's units give it", async () => {
+    // `30pt` is 40 under CSS and 37.36 under SVG 1.1's 90dpi, so this is square only if the source
+    // resolved the way a browser does — and square in the layout only because an intrinsic size
+    // reaches the layout at all.
+    expect(await drawn(Row({ children: Image({ src: MIXED_UNITS }) }))).toEqual({ width: 40, height: 40 })
   })
 
   it('keeps both axes the caller named, ratio or no ratio', async () => {

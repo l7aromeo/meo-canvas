@@ -1,5 +1,23 @@
 import { vi } from 'vitest'
-import type { CanvasRenderingContext2D, TextMetrics } from 'meo-skia-canvas'
+import type { CanvasGradient, CanvasRenderingContext2D, TextMetrics } from 'meo-skia-canvas'
+
+/**
+ * A stand-in `CanvasGradient`.
+ *
+ * Its shape is written once because the interface grew in 6.0.0 and both spellings are kept: the
+ * space is `colorInterpolationSpace` with `interpolation` beside it, the hue method is
+ * `hueInterpolationMethod` with `hueInterpolation` beside it, and alpha has a method of its own.
+ */
+export function createTestGradient(): CanvasGradient {
+  return {
+    addColorStop: vi.fn(),
+    colorInterpolationSpace: 'srgb',
+    interpolation: 'srgb',
+    hueInterpolationMethod: 'shorter',
+    hueInterpolation: 'shorter',
+    alphaInterpolationMethod: 'premultiplied',
+  }
+}
 
 export function createTestTextMetrics(overrides: Partial<TextMetrics> & Pick<TextMetrics, 'width'>): TextMetrics {
   const { width, ...rest } = overrides
@@ -16,6 +34,8 @@ export function createTestTextMetrics(overrides: Partial<TextMetrics> & Pick<Tex
     alphabeticBaseline: 0,
     ideographicBaseline: 0,
     lines: [],
+    // 6.0.0 made `height` a member every metrics object carries rather than an optional one.
+    height: 12,
     width,
     ...rest,
   }
@@ -70,16 +90,8 @@ export function createMockCanvasContext(): CanvasRenderingContext2D {
     wordSpacing: 'normal',
     textDecoration: 'none',
     fontVariant: 'normal',
-    createLinearGradient: vi.fn<CanvasRenderingContext2D['createLinearGradient']>(() => ({
-      addColorStop: vi.fn(),
-      interpolation: 'srgb' as const,
-      hueInterpolation: 'shorter' as const,
-    })),
-    createRadialGradient: vi.fn<CanvasRenderingContext2D['createRadialGradient']>(() => ({
-      addColorStop: vi.fn(),
-      interpolation: 'srgb' as const,
-      hueInterpolation: 'shorter' as const,
-    })),
+    createLinearGradient: vi.fn<CanvasRenderingContext2D['createLinearGradient']>(() => createTestGradient()),
+    createRadialGradient: vi.fn<CanvasRenderingContext2D['createRadialGradient']>(() => createTestGradient()),
     setLineDash: vi.fn<CanvasRenderingContext2D['setLineDash']>(),
   }
 
