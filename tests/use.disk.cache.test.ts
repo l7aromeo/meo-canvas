@@ -63,6 +63,7 @@ vi.mock('yoga-layout', () => {
     setWidth: vi.fn(),
     setHeight: vi.fn(),
     setAspectRatio: vi.fn(),
+    setMeasureFunc: vi.fn(),
     getComputedWidth: vi.fn(() => 100),
     getComputedHeight: vi.fn(() => 100),
     getComputedLayout: vi.fn(() => ({ left: 0, top: 0, width: 100, height: 100 })),

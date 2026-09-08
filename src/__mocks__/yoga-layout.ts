@@ -54,6 +54,7 @@ export const mockNodeCreate = vi.fn(() => {
     setBoxSizing: vi.fn(),
     setDirection: vi.fn(),
     setAspectRatio: vi.fn(),
+    setMeasureFunc: vi.fn(),
     isDirty: vi.fn(() => false),
     markDirty: vi.fn(),
     free: vi.fn(),

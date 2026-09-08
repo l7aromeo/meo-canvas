@@ -569,7 +569,7 @@ describe('TextNode & Text factory', () => {
     it('wrapTextRich splits oversized tokens across lines', () => {
       const node = new TextNode('x', { fontSize: 12 })
       const ctx = createRenderContext()
-      const lines = (node as any).wrapTextRich(ctx, [{ text: 'abcdefghijklmnopqrstuvwxyz' }], 16, 0, 0)
+      const lines = (node as any).wrapTextRich(ctx, [{ text: 'abcdefghijklmnopqrstuvwxyz' }], 16, 0)
       const combined = lines
         .flat()
         .map((s: { text: string }) => s.text)
@@ -631,7 +631,7 @@ describe('TextNode & Text factory', () => {
     it('wrapTextRich breaks long tokens after explicit newlines', () => {
       const node = new TextNode('x', { fontSize: 12 })
       const ctx = createRenderContext()
-      const lines = (node as any).wrapTextRich(ctx, [{ text: `intro\n${'z'.repeat(30)}` }], 24, 0, 0)
+      const lines = (node as any).wrapTextRich(ctx, [{ text: `intro\n${'z'.repeat(30)}` }], 24, 0)
       expect(lines.length).toBeGreaterThan(1)
     })
 
@@ -671,7 +671,7 @@ describe('TextNode & Text factory', () => {
     it('wrapTextRich handles overflow after explicit newlines', () => {
       const node = new TextNode('x', { fontSize: 12 })
       const ctx = createRenderContext()
-      const lines = (node as any).wrapTextRich(ctx, [{ text: `intro\n${'z'.repeat(30)}` }], 16, 0, 0)
+      const lines = (node as any).wrapTextRich(ctx, [{ text: `intro\n${'z'.repeat(30)}` }], 16, 0)
       expect(lines.length).toBeGreaterThan(1)
     })
   })

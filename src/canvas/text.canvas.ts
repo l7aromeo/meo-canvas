@@ -411,25 +411,6 @@ export class TextNode extends BoxNode {
   }
 
   /**
-   * Brings a measured run up to the width CSS would give it under `letterSpacing`.
-   *
-   * The renderer already applies the spacing, but *between* characters: a run of `n` characters
-   * comes back `n - 1` spacings wider. CSS adds one after every character, including the last, so a
-   * run is one spacing short however long it is. Text is measured a word at a time here, and the
-   * spaces between words are measured on their own, so every one of those runs loses its own unit —
-   * which is why the shortfall grows with the number of words rather than being a single pixel at
-   * the end of the line.
-   *
-   * This used to add `n - 1` on the premise that the renderer applied none of it, and that premise
-   * had stopped being true: the spacing was counted twice, and a line came out roughly a third too
-   * wide at 2px on a sixteen-character string.
-   */
-  private addLetterSpacingExtra(text: string, measuredWidth: number, letterSpacingPx: number): number {
-    if (letterSpacingPx === 0 || text.length === 0) return measuredWidth
-    return measuredWidth + letterSpacingPx
-  }
-
-  /**
    * Generates a CSS font string by combining base TextProps with optional TextSegment styling.
    * Follows browser font string format: "font-style font-weight font-size font-family"
    *
@@ -513,13 +494,12 @@ export class TextNode extends BoxNode {
     ctx.letterSpacing = this.formatSpacing(this.props.letterSpacing)
     ctx.wordSpacing = 'normal' // Handled manually via parsedWordSpacingPx
     const parsedWordSpacingPx = this.parseSpacingToPx(this.props.wordSpacing, baseFontSize)
-    const parsedLetterSpacingPx = this.parseSpacingToPx(this.props.letterSpacing, baseFontSize)
 
     // Pre-measure each text segment width with its specific styling
     for (const segment of this.segments) {
       ctx.font = this.getFontString(segment)
       this._applyFontVariant(ctx, 'measureText (segment width)')
-      segment.width = this.addLetterSpacingExtra(segment.text, measureText(ctx, segment.text).width, parsedLetterSpacingPx)
+      segment.width = measureText(ctx, segment.text).width
     }
 
     // Calculate available layout width
@@ -527,7 +507,7 @@ export class TextNode extends BoxNode {
     const epsilon = 0.001 // Float precision compensation
 
     // Wrap text into lines based on available width
-    this.lines = this.wrapTextRich(ctx, this.segments, availableWidthForContent + epsilon, parsedWordSpacingPx, parsedLetterSpacingPx)
+    this.lines = this.wrapTextRich(ctx, this.segments, availableWidthForContent + epsilon, parsedWordSpacingPx)
 
     // Initialize line metrics arrays
     this.lineHeights = [] // Final heights including leading
@@ -602,7 +582,7 @@ export class TextNode extends BoxNode {
     const calculatedContentHeight = totalTextHeight + totalGapHeight
 
     // Calculate width required for text content
-    const spaceWidth = this.measureSpaceWidth(ctx, parsedLetterSpacingPx)
+    const spaceWidth = this.measureSpaceWidth(ctx)
     // The widest line the text asks for, which an explicit newline ends. Summing across one would
     // ask for room to lay every line end to end: a `Text` holding "a\nbbbb" needs the width of
     // "bbbb", not of both together, and the box came out that much too wide.
@@ -620,7 +600,7 @@ export class TextNode extends BoxNode {
           if (COLLAPSIBLE_RUN.test(word)) continue
           ctx.font = this.getFontString(segment)
           this._applyFontVariant(ctx, 'measureText (single line width)')
-          const wordWidth = this.addLetterSpacingExtra(word, measureText(ctx, word).width, parsedLetterSpacingPx)
+          const wordWidth = measureText(ctx, word).width
           if (!firstWordInLine) {
             lineWidth += spaceWidth + parsedWordSpacingPx
           }
@@ -723,7 +703,6 @@ export class TextNode extends BoxNode {
     fromIndex: number,
     budget: number,
     parsedWordSpacingPx: number,
-    parsedLetterSpacingPx: number,
     spaceWidth: number,
   ): TextSegment[] {
     /** The lines this one may draw from: itself, then each soft-wrapped continuation. */
@@ -754,7 +733,7 @@ export class TextNode extends BoxNode {
       this._applyFontVariant(ctx, 'fillLineToWidth')
 
       const gap = firstWord ? 0 : spaceWidth + parsedWordSpacingPx
-      const wholeWidth = this.addLetterSpacingExtra(segment.text, measureText(ctx, segment.text).width, parsedLetterSpacingPx)
+      const wholeWidth = measureText(ctx, segment.text).width
 
       if (used + gap + wholeWidth <= budget) {
         filled.push({ ...segment, width: wholeWidth })
@@ -768,7 +747,7 @@ export class TextNode extends BoxNode {
       let keptWidth = 0
       for (const char of segment.text) {
         const candidate = kept + char
-        const width = this.addLetterSpacingExtra(candidate, measureText(ctx, candidate).width, parsedLetterSpacingPx)
+        const width = measureText(ctx, candidate).width
         if (used + gap + width > budget) break
         kept = candidate
         keptWidth = width
@@ -798,7 +777,6 @@ export class TextNode extends BoxNode {
     segments: TextSegment[],
     maxWidth: number,
     parsedWordSpacingPx: number,
-    parsedLetterSpacingPx: number = 0,
     hardBreaks?: boolean[],
   ): TextSegment[][] {
     const lines: TextSegment[][] = []
@@ -807,7 +785,7 @@ export class TextNode extends BoxNode {
 
     let currentLineSegments: TextSegment[] = []
     let currentLineWidth = 0
-    const spaceWidth = this.measureSpaceWidth(ctx, parsedLetterSpacingPx)
+    const spaceWidth = this.measureSpaceWidth(ctx)
 
     // Helper to finalize current line and start new one
     const finalizeLine = (forceEmpty = false, endedAtNewline = false) => {
@@ -860,7 +838,7 @@ export class TextNode extends BoxNode {
               } else {
                 ctx.font = this.getFontString(segmentStyle)
                 if (this.props.fontVariant) ctx.fontVariant = this.props.fontVariant
-                wordWidth = this.addLetterSpacingExtra(wordOrSpace, measureText(ctx, wordOrSpace).width, parsedLetterSpacingPx)
+                wordWidth = measureText(ctx, wordOrSpace).width
                 wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
               }
 
@@ -881,7 +859,7 @@ export class TextNode extends BoxNode {
 
                 if (!isSpace) {
                   if (wordWidth > maxWidth && maxWidth > 0) {
-                    const brokenParts = this.breakWordRich(ctx, wordSegment, maxWidth, parsedLetterSpacingPx)
+                    const brokenParts = this.breakWordRich(ctx, wordSegment, maxWidth)
 
                     if (brokenParts.length > 0) {
                       for (let k = 0; k < brokenParts.length - 1; k++) {
@@ -923,7 +901,7 @@ export class TextNode extends BoxNode {
           } else {
             ctx.font = this.getFontString(segmentStyle)
             if (this.props.fontVariant) ctx.fontVariant = this.props.fontVariant
-            wordWidth = this.addLetterSpacingExtra(wordOrSpace, measureText(ctx, wordOrSpace).width, parsedLetterSpacingPx)
+            wordWidth = measureText(ctx, wordOrSpace).width
             wordSegment = { text: wordOrSpace, ...segmentStyle, width: wordWidth }
           }
 
@@ -944,7 +922,7 @@ export class TextNode extends BoxNode {
 
             if (!isSpace) {
               if (wordWidth > maxWidth && maxWidth > 0) {
-                const brokenParts = this.breakWordRich(ctx, wordSegment, maxWidth, parsedLetterSpacingPx)
+                const brokenParts = this.breakWordRich(ctx, wordSegment, maxWidth)
 
                 if (brokenParts.length > 0) {
                   for (let k = 0; k < brokenParts.length - 1; k++) {
@@ -978,7 +956,7 @@ export class TextNode extends BoxNode {
    * @param maxWidth Maximum width allowed for each resulting segment
    * @returns Array of TextSegments, each fitting maxWidth, or original segment if no breaking needed
    */
-  private breakWordRich(ctx: CanvasRenderingContext2D, segmentToBreak: TextSegment, maxWidth: number, parsedLetterSpacingPx: number = 0): TextSegment[] {
+  private breakWordRich(ctx: CanvasRenderingContext2D, segmentToBreak: TextSegment, maxWidth: number): TextSegment[] {
     const word = segmentToBreak.text
 
     // Copy all style properties to maintain consistent styling across broken segments
@@ -1002,7 +980,7 @@ export class TextNode extends BoxNode {
     // Process word character by character to find valid break points
     for (const char of word) {
       const testPartText = currentPartText + char
-      const testPartWidth = this.addLetterSpacingExtra(testPartText, measureText(ctx, testPartText).width, parsedLetterSpacingPx)
+      const testPartWidth = measureText(ctx, testPartText).width
 
       if (testPartWidth > maxWidth) {
         // Current accumulated text exceeds width - create new segment
@@ -1010,7 +988,7 @@ export class TextNode extends BoxNode {
           brokenSegments.push({
             text: currentPartText,
             ...style,
-            width: this.addLetterSpacingExtra(currentPartText, measureText(ctx, currentPartText).width, parsedLetterSpacingPx),
+            width: measureText(ctx, currentPartText).width,
           })
         }
 
@@ -1038,7 +1016,7 @@ export class TextNode extends BoxNode {
       brokenSegments.push({
         text: currentPartText,
         ...style,
-        width: this.addLetterSpacingExtra(currentPartText, measureText(ctx, currentPartText).width, parsedLetterSpacingPx),
+        width: measureText(ctx, currentPartText).width,
       })
     }
 
@@ -1057,13 +1035,13 @@ export class TextNode extends BoxNode {
    * space its own spacing like any other character, so without this a line falls short by one unit
    * per word gap.
    */
-  private measureSpaceWidth(ctx: CanvasRenderingContext2D, letterSpacingPx = 0): number {
+  private measureSpaceWidth(ctx: CanvasRenderingContext2D): number {
     const originalFont = ctx.font
     ctx.font = this.getFontString()
     const width = measureText(ctx, ' ').width
     ctx.font = originalFont
     const resolved = width > 0 ? width : (this.props.fontSize || 16) * 0.3
-    return this.addLetterSpacingExtra(' ', resolved, letterSpacingPx)
+    return resolved
   }
 
   /**
@@ -1139,12 +1117,11 @@ export class TextNode extends BoxNode {
     // Re-calculate lines based on the actual render width to ensure consistency
     // This fixes issues where Yoga Layout might use a cached measurement from a different
     // width constraint (e.g., during a flex shrink pass) but final layout is wider.
-    const spaceWidth = this.measureSpaceWidth(ctx, this.parseSpacingToPx(this.props.letterSpacing, baseFontSize))
+    const spaceWidth = this.measureSpaceWidth(ctx)
     // Use a small epsilon for float precision issues
     const epsilon = 0.01
-    const parsedLetterSpacingPx = this.parseSpacingToPx(this.props.letterSpacing, baseFontSize)
     const hardBreaks: boolean[] = []
-    const allLines = this.wrapTextRich(ctx, this.segments, contentWidth + epsilon, parsedWordSpacingPx, parsedLetterSpacingPx, hardBreaks)
+    const allLines = this.wrapTextRich(ctx, this.segments, contentWidth + epsilon, parsedWordSpacingPx, hardBreaks)
 
     const needsEllipsis = this.props.ellipsis && this.props.maxLines !== undefined && allLines.length > this.props.maxLines
 
@@ -1272,16 +1249,7 @@ export class TextNode extends BoxNode {
       // word earlier than a browser stops.
       const lastIndex = visibleLines.length - 1
       if (lastIndex >= 0) {
-        visibleLines[lastIndex] = this.fillLineToWidth(
-          ctx,
-          allLines,
-          hardBreaks,
-          lastIndex,
-          contentWidth - ellipsisWidth,
-          parsedWordSpacingPx,
-          parsedLetterSpacingPx,
-          spaceWidth,
-        )
+        visibleLines[lastIndex] = this.fillLineToWidth(ctx, allLines, hardBreaks, lastIndex, contentWidth - ellipsisWidth, parsedWordSpacingPx, spaceWidth)
       }
     }
 
