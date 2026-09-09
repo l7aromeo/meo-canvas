@@ -1323,8 +1323,15 @@ number that can never be reissued; `meo-skia-canvas` carries that scar.
 
 ### A new platform package cannot start on OIDC
 
+**The platform packages are scoped: `@meo-canvas/<suffix>`.** Not
+`meo-canvas-<suffix>`, which is what this file said until a prerelease check
+queried the unscoped names, got seven `E404`s, and reported that all seven needed
+bootstrapping by hand. They did not -- all seven exist. `optionalDependencies` in
+`packages/meo-canvas/package.json` is the authority, and the suffixes come from
+`TARGETS` in `tools/stage-platform-package.mjs`.
+
 A trusted publisher is configured on a package's settings page, and a package
-never published has none. So the first release of every `meo-canvas-<suffix>` is
+never published has none. So the first release of every `@meo-canvas/<suffix>` is
 refused -- correctly, with nothing published and no tag -- and **the dry run
 could not have seen it, because `--dry-run` never authenticates.**
 
@@ -1332,7 +1339,10 @@ Bootstrap by hand: `npm publish --access public --tag next <tgz>` each tarball,
 **one at a time with a pause between**. Four new names in ten seconds tripped
 npm's spam gate on the fifth and sixth; that is a burst heuristic, not a name
 problem. Before releasing a version that adds a platform package:
-`npm view meo-canvas-<suffix> version` -- an `E404` means bootstrap first.
+`npm view @meo-canvas/<suffix> version` -- an `E404` means bootstrap first, and a
+version means it is already on OIDC. **Query the name `optionalDependencies`
+names**, because the wrong spelling answers `E404` for every package including
+the ones that exist, and that reads as a release blocked rather than a typo.
 
 **Every platform package must exist before the main one, and the check is per
 name rather than per release.** npm and pnpm skip an optional dependency whose
