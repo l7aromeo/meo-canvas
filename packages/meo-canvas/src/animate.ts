@@ -810,7 +810,7 @@ const clampChannel = (value: number): number => Math.min(CHANNEL_MAX, Math.max(0
 const inGamut = ({ r, g, b }: Rgba): boolean => [r, g, b].every(c => c >= 0 && c <= CHANNEL_MAX)
 
 /** The migration guide, named in the errors most likely to be a v9 call. */
-const MIGRATING = 'https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md'
+const MIGRATING = 'https://github.com/l7aromeo/meo-canvas/blob/main/MIGRATING.md'
 
 /**
  * A colour, or a refusal saying what arrived instead.
