@@ -807,25 +807,66 @@ jobs:
           # the outcome. Runs appear within seconds; the two minutes is a
           # hang-breaker rather than an expected wait, and the message below
           # reads the same variable so the number cannot drift from the wait.
-          ceiling=120
-          deadline=$(( SECONDS + ceiling ))
+          appear=120
+          deadline=$(( SECONDS + appear ))
+          run_id=0
+          run_url=""
           while :; do
             latest=$(gh run list --workflow docs.yml --event workflow_dispatch --limit 1 --json databaseId,url --jq '.[0]')
             id=$(printf '%s' "$latest" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8') || '{}').databaseId || 0")
             if [ "$id" -gt "$before" ]; then
-              printf '%s' "$latest" | node -p "'started ' + (JSON.parse(require('fs').readFileSync(0,'utf8')).url)"
-              exit 0
+              run_id="$id"
+              run_url=$(printf '%s' "$latest" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).url")
+              echo "started ${run_url}"
+              break
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              break
+              echo "::error::dispatched docs.yml at ${git_tag} and no run appeared within ${appear}s"
+              echo "::error::the packages are published and the release is open; re-run this job, or dispatch the reference workflow by hand"
+              exit 1
             fi
             echo "waited ${SECONDS}s for the reference deploy to appear"
             sleep 5
           done
 
-          echo "::error::dispatched docs.yml at ${git_tag} and no run appeared within ${ceiling}s"
-          echo "::error::the packages are published and the release is open; re-run this job, or dispatch the reference workflow by hand"
-          exit 1
+          # **Started is not deployed, and the difference has been invisible.**
+          # This used to stop at the line above, so a run that began and then
+          # failed left this job green -- and every way that run can fail is
+          # quiet from here: the tag can miss the filter and publish nothing
+          # with a notice, the environment can refuse the ref before any step
+          # runs, the registry wait can spend its deadline on a version that
+          # will never resolve. All three have happened. The release page, the
+          # packages and the tag are all correct in each case and the reference
+          # is simply absent, which is what nobody notices until someone
+          # follows the link in the notes.
+          #
+          # Twenty minutes because the run's own registry wait is ten and its
+          # build is under one; the rest is headroom. A timeout here is
+          # reported rather than swallowed, and says the run may still be going
+          # -- an unfinished deploy and a failed one are different facts and
+          # this step does not have to guess which it saw.
+          finish=1200
+          deadline=$(( SECONDS + finish ))
+          while :; do
+            state=$(gh run view "$run_id" --json status,conclusion --jq '"\(.status) \(.conclusion // "")"')
+            case "$state" in
+              completed\ success)
+                echo "reference deployed: ${run_url}"
+                exit 0
+                ;;
+              completed\ *)
+                echo "::error::the reference deploy finished ${state#completed } -- ${run_url}"
+                echo "::error::the packages are published, the tag is pushed and the release is open; only the reference is missing. Fix the cause and re-run that workflow, or dispatch it by hand at ${git_tag}"
+                exit 1
+                ;;
+            esac
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::the reference deploy has not finished within ${finish}s and may still be running -- ${run_url}"
+              echo "::error::the release itself is complete; check that run before dispatching another"
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Say what happened
         env:
