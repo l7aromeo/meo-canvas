@@ -42,6 +42,49 @@ defaults:
     shell: bash
 
 jobs:
+  # The half of the gate that reads the repository and never compiles it, run
+  # once instead of three times. The split is `just portable` / `just native`,
+  # and the justfile beside those two lists holds the test that decides which a
+  # recipe belongs to, so a new recipe is placed there rather than here.
+  #
+  # **What it removes from the slowest runner.** Measured on run 34291240847:
+  # `typecheck` alone was 221s of Windows' 959s -- 176s of that the examples
+  # project -- against 60s for the whole portable group on ubuntu. `tsc
+  # --noEmit` emits nothing and reads a great many small files, so it is a
+  # Windows filesystem cost rather than a compilation one, and no amount of
+  # caching addresses it.
+  #
+  # No Rust toolchain, no cargo tools, no nasm: every recipe in the list is
+  # `cargo`-free through its dependencies, which is the test, and a step
+  # installed here that none of them needs would go unnoticed until someone
+  # timed the job.
+  portable:
+    name: portable
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+
+      # `docs-js` installs the typedoc tool's own dependencies with bun, and
+      # `ensure-deps` installs the workspace's, so bun is needed here even
+      # though nothing in this job runs an example.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.1'
+
+      - name: Install the JavaScript dependencies
+        run: bun install --frozen-lockfile
+
+      - run: just portable
+
   ci:
     name: ci (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -176,7 +219,10 @@ jobs:
       - name: Install the cargo tools just ci calls
         run: cargo install --locked cargo-llvm-cov cargo-machete
 
-      - run: just ci
+      # `native`, not `ci`: the portable half runs in the job above, once. This
+      # skips the lock `ci` takes as well, which guards one checkout against two
+      # concurrent gates and has nothing to guard on a fresh runner.
+      - run: just native
 
       # Advisories, once rather than three times: the lockfile is the same on
       # every runner, so this asks Linux and nobody else. Installed here rather

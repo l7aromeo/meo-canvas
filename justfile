@@ -143,9 +143,43 @@ ci:
     trap 'rm -rf "$lock"' EXIT INT TERM
     just ci-steps
 
+# The checks that read the repository and nothing else.
+#
+# **The test for this list: does the recipe, or anything it depends on, name
+# `cargo`?** If it does it belongs in `native`, and the question is settled by
+# grep rather than by judgement. `runtime-free` is here to be looked at and
+# rejected -- it runs `cargo tree`, which compiles nothing and would ride along
+# for about a second, and it is native anyway. **A rule that admits an exception
+# for cheapness stops being a test.**
+#
+# **What it buys.** These run identically on every host, so running them once
+# rather than three times costs nothing and saves the slowest runner's wall
+# clock. Measured on run 34291240847, per command from the log's timestamps:
+# `typecheck` alone is 221s of Windows' 959s -- 176s for the examples project and
+# 45s for the package -- against 60s for the whole group on ubuntu. `tsc
+# --noEmit` emits nothing and reads a great many small files, which is a Windows
+# filesystem cost rather than a compilation one.
+#
+# **The dependency half of the test decides three recipes, one each way.**
+# `docs-js` names no `cargo` and stays here, because what it depends on --
+# `build-js` -- compiles TypeScript rather than Rust. `test-js` and `coverage-js`
+# name no `cargo` either and are native, because they reach `addon`. **A
+# dependency is what carries a recipe across without its own body changing**, so
+# grep the closure rather than the recipe. Stated that way the test has no
+# exceptions: all ten here are `cargo`-free through their dependencies, and all
+# thirteen there reach it.
+portable: typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
+
+# The checks that compile, link, or run the addon, and so have to run per host.
+#
+# Everything whose dependencies reach `cargo`. For `test-js` and `coverage-js`
+# that is `addon`, and loading the compiled `.node` is the one thing that
+# genuinely differs between platforms.
+native: fmt-check arena-cases-check media-types-check lint-check docs test addon test-js coverage coverage-js example runtime-free unused
+
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
-ci-steps: fmt-check doc-examples-check platform-packages-check typecheck arena-tables-check arena-enums-check arena-cases-check media-types-check lint-check layout-check docs docs-js private-docs conformance-writes issue-refs test addon test-js coverage coverage-js example runtime-free unused
+ci-steps: portable native
 
 # First-time setup on a fresh clone. Idempotent -- safe to re-run.
 #
