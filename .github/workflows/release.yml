@@ -341,16 +341,18 @@ jobs:
       actions: write
 
     steps:
-      # **Full history and tags, because the release notes are a range.** The
-      # default checkout is one commit with no tags, so
-      # `git describe --tags` found nothing, the notes step took its
-      # "no previous tag" branch, and `git log HEAD` on a one-commit clone
-      # produced notes consisting of a single subject line -- while printing
-      # that they covered the whole history. Reproduced on a `--depth 1` clone
-      # of this repository: 1 commit, 0 tags, describe empty, notes one line.
+      # **Full history and tags, because the tag step asks whether its own tag
+      # already exists** and answers from the local refs rather than the
+      # network. That check is what makes a re-run walk past the half that
+      # succeeded instead of failing on a tag it created itself.
       #
-      # It is also what lets the tag step below ask whether its tag already
-      # exists without going to the network for the answer.
+      # It used to be needed for the notes as well, which were a `git log`
+      # range: on a default one-commit checkout `git describe --tags` found
+      # nothing, the notes step took its "no previous tag" branch, and the
+      # release page carried a single subject line while printing that it
+      # covered the whole history. The notes are read from a file in the tree
+      # now, so that failure is gone -- but the depth is not surplus, because
+      # the existence check still needs it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -646,28 +648,35 @@ jobs:
           NAME: ${{ needs.targets.outputs.name }}
         run: |
           set -euo pipefail
-          git_tag="v${VERSION}"
+          git_tag="npm-v${VERSION}"
 
-          # The notes are the commit subjects since the last tag, verbatim.
+          # **The notes are written by hand, one file per version, and a
+          # missing one stops the release.**
           #
-          # Not a conventional-commit parser: 26 of the last 40 subjects here
-          # carry no `feat:`/`fix:` prefix, so a parser would silently drop two
-          # thirds of the history -- including the changes that matter most,
-          # which are the ones someone took the trouble to name in a sentence.
-          # The subjects in this repository are already written as one-line
-          # summaries of what changed and why, so the log is the release note
-          # and reformatting it only loses information.
-          # Excludes the tag this run is about to create, which matters on a
-          # re-run: without `--exclude` a second attempt describes its own tag
-          # and produces notes covering nothing.
-          previous=$(git describe --tags --abbrev=0 --match 'v*' --exclude "${git_tag}" 2>/dev/null || true)
-          if [ -n "$previous" ]; then
-            range="${previous}..HEAD"
-            echo "notes cover ${range}"
-          else
-            range="HEAD"
-            echo "no previous tag; notes cover the whole history"
+          # They used to be the commit subjects since the last tag, verbatim.
+          # That was right while one lineage of tags covered one thing, and it
+          # is wrong now: 92 non-merge commits stand between the last release
+          # and this one, of which about twenty mean anything to somebody
+          # installing the package, and the generated page put "Check that
+          # `ci-steps` still runs both halves" beside "markup no longer clears
+          # a bad colour" with nothing to separate them. The reasoning against
+          # a conventional-commit parser still holds and is the reason the log
+          # was used at all -- 26 of the last 40 subjects carry no
+          # `feat:`/`fix:` prefix, so a parser would drop two thirds of the
+          # history including the changes someone took the trouble to name in
+          # a sentence -- but a parser is not what replaces it. A person is.
+          #
+          # **Missing means stop, and it must not fall back to the log.** A
+          # release that ships a noisy generated page because someone forgot
+          # is worse than one that refuses, and a fallback would make this
+          # check unable to fail: every release would pass it, whether or not
+          # anyone had written anything.
+          notes_source="docs/releases/npm/${VERSION}.md"
+          if [ ! -s "${notes_source}" ]; then
+            echo "::error::${notes_source} is missing or empty. Release notes are written by hand, per channel and per version, against the previous release of that channel. Write it, commit it, and run this again."
+            exit 1
           fi
+          echo "notes from ${notes_source}"
 
           {
             echo "\`npm install ${NAME}@${VERSION}\`"
@@ -676,18 +685,21 @@ jobs:
               echo "Published to the \`next\` dist-tag, so a plain \`npm install ${NAME}\` does not resolve it."
               echo ""
             fi
-            echo "## Changes"
-            echo ""
-            git log --no-merges --format='- %s' "${range}"
+            cat "${notes_source}"
             echo ""
             # Where the reference for *this* version lives. A release is when
             # someone goes looking for it, and `latest/` is not the answer while
             # 10.x is in prerelease -- it follows the newest stable release, so
             # it is absent until one exists. Naming the version's own directory
             # is the link that works either way.
+            #
+            # **The version, not the tag.** `docs.yml` strips the channel
+            # prefix before it names the directory, because the site index
+            # parses directory names as `vX.Y.Z`; a link built from
+            # `${git_tag}` would 404 on every release after the rename.
             echo "---"
             echo ""
-            echo "[API reference for ${git_tag}](https://l7aromeo.github.io/meo-canvas/${git_tag}/)"
+            echo "[API reference for v${VERSION}](https://l7aromeo.github.io/meo-canvas/v${VERSION}/)"
           } > notes.md
 
           # **Both halves ask whether they have already happened.** The tag is
@@ -780,7 +792,7 @@ jobs:
           VERSION: ${{ needs.targets.outputs.version }}
         run: |
           set -euo pipefail
-          git_tag="v${VERSION}"
+          git_tag="npm-v${VERSION}"
 
           # **Failing loudly rather than warning.** A deploy that did not start
           # is a smaller failure than a red release job -- the packages are on

@@ -169,7 +169,7 @@ ci:
 # exceptions: all eleven here are `cargo`-free through their dependencies, and
 # all thirteen there reach it. `gate-lists-check` asserts the arithmetic of that
 # sentence rather than leaving it to a reader.
-portable: gate-lists-check typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
+portable: gate-lists-check release-tags-check typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
 
 # The checks that compile, link, or run the addon, and so have to run per host.
 #
@@ -1523,6 +1523,19 @@ conformance-writes:
 [doc("Fail if ci-steps and the two lists have drifted apart.")]
 gate-lists-check:
     node packages/meo-canvas/tools/gate-lists.mjs
+
+# The two release channels, and the filter that decides which of them gets a
+# JavaScript reference.
+#
+# `docs.yml` matches a release tag against a regular expression and, on a
+# `release` event, publishes nothing for a tag that does not match -- a notice,
+# a green job, no deploy. So a tag prefix changed in `release.yml` and not
+# there costs a release its documentation and reports nothing. This runs a tag
+# of each shape through that exact `grep -Eq`, with the prefixes read out of
+# the workflows that build them rather than written down again here.
+[doc("Fail if the release tag prefixes and the docs filter disagree.")]
+release-tags-check:
+    node packages/meo-canvas/tools/release-tags.mjs
 
 # The half of the reference `docs-js` cannot see.
 #
