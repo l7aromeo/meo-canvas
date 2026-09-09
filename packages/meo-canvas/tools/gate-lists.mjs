@@ -56,12 +56,57 @@
 // above it fails this, and passed the version that searched the whole text.
 //
 // **What it does not catch, and these are real:** a job that invokes both and
-// then skips itself with an `if:`; a runner changed out from under either half;
-// `on:` narrowed so the workflow stops triggering. All three leave the invocation
-// in place, which is all this looks at. Deleting the workflow outright is caught,
-// but by the read failing rather than by an assertion. **Keeping it to "both are
-// invoked" is deliberate: past that it is a YAML validator, which is a different
-// tool and should be one.**
+// then skips itself with an `if:`; `on:` narrowed so the workflow stops
+// triggering. Both leave the invocation in place, which is all that assertion
+// looks at. Deleting the workflow outright is caught, but by the read failing
+// rather than by an assertion.
+//
+// **A fifth assertion, for the one of those that turned out to be reachable in
+// two lines.** Three recipes run on exactly one platform each, each guarded by
+// an `if: runner.os` in `ci.yml`:
+//
+//     just audit           Linux     the only thing that reads the advisory database
+//     just net-check       Linux     the only thing that compiles the `net` feature
+//     just threads-probe   Windows   the only thing that loads the addon under workers
+//
+// **Drop a platform from the matrix and its guarded step stops running with
+// nothing red** -- the step is still in the file, the job is still green, and the
+// run is faster, which reads as an improvement. That is the same defect the
+// fourth assertion exists for, one level down: there the job was deleted, here
+// the platform it needed is.
+//
+// **So this asserts the coupling rather than either side.** Checking only that
+// the recipes are invoked passes the matrix edit, because the `run:` line is
+// untouched; checking only that the matrix holds three platforms passes the
+// deletion of a step. What has to hold is that **each guarded recipe's platform
+// is in the matrix** -- and the guards are read out of the workflow rather than
+// written down here, so a fourth guarded step is covered by existing.
+//
+// **The three are named rather than counted.** `FLOORS` is right for the lists,
+// where the recipes are interchangeable in kind and the harm is attrition; it is
+// wrong here, where each of the three is the only thing that covers what it
+// covers. A floor of three would pass a tree that had swapped `net-check` for a
+// second Linux step.
+//
+// **And the list has to be complete, which is a second assertion rather than a
+// property of the first.** Reading each guard's platform out of the workflow is
+// not the same as noticing a guard the map has never heard of: the loop is over
+// the map, so a fourth guarded step added tomorrow would be exactly as droppable
+// as these three and this would stay green. **That is the defect being fixed,
+// wearing the check's own clothes.** So every `if: runner.os` step in the
+// workflow that runs a `just` recipe must have an entry here, and a new one
+// fails until someone adds it.
+//
+// **A guarded step that runs no `just` recipe is exempt by construction**, which
+// is the two libaom installs: they are setup for the platform they run on rather
+// than coverage that platform is the only source of, so dropping the platform
+// drops the need for them at the same time. Written as a property rather than a
+// list of exempt names, because a list would have to be maintained by the same
+// person who forgot to add the entry.
+//
+// **Past this it is a YAML validator, which is a different tool and should be
+// one.** The line is that this reads what a step says about itself -- its `run:`
+// and its `if:` -- and never what GitHub would do with the file.
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -141,6 +186,75 @@ for (const list of ['portable', 'native']) {
   if (!invoked) problems.push(`\`.github/workflows/ci.yml\` never runs \`just ${list}\``)
 }
 
+// The platform-guarded recipes, and the platform each one needs in the matrix.
+//
+// `runner.os` is what a step's `if:` spells; the matrix spells runner labels. The
+// two vocabularies are joined here rather than in either file, which is the only
+// place that knows both.
+const GUARDED = { audit: 'Linux', 'net-check': 'Linux', 'threads-probe': 'Windows' }
+const LABEL = { Linux: 'ubuntu', Windows: 'windows', macOS: 'macos' }
+
+const workflowLines = readFileSync(WORKFLOW, 'utf8')
+  .split('\n')
+  .filter(line => !line.trimStart().startsWith('#'))
+
+// The matrix's `os:` list, as labels. One line, read as text for the same reason
+// the invocations are: the question is which platforms are named, not what YAML
+// means by them.
+const matrixLine = workflowLines.find(line => /^\s*os:\s*\[/.test(line)) ?? ''
+const platforms = [...matrixLine.matchAll(/[a-z]+(?=-latest|-[0-9])/g)].map(found => found[0])
+
+// **Every guarded step that runs a recipe is in the map.** Without this the loop
+// below only knows the three recipes written above, and a fourth guarded step
+// would be unprotected while the check reported success.
+for (const [index, line] of workflowLines.entries()) {
+  if (!/if:\s*runner\.os\s*==/.test(line)) continue
+  // The step's own `run:` lines: from the guard to the start of the next step.
+  const end = workflowLines.findIndex((later, at) => at > index && /^\s{6}- /.test(later))
+  const body = workflowLines.slice(index, end < 0 ? undefined : end)
+  for (const command of body) {
+    const invoked = /(?:^|run:\s*|\s)just\s+([a-z][a-z0-9-]*)/.exec(command.trim())
+    if (invoked && !(invoked[1] in GUARDED)) {
+      problems.push(
+        `\`just ${invoked[1]}\` is guarded by \`runner.os\` in \`.github/workflows/ci.yml\` and is not in ` +
+          `this tool's list, so nothing checks that its platform is in the matrix`,
+      )
+    }
+  }
+}
+
+for (const [recipe, os] of Object.entries(GUARDED)) {
+  // **The command, in either shape it takes here**: `run: just x`, or its own
+  // line inside a `run: |` block. Written for both because `audit` is the second
+  // and a version that matched only the first reported it missing -- a false
+  // positive that would have been read as the check working.
+  const at = workflowLines.findIndex(line => new RegExp(`(?:^|run:\\s*)\\s*just\\s+${recipe}(?:[\\s;&|]|$)`).test(line.trim()))
+  if (at < 0) {
+    problems.push(`\`.github/workflows/ci.yml\` never runs \`just ${recipe}\``)
+    continue
+  }
+  // **The step's own guard, found by walking back to the step it belongs to.**
+  // A fixed window would read a neighbour's `if:` when the command sits deep in
+  // a block, and would miss its own when the step is long. `- ` at that
+  // indentation starts a step, so it is where the search stops.
+  let guard
+  for (let line = at; line >= 0; line -= 1) {
+    const text = workflowLines[line]
+    if (/if:\s*runner\.os\s*==/.test(text)) {
+      guard = text
+      break
+    }
+    if (/^\s{6}- /.test(text) && line !== at) break
+  }
+  // A step that carries no guard runs everywhere, which is not this assertion's
+  // business.
+  if (guard === undefined) continue
+  const needs = /runner\.os\s*==\s*'([A-Za-z]+)'/.exec(guard)?.[1] ?? os
+  if (!platforms.includes(LABEL[needs] ?? needs)) {
+    problems.push(`\`just ${recipe}\` runs only on ${needs}, and the matrix does not name it: it would stop ` + `running with nothing red`)
+  }
+}
+
 if (problems.length > 0) {
   for (const one of problems) process.stdout.write(`  ${one}\n`)
   process.stderr.write(
@@ -150,12 +264,16 @@ if (problems.length > 0) {
       'by the test written beside them -- does it, or anything it depends on, name `cargo`?\n\n' +
       'And both halves must be invoked in `.github/workflows/ci.yml`. Deleting a job there leaves every other ' +
       'assertion above it true while its recipes stop running in CI -- including this check, which is in ' +
-      '`portable`.\n',
+      '`portable`.\n\n' +
+      'The platform-guarded recipes are the same failure one level down: `audit`, `net-check` and ' +
+      '`threads-probe` each run on one platform, so removing that platform from the matrix stops the step ' +
+      'without failing anything. Put the platform back, or move the recipe to one the matrix still has.\n',
   )
   process.exit(1)
 }
 
 process.stdout.write(
   `ci-steps runs all ${runs.length} recipes the two lists name: ${lists['portable'].length} portable, ${lists['native'].length} native, ` +
-    'no overlap, and the workflow runs both halves.\n',
+    'no overlap, the workflow runs both halves, and every platform-guarded recipe has its platform in the ' +
+    'matrix.\n',
 )
