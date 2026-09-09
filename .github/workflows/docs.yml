@@ -31,10 +31,45 @@ on:
   # never before it.
   release:
     types: [published]
+  # **Derived from what the build reads, not from what looks related.** The job
+  # runs `tsc -p packages/meo-canvas/tsconfig.build.json` and then the TypeDoc
+  # tool, so every input to those two is here and nothing else is: a path added
+  # because it feels adjacent buys a run on every change that cannot affect the
+  # reference.
+  #
+  # **What this list cannot see**, said here rather than left to be discovered.
+  # A path filter is a proxy for "could this change the reference", and the
+  # proxy is narrower than the claim: a dependency whose own types change
+  # breaks declaration emit with nothing in this repository touched, and no
+  # entry below would fire. The lockfile catches the half of that case where
+  # the version moves here; a publisher shipping different types under a
+  # version already pinned is outside it. The release path is what covers that,
+  # because it rebuilds from the tag rather than from a diff.
   pull_request:
     paths:
+      # What is compiled.
       - 'packages/meo-canvas/src/**'
+      # The config `tsc` is invoked with, and the base it extends. Either can
+      # turn declaration emit off, move `rootDir`, or drop a strictness flag
+      # the surface was written against.
+      - 'packages/meo-canvas/tsconfig.build.json'
+      - 'packages/meo-canvas/tsconfig.json'
+      # `moduleResolution: nodenext` reads this package's `type` and `exports`
+      # to resolve anything, and its `@types/node` dependency is what
+      # `"types": ["node"]` in the base config resolves to -- so a bump here
+      # changes what the declarations say.
+      - 'packages/meo-canvas/package.json'
+      # `typedoc.json` names this as the reference's front page, so a change to
+      # it is a change to the published site.
+      - 'packages/meo-canvas/README.md'
+      # The tool: `build.mjs`, `typedoc.json`, its own manifest and lockfile,
+      # and the undocumented baseline the build refuses to let rise.
       - 'packages/meo-canvas/tools/typedoc/**'
+      # The workflow installs from the repository root, and the root lockfile
+      # is what pins the compiler that emits the declarations -- TypeScript is
+      # a root dependency, and `./node_modules/.bin/tsc` is the one that runs.
+      - 'package.json'
+      - 'bun.lock'
       - '.github/workflows/docs.yml'
   # Backfills a version published before this workflow existed, or reruns one
   # whose build failed. Publishing an older tag does not move `latest/` unless
