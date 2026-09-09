@@ -152,24 +152,31 @@ fn a_run_carries_one_letter_spacing_per_character_as_chrome_does() {
         "unspaced {plain} is not Chrome's {CHROME_PLAIN}"
     );
 
-    // The backend's own answer, before the correction: sixteen characters with
-    // fifteen gaps between them.
+    // **The backend's own answer, and it is the whole answer since 0.16.**
+    // Through 0.15 it added `n - 1` -- fifteen gaps between sixteen characters
+    // -- and `run_width` made up the missing unit. 0.16 adds one per character
+    // instead, citing the Canvas standard, so the number to pin here is
+    // sixteen and the correction is gone.
     let backend = measurer.measure(&style, SPACING, SIXTEEN).width;
     let backend_delta = backend - plain;
     assert!(
-        SPACING.mul_add(-15.0, backend_delta).abs() < WIDTH_SLACK,
-        "the backend added {backend_delta}, which is neither 15 nor 16 units"
+        SPACING.mul_add(-16.0, backend_delta).abs() < WIDTH_SLACK,
+        "the backend added {backend_delta}, which is not 16 units"
     );
 
-    // And with it: sixteen units, which is Chrome's number.
-    let corrected = measurer.run_width(&style, SPACING, SIXTEEN);
+    // Sixteen units, which is Chrome's number.
+    let width = measurer.run_width(&style, SPACING, SIXTEEN);
     assert!(
-        (corrected - CHROME_SPACED).abs() < WIDTH_SLACK,
-        "spaced {corrected} is not Chrome's {CHROME_SPACED}"
+        (width - CHROME_SPACED).abs() < WIDTH_SLACK,
+        "spaced {width} is not Chrome's {CHROME_SPACED}"
     );
+    // **And `run_width` adds nothing of its own.** Asserting the total alone
+    // passes for a backend at fifteen units with a correction of one, which is
+    // what this file pinned before the bump; the equality is what says the
+    // compensation is gone rather than merely balanced.
     assert!(
-        SPACING.mul_add(-16.0, corrected - plain).abs() < WIDTH_SLACK,
-        "the correction did not land on one unit per character"
+        (width - backend).abs() < f32::EPSILON,
+        "run_width returned {width} where the backend measured {backend}"
     );
 }
 

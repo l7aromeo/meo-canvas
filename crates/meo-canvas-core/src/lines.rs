@@ -44,7 +44,8 @@ use meo_canvas_scene::style::{
     },
 };
 use meo_skia_canvas::{
-    Canvas, CanvasOptions, Font, FontFeature, FontStretch, FontVariantCaps,
+    Canvas, CanvasOptions, Font, FontFeature, FontSlant, FontStretch,
+    FontVariantCaps,
 };
 
 use crate::{FINITE_CEILING, resolve::ResolvedText};
@@ -240,7 +241,15 @@ impl RunStyle {
             families: vec![self.family.clone()],
             size: self.size,
             weight: self.weight,
-            italic: self.italic,
+            // 0.16 replaces the boolean with the three slants CSS has. The
+            // boolean chose between upright and the family's italic, which is
+            // what these two arms say; `Oblique` is the third and nothing here
+            // asks for it, so no face selection moves.
+            slant: if self.italic {
+                FontSlant::Italic
+            } else {
+                FontSlant::Normal
+            },
             stretch: FontStretch::Normal,
             line_height: None,
         }
@@ -452,31 +461,38 @@ impl TextMeasurer {
         measurement
     }
 
-    /// The width of a run, with the letter spacing CSS adds and the backend
-    /// does not.
+    /// The width of a run, which is what the backend measures and nothing
+    /// more.
     ///
-    /// **One unit, not one per character.** The backend applies the spacing
-    /// *between* characters, so an `n`-character run comes back `n - 1`
-    /// spacings wide where CSS gives it `n` -- one after every character,
-    /// including the last. Every run is short by exactly one unit, however
-    /// long it is.
+    /// **No correction, and this is the third arithmetic this function has
+    /// had.** CSS adds one unit after every character including the last, so
+    /// an `n`-character run is `n` spacings wide. What changed each time is
+    /// how much of that the backend already did:
     ///
-    /// v1 carries a comment saying that an earlier version added `n - 1` here
-    /// on the premise that the backend applied none of it, and that a line
-    /// came out roughly a third too wide at 2px on a sixteen-character string.
-    /// The premise had stopped being true; the arithmetic had not caught up.
+    /// | backend applies | this added | total |
+    /// | --- | --- | --- |
+    /// | none, as v1 assumed | `n - 1` | wrong, a third too wide at 2px |
+    /// | `n - 1`, through 0.15 | one unit | `n`, correct |
+    /// | `n`, from 0.16 | **nothing** | `n`, correct |
+    ///
+    /// meo-skia-canvas 0.16 made `set_letter_spacing` add one unit per
+    /// character rather than `n - 1`, citing the Canvas standard, and its
+    /// changelog measures the change as four glyphs at 10 going from 30 to 40.
+    /// **So the compensation here became a double count** -- every spaced run
+    /// one unit too wide -- which is what `chrome_text_truth` caught on the
+    /// bump: a spaced space measured 7.66 where Chrome makes it 5.66.
+    ///
+    /// **The lesson each time is the same and it is why this table is here:**
+    /// a correction for someone else's arithmetic is only right while their
+    /// arithmetic stands still, and nothing in it says which version it was
+    /// written against.
     pub fn run_width(
         &mut self,
         style: &RunStyle,
         letter_spacing: f32,
         text: &str,
     ) -> f32 {
-        let measured = self.measure(style, letter_spacing, text).width;
-        if letter_spacing == 0.0 || text.is_empty() {
-            measured
-        } else {
-            measured + letter_spacing
-        }
+        self.measure(style, letter_spacing, text).width
     }
 
     /// The width of one inter-word space, spacing included.
@@ -486,20 +502,21 @@ impl TextMeasurer {
     /// and taking it from whichever run happens to precede it would make a
     /// line's width depend on the order its styles appear in.
     ///
-    /// A single character comes back with no letter spacing at all -- there is
-    /// nothing for the backend to put it between -- so the one unit CSS gives
-    /// it is added here like any other run.
+    /// **The spacing is the backend's, as it is in `run_width`.** A single
+    /// character used to come back with none of it -- there was nothing to put
+    /// it between under the `n - 1` rule -- and the unit was added here.
+    /// meo-skia-canvas 0.16 adds one per character, so a space measured with
+    /// spacing already carries its unit and adding another double counts it.
+    ///
+    /// The fallback keeps its own correction: a face that reports **no** space
+    /// width at all gives a measurement the backend never made, so there is no
+    /// spacing in it to inherit.
     pub fn space_width(&mut self, base: &RunStyle, letter_spacing: f32) -> f32 {
         let measured = self.measure(base, letter_spacing, " ").width;
-        let resolved = if measured > 0.0 {
+        if measured > 0.0 {
             measured
         } else {
-            base.size * FALLBACK_SPACE
-        };
-        if letter_spacing == 0.0 {
-            resolved
-        } else {
-            resolved + letter_spacing
+            base.size.mul_add(FALLBACK_SPACE, letter_spacing)
         }
     }
 }
@@ -1656,16 +1673,23 @@ mod tests {
     }
 
     #[test]
-    fn a_run_gains_exactly_one_letter_spacing() {
+    fn a_run_carries_the_backends_spacing_and_no_correction() {
         let mut measurer = TextMeasurer::new();
         let base = RunStyle::base(&style());
         let plain = measurer.run_width(&base, 0.0, "Hxgp");
         let spaced = measurer.run_width(&base, 2.0, "Hxgp");
         let measured = measurer.measure(&base, 2.0, "Hxgp").width;
-        // One unit on top of what the backend reports, whatever the backend
-        // put between the characters.
-        assert!((spaced - measured - 2.0).abs() < 0.001);
-        assert!(spaced > plain);
+        // **Nothing on top of what the backend reports.** This asserted one
+        // unit until meo-skia-canvas 0.16, which added a unit per character
+        // rather than `n - 1` and turned the compensation into a double count.
+        assert!((spaced - measured).abs() < f32::EPSILON);
+        // And four characters' worth of it, so a backend that stopped applying
+        // spacing altogether fails here rather than passing the equality
+        // above.
+        assert!(
+            (spaced - plain - 8.0).abs() < 0.001,
+            "{spaced} against {plain}"
+        );
     }
 
     #[test]
