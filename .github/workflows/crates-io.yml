@@ -37,6 +37,21 @@ on:
 permissions:
   contents: write
 
+# One publish at a time, and never cancelled -- the same reasoning as
+# `release.yml`, which shares neither its registry nor its tag namespace with
+# this workflow but has exactly its shape: `cargo publish --workspace` uploads
+# four crates in sequence, then a tag is pushed and a release opened.
+#
+# The group omits the ref on purpose. Two dispatches at different refs publish
+# the same version to the same registry and push the same `rust-v<version>`
+# tag, so keying on the ref would let precisely the pair that collides run side
+# by side. And cancelling mid-publish leaves crates.io and this repository
+# disagreeing, with nothing that re-runs to fix it -- crates.io has no
+# unpublish, only yank.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -75,9 +90,25 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
+      # **Saved on a branch, never on a tag -- and unlike `release.yml`, this is
+      # an argument by analogy and not a measurement.** This workflow has never
+      # run, not once, so there is no hit or miss in its history to reason from.
+      # What transfers is the scoping rule rather than any observation: a run
+      # restores from its own ref's scope and from the default branch, so a run
+      # dispatched at a tag cannot read back what it writes, and every release
+      # carries a new tag.
+      #
+      # **What would falsify it:** a tag-dispatched run of this workflow
+      # reporting `Cache hit for:`. That would mean the scoping premise is wrong
+      # and this line should go.
+      #
+      # **What it cannot do is harm.** If this workflow is only ever dispatched
+      # from a branch, the predicate never fires and nothing changes. It
+      # suppresses a save only on the dispatch that provably cannot read one.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: crates-io
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       # `cargo publish` does not merely upload a tarball: it unpacks each one
       # into `target/package/` and **builds it**. Three of the four crates reach
@@ -231,7 +262,41 @@ jobs:
             cat "${notes_source}"
           } > notes.md
 
-          git tag -a "${git_tag}" -m "meo-canvas crates ${version}"
+          # **Both halves ask whether they have already happened**, because
+          # the step before this one is `cargo publish --workspace` and
+          # crates.io has no unpublish. A failure between the upload and the
+          # tag used to be terminal here: the crates are on the registry, the
+          # re-run dies at `git tag` because the tag now exists, and there is
+          # no path that finishes the job. `release.yml` learned this on
+          # 5 September 2026 and carries the same guard; this workflow has
+          # never run, so it was still carrying the version that fails.
+          #
+          # A tag at a different revision is a real conflict rather than
+          # something to walk past -- someone published this version from
+          # elsewhere -- so it stops rather than attaching a release to a
+          # commit this run did not build. Tags are local because the checkout
+          # above takes `fetch-depth: 0`.
+          head=$(git rev-parse HEAD)
+          if existing=$(git rev-parse -q --verify "refs/tags/${git_tag}^{commit}"); then
+            if [ "$existing" != "$head" ]; then
+              echo "::error::${git_tag} already exists at ${existing}, and this run published ${head}"
+              exit 1
+            fi
+            echo "${git_tag} already exists at this commit; not creating it again"
+          else
+            # **An annotated tag records who made it, so the runner needs an
+            # identity.** Without one `git tag -a` exits 128 with "empty ident
+            # name" -- which is exactly how `release.yml` died on run
+            # 33966045288 with every package already on npm. This workflow
+            # has the same `git tag -a` and had no `git config` anywhere in
+            # it, so its first real run would have reproduced that failure
+            # with four crates already on crates.io behind it.
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "${git_tag}" -m "meo-canvas crates ${version}"
+          fi
+          # A no-op when the remote already has this exact tag, and a rejection
+          # if it has a different one.
           git push origin "${git_tag}"
 
           # `--prerelease` on the same rule cargo uses to decide a version is a
@@ -240,8 +305,15 @@ jobs:
             *-*) prerelease=--prerelease ;;
             *)   prerelease= ;;
           esac
-          # shellcheck disable=SC2086
-          gh release create "${git_tag}" \
-            --title "crates ${version}" \
-            --notes-file notes.md \
-            ${prerelease}
+          # Guarded for the same reason the tag is: a re-run after the
+          # release was opened must walk past it rather than fail.
+          if gh release view "${git_tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "a release already exists under ${git_tag}; not opening a second one"
+          else
+            # shellcheck disable=SC2086
+            gh release create "${git_tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "crates ${version}" \
+              --notes-file notes.md \
+              ${prerelease}
+          fi
