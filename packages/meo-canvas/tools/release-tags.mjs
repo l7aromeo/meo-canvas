@@ -65,6 +65,18 @@ let checked = 0
 const npm = prefixOf('release.yml', workflow('release.yml'))
 const rust = prefixOf('crates-io.yml', workflow('crates-io.yml'))
 
+/** Does `site-index.mjs`'s own directory pattern accept this name? */
+const indexParses = (() => {
+  const source = readFileSync(join(ROOT, 'packages', 'meo-canvas', 'tools', 'typedoc', 'site-index.mjs'), 'utf8')
+  const found = source.match(/const m = \/(.+)\/\.exec\(name\)/)
+  if (!found) {
+    fail('site-index.mjs no longer matches directory names with a `^v...` pattern; this check reads that line')
+    return () => true
+  }
+  const pattern = new RegExp(found[1])
+  return name => pattern.test(name)
+})()
+
 /** Does the workflow's own filter accept this tag? */
 const accepts = tag => {
   try {
@@ -96,6 +108,64 @@ if (pattern && npm && rust) {
     const got = accepts(tag)
     if (got !== want) {
       fail(`docs.yml ${got ? 'accepts' : 'refuses'} ${JSON.stringify(tag)} and should ${want ? 'accept' : 'refuse'} it: ${why}`)
+    }
+  }
+
+  // **The tag-to-version derivation, run rather than restated.** This is the
+  // step that was wrong: `${VERSION#v}` was correct while the tag was
+  // `v10.0.0` and silently wrong once it was `npm-v10.0.0`, because `#v` does
+  // not strip a prefix the string does not begin with. The two lines are
+  // lifted out of `docs.yml` and executed in `bash`, so a change to them is a
+  // change to what this asserts.
+  const derivation = (() => {
+    const found = workflow('docs.yml').match(/^\s*VERSION="\$\{TAG#npm-\}"\n\s*VERSION="\$\{VERSION#v\}"$/m)
+    if (!found) {
+      fail('docs.yml no longer derives VERSION from TAG in the two lines this check runs')
+      return undefined
+    }
+    return found[0]
+  })()
+
+  /** The line that names the site directory, read rather than assumed. */
+  const dirLine = (() => {
+    const found = workflow('docs.yml').match(/^\s*(dir=.*)$/m)
+    if (!found) {
+      fail('docs.yml no longer assigns `dir=`; this check runs that line')
+      return undefined
+    }
+    return found[1]
+  })()
+
+  /** What `docs.yml` would compute for this tag: the version, and the directory. */
+  const computed = tag =>
+    execFileSync('bash', ['-c', `set -eu; TAG="$1"; ${derivation}; ${dirLine ?? 'dir='}; printf '%s\\n%s' "$VERSION" "$dir"`, 'sh', tag], {
+      encoding: 'utf8',
+    }).split('\n')
+
+  if (derivation && dirLine) {
+    for (const [tag, want] of [
+      [`${npm}10.0.0-alpha.6`, '10.0.0-alpha.6'],
+      [`${npm}10.0.0`, '10.0.0'],
+      ['v10.0.0-alpha.5', '10.0.0-alpha.5'],
+    ]) {
+      const [got, dir] = computed(tag)
+      if (got !== want) fail(`docs.yml turns ${tag} into ${JSON.stringify(got)}, not ${JSON.stringify(want)}`)
+
+      // **And the directory it then writes has to be one the index can read.**
+      // `docs.yml` writes `site/v${VERSION}`; `site-index.mjs` parses the
+      // directory names it finds. A name that does not parse is not an error
+      // anywhere -- the reference deploys, the index never lists it, and
+      // `latest/` never advances past the last release named the old way.
+      if (!indexParses(dir)) {
+        fail(`site-index.mjs would not list the directory docs.yml writes for ${tag}: ${JSON.stringify(dir)}`)
+      }
+    }
+
+    // A crate tag never reaches the derivation, because the filter refuses it
+    // first. Asserted as a pair so widening the filter fails here rather than
+    // publishing a JavaScript reference for a crate version.
+    if (accepts(`${rust}0.1.0-alpha.1`)) {
+      fail(`docs.yml accepts ${rust}0.1.0-alpha.1, which would derive a version and deploy a reference for a crate release`)
     }
   }
 
