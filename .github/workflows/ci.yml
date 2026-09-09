@@ -1,19 +1,28 @@
 name: ci
 
-# `v10` is here and not only `main`, and the omission was not cosmetic: v10 is
-# developed on its own branch because `main` on this remote is v1's, so for the
-# life of that branch **this gate could not run at all** -- not "had not", could
-# not. Every host-dependent defect was structurally invisible, and one shipped:
-# `target()` returned `linux-x64-glibc` where every key spells `gnu`, which no
-# test on a darwin machine can reach and which broke the primary Linux target
-# outright.
+# **`main` is this lineage now, and the `v10` branch it was developed on is
+# gone.** `git ls-remote --heads` returns `gh-pages`, `main` and `v9`, so a
+# trigger naming `v10` matches nothing that can ever be pushed.
+#
+# The history is why this file is careful about that. v10 lived on its own
+# branch while `main` still held v1, and for the life of that branch this gate
+# **could not run at all** -- not "had not", could not, because the trigger
+# named only `main`. Every host-dependent defect was structurally invisible and
+# one shipped: `target()` returned `linux-x64-glibc` where every key spells
+# `gnu`, which no test on a darwin machine can reach and which broke the primary
+# Linux target outright. **A trigger that names the wrong branch is not a
+# cosmetic error**, which is the reason to remove one that has stopped naming
+# anything rather than leave it as harmless.
+#
+# `v9` is deliberately absent. It is frozen and rarely touched, so it is
+# ungated on purpose rather than by omission -- do not "fix" it.
 #
 # `workflow_dispatch` so it can be asked for without a push, which is what you
 # want when the question is "does this pass on Linux" rather than "did my commit
 # break something".
 on:
   push:
-    branches: [main, v10]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

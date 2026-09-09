@@ -1,9 +1,9 @@
 # meo-canvas
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner-dark.webp" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner-light.webp" />
-  <img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner.webp" alt="meo-canvas — four easing curves animating, each drawn by the library itself" width="1280" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/docs/assets/brand/banner-dark.webp" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/docs/assets/brand/banner-light.webp" />
+  <img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/docs/assets/brand/banner.webp" alt="meo-canvas — four easing curves animating, each drawn by the library itself" width="1280" />
 </picture>
 
 Server-side image generation for Node. Describe a layout the way you would describe a page — boxes, rows, text, images, paths, charts — and get back encoded bytes.
@@ -39,14 +39,14 @@ the way npm's `latest` dist-tag does, so while 10.x is in prerelease it is
 absent and the index says so — go to the version's own directory.
 
 **Coming from v9?** Read
-[MIGRATING.md](https://github.com/l7aromeo/meo-canvas/blob/v10/MIGRATING.md) first. Most calls
+[MIGRATING.md](https://github.com/l7aromeo/meo-canvas/blob/main/MIGRATING.md) first. Most calls
 survive, but three keep their name and change what they do — `mixColor` above all, which takes
 colour objects now and refuses a v9 string call rather than answering it.
 
 ### Platforms
 
-The renderer is a native addon of about 51 MB, and it is **not** in this
-package. One package per platform carries one binary, named in
+The renderer is a native addon of 28-37 MiB depending on the platform, and it
+is **not** in this package. One package per platform carries one binary, named in
 `optionalDependencies` with its own `os`, `cpu` and `libc`, so an install
 downloads the one it can run and skips the rest. Nothing is fetched by a
 postinstall script, which is what keeps offline and `--ignore-scripts` installs
@@ -193,8 +193,12 @@ const canvas = await Root({
 canvas.release()
 ```
 
-**Bytes cross to the renderer, never URLs**, so anything set here reaches the
-origin and nothing else.
+**A fetched image crosses as bytes, not as its URL**, so anything set here
+reaches the origin and nothing else. The exception is a URL that could not be
+fetched: under the default `onImageError: 'placeholder'` the render finishes,
+and the address crosses so the renderer can say which image is missing. It
+cannot act on it -- the addon is built without the `net` feature, so nothing on
+that side can open a connection.
 
 Two bounds apply whatever you pass, and they match the ones the Rust crate sets
 for itself: **a fetch has 60 seconds** and **an image may not exceed 32 MiB**.
