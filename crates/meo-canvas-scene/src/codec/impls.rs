@@ -14,8 +14,8 @@ use super::{CodecError, Reader, Wire, Writer};
 use crate::{
     geometry::{Corners, Sides},
     node::{
-        ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
-        PathPaint,
+        HttpOptions, ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind,
+        NodeTag, PathPaint,
     },
     style::{
         Dimension, Length,
@@ -139,6 +139,45 @@ impl<T: Wire> Wire for Vec<T> {
 
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         input.list()
+    }
+}
+
+/// A pair, written as its two halves in declaration order.
+///
+/// Here so a list of pairs is a `Vec<T>` like any other list rather than a
+/// hand-written count-and-loop at the one place that needs it -- which is the
+/// shape that lets a writer and a reader disagree about the count's width.
+impl<A: Wire, B: Wire> Wire for (A, B) {
+    const MIN_ENCODED: usize = A::MIN_ENCODED + B::MIN_ENCODED;
+
+    fn write(&self, out: &mut Writer<'_>) {
+        self.0.write(out);
+        self.1.write(out);
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        Ok((A::read(input)?, B::read(input)?))
+    }
+}
+
+impl Wire for HttpOptions {
+    /// Writes [`HttpOptions::canonical`], not the list as it was built.
+    ///
+    /// **So this is the one composite whose encoding is not the identity.**
+    /// `decode(encode(s))` gives back a scene whose headers are lower-cased,
+    /// combined and sorted, which equals `s` when `s` was already canonical
+    /// and is idempotent otherwise. That is deliberate: a golden fixture and a
+    /// cross-surface byte comparison both want one byte string per header set,
+    /// whichever surface assembled it. The type's doc carries the reasoning
+    /// and the measurement behind it.
+    fn write(&self, out: &mut Writer<'_>) {
+        out.list(&self.canonical());
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            headers: input.list()?,
+        })
     }
 }
 
@@ -380,9 +419,10 @@ impl Wire for ImageSource {
                 out.u8(TAG_FIRST);
                 out.str(path);
             }
-            Self::Url(url) => {
+            Self::Url { url, http } => {
                 out.u8(1);
                 out.str(url);
+                http.write(out);
             }
             Self::Bytes(bytes) => {
                 out.u8(2);
@@ -395,7 +435,10 @@ impl Wire for ImageSource {
         let offset = input.offset();
         match input.u8()? {
             TAG_FIRST => Ok(Self::Path(input.str()?)),
-            1 => Ok(Self::Url(input.str()?)),
+            1 => Ok(Self::Url {
+                url: input.str()?,
+                http: HttpOptions::read(input)?,
+            }),
             2 => Ok(Self::Bytes(input.bytes()?)),
             tag => Err(CodecError::UnknownTag { offset, tag }),
         }

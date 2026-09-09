@@ -109,8 +109,7 @@ fn sibling_at(png: &[u8]) -> Vec<(usize, usize)> {
 
 #[test]
 fn a_dead_url_lets_the_render_finish_and_is_recorded() {
-    let scene =
-        row(ImageSource::Url(DEAD.to_owned()), OnImageError::Placeholder);
+    let scene = row(ImageSource::url(DEAD), OnImageError::Placeholder);
     let rendered = Renderer::new()
         .render(&scene)
         .unwrap_or_else(|error| unreachable!("the render failed: {error}"));
@@ -137,7 +136,7 @@ fn the_sibling_after_a_failing_image_lands_where_it_always_would() {
     // a working image of the same size would have put it.
     let dead = Renderer::new()
         .render_to_buffer(
-            &row(ImageSource::Url(DEAD.to_owned()), OnImageError::Placeholder),
+            &row(ImageSource::url(DEAD), OnImageError::Placeholder),
             ImageFormat::Png,
             &EncodeOptions::default(),
         )
@@ -167,7 +166,7 @@ fn the_sibling_after_a_failing_image_lands_where_it_always_would() {
 #[test]
 fn throw_is_the_behaviour_every_earlier_version_had() {
     let Err(error) = Renderer::new()
-        .render(&row(ImageSource::Url(DEAD.to_owned()), OnImageError::Throw))
+        .render(&row(ImageSource::url(DEAD), OnImageError::Throw))
     else {
         unreachable!("a dead URL under `throw` must fail the render")
     };
@@ -179,7 +178,7 @@ fn throw_is_the_behaviour_every_earlier_version_had() {
 
 #[test]
 fn ignore_draws_nothing_and_still_records_the_warning() {
-    let scene = row(ImageSource::Url(DEAD.to_owned()), OnImageError::Ignore);
+    let scene = row(ImageSource::url(DEAD), OnImageError::Ignore);
     let rendered = Renderer::new()
         .render(&scene)
         .unwrap_or_else(|error| unreachable!("{error}"));
@@ -195,7 +194,7 @@ fn ignore_and_placeholder_differ_only_in_what_is_drawn() {
     let render = |policy| {
         Renderer::new()
             .render_to_buffer(
-                &row(ImageSource::Url(DEAD.to_owned()), policy),
+                &row(ImageSource::url(DEAD), policy),
                 ImageFormat::Png,
                 &EncodeOptions::default(),
             )
@@ -254,7 +253,7 @@ fn alone(size: Option<f32>, radius: f32) -> Vec<u8> {
         .push(
             NodeId::ROOT,
             Node::new(NodeKind::Image {
-                source: ImageSource::Url(DEAD.to_owned()),
+                source: ImageSource::url(DEAD),
                 frame: None,
                 fit: ObjectFit::Fill,
                 position: (Length::ZERO, Length::ZERO),
@@ -351,7 +350,7 @@ fn one_url_asked_for_three_times_is_one_warning_that_says_three() {
             .push(
                 NodeId::ROOT,
                 Node::new(NodeKind::Image {
-                    source: ImageSource::Url(DEAD.to_owned()),
+                    source: ImageSource::url(DEAD),
                     frame: None,
                     fit: ObjectFit::Fill,
                     position: (Length::ZERO, Length::ZERO),
@@ -393,7 +392,7 @@ fn two_dead_urls_are_two_warnings_that_name_themselves() {
             .push(
                 NodeId::ROOT,
                 Node::new(NodeKind::Image {
-                    source: ImageSource::Url(url.to_owned()),
+                    source: ImageSource::url(url),
                     frame: None,
                     fit: ObjectFit::Fill,
                     position: (Length::ZERO, Length::ZERO),

@@ -54,8 +54,8 @@ use meo_canvas_scene::{
     Scene, Size,
     geometry::{Corners, Sides},
     node::{
-        ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
-        PathPaint,
+        HttpOptions, ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind,
+        NodeTag, PathPaint,
     },
     style::{
         Dimension, Length, PaintOrder,
@@ -426,11 +426,40 @@ json_tagged!(Spacing {
     // here before it could be a case at all.
     _ => "unknown";
 });
-json_tagged!(ImageSource {
-    Self::Path(v) => "path", v;
-    Self::Url(v) => "url", v;
-    Self::Bytes(v) => "bytes", v;
-});
+// Hand-written rather than `json_tagged!`, which describes a variant by its one
+// payload. The `Url` arm carries two, and the two url cases below differ only
+// in the second: described by their URL alone they would read as the same case
+// while their bytes differ, which is the artefact lying about what it pins.
+impl ToJson for ImageSource {
+    fn to_json(&self) -> String {
+        match self {
+            Self::Path(path) => {
+                format!("{{\"tag\":\"path\",\"value\":{}}}", path.to_json())
+            }
+            // `canonical()` rather than the list as authored: this artefact
+            // names what the bytes beside it hold, and the encoding
+            // lower-cases, combines and sorts. Describing the authored form
+            // would leave a reader hunting an `X-Zeta` the bytes do not
+            // contain -- the same defect as two cases describing identically
+            // while their bytes differ, one level along.
+            //
+            // **The key is written even when the list is empty**, and the
+            // conditional form is the tidier-looking one to reach for. Omit it
+            // and a reader that silently drops headers looks correct on every
+            // url case carrying none, which is the last place anyone would
+            // look; always present, that reader is red on all of them. The
+            // same shape as consuming a field without reporting it.
+            Self::Url { url, http } => format!(
+                "{{\"tag\":\"url\",\"value\":{},\"headers\":{}}}",
+                url.to_json(),
+                http.canonical().to_json()
+            ),
+            Self::Bytes(bytes) => {
+                format!("{{\"tag\":\"bytes\",\"value\":{}}}", bytes.to_json())
+            }
+        }
+    }
+}
 json_struct!(ParagraphStyle {
     max_lines,
     ellipsis
@@ -635,7 +664,41 @@ fn kind_cases() -> Vec<KindCase> {
         KindCase::built(
             format!("{KIND_PREFIX}image_url"),
             NodeTag::Image,
-            image(ImageSource::Url(String::from("https://probe.invalid/a"))),
+            image(ImageSource::url("https://probe.invalid/a")),
+        ),
+        // **Every part of the canonical form is load-bearing in this one
+        // case**, which is what a one-header, already-lower-case case could
+        // not be: drop the sort and `x-zeta` comes first; drop the
+        // lower-casing and `X-Zeta` is a different name that sorts elsewhere;
+        // drop the combining and there are three records instead of two. The
+        // TypeScript side reaches the same two pairs through `new Headers`,
+        // which does all three itself, so this is where the two surfaces are
+        // compared on it rather than on an empty list.
+        //
+        // **It pins the order of the first two steps as well.** The repeat
+        // here is a case-variant one, so it folds only because lower-casing
+        // runs before combining; reorder those two and `X-Zeta` and `x-zeta`
+        // are distinct names at combine time, nothing combines, and this goes
+        // red. That is also why there is no fourth header spelling an *exact*
+        // repeat: after the fold a case-variant repeat is one, reaching the
+        // identical combine path, so there is no second branch to cover.
+        //
+        // The TypeScript twin must be authored as an array of pairs. That is
+        // insurance rather than a requirement of this case -- an object
+        // expresses case-variants perfectly well -- but an object cannot hold
+        // the *same* name twice, so an edit to `('x-zeta','1'),
+        // ('x-zeta','2')` would silently stop testing the combining with
+        // nothing turning red.
+        KindCase::built(
+            format!("{KIND_PREFIX}image_url_headers"),
+            NodeTag::Image,
+            image(ImageSource::url_with(
+                "https://probe.invalid/a",
+                HttpOptions::new()
+                    .header("X-Zeta", "1")
+                    .header("authorization", "Bearer probe")
+                    .header("x-zeta", "2"),
+            )),
         ),
         KindCase::built(
             format!("{KIND_PREFIX}image_bytes"),
@@ -1145,7 +1208,7 @@ mod tests {
             "no case carries a path source"
         );
         assert!(
-            sources.iter().any(|s| matches!(s, ImageSource::Url(_))),
+            sources.iter().any(|s| matches!(s, ImageSource::Url { .. })),
             "no case carries a url source"
         );
         assert!(

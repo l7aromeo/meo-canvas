@@ -139,6 +139,22 @@ export async function example_README_md_4(): Promise<void> {
   canvas.release()
 }
 
+/** `README.md`. */
+export async function example_README_md_5(): Promise<void> {
+  const scoped = process.env['IMAGE_TOKEN'] ?? ''
+
+  const canvas = await Root({
+    width: 600,
+    httpOptions: { headers: { authorization: `Bearer ${scoped}`, accept: 'image/png' } },
+    children: [
+      // Sends the scene's `authorization`, and its own `accept`.
+      Image({ src: { url: 'https://cdn.example.invalid/photo.png', httpOptions: { headers: { accept: 'image/webp' } } } }),
+      // A different origin, a different key, and the scene's `accept` still.
+      Image({ src: { url: 'https://other.example.invalid/logo.png', httpOptions: { headers: { authorization: 'Bearer other' } } } }),
+    ],
+  })
+}
+
 /** `../../README.md`. */
 export async function example_______README_md(): Promise<void> {
 

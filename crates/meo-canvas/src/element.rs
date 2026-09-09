@@ -28,7 +28,10 @@
 use meo_canvas_core::diagnostic::Diagnostic;
 use meo_canvas_scene::{
     Length, Scene, SceneError, Size,
-    node::{ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, PathPaint},
+    node::{
+        HttpOptions, ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind,
+        PathPaint,
+    },
     style::{
         effect::FillRule,
         paint::{Color, ObjectFit},
@@ -725,15 +728,37 @@ impl Image {
         Self::source(ImageSource::Bytes(bytes.into()))
     }
 
-    /// An image from a URL.
+    /// An image from a URL, fetched with no options.
     ///
-    /// The renderer does not fetch. A scene carrying one of these reaches
-    /// `meo-canvas-core` as an error; the surface that accepted the URL is the
-    /// one that resolves it, which for the command-line renderer is its `net`
-    /// feature.
+    /// Whether it is fetched at all is a build-time decision: without the
+    /// `net` feature this crate forwards, a scene carrying one of these
+    /// reaches `meo-canvas-core` as
+    /// [`Error::UnresolvedSource`](crate::Error::UnresolvedSource), and no HTTP
+    /// stack is linked. [`Image::url_with`] is the same source carrying
+    /// headers.
     #[must_use]
     pub fn url(url: impl Into<String>) -> Element {
-        Self::source(ImageSource::Url(url.into()))
+        Self::source(ImageSource::url(url))
+    }
+
+    /// An image from a URL, with headers on the request that fetches it.
+    ///
+    /// The options belong to the source rather than to this node, so the same
+    /// spelling reaches a background image and a mask through
+    /// [`ImageSource::url_with`]. A node-level field would have given those
+    /// two no way to say it.
+    ///
+    /// ```
+    /// use meo_canvas::{Image, scene::HttpOptions};
+    ///
+    /// let logo = Image::url_with(
+    ///     "https://example.invalid/private.png",
+    ///     HttpOptions::new().header("authorization", "Bearer t"),
+    /// );
+    /// ```
+    #[must_use]
+    pub fn url_with(url: impl Into<String>, http: HttpOptions) -> Element {
+        Self::source(ImageSource::url_with(url, http))
     }
 
     /// An image from a source already in hand.
@@ -1431,7 +1456,7 @@ mod tests {
             (Image::path("a.png"), ImageSource::Path("a.png".to_owned())),
             (
                 Image::url("https://example.invalid/a.png"),
-                ImageSource::Url("https://example.invalid/a.png".to_owned()),
+                ImageSource::url("https://example.invalid/a.png"),
             ),
             (Image::bytes(vec![1, 2]), ImageSource::Bytes(vec![1, 2])),
         ];

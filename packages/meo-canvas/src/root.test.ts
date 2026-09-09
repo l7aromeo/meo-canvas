@@ -624,3 +624,253 @@ describe('an image source that cannot be resolved', () => {
     ).rejects.toThrow(/49151/)
   })
 })
+
+describe('per-source http options', () => {
+  const withFetch = (handler: typeof fetch) => {
+    const real = globalThis.fetch
+    globalThis.fetch = handler
+    return () => {
+      globalThis.fetch = real
+    }
+  }
+
+  /** The PNG magic, enough for the decoder to be given something. */
+  const png = () => Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])
+
+  it('merges the source over the scene rather than replacing it', async () => {
+    const sent: Headers[] = []
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers))
+      return new Response(png(), { status: 200 })
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(
+        {
+          width: 10,
+          height: 10,
+          httpOptions: { headers: { authorization: 'Bearer scene', accept: 'image/png' } },
+          children: Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { headers: { accept: 'image/webp' } } } }),
+        },
+        dependencies,
+      )
+
+      expect(sent).toHaveLength(1)
+      const [only] = sent
+      // The source wins the header it set; the scene keeps the one it did not.
+      expect(only?.get('accept')).toBe('image/webp')
+      expect(only?.get('authorization')).toBe('Bearer scene')
+    } finally {
+      restore()
+    }
+  })
+
+  // **The test the dedupe key exists for.** Two nodes at one address that would
+  // send different credentials are two fetches. Keyed by URL alone this is one
+  // fetch, and which `Authorization` it carries depends on which node the
+  // encoder reached first — an order no caller can see and nothing documents.
+  it('fetches twice for one url when the two sources send different headers', async () => {
+    const seen: string[] = []
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('authorization') ?? '<none>')
+      return new Response(png(), { status: 200 })
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(
+        {
+          width: 10,
+          height: 10,
+          children: [
+            Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { headers: { authorization: 'Bearer one' } } } }),
+            Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { headers: { authorization: 'Bearer two' } } } }),
+          ],
+        },
+        dependencies,
+      )
+
+      expect(seen.sort()).toEqual(['Bearer one', 'Bearer two'])
+    } finally {
+      restore()
+    }
+  })
+
+  // The control for the row above: the saving is still taken when the two
+  // requests really are the same request, so the key is not merely the URL plus
+  // something unique per node.
+  it('still asks once for one url when the two sources send the same headers', async () => {
+    let calls = 0
+    const restore = withFetch(async () => {
+      calls += 1
+      return new Response(png(), { status: 200 })
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      const src = { url: 'https://example.invalid/a.png', httpOptions: { headers: { authorization: 'Bearer one' } } }
+      await Root({ width: 10, height: 10, children: [Image({ src }), Image({ src: { ...src } })] }, dependencies)
+
+      expect(calls).toBe(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('gives each node the bytes its own request returned', async () => {
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const who = new Headers(init?.headers).get('authorization') === 'Bearer one' ? 1 : 2
+      return new Response(Uint8Array.from([137, 80, 78, 71, 13, 10, 26, who]), { status: 200 })
+    })
+
+    try {
+      const { dependencies, painted } = fakeRenderer()
+      await Root(
+        {
+          width: 10,
+          height: 10,
+          children: [
+            Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { headers: { authorization: 'Bearer one' } } } }),
+            Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { headers: { authorization: 'Bearer two' } } } }),
+          ],
+        },
+        dependencies,
+      )
+
+      const only = painted[0]
+      if (only === undefined) throw new Error('Root painted nothing')
+      const buffers = only.values.filter((value): value is Uint8Array => typeof value !== 'string')
+      // Both bodies arrived, and each went somewhere: one fetch reused for both
+      // nodes would put a single buffer here twice over.
+      expect(buffers.map(buffer => buffer[7]).sort()).toEqual([1, 2])
+    } finally {
+      restore()
+    }
+  })
+
+  it('sends a source that names no options exactly what the scene names', async () => {
+    const sent: Headers[] = []
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers))
+      return new Response(png(), { status: 200 })
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(
+        {
+          width: 10,
+          height: 10,
+          httpOptions: { headers: { authorization: 'Bearer scene' } },
+          children: Image({ src: { url: 'https://example.invalid/a.png' } }),
+        },
+        dependencies,
+      )
+
+      expect(sent[0]?.get('authorization')).toBe('Bearer scene')
+    } finally {
+      restore()
+    }
+  })
+
+  // A background image is one of the three places a URL can appear, and the
+  // reason the options are on the source rather than on `ImageProps`.
+  it('applies to a background image, not only to an image node', async () => {
+    const sent: Headers[] = []
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers))
+      return new Response(png(), { status: 200 })
+    })
+
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(
+        {
+          width: 10,
+          height: 10,
+          children: Box({
+            backgroundImage: { src: { url: 'https://example.invalid/bg.png', httpOptions: { headers: { authorization: 'Bearer bg' } } } },
+          }),
+        },
+        dependencies,
+      )
+
+      expect(sent[0]?.get('authorization')).toBe('Bearer bg')
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('a signal is composed rather than overridden', () => {
+  const withFetch = (handler: typeof fetch) => {
+    const real = globalThis.fetch
+    globalThis.fetch = handler
+    return () => {
+      globalThis.fetch = real
+    }
+  }
+
+  const png = () => Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])
+
+  /** The signal each fetch was actually given. */
+  async function signalsFor(props: RootProps): Promise<(AbortSignal | null | undefined)[]> {
+    const seen: (AbortSignal | null | undefined)[] = []
+    const restore = withFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(init?.signal)
+      return new Response(png(), { status: 200 })
+    })
+    try {
+      const { dependencies } = fakeRenderer()
+      await Root(props, dependencies)
+      return seen
+    } finally {
+      restore()
+    }
+  }
+
+  // **A signal is a channel, not a value.** Every other member of `RequestInit`
+  // is something the source states, and the source stating it again is an
+  // override. A signal is the caller's kill switch, and letting a source
+  // replace it puts a hole in that switch exactly where someone was specific —
+  // which contradicts what this module already defends: a caller who aborted
+  // asked for the render to stop, and is not a missing image.
+  it('still aborts a source that brought its own when the root aborts', async () => {
+    const seen = await signalsFor({
+      width: 10,
+      height: 10,
+      httpOptions: { signal: AbortSignal.abort() },
+      children: Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { signal: new AbortController().signal } } }),
+    })
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.aborted).toBe(true)
+  })
+
+  // The other direction, so the row above is not passing because everything is
+  // aborted: a source's own signal still tightens, which is all it could ever
+  // do once the two are composed.
+  it('aborts when the source signal fires and the root has none', async () => {
+    const seen = await signalsFor({
+      width: 10,
+      height: 10,
+      children: Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { signal: AbortSignal.abort() } } }),
+    })
+
+    expect(seen[0]?.aborted).toBe(true)
+  })
+
+  // And the clean baseline: neither side aborting leaves the fetch running, so
+  // the two rows above are reading a difference rather than a constant.
+  it('leaves the fetch alone when neither side aborts', async () => {
+    const seen = await signalsFor({
+      width: 10,
+      height: 10,
+      httpOptions: { signal: new AbortController().signal },
+      children: Image({ src: { url: 'https://example.invalid/a.png', httpOptions: { signal: new AbortController().signal } } }),
+    })
+
+    expect(seen[0]?.aborted).toBe(false)
+  })
+})

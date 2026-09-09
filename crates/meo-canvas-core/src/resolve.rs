@@ -86,7 +86,7 @@ use base64::{
 };
 use meo_canvas_scene::{
     OnImageError, Scene, Size,
-    node::{ImageSource, NodeId, NodeKind},
+    node::{HttpOptions, ImageSource, NodeId, NodeKind},
     style::{
         PaintOrder,
         effect::Mask,
@@ -757,7 +757,7 @@ impl<'scene> Resolved<'scene> {
 pub const fn is_local(source: &ImageSource) -> bool {
     match source {
         ImageSource::Path(_) | ImageSource::Bytes(_) => true,
-        ImageSource::Url(_) => false,
+        ImageSource::Url { .. } => false,
     }
 }
 
@@ -832,11 +832,14 @@ fn decode_sources<'scene>(
     // stay parallel; an SVG comes back as bytes and is parsed on this thread,
     // because a parsed document is neither `Send` nor `Sync` and cannot be
     // carried out of a worker at all.
-    let decoded: Vec<Result<DecodedImage, Error>> = in_parallel(&wanted)
-        .into_iter()
-        .zip(wanted.iter())
-        .map(|(fetched, (_, node))| fetched.and_then(|it| parsed(it, *node)))
-        .collect();
+    let decoded: Vec<Result<DecodedImage, Error>> =
+        in_parallel(&wanted, &scene.http)
+            .into_iter()
+            .zip(wanted.iter())
+            .map(|(fetched, (_, node))| {
+                fetched.and_then(|it| parsed(it, *node))
+            })
+            .collect();
     let mut once = HashMap::with_capacity(decoded.len());
     // **`Vec::new` does not allocate.** A render where every source resolves
     // never pushes, so this costs three words of stack and no heap at all --
@@ -893,7 +896,7 @@ fn soft(
     if scene.on_image_error == OnImageError::Throw {
         return Err(error);
     }
-    let ImageSource::Url(url) = source else {
+    let ImageSource::Url { url, .. } = source else {
         return Err(error);
     };
     // **A `data:` URI in a `Url` wrapper is still the caller's own bytes.**
@@ -989,6 +992,7 @@ fn soft(
 /// independent and were serial; the measurement is owed and is not here.
 fn in_parallel(
     wanted: &[(&ImageSource, NodeId)],
+    scene_http: &HttpOptions,
 ) -> Vec<Result<Fetched, Error>> {
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
@@ -996,7 +1000,7 @@ fn in_parallel(
     if threads <= 1 || wanted.len() <= 1 {
         return wanted
             .iter()
-            .map(|(source, id)| decode(*id, source))
+            .map(|(source, id)| decode(*id, source, scene_http))
             .collect();
     }
 
@@ -1008,7 +1012,7 @@ fn in_parallel(
                 scope.spawn(move || {
                     chunk
                         .iter()
-                        .map(|(source, id)| decode(*id, source))
+                        .map(|(source, id)| decode(*id, source, scene_http))
                         .collect::<Vec<_>>()
                 })
             })
@@ -1112,19 +1116,33 @@ fn taken(
 /// seconds of that, or three at 1080p, and animated WebP and AVIF are five to
 /// twenty times denser so anything that fits GIF fits them.
 ///
-/// # Fixed, not configurable
+/// # The size and the timeouts are fixed; the headers are the caller's
 ///
-/// A caller wanting a policy has the same escape the TypeScript surface has:
-/// fetch the bytes themselves and pass `ImageSource::Bytes`. Making these
-/// configurable would start this crate down the road of being an HTTP client --
-/// then redirects, proxies, headers, TLS -- and, more directly, **a
-/// configurable timeout can be set to infinity, which is this defect with a
-/// supported spelling.**
+/// **The bound is on what a request may cost, not on what it may say.** A
+/// caller wanting a different size or a different deadline has the escape the
+/// TypeScript surface has -- fetch the bytes and pass `ImageSource::Bytes` --
+/// because **a configurable timeout can be set to infinity, which is this
+/// defect with a supported spelling**, and the same is true of a size limit.
+/// A header cannot make a fetch unbounded, and without one a caller cannot
+/// reach an asset behind any authentication at all, so
+/// [`HttpOptions`](meo_canvas_scene::node::HttpOptions) carries them per
+/// source.
 ///
 /// What is still `ureq`'s: ten redirects then an error, and a 64 KiB cap on
 /// response headers.
+///
+/// # A header this request cannot carry
+///
+/// A name or a value outside the grammar -- a newline in a value is the one
+/// that matters, being request splitting -- is refused by `http`'s
+/// `HeaderName`/`HeaderValue` conversions and arrives here as an error from
+/// `call`, classified [`FetchFailure::Other`]. **Not validated again here:**
+/// the grammar has an implementation in the tree already and a second one
+/// would differ from it on the inputs nobody enumerated.
+/// `a_header_a_request_cannot_carry_is_refused_before_it_is_sent` in
+/// `fetch_policy.rs` pins that nothing reaches the socket.
 #[cfg(feature = "net")]
-fn fetch(url: &str) -> Result<Vec<u8>, Error> {
+fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
     use std::io::Read as _;
 
     let refuse = |error: ureq::Error| Error::SourceFetch {
@@ -1139,7 +1157,11 @@ fn fetch(url: &str) -> Result<Vec<u8>, Error> {
         .build()
         .into();
 
-    let mut response = agent.get(url).call().map_err(refuse)?;
+    let mut request = agent.get(url);
+    for (name, value) in &http.headers {
+        request = request.header(name, value);
+    }
+    let mut response = request.call().map_err(refuse)?;
 
     // **The size policy is enforced here rather than by the client**, and that
     // is not tidiness. `ureq`'s own `limit` reports `BodyExceedsLimit` when no
@@ -1397,7 +1419,15 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
             && text.contains("<svg")
 }
 
-fn decode(node: NodeId, source: &ImageSource) -> Result<Fetched, Error> {
+fn decode(
+    node: NodeId,
+    source: &ImageSource,
+    scene_http: &HttpOptions,
+) -> Result<Fetched, Error> {
+    // Read only by the fetch arm below, which this build does not compile.
+    #[cfg(not(feature = "net"))]
+    let _ = scene_http;
+
     // The `Path` arm owns what it read and the `Bytes` arm borrows what the
     // caller already holds, so only the one that has to allocate does. Making
     // both arms `Vec<u8>` reads more evenly and copies the whole file: a 5 MB
@@ -1410,7 +1440,7 @@ fn decode(node: NodeId, source: &ImageSource) -> Result<Fetched, Error> {
         // URI names no file and no host. It reached `std::fs::read` until
         // this arm existed, and failed as a missing file quoting a string that
         // was never a filename.
-        ImageSource::Path(source) | ImageSource::Url(source)
+        ImageSource::Path(source) | ImageSource::Url { url: source, .. }
             if is_data_uri(source) =>
         {
             read = data_uri_bytes(source)?;
@@ -1428,12 +1458,18 @@ fn decode(node: NodeId, source: &ImageSource) -> Result<Fetched, Error> {
         // always been, so a build that did not ask for an HTTP stack behaves
         // exactly as it did before the feature existed.
         #[cfg(feature = "net")]
-        ImageSource::Url(url) => {
-            read = fetch(url)?;
+        ImageSource::Url { url, http } => {
+            // The source's own options over the scene's, one header name at a
+            // time -- so a source naming one header keeps the scene's
+            // credentials rather than replacing them. The same rule the npm
+            // surface applies, so the two answer a shared question alike.
+            read = fetch(url, &http.over(scene_http))?;
             &read
         }
         #[cfg(not(feature = "net"))]
-        ImageSource::Url(_) => return Err(Error::UnresolvedSource(node)),
+        ImageSource::Url { .. } => {
+            return Err(Error::UnresolvedSource(node));
+        }
     };
 
     if let Ok(image) = meo_skia_canvas::Image::from_encoded(bytes) {
@@ -1476,10 +1512,7 @@ mod softening {
     fn url_scene() -> (Scene, ImageSource) {
         let mut scene = Scene::new(Size::new(8.0, 8.0));
         scene.on_image_error = OnImageError::Placeholder;
-        (
-            scene,
-            ImageSource::Url("http://example.invalid/x.png".to_owned()),
-        )
+        (scene, ImageSource::url("http://example.invalid/x.png"))
     }
 
     /// The allowlist, asserted from both sides.
@@ -1553,7 +1586,7 @@ mod softening {
         );
 
         // And only for the URL that was actually tried.
-        let other = ImageSource::Url("http://example.invalid/y.png".to_owned());
+        let other = ImageSource::url("http://example.invalid/y.png");
         assert!(matches!(
             soft(&tried, node, &other, Error::UnresolvedSource(node), 1),
             Err(Error::UnresolvedSource(_))
@@ -1825,14 +1858,11 @@ pub(crate) mod tests {
     fn a_url_is_refused_because_the_core_does_not_fetch() {
         assert!(is_local(&ImageSource::Path("a".to_owned())));
         assert!(is_local(&ImageSource::Bytes(Vec::new())));
-        assert!(!is_local(&ImageSource::Url("https://a.test".to_owned())));
+        assert!(!is_local(&ImageSource::url("https://a.test")));
 
         let mut scene = Scene::new(Size::ZERO);
         let node = scene
-            .push(
-                NodeId::ROOT,
-                image_node(ImageSource::Url(UNREACHABLE.to_owned())),
-            )
+            .push(NodeId::ROOT, image_node(ImageSource::url(UNREACHABLE)))
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_url_is_refused(&scene, Some(node));
     }
@@ -1903,9 +1933,9 @@ pub(crate) mod tests {
         // between them is spelling rather than meaning.
         for (name, source) in [
             ("base64 path", ImageSource::Path(red_png_data_uri(true))),
-            ("base64 url", ImageSource::Url(red_png_data_uri(true))),
+            ("base64 url", ImageSource::url(red_png_data_uri(true))),
             ("percent path", ImageSource::Path(red_png_data_uri(false))),
-            ("percent url", ImageSource::Url(red_png_data_uri(false))),
+            ("percent url", ImageSource::url(red_png_data_uri(false))),
         ] {
             assert_eq!(
                 decoded_size(source).ok(),
@@ -2125,8 +2155,8 @@ pub(crate) mod tests {
         // it stays an error under both policies -- otherwise the identical
         // payload would soften as `{ url }` and throw as a bare string.
         for source in [
-            ImageSource::Url("data:image/png;base64,!!!".to_owned()),
-            ImageSource::Url("data:text/plain;base64,aGVsbG8=".to_owned()),
+            ImageSource::url("data:image/png;base64,!!!"),
+            ImageSource::url("data:text/plain;base64,aGVsbG8="),
         ] {
             let mut scene = Scene::new(Size::ZERO);
             scene.on_image_error = OnImageError::Placeholder;
@@ -2172,7 +2202,7 @@ pub(crate) mod tests {
         let mut scene = Scene::new(Size::ZERO);
         scene.nodes[0].paint.background_image =
             Some(meo_canvas_scene::style::paint::BackgroundImage {
-                source: ImageSource::Url(UNREACHABLE.to_owned()),
+                source: ImageSource::url(UNREACHABLE),
                 repeat:
                     meo_canvas_scene::style::paint::BackgroundRepeat::Repeat,
                 size: meo_canvas_scene::style::paint::BackgroundSize::AUTO,

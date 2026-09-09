@@ -86,7 +86,7 @@ export interface Arena {
   /** The strings and buffers the slots index into. */
   readonly values: readonly SideValue[]
   /**
-   * Every URL source the scene named.
+   * Every URL source the scene named, with the options it resolved to.
    *
    * Carried out rather than refused in the writer: the arm belongs to the wire
    * and a Rust caller that resolves its own sources may write one. What this
@@ -95,7 +95,91 @@ export interface Arena {
    * refuses before rendering, at the surface where the promise was made rather
    * than at the far end where it could only fail.
    */
-  readonly urls: readonly string[]
+  readonly requests: readonly ImageRequest[]
+}
+
+/** One URL the scene named, and what a fetch of it would send. */
+export interface ImageRequest {
+  /** The address as the caller wrote it. */
+  readonly url: string
+  /**
+   * What identifies this fetch, and what {@link Arena} bytes are keyed by.
+   *
+   * **The URL alone is not enough once options are per-source.** Two nodes at
+   * one address with different `Authorization` are two fetches, and keying by
+   * URL collapses them into one whose headers depend on which node the encoder
+   * reached first. The key is the URL together with its resolved headers, so
+   * two sources share a fetch exactly when the request they would send is the
+   * same request.
+   */
+  readonly key: string
+  /** The scene-wide options with this source's merged over them. */
+  readonly init: RequestInit | undefined
+}
+
+/**
+ * `over` merged onto `base`, per key, with `headers` merged per header name.
+ *
+ * **Merge and not replace**, on the precedent this package already set: `Row`
+ * is `{ flexDirection, ...props }`, and `with_style` was changed from replace to
+ * merge because replacing discarded what the constructor had put there. A
+ * source that sets one header would otherwise silently drop the scene's
+ * credentials.
+ *
+ * **Every `HeadersInit` spelling, by asking the platform.** `Headers`, a plain
+ * object and an array of pairs are all legal, and merging only the object
+ * spelling would pass a test written in that spelling and drop the other two.
+ * `new Headers(init)` is the resolver that already exists, and it lower-cases
+ * names on the way in, which is what makes `Authorization` and `authorization`
+ * one header rather than two.
+ *
+ * **A key absent stays absent.** `exactOptionalPropertyTypes` is on, so
+ * `{ headers: undefined }` and `{}` are different types here, and an undefined
+ * value copied across would turn one into the other.
+ */
+export function mergeHttpOptions(base: RequestInit | undefined, over: RequestInit | undefined): RequestInit | undefined {
+  if (base === undefined) return over
+  if (over === undefined) return base
+
+  const merged: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(base)) if (value !== undefined) merged[key] = value
+  for (const [key, value] of Object.entries(over)) if (value !== undefined) merged[key] = value
+
+  if (base.headers !== undefined || over.headers !== undefined) {
+    const headers = new Headers(base.headers)
+    for (const [name, value] of new Headers(over.headers)) headers.set(name, value)
+    merged['headers'] = headers
+  }
+
+  // **`signal` is composed, not overridden, and it is the one member where
+  // that is true.** Every other key is a value the source is stating, and a
+  // source stating it again is an override. A signal is a channel the caller
+  // holds: letting a source replace the scene's would put a hole in the
+  // caller's kill switch exactly where someone had been specific, and a caller
+  // who aborts is not asking for a placeholder — `Root` already defends that
+  // in prose and would then stop defending it for any source with a signal of
+  // its own. Composed, first to fire wins, so a per-source signal can only
+  // tighten — which is the argument the sixty-second ceiling already rests on.
+  const signals = [base.signal, over.signal].filter((signal): signal is AbortSignal => signal !== undefined && signal !== null)
+  if (signals.length === 1) merged['signal'] = signals[0]
+  else if (signals.length > 1) merged['signal'] = AbortSignal.any(signals)
+  return merged
+}
+
+/**
+ * What identifies a fetch: the address, and the headers it would carry.
+ *
+ * Sorted, because two callers writing the same two headers in either order are
+ * making the same request and a key that said otherwise would fetch twice. As
+ * in the writer, `Headers` has already sorted them and the explicit `sort` is
+ * the contract written down rather than the thing enforcing it.
+ * Nothing else in `RequestInit` is part of it — a `signal` is per-render rather
+ * than per-request, and an agent or `credentials` does not change which bytes
+ * come back.
+ */
+export function requestKey(url: string, init: RequestInit | undefined): string {
+  const headers = [...new Headers(init?.headers)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return headers.length === 0 ? url : `${url}\n${headers.map(([name, value]) => `${name}: ${value}`).join('\n')}`
 }
 
 /**
@@ -140,8 +224,11 @@ export class ArenaWriter {
   readonly #strings = new Map<string, number>()
 
   /** The scene, ready to hand across. */
-  /** Every URL source written so far. */
-  readonly urls: string[] = []
+  /** Every URL source written so far, with the options it resolved to. */
+  readonly requests: ImageRequest[] = []
+
+  /** The scene-wide options a per-source `httpOptions` merges over. */
+  httpOptions: RequestInit | undefined = undefined
 
   /**
    * Bytes already obtained for a URL source, keyed by the URL.
@@ -154,7 +241,7 @@ export class ArenaWriter {
   fetched: ReadonlyMap<string, Uint8Array> | undefined = undefined
 
   finish(): Arena {
-    return { slots: Float64Array.from(this.#slots), values: this.#values, urls: this.urls }
+    return { slots: Float64Array.from(this.#slots), values: this.#values, requests: this.requests }
   }
 
   /** Writes one slot exactly as given. */
@@ -985,11 +1072,21 @@ function writeSource(out: ArenaWriter, src: string | ImageSource): void {
     return
   }
   if ('url' in source) {
+    // **Resolved here and nowhere else.** Both encode passes and the fetch pass
+    // between them have to agree about what a source's options are and about
+    // which sources share a fetch; computing that in one place is what makes
+    // agreement structural rather than a thing to keep in step.
+    const init = mergeHttpOptions(out.httpOptions, source.httpOptions)
+    const key = requestKey(source.url, init)
+
     // **Bytes cross the wire, never a URL.** Where this render has already
     // fetched the URL, the source is written as though the caller had passed
     // the bytes — so nothing downstream has to know a network was involved and
     // `meo-canvas-core` needs no `net` feature to draw it.
-    const bytes = out.fetched?.get(source.url)
+    //
+    // Keyed by the request rather than the address: two sources at one URL with
+    // different headers fetched separately, and each takes its own bytes back.
+    const bytes = out.fetched?.get(key)
     if (bytes !== undefined) {
       out.enum(2)
       out.bytes(bytes)
@@ -1000,9 +1097,36 @@ function writeSource(out: ArenaWriter, src: string | ImageSource): void {
     // Rust caller with a resolver of its own can use it. The count is what
     // `Root` reads to decide whether a fetch pass is needed at all, so a scene
     // naming no URL pays nothing for this.
-    out.urls.push(source.url)
+    //
+    // The headers travel with it, because a resolver on the far side has the
+    // same problem this one does: an address without the credentials that make
+    // it answer is not enough to fetch. Nothing else in `RequestInit` crosses —
+    // a `signal` or an agent is honoured by the fetch on this side, and the
+    // sources that reach the far side are the ones this surface did not fetch.
+    //
+    // **Sorted by name, and that is the wire contract rather than this
+    // surface's habit** — the Rust writer sorts too, or the same request
+    // encodes differently on the two sides and the disagreement surfaces as a
+    // codec defect far from whoever added a header source.
+    //
+    // **The `sort` below is not what makes it true, which is worth saying
+    // because it looks like it is.** `Headers` iterates in sorted order by
+    // specification, so normalising through it has already done the work:
+    // removing the `sort` changes nothing, measured. It stays because the
+    // contract has two implementations and this is where this one writes it
+    // down. What *would* break the order is a writer that stopped going
+    // through `Headers` and iterated a plain object instead — which is the
+    // mutation `writes them sorted by name` fails against, and the one it is
+    // there to catch.
+    out.requests.push({ url: source.url, key, init })
     out.enum(1)
     out.text(source.url)
+    const headers = [...new Headers(init?.headers)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    out.count(headers.length)
+    for (const [name, value] of headers) {
+      out.text(name)
+      out.text(value)
+    }
     return
   }
   out.enum(2)
@@ -1806,9 +1930,11 @@ export function encodeScene(
   surface: SurfaceOptions = {},
   fetched?: ReadonlyMap<string, Uint8Array>,
   attempts: readonly FetchAttempt[] = [],
+  httpOptions?: RequestInit,
 ): Arena {
   const out = new ArenaWriter()
   out.fetched = fetched
+  out.httpOptions = httpOptions
   writeHeader(out, width, height, contentHeight, scale, surface, pages.length, attempts)
   for (const page of pages) writeNode(out, page)
   return out.finish()

@@ -236,7 +236,7 @@ fn a_url_source_exits_six_and_names_the_feature_that_would_fetch_it() {
         .push(
             page,
             Node::new(NodeKind::Image {
-                source: ImageSource::Url(
+                source: ImageSource::url(
                     "https://example.invalid/a.png".to_owned(),
                 ),
                 fit: ObjectFit::Contain,

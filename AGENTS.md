@@ -52,8 +52,19 @@ first.** A change to one is not done until the other has it. A capability behind
 a feature flag is one the consumer can have, so the rule is about reach rather
 than defaults: `net` puts URL fetching behind a flag on the crate and
 `RootProps.httpOptions` has it always on npm, because the addon ships the client
-already built and a crate consumer compiles it. Identical capability, different
-price, and the flag is what lets whoever pays decide.
+already built and a crate consumer compiles it. Same reach, different price, and
+the flag is what lets whoever pays decide.
+
+**That sentence used to say "identical capability", and it was false for as long
+as it stood.** `RootProps.httpOptions` could send an `Authorization` header and
+the crate had no header, auth or agent surface at any spelling -- `fetch` took a
+URL and nothing else -- so one surface could reach an authenticated asset and the
+other could not. It is a demonstration of what the rule is for rather than an
+exception to it: **the sentence asserting parity is exactly the sentence nobody
+re-checks**, because it reads as a policy and is in fact a claim about the code.
+`HttpOptions` closes it, per source rather than per scene, which is the finer of
+the two -- and a capability the other surface lacks in the other direction is
+the same defect wearing a different sign.
 
 **A change's two sides land in one commit.** Ownership decides who edits a file,
 not what a commit is: splitting a wire change across two commits to respect a

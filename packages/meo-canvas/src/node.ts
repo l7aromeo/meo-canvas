@@ -49,6 +49,29 @@ export type ImageSource =
        * net` for the same reason.
        */
       readonly url: string
+      /**
+       * Merged over the scene-wide `httpOptions` on `Root` for this source alone.
+       *
+       * **Merged rather than replacing**, per key, and `headers` per header
+       * name — so a scene-wide `Authorization` survives a source that only sets
+       * an `Accept`, which is how every other pair of settings in this package
+       * behaves.
+       *
+       * **`signal` is the exception: it composes.** Every other member is a
+       * value this source is stating; a signal is the caller's kill switch, and
+       * one here is composed with the scene's rather than replacing it. So a
+       * signal set here can only make this fetch stop sooner, never let it
+       * outlive an abort at the root.
+       *
+       * **On the source and not on the node**, because a URL can appear in
+       * three places: an image's `src`, a `backgroundImage` and a `mask`. Put
+       * on `ImageProps` this would cover one of them and leave the other two
+       * quietly scene-wide, which is the split that has already produced one
+       * defect here — a URL refusal written against a background image passed
+       * while `Image` went on encoding URLs, because the two paths each held
+       * their own copy of the branch.
+       */
+      readonly httpOptions?: RequestInit
     }
   | {
       /** The encoded image itself, when the caller already holds it. */
