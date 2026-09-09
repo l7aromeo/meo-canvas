@@ -158,10 +158,73 @@ jobs:
       # rather than a per-run one. Stated rather than left to the default: the
       # coverage step depends on it, and a default that changes upstream would
       # turn that into a silent several-minute regression on every run.
+      #
+      # **`save-if` restricts writing to the default branch, so the repository
+      # stops going over GitHub's cache limit as pull requests accumulate.**
+      # Over the limit, eviction takes a leg at random. Measured 2026-09-09,
+      # with PR #59 merged and its caches still held:
+      #
+      #     total                11.73 GiB
+      #       refs/heads/main      8.20 GiB
+      #       refs/pull/59/merge   3.53 GiB   dead -- that pull request is merged
+      #
+      # Figures here are binary: the API reports bytes, and these are those
+      # bytes over 2^20 and 2^30. The total is 12,595,466,915 of them. GitHub
+      # documents the limit as "10 GB" and does not say which unit that is, so
+      # the divisor is stated here rather than the limit's convention guessed --
+      # 11.73 against 10 GiB and 12.60 against 10 GB are both over, and nothing
+      # below turns on which it means.
+      #
+      # One full set is ubuntu 2215 + windows 1398 + macos 1242 MiB = 4855 MiB,
+      # and every pull request saved a second set that dies with the branch and
+      # can never be read again.
+      #
+      # What the eviction costs, per leg, on three consecutive runs. **A
+      # different leg loses each time, which is the shape of the problem -- it
+      # is not a slow platform:**
+      #
+      #     run           leg      restore  install   just native
+      #     34337356783   windows      58s       1s         883s
+      #                   macos        33s       1s         531s
+      #                   ubuntu       34s       0s         519s
+      #     34339254035   ubuntu        1s      90s        2090s
+      #                   windows      47s       2s         834s
+      #                   macos        40s       2s         460s
+      #     34343357328   windows       6s     185s        2784s (cancelled)
+      #                   ubuntu       48s       0s         513s
+      #                   macos        39s       1s         563s
+      #
+      # **A 1s or 6s restore is a restore of nothing**, and `cargo install`
+      # taking 90s or 185s where a warm leg takes 0s is ~/.cargo/bin arriving
+      # empty. The gate itself then runs 4x and 3.3x its warm time.
+      #
+      # Pull requests still *restore* -- a run reads its base branch's caches --
+      # and this action passes a prefix restore-key, so a pull request that
+      # moves Cargo.lock gets a partial hit rather than none. It stops writing a
+      # copy nobody will read.
+      #
+      # **The key contains no workflow text**, so editing this file does not
+      # cost a cold run. `CacheConfig.new()` in `dist/cleanup-BWEbZ6YT.js` builds
+      # it from `$GITHUB_JOB` (the job id, the `ci` you can read in the key), the
+      # runner OS and arch, a hash of each installed `rustc -vV` plus every env
+      # var starting with CARGO, CC, CFLAGS, CXX, CMAKE or RUST, and a hash of
+      # `.cargo/config.toml`, `rust-toolchain*` and the workspace manifests. It
+      # follows that setting `CARGO_HOME` would invalidate every key that reads
+      # it -- by name, not by being a workflow edit.
+      #
+      # **This action already exports `CARGO_INCREMENTAL=0` itself**, before any
+      # cargo command in the job: `dist/restore.js` line 56 at the pin above,
+      # unconditional, with no input to turn it off. Setting it in `env:` here
+      # would change nothing.
+      #
+      # `v10` is still in `on:` above and would also stop saving. That is
+      # intended: it reads the default branch's caches like any other branch,
+      # and it is not where this is developed any more.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.os }}
           cache-bin: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # A Node runtime for prettier, vitest and the tools; the packages
       # themselves are installed by bun below, so there is no npm cache to key.
