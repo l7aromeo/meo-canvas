@@ -18,6 +18,16 @@
 // working set. A total says the budget is tight; a ref that should not be there
 // says which change to make.
 //
+// **Every call it makes is bounded, because a gate step that hangs is worse
+// than one that fails.** This reads the network and shells out to `gh`, and
+// neither had a bound when it was written: on 2026-09-10 two `just ci` runs
+// died at this recipe with `terminated on line 1541 by signal 15` after five
+// lines of output, which is a fifteen-minute hang and then whatever was
+// watching giving up. A check that can stop the gate indefinitely is a worse
+// failure than the eviction it exists to catch, and it is the same fault as an
+// unbounded fetch anywhere else -- which this repository already bounds, at
+// sixty seconds, for image sources.
+//
 // **What this cannot see, stated so nobody reads more into a pass.** It takes
 // one reading at one moment. Eviction happens between runs, so a pass means the
 // budget was fine when it looked -- not that nothing was evicted since the last
@@ -58,12 +68,23 @@ function repository() {
   return match[1]
 }
 
+/** How long any one call here may take before it is abandoned, in milliseconds. */
+const DEADLINE_MS = 20_000
+
 /** A token, from the environment in CI and from `gh` on a developer's machine. */
 function token() {
   const fromEnv = process.env['GITHUB_TOKEN'] ?? process.env['GH_TOKEN']
   if (fromEnv !== undefined && fromEnv !== '') return fromEnv
   try {
-    const fromGh = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    // `timeout` because this is a subprocess in the middle of the gate. Without
+    // it a slow or wedged `gh` stops `just ci` for as long as it likes, and the
+    // symptom is a recipe that prints nothing rather than an error anyone can
+    // read.
+    const fromGh = execFileSync('gh', ['auth', 'token'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: DEADLINE_MS,
+    }).trim()
     return fromGh === '' ? undefined : fromGh
   } catch {
     return undefined
@@ -94,9 +115,27 @@ if (auth === undefined) {
 const repo = repository()
 const entries = []
 for (let page = 1; ; page += 1) {
-  const response = await fetch(`https://api.github.com/repos/${repo}/actions/caches?per_page=100&page=${page}`, {
-    headers: { authorization: `Bearer ${auth}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
-  })
+  let response
+  try {
+    response = await fetch(`https://api.github.com/repos/${repo}/actions/caches?per_page=100&page=${page}`, {
+      headers: { authorization: `Bearer ${auth}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+      signal: AbortSignal.timeout(DEADLINE_MS),
+    })
+  } catch (cause) {
+    // **Unreachable is not the same as fine, and not the same as broken.** In
+    // CI the runner is already talking to this host, so a failure here says the
+    // job's access is wrong and the run is compromised either way. On a machine
+    // it says the network is having a moment, which is not a reason to stop
+    // someone's gate -- the same split the missing-token arm above makes, for
+    // the same reason.
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    if (inCi) {
+      process.stderr.write(`\nCould not reach the cache list for ${repo} within ${DEADLINE_MS / 1000}s: ${detail}\n`)
+      process.exit(1)
+    }
+    process.stdout.write(`cache budget: not checked -- could not reach the API within ${DEADLINE_MS / 1000}s (${detail}).\n`)
+    process.exit(0)
+  }
   if (!response.ok) {
     process.stderr.write(`\nGitHub answered ${response.status} for ${repo}'s cache list. With \`actions: read\` this call succeeds; without it, it does not.\n`)
     process.exit(1)
