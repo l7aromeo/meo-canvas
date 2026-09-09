@@ -38,11 +38,32 @@
 // That is a maintained exclusion list, which is a different check with a
 // different cost, and it is not this one.
 //
-// **And it says nothing about the workflow.** Deleting the `portable` job from
-// `.github/workflows/ci.yml` leaves every assertion here true and stops those
-// recipes running in CI entirely -- and this check is itself in `portable`, so
-// it would be among the ones that stopped.
+// **A fourth assertion, about the workflow rather than the justfile.** The three
+// above stay true if the `portable` job is deleted from
+// `.github/workflows/ci.yml` and the matrix left on `just native`: eleven
+// recipes stop running in CI, this check among them, and nothing goes red. That
+// is a two-line edit a reviewer reads as tidying. So: **both `just portable` and
+// `just native` must be invoked somewhere in that workflow.**
+//
+// `ci.yml` is in the tree and the gate checks the tree, which is the same
+// argument that put a check on prose and a check on a directory's shape in it.
+//
+// **It reads `run:` lines and ignores comments, and that is not fussiness.** The
+// workflow's own prose names `just portable` and `just native` while explaining
+// the split, so a substring search over the file would pass with both `run:`
+// lines deleted -- a check that cannot fail, in the file added to stop one.
+// Measured: deleting the `- run: just portable` line and keeping the paragraph
+// above it fails this, and passed the version that searched the whole text.
+//
+// **What it does not catch, and these are real:** a job that invokes both and
+// then skips itself with an `if:`; a runner changed out from under either half;
+// `on:` narrowed so the workflow stops triggering. All three leave the invocation
+// in place, which is all this looks at. Deleting the workflow outright is caught,
+// but by the read failing rather than by an assertion. **Keeping it to "both are
+// invoked" is deliberate: past that it is a YAML validator, which is a different
+// tool and should be one.**
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -100,17 +121,41 @@ for (const [list, floor] of Object.entries(FLOORS)) {
   if (lists[list].length < floor) problems.push(`\`${list}\` has ${lists[list].length} recipes and the floor is ${floor}`)
 }
 
+// The workflow's `run:` lines, with comments dropped. A YAML parser is not on
+// hand and would be more than this needs: the question is only whether a command
+// is invoked, and the shapes it can take here are `- run: just x` and a `run: |`
+// block with the command on its own line.
+const WORKFLOW = join(ROOT, '.github', 'workflows', 'ci.yml')
+const invocations = readFileSync(WORKFLOW, 'utf8')
+  .split('\n')
+  .filter(line => !line.trimStart().startsWith('#'))
+  .map(line =>
+    line
+      .trim()
+      .replace(/^-\s*/, '')
+      .replace(/^run:\s*/, ''),
+  )
+
+for (const list of ['portable', 'native']) {
+  const invoked = invocations.some(line => new RegExp(`(?:^|[\\s;&|])just\\s+${list}(?:[\\s;&|]|$)`).test(line))
+  if (!invoked) problems.push(`\`.github/workflows/ci.yml\` never runs \`just ${list}\``)
+}
+
 if (problems.length > 0) {
   for (const one of problems) process.stdout.write(`  ${one}\n`)
   process.stderr.write(
     '\n`ci-steps` must run exactly the recipes `portable` and `native` name between them, and neither list may ' +
       'go empty. CI runs the two halves as separate jobs and never runs `ci-steps`, so nothing else notices a ' +
       'recipe leaving: the gate gets faster and stays green. Put the recipe back, or move it between the lists ' +
-      'by the test written beside them -- does it, or anything it depends on, name `cargo`?\n',
+      'by the test written beside them -- does it, or anything it depends on, name `cargo`?\n\n' +
+      'And both halves must be invoked in `.github/workflows/ci.yml`. Deleting a job there leaves every other ' +
+      'assertion above it true while its recipes stop running in CI -- including this check, which is in ' +
+      '`portable`.\n',
   )
   process.exit(1)
 }
 
 process.stdout.write(
-  `ci-steps runs all ${runs.length} recipes the two lists name: ${lists['portable'].length} portable, ${lists['native'].length} native, no overlap.\n`,
+  `ci-steps runs all ${runs.length} recipes the two lists name: ${lists['portable'].length} portable, ${lists['native'].length} native, ` +
+    'no overlap, and the workflow runs both halves.\n',
 )
