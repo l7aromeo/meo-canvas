@@ -586,6 +586,30 @@ pub(crate) const fn probe_fills() -> [ProbeFills; 2] {
 #[cfg(test)]
 pub(crate) const PROBE_TEXT: &str = "#0a141e";
 
+/// Whether [`PROBE_TEXT`] can be an HTTP header name.
+///
+/// **A third constraint on the sample, and the silent one.** The property
+/// table fills every `String` slot with it, and `background_image`'s source is
+/// a URL, so since [`meo_canvas_scene::node::HttpOptions`] arrived the sample
+/// is also that source's header **name**. The other surface builds the same
+/// case through the platform's `Headers`, which throws `TypeError` on a name
+/// outside the token grammar -- so a sample carrying a space, a colon or any
+/// non-ASCII byte makes that case impossible to construct there, and the
+/// agreement test fails as a thrown exception rather than a byte mismatch.
+/// `#` happens to be a token character; a great many plausible replacements
+/// are not.
+///
+/// RFC 9110's `tchar`. Asserted by `the_probe_text_is_a_valid_header_name` so
+/// a replacement fails here, naming the reason, rather than on the other
+/// surface with a diagnosis nobody reaches quickly.
+#[cfg(test)]
+pub(crate) fn is_http_token(text: &str) -> bool {
+    !text.is_empty()
+        && text.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+        })
+}
+
 #[cfg(test)]
 pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
     (
@@ -978,6 +1002,12 @@ pub fn decode(
         color_type,
         color_space,
         on_image_error,
+        // **Empty on purpose, and the arena has no slot for it.** The
+        // JavaScript half merges `RootProps.httpOptions` into each source
+        // before it writes, so what crosses is already resolved; carrying the
+        // scene-wide set as well and merging again here would apply the merge
+        // twice. `Scene::http` is the byte format's and the Rust author's.
+        http: meo_canvas_scene::node::HttpOptions::new(),
         image_fetch_attempts: attempts,
         nodes: Vec::new(),
         pages: Vec::with_capacity(page_count),
@@ -1142,11 +1172,30 @@ mod tests {
     };
 
     use super::{
-        ArenaError, ColorSpace, ColorType, MAGIC, MAX_NODES, SideValue,
-        VERSION, Values, decode, effects,
+        ArenaError, ColorSpace, ColorType, MAGIC, MAX_NODES, PROBE_TEXT,
+        SideValue, VERSION, Values, decode, effects,
         group::{BITS_PER_SLOT, Mask},
-        layout, paint, text,
+        is_http_token, layout, paint, text,
     };
+
+    /// The sample has to be a header name, and nothing else says so.
+    ///
+    /// See [`is_http_token`] for why: `background_image`'s probe source is a
+    /// URL, so the sample fills its header name too, and the other surface
+    /// cannot construct a name outside the token grammar at all.
+    #[test]
+    fn the_probe_text_is_a_valid_header_name() {
+        assert!(
+            is_http_token(PROBE_TEXT),
+            "`{PROBE_TEXT}` cannot be an HTTP header name, so the other \
+             surface cannot build the background-image case"
+        );
+        // Pointed at values it must refuse, so a predicate that returned
+        // `true` for everything would not pass this.
+        for refused in ["", "bad name", "a:b", "s\u{e9}par\u{e9}"] {
+            assert!(!is_http_token(refused), "`{refused}` was accepted");
+        }
+    }
 
     /// Builds an arena the way the TypeScript writer is specified to.
     ///
@@ -2159,21 +2208,39 @@ mod tests {
     /// The three image sources, split out for the line cap.
     #[test]
     fn every_image_source_reads_the_slots_the_specification_says() {
-        use meo_canvas_scene::node::ImageSource;
+        use meo_canvas_scene::node::{HttpOptions, ImageSource};
 
         let side = Values::new(vec![
             SideValue::Text("a string".to_owned()),
             SideValue::Bytes(vec![7, 8]),
+            SideValue::Text("authorization".to_owned()),
+            SideValue::Text("Bearer t".to_owned()),
         ]);
 
         assert_eq!(
             read_one::<ImageSource>(&[0.0, 0.0], &side),
             Ok(ImageSource::Path("a string".to_owned()))
         );
+        // A URL is three slots, not two: the tag, the URL's index, and the
+        // header count that follows it. Absent options are a count of zero
+        // rather than an absent slot, so every `Url` reads the same shape.
         assert_eq!(
-            read_one::<ImageSource>(&[1.0, 0.0], &side),
-            Ok(ImageSource::Url("a string".to_owned()))
+            read_one::<ImageSource>(&[1.0, 0.0, 0.0], &side),
+            Ok(ImageSource::url("a string"))
         );
+        assert_eq!(
+            read_one::<ImageSource>(&[1.0, 0.0, 1.0, 2.0, 3.0], &side),
+            Ok(ImageSource::url_with(
+                "a string",
+                HttpOptions::new().header("authorization", "Bearer t")
+            ))
+        );
+        // A count with no pairs behind it runs out rather than reading past
+        // the arena, which is the shape every count here has to have.
+        assert!(matches!(
+            read_one::<ImageSource>(&[1.0, 0.0, 1.0], &side),
+            Err(ArenaError::OutOfRange { .. })
+        ));
         assert_eq!(
             read_one::<ImageSource>(&[2.0, 1.0], &side),
             Ok(ImageSource::Bytes(vec![7, 8]))

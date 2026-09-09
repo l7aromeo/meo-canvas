@@ -13,7 +13,7 @@
  */
 
 import { resolveAddon } from './addon.js'
-import { encodeScene, type FetchAttempt, type SideValue, type SurfaceOptions } from './arena.js'
+import { encodeScene, type FetchAttempt, type ImageRequest, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
 import { Box, containerPropsOf, type Children, type SceneNode } from './node.js'
 import type { ColorSpace, ColorType, OnImageError } from './index.js'
@@ -298,12 +298,17 @@ export type RootProps = Style & {
    * `RequestInit` as the platform defines it, so headers, credentials, an
    * `AbortSignal` and a proxy agent all work the way they do everywhere else in
    * this runtime rather than through a second set of options this package
-   * invented. One object for the whole render: a per-source variant would be a
-   * larger promise than v1 made and nothing has asked for it.
+   * invented.
    *
-   * Only the URLs are fetched — **bytes cross the wire to the renderer, never a
-   * URL** — so a `credentials` or `Authorization` set here reaches the origin
-   * and nothing else.
+   * **The floor rather than the whole story.** A source may carry its own
+   * `httpOptions`, which merge over these per key and per header name — see the
+   * url arm of {@link ImageSource}. Set the credentials that apply to the scene
+   * here and the ones that apply to one origin there; a source that names only
+   * an `Accept` still sends this object's `Authorization`.
+   *
+   * Only the URLs are fetched — **bytes cross the wire to the renderer** for
+   * every image this surface resolved — so a `credentials` or `Authorization`
+   * set here reaches the origin and nothing else.
    */
   readonly httpOptions?: RequestInit
   /**
@@ -551,7 +556,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   // this tall" means and the renderer reads it as the page's minimum.
   const contentHeight = props.height === undefined
   const height = props.height ?? (typeof props.minHeight === 'number' ? props.minHeight : 0)
-  let arena = encodeScene(tree, props.width, height, contentHeight, scale, surface)
+  let arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, undefined, [], props.httpOptions)
 
   // **Fetched here, at the surface, and only bytes cross the wire.**
   //
@@ -568,8 +573,15 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   // `src`, background image, mask — which is exactly the kind of duplicate that
   // drifts the first time a source moves. The encoder already knows; the first
   // pass asks it, and a scene naming no URL never runs the second.
-  if (arena.urls.length > 0) {
-    const wanted = [...new Set(arena.urls)]
+  if (arena.requests.length > 0) {
+    // **Deduped by the request, not by the address.** Two sources at one URL
+    // that would send different headers are two fetches; two that would send
+    // the same one are one. Keying this by URL alone — which is what it did
+    // before options could be per-source — collapses the first pair into a
+    // single fetch whose headers depend on which node the encoder reached
+    // first, and the encoder's order is not something a caller can see.
+    const wanted = new Map<string, ImageRequest>()
+    for (const request of arena.requests) if (!wanted.has(request.key)) wanted.set(request.key, request)
     const fetched = new Map<string, Uint8Array>()
     // **Tolerated failures are recorded, not swallowed.** Under `'throw'` this
     // stays empty and every `throw` below fires as it always did; otherwise a
@@ -585,13 +597,17 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
       attempts.push(attempt)
     }
     await Promise.all(
-      wanted.map(async url => {
-        const caller = props.httpOptions?.signal
+      [...wanted.values()].map(async ({ url, key, init }) => {
+        // The composed signal: the scene's, this source's, and then the
+        // ceiling below. A source that brings its own abort can tighten the
+        // wait and cannot escape the caller's — see `mergeHttpOptions` for why
+        // `signal` is the one member that composes rather than overriding.
+        const caller = init?.signal
         const { ceiling, signal } = fetchDeadline(caller)
 
         let response: Response
         try {
-          response = await fetch(url, { ...props.httpOptions, signal })
+          response = await fetch(url, { ...init, signal })
         } catch (cause) {
           // Ours or theirs is worth distinguishing: one is a limit this
           // renderer chose and the other is the caller's own abort, and a
@@ -621,7 +637,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
           return
         }
         try {
-          fetched.set(url, await bounded(url, response))
+          fetched.set(key, await bounded(url, response))
         } catch (cause) {
           // `bounded` refuses a body past the limit, which is this renderer's
           // number rather than the server's — a different event from a slow
@@ -630,7 +646,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
         }
       }),
     )
-    arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched, attempts)
+    arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched, attempts, props.httpOptions)
   }
 
   const native = dependencies.renderer.paint(arena.slots, arena.values, {

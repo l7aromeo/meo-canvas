@@ -193,6 +193,39 @@ const canvas = await Root({
 canvas.release()
 ```
 
+**A source can carry its own, and they merge rather than replace.** Per key, and
+`headers` per header name, with the source winning — so the scene sets what
+applies to the render and a source adds what applies to one origin:
+
+```ts
+const scoped = process.env['IMAGE_TOKEN'] ?? ''
+
+const canvas = await Root({
+  width: 600,
+  httpOptions: { headers: { authorization: `Bearer ${scoped}`, accept: 'image/png' } },
+  children: [
+    // Sends the scene's `authorization`, and its own `accept`.
+    Image({ src: { url: 'https://cdn.example.invalid/photo.png', httpOptions: { headers: { accept: 'image/webp' } } } }),
+    // A different origin, a different key, and the scene's `accept` still.
+    Image({ src: { url: 'https://other.example.invalid/logo.png', httpOptions: { headers: { authorization: 'Bearer other' } } } }),
+  ],
+})
+```
+
+The options belong to the **source**, not to the `Image` — a URL can also appear
+in a `backgroundImage` and in a `mask`, and all three read the same field.
+
+**`signal` composes rather than overriding**, and it is the only member that
+does. Everything else is a value the source states; a signal is your kill
+switch, so one on a source is composed with the one on `Root` and with this
+renderer's own sixty-second ceiling. First to fire wins, which means a source's
+signal can only make that fetch stop sooner — an abort at the root still stops
+every image, including the ones that brought a signal of their own.
+
+**One fetch per distinct request, not per distinct URL.** Two sources at one
+address sharing the same options are fetched once; two that differ in a header
+are two fetches, each drawing what its own request returned.
+
 **A fetched image crosses as bytes, not as its URL**, so anything set here
 reaches the origin and nothing else. The exception is a URL that could not be
 fetched: under the default `onImageError: 'placeholder'` the render finishes,

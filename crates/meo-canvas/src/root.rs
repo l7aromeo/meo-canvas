@@ -30,7 +30,9 @@ use meo_canvas_core::{
     EncodeOptions, Error, ImageFormat, ImageWarning, PreparedEncode,
     RenderedCanvas, Renderer, diagnostic::Diagnostic,
 };
-use meo_canvas_scene::{OnImageError, Scene, SceneError, Size};
+use meo_canvas_scene::{
+    OnImageError, Scene, SceneError, Size, node::HttpOptions,
+};
 
 use crate::{
     ColorSpace, ColorType, Element, IntoElements, Style, Styled,
@@ -229,6 +231,7 @@ pub struct Root {
     height: f32,
     /// What a render does when an image source cannot be resolved.
     on_image_error: OnImageError,
+    http: HttpOptions,
     /// Whether the height comes from the content rather than from the caller.
     content_height: bool,
     /// Device-pixel multiplier applied at paint time.
@@ -290,6 +293,7 @@ impl Root {
             content_height: true,
             scale: Self::DEFAULT_SCALE,
             on_image_error: OnImageError::Placeholder,
+            http: HttpOptions::new(),
             // **A page lays its children out as flex, and says so.** The
             // scene's default is `block`, which is what a browser gives a
             // `<div>`; a page root that inherited it would stack its children
@@ -386,6 +390,32 @@ impl Root {
     #[must_use]
     pub const fn on_image_error(mut self, policy: OnImageError) -> Self {
         self.on_image_error = policy;
+        self
+    }
+
+    /// What every URL in this scene is fetched with.
+    ///
+    /// The mirror of npm's `RootProps.httpOptions`, and the reason it exists:
+    /// a page pulling twenty images from one origin says its credential once
+    /// rather than twenty times. A source's own options merge **over** these,
+    /// one header name at a time, so
+    /// [`Image::url_with`](crate::Image::url_with) at one source does not drop
+    /// what the scene set for the rest.
+    ///
+    /// Only a build with the `net` feature fetches at all; without it a URL is
+    /// [`Error::UnresolvedSource`] and these
+    /// are carried in the scene and never sent.
+    ///
+    /// ```
+    /// use meo_canvas::{Root, scene::HttpOptions};
+    ///
+    /// let root = Root::new(320.0)
+    ///     .height(200.0)
+    ///     .http_options(HttpOptions::new().header("authorization", "Bearer t"));
+    /// ```
+    #[must_use]
+    pub fn http_options(mut self, http: HttpOptions) -> Self {
+        self.http = http;
         self
     }
 
@@ -521,6 +551,7 @@ impl Root {
         scene.scale = self.scale;
         scene.gpu = self.gpu;
         scene.on_image_error = self.on_image_error;
+        scene.http = self.http;
         scene.color_type = self.color_type;
         scene.color_space = self.color_space;
 

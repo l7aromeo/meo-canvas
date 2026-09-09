@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import cases from '../../../fixtures/arena-cases.json' with { type: 'json' }
 
-import { ArenaWriter, PROPERTY_TABLES, encodeScene, variant, type SideValue } from './arena.js'
+import { ArenaWriter, PROPERTY_TABLES, encodeScene, mergeHttpOptions, requestKey, variant, type SideValue } from './arena.js'
 import { ENUMS, NODE_TAG } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION, type ArenaProperty } from './generated/arena-tables.js'
 import { Box, Image, Path, RichText, Text, type SceneNode } from './node.js'
@@ -130,11 +130,7 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
     return { tag }
   },
   BackgroundImage: input => ({
-    source: (() => {
-      const tag = ['path', 'url', 'bytes'][slot(input)]
-      if (tag === undefined) throw new RangeError('ImageSource has no such tag')
-      return { tag, value: sourceValue(side(input)) }
-    })(),
+    source: readSource(input),
     repeat: read(input, 'BackgroundRepeat'),
     size: read(input, 'BackgroundSize'),
     position: [read(input, 'Length'), read(input, 'Length')],
@@ -328,6 +324,42 @@ function sourceValue(value: SideValue): string | number[] {
   return typeof value === 'string' ? value : [...value]
 }
 
+/**
+ * Reads an image source: the tag, its side value, and the headers a url carries.
+ *
+ * **Reported, not merely consumed.** A url arm is `enum, url, count, count x
+ * (name, value)`, so a reader that skipped the pairs would fall out of step with
+ * everything after them — which is how this reader failed when the count was
+ * added. Consuming without reporting would be worse than that in a quieter way:
+ * the agreement test would compare two shapes that both omit the headers and
+ * pass without having looked at them, which is a decoration rather than a test.
+ *
+ * **The key is always present on a url, empty array included**, and that is a
+ * detectability argument rather than a tidiness one. A reader that silently
+ * drops headers is red on *every* url case when the key is always there, and
+ * looks correct on every empty case when the key is absent when empty — which
+ * is exactly the consume-but-do-not-report state this reader was in before, and
+ * the shape that hid it. The one-difference-between-the-two-cases reading is
+ * about diff legibility and loses to that.
+ */
+function readSource(input: Cursor): { tag: string; value: string | number[]; headers?: [string, string][] } {
+  const tags = ['path', 'url', 'bytes']
+  const tag = tags[slot(input)]
+  if (tag === undefined) throw new RangeError('ImageSource has no such tag')
+  const value = sourceValue(side(input))
+  if (tag !== 'url') return { tag, value }
+
+  const count = slot(input)
+  const headers: [string, string][] = []
+  for (let index = 0; index < count; index += 1) {
+    const name = side(input)
+    const headerValue = side(input)
+    if (typeof name !== 'string' || typeof headerValue !== 'string') throw new TypeError('a header name and value are strings')
+    headers.push([name, headerValue])
+  }
+  return { tag, value, headers }
+}
+
 /** Reads the payload the node's kind carries. */
 function readPayload(input: Cursor, kind: string): unknown {
   // The shape is the case fixture's, field for field, so a decoded payload can
@@ -360,15 +392,11 @@ function readPayload(input: Cursor, kind: string): unknown {
   if (kind === 'Image') {
     // A source is a tag and then a side value, not a tag and a number: the
     // bytes of an image cannot live in a `Float64Array` any more than a string
-    // can.
-    const tags = ['path', 'url', 'bytes']
-    const tag = tags[slot(input)]
-    if (tag === undefined) throw new RangeError('ImageSource has no such tag')
+    // can. Bytes come back as a plain array, which is how the case fixture
+    // writes a buffer — a `Uint8Array` here would compare unequal to Rust's own
+    // answer for a difference that is about JavaScript rather than the format.
     return {
-      // Bytes come back as a plain array, which is how the case fixture writes
-      // a buffer. A `Uint8Array` here would compare unequal to Rust's own
-      // answer for a difference that is about JavaScript rather than the format.
-      source: { tag, value: sourceValue(side(input)) },
+      source: readSource(input),
       fit: read(input, 'ObjectFit'),
       position: [read(input, 'Length'), read(input, 'Length')],
       frame: read(input, 'Option<u32>'),
@@ -590,7 +618,20 @@ const PROBES: Readonly<Record<string, Style>> = {
   },
   background_image: {
     backgroundImage: {
-      src: { url: PROBE_STRING },
+      // **The header pair is `PROBE_STRING` twice, and that is the fixture's
+      // doing rather than a choice.** Rust's property-table generator fills
+      // every `String` slot with one sample, so on that side the same hex
+      // colour is the url, the header name and the header value. This side has
+      // to author the same scene or the two describe different bytes.
+      //
+      // It works because `#` is a valid HTTP token character: `new Headers([[
+      // '#0a141e', '#0a141e' ]])` is accepted, where `'bad name'`, `'a:b'` and
+      // `'séparé'` are all refused as invalid header names. **So this case
+      // rests on the sample staying a valid token** — pick one that is not and
+      // this side cannot build the scene at all, and the agreement test fails
+      // with a `TypeError` rather than a byte mismatch, which is a much longer
+      // road to the cause.
+      src: { url: PROBE_STRING, httpOptions: { headers: [[PROBE_STRING, PROBE_STRING]] } },
       repeat: 'repeat-x',
       size: 'cover',
       position: { x: '25%', y: '25%' },
@@ -1030,7 +1071,8 @@ describe('an image node', () => {
     const decoded = page(Image({ src: { url: 'https://example.invalid/a.png' }, objectFit: 'cover', frame: 3 }))
 
     expect(decoded.payload).toEqual({
-      source: { tag: 'url', value: 'https://example.invalid/a.png' },
+      // Every url source reports `headers`, empty when it has none.
+      source: { tag: 'url', value: 'https://example.invalid/a.png', headers: [] },
       fit: 'Cover',
       position: [
         { tag: 'percent', value: 0.5 },
@@ -1537,6 +1579,40 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
   __kind_image_path: Image({ src: 'probe.png', objectFit: 'cover', objectPosition: ['25%', 3], frame: 2 }),
   __kind_image_url: Image({
     src: { url: 'https://probe.invalid/a' },
+    objectFit: 'cover',
+    objectPosition: ['25%', 3],
+    frame: 2,
+  }),
+  // The same URL with headers. Both url cases carry a `headers` key — this one
+  // with two pairs, `__kind_image_url` with an empty array — because a key that
+  // is always present makes a reader that drops headers red on every url case,
+  // where a key absent-when-empty lets that reader look correct on the empty
+  // one.
+  //
+  // **Authored as an array of pairs, not as an object, and that is the whole
+  // point of the case.** `{ 'x-zeta': '1', 'x-zeta': '2' }` is one key — the
+  // second literal overwrites the first before `Headers` is ever constructed —
+  // so the repeat would vanish and the case would silently stop testing
+  // combining. (Case-variants do survive an object: `X-Zeta` and `x-zeta` are
+  // two distinct JavaScript keys and both reach `Headers`.)
+  //
+  // The encoded form is canonical rather than authored: lower-cased, repeats
+  // combined with `", "`, then sorted by name. So these three pairs cross as
+  // two — `authorization: Bearer probe` and `x-zeta: 1, 2` — and the case holds
+  // all three properties at once. Drop the sort and `x-zeta` comes first; drop
+  // the lower-casing and `X-Zeta` sorts elsewhere as a different name; drop the
+  // combining and there are three records rather than two.
+  __kind_image_url_headers: Image({
+    src: {
+      url: 'https://probe.invalid/a',
+      httpOptions: {
+        headers: [
+          ['X-Zeta', '1'],
+          ['authorization', 'Bearer probe'],
+          ['x-zeta', '2'],
+        ],
+      },
+    },
     objectFit: 'cover',
     objectPosition: ['25%', 3],
     frame: 2,
@@ -2122,5 +2198,179 @@ describe('a value no path handles is refused by the property that was written', 
     ['letterSpacing', 'normal'],
   ])('still writes %s: %s', (key, value) => {
     expect(throughTheAddon({ [key]: value }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('merging http options', () => {
+  it('keeps a scene-wide header a source did not mention', () => {
+    const merged = mergeHttpOptions({ headers: { authorization: 'Bearer scene' } }, { headers: { accept: 'image/webp' } })
+    const headers = new Headers(merged?.headers)
+    expect(headers.get('authorization')).toBe('Bearer scene')
+    expect(headers.get('accept')).toBe('image/webp')
+  })
+
+  it('lets the source win the header they both set', () => {
+    const merged = mergeHttpOptions({ headers: { authorization: 'Bearer scene' } }, { headers: { authorization: 'Bearer source' } })
+    expect(new Headers(merged?.headers).get('authorization')).toBe('Bearer source')
+  })
+
+  it('lets the source win any other key', () => {
+    const merged = mergeHttpOptions({ credentials: 'omit', redirect: 'error' }, { credentials: 'include' })
+    expect(merged?.credentials).toBe('include')
+    expect(merged?.redirect).toBe('error')
+  })
+
+  // **Each spelling against a known value.** `Headers`, a plain object and an
+  // array of pairs are all legal `HeadersInit`, and a merge written against the
+  // object form passes a test written in the object form while dropping the
+  // other two. The scene-wide header surviving is what says the merge saw the
+  // source's headers at all.
+  it.each([
+    ['a Headers instance', new Headers({ accept: 'image/webp' })],
+    ['a plain object', { accept: 'image/webp' }],
+    ['an array of pairs', [['accept', 'image/webp']] as [string, string][]],
+  ])('merges %s', (_name, headers) => {
+    const merged = mergeHttpOptions({ headers: { authorization: 'Bearer scene' } }, { headers })
+    const out = new Headers(merged?.headers)
+    expect(out.get('accept')).toBe('image/webp')
+    expect(out.get('authorization')).toBe('Bearer scene')
+  })
+
+  it('treats a header name as case-insensitively one header', () => {
+    const merged = mergeHttpOptions({ headers: { Authorization: 'Bearer scene' } }, { headers: { authorization: 'Bearer source' } })
+    expect([...new Headers(merged?.headers)]).toEqual([['authorization', 'Bearer source']])
+  })
+
+  // `exactOptionalPropertyTypes` is on, so a key that was absent must not come
+  // back present-and-undefined — the two are different types here and the
+  // difference is invisible to a `toBe(undefined)` assertion.
+  it('leaves an absent key absent rather than present and undefined', () => {
+    const merged = mergeHttpOptions({ headers: { accept: 'image/webp' } }, { credentials: 'include' })
+    expect(Object.hasOwn(merged ?? {}, 'redirect')).toBe(false)
+  })
+
+  it('carries one side through when the other is absent', () => {
+    expect(mergeHttpOptions(undefined, { credentials: 'include' })?.credentials).toBe('include')
+    expect(mergeHttpOptions({ credentials: 'omit' }, undefined)?.credentials).toBe('omit')
+    expect(mergeHttpOptions(undefined, undefined)).toBeUndefined()
+  })
+})
+
+describe('the request key', () => {
+  it('is the url alone when nothing is sent with it', () => {
+    expect(requestKey('https://example.invalid/a.png', undefined)).toBe('https://example.invalid/a.png')
+  })
+
+  it('separates two requests to one url that send different headers', () => {
+    const one = requestKey('https://example.invalid/a.png', { headers: { authorization: 'Bearer one' } })
+    const two = requestKey('https://example.invalid/a.png', { headers: { authorization: 'Bearer two' } })
+    expect(one).not.toBe(two)
+  })
+
+  it('joins two requests that send the same headers in either order', () => {
+    const one = requestKey('https://example.invalid/a.png', { headers: { accept: 'image/webp', authorization: 'Bearer one' } })
+    const two = requestKey('https://example.invalid/a.png', { headers: { authorization: 'Bearer one', accept: 'image/webp' } })
+    expect(one).toBe(two)
+  })
+
+  it('ignores what does not change which bytes come back', () => {
+    const bare = requestKey('https://example.invalid/a.png', {})
+    expect(requestKey('https://example.invalid/a.png', { credentials: 'include' })).toBe(bare)
+  })
+})
+
+describe('the headers a url source carries', () => {
+  /** Where each string sits in the side values, by first write. */
+  function positions(values: readonly SideValue[]): Map<string, number> {
+    const at = new Map<string, number>()
+    values.forEach((value, index) => {
+      if (typeof value === 'string' && !at.has(value)) at.set(value, index)
+    })
+    return at
+  }
+
+  // **Sorted by name, and that is the wire contract rather than an
+  // implementation detail.** Two writers that agree on "a count, then that many
+  // pairs" and disagree on the order produce different bytes for the same
+  // request, and the disagreement surfaces as a codec defect a long way from
+  // whoever added a header source. A test written with one header, or with two
+  // whose sorted and insertion orders coincide, passes under either rule and
+  // pins nothing — so these two are chosen to differ: inserted zeta then alpha,
+  // written alpha then zeta.
+  //
+  // **It does not fail if the explicit `sort` is deleted**, because `Headers`
+  // iterates sorted by specification and the normalisation has already done it
+  // — measured, not assumed. It fails when the writer stops normalising through
+  // `Headers` and iterates the object it was handed, which is the edit that
+  // would actually break the order.
+  it('writes them sorted by name rather than in the order they were given', () => {
+    const arena = encodeScene(
+      [Image({ src: { url: 'https://probe.invalid/h', httpOptions: { headers: { 'x-zeta': 'z', 'x-alpha': 'a' } } } })],
+      10,
+      10,
+      false,
+      1,
+    )
+    const at = positions(arena.values)
+    const alpha = at.get('x-alpha')
+    const zeta = at.get('x-zeta')
+    expect(alpha).toBeDefined()
+    expect(zeta).toBeDefined()
+    expect(Number(alpha)).toBeLessThan(Number(zeta))
+  })
+
+  it('counts them, and counts nothing when there are none', () => {
+    const withNone = encodeScene([Image({ src: { url: 'https://probe.invalid/h' } })], 10, 10, false, 1)
+    const withTwo = encodeScene(
+      [Image({ src: { url: 'https://probe.invalid/h', httpOptions: { headers: { 'x-alpha': 'a', 'x-zeta': 'z' } } } })],
+      10,
+      10,
+      false,
+      1,
+    )
+    // Four more slots: the count is written either way, and each pair is two
+    // side-value indices.
+    expect(withTwo.slots.length - withNone.slots.length).toBe(4)
+  })
+
+  // **One case holding three properties, and each of the three is what one
+  // plausible wrong edit would break.** The authored pairs are `X-Zeta: 1`,
+  // `authorization: Bearer probe`, `x-zeta: 2`; the canonical form is
+  // lower-cased, combined with `", "`, and sorted by name. Reading the pairs
+  // back off the wire is what makes this a test of the encoding rather than of
+  // `Headers`.
+  it('encodes them lower-cased, combined and sorted', () => {
+    const arena = encodeScene(
+      [
+        Image({
+          src: {
+            url: 'https://probe.invalid/a',
+            httpOptions: {
+              headers: [
+                ['X-Zeta', '1'],
+                ['authorization', 'Bearer probe'],
+                ['x-zeta', '2'],
+              ],
+            },
+          },
+        }),
+      ],
+      10,
+      10,
+      false,
+      1,
+    )
+    const strings = arena.values.filter((value): value is string => typeof value === 'string')
+    // The url, then the pairs in the order they were written.
+    const at = strings.indexOf('https://probe.invalid/a')
+    expect(strings.slice(at + 1, at + 5)).toEqual(['authorization', 'Bearer probe', 'x-zeta', '1, 2'])
+  })
+
+  it('reports the request it would make, so Root can fetch it', () => {
+    const arena = encodeScene([Image({ src: { url: 'https://probe.invalid/h', httpOptions: { headers: { authorization: 'Bearer one' } } } })], 10, 10, false, 1)
+    expect(arena.requests).toHaveLength(1)
+    const [only] = arena.requests
+    expect(only?.url).toBe('https://probe.invalid/h')
+    expect(new Headers(only?.init?.headers).get('authorization')).toBe('Bearer one')
   })
 })

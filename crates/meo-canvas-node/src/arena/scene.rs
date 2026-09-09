@@ -5,7 +5,7 @@
 
 use meo_canvas_scene::{
     OnImageError,
-    node::{ImageSource, LineCap, LineJoin, NodeTag, PathPaint},
+    node::{HttpOptions, ImageSource, LineCap, LineJoin, NodeTag, PathPaint},
     style::{
         Dimension, Length, PaintOrder,
         effect::{BoxShadow, FillRule, Mask, MaskShape, TextShadow, Transform},
@@ -233,20 +233,62 @@ impl ArenaValue for BackgroundSize {
 }
 
 impl ArenaValue for ImageSource {
+    /// A tag, one side-array index, and -- for a URL -- its options after it.
+    ///
+    /// The index is read inside each arm rather than once above the match,
+    /// because the `Url` arm no longer ends there: a header count follows it,
+    /// then a name and a value per header. Reading it above would put the
+    /// count's slot inside the arm that does not have one.
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let slot = input.offset();
         let tag = input.tag()?;
-        let index = input.index()?;
         match tag {
-            0 => Ok(Self::Path(input.text(index, slot)?)),
-            1 => Ok(Self::Url(input.text(index, slot)?)),
-            2 => Ok(Self::Bytes(input.bytes(index, slot)?)),
+            0 => {
+                let index = input.index()?;
+                Ok(Self::Path(input.text(index, slot)?))
+            }
+            1 => {
+                let index = input.index()?;
+                let url = input.text(index, slot)?;
+                Ok(Self::Url {
+                    url,
+                    http: HttpOptions::read(input)?,
+                })
+            }
+            2 => {
+                let index = input.index()?;
+                Ok(Self::Bytes(input.bytes(index, slot)?))
+            }
             found => Err(ArenaError::UnknownTag {
                 slot,
                 what: "ImageSource",
                 found: f64::from(found),
             }),
         }
+    }
+}
+
+impl ArenaValue for HttpOptions {
+    /// A header count, then a name and a value per header.
+    ///
+    /// **Nothing is reserved from the count.** [`Reader::count`] bounds it by
+    /// the slots that remain, which is right about whether the slot is corrupt
+    /// and says nothing about memory: a pair costs two slots on the arena and
+    /// two `String`s in memory, so a count the arena can back still asks for
+    /// far more than the arena holds. The loop grows instead and a short arena
+    /// fails on the read that runs out.
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let count = input.count()?;
+        let mut headers = Vec::new();
+        for _ in 0..count {
+            let slot = input.offset();
+            let name = input.index()?;
+            let name = input.text(name, slot)?;
+            let slot = input.offset();
+            let value = input.index()?;
+            headers.push((name, input.text(value, slot)?));
+        }
+        Ok(Self { headers })
     }
 }
 

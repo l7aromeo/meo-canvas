@@ -127,9 +127,18 @@
 //! is who pays and when. On npm the addon is a prebuilt binary with the client
 //! already inside it, so having the capability costs its caller nothing. Here
 //! the consumer compiles it, so the same capability costs dependencies, build
-//! time and audit surface -- **identical capability, different price**, and the
+//! time and audit surface -- **the same reach, a different price**, and the
 //! flag is what lets the one who pays decide. Most callers never do: a scene
 //! built from bytes or paths names no URL.
+//!
+//! **"Identical capability" is what this used to say, and it was not true.**
+//! `RootProps.httpOptions` could send an `Authorization` header; nothing here
+//! could send a header at all, so an asset behind any authentication was
+//! reachable from one surface and not from the other while the paragraph
+//! claiming parity sat above the gap.
+//! [`HttpOptions`](scene::HttpOptions) closes it, and closes it per source
+//! rather than per scene: a page pulling from two origins sends each one only
+//! what belongs to it.
 //!
 //! It is the shape `metal` and `vulkan` already have, for the same reason.
 //! Neither surface ships a capability the other lacks; a capability behind a
@@ -249,7 +258,7 @@ pub mod scene {
     pub use meo_canvas_scene::{
         Corners, Dimension, Length, Node, NodeId, NodeKind, Point, Rect, Scene,
         SceneError, Sides, Size,
-        node::{ImageSource, LineCap, LineJoin, PathPaint},
+        node::{HttpOptions, ImageSource, LineCap, LineJoin, PathPaint},
         style::{
             PaintOrder,
             effect::{

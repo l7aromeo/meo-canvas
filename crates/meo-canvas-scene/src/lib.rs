@@ -186,6 +186,20 @@ pub struct Scene {
     /// this build was never able to fetch -- the first is the broken-image
     /// case, the second is a missing feature flag and stays an error.
     pub image_fetch_attempts: Vec<ImageFetchAttempt>,
+    /// What every URL in this scene is fetched with, unless a source says
+    /// otherwise.
+    ///
+    /// The scene-wide half of the pair, mirroring npm's
+    /// `RootProps.httpOptions`. A source's own
+    /// [`HttpOptions`](node::HttpOptions) merge **over** these one header name
+    /// at a time, so naming one header at a source does not drop the scene's
+    /// credentials.
+    ///
+    /// **Empty for every scene that decodes from an arena, and that is not a
+    /// gap.** The npm surface merges the scene's options into each source
+    /// before it writes, so what crosses is already resolved; carrying these
+    /// as well and merging again on this side would apply the merge twice.
+    pub http: node::HttpOptions,
     /// Every node of every page. Index by [`NodeId::get`].
     pub nodes: Vec<Node>,
     /// The root of each page, in the order the pages are drawn.
@@ -229,6 +243,9 @@ impl Scene {
             color_space: None,
             // The default is a variant, not an absence: see the field.
             on_image_error: OnImageError::default(),
+            // Empty rather than absent, for the reason the field gives: no
+            // headers and an empty list send the same request.
+            http: node::HttpOptions::new(),
             image_fetch_attempts: Vec::new(),
             nodes: vec![Node::container()],
             pages: vec![NodeId::ROOT],

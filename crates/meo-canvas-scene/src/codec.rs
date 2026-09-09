@@ -47,7 +47,7 @@
 //! ```text
 //! scene    := "MCSC" u16(version) f32 f32 bool f32
 //!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
-//!             enum(on_image_error) list<attempt>(image_fetch_attempts)
+//!             enum(on_image_error) http list<attempt>(image_fetch_attempts)
 //!             list<u32>(pages) list<node>
 //!             ^magic         ^1   ^w  ^h  ^ch  ^scale
 //!
@@ -145,7 +145,7 @@ pub(crate) use writer::Writer;
 
 use crate::{
     Scene,
-    node::NodeId,
+    node::{HttpOptions, NodeId},
     surface::{ColorSpace, ColorType, ImageFetchAttempt, OnImageError},
 };
 
@@ -160,7 +160,14 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 6;
+///
+/// Seven since [`crate::node::HttpOptions`] arrived, in two places at once:
+/// the `Url` arm of [`crate::node::ImageSource`] and [`Scene::http`]. Both are
+/// a field added rather than a tag, so a revision-six reader takes the header
+/// count for whatever follows and misreads the rest of the buffer -- exactly
+/// the case the paragraph above reserves a bump for. One bump covers both,
+/// because a revision is the whole layout rather than a per-field number.
+pub const VERSION: u16 = 7;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -344,6 +351,10 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     // Not `opt`, because the field is not optional: the scene always has a
     // policy and the default is a variant rather than an absence.
     scene.on_image_error.write(&mut writer);
+    // Beside the image policy, because both are the scene's answer about
+    // sources rather than about geometry. One `u32` of zero on a scene that
+    // names no headers, which is nearly all of them.
+    scene.http.write(&mut writer);
     // Empty for every caller that does not fetch for itself, which is every
     // Rust one -- so this costs one `u32` of zero on an ordinary scene.
     writer.list(&scene.image_fetch_attempts);
@@ -384,6 +395,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let color_type: Option<ColorType> = input.opt()?;
     let color_space: Option<ColorSpace> = input.opt()?;
     let on_image_error = OnImageError::read(&mut input)?;
+    let http = HttpOptions::read(&mut input)?;
     let image_fetch_attempts: Vec<ImageFetchAttempt> = input.list()?;
     let pages: Vec<NodeId> = input.list()?;
 
@@ -409,6 +421,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
         color_type,
         color_space,
         on_image_error,
+        http,
         image_fetch_attempts,
         nodes,
         pages,
@@ -427,7 +440,8 @@ mod tests {
         Scene, SceneError,
         geometry::{Corners, Sides, Size},
         node::{
-            ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, PathPaint,
+            HttpOptions, ImageSource, LineCap, LineJoin, Node, NodeId,
+            NodeKind, PathPaint,
         },
         style::{
             Dimension, Length, PaintOrder,
@@ -465,8 +479,9 @@ mod tests {
     /// absent: one discriminant each, and no payload behind any of them --
     /// plus the one byte `on_image_error` always occupies, which is not
     /// optional and so has no absent form to be shorter than -- plus the four
-    /// bytes of the empty `image_fetch_attempts` list's count.
-    const ABSENT_SURFACE: usize = 3 + 1 + 4;
+    /// bytes of the empty `http` header list's count and the four of the empty
+    /// `image_fetch_attempts` list's.
+    const ABSENT_SURFACE: usize = 3 + 1 + 4 + 4;
 
     /// Byte offset of the page list in a scene whose surface says nothing.
     const PAGES_OFFSET: usize = SURFACE_OFFSET + ABSENT_SURFACE;
@@ -700,7 +715,7 @@ mod tests {
                 },
             },
             NodeKind::Image {
-                source: ImageSource::Url(
+                source: ImageSource::url(
                     "https://example.test/a.png".to_owned(),
                 ),
                 fit: ObjectFit::ScaleDown,
@@ -757,6 +772,49 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}"));
             assert_eq!(decode(&encode(&scene)), Ok(scene));
         }
+    }
+
+    /// The bytes do not depend on how the caller assembled the headers.
+    ///
+    /// **The pin for the sort, the lower-casing and the combining at once**,
+    /// and the reason they live in `Wire::write` rather than in
+    /// [`HttpOptions::header`]: the second value below is a struct literal,
+    /// which is exactly what bypasses a constructor's invariant. Remove any
+    /// one of the three normalisations and this fails.
+    #[test]
+    fn the_encoded_headers_are_canonical() {
+        let written = ImageSource::url_with(
+            "https://a.test",
+            HttpOptions {
+                headers: vec![
+                    ("X-Zeta".to_owned(), "1".to_owned()),
+                    ("authorization".to_owned(), "Bearer t".to_owned()),
+                    ("x-zeta".to_owned(), "2".to_owned()),
+                ],
+            },
+        );
+        let canonical = ImageSource::url_with(
+            "https://a.test",
+            HttpOptions::new()
+                .header("authorization", "Bearer t")
+                .header("x-zeta", "1, 2"),
+        );
+
+        let mut left = Vec::new();
+        written.write(&mut Writer::new(&mut left));
+        let mut right = Vec::new();
+        canonical.write(&mut Writer::new(&mut right));
+        assert_eq!(left, right, "the encoding is not canonical");
+
+        // And decoding gives back the canonical form rather than what was
+        // written, which is the half that makes the round trip idempotent
+        // instead of the identity.
+        let mut input = Reader::new(&left);
+        assert_eq!(
+            ImageSource::read(&mut input)
+                .unwrap_or_else(|error| unreachable!("{error}")),
+            canonical
+        );
     }
 
     #[test]
@@ -1098,7 +1156,18 @@ mod tests {
         round_trip(&Spacing::Points(1.0));
         round_trip(&Spacing::Em(0.1));
         round_trip(&ImageSource::Path("/a".to_owned()));
-        round_trip(&ImageSource::Url("https://a.test".to_owned()));
+        round_trip(&ImageSource::url("https://a.test"));
+        // The options are a field of the arm rather than a variant of
+        // their own, so an empty one and a set one take the same path
+        // and only the second says the list is written at all. Written
+        // canonical, so that `round_trip`'s equality holds -- see
+        // `the_encoded_headers_are_canonical` for the other direction.
+        round_trip(&ImageSource::url_with(
+            "https://a.test",
+            HttpOptions::new()
+                .header("accept", "image/png")
+                .header("authorization", "Bearer t"),
+        ));
         round_trip(&ImageSource::Bytes(vec![1, 2, 3]));
         round_trip(&Mask::Image(ImageSource::Path("/m".to_owned())));
         round_trip(&Mask::Shape(MaskShape::Circle));
