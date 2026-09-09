@@ -118,6 +118,55 @@ jobs:
     # past which a run has stopped rather than slowed, and without it the
     # default is six hours of a runner.
     timeout-minutes: 90
+
+    # **An experiment, not a settled improvement.** The workspace and `target/`
+    # are already on `D:` -- 50 occurrences against 35 for `CARGO_HOME` in run
+    # 34339254035's Windows log -- so what is left on `C:` is the registry, the
+    # sources it extracts, and `.cargo/bin`. Registry extraction is many small
+    # files, which is the shape Windows is worst at, so it is the plausible
+    # remainder. Plausible is all it is: uv's dev-drive note says `D:` is
+    # comparable to a ReFS dev drive, not that `D:` beats `C:` for this
+    # workload on these runners, and nobody has measured that here.
+    #
+    # **Read the Windows steps against macOS and ubuntu in the same run, not
+    # against a previous night.** Those two legs are untouched by a Windows
+    # `CARGO_HOME`, so they are the load control on a machine we cannot
+    # inspect: Windows moving alone is the change, all three moving together is
+    # GitHub's fleet, and Windows flat is no effect worth a variable. The rows
+    # that answer it are steps -- `cargo install --locked`, `just native`, and
+    # the restore separately -- not leg wall time, which contains the cache
+    # budget that changed in the same period.
+    #
+    # **The first run after this lands is cold by construction and its number
+    # is the cost of the switch, not a regression.** `CARGO_HOME` is in the key
+    # by name: the prefix list quoted at the cache step below selects every env
+    # var starting CARGO, so setting it changes the hash and misses exactly
+    # once. Recorded and reported rather than hidden, then the warm runs after
+    # it are the measurement.
+    #
+    # **Job-level rather than a step, and that is a correctness condition.**
+    # `rust-cache` resolves `env.CARGO_HOME || join(HOME, ".cargo")` when its
+    # step runs, and `dtolnay/rust-toolchain` above installs into `CARGO_HOME`
+    # before that. A step exporting this after the cache step would leave the
+    # action caching `C:\Users\runneradmin\.cargo` while every later cargo
+    # invocation used `D:` -- the registry would silently stop being cached and
+    # the timings would stay plausible while measuring nothing.
+    #
+    # **The other two legs get the empty string, which is not the same as being
+    # given a bad path.** Measured with cargo 1.98.0: `CARGO_HOME= cargo fetch`
+    # under a fresh `HOME` created `$HOME/.cargo/registry` and nothing in the
+    # working directory, so an empty value falls back exactly as an unset one
+    # does; `rust-cache`'s `||` treats it the same way. Job-level `env:` cannot
+    # be conditional per key, and the alternative -- hard-coding
+    # `/home/runner/.cargo` and `/Users/runner/.cargo` -- states two paths this
+    # repository does not own.
+    #
+    # **What retires this**: if the warm Windows steps move by less than the
+    # run-to-run spread of the two unaffected legs, there is no effect to have
+    # and the variable is not worth the invalidation it costs. Delete it and
+    # say so -- a measured null is the result, not a failure to find one.
+    env:
+      CARGO_HOME: ${{ matrix.os == 'windows-latest' && 'D:\.cargo' || '' }}
     strategy:
       # Every platform reports. Cancelling the set on one failure hides whether
       # the fault is the code or the backend, which is the first thing to know.
@@ -233,8 +282,9 @@ jobs:
       # runner OS and arch, a hash of each installed `rustc -vV` plus every env
       # var starting with CARGO, CC, CFLAGS, CXX, CMAKE or RUST, and a hash of
       # `.cargo/config.toml`, `rust-toolchain*` and the workspace manifests. It
-      # follows that setting `CARGO_HOME` would invalidate every key that reads
-      # it -- by name, not by being a workflow edit.
+      # follows that the Windows `CARGO_HOME` set in this job's `env:` above
+      # invalidates that leg's key once -- by name, not by being a workflow
+      # edit, and not on the two legs where the value is empty.
       #
       # **This action already exports `CARGO_INCREMENTAL=0` itself**, before any
       # cargo command in the job: `dist/restore.js` line 56 at the pin above,
