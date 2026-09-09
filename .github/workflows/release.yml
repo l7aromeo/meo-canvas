@@ -27,6 +27,27 @@ on:
 permissions:
   contents: read
 
+# One release at a time, and never cancelled.
+#
+# **The group deliberately omits the ref.** `ci.yml` keys on
+# `${{ github.workflow }}-${{ github.ref }}` because two branches are two
+# independent questions; here they are not. A dispatch at `main` and a dispatch
+# at a tag publish the same version to the same registry and push the same
+# `npm-v<version>` tag, so keying on the ref would let exactly the pair that
+# collides run side by side.
+#
+# **And `cancel-in-progress` is false, which is the opposite of `ci.yml`'s
+# choice, for the reason that makes this workflow different: it is not
+# idempotent in the middle.** The publish job pushes seven platform packages,
+# waits for them to resolve, publishes the main package, pushes a git tag and
+# opens a release. Cancelling between any two of those leaves the registry and
+# the repository disagreeing, and nothing re-runs to fix it. A second dispatch
+# waits instead -- and if the first has already published, its own `npm view`
+# guards make it a no-op rather than a conflict.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -155,10 +176,40 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
+      # **Saved on a branch, never on a tag, because a tag-dispatched run cannot
+      # read back what it writes.** A run restores from its own ref's scope and
+      # from the default branch. Releases are dispatched at the tag by intent --
+      # the tag is the release's identity, and dispatching at it is what
+      # guarantees the built commit is the tagged one -- and every release gets
+      # a new tag, so a publish run misses by construction and then saves a set
+      # no later run can address. Measured on the alpha.5 publish run
+      # (33970267410, dispatched at `refs/tags/v10.0.0-alpha.5`): seven of seven
+      # `No cache found.`, and 2029 MiB written afterwards -- 372 + 366 + 342 +
+      # 419 + 418 + 56 + 56 MiB, from each job's own tar byte count.
+      #
+      # **A rehearsal dispatched at a branch does hit, which is why this gates
+      # rather than deletes.** Run 33961676649, dispatched at `v10`: five of
+      # seven `Cache hit for:`, win32-x64 restoring 391,274,614 bytes. Only the
+      # musl pair missed.
+      #
+      # **Do not rewrite this as `github.ref == 'refs/heads/main'`.** `ci.yml`
+      # carries that form and it is right there and wrong here: releases are not
+      # dispatched from `main` today, so it would mean *never save* and would
+      # delete the five hits above. It would also appear to work to anyone
+      # checking now, because the `v10` branch those hits came from has since
+      # been deleted -- the branch-keyed form is correct today only by accident
+      # of a deletion, and would have been wrong a week ago. The rule is about
+      # the publish run being unable to read its own cache, so it is written
+      # about tags.
+      #
+      # Verified on both arms rather than from the shape of the expression: the
+      # tag run's checkout fetches `+refs/tags/v10.0.0-alpha.5:refs/tags/...`,
+      # the branch run's fetches into `refs/remotes/origin/v10`.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ matrix.suffix }}
           cache-bin: true
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       # **No system libraries are installed for the Linux builds, and that is the
       # change rather than an omission.** cmake, nasm and the font development
@@ -457,7 +508,16 @@ jobs:
             # `name` and `version` this loop read out of the tarball, so the
             # wait cannot be asking about a different package than the publish.
             echo "${name}@${version}" >> "$RUNNER_TEMP/platform-packages.txt"
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            # **`$DRY != true` first, so a rehearsal rehearses.** The skip is
+            # load-bearing for the publish path -- npm refuses to publish over
+            # an existing version, and the bootstrap above leaves packages this
+            # loop has to walk past -- but on a dry run it skipped every package
+            # whose version was already on the registry and reported green
+            # having packed and validated nothing. That is the default path
+            # (`dry_run: true`) and the one a releaser rehearses with. The main
+            # package's step already reads this way; the two disagreed, and this
+            # is the half that was wrong.
+            if [ "$DRY" != "true" ] && npm view "${name}@${version}" version >/dev/null 2>&1; then
               echo "    ${name}@${version} is already on the registry; not publishing it again"
               continue
             fi
