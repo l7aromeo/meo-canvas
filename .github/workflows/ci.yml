@@ -71,6 +71,17 @@ jobs:
     name: portable
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # **Job-level, and it restates `contents: read` because it has to.** A job's
+    # `permissions:` replaces the workflow's rather than adding to it, so
+    # writing `actions: read` alone here would take the checkout's read away and
+    # the job would fail before it reached anything interesting.
+    #
+    # `actions: read` is for `cache-budget-check`, which lists the repository's
+    # caches. It is granted here and nowhere else: the matrix legs are where
+    # third-party build tooling runs, and none of them reads the cache list.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -92,7 +103,11 @@ jobs:
       - name: Install the JavaScript dependencies
         run: bun install --frozen-lockfile
 
+      # The token is the one `actions: read` above authorises, and it is passed
+      # rather than assumed: nothing is in a step's environment by default.
       - run: just portable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   ci:
     name: ci (${{ matrix.os }})
