@@ -72,6 +72,12 @@ import type { Format } from './index.js'
  * the same encoder — so what this arm measures is the option and not the
  * language, which is the claim it has to be able to make.
  *
+ * **That number was written down before the second measurement**, in the
+ * report of this side's provocation, when no Rust provocation existed. It is a
+ * prediction that held rather than an agreement noticed once both were in
+ * hand, and the two read identically afterwards unless somebody says which
+ * happened.
+ *
  * # Regenerating
  *
  * `UPDATE_ENCODE_HASHES=1 npx vitest run encode.agreement`, and the Rust side

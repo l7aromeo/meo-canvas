@@ -49,6 +49,12 @@
 //! reach the same encoder -- so what this arm measures is the option and not
 //! the language, which is the claim it has to be able to make.
 //!
+//! **That number was written down before the second measurement**, in the
+//! report of the JavaScript provocation, when no Rust provocation existed. It
+//! is a prediction that held rather than an agreement noticed once both were
+//! in hand, and the two read identically afterwards unless somebody says
+//! which happened.
+//!
 //! # Regenerating
 //!
 //! `UPDATE_ENCODE_HASHES=1 npx vitest run encode.agreement` writes the asset
@@ -150,8 +156,24 @@ fn produces_the_hashes_the_javascript_side_wrote() {
         })
         .collect();
 
+    // **The lengths first, and on their own.** `zip` stops at the shorter
+    // side, so eight measured against a five-line asset compares five and
+    // `disagreed` can come back empty -- and folding both facts into one
+    // assertion printed "in 0 of 5 formats:" followed by nothing, a failure
+    // whose own body says nothing disagreed. Measured, not reasoned: that is
+    // the message a truncated asset produced. Two assertions, because they are
+    // two questions and only one of them has a list to print.
+    assert_eq!(
+        measured.len(),
+        expected.len(),
+        "this test encodes {} formats and the asset names {}; regenerate it \
+         with UPDATE_ENCODE_HASHES=1, or the format lists have come apart",
+        measured.len(),
+        expected.len()
+    );
+
     assert!(
-        disagreed.is_empty() && measured.len() == expected.len(),
+        disagreed.is_empty(),
         "the two surfaces disagree about encoded bytes in {} of {} formats:\n{}",
         disagreed.len(),
         expected.len(),
