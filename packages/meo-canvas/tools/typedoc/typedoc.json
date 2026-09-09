@@ -16,7 +16,7 @@
   "categorizeByGroup": true,
   "sort": ["kind", "alphabetical"],
   "navigationLinks": {
-    "Source": "https://github.com/l7aromeo/meo-canvas/tree/v10",
+    "Source": "https://github.com/l7aromeo/meo-canvas/tree/main",
     "npm": "https://www.npmjs.com/package/meo-canvas"
   },
 
