@@ -166,9 +166,10 @@ ci:
 # name no `cargo` either and are native, because they reach `addon`. **A
 # dependency is what carries a recipe across without its own body changing**, so
 # grep the closure rather than the recipe. Stated that way the test has no
-# exceptions: all ten here are `cargo`-free through their dependencies, and all
-# thirteen there reach it.
-portable: typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
+# exceptions: all eleven here are `cargo`-free through their dependencies, and
+# all thirteen there reach it. `gate-lists-check` asserts the arithmetic of that
+# sentence rather than leaving it to a reader.
+portable: gate-lists-check typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
 
 # The checks that compile, link, or run the addon, and so have to run per host.
 #
@@ -1508,6 +1509,20 @@ issue-refs:
 [doc("Fail if a conformance tool writes a fixture without a WRITE guard.")]
 conformance-writes:
     node packages/meo-canvas/tools/conformance-writes.mjs
+
+# Fail if `ci-steps` stopped running everything the two lists name.
+#
+# **The composition is exercised nowhere else.** CI runs `portable` and `native`
+# as separate jobs and never runs `ci-steps`, so an edit that drops a recipe from
+# a list, or points `ci-steps` at one half, makes the local gate faster and
+# quieter and leaves it green. This is the only thing that looks.
+#
+# It asks `just` rather than reading the file, so it cannot disagree with the
+# gate about what a dependency is -- and it floors both lists as well as
+# comparing them, because a comparison of two empty lists succeeds.
+[doc("Fail if ci-steps and the two lists have drifted apart.")]
+gate-lists-check:
+    node packages/meo-canvas/tools/gate-lists.mjs
 
 # The half of the reference `docs-js` cannot see.
 #
