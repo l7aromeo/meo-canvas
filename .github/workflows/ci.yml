@@ -243,9 +243,30 @@ jobs:
       # failed` out of `aom_configure.cmake`. Installing clang may even have
       # been the cause rather than the cure, by handing cmake a compiler it then
       # failed to test.
+      # **The vendor repositories the runner image pre-registers are removed
+      # before the update, because `apt-get update` fails wholesale when any one
+      # of them serves a bad index and none of them has anything we install.**
+      # On 2026-09-09 `dl.google.com` served a `Packages.gz` whose hash did not
+      # match its own `Release` file -- the release file was six hours newer than
+      # the package list it described -- and **all five open pull requests failed
+      # their ubuntu leg at once**, on five unrelated diffs. Five of five is an
+      # outage rather than five defects, and nothing in this repository needed
+      # the repository that broke.
+      #
+      # Everything below comes from Ubuntu's own archive: cmake and nasm for
+      # libaom, pkg-config and the fontconfig and freetype headers for
+      # `rust-skia`, which probes for them and falls back to bare library names
+      # in silence when the probe fails.
+      #
+      # The gate launches no browser -- `conformance` is in neither `portable`
+      # nor `native`, and the browser it would use is Playwright's own Chromium
+      # from `just setup`, never the apt package -- so removing Google's list
+      # costs this workflow nothing.
       - name: Install what libaom needs
         if: runner.os == 'Linux'
         run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y \
             cmake nasm \
