@@ -12,6 +12,52 @@ a Skia backend.
 The public surface: struct-literal options closed with `..Default::default()`,
 no Skia or taffy types anywhere, and no async runtime imposed on the caller.
 
+```sh
+cargo add meo-canvas
+```
+
+## A picture
+
+```rust
+use meo_canvas::{Renderer, Root, Row, Styled, Text, hex, px};
+
+let renderer = Renderer::new();
+
+let mut canvas = Root::new(520.0)
+    .height(180.0)
+    .background_color(hex("#101014"))
+    .children(
+        Row::new()
+            .gap(px(20.0))
+            .padding(px(24.0))
+            .children(Text::new("Ukasyah").font_size(26.0).bold()),
+    )
+    .render(&renderer)?;
+
+canvas.to_file("out.png")?;
+```
+
+Setters are flat and chained, and they come from [`Styled`], which every node
+implements — so importing that trait is what makes `background_color` and
+`gap` available. `Root::new` takes the width; the height is a setter, because
+Rust has no optional argument and a page that sizes itself to its content is
+the more common case.
+
+**This example is compiled.** It lives at `examples/readme.rs` and is built by
+the same `cargo clippy --all-targets` the rest of the tree is gated with, so
+a README that stops compiling fails a run rather than a reader.
+
+## What it writes
+
+`to_file` takes the format from the extension; `to_file_as` takes it as an
+argument, and `to_buffer` hands back bytes.
+
+```text
+raster      png  jpeg  webp  avif  bmp  ico  tiff
+animated    gif  apng
+vector      svg  pdf
+```
+
 ## Features
 
 All three are off by default. A build that names none of them renders on the
@@ -56,3 +102,18 @@ than at the missing prober.
 `cmake` and `nasm` are also needed at build time, for libaom.
 
 macOS and Windows need none of this: Skia uses CoreText and DirectWrite there.
+
+## Reference
+
+The API documentation is on [docs.rs](https://docs.rs/meo-canvas), and the
+reasoning behind the surface — why the setters are flat, why `Root` is built
+rather than constructed, what each divergence from CSS costs — is in
+[`AGENTS.md`](https://github.com/l7aromeo/meo-canvas/blob/main/AGENTS.md) in
+the repository.
+
+The npm package is the same renderer behind a prebuilt binary, for callers who
+would rather not compile Skia: [`meo-canvas`](https://www.npmjs.com/package/meo-canvas).
+
+## Licence
+
+MIT.
