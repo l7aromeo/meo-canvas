@@ -76,6 +76,9 @@ jobs:
     # that never returns, not on the work.
     timeout-minutes: 20
     outputs:
+      # The tag names the ref and the release; the version names the package
+      # and the directory. Nothing downstream derives one from the other.
+      tag: ${{ steps.which.outputs.tag }}
       version: ${{ steps.which.outputs.version }}
     steps:
       # Which version, if any, this run publishes. A pull request builds and
@@ -111,11 +114,30 @@ jobs:
             echo "::notice::$TAG is not an npm release tag; nothing published"
             TAG=""
           fi
-          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          # **The tag and the version are different strings and this is the
+          # one place that turns one into the other.** They were both called
+          # `version` before, and a step three hundred lines below wrote
+          # `${VERSION#v}` to reach the npm spelling -- correct while the tag
+          # was `v10.0.0`, silently wrong the day it became `npm-v10.0.0`,
+          # because `#v` does not strip a prefix the string does not start
+          # with. `npm view meo-canvas@npm-v10.0.0-alpha.6` answers E404, so
+          # the registry wait would have run its whole ten-minute deadline and
+          # failed every release. Deriving it once, beside the pattern that
+          # decides which prefixes are legal, is what keeps the two from
+          # disagreeing again.
+          #
+          # `tools/release-tags.mjs` runs these two lines over a tag of each
+          # shape and asserts what comes out.
+          VERSION="${TAG#npm-}"
+          VERSION="${VERSION#v}"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.which.outputs.version }}
+          ref: ${{ steps.which.outputs.tag }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -147,7 +169,7 @@ jobs:
         run: git diff --exit-code packages/meo-canvas/tools/typedoc/undocumented-baseline.txt
 
       - name: Keep the reference
-        if: steps.which.outputs.version != ''
+        if: steps.which.outputs.tag != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: reference
@@ -163,9 +185,9 @@ jobs:
           retention-days: 1
 
   publish:
-    name: publish ${{ needs.build.outputs.version }}
+    name: publish ${{ needs.build.outputs.tag }}
     needs: build
-    if: needs.build.outputs.version != ''
+    if: needs.build.outputs.tag != ''
     runs-on: ubuntu-latest
     # Ten of these are the registry wait below, which fails on its own deadline
     # and reports why. The rest is headroom for the deploy, and a bound on the
@@ -192,7 +214,6 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          want="${VERSION#v}"
 
           # One deadline for the whole question rather than one per package.
           # Ten minutes is the budget for "this release is installable"; a
@@ -211,7 +232,7 @@ jobs:
             echo "  $1 resolves"
           }
 
-          resolves "meo-canvas@${want}"
+          resolves "meo-canvas@${VERSION}"
 
           # **The main package alone was never the question this step claimed
           # to answer.** It said it was waiting so that `latest/` never
@@ -237,7 +258,7 @@ jobs:
           # `jq` rather than `node`, for the reason `crates-io.yml` gives at its
           # own version read: `npm` is on the image and this step already rests
           # on that, but nothing here sets a Node up on purpose.
-          declared=$(npm view "meo-canvas@${want}" optionalDependencies --json)
+          declared=$(npm view "meo-canvas@${VERSION}" optionalDependencies --json)
           test -n "$declared" || declared='{}'
           platforms=$(printf '%s' "$declared" | jq -r 'to_entries[] | "\(.key)@\(.value)"')
 
@@ -249,7 +270,7 @@ jobs:
           # package will have to change this line, and should have to.
           count=$(printf '%s' "$platforms" | grep -c . || true)
           if [ "$count" -eq 0 ]; then
-            echo "::error::meo-canvas@${want} declared no optionalDependencies; this check looked at nothing"
+            echo "::error::meo-canvas@${VERSION} declared no optionalDependencies; this check looked at nothing"
             exit 1
           fi
           echo "waiting on ${count} platform packages"
@@ -330,7 +351,7 @@ jobs:
           #
           # There is only one channel here in any case: the Rust reference is
           # published by docs.rs, so no `rust-v*` release ever reaches this.
-          dir="${VERSION#npm-}"
+          dir="v${VERSION}"
           rm -rf "site/${dir}"
           cp -r incoming "site/${dir}"
 
@@ -365,7 +386,11 @@ jobs:
 
       - name: Record it
         env:
-          VERSION: ${{ needs.build.outputs.version }}
+          # The tag, because this line is the only record on `gh-pages` of
+          # which release a deploy came from, and the tag is what the GitHub
+          # release and `git tag` both name. The directory beside it already
+          # carries the version.
+          TAG: ${{ needs.build.outputs.tag }}
         run: |
           set -euo pipefail
           cd site
@@ -373,7 +398,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --quiet && echo "nothing changed" && exit 0
-          git commit -q -m "docs: ${VERSION}"
+          git commit -q -m "docs: ${TAG}"
           git push -q origin HEAD:gh-pages
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
