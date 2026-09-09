@@ -169,7 +169,7 @@ ci:
 # exceptions: all eleven here are `cargo`-free through their dependencies, and
 # all thirteen there reach it. `gate-lists-check` asserts the arithmetic of that
 # sentence rather than leaving it to a reader.
-portable: gate-lists-check release-tags-check typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
+portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
 
 # The checks that compile, link, or run the addon, and so have to run per host.
 #
@@ -1523,6 +1523,22 @@ conformance-writes:
 [doc("Fail if ci-steps and the two lists have drifted apart.")]
 gate-lists-check:
     node packages/meo-canvas/tools/gate-lists.mjs
+
+# Fail if the Actions cache is close to the limit, and say which ref holds it.
+#
+# **GitHub emits no signal when it evicts.** The only symptom is a restore
+# taking seconds instead of a minute, and nothing looks at that -- so on
+# 9 September a merged pull request's dead 3.53 GiB pushed the repository over
+# and a different leg cold-built on every run for an unknown period, reading as
+# "Windows is slow".
+#
+# Reads the API, so it needs a token: `GITHUB_TOKEN` in CI, `gh auth token` on
+# a machine. Without one it says so and passes locally, and fails in CI, where
+# an absent token means the job lost `actions: read` rather than that someone
+# has not run `gh auth login`.
+[doc("Fail if the Actions cache is near the limit; name the refs holding it.")]
+cache-budget-check:
+    node packages/meo-canvas/tools/cache-budget.mjs
 
 # The two release channels, and the filter that decides which of them gets a
 # JavaScript reference.
