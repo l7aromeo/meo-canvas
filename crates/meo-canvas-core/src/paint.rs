@@ -48,8 +48,8 @@ use meo_skia_canvas::{
     Affine, BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
     FillRule as SkiaFillRule, GradientInterpolation,
     GradientStop as SkiaGradientStop, Image as SkiaImage, Path2D, PathBuilder,
-    PixelColorSpace, PixelDepth, PixelExportOptions, PixelFormat, Point,
-    RgbaLinear, Shader, StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
+    PixelColorSpace, PixelDepth, PixelExportOptions, Point, RgbaLinear, Shader,
+    StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
     TextBaseline as SkiaTextBaseline, TextDecoration as SkiaTextDecoration,
     TextDecorationStyle as SkiaDecorationStyle,
     filter::{BlurStyle, MaskFilter},
@@ -4293,8 +4293,15 @@ fn draw_backdrop(
         data.width(),
         data.height(),
         data.stride(),
-        PixelFormat::Rgba8UnormPremul,
-        PixelColorSpace::Srgb,
+        // 0.16 folds the format and the colour space into one options value.
+        // `Rgba8UnormPremul` was the two of them said separately: eight-bit
+        // sRGB with the alpha already multiplied in, which is what the surface
+        // read above hands back.
+        PixelExportOptions {
+            color_space: PixelColorSpace::Srgb,
+            depth: PixelDepth::Uint8,
+            premultiplied: true,
+        },
     )
     .map_err(|error| Error::Paint(error.to_string()))?;
 

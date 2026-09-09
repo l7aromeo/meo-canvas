@@ -1365,9 +1365,9 @@ version = "0.1.0"
 
 [[package]]
 name = "meo-skia-canvas"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38cb4653b8e6c16ebabc0e08a6a456487797b55f0c6d42b45164362e6d47d8b6"
+checksum = "17a595eaf0f22b5eda703d5309835e32aafff032ed938c41a80e36388e1f9e17"
 dependencies = [
  "allsorts",
  "ash",
@@ -1390,6 +1390,7 @@ dependencies = [
  "png",
  "process_path",
  "quantette",
+ "quick-xml 0.37.5",
  "raw-window-handle 0.6.2",
  "raw-window-metal",
  "rayon",
