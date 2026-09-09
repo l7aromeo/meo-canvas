@@ -36,6 +36,19 @@ on:
 permissions:
   contents: read
 
+# **The last workflow without one.** Two dispatches, or a dispatch while a
+# `fixtures/**` push is running, would write the same artifact name and race for
+# the same cache key. Keyed by ref *and* by the chosen runner, because rendering
+# the same branch on Windows and on Linux is the ordinary way this is used and
+# those two must not cancel each other.
+#
+# `cancel-in-progress: false`: a run that has spent forty minutes rendering
+# goldens is not superseded by a newer one the way a gate result is. The second
+# waits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.os || 'matrix' }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -80,9 +93,24 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
+      # **Restores, never saves.** This workflow runs on `workflow_dispatch` and
+      # on pushes to `fixtures/**`, so every cache it wrote was scoped to a
+      # branch that gets deleted with its pull request and could never be read
+      # again -- the same waste `save-if` removed from `ci.yml`, which is why
+      # the cache list holds six entries and not one of them is a `fixtures-`.
+      #
+      # **It cannot read `ci.yml`'s entries either, and the key is not why.**
+      # rust-cache appends the job id: `key += `-${job}`` when `add-job-id-key`
+      # is true, which is its default. `ci.yml`'s job is `ci` and this one is
+      # `accept`, so the observed key `v0-rust-macos-latest-ci-Darwin-arm64-...`
+      # carries a segment this job can never produce. Matching the `key:` input
+      # alone would change nothing; sharing would take `add-job-id-key: false`
+      # in **both** files, and one invalidation of the CI cache to get it.
+      # That is a trade for `ci.yml` to make and it is not made here.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: fixtures-${{ inputs.os || matrix.os }}
+          save-if: false
 
       # The same two the CI job installs, and for the same reasons: libaom
       # assembles its hot paths on x86, and Skia links the system font
