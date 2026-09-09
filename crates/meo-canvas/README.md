@@ -1,9 +1,9 @@
 # `meo-canvas`
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner-dark.webp" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner-light.webp" />
-  <img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/v10/docs/assets/brand/banner.webp" alt="meo-canvas — four easing curves animating, each drawn by the library itself" width="1280" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/docs/assets/brand/banner-dark.webp" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/docs/assets/brand/banner-light.webp" />
+  <img src="https://raw.githubusercontent.com/l7aromeo/meo-canvas/main/docs/assets/brand/banner.webp" alt="meo-canvas — four easing curves animating, each drawn by the library itself" width="1280" />
 </picture>
 
 Describe a picture; get image bytes back. CSS flexbox, grid and block layout on
