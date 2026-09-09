@@ -42,7 +42,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to publish, e.g. v10.0.0-alpha.4'
+        description: 'Release tag to publish, e.g. npm-v10.0.0-alpha.6'
         required: true
         type: string
 
@@ -87,11 +87,25 @@ jobs:
             release)           TAG="${{ github.event.release.tag_name }}" ;;
             *)                 TAG="" ;;
           esac
-          # `v10.0.0` or `v10.0.0-alpha.4`; the crates lineage is `crates-v*`
-          # and does not create a JavaScript reference.
-          if [ -n "$TAG" ] && ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+          # `npm-v10.0.0` or `npm-v10.0.0-alpha.6`, and the bare `v10.0.0`
+          # spelling the npm channel used before it was given a prefix. Both
+          # are npm releases and both have a JavaScript reference; the 68
+          # existing `v*` tags were not rewritten, and `workflow_dispatch`
+          # exists to backfill exactly those, so refusing them would make
+          # every release before the rename unrepublishable.
+          #
+          # The Rust lineage is `rust-v*` and produces no JavaScript
+          # reference. **That is what this pattern is for**, and it is why the
+          # npm prefix could not simply be added without touching it: an
+          # anchored `^v` matches neither `npm-v10.0.0` nor `rust-v0.1.0`, so
+          # the rename would have made a release event print a notice and
+          # publish nothing -- no error, no red job, no deploy.
+          #
+          # `tools/release-tags.mjs` runs a tag of every shape through this
+          # exact line rather than through a second copy of it.
+          if [ -n "$TAG" ] && ! printf '%s' "$TAG" | grep -Eq '^(npm-)?v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-              echo "::error::'$TAG' is not an npm release tag (expected vX.Y.Z or vX.Y.Z-pre)"
+              echo "::error::'$TAG' is not an npm release tag (expected npm-vX.Y.Z, npm-vX.Y.Z-pre, or the pre-rename vX.Y.Z)"
               exit 1
             fi
             echo "::notice::$TAG is not an npm release tag; nothing published"
@@ -302,8 +316,23 @@ jobs:
         run: |
           set -euo pipefail
           touch site/.nojekyll
-          rm -rf "site/${VERSION}"
-          cp -r incoming "site/${VERSION}"
+
+          # **The directory is the version, with no channel prefix.** The tag
+          # is `npm-v10.0.0-alpha.6` and the directory stays `v10.0.0-alpha.6`,
+          # for a reason that is not tidiness: the sort below and
+          # `site-index.mjs` both read directory names against
+          # `^v(\d+)\.(\d+)\.(\d+)`, so a prefixed directory parses as
+          # nothing. It would deploy, the index would never list it, and
+          # `latest/` would never advance past the last release named the old
+          # way -- with no error anywhere. Stripping the prefix also leaves the
+          # 68 directories already on `gh-pages` correct rather than starting a
+          # second naming scheme beside them.
+          #
+          # There is only one channel here in any case: the Rust reference is
+          # published by docs.rs, so no `rust-v*` release ever reaches this.
+          dir="${VERSION#npm-}"
+          rm -rf "site/${dir}"
+          cp -r incoming "site/${dir}"
 
           mkdir -p site/assets/brand
           cp repo/docs/assets/brand/banner-dark.webp \

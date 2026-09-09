@@ -57,6 +57,17 @@
 !/docs/assets/brand/README.md
 !/LICENSE
 
+# -- Release notes ----------------------------------------------------------
+# Written by hand, one file per version per channel. `release.yml` and
+# `crates-io.yml` read the file for the version they are publishing and refuse
+# to release without it, so these have to be trackable or the refusal is
+# permanent: the error would name a path `git add` cannot take, and no amount
+# of writing the note would satisfy it. Only `.md`, so a scratch file left in
+# the directory is still refused by the `*` above.
+!/docs/releases/README.md
+!/docs/releases/npm/*.md
+!/docs/releases/rust/*.md
+
 # -- Crates -----------------------------------------------------------------
 # Each crate carries its own README because `clippy::cargo` requires the
 # `readme` metadata and crates.io renders it per crate, not per workspace.

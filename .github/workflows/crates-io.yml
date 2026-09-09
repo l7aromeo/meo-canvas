@@ -54,9 +54,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The whole history, because the release notes below are `git log`
-          # over the range since the last tag and a shallow clone has neither
-          # the tags nor the commits.
+          # The whole history, because the tag step below asks whether its own
+          # tag already exists and a shallow clone fetches none. The notes no
+          # longer need it -- they are read from a file in the tree -- but the
+          # existence check is what makes a re-run safe, so the depth stays.
           fetch-depth: 0
 
       # The same block-scalar read `release.yml` uses, and for the same reason:
@@ -177,14 +178,19 @@ jobs:
       # has that scar. Tagging last means a failed publish leaves the tree
       # exactly as it was.
       #
-      # **The prefix is `crates-v`, not `v`.** `release.yml` owns `v*` for the
-      # npm lineage and derives its release notes from
-      # `git describe --tags --match 'v*'`. A crates tag named `v0.1.0` would
-      # match that pattern, become the "previous tag" for the next npm release,
-      # and silently truncate its notes to the commits since a tag from the
-      # other lineage. The two version lines are independent -- npm continues
-      # v1 at 10.x, the crates start fresh at 0.1.0 -- so their tags have to be
-      # too.
+      # **The prefix is `rust-v`, and the npm side now carries `npm-v`.** The
+      # two version lines are independent -- npm continues v1 at 10.x, the
+      # crates start fresh at 0.1.0 -- so a shared namespace was never right,
+      # and a crate tag named `v0.1.0` would once have become the "previous
+      # tag" for the next npm release and silently truncated its notes to a
+      # range across two lineages. That particular failure is gone with the
+      # generated notes; the namespaces stay separate because the releases
+      # are, and because `docs.yml` decides whether a tag has a JavaScript
+      # reference by its prefix.
+      #
+      # This lineage has no published tags yet, so the rename from `crates-v`
+      # costs nothing and rewrites nothing. The npm side's 68 `v*` tags were
+      # left alone, which is why `docs.yml` accepts both spellings there.
       - name: Tag the commit and open a release
         if: ${{ !inputs.dry_run }}
         env:
@@ -198,32 +204,34 @@ jobs:
           version=$(cargo metadata --format-version 1 --no-deps \
             | jq -r '.packages[] | select(.name == "meo-canvas") | .version')
           test -n "$version" || { echo "::error::could not read the crate version"; exit 1; }
-          git_tag="crates-v${version}"
+          git_tag="rust-v${version}"
 
-          # The commit subjects since the last crates tag, verbatim, on the
-          # same reasoning `release.yml` gives: the subjects here are already
-          # written as one-line summaries, so a conventional-commit parser
-          # would drop most of the history rather than organise it.
-          previous=$(git describe --tags --abbrev=0 --match 'crates-v*' 2>/dev/null || true)
-          if [ -n "$previous" ]; then
-            range="${previous}..HEAD"
-            echo "notes cover ${range}"
-          else
-            range="HEAD"
-            echo "no previous crates tag; notes cover the whole history"
+          # **Written by hand, per version, and a missing file stops the
+          # release** -- the same rule `release.yml` follows and for the same
+          # reason. A range of subjects described one lineage when there was
+          # one lineage; with two channels cutting from the same trunk, the
+          # commits between two crate releases include every npm-side change
+          # and every gate edit, and a page listing all of them tells a crate
+          # consumer nothing. Written against the previous release of THIS
+          # channel is the whole point of the split.
+          #
+          # No fallback to the log. A fallback would make this unable to fail.
+          notes_source="docs/releases/rust/${version}.md"
+          if [ ! -s "${notes_source}" ]; then
+            echo "::error::${notes_source} is missing or empty. Release notes are written by hand, per channel and per version, against the previous release of that channel. Write it, commit it, and run this again."
+            exit 1
           fi
+          echo "notes from ${notes_source}"
 
           {
             echo "\`cargo add meo-canvas@${version}\`"
             echo ""
             echo "Published: \`meo-canvas-scene\`, \`meo-canvas-core\`, \`meo-canvas\`, \`meo-canvas-cli\`, all at ${version}."
             echo ""
-            echo "## Changes"
-            echo ""
-            git log --no-merges --format='- %s' "${range}"
+            cat "${notes_source}"
           } > notes.md
 
-          git tag -a "${git_tag}" -m "crates ${version}"
+          git tag -a "${git_tag}" -m "meo-canvas crates ${version}"
           git push origin "${git_tag}"
 
           # `--prerelease` on the same rule cargo uses to decide a version is a
