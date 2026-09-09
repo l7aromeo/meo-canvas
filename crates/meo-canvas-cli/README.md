@@ -8,7 +8,9 @@ Renders an encoded scene file to an image.
 meo-canvas scene.mcs --format png --output out.png
 ```
 
-Install it with `cargo install meo-canvas-cli`. The binary is named
+Install it with `cargo install meo-canvas-cli --version 0.1.0-alpha.1`.
+The version is named because this is a prerelease and `cargo install` will not
+select one otherwise. The binary is named
 `meo-canvas`; the library crate of that name is the Rust API, and the two are
 separate things that share a word.
 

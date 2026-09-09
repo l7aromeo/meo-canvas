@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
 # 1.98 is the floor the workspace actually needs and the current stable
 # (`rustc 1.98.0 (88d9e12ae 2026-08-18)`). Nothing here reaches below it, and a
@@ -23,8 +23,8 @@ authors = ["L A Romeo <ukasyahrz@outlook.com>"]
 # Internal members. Both a `path` and a `version` because a member published to
 # crates.io carries the version and a local build follows the path; naming only
 # one makes the crate either unpublishable or untestable.
-meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.1.0" }
-meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0" }
+meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.1.0-alpha.1" }
+meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0-alpha.1" }
 
 # The drawing backend, from crates.io rather than a path or a workspace member.
 # `default-features = false` is what keeps its `node-addon` feature off, and so

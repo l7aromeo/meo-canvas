@@ -976,11 +976,20 @@ bump-npm *bump="prerelease": ensure-deps
 # the tag up with no release under it.
 release_repo := "l7aromeo/meo-canvas"
 
-# The branch a release is cut from. Not `main`: `main` on that remote is v1's,
-# and it is v1's semantic-release branch, so a push there publishes
-# `meo-canvas@latest`. This line is the difference between shipping v10 and
-# replacing v9.
-release_branch := "v10"
+# The branch a release is cut from.
+#
+# `main` is this lineage. It named the previous one until the branches were
+# swapped, and the note here used to say `main` was the wrong answer for exactly
+# that reason -- so a reader meeting a stale copy of this comment will believe
+# the value below is a mistake and change it back to a branch that no longer
+# exists. It does not exist: `git ls-remote --heads` returns `gh-pages`, `main`
+# and `v9`.
+#
+# The predecessor is the `v9` branch, frozen and never bumped again. Nothing
+# here can publish it: what separates the two npm lineages now is the version
+# and the dist-tag, and what separates the two release channels is the tag
+# prefix -- `npm-v*` against `rust-v*`, which `release-tags-check` pins.
+release_branch := "main"
 
 # Rehearse a release without publishing anything.
 #
