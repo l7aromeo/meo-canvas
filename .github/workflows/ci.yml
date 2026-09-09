@@ -265,8 +265,13 @@ jobs:
       - name: Install what libaom needs
         if: runner.os == 'Linux'
         run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
-                     /etc/apt/sources.list.d/microsoft-prod.list
+          # Matched on CONTENT rather than on filename. The first version of
+          # this named `google-chrome.list` and failed on the runner exactly as
+          # it failed without the fix -- reproduced in a container: the same
+          # repository registered as `google-chrome.sources.list` survives a
+          # name-based `rm` and `apt-get update` still exits 100.
+          sudo grep -rlE 'dl\.google\.com|packages\.microsoft\.com' \
+            /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -r rm -f
           sudo apt-get update
           sudo apt-get install -y \
             cmake nasm \
