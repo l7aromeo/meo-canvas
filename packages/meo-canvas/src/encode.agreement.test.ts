@@ -57,6 +57,21 @@ import type { Format } from './index.js'
  * proves platform-dependent the answer is a per-platform variant beside it —
  * the way the fixtures already do it — rather than a tolerance.
  *
+ *
+ * # Shown to go red from both sides, not from one
+ *
+ * Construction says the pair is symmetric; construction is not evidence, and
+ * this file is an argument against taking it as such. So the same divergence
+ * was introduced on each surface in turn — `quality: 0.5` defaulted in
+ * `toBuffer` here, and `quality: Some(0.5)` defaulted in `Root::to_buffer`
+ * there — and each turned **three of eight** formats red, `jpg`, `webp` and
+ * `avif`, leaving `png`, `bmp`, `tiff`, `svg` and `raw` byte-identical.
+ *
+ * **Both provocations produced the same `jpg` hash**, `5e0afffe9d6b74ad`. Two
+ * surfaces given one option arriving at one byte string is evidence they reach
+ * the same encoder — so what this arm measures is the option and not the
+ * language, which is the claim it has to be able to make.
+ *
  * # Regenerating
  *
  * `UPDATE_ENCODE_HASHES=1 npx vitest run encode.agreement`, and the Rust side

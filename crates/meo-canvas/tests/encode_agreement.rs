@@ -34,6 +34,21 @@
 //! is a claim about every platform that runs this suite, so this scene is flat
 //! rectangles -- the half of that measurement that does not move.
 //!
+//!
+//! # Shown to go red from both sides, not from one
+//!
+//! Construction says the pair is symmetric; construction is not evidence, and
+//! this file is an argument against taking it as such. So the same divergence
+//! was introduced on each surface in turn -- `quality: Some(0.5)` defaulted in
+//! `Root::to_buffer` here, and `quality: 0.5` defaulted in `toBuffer` there --
+//! and each turned **three of eight** formats red, `jpg`, `webp` and `avif`,
+//! leaving `png`, `bmp`, `tiff`, `svg` and `raw` byte-identical.
+//!
+//! **Both provocations produced the same `jpg` hash**, `5e0afffe9d6b74ad`.
+//! Two surfaces given one option arriving at one byte string is evidence they
+//! reach the same encoder -- so what this arm measures is the option and not
+//! the language, which is the claim it has to be able to make.
+//!
 //! # Regenerating
 //!
 //! `UPDATE_ENCODE_HASHES=1 npx vitest run encode.agreement` writes the asset
@@ -120,9 +135,26 @@ fn produces_the_hashes_the_javascript_side_wrote() {
     ))
     .unwrap_or_else(|error| unreachable!("the asset is missing: {error}"));
 
-    assert_eq!(
-        measured.join("\n"),
-        expected.trim(),
-        "\nthe two surfaces disagree about encoded bytes; each line is `<format> <fnv1a>`"
+    // **Line by line rather than two joined blocks.** Comparing the blocks is
+    // one assertion that prints both in full, so a reader counts columns to
+    // find which format moved. The provocations that checked this arm moved
+    // three of eight; naming those three is the difference between a failure
+    // that says what happened and one that says only that it did.
+    let expected: Vec<&str> = expected.trim().lines().collect();
+    let disagreed: Vec<String> = measured
+        .iter()
+        .zip(&expected)
+        .filter(|(ours, theirs)| ours.as_str() != **theirs)
+        .map(|(ours, theirs)| {
+            format!("  {theirs}  <- the other surface\n  {ours}  <- this one")
+        })
+        .collect();
+
+    assert!(
+        disagreed.is_empty() && measured.len() == expected.len(),
+        "the two surfaces disagree about encoded bytes in {} of {} formats:\n{}",
+        disagreed.len(),
+        expected.len(),
+        disagreed.join("\n")
     );
 }
