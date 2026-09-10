@@ -29,7 +29,8 @@ use meo_canvas_scene::{
     style::{
         Dimension, Length,
         layout::{
-            Align, Display, FlexDirection, LayoutStyle, PositionType, TrackSize,
+            Align, Display, FlexDirection, LayoutStyle, Overflow, PositionType,
+            TrackSize,
         },
         paint::Color,
     },
@@ -149,6 +150,56 @@ fn scene_for(case: &str) -> Scene {
     scene
 }
 
+/// The rows where the box clips, which is what removes CSS's automatic minimum.
+const CLIPPED: &[&str] = &[
+    "ratio-definite-clipped",
+    "ratio-definite-overflow-scroll",
+    "ratio-definite-overflow-auto",
+];
+
+/// `ratio-with-taller-content`'s box, clipped three ways.
+///
+/// **Split from [`ratio_box_case`] because they vary the overflow rather than
+/// what supplies the width.** All three are the same 100-wide box holding 300
+/// of content, and only the clipping differs -- which is the whole of what
+/// these rows are about.
+fn clipped_case(scene: &mut Scene, case: &str) {
+    // `ratio-with-taller-content`'s box, clipped. Clipping removes
+    // CSS's automatic minimum, so Chrome reports the ratio's own
+    // 117.64 rather than the content's 300 -- which is what taffy
+    // already gives, and why the compensation must not fire here.
+    //
+    // `overflow: clip` was measured at 300 and has no row: it is the
+    // one non-visible value establishing no scroll container, and
+    // `Overflow` here cannot express it.
+    let overflow = if case == "ratio-definite-overflow-scroll"
+        || case == "ratio-definite-overflow-auto"
+    {
+        Overflow::Scroll
+    } else {
+        Overflow::Hidden
+    };
+    let outer = push(
+        scene,
+        NodeId::ROOT,
+        boxed(LayoutStyle {
+            size: (Dimension::Points(100.0), Dimension::Auto),
+            ..LayoutStyle::default()
+        }),
+    );
+    let mut style = bare_ratio(RATIO);
+    style.overflow = (overflow, overflow);
+    let parent = push(scene, outer, measured(style));
+    push(
+        scene,
+        parent,
+        boxed(LayoutStyle {
+            size: (Dimension::Auto, Dimension::Points(300.0)),
+            ..LayoutStyle::default()
+        }),
+    );
+}
+
 /// The rows where the measured element is the ratio box itself.
 ///
 /// **A third question, not a third spelling of the first two.** The other
@@ -164,6 +215,9 @@ const RATIO_BOX: &[&str] = &[
     "column-flex-ratio-cross",
     "grid-item-ratio",
     "ratio-with-taller-content",
+    "ratio-definite-clipped",
+    "ratio-definite-overflow-scroll",
+    "ratio-definite-overflow-auto",
     "ratio-shrink-with-author-min-height",
     "ratio-shrink-50-child",
     "ratio-shrink-taller-content",
@@ -306,6 +360,7 @@ fn ratio_box_case(scene: &mut Scene, case: &str) {
             );
             push(scene, outer, measured(bare_ratio(RATIO)));
         }
+        other if CLIPPED.contains(&other) => clipped_case(scene, other),
         "ratio-with-taller-content" => {
             // The row that says a derived height is a floor rather than an
             // override: the ratio implies 117.64 and the content is 300, and
@@ -738,7 +793,7 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 /// bracket that boundary at 34 and 36 against a derived 35.28: the first
 /// diverges and the second does not, so the two rows locate the defect at the
 /// crossing rather than describing it.
-const KNOWN: &[&str] = &["ratio-with-taller-content"];
+const KNOWN: &[&str] = &[];
 
 /// One row: the case's key and the height Chrome gave it.
 fn rows() -> Vec<(String, f32)> {
@@ -765,7 +820,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        26,
+        29,
         "the table changed shape; the scenes here are per row"
     );
 

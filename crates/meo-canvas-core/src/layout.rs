@@ -1080,11 +1080,16 @@ where
         return Ok(());
     }
 
+    // What the ratio-free solve reported, kept because the second workaround
+    // below compares against it. A `Vec` rather than a map because the
+    // candidate list is the iteration order in both places.
+    let mut cleared: Vec<(taffy::NodeId, f32, f32)> = Vec::new();
     let mut pins: Vec<(taffy::NodeId, f32)> = Vec::new();
     for (id, ratio) in candidates {
         let solved = tree
             .layout(*id)
             .map_err(|error| Error::Layout(error.to_string()))?;
+        cleared.push((*id, solved.size.width, solved.size.height));
         if solved.size.width / ratio >= solved.size.height {
             pins.push((*id, solved.size.width));
         }
@@ -1097,16 +1102,150 @@ where
             .clone();
         style.aspect_ratio = Some(*ratio);
         if let Some((_, width)) = pins.iter().find(|(pinned, _)| pinned == id) {
+            // **The pinned width stays on the style after the solve,
+            // deliberately.** Nothing removes it, and nothing needs to:
+            // `collect` reads `tree.layout`, so what a `LayoutResult` reports
+            // is the geometry rather than the style it came from. A pass added
+            // later that reads `tree.style()` after `solve_once` sees an inline
+            // size the author never wrote.
             style.size.width = taffy::Dimension::length(*width);
         }
         tree.set_style(*id, style)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
 
-    // **Cleared, because the second pass re-measures.** Every leaf reaching the
-    // measurer writes its baseline again, so entries from the first pass would
-    // survive for any node the second sizes differently -- and a stale baseline
-    // is text drawn at the wrong `y`, which no row of any table here shows.
+    // **Cleared, because the second pass re-measures.** Entries from the first
+    // pass would otherwise survive for any node the second sizes differently,
+    // and a stale baseline is text drawn at the wrong `y`, which no row of any
+    // table here shows.
+    //
+    // **What makes the clear safe is not that every call writes one.**
+    // `measure_leaf` inserts inside `if let Some(baseline) =
+    // measured.first_baseline`, so a leaf whose answer carries no baseline
+    // writes nothing. It is safe because a leaf that produced one before
+    // produces it again: the measurement is a pure function of its key, which
+    // is the same property `SceneMeasurer.answers` relies on to survive both
+    // passes.
+    //
+    // **A leaf the second pass does not measure keeps nothing**, which is worse
+    // than the stale entry this removes. Today taffy measures every leaf it
+    // measured before, because the pin sets the inline axis alone and a block
+    // size still has to come from somewhere -- so this is safe by a property of
+    // what the pin touches rather than by anything asserted. A compensation
+    // pinning both axes of a leaf leaves it with no baseline and draws its text
+    // at the wrong `y`.
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)?;
+
+    floor_ratio_heights(
+        tree, candidates, &cleared, &pins, root, available, measure, baselines,
+    )
+}
+
+/// Whether this box clips, which is what removes CSS's automatic minimum.
+///
+/// **A scroll container rather than a non-`visible` overflow**, and the two are
+/// not the same set. Measured in Chrome on a 100-wide ratio box holding 300 of
+/// content: `hidden`, `scroll` and `auto` all report 117.64 and `clip` reports
+/// 300. `clip` is the one non-visible value that establishes no scroll
+/// container, so a predicate written from the specification's wording would be
+/// right on three spellings and silently wrong on the fourth.
+///
+/// `Overflow` here has no `Clip`, so no scene reaches that case today. Adding
+/// one is **not** a synonym for `Hidden` on this axis.
+const fn clips(overflow: taffy::Point<taffy::Overflow>) -> bool {
+    !matches!(overflow.x, taffy::Overflow::Visible)
+        || !matches!(overflow.y, taffy::Overflow::Visible)
+}
+
+// [WORKAROUND] taffy has one minimum where CSS has two that behave
+// differently. CSS gives a ratio box an automatic minimum block size from its
+// content, which does **not** transfer back into the inline axis, and an
+// author's `min-height`, which does. taffy's `min_size.height` is the second
+// kind, so a content-derived floor written there is transferred and a 100-wide
+// box comes back 255 wide -- measured, against Chrome's 100.
+// `l7aromeo/meo-canvas#104`.
+//
+// Retires when taffy distinguishes the two, or applies the automatic minimum
+// itself -- `ratio-with-taller-content` in
+// `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fails in
+// both directions and will say so, and
+// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
+// needs this.
+//
+// **It shares the ratio-free solve above rather than running its own.** One
+// clearing pass serves both compensations and the decision splits afterwards,
+// so a reader looking for a second machine will not find one.
+//
+// **Only where the inline size is not an outcome of the ratio**, which is read
+// rather than reasoned: removing the ratio moves the width exactly where the
+// ratio produced it. Measured, a 100-wide block box reports 100 with and
+// without, and its shrink-to-fit sibling reports 255 with and 30 without --
+// where the width moves, taffy's block-to-inline transfer is already Chrome's
+// answer and the node is left alone.
+//
+// **And only where the box does not clip**, because clipping removes the
+// automatic minimum this restores -- see [`clips`].
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the second half of one workaround, sharing the first half's \
+              solve; splitting the arguments into a struct would hide that \
+              they are the same pass's outputs"
+)]
+fn floor_ratio_heights<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    candidates: &[(taffy::NodeId, f32)],
+    cleared: &[(taffy::NodeId, f32, f32)],
+    pins: &[(taffy::NodeId, f32)],
+    root: taffy::NodeId,
+    available: taffy::Size<taffy::AvailableSpace>,
+    measure: &mut M,
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut floored: Vec<taffy::NodeId> = Vec::new();
+    for (id, ratio) in candidates {
+        // A pinned node has a definite width by now, so its width cannot move
+        // and the test below would answer `false` for the wrong reason.
+        if pins.iter().any(|(pinned, _)| pinned == id) {
+            continue;
+        }
+        let Some((_, was_wide, was_tall)) =
+            cleared.iter().find(|(cleared_id, _, _)| cleared_id == id)
+        else {
+            continue;
+        };
+        let style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        if clips(style.overflow) {
+            continue;
+        }
+        let solved = tree
+            .layout(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        let moved = (solved.size.width - was_wide).abs() > f32::EPSILON;
+        if !moved && *was_tall > solved.size.width / ratio {
+            floored.push(*id);
+        }
+    }
+
+    if floored.is_empty() {
+        return Ok(());
+    }
+
+    for id in &floored {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.aspect_ratio = None;
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+
     baselines.clear();
     solve_once(tree, root, available, measure, baselines)
 }

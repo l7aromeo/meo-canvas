@@ -280,6 +280,53 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-definite-clipped',
+    // **Does the automatic minimum survive clipping?** CSS gives a box with an
+    // aspect ratio an automatic minimum block size only while `overflow` is
+    // `visible`. If that is what puts `ratio-with-taller-content` at 300, then
+    // clipping should remove it and Chrome should report the 118 the ratio
+    // implies -- which is the number this renderer already gives, and a
+    // compensation that always floors would be wrong for every clipped box.
+    // Three further spellings were measured and are not rows here, because no
+    // scene can reach them. `overflow: clip` gives **300** where `hidden`,
+    // `scroll` and `auto` give 117.64 -- it is the one non-visible value that
+    // establishes no scroll container, and `Overflow` in this renderer has no
+    // `Clip` variant to express it. And text content at 100 wide gives 120 with
+    // the ratio and 120 without, against 160 at its min-content width, which is
+    // what says the floor is the content's height at the used width rather than
+    // its min-content height.
+    note: 'the same box clipped -- if the automatic minimum is what makes 300, this is 118',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:hidden">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-definite-overflow-scroll',
+    // The predicate is a set rather than a value: CSS removes the automatic
+    // minimum for a non-`visible` overflow, and that is a reading until each
+    // spelling is measured.
+    note: 'overflow: scroll -- does it drop the automatic minimum the way hidden does',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:scroll">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-definite-overflow-auto',
+    // The predicate is a set rather than a value: CSS removes the automatic
+    // minimum for a non-`visible` overflow, and that is a reading until each
+    // spelling is measured.
+    note: 'overflow: auto -- does it drop the automatic minimum the way hidden does',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:auto">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-with-taller-content',
     note: 'content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override',
     html: `<div style="width:100px">

@@ -28,4 +28,7 @@ ratio-shrink-content-just-under	35.28	29.98	content one pixel short of the deriv
 ratio-shrink-content-just-over	36.00	30.59	content one pixel past it -- if the width moves here and not above, the threshold is the derived height itself
 ratio-gt-one-shrink	15.00	30.00	a ratio above 1 with short content, so a direction rule cannot be an artefact of the ratio side of 1
 ratio-gt-one-taller-content	40.00	80.00	the same ratio with content past the derived height
+ratio-definite-clipped	117.64	100.00	the same box clipped -- if the automatic minimum is what makes 300, this is 118
+ratio-definite-overflow-scroll	117.64	100.00	overflow: scroll -- does it drop the automatic minimum the way hidden does
+ratio-definite-overflow-auto	117.64	100.00	overflow: auto -- does it drop the automatic minimum the way hidden does
 ratio-with-taller-content	300.00	100.00	content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override
