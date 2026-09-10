@@ -31,4 +31,5 @@ ratio-gt-one-taller-content	40.00	80.00	the same ratio with content past the der
 ratio-definite-clipped	117.64	100.00	the same box clipped -- if the automatic minimum is what makes 300, this is 118
 ratio-definite-overflow-scroll	117.64	100.00	overflow: scroll -- does it drop the automatic minimum the way hidden does
 ratio-definite-overflow-auto	117.64	100.00	overflow: auto -- does it drop the automatic minimum the way hidden does
+ratio-definite-clipped-author-min	200.00	170.00	clipped and carrying an author min-height -- the explicit minimum survives and takes the width with it
 ratio-with-taller-content	300.00	100.00	content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override

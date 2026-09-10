@@ -327,6 +327,21 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-definite-clipped-author-min',
+    // **The row that separates CSS's two minimums.** Clipping removes the
+    // automatic one; an author's `min-height` survives it and, unlike the
+    // automatic one, transfers back through the ratio into the inline axis --
+    // 200 x 0.85 = 170, on a box whose containing block is 100 wide. That
+    // asymmetry is the whole of `l7aromeo/meo-canvas#104`'s upstream half:
+    // taffy has one slot and it behaves like the explicit kind.
+    note: 'clipped and carrying an author min-height -- the explicit minimum survives and takes the width with it',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:hidden;min-height:200px">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-with-taller-content',
     note: 'content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override',
     html: `<div style="width:100px">

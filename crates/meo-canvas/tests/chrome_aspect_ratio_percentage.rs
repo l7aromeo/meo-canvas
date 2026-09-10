@@ -206,6 +206,7 @@ const CLIPPED: &[&str] = &[
     "ratio-definite-clipped",
     "ratio-definite-overflow-scroll",
     "ratio-definite-overflow-auto",
+    "ratio-definite-clipped-author-min",
 ];
 
 /// `ratio-with-taller-content`'s box, clipped three ways.
@@ -240,6 +241,15 @@ fn clipped_case(scene: &mut Scene, case: &str) {
     );
     let mut style = bare_ratio(RATIO);
     style.overflow = (overflow, overflow);
+    // **The row that separates CSS's two minimums.** Clipping removes the
+    // automatic one; an author's `min-height` survives it, and unlike the
+    // automatic one it transfers back through the ratio into the inline axis --
+    // Chrome gives `170 x 200` on a box whose containing block is 100 wide.
+    // That asymmetry is what `l7aromeo/meo-canvas#104` reports upstream: taffy
+    // has one slot and it behaves like the explicit kind.
+    if case == "ratio-definite-clipped-author-min" {
+        style.min_size = (Dimension::Auto, Dimension::Points(200.0));
+    }
     let parent = push(scene, outer, measured(style));
     push(
         scene,
@@ -269,6 +279,7 @@ const RATIO_BOX: &[&str] = &[
     "ratio-definite-clipped",
     "ratio-definite-overflow-scroll",
     "ratio-definite-overflow-auto",
+    "ratio-definite-clipped-author-min",
     "ratio-shrink-with-author-min-height",
     "ratio-shrink-50-child",
     "ratio-shrink-taller-content",
@@ -881,7 +892,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        29,
+        30,
         "the table changed shape; the scenes here are per row"
     );
 
