@@ -117,12 +117,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 /**
  * How short each list may get before this asks whether it was meant.
  *
- * Two below today's eleven and thirteen: removing a recipe deliberately should
- * not require editing a number here, and a list emptied by an edit must not
- * pass. This is the only assertion that sees a deletion at all, which is why it
- * is close rather than generous.
+ * Two below today's thirteen and thirteen: removing a recipe deliberately
+ * should not require editing a number here, and a list emptied by an edit must
+ * not pass. This is the only assertion that sees a deletion at all, which is
+ * why it is close rather than generous.
  */
-const FLOORS = { portable: 9, native: 11 }
+const FLOORS = { portable: 11, native: 11 }
 
 const recipes = JSON.parse(execFileSync('just', ['--dump', '--dump-format', 'json'], { cwd: ROOT, encoding: 'utf8' })).recipes
 
