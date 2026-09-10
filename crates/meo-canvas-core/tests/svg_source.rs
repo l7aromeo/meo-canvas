@@ -319,3 +319,194 @@ fn a_colour_on_a_bitmap_is_refused() {
         "the same bitmap without a colour did not render"
     );
 }
+
+/// The 8x4 marks as a document, so the two source kinds are the same picture.
+///
+/// Asymmetric on both axes, because a symmetric one reads the same stretched
+/// as cropped and `fill` and `cover` would agree by construction.
+const MARKS: &str = concat!(
+    r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="4" "##,
+    r##"viewBox="0 0 8 4"><rect width="8" height="4" fill="#101014"/>"##,
+    r##"<rect width="1" height="4" fill="#ff00ff"/>"##,
+    r##"<rect x="7" width="1" height="4" fill="#00ffff"/></svg>"##,
+);
+
+/// The cell colour, which is what "not ink" means below.
+const CELL: (u8, u8, u8) = (240, 240, 240);
+
+/// Renders one source at one fit and returns the bounding box of its ink.
+///
+/// Reads [`ImageFormat::Raw`] rather than a PNG because the question is where
+/// the picture landed, and a decode step between the paint and the assertion
+/// is one more thing that can be wrong.
+fn ink(
+    source: ImageSource,
+    fit: ObjectFit,
+    (w, h): (f32, f32),
+) -> (usize, usize, usize, usize) {
+    let mut scene = Scene::new(Size::new(w, h));
+    if let Some(page) = scene.get_mut(NodeId::ROOT) {
+        page.paint.background_color = Color::rgb(CELL.0, CELL.1, CELL.2);
+    }
+    let id = scene
+        .push(
+            NodeId::ROOT,
+            Node::new(NodeKind::Image {
+                source,
+                fit,
+                position: (
+                    meo_canvas_scene::style::Length::Percent(0.5),
+                    meo_canvas_scene::style::Length::Percent(0.5),
+                ),
+                frame: None,
+            }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    if let Some(node) = scene.get_mut(id) {
+        node.layout.size = (Dimension::Points(w), Dimension::Points(h));
+    }
+
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    let bytes = renderer
+        .render_to_buffer(&scene, ImageFormat::Raw, &EncodeOptions::default())
+        .unwrap_or_else(|error| unreachable!("it did not render: {error}"));
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "both extents are whole numbers chosen by this test"
+    )]
+    let (width, height) = (w as usize, h as usize);
+    let (mut left, mut top, mut right, mut bottom) =
+        (usize::MAX, usize::MAX, 0_usize, 0_usize);
+    for y in 0..height {
+        for x in 0..width {
+            let index = ((y * width) + x) * 4;
+            let pixel = (bytes[index], bytes[index + 1], bytes[index + 2]);
+            if pixel != CELL {
+                left = left.min(x);
+                top = top.min(y);
+                right = right.max(x);
+                bottom = bottom.max(y);
+            }
+        }
+    }
+    assert!(left != usize::MAX, "nothing was drawn at all");
+    (left, top, right - left + 1, bottom - top + 1)
+}
+
+/// The same document rasterised at its own size, as PNG bytes.
+///
+/// **The control is generated rather than committed**, so the two source kinds
+/// are provably the same picture. A committed bitmap would be a second asset
+/// that could drift from the document and turn a divergence in the drawing
+/// into a divergence in the art.
+fn marks_as_raster() -> Vec<u8> {
+    let mut scene = Scene::new(Size::new(8.0, 4.0));
+    let id = scene
+        .push(
+            NodeId::ROOT,
+            Node::new(NodeKind::Image {
+                source: ImageSource::Bytes(MARKS.as_bytes().to_vec()),
+                fit: ObjectFit::Fill,
+                position: (
+                    meo_canvas_scene::style::Length::Percent(0.0),
+                    meo_canvas_scene::style::Length::Percent(0.0),
+                ),
+                frame: None,
+            }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    if let Some(node) = scene.get_mut(id) {
+        node.layout.size = (Dimension::Points(8.0), Dimension::Points(4.0));
+    }
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    renderer
+        .render_to_buffer(&scene, ImageFormat::Png, &EncodeOptions::default())
+        .unwrap_or_else(|error| unreachable!("it did not render: {error}"))
+}
+
+/// Every object-fit rule but `fill` puts a document where it puts a bitmap.
+///
+/// **`fill` differing is correct, and this test exists to stop it being
+/// "fixed".** An `<img>` whose source is a document with a `viewBox` and no
+/// `preserveAspectRatio` carries SVG's default, `xMidYMid meet`: `object-fit`
+/// sizes the replaced element, and the document then fits itself inside that
+/// uniformly and centres it. So a stretch never reaches the drawing, and the
+/// visible result is `contain`'s rectangle. Chrome does exactly this --
+/// `tests/assets/chrome/object-fit.tsv` has `fill` and `contain` on the same
+/// rectangle for every `svg` row and on different ones for every `raster` row,
+/// at all three box sizes.
+///
+/// The other four rules preserve the source's aspect, so the document fills
+/// what it is given and the two kinds agree.
+///
+/// **Written the other way round first, and the table refused it.** Making the
+/// kinds agree under `fill` took a renderer that matched Chrome on all thirty
+/// rows and broke three of them.
+///
+/// `l7aromeo/meo-canvas#95` is where this was reported, and it expects the two
+/// kinds to agree -- true only at its own box, 200x133 against 60x40 art, where
+/// a correct implementation draws 199.5x133 and a copy of the bitmap's rule
+/// draws 200x133. Half a pixel apart, inside the slack that issue declares for
+/// a vector edge. The placement itself was wrong until `meo-skia-canvas` 0.16.1
+/// (`l7aromeo/meo-skia-canvas#212`); measured on 0.16.0,
+/// `fill`, `contain` and `cover` are wrong at every box here and `scale-down`
+/// at 6x6.
+#[test]
+fn a_document_is_placed_like_a_bitmap_except_where_it_fits_itself() {
+    let raster = marks_as_raster();
+    for box_size in [(72.0, 72.0), (6.0, 6.0), (100.0, 200.0)] {
+        for (name, fit) in [
+            ("contain", ObjectFit::Contain),
+            ("cover", ObjectFit::Cover),
+            ("none", ObjectFit::None),
+            ("scale-down", ObjectFit::ScaleDown),
+        ] {
+            let vector = ink(
+                ImageSource::Bytes(MARKS.as_bytes().to_vec()),
+                fit,
+                box_size,
+            );
+            let bitmap = ink(ImageSource::Bytes(raster.clone()), fit, box_size);
+            assert_eq!(
+                vector, bitmap,
+                "{name} at {box_size:?}: the document landed at {vector:?} \
+                 and the bitmap at {bitmap:?}"
+            );
+        }
+
+        // `fill` is the one that differs, and it differs by landing on
+        // `contain`'s rectangle. Asserted rather than merely excluded: an
+        // exclusion would also pass if the document stopped being drawn.
+        let filled = ink(
+            ImageSource::Bytes(MARKS.as_bytes().to_vec()),
+            ObjectFit::Fill,
+            box_size,
+        );
+        let contained = ink(
+            ImageSource::Bytes(MARKS.as_bytes().to_vec()),
+            ObjectFit::Contain,
+            box_size,
+        );
+        let stretched = ink(
+            ImageSource::Bytes(raster.clone()),
+            ObjectFit::Fill,
+            box_size,
+        );
+        assert_eq!(
+            filled, contained,
+            "fill at {box_size:?}: a document fits itself under \
+             `xMidYMid meet`, so it should land on contain's rectangle"
+        );
+        assert_ne!(
+            filled, stretched,
+            "fill at {box_size:?}: the document and the bitmap agreed, which \
+             means the document was stretched to the box -- Chrome does not \
+             stretch it, because the document re-fits itself inside whatever \
+             viewport it is given"
+        );
+    }
+}

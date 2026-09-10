@@ -34,6 +34,18 @@ use meo_canvas::{
 /// The source: eight by four, magenta at its own `x = 0`, cyan at `x = 7`.
 const FIT_MARKS: &[u8] = include_bytes!("assets/fit-marks.png");
 
+/// The same picture as a document, which is the kind that placed it wrong.
+///
+/// **The same picture rather than a similar one**: rasterised at its own 8x4
+/// it is byte-identical to the bitmap on all thirty-two pixels. If the two arts
+/// differed, every row would differ and none of it would be about placement.
+///
+/// The divergence is `l7aromeo/meo-canvas#95`, and it is a property of
+/// `meo-skia-canvas` before 0.16.1 rather than of this crate
+/// (`l7aromeo/meo-skia-canvas#212`). The `svg` rows are why the workspace
+/// requires that version rather than admitting 0.16.0.
+const FIT_MARKS_SVG: &[u8] = include_bytes!("assets/fit-marks.svg");
+
 /// The colour of the cell each rule is drawn in.
 ///
 /// **The cell's size comes from the table rather than from here.** With one
@@ -58,10 +70,20 @@ const NEAR: u32 = 60;
 /// One row of the table.
 struct Row {
     fit: String,
-    cell: f32,
+    cell: (f32, f32),
     rect: [u32; 4],
     magenta: bool,
     cyan: bool,
+    source: String,
+}
+
+/// Whether two rows describe the same cell.
+///
+/// **Both extents, because the boxes are no longer all square.** Comparing the
+/// width alone was right while every box was, and it silently pairs a 100x200
+/// row with a 100x100 one the moment they are not.
+fn same_box(a: (f32, f32), b: (f32, f32)) -> bool {
+    (a.0 - b.0).abs() < f32::EPSILON && (a.1 - b.1).abs() < f32::EPSILON
 }
 
 fn distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
@@ -70,14 +92,18 @@ fn distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
 }
 
 /// Renders one cell and reports its rectangle and which marks survived.
-fn drawn(fit: ObjectFit, cell: f32) -> ([u32; 4], bool, bool) {
+fn drawn(
+    fit: ObjectFit,
+    (width, height): (f32, f32),
+    source: &[u8],
+) -> ([u32; 4], bool, bool) {
     let mut renderer = Renderer::new();
     // Off for the reason every pixel-reading test here turns it off: two
     // rasterisers do not agree to the byte.
     renderer.set_gpu(false);
 
-    let mut canvas = Root::new(cell)
-        .height(cell)
+    let mut canvas = Root::new(width)
+        .height(height)
         .position_type(PositionType::Relative)
         .background_color(hex_rgb(0xff_ff_ff))
         .align_items(Align::Center)
@@ -85,13 +111,13 @@ fn drawn(fit: ObjectFit, cell: f32) -> ([u32; 4], bool, bool) {
             Box::new()
                 .display(Display::Block)
                 .position_type(PositionType::Relative)
-                .size(px(cell), px(cell))
+                .size(px(width), px(height))
                 .overflow(Overflow::Hidden)
                 .background_color(hex_rgb(0xf0_f0_f0))
                 .children(
-                    Image::bytes(FIT_MARKS)
+                    Image::bytes(source)
                         .position_type(PositionType::Relative)
-                        .size(px(cell), px(cell))
+                        .size(px(width), px(height))
                         .object_fit(fit),
                 ),
         )
@@ -106,13 +132,13 @@ fn drawn(fit: ObjectFit, cell: f32) -> ([u32; 4], bool, bool) {
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "a cell side the table states, four to seventy-two"
+        reason = "a cell side the table states, four to two hundred"
     )]
-    let side = cell as usize;
+    let (side, down) = (width as usize, height as usize);
     let mut bounds: Option<(usize, usize, usize, usize)> = None;
     let mut magenta = false;
     let mut cyan = false;
-    for y in 0..side {
+    for y in 0..down {
         for x in 0..side {
             let at = (y * side + x) * 4;
             let here = (bytes[at], bytes[at + 1], bytes[at + 2]);
@@ -152,30 +178,26 @@ fn drawn(fit: ObjectFit, cell: f32) -> ([u32; 4], bool, bool) {
 /// Which rules we answer differently from Chrome today.
 const KNOWN_FIT: &[&str] = &[];
 
-#[test]
-fn object_fit_puts_a_picture_where_chrome_puts_it() {
-    let table = include_str!("assets/chrome/object-fit.tsv");
-    let rows: Vec<Row> = table
-        .lines()
-        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
-        .filter_map(|line| {
-            let fields: Vec<&str> = line.split('\t').collect();
-            if fields.len() < 6 {
-                return None;
-            }
-            let rect: Vec<u32> = fields[3]
-                .split(',')
-                .filter_map(|n| n.parse().ok())
-                .collect();
-            Some(Row {
-                fit: fields[0].to_owned(),
-                cell: fields[1].parse().ok()?,
-                rect: [rect[0], rect[1], rect[2], rect[3]],
-                magenta: fields[4] == "magenta",
-                cyan: fields[5] == "cyan",
-            })
-        })
-        .collect();
+/// Refuses a table that could not fail, before anything is compared against it.
+///
+/// **Four checks, each of which a green run would otherwise hide.** They are
+/// here rather than inline because they are one idea -- whether this table is
+/// capable of reporting a defect -- and because the comparison loop below is
+/// long enough without them.
+fn assert_the_table_can_fail(rows: &[Row]) {
+    // **Counted first, because an empty list misdiagnoses itself.** Every
+    // guard below asks whether some row has a property, and each of them is
+    // false of no rows at all -- so a table this parser cannot read fires the
+    // first one and blames `scale-down` for a missing column. Seen exactly
+    // that way when the source column was added and the fixture had not been
+    // re-measured yet.
+    assert!(
+        !rows.is_empty(),
+        "no row of the table parsed: it has fewer fields than this reads, so \
+     the fixture predates the `source` column and `just conformance` has \
+     not been run since"
+    );
+
     // **The table has to be able to tell `scale-down` from `none`.**
     //
     // Not a count: a count is what the fixture already passed while carrying
@@ -187,7 +209,7 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
         row.fit == "none"
             && rows.iter().any(|other| {
                 other.fit == "scale-down"
-                    && (other.cell - row.cell).abs() < f32::EPSILON
+                    && same_box(other.cell, row.cell)
                     && (other.rect != row.rect
                         || other.magenta != row.magenta
                         || other.cyan != row.cyan)
@@ -196,9 +218,73 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
     assert!(
         separates,
         "no cell size in the table separates `none` from `scale-down`, so the \
-         table cannot fail for `scale-down`: it is the smaller of `none` and \
-         `contain`, which is `none` wherever the picture already fits"
+     table cannot fail for `scale-down`: it is the smaller of `none` and \
+     `contain`, which is `none` wherever the picture already fits"
     );
+
+    // **Both source kinds, because one kind is what let this through.** The
+    // table walked a PNG and only a PNG, so `object-fit` was guarded for one of
+    // the two kinds a caller can supply and the other placed three rules at the
+    // wrong rectangle with nothing red. A table that loses the vector rows is
+    // back to the state this defect was found in.
+    for kind in ["raster", "svg"] {
+        assert!(
+            rows.iter().any(|row| row.source == kind),
+            "the table has no `{kind}` rows, so it cannot say whether the two \
+         source kinds are placed alike -- which is the whole finding"
+        );
+    }
+
+    // **The box has to disagree with the picture about aspect.** Where they
+    // agree, `fill`, `contain` and `cover` are one rectangle and a renderer
+    // implementing only `fill` passes every row. Measured rather than supposed:
+    // a 200x100 box against this 2:1 picture agrees on all five rules with the
+    // defect present and with it fixed. This asks the property directly, so
+    // swapping the boxes for square-picture ones fails by name here instead of
+    // going green everywhere.
+    let discriminates = rows.iter().any(|row| {
+        row.fit == "fill"
+            && rows.iter().any(|other| {
+                other.fit == "contain"
+                    && other.source == row.source
+                    && same_box(other.cell, row.cell)
+                    && other.rect != row.rect
+            })
+    });
+    assert!(
+        discriminates,
+        "no box in the table gives `fill` and `contain` different rectangles, \
+     so every box shares the picture's aspect and the table cannot fail \
+     for a renderer that letterboxes what it should stretch"
+    );
+}
+
+#[test]
+fn object_fit_puts_a_picture_where_chrome_puts_it() {
+    let table = include_str!("assets/chrome/object-fit.tsv");
+    let rows: Vec<Row> = table
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() < 7 {
+                return None;
+            }
+            let rect: Vec<u32> = fields[3]
+                .split(',')
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            Some(Row {
+                fit: fields[0].to_owned(),
+                cell: (fields[1].parse().ok()?, fields[2].parse().ok()?),
+                rect: [rect[0], rect[1], rect[2], rect[3]],
+                magenta: fields[4] == "magenta",
+                cyan: fields[5] == "cyan",
+                source: fields[6].to_owned(),
+            })
+        })
+        .collect();
+    assert_the_table_can_fail(&rows);
 
     let mut wrong = Vec::new();
     for row in &rows {
@@ -212,7 +298,14 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
                 unreachable!("the table names a fit we do not have: {other}")
             }
         };
-        let (rect, magenta, cyan) = drawn(fit, row.cell);
+        let source = match row.source.as_str() {
+            "raster" => FIT_MARKS,
+            "svg" => FIT_MARKS_SVG,
+            other => {
+                unreachable!("the table names a source we do not have: {other}")
+            }
+        };
+        let (rect, magenta, cyan) = drawn(fit, row.cell, source);
         let known = KNOWN_FIT.contains(&row.fit.as_str());
 
         // A pixel of tolerance on the rectangle: a bounding box read from ink
@@ -227,8 +320,8 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
 
         if apart && !known {
             wrong.push(format!(
-                "{} at {}: we draw {rect:?} magenta={magenta} cyan={cyan}, Chrome {:?} magenta={} cyan={}",
-                row.fit, row.cell, row.rect, row.magenta, row.cyan
+                "{} at {:?} as {}: we draw {rect:?} magenta={magenta} cyan={cyan}, Chrome {:?} magenta={} cyan={}",
+                row.fit, row.cell, row.source, row.rect, row.magenta, row.cyan
             ));
         }
         if !apart && known {
@@ -249,16 +342,16 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
         "object-fit: {} rows compared across {} cell sizes, {} pinned",
         rows.len(),
         {
-            let mut sizes: Vec<u32> = rows
+            let mut sizes: Vec<(u32, u32)> = rows
                 .iter()
                 .map(|row| {
                     #[expect(
                         clippy::cast_possible_truncation,
                         clippy::cast_sign_loss,
-                        reason = "a cell side the table states"
+                        reason = "a cell the table states in whole pixels"
                     )]
-                    let side = row.cell as u32;
-                    side
+                    let box_size = (row.cell.0 as u32, row.cell.1 as u32);
+                    box_size
                 })
                 .collect();
             sizes.sort_unstable();
