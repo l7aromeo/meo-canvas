@@ -531,11 +531,7 @@ impl Measure for SceneMeasurer<'_> {
         let answer = if self.resolved.text(node).is_some() {
             self.measure_text(node, known, available)
         } else if let Some(image) = self.resolved.image(node) {
-            MeasuredLeaf::sized(fit_intrinsic(
-                image.intrinsic_size(),
-                known,
-                available,
-            ))
+            MeasuredLeaf::sized(fit_intrinsic(image.intrinsic_size(), known))
         } else {
             // A node this measurer was never prepared for. The trait says
             // `EMPTY` rather than a panic, because a mismatch between the tree
@@ -548,17 +544,18 @@ impl Measure for SceneMeasurer<'_> {
     }
 }
 
-/// Fits a leaf with an intrinsic size into what layout has offered.
+/// Fits a leaf with an intrinsic size into what layout has **fixed**.
 ///
 /// The rule CSS gives a replaced element: a fixed axis wins, an open axis takes
 /// the intrinsic extent scaled to preserve the ratio when the other axis is
-/// fixed, and neither being fixed leaves the intrinsic size, clamped to a
-/// definite budget.
-fn fit_intrinsic(
-    intrinsic: Size,
-    known: (Option<f32>, Option<f32>),
-    available: (Available, Available),
-) -> Size {
+/// fixed, and neither being fixed leaves the intrinsic size **as it is**.
+///
+/// **What layout merely offered is not a parameter here and used to be.** That
+/// last arm clamped each axis to a definite budget, which made a replaced
+/// element `min(intrinsic, container)` -- and Chrome never narrows one, so a
+/// 60x40 image is 60x40 in a 200x30 block, in a 200x100 block, and in a
+/// 30-*wide* block, overflowing each time.
+fn fit_intrinsic(intrinsic: Size, known: (Option<f32>, Option<f32>)) -> Size {
     let ratio = if intrinsic.height > 0.0 {
         Some(intrinsic.width / intrinsic.height)
     } else {
@@ -573,21 +570,18 @@ fn fit_intrinsic(
         (None, Some(height), Some(ratio)) => Size::new(height * ratio, height),
         (Some(width), None, _) => Size::new(width, intrinsic.height),
         (None, Some(height), None) => Size::new(intrinsic.width, height),
-        (None, None, _) => Size::new(
-            clamp_to(intrinsic.width, available.0),
-            clamp_to(intrinsic.height, available.1),
-        ),
-    }
-}
-
-/// An intrinsic extent narrowed to a definite budget.
-///
-/// The intrinsic sizes are the same on both intrinsic questions: an image does
-/// not wrap, so its minimum and maximum content extents are one number.
-const fn clamp_to(intrinsic: f32, available: Available) -> f32 {
-    match available {
-        Available::Definite(budget) => intrinsic.min(budget),
-        Available::MinContent | Available::MaxContent => intrinsic,
+        // **Neither axis fixed: the intrinsic size, and nothing narrows it.**
+        // This used to clamp each axis to a definite budget, which made a
+        // replaced element `min(intrinsic, container)` -- so a 60x40 image in a
+        // 30-tall box measured 60x30 and the picture was squashed rather than
+        // overflowing. Chrome never does that: measured on a real `<img>` with
+        // no width or height of its own, it is 60x40 in a 200x30 block, 60x40
+        // in a 200x100 block, and 60x40 in a 30-WIDE block, overflowing each
+        // time. The cases where a container does change the answer are handled
+        // where they belong -- a flex line stretching the cross axis gives
+        // 45x30 under `align-items: stretch` and 60x40 under `flex-start`, and
+        // that is `align_self`, not a clamp here.
+        (None, None, _) => intrinsic,
     }
 }
 
@@ -747,8 +741,7 @@ mod tests {
 
     use super::{
         Available, AvailableKey, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE,
-        Measure, MeasuredLeaf, SceneMeasurer, clamp_to, fit_intrinsic,
-        spacing_pixels,
+        Measure, MeasuredLeaf, SceneMeasurer, fit_intrinsic, spacing_pixels,
     };
     use crate::resolve::{
         Fonts, Resolved, ResolvedText,
@@ -993,25 +986,24 @@ mod tests {
     fn a_source_that_never_decoded_measures_as_chrome_measures_it() {
         // No bitmap arrived, so there is no intrinsic size to fit.
         let none = Size::ZERO;
-        let open = (Available::MaxContent, Available::MaxContent);
 
         assert_eq!(
-            fit_intrinsic(none, (None, None), open),
+            fit_intrinsic(none, (None, None)),
             Size::new(0.0, 0.0),
             "auto on both axes should collapse, as Chrome does"
         );
         assert_eq!(
-            fit_intrinsic(none, (Some(100.0), None), open),
+            fit_intrinsic(none, (Some(100.0), None)),
             Size::new(100.0, 0.0),
             "an explicit width should survive and the auto height collapse"
         );
         assert_eq!(
-            fit_intrinsic(none, (None, Some(60.0)), open),
+            fit_intrinsic(none, (None, Some(60.0))),
             Size::new(0.0, 60.0),
             "an explicit height should survive and the auto width collapse"
         );
         assert_eq!(
-            fit_intrinsic(none, (Some(80.0), Some(40.0)), open),
+            fit_intrinsic(none, (Some(80.0), Some(40.0))),
             Size::new(80.0, 40.0),
             "both stated should be honoured untouched"
         );
@@ -1023,9 +1015,9 @@ mod tests {
         // zero and for NaN alike; this asserts the consequence rather than
         // trusting the guard.
         for size in [
-            fit_intrinsic(none, (Some(100.0), None), open),
-            fit_intrinsic(none, (None, Some(60.0)), open),
-            fit_intrinsic(none, (None, None), open),
+            fit_intrinsic(none, (Some(100.0), None)),
+            fit_intrinsic(none, (None, Some(60.0))),
+            fit_intrinsic(none, (None, None)),
         ] {
             assert!(
                 size.width.is_finite() && size.height.is_finite(),
@@ -1037,53 +1029,39 @@ mod tests {
     #[test]
     fn fitting_an_intrinsic_size_follows_the_replaced_element_rule() {
         let intrinsic = Size::new(4.0, 2.0);
-        let open = (Available::MaxContent, Available::MaxContent);
 
         // Both axes fixed: the fixed size wins outright.
         assert_eq!(
-            fit_intrinsic(intrinsic, (Some(10.0), Some(20.0)), open),
+            fit_intrinsic(intrinsic, (Some(10.0), Some(20.0))),
             Size::new(10.0, 20.0)
         );
         // One axis fixed: the other follows the 2:1 ratio.
         assert_eq!(
-            fit_intrinsic(intrinsic, (Some(10.0), None), open),
+            fit_intrinsic(intrinsic, (Some(10.0), None)),
             Size::new(10.0, 5.0)
         );
         assert_eq!(
-            fit_intrinsic(intrinsic, (None, Some(5.0)), open),
+            fit_intrinsic(intrinsic, (None, Some(5.0))),
             Size::new(10.0, 5.0)
         );
-        // Neither fixed: the intrinsic size, narrowed to a definite budget.
-        assert_eq!(fit_intrinsic(intrinsic, (None, None), open), intrinsic);
-        assert_eq!(
-            fit_intrinsic(
-                intrinsic,
-                (None, None),
-                (Available::Definite(3.0), Available::Definite(1.0))
-            ),
-            Size::new(3.0, 1.0)
-        );
-        // A budget wider than the image does not stretch it.
-        assert_eq!(
-            fit_intrinsic(
-                intrinsic,
-                (None, None),
-                (Available::Definite(400.0), Available::MinContent)
-            ),
-            intrinsic
-        );
+        // **Neither fixed: the intrinsic size, and the space offered no longer
+        // enters into it.** These two rows asserted the opposite -- a 3x1
+        // budget shrinking the image to 3x1 -- which is what made a replaced
+        // element `min(intrinsic, container)`. Chrome overflows instead, on
+        // every one of the three containers in `an_intrinsic_size_is_not_
+        // narrowed_by_the_space_offered`'s comment.
+        assert_eq!(fit_intrinsic(intrinsic, (None, None)), intrinsic);
     }
 
     #[test]
     fn a_zero_height_image_has_no_ratio_to_preserve() {
         let degenerate = Size::new(4.0, 0.0);
-        let open = (Available::MaxContent, Available::MaxContent);
         assert_eq!(
-            fit_intrinsic(degenerate, (Some(10.0), None), open),
+            fit_intrinsic(degenerate, (Some(10.0), None)),
             Size::new(10.0, 0.0)
         );
         assert_eq!(
-            fit_intrinsic(degenerate, (None, Some(7.0)), open),
+            fit_intrinsic(degenerate, (None, Some(7.0))),
             Size::new(4.0, 7.0)
         );
     }
@@ -1107,22 +1085,18 @@ mod tests {
         );
     }
 
+    /// **The clamp is gone, and this is the row that says so.**
+    ///
+    /// `fit_intrinsic` used to narrow each axis to the available budget when
+    /// neither was known, which made a replaced element `min(intrinsic,
+    /// container)`. Chrome never does that: a 60x40 `<img>` with no width or
+    /// height is 60x40 in a 200x30 block, in a 200x100 block, and in a 30-WIDE
+    /// block, overflowing each time. The budget is no longer a parameter, so
+    /// the only way to reintroduce the clamp is to add one back.
     #[test]
-    fn clamping_only_narrows_against_a_definite_budget() {
-        assert!(
-            (clamp_to(10.0, Available::Definite(4.0)) - 4.0).abs()
-                < f32::EPSILON
-        );
-        assert!(
-            (clamp_to(10.0, Available::Definite(40.0)) - 10.0).abs()
-                < f32::EPSILON
-        );
-        assert!(
-            (clamp_to(10.0, Available::MinContent) - 10.0).abs() < f32::EPSILON
-        );
-        assert!(
-            (clamp_to(10.0, Available::MaxContent) - 10.0).abs() < f32::EPSILON
-        );
+    fn an_intrinsic_size_is_not_narrowed_by_the_space_offered() {
+        let intrinsic = Size::new(60.0, 40.0);
+        assert_eq!(fit_intrinsic(intrinsic, (None, None)), intrinsic);
     }
 
     #[test]

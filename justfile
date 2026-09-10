@@ -1225,6 +1225,7 @@ conformance: ensure-deps ensure-browser
     WRITE=1 node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/grid.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/mincontent.mjs
+    WRITE=1 node packages/meo-canvas/tools/conformance/replacedinsets.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/overflowposition.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/abspositioned.mjs
     WRITE=1 node packages/meo-canvas/tools/conformance/aspectratio.mjs

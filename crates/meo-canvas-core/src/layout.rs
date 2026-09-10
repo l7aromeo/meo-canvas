@@ -506,6 +506,83 @@ fn child_height_is_definite(
     }
 }
 
+/// Whether this node is a **replaced** element in CSS's sense.
+///
+/// A replaced element's `auto` width and height are its own intrinsic
+/// dimensions, and CSS resolves an over-constrained pair of insets by dropping
+/// one rather than by stretching the element -- CSS 2.2 §10.3.8 and §10.6.5.
+/// Measured on a real `<img>`, containing block 200x30, art 60x40: `inset: 0`
+/// gives **60x40**, and so do one inset, opposing insets on either axis, and
+/// every `object-fit`. A `div` in the same scene gives 200x30. Both are rows in
+/// `replaced-insets.tsv`.
+///
+/// **Only `Image`, and only childless.** Text is not replaced -- its size comes
+/// from its content, which is what a measured leaf already expresses -- and a
+/// path is drawn into whatever box it is given.
+///
+/// **The arity is not a detail.** This module already decides replaced-ness by
+/// arity thirty lines below, where a childless node is given the measurer's
+/// context and a node with children is not: an `Image` with a subtree is never
+/// measured, has no intrinsic size to prefer, and is a container whatever it
+/// draws. Keying on the kind alone contradicted a rule the file states in its
+/// own words, and it cost a real answer -- an absolutely positioned `Image`
+/// with `top`/`bottom` and a `height: 100%` child painted **30** before this
+/// predicate existed and **0** after, because `unstretch_replaced` removed the
+/// inset that was its only height and left it sized by the child that was
+/// waiting on it.
+///
+/// **Chrome cannot arbitrate the scene**, because an `<img>` cannot have
+/// children in HTML — so this rule comes from the engine's own leaf-container
+/// split rather than from conformance, and saying so is what stops the next
+/// reader looking for a row in `replaced-insets.tsv` that cannot exist.
+const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
+    node.children.is_empty()
+        && matches!(node.kind, meo_canvas_scene::node::NodeKind::Image { .. })
+}
+
+/// Drops the end inset on any axis where a replaced element would be stretched.
+///
+/// **taffy cannot be told about this and it is not taffy's bug.** Its `Style`
+/// carries no way to say "this box is replaced", so an absolutely positioned
+/// leaf with opposing insets is sized from them -- which is correct CSS for a
+/// non-replaced box and wrong for this one. The knowledge is ours, in
+/// `NodeKind`, so the rule has to be expressed here.
+///
+/// Dropping the **end** inset rather than the start one is what Chrome does:
+/// every row of `replaced-insets.tsv` sits at `x=0, y=0`, so `left` and `top`
+/// are honoured and `right` and `bottom` are discarded. With one inset gone the
+/// axis is no longer over-constrained, taffy asks the measurer, and the
+/// intrinsic extent comes back.
+///
+/// Only where the size is `auto`: a declared width or height wins over the
+/// intrinsic one in Chrome too -- `inset: 0` with `width/height: 100%` is
+/// 200x30 there and here.
+const fn unstretch_replaced(
+    style: &mut taffy::Style,
+    source: &meo_canvas_scene::node::Node,
+) {
+    if !is_replaced(source) || !out_of_flow(source) {
+        return;
+    }
+    let layout = &source.layout;
+    // Asked of the scene's own style rather than of taffy's, for the same
+    // reason `insets_settle_it` does: `Dimension::Auto` and `Option::None` are
+    // this crate's vocabulary, and reading them back out of the converted
+    // struct would be a second, weaker statement of what was just written.
+    if matches!(layout.size.0, Dimension::Auto)
+        && layout.inset.left.is_some()
+        && layout.inset.right.is_some()
+    {
+        style.inset.right = taffy::LengthPercentageAuto::auto();
+    }
+    if matches!(layout.size.1, Dimension::Auto)
+        && layout.inset.top.is_some()
+        && layout.inset.bottom.is_some()
+    {
+        style.inset.bottom = taffy::LengthPercentageAuto::auto();
+    }
+}
+
 /// Whether this box is taken out of the flow.
 const fn out_of_flow(node: &meo_canvas_scene::node::Node) -> bool {
     matches!(
@@ -530,7 +607,19 @@ const fn out_of_flow(node: &meo_canvas_scene::node::Node) -> bool {
 /// A declared height needs no help from this: it is the `Points` arm, and
 /// `abs-declared-over-insets-child` is the row that says so.
 const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
-    out_of_flow(node)
+    // **Not for a replaced element.** Insets do not settle its height --
+    // `replaced-insets.tsv` gives a 60x40 image 40 under `top: 0; bottom: 0`
+    // in a 30-tall block. The guard is one term and the predicate already
+    // exists for the sizing rule above.
+    //
+    // **Unmeasured, and deliberately so.** After that rule the box IS its
+    // intrinsic height, which is a height a percentage child should resolve
+    // against, so this may have been returning the right answer by a route
+    // other than the one it names. The guard makes the reasoning honest; the
+    // number is measured separately, and if it was already right this comment
+    // is the change.
+    !is_replaced(node)
+        && out_of_flow(node)
         && node.layout.inset.top.is_some()
         && node.layout.inset.bottom.is_some()
 }
@@ -631,6 +720,7 @@ fn pin_page_root(
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    unstretch_replaced(&mut style, source);
     if style.size.width.is_auto() {
         style.size.width =
             taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
@@ -738,6 +828,7 @@ fn build(
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    unstretch_replaced(&mut style, source);
     // **A percentage against an indefinite containing block resolves to
     // `auto`**, which for a size is no size and for a minimum or maximum is no
     // constraint. taffy resolves it against the parent's height whether or not
@@ -857,11 +948,23 @@ fn build(
     }
 
     // A childless node is given the measurer's context whatever it draws.
-    // Layout does not know which kinds have an intrinsic size -- that is what
-    // `measure` is for -- and the trait's own contract says a node the measurer
-    // was never prepared for answers `MeasuredLeaf::EMPTY`. Deciding here would
-    // put a second, disagreeing copy of that knowledge in the module that
-    // deliberately holds none of it.
+    // Layout does not know **what** any kind's intrinsic size is -- that is
+    // what `measure` is for -- and the trait's own contract says a node the
+    // measurer was never prepared for answers `MeasuredLeaf::EMPTY`. Deciding
+    // a size here would put a second, disagreeing copy of that knowledge in
+    // the module that deliberately holds none of it.
+    //
+    // **`is_replaced` is the one thing about kind this module does read, and
+    // the line is between an extent and a classification.** It answers whether
+    // CSS calls a node replaced, which decides whether opposing insets may
+    // size it -- and then it removes an inset and lets the measurer answer.
+    // No dimension is derived here and none is compared against one; if this
+    // module ever reads an image's width, that is the copy this paragraph
+    // refuses. Measured, because the two are easy to conflate: a `Text` node
+    // measures and is **not** replaced, and an absolutely positioned one with
+    // opposing insets stretches to them -- 200x30 under `inset: 0` in Chrome
+    // and 200x30 here. A rule keyed on "the measurer answered" would have
+    // taken that row with it.
     let created = if children.is_empty() {
         tree.new_leaf_with_context(style, node)
     } else {
