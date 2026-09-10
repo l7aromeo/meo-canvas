@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -78,6 +78,23 @@ import type { Format } from './index.js'
  * hand, and the two read identically afterwards unless somebody says which
  * happened.
  *
+ *
+ * # One platform moves, and which
+ *
+ * `windows-x86_64` writes a different `tiff` and nothing else. Both surfaces
+ * there produced `2d53a12a013360c6` — the Rust half in one CI run and this one
+ * in another — so they agree with each other and differ from the macOS
+ * reference, which makes it a platform row rather than the cross-surface
+ * disagreement this arm exists to catch. `ubuntu-latest` moves nothing, so the
+ * axis is Windows and not "every platform except the reference". The evidence
+ * that it is the container rather than the picture, and the limit of the
+ * claim, are in `flat-hashes.windows-x86_64.txt`.
+ *
+ * **To measure a platform this machine is not**, dispatch
+ * `.github/workflows/encode-hashes.yml`. It prints the rows that differ and
+ * uploads them; it writes nothing to the branch, because a row is a claim
+ * about a platform and a bare hash is unreviewable.
+ *
  * # Regenerating
  *
  * `UPDATE_ENCODE_HASHES=1 npx vitest run encode.agreement`, and the Rust side
@@ -86,7 +103,85 @@ import type { Format } from './index.js'
  * reason `chart.agreement.test.ts` gives: `ci` runs the Rust tests first, so a
  * file written here would leave that side comparing against the previous run.
  */
-const asset = fileURLToPath(new URL('../../../crates/meo-canvas/tests/assets/encode/flat-hashes.txt', import.meta.url))
+const assets = (name: string) => fileURLToPath(new URL(`../../../crates/meo-canvas/tests/assets/encode/${name}`, import.meta.url))
+
+/**
+ * This host's variant suffix, `windows-x86_64` and so on.
+ *
+ * **Spelled the way Rust spells it**, because the two sides address one file
+ * and a disagreement about its name is a disagreement about which asset each
+ * is reading. Node says `win32` and `x64` where Rust says `windows` and
+ * `x86_64`, so the mapping lives here and is the only place either side
+ * translates. If it were wrong, one surface would read an overlay the other
+ * did not and the arm would fail loudly rather than quietly agree — which is
+ * why the mapping needs no test of its own.
+ */
+const hostVariant = (): string => {
+  const os: Record<string, string> = { win32: 'windows', darwin: 'macos', linux: 'linux' }
+  const arch: Record<string, string> = { x64: 'x86_64', arm64: 'aarch64' }
+  return `${os[process.platform] ?? process.platform}-${arch[process.arch] ?? process.arch}`
+}
+
+/** The platform the base asset was written on, as `fixtures.rs` names it. */
+const REFERENCE = 'macos-aarch64'
+
+/** The `<format> <hash>` rows of an asset, with comments and blanks dropped. */
+const rows = (text: string): Map<string, string> =>
+  new Map(
+    text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line !== '' && !line.startsWith('#'))
+      .map(line => {
+        const at = line.indexOf(' ')
+        if (at < 0) throw new Error(`\`${line}\` is not \`<format> <hash>\``)
+        return [line.slice(0, at), line.slice(at + 1)] as const
+      }),
+  )
+
+/**
+ * The base rows with this platform's overlay applied.
+ *
+ * # Why an overlay rather than a whole file per platform
+ *
+ * `fixtures.rs` keeps a whole `expected.<os>-<arch>.png` because a PNG is one
+ * indivisible artefact — there is no way to say "this image, but one pixel
+ * differs". Eight independent rows are not like that, and a whole-file variant
+ * would store seven values twice. **That duplication goes stale in one
+ * direction and says nothing about it**: regenerate the base, forget the
+ * variant, and seven rows disagree for a reason nobody intended while the one
+ * that was supposed to differ looks untouched.
+ *
+ * # A row that has stopped differing is an error
+ *
+ * `fixtures.rs` states the rule — a variant exists **only where a platform is
+ * measurably different** — and checks half of it: an absent variant means this
+ * platform agrees, and the run finds out. A *present* variant that has become
+ * identical to what it replaces is checked nowhere, and is indistinguishable
+ * from one still doing work. So each overlay row is asserted to differ from
+ * the row it replaces, and an equal one says to delete the line.
+ */
+const expectedRows = (): Map<string, string> => {
+  const expected = rows(readFileSync(assets('flat-hashes.txt'), 'utf8'))
+  const overlay = assets(`flat-hashes.${hostVariant()}.txt`)
+  if (!existsSync(overlay)) return expected
+
+  for (const [format, hash] of rows(readFileSync(overlay, 'utf8'))) {
+    const base = expected.get(format)
+    if (base === undefined) {
+      throw new Error(`${overlay}: names \`${format}\`, which the base asset does not`)
+    }
+    if (base === hash) {
+      throw new Error(
+        `${overlay}: \`${format}\` no longer differs from the base asset. Delete the line — ` +
+          'an override that agrees with what it overrides cannot be told from one still doing work.',
+      )
+    }
+    expected.set(format, hash)
+  }
+
+  return expected
+}
 
 /** The formats `just example` writes for every scene. */
 const FORMATS: readonly Format[] = ['png', 'jpg', 'webp', 'avif', 'bmp', 'tiff', 'svg', 'raw']
@@ -144,11 +239,35 @@ describe('the two surfaces encode the same bytes', () => {
       canvas.release()
     }
 
-    const lines = [...measured].map(([format, hash]) => `${format} ${hash}`)
+    const expected = expectedRows()
+
+    // **Regeneration writes the base only on the platform the base describes.**
+    // Anywhere else it prints the rows that differ and writes nothing, because
+    // writing here would overwrite a macOS asset with this platform's values
+    // and every other platform would then be measured against whichever runner
+    // regenerated last. What a non-reference platform produces is an overlay,
+    // and an overlay is prose as much as it is a hash — which platform, and the
+    // evidence that the difference is real — so a person writes it from these
+    // lines rather than a process writing it for them. `fixtures.yml` makes the
+    // same choice for the same reason: a workflow that commits an accepted
+    // value turns a regression into a commit nobody reviewed.
     if (process.env['UPDATE_ENCODE_HASHES'] === '1') {
-      writeFileSync(asset, `${lines.join('\n')}\n`)
+      const variant = hostVariant()
+      if (variant === REFERENCE) {
+        writeFileSync(assets('flat-hashes.txt'), `${[...measured].map(([format, hash]) => `${format} ${hash}`).join('\n')}\n`)
+      } else {
+        const moved = [...measured].filter(([format, hash]) => expected.get(format) !== hash)
+        process.stdout.write(
+          `\n${variant}: ${moved.length} of ${measured.size} formats differ from what this ` +
+            `platform is checked against.\nPut these in flat-hashes.${variant}.txt with the ` +
+            `evidence that the difference is real:\n` +
+            `${moved.map(([format, hash]) => `${format} ${hash}`).join('\n')}\n`,
+        )
+      }
     }
 
-    expect(lines.join('\n')).toBe(readFileSync(asset, 'utf8').trim())
+    const lines = [...measured].map(([format, hash]) => `${format} ${hash}`)
+    const against = [...expected].map(([format, hash]) => `${format} ${hash}`)
+    expect(lines.join('\n')).toBe(against.join('\n'))
   })
 })

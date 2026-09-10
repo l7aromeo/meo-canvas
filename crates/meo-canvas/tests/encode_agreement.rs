@@ -55,12 +55,30 @@
 //! in hand, and the two read identically afterwards unless somebody says
 //! which happened.
 //!
+//!
+//! # One platform moves, and which
+//!
+//! `windows-x86_64` writes a different `tiff` and nothing else. Both surfaces
+//! there produced `2d53a12a013360c6` -- the Rust half in one CI run and the
+//! TypeScript half in another -- so they agree with each other and differ from
+//! the macOS reference, which makes it a platform row rather than the
+//! cross-surface disagreement this arm exists to catch. `ubuntu-latest` moves
+//! nothing, so the axis is Windows and not "every platform except the
+//! reference". The evidence that it is the container rather than the picture,
+//! and the limit of the claim, are in
+//! `tests/assets/encode/flat-hashes.windows-x86_64.txt`.
+//!
+//! **To measure a platform this machine is not**, dispatch
+//! `.github/workflows/encode-hashes.yml`. It prints the rows that differ and
+//! uploads them; it writes nothing to the branch, because a row is a claim
+//! about a platform and a bare hash is unreviewable.
+//!
 //! # Regenerating
 //!
 //! `UPDATE_ENCODE_HASHES=1 npx vitest run encode.agreement` writes the asset
 //! from the JavaScript side; this side only ever asserts against it, so a
 //! regeneration that was not legitimate fails here.
-use std::fs::read_to_string;
+use std::{fs::read_to_string, path::PathBuf};
 
 use meo_canvas::{Box, Format, Renderer, Root, Styled, hex_rgb, px};
 
@@ -90,6 +108,91 @@ fn fnv1a(bytes: &[u8]) -> String {
         hash = hash.wrapping_mul(0x100_0000_01b3);
     }
     format!("{hash:016x}")
+}
+
+/// Where the assets live.
+fn assets() -> PathBuf {
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/assets/encode"))
+}
+
+/// This host's variant suffix, `windows-x86_64` and so on.
+///
+/// The same shape `fixtures.rs` uses, and deliberately not a looser one: the
+/// axis measured so far is Windows against a macOS reference with Linux
+/// agreeing, and `win32-arm64` is a published target CI does not gate. Keyed
+/// on the architecture as well, an unmeasured cell falls back to the base and
+/// fails if it differs -- which is a finding rather than a silent pass.
+fn host_variant() -> String {
+    format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// The `<format> <hash>` rows of an asset, with comments and blanks dropped.
+fn rows(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let (name, hash) = line.split_once(' ').unwrap_or_else(|| {
+                unreachable!("`{line}` is not `<format> <hash>`")
+            });
+            (name.to_owned(), hash.to_owned())
+        })
+        .collect()
+}
+
+/// The base rows with this platform's overlay applied.
+///
+/// # Why an overlay rather than a whole file per platform
+///
+/// `fixtures.rs` keeps a whole `expected.<os>-<arch>.png` because a PNG is one
+/// indivisible artefact -- there is no way to say "this image, but one pixel
+/// differs". Eight independent rows are not like that, and a whole-file
+/// variant would store seven values twice. **That duplication goes stale in
+/// one direction and says nothing about it**: regenerate the base, forget the
+/// variant, and seven rows disagree for a reason nobody intended while the one
+/// row that was supposed to differ looks untouched.
+///
+/// # A row that has stopped differing is an error
+///
+/// `fixtures.rs` states the rule -- a variant exists **only where a platform
+/// is measurably different** -- and checks half of it: an absent variant means
+/// this platform agrees, and the run finds out. A *present* variant that has
+/// become identical to what it replaces is checked nowhere, and is
+/// indistinguishable from one still doing work. So each overlay row is
+/// asserted to differ from the row it replaces, and an equal one says to
+/// delete the line.
+fn expected_rows() -> Vec<(String, String)> {
+    let base = read_to_string(assets().join("flat-hashes.txt"))
+        .unwrap_or_else(|error| unreachable!("the asset is missing: {error}"));
+    let mut expected = rows(&base);
+
+    let overlay = assets().join(format!("flat-hashes.{}.txt", host_variant()));
+    let Ok(text) = read_to_string(&overlay) else {
+        return expected;
+    };
+
+    for (name, hash) in rows(&text) {
+        let row = expected
+            .iter_mut()
+            .find(|(format, _)| *format == name)
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "{}: names `{name}`, which the base asset does not",
+                    overlay.display()
+                )
+            });
+        assert_ne!(
+            row.1,
+            hash,
+            "{}: `{name}` no longer differs from the base asset. Delete the \
+             line -- an override that agrees with what it overrides cannot be \
+             told from one still doing work.",
+            overlay.display()
+        );
+        row.1 = hash;
+    }
+
+    expected
 }
 
 /// The scene both surfaces build. Flat rectangles, for the reason above.
@@ -135,22 +238,19 @@ fn produces_the_hashes_the_javascript_side_wrote() {
         })
         .collect();
 
-    let expected = read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/assets/encode/flat-hashes.txt"
-    ))
-    .unwrap_or_else(|error| unreachable!("the asset is missing: {error}"));
-
     // **Line by line rather than two joined blocks.** Comparing the blocks is
     // one assertion that prints both in full, so a reader counts columns to
     // find which format moved. The provocations that checked this arm moved
     // three of eight; naming those three is the difference between a failure
     // that says what happened and one that says only that it did.
-    let expected: Vec<&str> = expected.trim().lines().collect();
+    let expected: Vec<String> = expected_rows()
+        .into_iter()
+        .map(|(name, hash)| format!("{name} {hash}"))
+        .collect();
     let disagreed: Vec<String> = measured
         .iter()
         .zip(&expected)
-        .filter(|(ours, theirs)| ours.as_str() != **theirs)
+        .filter(|(ours, theirs)| ours != theirs)
         .map(|(ours, theirs)| {
             format!("  {theirs}  <- the other surface\n  {ours}  <- this one")
         })
