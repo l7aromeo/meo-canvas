@@ -558,6 +558,12 @@ coverage-open:
 lint: ensure-deps build-js ensure-example-deps
     cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
+    # Same boundary `fmt` names below. `lint-check` lints across it and this
+    # did not, so the tool whose whole job is repairing clippy failures left
+    # the one kind `just ci` goes on to fail on. The feature set matches the
+    # check's, because a fixing pass over a different set repairs code the
+    # checking pass never compiles.
+    cargo clippy --manifest-path examples/rust/Cargo.toml --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
     bun run eslint . --fix
 
 # Run clippy without fixing (CI-safe).
