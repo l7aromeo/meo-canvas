@@ -1,0 +1,147 @@
+name: cache-prune
+
+# Removes the Actions cache entries nothing will restore.
+#
+# **The budget check names them and cannot remove them.** `just
+# cache-budget-check` fails the gate when the total passes 7.5 GiB and prints
+# the `gh api -X DELETE` lines; on 2026-09-10 a person ran those by hand twice
+# in one evening. Every push to `main` that moves `Cargo.lock` mints three keys
+# at 1.2-2.2 GiB, so the growth is a property of merging rather than an
+# incident, and a remedy that needs a human is a remedy that runs when someone
+# is watching.
+#
+# # Why this fires after CI on `main` rather than on a clock
+#
+# **A superseded entry comes into existence at exactly one moment**: when a run
+# on `main` saves a new key beside the old one. Pruning then is pruning at the
+# cause, and the budget never grows. A schedule prunes on a timetable unrelated
+# to merging -- doing nothing for hours between merges, and not running at all
+# during the burst that actually crossed the floor, which is what happened.
+#
+# `workflow_dispatch` as well, because the first run of a new workflow and any
+# run after a manual deletion both want a person's finger on it.
+#
+# **Not a job inside `ci.yml`.** That file is edited often and by several
+# hands, and a job there holding `actions: write` is a token scope on the gate
+# every pull request runs. Here the scope is on one job that only the default
+# branch can start.
+#
+# # What it will not do
+#
+# `cache-prune.mjs` is a dry run unless it is passed `--delete`, and this file
+# is the only place that flag appears. The rule it uses refuses to select the
+# last entry for a key prefix, and re-checks that at the point of deletion; and
+# it replays the night the rule was established before it touches the network,
+# so a broken rule cannot reach the API.
+# **The name says which trigger, and claims no mode.** It said
+# `inputs.delete == false && 'dry run' || 'delete'`, which labelled the
+# deleting run a dry run: on `workflow_run` there are no inputs, `inputs.delete`
+# is null, and GitHub coerces a mismatched comparison to a number -- null casts
+# to 0 and false casts to 0, so `null == false` is true. The replacement guarded
+# the input behind the event and moved the same defect onto the safe path,
+# because the empty string is falsy here and `x && '' || 'delete'` yields
+# `delete`.
+#
+# **A name cannot read what the step decided**, so any mode it states is a
+# second evaluation of the same inputs -- which is how both of those lied. It
+# states the trigger, which it can know, and the step prints the mode it
+# actually took as its first line and into the run summary.
+run-name: cache-prune — ${{ github.event_name }}
+
+on:
+  # **This trigger cannot be exercised by the pull request that adds it.** A
+  # `workflow_run` workflow runs the file as it exists on the **default
+  # branch**, so it is inert until this merges -- and the first time it ever
+  # fires, it fires on the automatic path, which passes `--delete`.
+  #
+  # What a pull request can prove: the tool's selection, its refusals, its dry
+  # run against the live cache, and that this file parses. What only the first
+  # run on `main` proves: that the `workflow_run` filter matches, that
+  # `actions: write` is accepted for the delete call, that the delete path
+  # executes at all, and that `${{ inputs.delete }}` evaluates rather than
+  # erroring on an event the `inputs` context is not documented for. A reader
+  # who assumes the PR covered those would be wrong, so it is written here
+  # rather than left to be assumed.
+  #
+  # The fourth is the mildest: `modeFrom` never reads that value on this path,
+  # so a wrong guess about what it holds cannot change what the run does -- only
+  # a failure to evaluate at all could, and that fails the run rather than
+  # deleting.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      delete:
+        description: 'Delete, rather than printing what would be deleted'
+        type: boolean
+        default: false
+
+# **The one job in this repository that can remove a cache.** `actions: write`
+# covers both the list and the delete; nothing else here is granted it.
+permissions:
+  actions: write
+
+# Two merges landing together would otherwise list the same caches and race to
+# delete the same ids. The second waits rather than cancelling: a prune that has
+# already deleted half its list is not superseded by a newer one.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prune:
+    name: prune
+    # A `workflow_run` fires whatever the conclusion. Pruning after a red run is
+    # not wrong -- the caches are the same either way -- but a failed run may
+    # not have saved, so there is nothing new to supersede and the call is
+    # spent for nothing.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    # Seconds of API calls. The bound is on a wedged fetch, not on the work.
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+
+      # **`--delete` on the automatic path and on a dispatch that asks for it.**
+      # A dispatch defaults to false so that the manual route is a dry run
+      # unless somebody says otherwise, and the automatic route is the one that
+      # keeps the budget flat.
+      - name: Prune
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # **Raw values, and no decision here.** `modeFrom` in
+          # `cache-entries.mjs` turns these two strings into a mode, and its
+          # own test runs before the network. `DELETE_INPUT` is empty on
+          # `workflow_run` and `'true'` or `'false'` on a dispatch.
+          EVENT: ${{ github.event_name }}
+          # **`inputs`, the documented spelling, and the assumption named
+          # rather than respelled away.** This was briefly
+          # `github.event.inputs.delete` on the reasoning that `github.event` is
+          # always present -- which traded one undocumented behaviour for
+          # another: the contexts reference documents the `inputs` context and
+          # does not mention `github.event.inputs` at all.
+          #
+          # **What removes the risk is not the spelling.** `modeFrom` returns on
+          # the event before it reads this value, so on `workflow_run` the input
+          # is never consulted. Executed over every shape a wrong guess could
+          # take -- `''`, `null`, `undefined`, `false`, `true`, `yes`, `0` --
+          # all seven give `delete`, because none of them is read. And on a
+          # dispatch, where it is read, an unrecognised value is refused rather
+          # than treated as an intention.
+          #
+          # So the only residue is whether the expression *evaluates* on
+          # `workflow_run` rather than erroring the run, which is identical for
+          # both spellings and is in the unverified list below.
+          DELETE_INPUT: ${{ inputs.delete }}
+        run: node packages/meo-canvas/tools/cache-prune.mjs

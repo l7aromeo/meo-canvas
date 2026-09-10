@@ -46,6 +46,8 @@
 // different tool. This one is a smoke alarm, not a flight recorder.
 import { execFileSync } from 'node:child_process'
 
+import { ORDER_READS, supersededOf } from './cache-entries.mjs'
+
 const GIB = 1024 ** 3
 const MIB = 1024 ** 2
 
@@ -168,32 +170,21 @@ const refs = [...byRef].sort((a, b) => b[1] - a[1])
 process.stdout.write(`cache budget: ${(total / GIB).toFixed(2)} GiB across ${entries.length} entries, floor ${(FLOOR_BYTES / GIB).toFixed(1)} GiB\n`)
 for (const [ref, size] of refs) process.stdout.write(`  ${(size / GIB).toFixed(2).padStart(6)} GiB  ${ref}\n`)
 
-// **Superseded: same key prefix, older last access.** rust-cache's key is a
-// prefix, then a hash of the toolchain and the `CARGO`/`RUST`-shaped
-// environment, then a hash of the manifests. Two entries sharing a prefix and
-// differing in either hash are the same job at two different moments, and only
-// the newer can ever be restored — the older is dead weight that nothing will
-// read and nothing will remove.
+// **Superseded: same key prefix, read less recently than a sibling.** The rule
+// and its proof are in `cache-entries.mjs`, imported rather than repeated so
+// that this report and `cache-prune.mjs` cannot disagree about which entries
+// are dead.
 //
-// Grouped by stripping the two trailing hashes, so a key that does not have
-// them — the `bun-` entries — is its own group of one and is never called
-// superseded.
-const byPrefix = new Map()
-for (const entry of entries) {
-  const prefix = entry.key.replace(/-[0-9a-f]{8}-[0-9a-f]{8}$/, '')
-  const group = byPrefix.get(prefix) ?? []
-  group.push(entry)
-  byPrefix.set(prefix, group)
-}
-const superseded = []
-for (const group of byPrefix.values()) {
-  if (group.length < 2) continue
-  group.sort((a, b) => Date.parse(b.last_accessed_at) - Date.parse(a.last_accessed_at))
-  superseded.push(...group.slice(1))
-}
+// **Read, not created**, and the distinction is the whole of it: the trailing
+// hashes are content rather than a clock, so a newer entry can cache a
+// lockfile state `main` has moved past while an older one is exactly current.
+// This comment used to say "only the newer can ever be restored", which is
+// false, and a reader who believed it produced a delete list containing the
+// two caches `main` actually restores.
+const superseded = supersededOf(entries)
 const supersededBytes = superseded.reduce((sum, entry) => sum + entry.size_in_bytes, 0)
 if (superseded.length > 0) {
-  process.stdout.write(`  ${superseded.length} superseded, ${(supersededBytes / GIB).toFixed(2)} GiB -- same key prefix, older than a sibling:\n`)
+  process.stdout.write(`  ${superseded.length} superseded, ${(supersededBytes / GIB).toFixed(2)} GiB -- same key prefix, ${ORDER_READS}:\n`)
   for (const entry of superseded)
     process.stdout.write(`    gh api -X DELETE repos/${repo}/actions/caches/${entry.id}  # ${(entry.size_in_bytes / MIB).toFixed(0)} MiB ${entry.key}\n`)
 }
