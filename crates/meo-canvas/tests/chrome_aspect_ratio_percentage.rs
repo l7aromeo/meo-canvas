@@ -98,10 +98,61 @@ fn ratio_parent(size: (Dimension, Dimension)) -> LayoutStyle {
 }
 
 /// A child asking for a fraction of its parent's height.
+///
+/// **No width, because the markup declares none.** A block-level child with an
+/// `auto` inline size fills its containing block, and Chrome measures 120 for
+/// these rows against the parent's 120. This stated `30` until the width column
+/// was asserted, which made every scene built from it a different scene from
+/// the one the browser measured -- invisible while only the height was
+/// compared, because the parent's height in these shapes does not depend on the
+/// child's width.
 fn tall(fraction: f32) -> LayoutStyle {
+    LayoutStyle {
+        size: (Dimension::Auto, Dimension::Percent(fraction)),
+        ..LayoutStyle::default()
+    }
+}
+
+/// The same child where the markup **does** declare a width.
+///
+/// Four rows do, and in three of them the 30 is load-bearing: it is what makes
+/// the parent shrink-to-fit. The two spellings are not interchangeable.
+fn tall_and_wide(fraction: f32) -> LayoutStyle {
     LayoutStyle {
         size: (Dimension::Points(30.0), Dimension::Percent(fraction)),
         ..LayoutStyle::default()
+    }
+}
+
+/// The width of the painted band in whole pixels, zero for nothing drawn.
+///
+/// The same walk as [`painted_height`] over the other axis. Written out rather
+/// than folded into one function returning a pair, because every existing
+/// caller wants the height alone and a pair would make the height's callers
+/// read a tuple to ignore half of it.
+fn painted_width(scene: &Scene) -> u32 {
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    let bytes = renderer
+        .render_to_buffer(scene, ImageFormat::Raw, &EncodeOptions::default())
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let side = PAGE as u32;
+    let mut left: Option<u32> = None;
+    let mut right: Option<u32> = None;
+    for x in 0..side {
+        let inked = (0..side).any(|y| {
+            let at = ((y * side + x) * 4) as usize;
+            (bytes[at], bytes[at + 1], bytes[at + 2]) == INK
+        });
+        if inked {
+            left = left.or(Some(x));
+            right = Some(x);
+        }
+    }
+    match (left, right) {
+        (Some(first), Some(last)) => last - first + 1,
+        _ => 0,
     }
 }
 
@@ -463,7 +514,7 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
                 }),
             );
             let parent = push(scene, wrapper, boxed(bare_ratio(RATIO)));
-            push(scene, parent, measured(tall(0.5)));
+            push(scene, parent, measured(tall_and_wide(0.5)));
         }
         other => unreachable!("no shrink-family scene for `{other}`"),
     }
@@ -513,7 +564,7 @@ fn child_percentage_case(scene: &mut Scene, case: &str) {
                 ratio_parent((Dimension::Points(120.0), Dimension::Auto));
             parent.position_type = PositionType::Relative;
             let parent = push(scene, NodeId::ROOT, boxed(parent));
-            let mut layout = tall(1.0);
+            let mut layout = tall_and_wide(1.0);
             layout.position_type = PositionType::Absolute;
             layout.inset.top = Some(Length::Points(0.0));
             push(scene, parent, measured(layout));
@@ -528,7 +579,7 @@ fn child_percentage_case(scene: &mut Scene, case: &str) {
                 ))),
             );
             let mut layout = LayoutStyle {
-                size: (Dimension::Points(30.0), Dimension::Points(20.0)),
+                size: (Dimension::Auto, Dimension::Points(20.0)),
                 ..LayoutStyle::default()
             };
             layout.min_size = (Dimension::Auto, Dimension::Percent(2.0));
@@ -544,7 +595,7 @@ fn child_percentage_case(scene: &mut Scene, case: &str) {
                 ))),
             );
             let mut layout = LayoutStyle {
-                size: (Dimension::Points(30.0), Dimension::Points(300.0)),
+                size: (Dimension::Auto, Dimension::Points(300.0)),
                 ..LayoutStyle::default()
             };
             layout.max_size = (Dimension::Auto, Dimension::Percent(0.25));
@@ -614,7 +665,7 @@ fn parent_shape_case(scene: &mut Scene, case: &str) {
                 wrapper,
                 boxed(ratio_parent((Dimension::Auto, Dimension::Auto))),
             );
-            push(scene, parent, measured(tall(1.0)));
+            push(scene, parent, measured(tall_and_wide(1.0)));
         }
         "ratio-with-percentage-width" => {
             let outer = push(
@@ -631,7 +682,7 @@ fn parent_shape_case(scene: &mut Scene, case: &str) {
                 outer,
                 boxed(ratio_parent((Dimension::Percent(0.5), Dimension::Auto))),
             );
-            push(scene, parent, measured(tall(1.0)));
+            push(scene, parent, measured(tall_and_wide(1.0)));
         }
         "inflow-100-no-ratio" => {
             let parent = push(
@@ -796,7 +847,7 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 const KNOWN: &[&str] = &[];
 
 /// One row: the case's key and the height Chrome gave it.
-fn rows() -> Vec<(String, f32)> {
+fn rows() -> Vec<(String, f32, f32)> {
     TABLE
         .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
@@ -810,7 +861,17 @@ fn rows() -> Vec<(String, f32)> {
                 .unwrap_or_else(|| unreachable!("{key} has no height"))
                 .parse::<f32>()
                 .unwrap_or_else(|error| unreachable!("{key}: {error}"));
-            (key.to_owned(), height)
+            // **The width was measured, recorded and dropped here.** Every row
+            // of this table has carried a Chrome width since it was written and
+            // this parser stopped at the height, so the assertion below could
+            // not have compared one. The column is data the check was narrower
+            // than.
+            let width = columns
+                .next()
+                .unwrap_or_else(|| unreachable!("{key} has no width"))
+                .parse::<f32>()
+                .unwrap_or_else(|error| unreachable!("{key}: {error}"));
+            (key.to_owned(), height, width)
         })
         .collect()
 }
@@ -829,8 +890,9 @@ fn every_row_paints_the_band_chrome_measured() {
     // raises is whether it moved a row somewhere else in the table.
     let mut failing = Vec::new();
     let mut stale = Vec::new();
-    for (key, chrome) in &rows {
+    for (key, chrome, chrome_wide) in &rows {
         let painted = painted_height(&scene_for(key));
+        let painted_wide = painted_width(&scene_for(key));
         // Within one pixel, and stated rather than assumed: Chrome reports a
         // fractional used height and this counts whole rows of pixels, so
         // 141.17 and 141 are the same answer. The rows this exists for are
@@ -839,8 +901,24 @@ fn every_row_paints_the_band_chrome_measured() {
             - chrome)
             .abs()
             <= 1.0;
+        // **A row Chrome measures as zero-tall has no ink to measure a width
+        // from**, so the width is not compared there. `inflow-100-no-ratio` is
+        // the case: Chrome reports `120 x 0`, a box that exists and paints
+        // nothing, and this walk over painted pixels reports `0 x 0`. The row's
+        // point is the zero height and it is asserted; skipping the width is
+        // narrower than the data by one column on one row, said here rather
+        // than left for the next reader to find as a silent pass.
+        let wide_agrees = *chrome < 1.0
+            || (f32::from(u16::try_from(painted_wide).unwrap_or(u16::MAX))
+                - chrome_wide)
+                .abs()
+                <= 1.0;
+        let agrees = agrees && wide_agrees;
         if !agrees && !KNOWN.contains(&key.as_str()) {
-            failing.push(format!("{key}: chrome {chrome:.2}, here {painted}"));
+            failing.push(format!(
+                "{key}: chrome {chrome_wide:.2} x {chrome:.2}, here \
+                 {painted_wide} x {painted}"
+            ));
         }
         if agrees && KNOWN.contains(&key.as_str()) {
             stale.push(key.clone());
