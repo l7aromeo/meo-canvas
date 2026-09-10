@@ -175,6 +175,82 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-shrink-with-author-min-height',
+    // **One field, two claimants.** An author's `min-height` and a height
+    // derived from a ratio are the same taffy slot, and CSS takes the larger of
+    // the two. 200 is larger than the 35.28 the ratio implies here, so this row
+    // says which one Chrome honours when they disagree -- and a compensation
+    // writing into that field has to answer the same question.
+    note: 'an author min-height beside a ratio on a shrink-to-fit width -- the larger floor wins',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;min-height:200px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-50-child',
+    // The proportional case under a shrink-to-fit parent. The whole-height one
+    // is `ratio-with-no-definite-length`; without this, a compensation could
+    // satisfy `100%` by any means and this table could not tell.
+    note: 'half the height of a shrink-to-fit ratio parent, where the whole-height row is the KNOWN one',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div style="aspect-ratio:.85">
+               <div id="m" style="width:30px;height:50%"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-taller-content',
+    // **The row that decides whether the width may grow.** A shrink-to-fit
+    // ratio box holding content taller than the ratio implies: if Chrome takes
+    // the width back up through the ratio, then a compensation clearing the
+    // ratio is wrong, and the 255 a raw-taffy probe produced here is correct
+    // rather than a defect.
+    note: 'shrink-to-fit ratio box whose content exceeds the derived height -- does the width follow',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-content-just-under',
+    note: 'content one pixel short of the derived height -- the derived one should win and the width should not move',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:34px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-content-just-over',
+    note: 'content one pixel past it -- if the width moves here and not above, the threshold is the derived height itself',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:36px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-gt-one-shrink',
+    note: 'a ratio above 1 with short content, so a direction rule cannot be an artefact of the ratio side of 1',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:2">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-gt-one-taller-content',
+    note: 'the same ratio with content past the derived height',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:2">
+               <div style="width:30px;height:40px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-with-taller-content',
     note: 'content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override',
     html: `<div style="width:100px">

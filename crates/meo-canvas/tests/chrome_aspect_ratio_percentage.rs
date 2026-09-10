@@ -164,7 +164,55 @@ const RATIO_BOX: &[&str] = &[
     "column-flex-ratio-cross",
     "grid-item-ratio",
     "ratio-with-taller-content",
+    "ratio-shrink-with-author-min-height",
+    "ratio-shrink-50-child",
+    "ratio-shrink-taller-content",
+    "ratio-shrink-content-just-under",
+    "ratio-shrink-content-just-over",
+    "ratio-gt-one-shrink",
+    "ratio-gt-one-taller-content",
 ];
+
+/// A shrink-to-fit ratio box holding one child, measured on the box itself.
+///
+/// **One builder for seven rows, because here the shape is the constant and the
+/// numbers are what vary.** The older groups write each scene out, since what
+/// varies there is which box settles which axis and a helper would hide it.
+/// These rows all ask the same question -- what does the box do when its
+/// content or its floor beats the height the ratio derives -- so the ratio, the
+/// child's height and the floor are the whole of the difference and writing
+/// them seven times would bury three numbers in ninety lines.
+fn shrink_ratio_box(
+    scene: &mut Scene,
+    ratio: f32,
+    child_height: f32,
+    floor: Option<f32>,
+) -> NodeId {
+    let wrapper = push(
+        scene,
+        NodeId::ROOT,
+        boxed(LayoutStyle {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            align_items: Some(Align::FlexStart),
+            ..LayoutStyle::default()
+        }),
+    );
+    let mut style = bare_ratio(ratio);
+    if let Some(floor) = floor {
+        style.min_size = (Dimension::Auto, Dimension::Points(floor));
+    }
+    let parent = push(scene, wrapper, measured(style));
+    push(
+        scene,
+        parent,
+        boxed(LayoutStyle {
+            size: (Dimension::Points(30.0), Dimension::Points(child_height)),
+            ..LayoutStyle::default()
+        }),
+    );
+    parent
+}
 
 /// A ratio box with no stated extent on either axis.
 fn bare_ratio(ratio: f32) -> LayoutStyle {
@@ -278,7 +326,57 @@ fn ratio_box_case(scene: &mut Scene, case: &str) {
                 }),
             );
         }
-        other => unreachable!("no ratio-box scene for `{other}`"),
+        other => shrink_family_case(scene, other),
+    }
+}
+
+/// The rows that vary what competes with the height the ratio derives.
+///
+/// **Split from [`ratio_box_case`] because they vary a different thing.** Those
+/// rows vary what supplies the box's width -- a block container, a flex cross
+/// axis, a grid track; these hold the width at fit-content and vary the term
+/// that wins Chrome's maximum: the content's own height, or an author's floor.
+/// `ratio-shrink-content-just-under` and `-just-over` straddle the crossing at
+/// 34 and 36 against a derived 35.28, and the pair is why the boundary is
+/// located rather than described.
+fn shrink_family_case(scene: &mut Scene, case: &str) {
+    match case {
+        "ratio-shrink-with-author-min-height" => {
+            shrink_ratio_box(scene, RATIO, 10.0, Some(200.0));
+        }
+        "ratio-shrink-taller-content" => {
+            shrink_ratio_box(scene, RATIO, 300.0, None);
+        }
+        "ratio-shrink-content-just-under" => {
+            shrink_ratio_box(scene, RATIO, 34.0, None);
+        }
+        "ratio-shrink-content-just-over" => {
+            shrink_ratio_box(scene, RATIO, 36.0, None);
+        }
+        "ratio-gt-one-shrink" => {
+            shrink_ratio_box(scene, OUTER_RATIO, 10.0, None);
+        }
+        "ratio-gt-one-taller-content" => {
+            shrink_ratio_box(scene, OUTER_RATIO, 40.0, None);
+        }
+        "ratio-shrink-50-child" => {
+            // Half the height of a shrink-to-fit ratio parent. Without this a
+            // compensation could satisfy `100%` by any means and the table
+            // could not tell the difference.
+            let wrapper = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    align_items: Some(Align::FlexStart),
+                    ..LayoutStyle::default()
+                }),
+            );
+            let parent = push(scene, wrapper, boxed(bare_ratio(RATIO)));
+            push(scene, parent, measured(tall(0.5)));
+        }
+        other => unreachable!("no shrink-family scene for `{other}`"),
     }
 }
 
@@ -570,8 +668,34 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 ///
 /// None of the eleven rows this table carried before could see it, because not
 /// one of them has content taller than its ratio implies.
-const KNOWN: &[&str] =
-    &["ratio-with-no-definite-length", "ratio-with-taller-content"];
+/// **Four of these five are one defect, and the rows say which.** A ratio box
+/// whose inline size is fit-content gets no derived block size from taffy, so
+/// `ratio-with-no-definite-length`, `ratio-shrink-50-child`,
+/// `ratio-shrink-content-just-under` and `ratio-gt-one-shrink` all report the
+/// content's own height where Chrome reports the ratio's.
+///
+/// **What separates them from the rows that pass is which term wins a
+/// maximum.** Chrome takes a ratio box's block size as the largest of the
+/// height the ratio derives, the content's min-content height, and any author
+/// `min-height`, and transfers that back through the ratio to the inline axis
+/// when the winner is not the derivation. taffy performs the transfer back
+/// correctly -- which is why `ratio-shrink-taller-content` at `300 x 255`,
+/// `ratio-shrink-content-just-over` at `36 x 30.59`,
+/// `ratio-gt-one-taller-content` at `40 x 80` and
+/// `ratio-shrink-with-author-min-height` at `200 x 170` all agree here -- and
+/// supplies nothing when the derivation is the term that should win.
+///
+/// `ratio-shrink-content-just-under` and `ratio-shrink-content-just-over`
+/// bracket that boundary at 34 and 36 against a derived 35.28: the first
+/// diverges and the second does not, so the two rows locate the defect at the
+/// crossing rather than describing it.
+const KNOWN: &[&str] = &[
+    "ratio-with-no-definite-length",
+    "ratio-with-taller-content",
+    "ratio-shrink-50-child",
+    "ratio-shrink-content-just-under",
+    "ratio-gt-one-shrink",
+];
 
 /// One row: the case's key and the height Chrome gave it.
 fn rows() -> Vec<(String, f32)> {
@@ -598,7 +722,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        17,
+        24,
         "the table changed shape; the scenes here are per row"
     );
 
