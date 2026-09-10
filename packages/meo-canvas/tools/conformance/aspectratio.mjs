@@ -271,6 +271,38 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-far-above-one',
+    // **The family nothing else in this table reaches.** Every other row sits
+    // at 0.85, 2 or 3, and at 3 the derivation and the content are both 10 --
+    // so a table sampling 0.85, 2 and 3 reports perfect agreement across a
+    // family that was broken from 4 upward. That coincidence is why the
+    // existing coverage found nothing, and it is the reason to measure here
+    // rather than to add a fourth point near the ones that already agree.
+    note: 'a definite width well above ratio 3, where the derived height was wrong by a factor rather than absent',
+    html: `<div style="width:30px">
+             <div id="m" style="aspect-ratio:10">
+               <div style="height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-far-above-one-vanishing',
+    // **The other end of the same family, and a different kind of failure.**
+    // At 10 the box came back 3 tall -- a wrong size. At 100 it came back
+    // `0 x 0` -- an absent box, which a caller meets as a missing element
+    // rather than a misplaced one. One row cannot stand for both.
+    //
+    // 1e30 behaves as this does and is deliberately absent: it would pin
+    // nothing extra and would suggest the family is about extreme values when
+    // it starts at 4.
+    note: 'the same at a ratio far enough that the box rendered nothing at all, which a wrong size is not',
+    html: `<div style="width:30px">
+             <div id="m" style="aspect-ratio:100">
+               <div style="height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-gt-one-taller-content',
     note: 'the same ratio with content past the derived height',
     html: `<div style="display:flex;flex-direction:column;align-items:flex-start">

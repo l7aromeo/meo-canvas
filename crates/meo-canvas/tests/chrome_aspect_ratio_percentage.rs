@@ -289,6 +289,8 @@ const RATIO_BOX: &[&str] = &[
     "ratio-shrink-content-just-over",
     "ratio-gt-one-shrink",
     "ratio-gt-one-taller-content",
+    "ratio-far-above-one",
+    "ratio-far-above-one-vanishing",
 ];
 
 /// A shrink-to-fit ratio box holding one child, measured on the box itself.
@@ -506,6 +508,48 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
         }
         "ratio-gt-one-shrink" => {
             shrink_ratio_box(scene, OUTER_RATIO, 10.0, None);
+        }
+        "ratio-far-above-one" | "ratio-far-above-one-vanishing" => {
+            // **A definite width, which is what makes these the same family as
+            // `ratio-with-taller-content` rather than the shrink-to-fit one.**
+            // At a fit-content width the content's height wins and taffy
+            // transfers it back into the inline axis, which is already Chrome's
+            // answer -- so the shrink-to-fit spelling of these rows passes with
+            // the compensation absent and pins nothing.
+            //
+            // **Nothing else in this table sits above ratio 3**, and at 3 the
+            // derivation and the content are both 10, so sampling 0.85, 2 and 3
+            // reports perfect agreement across a family that was wrong from 4
+            // upward. That coincidence is why the earlier coverage found
+            // nothing.
+            //
+            // The two differ in the kind of failure: at 10 the box came back a
+            // third of its height, at 100 it came back absent. 1e30 behaves as
+            // 100 does and is deliberately not a row -- it would pin nothing
+            // extra and would suggest the family is about extreme values when
+            // it starts at 4.
+            let ratio = if case == "ratio-far-above-one" {
+                10.0
+            } else {
+                100.0
+            };
+            let outer = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    size: (Dimension::Points(30.0), Dimension::Auto),
+                    ..LayoutStyle::default()
+                }),
+            );
+            let parent = push(scene, outer, measured(bare_ratio(ratio)));
+            push(
+                scene,
+                parent,
+                boxed(LayoutStyle {
+                    size: (Dimension::Auto, Dimension::Points(10.0)),
+                    ..LayoutStyle::default()
+                }),
+            );
         }
         "ratio-gt-one-taller-content" => {
             shrink_ratio_box(scene, OUTER_RATIO, 40.0, None);
@@ -892,7 +936,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        30,
+        32,
         "the table changed shape; the scenes here are per row"
     );
 
@@ -919,7 +963,16 @@ fn every_row_paints_the_band_chrome_measured() {
         // point is the zero height and it is asserted; skipping the width is
         // narrower than the data by one column on one row, said here rather
         // than left for the next reader to find as a silent pass.
+        // **And a box wider than the page reports the page.** `painted_width`
+        // walks painted pixels, so a box Chrome measures at 1000 on a 400-wide
+        // sheet can only ink 400 -- the measurement is truncated by the surface
+        // rather than disagreeing with the browser.
+        // `ratio-far-above-one-vanishing` is the case, and its point is the
+        // height: it came back `0 x 0` before the compensation, so the row is
+        // about whether the box exists at all.
+        let off_page = *chrome_wide > PAGE;
         let wide_agrees = *chrome < 1.0
+            || off_page
             || (f32::from(u16::try_from(painted_wide).unwrap_or(u16::MAX))
                 - chrome_wide)
                 .abs()
