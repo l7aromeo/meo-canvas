@@ -1,4 +1,5 @@
 # What Chrome reports as an element’s intrinsic width, by truncation.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 # Written by packages/meo-canvas/tools/conformance/mincontent.mjs.
 # text	size	variant	min-content	max-content
 "HP"	12	plain	12.50	12.50

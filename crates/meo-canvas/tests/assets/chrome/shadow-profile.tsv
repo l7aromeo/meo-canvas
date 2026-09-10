@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. The shape of a box-shadow's blur.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # The companion to `shadow-extent.tsv`, from the SAME rendered cells, so the
 # two cannot disagree about the scene they describe -- one walker renders each

@@ -18,6 +18,16 @@
 // working set. A total says the budget is tight; a ref that should not be there
 // says which change to make.
 //
+// **And per superseded key, because the ref is not always the answer.** On
+// 10 September every entry was on the default branch and the floor was right:
+// what was wrong was that five key prefixes each held two entries, differing
+// only in the environment hash, so the older of each pair could never be
+// restored again. The message at the time said to look for a ref that is not
+// the default branch and, failing that, to argue about the floor — neither of
+// which was the case in front of the reader. **A remediation that cannot name
+// the case it just met sends people somewhere else**, so this names the
+// superseded entries and prints the command that removes them.
+//
 // **Every call it makes is bounded, because a gate step that hangs is worse
 // than one that fails.** This reads the network and shells out to `gh`, and
 // neither had a bound when it was written: on 2026-09-10 two `just ci` runs
@@ -158,15 +168,50 @@ const refs = [...byRef].sort((a, b) => b[1] - a[1])
 process.stdout.write(`cache budget: ${(total / GIB).toFixed(2)} GiB across ${entries.length} entries, floor ${(FLOOR_BYTES / GIB).toFixed(1)} GiB\n`)
 for (const [ref, size] of refs) process.stdout.write(`  ${(size / GIB).toFixed(2).padStart(6)} GiB  ${ref}\n`)
 
+// **Superseded: same key prefix, older last access.** rust-cache's key is a
+// prefix, then a hash of the toolchain and the `CARGO`/`RUST`-shaped
+// environment, then a hash of the manifests. Two entries sharing a prefix and
+// differing in either hash are the same job at two different moments, and only
+// the newer can ever be restored — the older is dead weight that nothing will
+// read and nothing will remove.
+//
+// Grouped by stripping the two trailing hashes, so a key that does not have
+// them — the `bun-` entries — is its own group of one and is never called
+// superseded.
+const byPrefix = new Map()
+for (const entry of entries) {
+  const prefix = entry.key.replace(/-[0-9a-f]{8}-[0-9a-f]{8}$/, '')
+  const group = byPrefix.get(prefix) ?? []
+  group.push(entry)
+  byPrefix.set(prefix, group)
+}
+const superseded = []
+for (const group of byPrefix.values()) {
+  if (group.length < 2) continue
+  group.sort((a, b) => Date.parse(b.last_accessed_at) - Date.parse(a.last_accessed_at))
+  superseded.push(...group.slice(1))
+}
+const supersededBytes = superseded.reduce((sum, entry) => sum + entry.size_in_bytes, 0)
+if (superseded.length > 0) {
+  process.stdout.write(`  ${superseded.length} superseded, ${(supersededBytes / GIB).toFixed(2)} GiB -- same key prefix, older than a sibling:\n`)
+  for (const entry of superseded)
+    process.stdout.write(`    gh api -X DELETE repos/${repo}/actions/caches/${entry.id}  # ${(entry.size_in_bytes / MIB).toFixed(0)} MiB ${entry.key}\n`)
+}
+
 if (total > FLOOR_BYTES) {
   const largest = entries.reduce((big, entry) => (entry.size_in_bytes > big.size_in_bytes ? entry : big))
+  const remainder = (total - supersededBytes) / GIB
   process.stderr.write(
     `\nThe cache is ${(total / GIB).toFixed(2)} GiB, past the ${(FLOOR_BYTES / GIB).toFixed(1)} GiB this asks about, and ` +
-      `the largest single entry is ${(largest.size_in_bytes / MIB).toFixed(0)} MiB. Read the per-ref lines above: a ref ` +
-      'that is not the default branch is a pull request or a tag whose caches outlive it and can never be restored by ' +
-      'anything, and deleting those is the cheapest fix. `gh api repos/OWNER/REPO/actions/caches` lists them and ' +
-      '`gh api -X DELETE .../actions/caches?key=KEY` removes one. If every ref here is legitimate, the working set has ' +
-      'grown and the floor is what needs the argument.\n',
+      `the largest single entry is ${(largest.size_in_bytes / MIB).toFixed(0)} MiB.\n\n` +
+      (superseded.length > 0
+        ? `Start with the ${superseded.length} superseded above: the commands are printed and removing them leaves ` +
+          `${remainder.toFixed(2)} GiB, which is ${remainder > FLOOR_BYTES / GIB ? 'still over the floor -- so that is a start and not the fix' : 'under the floor'}.\n`
+        : 'Nothing here is superseded, so there is no dead weight to remove.\n') +
+      'Then read the per-ref lines: a ref that is not the default branch is a pull request or a tag whose caches ' +
+      'outlive it and can never be restored by anything. If every ref is the default branch and nothing is ' +
+      'superseded, the working set itself has grown -- look for a workflow saving into this budget that does not ' +
+      'need to, before arguing about the floor.\n',
   )
   process.exit(1)
 }

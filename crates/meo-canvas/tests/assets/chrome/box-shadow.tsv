@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Where an outer box-shadow may land.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # Cell 80x80 of #b01020, carrying a 40x40 box at
 # 20,20. Backgrounds: translucent rgba(0, 0, 0, 0.5),

@@ -166,6 +166,32 @@ for (const [list, floor] of Object.entries(FLOORS)) {
   if (lists[list].length < floor) problems.push(`\`${list}\` has ${lists[list].length} recipes and the floor is ${floor}`)
 }
 
+// **Order, for the two places in `native` where it carries meaning.**
+// Everything else in these lists is independent and the order is taste; these
+// two are not, and until now nothing would have noticed either being undone.
+//
+// `test-js` before `test`: `just` stops at the first failure, so with `test`
+// first a red Rust suite means the JavaScript suite never runs and a reader
+// sees one surface and no information about the other. `addon` before
+// `test-js`: `test-js` loads the compiled `.node`.
+//
+// Asserted as a pair because they pull opposite ways — satisfy the first by
+// moving `test-js` to the front and the second breaks — so a future edit is
+// told both constraints rather than discovering the second by failing it.
+const ORDERED = [
+  ['addon', 'test-js', '`test-js` loads the compiled addon'],
+  ['test-js', 'test', 'a red Rust suite must not stop the JavaScript suite from reporting'],
+]
+for (const [first, second, why] of ORDERED) {
+  const at = lists['native'].indexOf(first)
+  const then = lists['native'].indexOf(second)
+  if (at === -1 || then === -1) {
+    problems.push(`\`native\` names neither or only one of \`${first}\` and \`${second}\`, so their order cannot be checked`)
+    continue
+  }
+  if (at > then) problems.push(`\`native\` runs \`${second}\` before \`${first}\`: ${why}`)
+}
+
 // The workflow's `run:` lines, with comments dropped. A YAML parser is not on
 // hand and would be more than this needs: the question is only whether a command
 // is invoked, and the shapes it can take here are `- run: just x` and a `run: |`

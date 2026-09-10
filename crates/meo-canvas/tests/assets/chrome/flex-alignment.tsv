@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Where a flex container puts its children.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # Container 160x80. Three children 24x20, 30x32, 20x44,
 # each sized by a spacer inside it rather than by a height of its own -- so

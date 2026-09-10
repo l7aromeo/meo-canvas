@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. The rhythm of a dashed or dotted border.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # Box 240x48. The run is read along the TOP border band, at the
 # row named in the `y` column, between the two `x` bounds -- both derived from the

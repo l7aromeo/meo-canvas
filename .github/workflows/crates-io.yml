@@ -110,10 +110,25 @@ jobs:
       # **What it cannot do is harm.** If this workflow is only ever dispatched
       # from a branch, the predicate never fires and nothing changes. It
       # suppresses a save only on the dispatch that provably cannot read one.
+      # **Restores and never saves**, on the same argument as `release.yml`,
+      # where the measurement is: a per-push cache budget is the wrong place to
+      # store warmth for a workflow dispatched a few times a week. This one is a
+      # single job rather than seven, so it gives up less and the argument holds
+      # more easily.
+      #
+      # **It also removes ten `##[error]` annotations from a green run**, and
+      # that is a consequence rather than a second change. `cargo publish
+      # --dry-run` unpacks each crate into `target/package/<crate>-<version>/`,
+      # the action's post step walks `target/` to prune before saving, and it
+      # trips over `tests/trybuild` and `tests/target` directories that are not
+      # in the packaged copy — ten `ENOENT ... opendir` lines on a run that
+      # passes. `dist/save.js` at the pin above reads `save-if` and returns
+      # before any cleaning, so with saving off the walk never happens. Error
+      # annotations on a passing run teach people to stop reading annotations.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: crates-io
-          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          save-if: false
 
       # `cargo publish` does not merely upload a tarball: it unpacks each one
       # into `target/package/` and **builds it**. Three of the four crates reach
