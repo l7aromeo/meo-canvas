@@ -9,20 +9,20 @@ run-name: >-
 # and publishing is a decision about code that already arrived. `just
 # release-crate` is what a person runs; this is what it triggers.
 #
-# **It cannot be triggered at all today, and that is not a defect in this
-# file.** `workflow_dispatch` needs the workflow's path to exist on the
-# repository's default branch, and the default is still `main` -- v1's, which
-# carries `ci.yml`, `docs.yml` and `release.yml` and no `crates-io.yml`. So
-# `gh workflow list --all` does not list this workflow and the API answers
-# `workflow crates-io.yml not found on the default branch`; `just release-crate`
-# fails there rather than here. `release.yml` is dispatchable only because its
-# *path* happens to exist on `main`, and a dispatch of it at `ref: v10` runs
-# v10's content -- which is why that one rehearses and this one has never run.
+# **It is dispatchable, and for most of this file's life it was not.**
+# `workflow_dispatch` needs the workflow's path to exist on the repository's
+# default branch; the default was the previous lineage's `main`, which carried
+# no `crates-io.yml`, so `gh workflow list --all` did not list this file and the
+# API answered `workflow crates-io.yml not found on the default branch`. The
+# branch swap fixed it, and this workflow first ran on 10 September 2026 --
+# publishing `meo-canvas`, `meo-canvas-scene`, `meo-canvas-core` and
+# `meo-canvas-cli` at `0.1.0-alpha.1`.
 #
-# `fixtures.yml` documents the same constraint and works around it with a push
-# trigger. That is not available to a workflow that publishes: a push is how
-# code arrives, which is the sentence above. **The fix is the branch swap**, and
-# nothing here should be reshaped to anticipate it.
+# The paragraph that stood here said it could not be triggered at all, which
+# stopped being true without anything in this file changing. It is replaced
+# rather than deleted because the next reader of a workflow that has run twice
+# should know why it once could not run, and `fixtures.yml` still carries the
+# push-trigger workaround the same constraint forced on it.
 on:
   workflow_dispatch:
     inputs:
@@ -31,11 +31,16 @@ on:
         type: boolean
         default: true
 
-# `contents: write` is what lets the job tag the commit it published. crates.io
-# has no provenance attestation to mint, so unlike the npm workflow there is no
-# `id-token: write` here -- see the note on authentication below.
+# `contents: write` is what lets the job tag the commit it published.
+#
+# `id-token: write` is what lets it authenticate. crates.io mints no provenance
+# attestation, so this is not the npm job's reason for the same line -- there it
+# signs an artefact, here it exchanges an OIDC token for a short-lived registry
+# one. Same permission, different purpose, and a comment saying only "no
+# attestation, so no id-token" is what kept it absent while it was needed.
 permissions:
   contents: write
+  id-token: write
 
 # One publish at a time, and never cancelled -- the same reasoning as
 # `release.yml`, which shares neither its registry nor its tag namespace with
@@ -186,22 +191,26 @@ jobs:
       # without being named: it carries `publish = false`, so `--workspace`
       # skips it. Excluding it here as well would be a second place to keep in
       # step with the manifest.
+      # Trusted Publishing, not a token. All four crates carry a publisher
+      # naming this repository and this workflow filename, and each has
+      # "require trusted publishing for all new versions" set -- so a token
+      # would now be **rejected** by the registry rather than merely
+      # unnecessary. The first release could not use this: a publisher is
+      # configured per crate, on a crate that already exists, so claiming four
+      # unclaimed names needed a token exactly once. That token is deleted.
+      #
+      # The exchange is short-lived and scoped to this run, which is why there
+      # is no secret to leak and nothing to rotate.
+      - name: Authenticate to crates.io
+        if: ${{ !inputs.dry_run }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        id: auth
+
       - name: Publish
         if: ${{ !inputs.dry_run }}
         env:
-          # crates.io has no OIDC path for a crate that does not exist yet --
-          # Trusted Publishing is configured per crate, on a crate already
-          # published -- so the first release needs a token. Once all four
-          # exist, this can become `rust-lang/crates-io-auth-action` and the
-          # secret can be deleted, which is the arrangement the npm job already
-          # has and the one this repository prefers.
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          test -n "${CARGO_REGISTRY_TOKEN}" || {
-            echo "::error::CARGO_REGISTRY_TOKEN is not set; nothing was published"
-            exit 1
-          }
-          cargo publish --workspace
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --workspace
 
       # Tag AFTER the registry has accepted everything, never before. A tag
       # pushed first and a publish that then fails leaves a tag with no release
