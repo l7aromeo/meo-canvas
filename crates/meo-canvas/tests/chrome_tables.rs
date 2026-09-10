@@ -504,7 +504,13 @@ fn measure(row: &Row) -> (f32, f32) {
 
 #[test]
 fn box_sizing_matches_chrome() {
-    let table = read_rows(include_str!("assets/chrome/box-sizing.json"));
+    let table = read_columns(
+        include_str!("assets/chrome/box-sizing.tsv"),
+        &[
+            "parent", "sizing", "width", "border", "padding", "outer",
+            "content",
+        ],
+    );
     let mut wrong = Vec::new();
     let mut blind = 0_usize;
 
@@ -549,7 +555,94 @@ fn box_sizing_matches_chrome() {
     );
 }
 
+/// A tab-separated table, read through a header this **asserts** rather than
+/// skips.
+///
+/// The fifteen readers in `crates/*/tests` that split on tabs all skip their
+/// `#` lines and then index fields by position. That is a convention rather
+/// than a guard: a tool emitting its columns in a different order produces a
+/// table this would read as different fields entirely, and the test would stay
+/// green while measuring something else. Nothing in a positional format
+/// notices. So the last commented line names the columns, and a table whose
+/// names or order do not match `want` is a broken checkout rather than a case
+/// to skip.
+///
+/// This is the first of the fifteen to do it. The other fourteen are
+/// unconverted, so a reader here is not evidence about a reader there.
+///
+/// **The limit, named rather than left to be discovered.** This catches a
+/// table that *declares* a different order. It cannot catch one whose header
+/// still reads `border\tpadding` while the fields behind it were swapped --
+/// the names would match and the values would be read into the wrong columns.
+/// Guarding that needs the writer and the reader to share the list, which
+/// they do not. An unnamed limit gets mistaken for coverage.
+///
+/// # Panics
+///
+/// When the header is absent, or names columns other than `want`, or a row
+/// carries a different number of fields than the header does.
+fn read_columns(text: &str, want: &[&str]) -> Vec<Row> {
+    let mut names: Option<Vec<&str>> = None;
+    let mut rows = Vec::new();
+
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix('#') {
+            // The column line is the last comment before the data, and is the
+            // only one carrying tabs -- prose above it never does.
+            if rest.contains('\t') {
+                names = Some(rest.trim().split('\t').map(str::trim).collect());
+            }
+            continue;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let Some(header) = names.as_ref() else {
+            unreachable!(
+                "a row before the commented line naming the columns: a \
+                 malformed table is a broken checkout rather than a case to \
+                 skip"
+            )
+        };
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(
+            fields.len(),
+            header.len(),
+            "a row carries {} fields where the header names {}: {line}",
+            fields.len(),
+            header.len()
+        );
+        rows.push(
+            header
+                .iter()
+                .zip(fields)
+                .map(|(name, field)| {
+                    ((*name).to_owned(), field.trim().to_owned())
+                })
+                .collect(),
+        );
+    }
+
+    let Some(names) = names else {
+        unreachable!(
+            "no commented line naming the columns: a table with no header"
+        )
+    };
+    assert_eq!(
+        names, want,
+        "the table names columns this reader does not expect; a positional \
+         format read against the wrong names measures the wrong fields"
+    );
+    rows
+}
+
 /// A reader for the tables, which are flat enough not to need a dependency.
+///
+/// **One caller left.** `box-sizing` moved to a `.tsv` read by
+/// [`read_columns`], so this and its four helpers exist for
+/// `paint-order.json` alone. Moving that table too deletes about a hundred
+/// lines of hand-rolled JSON, and is issue 114 rather than this change.
 ///
 /// An array of objects whose values are strings or numbers, one row per
 /// combination. Every value is kept as the text it was written as: a row's
