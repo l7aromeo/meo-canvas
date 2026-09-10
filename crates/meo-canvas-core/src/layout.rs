@@ -207,9 +207,13 @@ where
         //
         // The page has no parent, so both answers are the same one: nothing
         // above it is content-sized.
-        Definite {
-            parent: !scene.content_height,
-            own: !scene.content_height,
+        FromAbove {
+            heights: Definite {
+                parent: !scene.content_height,
+                own: !scene.content_height,
+            },
+            parent: None,
+            measure,
         },
     )?;
     for node in viewport.into_iter().chain(orphans) {
@@ -448,6 +452,30 @@ fn bottom_align_reversed_wraps(
 /// one level -- a percentage on a child of a content-sized box survived,
 /// because the *child* had a declared height, which is not the question being
 /// asked.
+/// What a node needs from the walk above it.
+///
+/// **Three things that all travel together and are all about the level above,
+/// so they arrive as one argument rather than three.** `build` recurses, and
+/// nine parameters is past what `clippy::too_many_arguments` allows and past
+/// what a reader can hold: the two that describe the parent belong beside the
+/// two heights that already did, and the measurer is threaded rather than
+/// stored because a `&mut` cannot be copied into every level.
+struct FromAbove<'above, M: ?Sized> {
+    /// Which heights are definite, one level apart. See [`Definite`].
+    heights: Definite,
+    /// The node this one hangs under, or `None` for the page root.
+    ///
+    /// Read for its `display`: a block parent stretches an `auto` width and a
+    /// flex one does not, which is the difference [`intrinsic_sizes_it`] is
+    /// scoped on.
+    parent: Option<&'above meo_canvas_scene::node::Node>,
+    /// The measurer this solve is running with.
+    ///
+    /// Here so a leaf's intrinsic size can be asked for while its style is
+    /// being built, which is before taffy has asked anything.
+    measure: &'above mut M,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Definite {
     /// Whether the containing block's height is definite.
@@ -622,6 +650,80 @@ const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
         && out_of_flow(node)
         && node.layout.inset.top.is_some()
         && node.layout.inset.bottom.is_some()
+}
+
+/// Gives taffy the two things that make a replaced element replaced: its
+/// intrinsic ratio, and -- where block flow would otherwise stretch it -- its
+/// intrinsic width.
+///
+/// **The ratio is the repair for `l7aromeo/meo-canvas#94`, and it is a repair
+/// to what taffy is *told* rather than to how it is asked.** taffy calls the
+/// measurer with `known = (None, None)` in block layout even where the node's
+/// style width is a definite 200, so [`crate::measure::fit_intrinsic`]'s ratio
+/// arm never fires and the intrinsic height comes back untouched; in flex it
+/// asks with `known = (Some(200.0), None)` and the same arm answers correctly.
+/// Handing taffy the ratio lets its own block algorithm derive the height,
+/// which is the resolver that already exists rather than a second copy of one.
+///
+/// A ratio the author declared wins: this fills in `aspect-ratio: auto`, which
+/// is what a replaced element has, and `aspect-ratio: 2` is not that.
+///
+/// **The width arm is narrower than the ratio arm and deliberately so.** A
+/// block-level box with `width: auto` fills its container, which is right for
+/// a box and wrong for a replaced element -- CSS gives that one its intrinsic
+/// width. Left alone, the ratio would faithfully derive a height from a width
+/// that should never have been the container's: measured, a 60x40 image in a
+/// 200-wide block reads 200x133 where Chrome reads 60x40. It applies only with
+/// **both** axes `auto`, because one definite axis makes the ratio the answer
+/// on the other -- `block w auto h80` is 120x80 in Chrome and comes out of the
+/// ratio alone.
+///
+/// Scoped to a block parent because that is where the stretch happens and
+/// where it is measured. A flex item shrink-to-fits its main axis and an
+/// out-of-flow box is not stretched by anything, and both are already right --
+/// `replaced-ratio.tsv` carries them as controls that must not move.
+fn intrinsic_sizes_it<M>(
+    style: &mut taffy::Style,
+    node: NodeId,
+    source: &meo_canvas_scene::node::Node,
+    parent: Option<&meo_canvas_scene::node::Node>,
+    measure: &mut M,
+) where
+    M: Measure + ?Sized,
+{
+    if !is_replaced(source) {
+        return;
+    }
+    // **Asked of the measurer rather than of the image.** It is the one thing
+    // in the pipeline that already answers "how big is this leaf", and with
+    // neither axis known it answers with the intrinsic size by definition --
+    // see `fit_intrinsic`'s last arm. Reaching for the decoded image here
+    // would be a second route to one number.
+    let intrinsic = measure
+        .measure(
+            node,
+            (None, None),
+            (Available::MaxContent, Available::MaxContent),
+        )
+        .size;
+    if intrinsic.width <= 0.0 || intrinsic.height <= 0.0 {
+        return;
+    }
+    let ratio = intrinsic.width / intrinsic.height;
+    if !usable_ratio(ratio) {
+        return;
+    }
+    if style.aspect_ratio.is_none() {
+        style.aspect_ratio = Some(ratio);
+    }
+    if !out_of_flow(source)
+        && parent.is_some_and(|parent| parent.layout.display == Display::Block)
+        && matches!(source.layout.size.0, Dimension::Auto)
+        && matches!(source.layout.size.1, Dimension::Auto)
+    {
+        style.size.width =
+            taffy::Dimension::length(intrinsic.width * LAYOUT_SCALE);
+    }
 }
 
 /// Whether a ratio derives this box's height from its width.
@@ -814,21 +916,30 @@ pub(crate) const fn is_containing_block(
         || node.effects.transform.is_some()
 }
 
-fn build(
+fn build<M>(
     scene: &Scene,
     node: NodeId,
     tree: &mut taffy::TaffyTree<NodeId>,
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
     orphans: &mut Vec<taffy::NodeId>,
     captive: &mut Vec<taffy::NodeId>,
-    heights: Definite,
-) -> Result<taffy::NodeId, Error> {
+    above: FromAbove<'_, M>,
+) -> Result<taffy::NodeId, Error>
+where
+    M: Measure + ?Sized,
+{
+    let FromAbove {
+        heights,
+        parent,
+        measure,
+    } = above;
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
     unstretch_replaced(&mut style, source);
+    intrinsic_sizes_it(&mut style, node, source, parent, measure);
     // **A percentage against an indefinite containing block resolves to
     // `auto`**, which for a size is no size and for a minimum or maximum is no
     // constraint. taffy resolves it against the parent's height whether or not
@@ -887,11 +998,15 @@ fn build(
                 to_scene,
                 &mut unclaimed,
                 &mut captured,
-                // A dangling id has no style to read, so it inherits this
-                // node's answers rather than being given ones of its own.
-                Definite {
-                    parent: heights.own,
-                    own: heights.own,
+                FromAbove {
+                    // A dangling id has no style to read, so it inherits this
+                    // node's answers rather than being given ones of its own.
+                    heights: Definite {
+                        parent: heights.own,
+                        own: heights.own,
+                    },
+                    parent: Some(source),
+                    measure: &mut *measure,
                 },
             )?);
             continue;
@@ -907,13 +1022,17 @@ fn build(
             to_scene,
             &mut unclaimed,
             &mut captured,
-            Definite {
-                parent: heights.own,
-                own: child_height_is_definite(
-                    source,
-                    child_source,
-                    heights.own,
-                ),
+            FromAbove {
+                heights: Definite {
+                    parent: heights.own,
+                    own: child_height_is_definite(
+                        source,
+                        child_source,
+                        heights.own,
+                    ),
+                },
+                parent: Some(source),
+                measure: &mut *measure,
             },
         )?;
         match child_source.layout.position_type {
