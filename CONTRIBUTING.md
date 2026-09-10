@@ -57,29 +57,66 @@ whole content is a type needs `just typecheck` as well, and a green suite says n
 
 ## The gates
 
-`just ci` runs all of these and takes a lock, so two of them cannot run in one tree at once. Run it
-before opening a pull request. Each is also a recipe you can run alone while you work.
+`just ci` takes a lock, so two of them cannot run in one tree at once. Run it before opening a pull
+request. Each recipe below is also one you can run alone while you work.
 
-| Recipe                                                                                    | What it is for                                                                 |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `fmt-check`                                                                               | rustfmt on the pinned nightly, then prettier over JS, TS and Markdown          |
-| `lint-check`                                                                              | clippy with `-D warnings`, across the workspace, the addon and `examples/rust` |
-| `typecheck`                                                                               | the shipped TypeScript surface and its tests                                   |
-| `test` / `test-js`                                                                        | the two test suites                                                            |
-| `coverage` / `coverage-js`                                                                | a 90% floor on each side                                                       |
-| `docs` / `docs-js`                                                                        | a rustdoc warning fails; so does a dead link or a newly undocumented member    |
-| `doc-examples-check`                                                                      | the `ts` fences in both READMEs are lifted into a module and compiled          |
-| `example`                                                                                 | runs all nine examples on both surfaces and compares every byte                |
-| `arena-tables-check`, `arena-enums-check`, `media-types-check`, `platform-packages-check` | generated files must match their sources                                       |
-| `layout-check`                                                                            | no `mod.rs` anywhere under `crates/`                                           |
-| `runtime-free`                                                                            | fails if an async runtime is anywhere in the dependency tree                   |
-| `unused`                                                                                  | `cargo machete` — dependencies declared in a `Cargo.toml` that nothing imports |
-| `audit`                                                                                   | `cargo audit` over the lockfile — not in `ci`, run once per push by CI         |
+**The table is a selection rather than the list.** `portable` and `native` in the `justfile` are
+what `just ci` runs and are the authority on it; they name several recipes this table does not. A
+full copy here would go stale with nothing to report it, which is why there is not one.
 
-Two are deliberately outside `just ci`: `audit`, because an advisory is a fact about the lockfile
-rather than the platform and three runners would buy three copies of one answer; and `conformance`,
-which re-measures Chrome with Playwright and rewrites the comparison tables. A re-measurement should
-arrive as a diff a person reads, so a clone that never runs it never downloads a browser.
+| Recipe                                                                                    | What it is for                                                                               |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `fmt-check`                                                                               | rustfmt on the pinned nightly, then prettier over JS, TS and Markdown                        |
+| `lint-check`                                                                              | clippy with `-D warnings`, across the workspace, the addon and `examples/rust`               |
+| `typecheck`                                                                               | the shipped TypeScript surface and its tests                                                 |
+| `test` / `test-js`                                                                        | the two test suites                                                                          |
+| `coverage` / `coverage-js`                                                                | a 90% floor on each side; `coverage` carries a second at 60% of regions on the Neon boundary |
+| `docs` / `docs-js`                                                                        | a rustdoc warning fails; so does a dead link or a newly undocumented member                  |
+| `doc-examples-check`                                                                      | the `ts` fences in both READMEs are lifted into a module and compiled                        |
+| `example`                                                                                 | runs all nine examples on both surfaces and compares every byte                              |
+| `arena-tables-check`, `arena-enums-check`, `media-types-check`, `platform-packages-check` | generated files must match their sources                                                     |
+| `layout-check`                                                                            | no `mod.rs` anywhere under `crates/`                                                         |
+| `runtime-free`                                                                            | fails if an async runtime is anywhere in the dependency tree                                 |
+| `unused`                                                                                  | `cargo machete` — dependencies declared in a `Cargo.toml` that nothing imports               |
+| `audit`                                                                                   | `cargo audit` over the lockfile — not in `ci`, run once per push by CI                       |
+
+Three are deliberately outside `just ci`. `audit`, because an advisory is a fact about the lockfile
+rather than the platform and three runners would buy three copies of one answer. `net-check`,
+because the `net` feature is off by default, so no run of the gate compiles the code it covers.
+And `conformance`, which re-measures Chrome with Playwright and rewrites the comparison tables — a
+re-measurement should arrive as a diff a person reads, so a clone that never runs it never downloads
+a browser.
+
+## Where a test goes
+
+Five layers. Pick by the question you are answering, not by which is quickest to write — the
+quickest to write is the unit test, and it is the one that proves the least about a renderer.
+
+| Layer           | The question it answers                   | Where it lives                                                                  |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
+| **unit**        | does this function do what it says        | `mod tests` in the file itself                                                  |
+| **integration** | do the stages still agree across a seam   | `crates/<crate>/tests/*.rs`                                                     |
+| **golden**      | is the picture right                      | `fixtures/<name>/`, compared byte for byte                                      |
+| **conformance** | does this match what a browser does       | a table under `crates/meo-canvas/tests/assets/chrome/`, read by a `chrome_*.rs` |
+| **doctest**     | does the documented example still compile | a fenced example in the doc comment                                             |
+
+**Paint is verified by comparison, never by assertion.** Executing a fill proves the line ran, not
+that the pixels are right, so anything about drawing belongs in a golden rather than in an `assert`.
+
+**Which crate.** A test in `crates/meo-canvas-core/tests/` uses the core and nothing above it —
+that holds for every file there today. A test in `crates/meo-canvas/tests/` may use either, and
+several use the core directly because what they are measuring is layout rather than the builder
+surface. If your test never mentions `meo_canvas::`, it probably belongs in the core's directory.
+
+**Finding the existing one first.** `cargo test --workspace -- --list` prints every test name, and
+the names here are sentences — `a_font_without_a_family_exits_five_and_says_the_shape` — so
+grepping that list for a word from your question usually lands on the file. The conformance readers
+are split across two crates and their names do not always match the table they read, so grep the
+table name too.
+
+**Before you trust a new test, make it fail.** Mutate the thing it guards and watch it go red. A
+green result from a check never shown to fail says nothing, and it is the most expensive kind of
+test here — it looks like coverage and is not.
 
 ## Generated files are checked in
 
@@ -119,8 +156,11 @@ Comments here say **why**, not what. The code says what it does; a comment earns
 recording the thing that is not visible — what was measured, what was tried and did not work, what
 the alternative cost. A comment that restates the line below it will be asked about in review.
 
-Commit subjects are sentences describing what the commit does, not `feat:` or `fix:` prefixes.
-`git log` is the reference.
+Commit subjects take a Conventional Commits type and a scope naming the part of the tree they touch
+— `fix(layout):`, `test(codec):`, `docs(releases):` — and say what changed, in the imperative, under
+about seventy characters. The body says why: what was wrong, how it was found, what else was tried,
+and what is true now that was not before. Prose, not bullets. `git log` is the reference and
+`AGENTS.md` has the long form.
 
 ## Reporting things
 
