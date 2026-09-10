@@ -1,0 +1,25 @@
+# Chrome, through `just conformance`. Where `text-align` puts a line, and
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# which values move with `direction`.
+# An <img>-free cell of 300x60 painted #ffffff, one line of Fixture at 32px.
+# Written by packages/meo-canvas/tools/conformance/textaligndirection.mjs.
+#
+# `extent` is the inked columns as `left,width`, so a line that moved is a
+# different first column rather than a different size -- every row here is
+# the same three glyphs and only the placement varies.
+#
+# The `ltr` rows are the control: `start` must equal `left` and `end` must
+# equal `right` there, or a repair to the physical arms cannot be told from
+# a repair to nothing.
+#
+# direction	align	extent	note
+ltr	start	1,40	control -- must equal `left` under ltr, or a no-op reads as a fix
+ltr	end	260,39	control -- must equal `right` under ltr, for the same reason
+ltr	left	1,40	the physical arm, which no direction moves
+ltr	right	260,39	the physical arm, which no direction moves
+ltr	center	130,40	proves nothing about direction: the same rectangle under both
+rtl	start	260,39	the defect: `start` is the inline start and flips to the right edge
+rtl	end	1,40	and `end` flips to the left edge with it
+rtl	left	1,40	unmoved, which is what separates it from `start`
+rtl	right	260,39	unmoved, which is what separates it from `end`
+rtl	center	130,40	proves nothing about direction: the same rectangle under both

@@ -55,16 +55,23 @@ const TOOLS = join(HERE, 'conformance')
 /**
  * How many guarded writes the directory holds today.
  *
+ * Nineteen since `textaligndirection.mjs` joined, which is a **new tool**
+ * rather than a new table -- the same reason the two before it moved, and the
+ * reason this constant and the one below move together only when both happen
+ * at once.
+ *
  * Seventeen since `replacedinsets.mjs` and `aspectratio.mjs` joined, and
  * fifteen since `abspositioned.mjs` before them -- each a **new tool** rather
  * than a new table, an unrelated reason from the one that moved the floor
  * below, and they happened to move together only because one change brought
  * both.
  */
-const FLOOR = 18
+const FLOOR = 19
 
 /**
  * How many stamped `.tsv` tables there are today.
+ *
+ * Nineteen since `text-align-direction.tsv` joined.
  *
  * Seventeen since `replaced-insets.tsv` and `aspect-ratio-percentage.tsv`
  * joined, fifteen since `absolute-percentage.tsv` before them. **Stamping one
@@ -80,7 +87,7 @@ const FLOOR = 18
  * time a tool writes something that is not a table, or a table is produced by a
  * tool that already existed.
  */
-const STAMPED_FLOOR = 18
+const STAMPED_FLOOR = 19
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([

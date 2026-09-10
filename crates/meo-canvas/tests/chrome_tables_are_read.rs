@@ -111,15 +111,32 @@ fn every_chrome_table_is_read_by_a_test() {
     let mut stale_exemption = Vec::new();
 
     for table in &tables {
-        // The `include_str!` form specifically, on the line that names the
-        // file. A doc comment naming it matches a plain substring search and
-        // reads nothing. The path is matched by its tail rather than in full,
-        // because `chrome_border_rhythm.rs` lives in the other crate and
-        // reaches these tables through `../../meo-canvas/...`.
+        // The `include_str!` form specifically. A doc comment naming the file
+        // matches a plain substring search and reads nothing. The path is
+        // matched by its tail rather than in full, because
+        // `chrome_border_rhythm.rs` lives in the other crate and reaches these
+        // tables through `../../meo-canvas/...`.
+        //
+        // **Whitespace is removed before the search, because rustfmt wraps the
+        // macro.** This asked for `include_str!` and the path on one line, and
+        // a `const` whose name and path together pass eighty columns is
+        // reformatted to three lines -- the macro on the first, the path alone
+        // on the second. The table was read and this reported it unread, which
+        // is a false absence rather than a missed reader, and the harder
+        // failure to notice: a real reader looks like a missing one.
+        let flat: Vec<String> = text
+            .iter()
+            .map(|source| {
+                source.chars().filter(|c| !c.is_whitespace()).collect()
+            })
+            .collect();
         let tail = format!("assets/chrome/{table}\"");
-        let read = text.iter().any(|source| {
-            source.lines().any(|line| {
-                line.contains("include_str!") && line.contains(&tail)
+        let read = flat.iter().any(|source| {
+            source.match_indices("include_str!(\"").any(|(at, opener)| {
+                let after = &source[at + opener.len()..];
+                after
+                    .find('"')
+                    .is_some_and(|end| after[..=end].ends_with(&tail))
             })
         });
         let excused = KNOWN_UNREAD.iter().find(|(name, _)| name == table);
