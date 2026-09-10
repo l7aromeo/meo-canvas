@@ -1,0 +1,20 @@
+# What a percentage height resolves against when the box is out of flow.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Chrome, viewport 400x400.
+# Written by packages/meo-canvas/tools/conformance/abspositioned.mjs.
+# case	height	note
+abs-percent-content-cb	39.98	containing block is a content-sized relative ancestor
+abs-percent-declared-cb	39.98	control -- the ancestor states its height
+abs-percent-abs-cb	29.98	containing block is itself an auto-height absolute box
+abs-percent-grandparent-cb	39.98	the nearest positioned ancestor is not the parent
+abs-percent-grandparent-sized	59.98	the same chain with the in-between box 60 tall
+abs-insets-box	40.02	the box itself, sized by top and bottom
+abs-insets-child	40.02	a full-height child of that box
+abs-top-only-child	0.00	control -- one inset is not a height, so the box is content-sized
+abs-declared-over-insets-child	50.00	control -- a declared height wins over the insets
+abs-minheight-200	20.00	control -- an auto-height absolute box is indefinite for its children
+inflow-percent-content-cb	0.00	control -- in flow, a content-sized parent resolves nothing
+fixed-percent-positioned-ancestor	133.31	a positioned ancestor does not capture a fixed box
+fixed-percent-no-ancestor	133.31	the viewport, stated
+fixed-percent-transformed	49.98	a transform does capture one, and states its height
+fixed-percent-transformed-auto	49.98	the same capture, with the ancestor sized by its content

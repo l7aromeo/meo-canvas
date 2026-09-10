@@ -491,9 +491,47 @@ fn child_height_is_definite(
 ) -> bool {
     match child.layout.size.1 {
         Dimension::Points(_) => true,
-        Dimension::Percent(_) => parent_is_definite,
-        Dimension::Auto => parent_is_definite && flex_settles_it(parent, child),
+        // **An out-of-flow box does not contribute to its containing block's
+        // height**, so that height is settled before this box is laid out and
+        // there is nothing circular to refuse. `parent_is_definite` answers
+        // about the flex parent, which for an out-of-flow box is not the
+        // containing block at all -- it is the nearest positioned ancestor,
+        // and for a fixed box the page.
+        Dimension::Percent(_) => out_of_flow(child) || parent_is_definite,
+        Dimension::Auto => {
+            insets_settle_it(child)
+                || parent_is_definite && flex_settles_it(parent, child)
+        }
     }
+}
+
+/// Whether this box is taken out of the flow.
+const fn out_of_flow(node: &meo_canvas_scene::node::Node) -> bool {
+    matches!(
+        node.layout.position_type,
+        PositionType::Absolute | PositionType::Fixed
+    )
+}
+
+/// Whether an out-of-flow box's height comes from its insets rather than its
+/// content.
+///
+/// **Opposing insets, both of them.** `top` and `bottom` are the pair that
+/// states a height the same way `height` does, because the distance between
+/// them is one; either alone states a position and leaves the height to the
+/// content, and `left` and `right` say nothing about this axis at all.
+/// Measured: a box at `top: 33.33%; bottom: 33.34%` in a 120-tall block paints
+/// 40 and its `height: 100%` child paints 40 with it; the same box with only
+/// `top` set leaves that child painting **nothing**, in Chrome and here. Both
+/// rows are in `absolute-percentage.tsv`, and the second is what a repair
+/// reading one inset would break.
+///
+/// A declared height needs no help from this: it is the `Points` arm, and
+/// `abs-declared-over-insets-child` is the row that says so.
+const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
+    out_of_flow(node)
+        && node.layout.inset.top.is_some()
+        && node.layout.inset.bottom.is_some()
 }
 
 /// Whether flex layout gives this child a height its own contents did not.
@@ -658,7 +696,18 @@ fn build(
     // Asked of the scene's own values rather than of the converted ones,
     // because taffy's types do not answer "were you a percentage" and a
     // round-trip through them would be a second place to keep in step.
-    if !heights.parent {
+    //
+    // **`heights.parent` is the flex parent's answer, and for an out-of-flow
+    // box the flex parent is not the containing block.** That is the nearest
+    // positioned ancestor, or the page for a fixed box, and its height is
+    // settled before this box is laid out precisely because this box is out of
+    // flow and contributes nothing to it. So there is no indefiniteness to
+    // propagate and the percentage stands. Measured in Chrome across
+    // `absolute-percentage.tsv`, including the case most likely to be
+    // circular -- a containing block that is itself an auto-height absolutely
+    // positioned box, which resolves at a third of its content height rather
+    // than refusing.
+    if !heights.parent && !out_of_flow(source) {
         if matches!(source.layout.size.1, Dimension::Percent(_)) {
             style.size.height = taffy::Dimension::auto();
         }
