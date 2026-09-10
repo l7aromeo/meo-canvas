@@ -243,81 +243,20 @@ where
     // result, which is what places glyphs at paint time.
     let mut baselines: HashMap<NodeId, f32> = HashMap::new();
 
-    tree.compute_layout_with_measure(
+    // [WORKAROUND] `compensate_ratio_direction` explains this pair; the ratios
+    // come off before the solve so it reports a fit-content inline size, and go
+    // back on after it.
+    let candidates = ratio_direction_candidates(scene, &tree, &to_scene);
+    clear_ratios(&mut tree, &candidates)?;
+    solve_once(&mut tree, root, available, measure, &mut baselines)?;
+    compensate_ratio_direction(
+        &mut tree,
+        &candidates,
         root,
         available,
-        |inputs, _taffy_node, context, style| {
-            // A node with no context is a container taffy sizes from its
-            // children; only the leaves built with `new_leaf_with_context`
-            // reach the measurer.
-            let node = context.map(|context| *context);
-
-            // `compute_leaf_layout` turns a measured extent into the leaf's
-            // full result: it applies the node's own padding, border, box
-            // sizing, aspect ratio and min-max clamps, and reports the
-            // scrollable overflow. taffy hands the whole `LayoutOutput` to
-            // this closure and builds none of it, so calling the helper is
-            // what keeps a measured leaf sized the way every other leaf in
-            // the tree is.
-            //
-            // The calc resolver answers zero because `calc` is off: with no
-            // way to build a `calc` length, nothing can reach the resolver
-            // and any value it returned would be unobservable.
-            let mut first_baseline = None;
-            let mut output = taffy::compute_leaf_layout(
-                inputs,
-                style,
-                |_, _| 0.0,
-                |known, space| {
-                    let Some(node) = node else {
-                        return taffy::Size::ZERO;
-                    };
-
-                    let measured = measure.measure(
-                        node,
-                        (known.width, known.height),
-                        (to_available(space.width), to_available(space.height)),
-                    );
-
-                    if let Some(baseline) = measured.first_baseline {
-                        baselines.insert(node, baseline);
-                        first_baseline = Some(baseline);
-                    }
-
-                    // Measured text is a used length like any other, so it
-                    // enters the grid at the same boundary the styled lengths
-                    // do.
-                    taffy::Size {
-                        width: contains(measured.size.width),
-                        height: contains(measured.size.height),
-                    }
-                },
-            );
-
-            // A measurer works in the content box, and CSS measures a flex
-            // item's baseline from its **border box**, so the leaf's own top
-            // padding and border are part of the answer. Text with padding
-            // aligns a hair low without this, which is the kind of wrong that
-            // reads as a font metric.
-            //
-            // Percentages resolve against the containing block's inline size
-            // in both edges, which is CSS's rule rather than a simplification.
-            output.baselines =
-                taffy::Baselines::from_first(first_baseline.map(|baseline| {
-                    let top = style
-                        .padding
-                        .top
-                        .resolve_or_zero(inputs.parent_size.width, |_, _| 0.0)
-                        + style.border.top.resolve_or_zero(
-                            inputs.parent_size.width,
-                            |_, _| 0.0,
-                        );
-                    baseline + top
-                }));
-            output
-        },
-    )
-    .map_err(|error| Error::Layout(error.to_string()))?;
+        measure,
+        &mut baselines,
+    )?;
 
     let mut rects = HashMap::with_capacity(to_scene.len());
     let mut insets = HashMap::with_capacity(to_scene.len());
@@ -914,6 +853,262 @@ pub(crate) const fn is_containing_block(
 ) -> bool {
     !matches!(node.layout.position_type, PositionType::Static)
         || node.effects.transform.is_some()
+}
+
+/// The measure closure's body, as a function both passes can call.
+///
+/// **Extracted because the workaround below lays out twice.** A closure written
+/// inline at one call site cannot be handed to a second, and two copies of the
+/// baseline arithmetic would be two things to keep in step.
+fn measure_leaf<M>(
+    inputs: taffy::LayoutInput,
+    context: Option<&mut NodeId>,
+    style: &taffy::Style,
+    measure: &mut M,
+    baselines: &mut HashMap<NodeId, f32>,
+) -> taffy::LayoutOutput
+where
+    M: Measure + ?Sized,
+{
+    // A node with no context is a container taffy sizes from its
+    // children; only the leaves built with `new_leaf_with_context`
+    // reach the measurer.
+    let node = context.map(|context| *context);
+
+    // `compute_leaf_layout` turns a measured extent into the leaf's
+    // full result: it applies the node's own padding, border, box
+    // sizing, aspect ratio and min-max clamps, and reports the
+    // scrollable overflow. taffy hands the whole `LayoutOutput` to
+    // this closure and builds none of it, so calling the helper is
+    // what keeps a measured leaf sized the way every other leaf in
+    // the tree is.
+    //
+    // The calc resolver answers zero because `calc` is off: with no
+    // way to build a `calc` length, nothing can reach the resolver
+    // and any value it returned would be unobservable.
+    let mut first_baseline = None;
+    let mut output = taffy::compute_leaf_layout(
+        inputs,
+        style,
+        |_, _| 0.0,
+        |known, space| {
+            let Some(node) = node else {
+                return taffy::Size::ZERO;
+            };
+
+            let measured = measure.measure(
+                node,
+                (known.width, known.height),
+                (to_available(space.width), to_available(space.height)),
+            );
+
+            if let Some(baseline) = measured.first_baseline {
+                baselines.insert(node, baseline);
+                first_baseline = Some(baseline);
+            }
+
+            // Measured text is a used length like any other, so it
+            // enters the grid at the same boundary the styled lengths
+            // do.
+            taffy::Size {
+                width: contains(measured.size.width),
+                height: contains(measured.size.height),
+            }
+        },
+    );
+
+    // A measurer works in the content box, and CSS measures a flex
+    // item's baseline from its **border box**, so the leaf's own top
+    // padding and border are part of the answer. Text with padding
+    // aligns a hair low without this, which is the kind of wrong that
+    // reads as a font metric.
+    //
+    // Percentages resolve against the containing block's inline size
+    // in both edges, which is CSS's rule rather than a simplification.
+    output.baselines =
+        taffy::Baselines::from_first(first_baseline.map(|baseline| {
+            let top = style
+                .padding
+                .top
+                .resolve_or_zero(inputs.parent_size.width, |_, _| 0.0)
+                + style
+                    .border
+                    .top
+                    .resolve_or_zero(inputs.parent_size.width, |_, _| 0.0);
+            baseline + top
+        }));
+    output
+}
+
+/// One solve of the whole page.
+fn solve_once<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    root: taffy::NodeId,
+    available: taffy::Size<taffy::AvailableSpace>,
+    measure: &mut M,
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    tree.compute_layout_with_measure(
+        root,
+        available,
+        |inputs, _taffy_node, context, style| {
+            measure_leaf(inputs, context, style, measure, baselines)
+        },
+    )
+    .map_err(|error| Error::Layout(error.to_string()))
+}
+
+/// The boxes the ratio workaround applies to.
+///
+/// A usable ratio and nothing stated on either axis, minus any box entangled
+/// with another such box. See [`compensate_ratio_direction`].
+fn ratio_direction_candidates(
+    scene: &Scene,
+    tree: &taffy::TaffyTree<NodeId>,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+) -> Vec<(taffy::NodeId, f32)> {
+    let found: Vec<(taffy::NodeId, f32)> = to_scene
+        .iter()
+        .filter_map(|(taffy_id, scene_id)| {
+            let source = scene.get(*scene_id)?;
+            let ratio =
+                source.layout.aspect_ratio.filter(|r| usable_ratio(*r))?;
+            (matches!(source.layout.size.0, Dimension::Auto)
+                && matches!(source.layout.size.1, Dimension::Auto))
+            .then_some((*taffy_id, ratio))
+        })
+        .collect();
+
+    // **A ratio box nested inside another is left alone, and that follows from
+    // the same rule rather than patching around it.** The clearing pass answers
+    // "what is this box's fit-content width" correctly only where no other
+    // ratio box is entangled with the answer. Inside a nesting it is wrong in
+    // both directions: the inner's final width is an outcome of the outer's
+    // derivation rather than of its own content, and the outer's content height
+    // is the inner's *derived* height, which the clearing pass has removed --
+    // measured, the outer sees 10 where the real layout gives it 35.28.
+    //
+    // So the decision would rest on numbers that do not survive the second
+    // pass. Chrome resolves such a pair in one ordered sweep and this renderer
+    // already agrees with it there: `nested-ratio-outer` at 35.28 and
+    // `nested-ratio-inner` at 83.00 both pass without any of this.
+    let entangled: Vec<taffy::NodeId> = found
+        .iter()
+        .filter_map(|(id, _)| {
+            let mut walk = tree.parent(*id);
+            while let Some(parent) = walk {
+                if found.iter().any(|(other, _)| *other == parent) {
+                    return Some(vec![*id, parent]);
+                }
+                walk = tree.parent(parent);
+            }
+            None
+        })
+        .flatten()
+        .collect();
+    found
+        .into_iter()
+        .filter(|(id, _)| !entangled.contains(id))
+        .collect()
+}
+
+/// Takes the ratio off every candidate, so the first solve reports a
+/// fit-content inline size.
+fn clear_ratios(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    candidates: &[(taffy::NodeId, f32)],
+) -> Result<(), Error> {
+    for (id, _) in candidates {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.aspect_ratio = None;
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    Ok(())
+}
+
+// [WORKAROUND] taffy resolves a ratio box's axes in the wrong order when its
+// inline size is an outcome of layout: it derives the width from the block size
+// rather than deriving the block size from a fit-content width. Every ratio box
+// in a solved tree satisfies `width = round(height x ratio)`, which is Chrome's
+// rule only where the height was settled by something else.
+// `DioxusLabs/taffy#804`, tracked as `l7aromeo/meo-canvas#97`.
+//
+// Retires when a taffy release derives the block size for a shrink-to-fit ratio
+// parent -- `ratio-shrink-issue-97` and the rows beside it in
+// `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fail in
+// both directions and will say so, and
+// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
+// needs this. Deleting it is deleting this function,
+// [`ratio_direction_candidates`], [`clear_ratios`] and the two calls in
+// [`solve_page`] that bracket the first solve.
+//
+// **The first pass clears the ratio rather than working around its result.**
+// With no ratio on the node taffy returns the fit-content inline size, which is
+// the number it gets right and the one it corrupts when the ratio is present:
+// measured, a 30-wide child under `aspect-ratio: .85` gives 9 with the ratio
+// and 30 without. So nothing here computes a fit-content size; it asks taffy
+// the question in the one state where the answer is usable.
+//
+// **The width is pinned only where the derivation wins.** Chrome takes the
+// largest of the derived block size, the content's own height and any author
+// minimum, and the solved height already carries the other two -- so `derived`
+// winning is the whole of the test. Where another term wins, taffy's
+// block-to-inline transfer already lands on Chrome's answer and the node is
+// left as it is: pinning there would stop that transfer and break
+// `ratio-shrink-taller-content`, which Chrome gives 300 x 255.
+/// Restores the ratios, pins the width where the derivation wins, and solves
+/// again.
+fn compensate_ratio_direction<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    candidates: &[(taffy::NodeId, f32)],
+    root: taffy::NodeId,
+    available: taffy::Size<taffy::AvailableSpace>,
+    measure: &mut M,
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let mut pins: Vec<(taffy::NodeId, f32)> = Vec::new();
+    for (id, ratio) in candidates {
+        let solved = tree
+            .layout(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        if solved.size.width / ratio >= solved.size.height {
+            pins.push((*id, solved.size.width));
+        }
+    }
+
+    for (id, ratio) in candidates {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.aspect_ratio = Some(*ratio);
+        if let Some((_, width)) = pins.iter().find(|(pinned, _)| pinned == id) {
+            style.size.width = taffy::Dimension::length(*width);
+        }
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+
+    // **Cleared, because the second pass re-measures.** Every leaf reaching the
+    // measurer writes its baseline again, so entries from the first pass would
+    // survive for any node the second sizes differently -- and a stale baseline
+    // is text drawn at the wrong `y`, which no row of any table here shows.
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
 }
 
 fn build<M>(

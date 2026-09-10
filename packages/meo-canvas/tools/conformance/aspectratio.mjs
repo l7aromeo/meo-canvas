@@ -124,6 +124,170 @@ const CASES = [
              <div id="m" style="height:100%"></div>
            </div>`,
   },
+
+  // **The rows below measure the ratio box itself rather than a percentage
+  // child.** The eleven above ask what a percentage resolves against; these ask
+  // whether the ratio derives a height at all when the width is an *outcome* of
+  // layout rather than a declared length. That is a different question and the
+  // table could not express it: every ratio box above has a width that is
+  // declared, a percentage, or shrink-to-fit, and none is block-level auto.
+  {
+    key: 'block-auto-width-ratio',
+    note: 'block-level, no width stated -- the width is the containing block and the height is derived from it',
+    html: `<div style="width:200px">
+             <div id="m" style="aspect-ratio:.85"></div>
+           </div>`,
+  },
+  {
+    key: 'nested-ratio-outer',
+    note: 'two ratios deep, the outer measured -- shrink-to-fit around a ratio box',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:2">
+               <div style="aspect-ratio:.85">
+                 <div style="width:30px;height:10px"></div>
+               </div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'nested-ratio-inner',
+    note: 'the same tree, the inner measured -- does the outer ratio change what the inner derives',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div style="aspect-ratio:2">
+               <div id="m" style="aspect-ratio:.85">
+                 <div style="width:30px;height:10px"></div>
+               </div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'column-flex-ratio-cross',
+    note: 'a ratio item in a column flex container -- the width is the cross axis and stretches',
+    html: `<div style="display:flex;flex-direction:column;width:200px">
+             <div id="m" style="aspect-ratio:.85"></div>
+           </div>`,
+  },
+  {
+    key: 'grid-item-ratio',
+    note: 'a ratio item in a grid track -- the width comes from the track',
+    html: `<div style="display:grid;grid-template-columns:200px">
+             <div id="m" style="aspect-ratio:.85"></div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-with-author-min-height',
+    // **One field, two claimants.** An author's `min-height` and a height
+    // derived from a ratio are the same taffy slot, and CSS takes the larger of
+    // the two. 200 is larger than the 35.28 the ratio implies here, so this row
+    // says which one Chrome honours when they disagree -- and a compensation
+    // writing into that field has to answer the same question.
+    note: 'an author min-height beside a ratio on a shrink-to-fit width -- the larger floor wins',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;min-height:200px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-50-child',
+    // The proportional case under a shrink-to-fit parent. The whole-height one
+    // is `ratio-with-no-definite-length`; without this, a compensation could
+    // satisfy `100%` by any means and this table could not tell.
+    note: 'half the height of a shrink-to-fit ratio parent, where the whole-height row is the KNOWN one',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div style="aspect-ratio:.85">
+               <div id="m" style="width:30px;height:50%"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-taller-content',
+    // **The row that decides whether the width may grow.** A shrink-to-fit
+    // ratio box holding content taller than the ratio implies: if Chrome takes
+    // the width back up through the ratio, then a compensation clearing the
+    // ratio is wrong, and the 255 a raw-taffy probe produced here is correct
+    // rather than a defect.
+    note: 'shrink-to-fit ratio box whose content exceeds the derived height -- does the width follow',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-issue-97',
+    // **The shape `l7aromeo/meo-canvas#97` actually reports**, which had no row
+    // in this table until now. The closest was `ratio-gt-one-shrink`, the same
+    // scene at ratio 2.0, and `ratio-with-no-definite-length` -- which carries
+    // that issue's name in `KNOWN` -- has a percentage-height child and fails a
+    // different way.
+    note: 'the issue shape itself: a plain 30x10 child under ratio .85 on a shrink-to-fit parent',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-under-definite-ratio-parent',
+    // **The control on what counts as entangled.** The parent carries a ratio
+    // and a declared width, so its own width is not an outcome and nothing the
+    // child derives depends on it. A predicate asking "does an ancestor have a
+    // ratio" would skip the child here; one asking "is an ancestor's inline
+    // size also an outcome" compensates it. Nothing else in this table
+    // distinguishes the two readings.
+    note: 'a shrink-to-fit ratio child inside a ratio parent whose width is declared -- the parent is not entangled',
+    html: `<div style="width:200px;aspect-ratio:2;display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-content-just-under',
+    note: 'content one pixel short of the derived height -- the derived one should win and the width should not move',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:34px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-content-just-over',
+    note: 'content one pixel past it -- if the width moves here and not above, the threshold is the derived height itself',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:36px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-gt-one-shrink',
+    note: 'a ratio above 1 with short content, so a direction rule cannot be an artefact of the ratio side of 1',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:2">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-gt-one-taller-content',
+    note: 'the same ratio with content past the derived height',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:2">
+               <div style="width:30px;height:40px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-with-taller-content',
+    note: 'content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
 ]
 
 const { page, close } = await open()
