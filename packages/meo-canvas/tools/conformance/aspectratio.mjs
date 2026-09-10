@@ -215,6 +215,20 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-shrink-issue-97',
+    // **The shape `l7aromeo/meo-canvas#97` actually reports**, which had no row
+    // in this table until now. The closest was `ratio-gt-one-shrink`, the same
+    // scene at ratio 2.0, and `ratio-with-no-definite-length` -- which carries
+    // that issue's name in `KNOWN` -- has a percentage-height child and fails a
+    // different way.
+    note: 'the issue shape itself: a plain 30x10 child under ratio .85 on a shrink-to-fit parent',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-shrink-content-just-under',
     note: 'content one pixel short of the derived height -- the derived one should win and the width should not move',
     html: `<div style="display:flex;flex-direction:column;align-items:flex-start">

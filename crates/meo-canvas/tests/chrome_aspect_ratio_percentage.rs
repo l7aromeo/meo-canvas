@@ -167,6 +167,7 @@ const RATIO_BOX: &[&str] = &[
     "ratio-shrink-with-author-min-height",
     "ratio-shrink-50-child",
     "ratio-shrink-taller-content",
+    "ratio-shrink-issue-97",
     "ratio-shrink-content-just-under",
     "ratio-shrink-content-just-over",
     "ratio-gt-one-shrink",
@@ -346,6 +347,9 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
         }
         "ratio-shrink-taller-content" => {
             shrink_ratio_box(scene, RATIO, 300.0, None);
+        }
+        "ratio-shrink-issue-97" => {
+            shrink_ratio_box(scene, RATIO, 10.0, None);
         }
         "ratio-shrink-content-just-under" => {
             shrink_ratio_box(scene, RATIO, 34.0, None);
@@ -668,10 +672,25 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 ///
 /// None of the eleven rows this table carried before could see it, because not
 /// one of them has content taller than its ratio implies.
-/// **Four of these five are one defect, and the rows say which.** A ratio box
+/// **`ratio-shrink-issue-97` is the shape `l7aromeo/meo-canvas#97` reports**,
+/// and it had no row here until it was added: the nearest was
+/// `ratio-gt-one-shrink`, the same scene at ratio 2.0, while
+/// `ratio-with-no-definite-length` carries a percentage-height child and
+/// collapses instead of dropping a derivation.
+///
+/// **The issue's figure for this renderer does not reproduce.** It records
+/// `30.00 x 10.00`; measured here the box is `9 x 10`, and 9 is
+/// `round(10 x 0.85)`. That matters beyond this row: every ratio box in the
+/// tree satisfies `width = round(height x ratio)`, so taffy transfers block to
+/// inline and never inline to block on these shapes. The rows that agree with
+/// Chrome agree because the two rules coincide wherever the height is
+/// content-determined, which is why none of them can witness the direction.
+///
+/// **Five of these six are one defect, and the rows say which.** A ratio box
 /// whose inline size is fit-content gets no derived block size from taffy, so
-/// `ratio-with-no-definite-length`, `ratio-shrink-50-child`,
-/// `ratio-shrink-content-just-under` and `ratio-gt-one-shrink` all report the
+/// `ratio-with-no-definite-length`, `ratio-shrink-issue-97`,
+/// `ratio-shrink-50-child`, `ratio-shrink-content-just-under` and
+/// `ratio-gt-one-shrink` all report the
 /// content's own height where Chrome reports the ratio's.
 ///
 /// **What separates them from the rows that pass is which term wins a
@@ -692,6 +711,7 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 const KNOWN: &[&str] = &[
     "ratio-with-no-definite-length",
     "ratio-with-taller-content",
+    "ratio-shrink-issue-97",
     "ratio-shrink-50-child",
     "ratio-shrink-content-just-under",
     "ratio-gt-one-shrink",
@@ -722,7 +742,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        24,
+        25,
         "the table changed shape; the scenes here are per row"
     );
 
