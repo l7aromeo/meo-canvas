@@ -1567,6 +1567,20 @@ gate-lists-check:
 cache-budget-check:
     node packages/meo-canvas/tools/cache-budget.mjs
 
+# What the budget check names, removed.
+#
+# **A dry run unless you pass `--delete`**, and the only place that flag is
+# passed automatically is `.github/workflows/cache-prune.yml`, which is the one
+# job in this repository holding `actions: write`. Deleting a cache is
+# irreversible and a wrong one costs an hour of cold Skia build on Windows.
+#
+# **Not in `ci-steps`**, for the reason `audit` is not: it reaches the network
+# and it acts. The gate asks whether the budget is healthy; this is the remedy,
+# and a remedy inside a gate is a gate that changes the thing it measures.
+[doc("Print the superseded cache entries; --delete removes them.")]
+cache-prune *args:
+    node packages/meo-canvas/tools/cache-prune.mjs {{ args }}
+
 # The two release channels, and the filter that decides which of them gets a
 # JavaScript reference.
 #
