@@ -205,11 +205,45 @@ jobs:
       # Verified on both arms rather than from the shape of the expression: the
       # tag run's checkout fetches `+refs/tags/v10.0.0-alpha.5:refs/tags/...`,
       # the branch run's fetches into `refs/remotes/origin/v10`.
+      # **It restores and never saves, and what that gives up is measured
+      # rather than assumed.** Two dispatches on 10 September, `34420580931`
+      # then `34423647380`, forty-three minutes apart at the identical
+      # `head_sha` `5f8e8f5b`, so nothing about the tree differed between them:
+      #
+      #     target              first    second    delta
+      #     darwin-arm64         251s      73s     -178s
+      #     linux-x64-gnu        757s     325s     -432s
+      #     win32-arm64          430s     165s     -265s
+      #     linux-arm64-gnu      619s     362s     -257s
+      #     linux-x64-musl      2361s    2093s     -268s
+      #     linux-arm64-musl    1422s    1293s     -129s
+      #     win32-x64            445s     466s      +21s   no gain
+      #                         -----    -----    ------
+      #                         6285s    4777s    -1508s
+      #
+      # Six of seven improved and one did not, which is why the six are
+      # credible. **So this cache is not useless and the reason for stopping it
+      # is not that it was.** It is that a per-push budget is the wrong place to
+      # store warmth for a workflow dispatched a few times a week: these seven
+      # entries plus `crates-io`'s were 5.09 GiB of the repository's cache,
+      # larger than the whole CI working set they were evicting, and an eviction
+      # costs a cold leg on every push until someone notices. Twenty-five
+      # runner-minutes on a same-session re-dispatch is the price, paid by a
+      # releaser who is already waiting on a thirty-five-minute matrix.
+      #
+      # **`save-if: false` and not a narrower predicate.** The condition it
+      # replaces guarded tag runs, and both these workflows are
+      # `workflow_dispatch` on a branch — so `github.ref` is `refs/heads/main`,
+      # the condition was always true, and they saved every single time.
+      # `fixtures.yml` already reads `save-if: false` on the same argument:
+      # these keys can never restore a CI cache, so sharing would need
+      # `add-job-id-key: false` in both files and one CI invalidation, and that
+      # is a trade for `ci.yml` to make.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ matrix.suffix }}
           cache-bin: true
-          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          save-if: false
 
       # **No system libraries are installed for the Linux builds, and that is the
       # change rather than an omission.** cmake, nasm and the font development
