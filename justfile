@@ -1708,6 +1708,71 @@ bench-rust:
 bench-js: ensure-deps build-js addon-release
     node --expose-gc packages/meo-canvas/tools/bench.mjs
 
+# Find a test by name, without running one.
+#
+# **The names in this tree are sentences** -- 8.4 words on average across the
+# integration tests -- so a filtered list of them answers "where is this
+# behaviour pinned" directly, where a grep of the source answers "where does
+# this word appear". `cargo test -- --list` prints every name and surfaces
+# nothing; this is that output with a filter on it.
+#
+# **It runs no test and asserts nothing**, which is what makes it safe to reach
+# for. It does *compile* them: `--list` reads the test binaries, so a cold
+# target directory pays a full build here. That cost buys a question the
+# compiler has already answered and a grep cannot -- a name is a test only if
+# the harness registered it.
+#
+# **No pattern lists everything**, deliberately. "What is there" is a real
+# question and the answer is long rather than wrong; the alternative is a usage
+# message that refuses to answer it.
+#
+# **No match exits 1**, also deliberately. A pattern matching nothing is a
+# result -- most often a name that has been renamed or a suite that does not
+# exist -- and a recipe that reports it as success is the shape this repository
+# spent a night removing from its checks. The message names the pattern,
+# because `grep`'s own silence does not.
+#
+# The pattern is substituted textually by `just`, so a quote inside it will
+# break the assignment rather than searching for a quote.
+[doc("List test names matching a pattern, without running any. No pattern lists all.")]
+tests pattern="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pattern='{{ pattern }}'
+    # **stderr is kept, and it carries the answer.** cargo writes the test
+    # names to stdout and `Running tests/<file>.rs` to stderr, so discarding
+    # stderr discards the only line saying which file a name lives in -- and
+    # that file is what "where is this tested" is asking for. The first draft
+    # of this recipe sent stderr to /dev/null and answered a narrower question
+    # than the one in its own doc comment.
+    #
+    # Grouping relies on cargo printing each `Running` line before that
+    # binary's names, which it does because it runs them in sequence.
+    #
+    # `|| true` because a filter matching nothing is not a failure of the
+    # filter, and `set -e` would otherwise end the recipe before the message
+    # below -- which is the whole of what this adds over a raw grep.
+    found=$(cargo test --workspace -- --list 2>&1 | awk -v pat="$pattern" '
+        /^ *(Running|Doc-tests)/ {
+            where = $0
+            # A pattern naming the FILE lists everything in it. "Where is the
+            # aspect-ratio behaviour tested" is answered by a file name, and
+            # no test in `chrome_aspect_ratio_percentage.rs` has "aspect" in
+            # its own name -- so matching names alone answers nothing for
+            # exactly the question the doc comment poses.
+            whole = tolower(where) ~ tolower(pat)
+            next
+        }
+        $0 ~ /: test$/ && (whole || tolower($0) ~ tolower(pat)) {
+            if (where != shown) { print where; shown = where }
+            print "  " $0
+        }' || true)
+    if [[ -z "$found" ]]; then
+        echo "no test name matches: $pattern" >&2
+        exit 1
+    fi
+    echo "$found"
+
 # Remove all build output.
 clean:
     cargo clean
