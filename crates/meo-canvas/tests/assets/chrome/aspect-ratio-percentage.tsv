@@ -23,6 +23,7 @@ ratio-shrink-with-author-min-height	200.00	170.00	an author min-height beside a 
 ratio-shrink-50-child	17.64	30.00	half the height of a shrink-to-fit ratio parent, where the whole-height row is the KNOWN one
 ratio-shrink-taller-content	300.00	255.00	shrink-to-fit ratio box whose content exceeds the derived height -- does the width follow
 ratio-shrink-issue-97	35.28	29.98	the issue shape itself: a plain 30x10 child under ratio .85 on a shrink-to-fit parent
+ratio-under-definite-ratio-parent	35.28	29.98	a shrink-to-fit ratio child inside a ratio parent whose width is declared -- the parent is not entangled
 ratio-shrink-content-just-under	35.28	29.98	content one pixel short of the derived height -- the derived one should win and the width should not move
 ratio-shrink-content-just-over	36.00	30.59	content one pixel past it -- if the width moves here and not above, the threshold is the derived height itself
 ratio-gt-one-shrink	15.00	30.00	a ratio above 1 with short content, so a direction rule cannot be an artefact of the ratio side of 1

@@ -229,6 +229,21 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-under-definite-ratio-parent',
+    // **The control on what counts as entangled.** The parent carries a ratio
+    // and a declared width, so its own width is not an outcome and nothing the
+    // child derives depends on it. A predicate asking "does an ancestor have a
+    // ratio" would skip the child here; one asking "is an ancestor's inline
+    // size also an outcome" compensates it. Nothing else in this table
+    // distinguishes the two readings.
+    note: 'a shrink-to-fit ratio child inside a ratio parent whose width is declared -- the parent is not entangled',
+    html: `<div style="width:200px;aspect-ratio:2;display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-shrink-content-just-under',
     note: 'content one pixel short of the derived height -- the derived one should win and the width should not move',
     html: `<div style="display:flex;flex-direction:column;align-items:flex-start">

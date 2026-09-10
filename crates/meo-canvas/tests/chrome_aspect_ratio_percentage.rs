@@ -168,6 +168,7 @@ const RATIO_BOX: &[&str] = &[
     "ratio-shrink-50-child",
     "ratio-shrink-taller-content",
     "ratio-shrink-issue-97",
+    "ratio-under-definite-ratio-parent",
     "ratio-shrink-content-just-under",
     "ratio-shrink-content-just-over",
     "ratio-gt-one-shrink",
@@ -350,6 +351,35 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
         }
         "ratio-shrink-issue-97" => {
             shrink_ratio_box(scene, RATIO, 10.0, None);
+        }
+        "ratio-under-definite-ratio-parent" => {
+            // **The control on the entanglement predicate.** The outer carries
+            // a ratio and a declared width, so its inline size is not an
+            // outcome and the inner's answer does not depend on a derivation
+            // any clearing pass would remove. A predicate asking whether an
+            // ancestor merely *has* a ratio would skip the inner; one asking
+            // whether an ancestor's inline size is also an outcome does not.
+            let outer = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    size: (Dimension::Points(200.0), Dimension::Auto),
+                    aspect_ratio: Some(OUTER_RATIO),
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    align_items: Some(Align::FlexStart),
+                    ..LayoutStyle::default()
+                }),
+            );
+            let parent = push(scene, outer, measured(bare_ratio(RATIO)));
+            push(
+                scene,
+                parent,
+                boxed(LayoutStyle {
+                    size: (Dimension::Points(30.0), Dimension::Points(10.0)),
+                    ..LayoutStyle::default()
+                }),
+            );
         }
         "ratio-shrink-content-just-under" => {
             shrink_ratio_box(scene, RATIO, 34.0, None);
@@ -708,14 +738,7 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 /// bracket that boundary at 34 and 36 against a derived 35.28: the first
 /// diverges and the second does not, so the two rows locate the defect at the
 /// crossing rather than describing it.
-const KNOWN: &[&str] = &[
-    "ratio-with-no-definite-length",
-    "ratio-with-taller-content",
-    "ratio-shrink-issue-97",
-    "ratio-shrink-50-child",
-    "ratio-shrink-content-just-under",
-    "ratio-gt-one-shrink",
-];
+const KNOWN: &[&str] = &["ratio-with-taller-content"];
 
 /// One row: the case's key and the height Chrome gave it.
 fn rows() -> Vec<(String, f32)> {
@@ -742,7 +765,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        25,
+        26,
         "the table changed shape; the scenes here are per row"
     );
 
