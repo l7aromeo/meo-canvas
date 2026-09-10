@@ -1,0 +1,166 @@
+// What a percentage height resolves against when a ratio settles the parent.
+//
+// Reported as `l7aromeo/meo-canvas#91`: an in-flow `height: 100%` under a box
+// sized by `width` and `aspect-ratio` came out zero, while the parent's own box
+// was right. The renderer decides definiteness itself and hands taffy the
+// answer, so the rule is ours; it knows a declared length and it knows opposing
+// insets, and a ratio plus a definite length on the other axis is a third way
+// that is not in it.
+//
+// **The rows that must not move are half the table.** This is the third repair
+// to the same rule, and each time the failure mode has been trading one wrong
+// answer for another: `ratio-and-declared-height` is 60 rather than 141 because
+// a declared height wins outright, and `inflow-100-no-ratio` is nothing because
+// without a ratio a content-sized parent still settles nothing. A repair that
+// made every ratio parent definite breaks the first; one that made every parent
+// definite breaks the second.
+//
+// Every height is `getBoundingClientRect().height` after layout, and the widths
+// are here because `ratio-from-height` is the row where the derived axis is the
+// *width* -- the rule is about either axis being definite, not about width.
+
+import { writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { open, settle, table } from './browser.mjs'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv')
+
+/** The page every case is measured in. */
+const VIEWPORT = { width: 400, height: 400 }
+
+/**
+ * One scene per row, written out rather than built by a helper.
+ *
+ * What varies is which box settles which axis, so a builder that assembled the
+ * pair would hide the only thing under test. `#m` is always the element
+ * measured.
+ */
+const CASES = [
+  {
+    key: 'ratio-parent-box',
+    note: 'control -- the ratio settles the box itself, and already did',
+    html: `<div id="m" style="width:120px;aspect-ratio:.85"></div>`,
+  },
+  {
+    key: 'inflow-100-under-ratio',
+    note: 'the defect: a whole-height child of a ratio-sized parent',
+    html: `<div style="width:120px;aspect-ratio:.85">
+             <div id="m" style="height:100%"></div>
+           </div>`,
+  },
+  {
+    key: 'inflow-50-under-ratio',
+    note: 'the same, proportional rather than whole',
+    html: `<div style="width:120px;aspect-ratio:.85">
+             <div id="m" style="height:50%"></div>
+           </div>`,
+  },
+  {
+    key: 'abs-100-under-ratio',
+    note: 'out of flow under the same parent',
+    html: `<div style="position:relative;width:120px;aspect-ratio:.85">
+             <div id="m" style="position:absolute;top:0;width:30px;height:100%"></div>
+           </div>`,
+  },
+  {
+    key: 'ratio-and-declared-height',
+    note: 'control -- a declared height wins and the ratio does not fight it',
+    html: `<div style="width:120px;height:60px;aspect-ratio:.85">
+             <div id="m" style="height:100%"></div>
+           </div>`,
+  },
+  {
+    key: 'ratio-from-height',
+    note: 'the other axis: height declared, width derived',
+    html: `<div style="height:120px;aspect-ratio:.85">
+             <div id="m" style="height:100%"></div>
+           </div>`,
+  },
+  {
+    key: 'min-height-200-under-ratio',
+    note: 'a minimum resolves against it too',
+    html: `<div style="width:120px;aspect-ratio:.85">
+             <div id="m" style="height:20px;min-height:200%"></div>
+           </div>`,
+  },
+  {
+    key: 'max-height-25-under-ratio',
+    note: 'and a maximum, which is the third kind build drops',
+    html: `<div style="width:120px;aspect-ratio:.85">
+             <div id="m" style="height:300px;max-height:25%"></div>
+           </div>`,
+  },
+  {
+    key: 'ratio-with-no-definite-length',
+    // **The row that decides how wide the rule is.** Neither axis states a
+    // length: the parent's width is shrink-to-fit from this child's 30, the
+    // ratio derives the height from that, and the child's `100%` resolves
+    // against it. So a ratio settles the block axis whatever the inline axis
+    // was arrived at, and a repair demanding a declared width would leave this
+    // painting nothing.
+    note: 'neither axis declared -- the width is shrink-to-fit and it still resolves',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div style="aspect-ratio:.85">
+               <div id="m" style="width:30px;height:100%"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-with-percentage-width',
+    note: 'the width is itself a percentage, and the ratio still settles the height',
+    html: `<div style="width:200px;height:50px">
+             <div style="width:50%;aspect-ratio:.85">
+               <div id="m" style="width:30px;height:100%"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'inflow-100-no-ratio',
+    note: 'control -- without the ratio the parent settles nothing',
+    html: `<div style="width:120px">
+             <div id="m" style="height:100%"></div>
+           </div>`,
+  },
+]
+
+const { page, close } = await open()
+try {
+  await page.setViewportSize(VIEWPORT)
+
+  // No stamp line here: `table()` inserts it after the first, from the version
+  // the browser reported when `open()` launched it. A tool that wrote its own
+  // would produce two.
+  const lines = [
+    '# What a percentage height resolves against when a ratio settles the parent.',
+    `# Chrome, viewport ${VIEWPORT.width}x${VIEWPORT.height}.`,
+    '# Written by packages/meo-canvas/tools/conformance/aspectratio.mjs.',
+    '# case\theight\twidth\tnote',
+  ]
+
+  for (const { key, note, html } of CASES) {
+    await page.evaluate(markup => {
+      document.body.innerHTML = markup
+    }, html)
+    await settle(page)
+    const box = await page.evaluate(() => {
+      const element = document.getElementById('m')
+      if (element === null) throw new Error('the case has no #m to measure')
+      const seen = element.getBoundingClientRect()
+      return { height: seen.height, width: seen.width }
+    })
+    lines.push([key, box.height.toFixed(2), box.width.toFixed(2), note].join('\t'))
+  }
+
+  const written = table(lines)
+  if (process.env['WRITE'] === '1') {
+    await writeFile(DESTINATION, written, 'utf8')
+    console.log(`wrote ${DESTINATION}`)
+  } else {
+    process.stdout.write(written)
+  }
+} finally {
+  await close()
+}

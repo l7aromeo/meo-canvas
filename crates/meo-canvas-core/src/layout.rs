@@ -500,6 +500,7 @@ fn child_height_is_definite(
         Dimension::Percent(_) => out_of_flow(child) || parent_is_definite,
         Dimension::Auto => {
             insets_settle_it(child)
+                || ratio_settles_it(child)
                 || parent_is_definite && flex_settles_it(parent, child)
         }
     }
@@ -532,6 +533,60 @@ const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
     out_of_flow(node)
         && node.layout.inset.top.is_some()
         && node.layout.inset.bottom.is_some()
+}
+
+/// Whether a ratio derives this box's height from its width.
+///
+/// **The inline axis is already definite and that is what makes this work.** A
+/// shrink-to-fit box still has a used width -- the note in [`build`] about
+/// dropping only block-axis percentages says so -- and a ratio turns that width
+/// into a height before the contents are laid out. Nothing here asks whether
+/// the width was *declared*, because Chrome does not: measured, a box whose
+/// only width is 30 pixels of shrink-to-fit content is 35.28 tall under
+/// `aspect-ratio: .85` and its `height: 100%` child paints all of it, and the
+/// same holds where the width is itself a percentage. Both rows are in
+/// `aspect-ratio-percentage.tsv`, and a repair demanding a declared width
+/// leaves them painting nothing.
+///
+/// A declared height needs none of this: it is the `Points` arm, and
+/// `ratio-and-declared-height` is 60 rather than 141 because a stated height
+/// wins outright and the ratio does not fight it.
+///
+/// **[`usable_ratio`] decides what counts as one**, here and in
+/// [`to_taffy_style`], because the two must not drift: a value taffy discards
+/// and this rule calls definite is a box whose height is indefinite in the
+/// layout engine and definite in the predicate at once, and a percentage child
+/// then resolves against a height nothing produced.
+fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
+    node.layout.aspect_ratio.is_some_and(usable_ratio)
+}
+
+/// Whether a declared aspect ratio is one at all.
+///
+/// A ratio is a positive finite number or it is not a ratio, and Chrome lays
+/// the others out as though none were declared -- measured, a 120-wide box
+/// with a 50-tall child is 120x50 under `aspect-ratio: 0`, under
+/// `calc(infinity)`, under `-2` and with no ratio at all, against 120x141.17
+/// under `.85`.
+///
+/// **It reaches that by two routes and only the outcome is shared.** `-2` is
+/// rejected at parse and computes to `auto`; `0` and `calc(infinity)` compute
+/// to `0 / 1` and `infinity / 1` -- kept as values -- and are then not applied.
+/// The distinction is worth stating because a probe with an *empty* parent
+/// reads `0` tall for all three and looks like the ratio being applied to
+/// nothing; it is the content-carrying probe that shows the height is the
+/// content's.
+///
+/// **One function rather than the same expression at two call sites.**
+/// [`to_taffy_style`] uses it to decide what taffy is given and
+/// [`ratio_settles_it`] to decide whether a percentage beneath the box can
+/// resolve, and those two answers have to be the same answer. Written twice
+/// they would agree until somebody widened one -- and the disagreement would
+/// not be a compile error or a wrong number in a test, but a box taffy treats
+/// as ratio-less while the predicate calls its height settled. That is the
+/// same shape as the defect this predicate exists to fix.
+const fn usable_ratio(ratio: f32) -> bool {
+    ratio.is_finite() && ratio > 0.0
 }
 
 /// Whether flex layout gives this child a height its own contents did not.
@@ -915,13 +970,7 @@ pub fn to_taffy_style(
             width: to_auto_length(sized(layout.max_size.0)),
             height: to_auto_length(sized(layout.max_size.1)),
         },
-        aspect_ratio: layout.aspect_ratio.filter(|ratio| {
-            // A ratio is a positive finite number or it is not a ratio.
-            // Chrome drops `0`, `-2`, `NaN` and `Infinity` alike and keeps the
-            // declared size; applying any of them abandons that size and
-            // shrinks the box to its content.
-            ratio.is_finite() && *ratio > 0.0
-        }),
+        aspect_ratio: layout.aspect_ratio.filter(|ratio| usable_ratio(*ratio)),
 
         margin: taffy::Rect {
             left: to_auto_length(margin(layout.margin.left)),
@@ -2627,6 +2676,48 @@ mod tests {
     /// that repair, a `min-height: 200%` child of a 60, 120 and 200 tall box
     /// gave 20 where Chrome gives 120, 240 and 400 -- so the definite rows are
     /// what makes this test constrain the fix rather than restate it.
+    /// A ratio the renderer will not use does not settle a height either.
+    ///
+    /// **The surface the shared filter had no test on.** Mutating
+    /// [`usable_ratio`] to accept everything reddens
+    /// `an_unusable_value_is_dropped_where_it_becomes_layout_input` and nothing
+    /// else -- that pins [`to_taffy_style`], where a bad ratio is dropped
+    /// before taffy sees it, and left [`ratio_settles_it`] free to call the
+    /// height settled anyway. That is the pair this predicate's own doc warns
+    /// about: indefinite in taffy and definite in this rule at once, with a
+    /// percentage child resolving against a height nothing derived.
+    ///
+    /// **Asserted on the predicate rather than as a rendered row**, because a
+    /// row would pass whatever this predicate did. Chrome lays an unusable
+    /// ratio out as though none were declared -- a 120-wide box with a 50-tall
+    /// child is 120x50 under `0`, `calc(infinity)`, `-2` and no ratio alike --
+    /// and so do we, by discarding it. **Agreement, but the row cannot show
+    /// which of us discarded what**, and with an empty parent both sides read
+    /// zero for reasons that have nothing in common.
+    ///
+    /// A negative is the one a caller reaches by arithmetic and it crosses both
+    /// surfaces: the npm writer's `decimal` refuses `NaN` and passes `-2` and
+    /// `Infinity`, so those two arrive from either door.
+    #[test]
+    fn a_ratio_this_renderer_will_not_use_settles_nothing() {
+        let parent = Node::new(meo_canvas_scene::node::NodeKind::Box);
+        let mut child = Node::new(meo_canvas_scene::node::NodeKind::Box);
+        child.layout.size = (Dimension::Points(30.0), Dimension::Auto);
+
+        for bad in [-2.0, 0.0, f32::NAN, f32::INFINITY] {
+            child.layout.aspect_ratio = Some(bad);
+            assert!(
+                !super::child_height_is_definite(&parent, &child, false),
+                "a ratio of {bad} was treated as settling the height"
+            );
+        }
+
+        // The control, and it is what stops this passing for a predicate that
+        // refuses every ratio: the one usable value must still settle it.
+        child.layout.aspect_ratio = Some(0.85);
+        assert!(super::child_height_is_definite(&parent, &child, false));
+    }
+
     #[test]
     fn a_percentage_height_resolves_only_against_a_definite_one() {
         fn probe(parent_height: Dimension) -> f32 {

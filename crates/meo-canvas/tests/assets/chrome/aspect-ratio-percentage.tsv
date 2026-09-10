@@ -1,0 +1,16 @@
+# What a percentage height resolves against when a ratio settles the parent.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Chrome, viewport 400x400.
+# Written by packages/meo-canvas/tools/conformance/aspectratio.mjs.
+# case	height	width	note
+ratio-parent-box	141.17	120.00	control -- the ratio settles the box itself, and already did
+inflow-100-under-ratio	141.17	120.00	the defect: a whole-height child of a ratio-sized parent
+inflow-50-under-ratio	70.58	120.00	the same, proportional rather than whole
+abs-100-under-ratio	141.17	30.00	out of flow under the same parent
+ratio-and-declared-height	60.00	120.00	control -- a declared height wins and the ratio does not fight it
+ratio-from-height	120.00	102.00	the other axis: height declared, width derived
+min-height-200-under-ratio	282.34	120.00	a minimum resolves against it too
+max-height-25-under-ratio	35.28	120.00	and a maximum, which is the third kind build drops
+ratio-with-no-definite-length	35.28	30.00	neither axis declared -- the width is shrink-to-fit and it still resolves
+ratio-with-percentage-width	117.64	30.00	the width is itself a percentage, and the ratio still settles the height
+inflow-100-no-ratio	0.00	120.00	control -- without the ratio the parent settles nothing
