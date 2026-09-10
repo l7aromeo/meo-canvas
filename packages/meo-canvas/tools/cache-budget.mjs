@@ -104,6 +104,53 @@ function token() {
 }
 
 const inCi = process.env['GITHUB_ACTIONS'] === 'true'
+
+// **The total is a fact about the repository, so it fails `main` and reports on
+// a pull request.**
+//
+// This ran everywhere and failed everywhere, and on 2026-09-10 a release-notes
+// pull request went red on `portable` because the shared cache was over the
+// floor -- a gate telling a contributor something true about the repository and
+// nothing about their change, while its three native legs passed on the same
+// commit. The cost is not that they cannot merge: it is a red they cannot act
+// on, and a red a reviewer has to learn to ignore takes the next real failure
+// on the same check down with it. The argument for failing there at all was
+// that somebody had to notice; the pruner notices instead.
+//
+// **Reporting needs positive evidence and enforcing is the default.** The set
+// below is named rather than inverted, so an unset or unrecognised environment
+// enforces rather than passes -- the opposite polarity to a guard that relaxes
+// whenever it cannot tell, which is the shape that made
+// `event !== 'workflow_dispatch'` wrong in `cache-prune.yml` on the same day.
+//
+// **Three events, and each is a change that is not yet on `main`.**
+// `pull_request` is the case this exists for. `pull_request_target` is the same
+// contributor's change evaluated against the base repository, so the argument is
+// identical and it is named now rather than discovered later. `merge_group` is
+// the one worth stating rather than leaving as a consequence of the keying: a
+// merge queue is about to become `main`, so enforcing there is defensible -- and
+// it would jam the whole queue on a shared resource, with no run on `main` to
+// fire the pruner and clear it, which is the deadlock this file's sibling spent
+// a production hour on. Reporting is self-healing instead: the change lands,
+// `main`'s own run fails on the budget, and the pruner runs whatever that
+// conclusion is, and removes the dead entries.
+//
+// `merge_group` fires only where a merge queue is enabled, so that arm is
+// prospective rather than a description of what runs today. It is named now
+// because being wrong in this direction costs one red run on `main` that then
+// fixes itself, and being wrong in the other costs a jammed queue and a person.
+//
+// **And it prints rather than passing quietly**, because a check that silently
+// does nothing is the shape this repository has been burned by repeatedly. The
+// same line names the entries it would have failed on, so a pull request still
+// carries the evidence and only the exit status changes.
+//
+// What this gives up: an over-budget cache is no longer visible as a red on a
+// pull request, so it is noticed on the next run on `main` instead. That is the
+// trade, taken deliberately, and it is why the line below says `reported, not
+// enforced` rather than `skipped`.
+const REPORT_ONLY_EVENTS = new Set(['pull_request', 'pull_request_target', 'merge_group'])
+const beforeMain = REPORT_ONLY_EVENTS.has(process.env['GITHUB_EVENT_NAME'] ?? '')
 const auth = token()
 
 // **The skip is refused where it would matter.** A check that quietly does
@@ -187,6 +234,15 @@ if (superseded.length > 0) {
   process.stdout.write(`  ${superseded.length} superseded, ${(supersededBytes / GIB).toFixed(2)} GiB -- same key prefix, ${ORDER_READS}:\n`)
   for (const entry of superseded)
     process.stdout.write(`    gh api -X DELETE repos/${repo}/actions/caches/${entry.id}  # ${(entry.size_in_bytes / MIB).toFixed(0)} MiB ${entry.key}\n`)
+}
+
+if (total > FLOOR_BYTES && beforeMain) {
+  process.stdout.write(
+    `cache budget: ${(total / GIB).toFixed(2)} GiB is over the ${(FLOOR_BYTES / GIB).toFixed(1)} GiB floor -- ` +
+      `reported, not enforced, because this is a ${process.env['GITHUB_EVENT_NAME']} and the cache is a ` +
+      'property of the repository rather than of this change. The next run on `main` fails on it.\n',
+  )
+  process.exit(0)
 }
 
 if (total > FLOOR_BYTES) {
