@@ -356,6 +356,45 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 /// wrong in the first, and the day taffy fixes it somebody has to find that
 /// compensation and undo it.
 ///
+/// **Upstream, and it does not come out when the fix in flight lands.** It is
+/// `DioxusLabs/taffy#804`, reproduced here against `v0.14.0` and against
+/// `main` -- eight commits ahead of the release and identical on this row.
+/// `DioxusLabs/taffy#1179` is open and fixes **the other spelling** of that
+/// issue, where a flex-grown item's cross size is not transferred: measured
+/// on that branch, that case goes from 128x64 to 128x128 and matches Chrome.
+///
+/// **This row is not that case, and that pull request makes it worse.**
+/// On the branch a shrink-to-fit parent goes from `30x10` -- the ratio ignored
+/// -- to `9x10`, narrower than the child inside it, because the transfer runs
+/// from the block axis to the inline one: holding a 30x10 child and varying
+/// only the ratio gives 9, 20 and 5 for 0.85, 2.0 and 0.5, so the width is the
+/// content *height* times the ratio. Released `0.13.0` gives `30x10` for every
+/// ratio, so the branches introduce that direction rather than inheriting it.
+///
+/// **taffy's maintainer characterised it before we did, on 2026-09-09**, in
+/// review on `src/compute/flexbox.rs:1817`: the condition there is "a
+/// pragmatic workaround", and the correct fix is that an auto-width column
+/// container's width should come from its items' max-content contributions
+/// rather than from the line cross size. That is a larger change they are
+/// deliberately not making in that pull request.
+///
+/// So **a release carrying `DioxusLabs/taffy#1179` does not retire this
+/// entry**, and the next reader should not delete it on seeing one. What
+/// retires it is a release in which a shrink-to-fit parent with a ratio
+/// reports its content width -- which the rows above will say plainly,
+/// because they fail in both directions.
+///
+/// **Tracked as `l7aromeo/meo-canvas#97`**, which carries the reproduction
+/// against taffy alone -- none of this repository in the path -- and states the
+/// boundary the two upstream reports do not state together: the ratio is
+/// applied when the inline size is definite **before** the item is laid out, a
+/// declared length or a percentage of a definite parent, and dropped when the
+/// inline size is itself an **outcome** of layout, whether from shrink-to-fit
+/// content or from flex-grow distribution. The upstream change that produces
+/// such a release is section 9.9.2 of the flexbox specification, intrinsic
+/// cross sizes for column containers, open as `DioxusLabs/taffy#351` since
+/// 2023-02-04 with 9.9.1 landed and 9.9.2 not.
+///
 /// The rule this file tests is still pinned without the row --
 /// `ratio-with-percentage-width` is the same claim with a width taffy does
 /// size, and it agrees -- so this entry records a second defect rather than

@@ -65,6 +65,14 @@ fn art() -> Vec<u8> {
 const TABLE: &str = include_str!("assets/chrome/replaced-insets.tsv");
 
 /// Chrome's `(x, y, width, height)` for one case of the table.
+///
+/// **The columns after the fourth are not read, and saying so is what makes
+/// that safe.** The row carries its declarations and a note as well, and both
+/// are prose for a reader rather than values for an assertion -- so editing a
+/// note changes the table and cannot change a result. A reader narrower than
+/// the file it reads is fine exactly when someone has recorded that the tail is
+/// ignored; it is a defect when the narrowing is silent and a later column
+/// starts carrying something.
 fn chrome(case: &str) -> (i32, i32, u32, u32) {
     for line in TABLE.lines() {
         if line.starts_with('#') || line.trim().is_empty() {

@@ -1,11 +1,35 @@
 # Chrome, through `just conformance`. Where each object-fit rule puts a picture.
 # Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
-# An <img> on a #f0f0f0 cell at 72x72, 6x6, source 
+# An <img> on a #f0f0f0 cell at 72x72, 6x6, 100x200, from
 # `crates/meo-canvas/tests/assets/fit-marks.png` — eight by four, magenta at its
 # own x=0 and cyan at x=7. Those two columns are what separate `fill` from
 # `cover`: both fill the box and differ only in what they CUT, so a symmetric
 # picture reads the same stretched as cropped.
+#
+# **`source` is the kind, and it is the column this table was missing.** The
+# same picture is supplied twice: as that PNG and as `fit-marks.svg`, which
+# rasterises at its own 8x4 to the identical thirty-two pixels. A renderer can
+# place one correctly and the other not, which is what happened here, and a
+# table with no source column cannot say so.
+#
+# **No box shares the picture's aspect, and that is what makes the table
+# able to fail.** The picture is 2:1; two boxes are square and the third is
+# 1:2. Where a box and the picture agree on aspect, `fill`, `contain` and
+# `cover` are one rectangle and a renderer that letterboxes what it should
+# stretch passes every row -- measured, not supposed: a 200x100 box against
+# this 8x4 picture agrees on all five rules whether that defect is present
+# or absent. 100x200 is the widest disagreement this picture allows.
+#
+# **`fill` and `contain` on the same rectangle in every `svg` row is Chrome
+# being right, not two modes collapsing.** `object-fit` sizes the replaced
+# element; the document then lays itself out inside that viewport under its
+# own `preserveAspectRatio`, which defaults to `xMidYMid meet`. So the
+# stretch never reaches the drawing and the ink lands where `contain` puts
+# it. A bitmap carries no such rule and is stretched, which is why the
+# `raster` rows differ there and the `svg` rows do not. The two kinds are
+# the same thirty-two pixels -- `fit-marks.svg` rasterises at its own 8x4
+# identical to the PNG -- so this is a difference in placement, not in art.
 #
 # `rect` is the bounding box of everything that is not the cell colour, so a
 # letterboxed fit reports the picture rather than the box.
@@ -18,14 +42,34 @@
 # eight wide are where the two separate: `none` crops, `scale-down` shrinks.
 # A table with only the 72 rows cannot fail for `scale-down` at all.
 #
-# fit	w	h	rect	magenta	cyan
-fill	72	72	0,0,72,72	magenta	cyan
-contain	72	72	0,18,72,36	magenta	cyan
-cover	72	72	0,0,72,72	-	-
-none	72	72	32,34,8,4	magenta	cyan
-scale-down	72	72	32,34,8,4	magenta	cyan
-fill	6	6	0,0,6,6	magenta	cyan
-contain	6	6	0,2,6,3	magenta	cyan
-cover	6	6	0,0,6,6	-	-
-none	6	6	0,1,6,4	-	-
-scale-down	6	6	0,2,6,3	magenta	cyan
+# fit	w	h	rect	magenta	cyan	source
+fill	72	72	0,0,72,72	magenta	cyan	raster
+contain	72	72	0,18,72,36	magenta	cyan	raster
+cover	72	72	0,0,72,72	-	-	raster
+none	72	72	32,34,8,4	magenta	cyan	raster
+scale-down	72	72	32,34,8,4	magenta	cyan	raster
+fill	6	6	0,0,6,6	magenta	cyan	raster
+contain	6	6	0,2,6,3	magenta	cyan	raster
+cover	6	6	0,0,6,6	-	-	raster
+none	6	6	0,1,6,4	-	-	raster
+scale-down	6	6	0,2,6,3	magenta	cyan	raster
+fill	100	200	0,0,100,200	magenta	cyan	raster
+contain	100	200	0,75,100,50	magenta	cyan	raster
+cover	100	200	0,0,100,200	-	-	raster
+none	100	200	46,98,8,4	magenta	cyan	raster
+scale-down	100	200	46,98,8,4	magenta	cyan	raster
+fill	72	72	0,18,72,36	magenta	cyan	svg
+contain	72	72	0,18,72,36	magenta	cyan	svg
+cover	72	72	0,0,72,72	-	-	svg
+none	72	72	32,34,8,4	magenta	cyan	svg
+scale-down	72	72	32,34,8,4	magenta	cyan	svg
+fill	6	6	0,2,6,3	magenta	cyan	svg
+contain	6	6	0,2,6,3	magenta	cyan	svg
+cover	6	6	0,0,6,6	-	-	svg
+none	6	6	0,1,6,4	-	-	svg
+scale-down	6	6	0,2,6,3	magenta	cyan	svg
+fill	100	200	0,75,100,50	magenta	cyan	svg
+contain	100	200	0,75,100,50	magenta	cyan	svg
+cover	100	200	0,0,100,200	-	-	svg
+none	100	200	46,98,8,4	magenta	cyan	svg
+scale-down	100	200	46,98,8,4	magenta	cyan	svg

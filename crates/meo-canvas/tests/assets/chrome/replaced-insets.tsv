@@ -12,6 +12,16 @@
 # dropped when both on an axis were given: the element sits against the
 # one that was honoured.
 #
+# **Every number here is a border box, read from getBoundingClientRect.**
+# What the browser paints INSIDE that box is not recorded and cannot be:
+# the five `object-fit` rows say what each rule does to the element’s box,
+# not where it puts the picture. That question is `object-fit.tsv`, whose
+# walker reads pixels, and it takes three separators rather than one: the
+# rectangle for `contain`; the magenta and cyan columns for `cover` against
+# `fill`, which share a rectangle and differ in that only `cover` crops the
+# art’s corner marks out of the cell; and a cell narrower than the art for
+# `scale-down` against `none`, identical at 72x72 and different at 6x6.
+#
 # case	x	y	width	height	declarations	note
 img inset 0	0.00	0.00	60.00	40.00	inset:0;	the defect: no width or height, insets alone
 img inset 0 + size 100%	0.00	0.00	200.00	30.00	inset:0;width:100%;height:100%;	an explicit size wins over the intrinsic one
@@ -24,7 +34,7 @@ img top 0 bottom 0	0.00	0.00	60.00	40.00	top:0;bottom:0;	the same question on th
 img no insets	0.00	0.00	60.00	40.00		absolute, no insets: intrinsic size against a shorter block
 img right 0 only	140.00	0.00	60.00	40.00	right:0;	a lone end inset positions and must not be dropped
 img bottom 0 only	0.00	-10.00	60.00	40.00	bottom:0;	the same on the block axis
-img inset 0 fill	0.00	0.00	60.00	40.00	inset:0;object-fit:fill;	object-fit paints, it does not size
+img inset 0 fill	0.00	0.00	60.00	40.00	inset:0;object-fit:fill;	the box under fill; the picture is object-fit.tsv
 img inset 0 contain	0.00	0.00	60.00	40.00	inset:0;object-fit:contain;	the same, and the reporter used fill
 img inset 0 cover	0.00	0.00	60.00	40.00	inset:0;object-fit:cover;	the same
 img inset 0 none	0.00	0.00	60.00	40.00	inset:0;object-fit:none;	the same

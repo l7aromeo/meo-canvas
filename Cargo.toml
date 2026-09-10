@@ -30,7 +30,21 @@ meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.0-alpha.2" }
 # `default-features = false` is what keeps its `node-addon` feature off, and so
 # keeps its `#[neon::main]` out of the graph: a `.node` addon has exactly one
 # module-init symbol, and `meo-canvas-node` owns it.
-meo-skia-canvas = { version = "0.16", default-features = false }
+#
+# **0.16.1 rather than 0.16, because 0.16.0 renders an SVG source wrong.**
+# `Svg::rasterize` allocated a surface at the size asked for and then drew a
+# root carrying absolute lengths at its intrinsic size in the corner, so an
+# image node with a document source ignored every fit that scales
+# (`l7aromeo/meo-skia-canvas#212`, fixed by `l7aromeo/meo-skia-canvas#213`).
+# Measured on 0.16.0, ten rows of
+# `crates/meo-canvas/tests/assets/chrome/object-fit.tsv` disagree with Chrome
+# and every one is the SVG source; on 0.16.1 none does.
+#
+# **The floor is here rather than only in the lockfile because a consumer never
+# reads ours.** `"0.16"` admits 0.16.0, and a crate depending on `meo-canvas`
+# resolves this requirement against the registry -- so a fix expressed only in
+# `Cargo.lock` is a fix only this repository has.
+meo-skia-canvas = { version = "0.16.1", default-features = false }
 
 # Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
 # `*const ()` handle the caller resolves, so it adds a surface with no
