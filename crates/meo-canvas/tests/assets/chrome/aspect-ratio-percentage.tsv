@@ -14,3 +14,9 @@ max-height-25-under-ratio	35.28	120.00	and a maximum, which is the third kind bu
 ratio-with-no-definite-length	35.28	30.00	neither axis declared -- the width is shrink-to-fit and it still resolves
 ratio-with-percentage-width	117.64	30.00	the width is itself a percentage, and the ratio still settles the height
 inflow-100-no-ratio	0.00	120.00	control -- without the ratio the parent settles nothing
+block-auto-width-ratio	235.28	200.00	block-level, no width stated -- the width is the containing block and the height is derived from it
+nested-ratio-outer	35.28	70.56	two ratios deep, the outer measured -- shrink-to-fit around a ratio box
+nested-ratio-inner	83.00	70.56	the same tree, the inner measured -- does the outer ratio change what the inner derives
+column-flex-ratio-cross	235.28	200.00	a ratio item in a column flex container -- the width is the cross axis and stretches
+grid-item-ratio	235.28	200.00	a ratio item in a grid track -- the width comes from the track
+ratio-with-taller-content	300.00	100.00	content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override

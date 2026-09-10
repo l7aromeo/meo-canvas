@@ -124,6 +124,65 @@ const CASES = [
              <div id="m" style="height:100%"></div>
            </div>`,
   },
+
+  // **The rows below measure the ratio box itself rather than a percentage
+  // child.** The eleven above ask what a percentage resolves against; these ask
+  // whether the ratio derives a height at all when the width is an *outcome* of
+  // layout rather than a declared length. That is a different question and the
+  // table could not express it: every ratio box above has a width that is
+  // declared, a percentage, or shrink-to-fit, and none is block-level auto.
+  {
+    key: 'block-auto-width-ratio',
+    note: 'block-level, no width stated -- the width is the containing block and the height is derived from it',
+    html: `<div style="width:200px">
+             <div id="m" style="aspect-ratio:.85"></div>
+           </div>`,
+  },
+  {
+    key: 'nested-ratio-outer',
+    note: 'two ratios deep, the outer measured -- shrink-to-fit around a ratio box',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:2">
+               <div style="aspect-ratio:.85">
+                 <div style="width:30px;height:10px"></div>
+               </div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'nested-ratio-inner',
+    note: 'the same tree, the inner measured -- does the outer ratio change what the inner derives',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div style="aspect-ratio:2">
+               <div id="m" style="aspect-ratio:.85">
+                 <div style="width:30px;height:10px"></div>
+               </div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'column-flex-ratio-cross',
+    note: 'a ratio item in a column flex container -- the width is the cross axis and stretches',
+    html: `<div style="display:flex;flex-direction:column;width:200px">
+             <div id="m" style="aspect-ratio:.85"></div>
+           </div>`,
+  },
+  {
+    key: 'grid-item-ratio',
+    note: 'a ratio item in a grid track -- the width comes from the track',
+    html: `<div style="display:grid;grid-template-columns:200px">
+             <div id="m" style="aspect-ratio:.85"></div>
+           </div>`,
+  },
+  {
+    key: 'ratio-with-taller-content',
+    note: 'content taller than the ratio implies -- decides whether a derived height is a floor, a ceiling or an override',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
 ]
 
 const { page, close } = await open()
