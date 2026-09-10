@@ -176,7 +176,21 @@ portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-
 # Everything whose dependencies reach `cargo`. For `test-js` and `coverage-js`
 # that is `addon`, and loading the compiled `.node` is the one thing that
 # genuinely differs between platforms.
-native: fmt-check arena-cases-check media-types-check lint-check docs test addon test-js coverage coverage-js example runtime-free unused
+#
+# **`test-js` runs before `test`, and the order is the point rather than a
+# tidying.** `just` stops at the first failure, so with `test` first a red Rust
+# suite meant the JavaScript suite never ran at all -- and a reader saw one
+# surface's failures and no information about the other. It cost a full round
+# trip on a Windows `tiff` disagreement where both figures reported were the
+# Rust side against a hash written on macOS, and the JavaScript side had not
+# executed. Two surfaces that can disagree should both report before anyone
+# reasons about which is wrong.
+#
+# `addon` stays ahead of `test-js`, which needs the compiled `.node`; that is
+# the only ordering constraint here, and `gate-lists-check` asserts both it and
+# the `test-js`-before-`test` rule, because nothing else would notice either
+# being undone.
+native: fmt-check arena-cases-check media-types-check lint-check docs addon test-js test coverage coverage-js example runtime-free unused
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
