@@ -13,7 +13,7 @@ The public surface: struct-literal options closed with `..Default::default()`,
 no Skia or taffy types anywhere, and no async runtime imposed on the caller.
 
 ```sh
-cargo add meo-canvas@0.1.0-alpha.2
+cargo add meo-canvas@0.1.0-alpha.3
 ```
 
 The version is named because this is a prerelease and `cargo add` will not
