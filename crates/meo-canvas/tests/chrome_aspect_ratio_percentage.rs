@@ -29,7 +29,8 @@ use meo_canvas_scene::{
     style::{
         Dimension, Length,
         layout::{
-            Align, Display, FlexDirection, LayoutStyle, PositionType, TrackSize,
+            Align, Display, FlexDirection, LayoutStyle, Overflow, PositionType,
+            TrackSize,
         },
         paint::Color,
     },
@@ -97,10 +98,61 @@ fn ratio_parent(size: (Dimension, Dimension)) -> LayoutStyle {
 }
 
 /// A child asking for a fraction of its parent's height.
+///
+/// **No width, because the markup declares none.** A block-level child with an
+/// `auto` inline size fills its containing block, and Chrome measures 120 for
+/// these rows against the parent's 120. This stated `30` until the width column
+/// was asserted, which made every scene built from it a different scene from
+/// the one the browser measured -- invisible while only the height was
+/// compared, because the parent's height in these shapes does not depend on the
+/// child's width.
 fn tall(fraction: f32) -> LayoutStyle {
+    LayoutStyle {
+        size: (Dimension::Auto, Dimension::Percent(fraction)),
+        ..LayoutStyle::default()
+    }
+}
+
+/// The same child where the markup **does** declare a width.
+///
+/// Four rows do, and in three of them the 30 is load-bearing: it is what makes
+/// the parent shrink-to-fit. The two spellings are not interchangeable.
+fn tall_and_wide(fraction: f32) -> LayoutStyle {
     LayoutStyle {
         size: (Dimension::Points(30.0), Dimension::Percent(fraction)),
         ..LayoutStyle::default()
+    }
+}
+
+/// The width of the painted band in whole pixels, zero for nothing drawn.
+///
+/// The same walk as [`painted_height`] over the other axis. Written out rather
+/// than folded into one function returning a pair, because every existing
+/// caller wants the height alone and a pair would make the height's callers
+/// read a tuple to ignore half of it.
+fn painted_width(scene: &Scene) -> u32 {
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    let bytes = renderer
+        .render_to_buffer(scene, ImageFormat::Raw, &EncodeOptions::default())
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let side = PAGE as u32;
+    let mut left: Option<u32> = None;
+    let mut right: Option<u32> = None;
+    for x in 0..side {
+        let inked = (0..side).any(|y| {
+            let at = ((y * side + x) * 4) as usize;
+            (bytes[at], bytes[at + 1], bytes[at + 2]) == INK
+        });
+        if inked {
+            left = left.or(Some(x));
+            right = Some(x);
+        }
+    }
+    match (left, right) {
+        (Some(first), Some(last)) => last - first + 1,
+        _ => 0,
     }
 }
 
@@ -149,6 +201,66 @@ fn scene_for(case: &str) -> Scene {
     scene
 }
 
+/// The rows where the box clips, which is what removes CSS's automatic minimum.
+const CLIPPED: &[&str] = &[
+    "ratio-definite-clipped",
+    "ratio-definite-overflow-scroll",
+    "ratio-definite-overflow-auto",
+    "ratio-definite-clipped-author-min",
+];
+
+/// `ratio-with-taller-content`'s box, clipped three ways.
+///
+/// **Split from [`ratio_box_case`] because they vary the overflow rather than
+/// what supplies the width.** All three are the same 100-wide box holding 300
+/// of content, and only the clipping differs -- which is the whole of what
+/// these rows are about.
+fn clipped_case(scene: &mut Scene, case: &str) {
+    // `ratio-with-taller-content`'s box, clipped. Clipping removes
+    // CSS's automatic minimum, so Chrome reports the ratio's own
+    // 117.64 rather than the content's 300 -- which is what taffy
+    // already gives, and why the compensation must not fire here.
+    //
+    // `overflow: clip` was measured at 300 and has no row: it is the
+    // one non-visible value establishing no scroll container, and
+    // `Overflow` here cannot express it.
+    let overflow = if case == "ratio-definite-overflow-scroll"
+        || case == "ratio-definite-overflow-auto"
+    {
+        Overflow::Scroll
+    } else {
+        Overflow::Hidden
+    };
+    let outer = push(
+        scene,
+        NodeId::ROOT,
+        boxed(LayoutStyle {
+            size: (Dimension::Points(100.0), Dimension::Auto),
+            ..LayoutStyle::default()
+        }),
+    );
+    let mut style = bare_ratio(RATIO);
+    style.overflow = (overflow, overflow);
+    // **The row that separates CSS's two minimums.** Clipping removes the
+    // automatic one; an author's `min-height` survives it, and unlike the
+    // automatic one it transfers back through the ratio into the inline axis --
+    // Chrome gives `170 x 200` on a box whose containing block is 100 wide.
+    // That asymmetry is what `l7aromeo/meo-canvas#104` reports upstream: taffy
+    // has one slot and it behaves like the explicit kind.
+    if case == "ratio-definite-clipped-author-min" {
+        style.min_size = (Dimension::Auto, Dimension::Points(200.0));
+    }
+    let parent = push(scene, outer, measured(style));
+    push(
+        scene,
+        parent,
+        boxed(LayoutStyle {
+            size: (Dimension::Auto, Dimension::Points(300.0)),
+            ..LayoutStyle::default()
+        }),
+    );
+}
+
 /// The rows where the measured element is the ratio box itself.
 ///
 /// **A third question, not a third spelling of the first two.** The other
@@ -164,6 +276,10 @@ const RATIO_BOX: &[&str] = &[
     "column-flex-ratio-cross",
     "grid-item-ratio",
     "ratio-with-taller-content",
+    "ratio-definite-clipped",
+    "ratio-definite-overflow-scroll",
+    "ratio-definite-overflow-auto",
+    "ratio-definite-clipped-author-min",
     "ratio-shrink-with-author-min-height",
     "ratio-shrink-50-child",
     "ratio-shrink-taller-content",
@@ -173,6 +289,8 @@ const RATIO_BOX: &[&str] = &[
     "ratio-shrink-content-just-over",
     "ratio-gt-one-shrink",
     "ratio-gt-one-taller-content",
+    "ratio-far-above-one",
+    "ratio-far-above-one-vanishing",
 ];
 
 /// A shrink-to-fit ratio box holding one child, measured on the box itself.
@@ -306,6 +424,7 @@ fn ratio_box_case(scene: &mut Scene, case: &str) {
             );
             push(scene, outer, measured(bare_ratio(RATIO)));
         }
+        other if CLIPPED.contains(&other) => clipped_case(scene, other),
         "ratio-with-taller-content" => {
             // The row that says a derived height is a floor rather than an
             // override: the ratio implies 117.64 and the content is 300, and
@@ -390,6 +509,48 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
         "ratio-gt-one-shrink" => {
             shrink_ratio_box(scene, OUTER_RATIO, 10.0, None);
         }
+        "ratio-far-above-one" | "ratio-far-above-one-vanishing" => {
+            // **A definite width, which is what makes these the same family as
+            // `ratio-with-taller-content` rather than the shrink-to-fit one.**
+            // At a fit-content width the content's height wins and taffy
+            // transfers it back into the inline axis, which is already Chrome's
+            // answer -- so the shrink-to-fit spelling of these rows passes with
+            // the compensation absent and pins nothing.
+            //
+            // **Nothing else in this table sits above ratio 3**, and at 3 the
+            // derivation and the content are both 10, so sampling 0.85, 2 and 3
+            // reports perfect agreement across a family that was wrong from 4
+            // upward. That coincidence is why the earlier coverage found
+            // nothing.
+            //
+            // The two differ in the kind of failure: at 10 the box came back a
+            // third of its height, at 100 it came back absent. 1e30 behaves as
+            // 100 does and is deliberately not a row -- it would pin nothing
+            // extra and would suggest the family is about extreme values when
+            // it starts at 4.
+            let ratio = if case == "ratio-far-above-one" {
+                10.0
+            } else {
+                100.0
+            };
+            let outer = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    size: (Dimension::Points(30.0), Dimension::Auto),
+                    ..LayoutStyle::default()
+                }),
+            );
+            let parent = push(scene, outer, measured(bare_ratio(ratio)));
+            push(
+                scene,
+                parent,
+                boxed(LayoutStyle {
+                    size: (Dimension::Auto, Dimension::Points(10.0)),
+                    ..LayoutStyle::default()
+                }),
+            );
+        }
         "ratio-gt-one-taller-content" => {
             shrink_ratio_box(scene, OUTER_RATIO, 40.0, None);
         }
@@ -408,7 +569,7 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
                 }),
             );
             let parent = push(scene, wrapper, boxed(bare_ratio(RATIO)));
-            push(scene, parent, measured(tall(0.5)));
+            push(scene, parent, measured(tall_and_wide(0.5)));
         }
         other => unreachable!("no shrink-family scene for `{other}`"),
     }
@@ -458,7 +619,7 @@ fn child_percentage_case(scene: &mut Scene, case: &str) {
                 ratio_parent((Dimension::Points(120.0), Dimension::Auto));
             parent.position_type = PositionType::Relative;
             let parent = push(scene, NodeId::ROOT, boxed(parent));
-            let mut layout = tall(1.0);
+            let mut layout = tall_and_wide(1.0);
             layout.position_type = PositionType::Absolute;
             layout.inset.top = Some(Length::Points(0.0));
             push(scene, parent, measured(layout));
@@ -473,7 +634,7 @@ fn child_percentage_case(scene: &mut Scene, case: &str) {
                 ))),
             );
             let mut layout = LayoutStyle {
-                size: (Dimension::Points(30.0), Dimension::Points(20.0)),
+                size: (Dimension::Auto, Dimension::Points(20.0)),
                 ..LayoutStyle::default()
             };
             layout.min_size = (Dimension::Auto, Dimension::Percent(2.0));
@@ -489,7 +650,7 @@ fn child_percentage_case(scene: &mut Scene, case: &str) {
                 ))),
             );
             let mut layout = LayoutStyle {
-                size: (Dimension::Points(30.0), Dimension::Points(300.0)),
+                size: (Dimension::Auto, Dimension::Points(300.0)),
                 ..LayoutStyle::default()
             };
             layout.max_size = (Dimension::Auto, Dimension::Percent(0.25));
@@ -559,7 +720,7 @@ fn parent_shape_case(scene: &mut Scene, case: &str) {
                 wrapper,
                 boxed(ratio_parent((Dimension::Auto, Dimension::Auto))),
             );
-            push(scene, parent, measured(tall(1.0)));
+            push(scene, parent, measured(tall_and_wide(1.0)));
         }
         "ratio-with-percentage-width" => {
             let outer = push(
@@ -576,7 +737,7 @@ fn parent_shape_case(scene: &mut Scene, case: &str) {
                 outer,
                 boxed(ratio_parent((Dimension::Percent(0.5), Dimension::Auto))),
             );
-            push(scene, parent, measured(tall(1.0)));
+            push(scene, parent, measured(tall_and_wide(1.0)));
         }
         "inflow-100-no-ratio" => {
             let parent = push(
@@ -738,10 +899,10 @@ const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
 /// bracket that boundary at 34 and 36 against a derived 35.28: the first
 /// diverges and the second does not, so the two rows locate the defect at the
 /// crossing rather than describing it.
-const KNOWN: &[&str] = &["ratio-with-taller-content"];
+const KNOWN: &[&str] = &[];
 
 /// One row: the case's key and the height Chrome gave it.
-fn rows() -> Vec<(String, f32)> {
+fn rows() -> Vec<(String, f32, f32)> {
     TABLE
         .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
@@ -755,7 +916,17 @@ fn rows() -> Vec<(String, f32)> {
                 .unwrap_or_else(|| unreachable!("{key} has no height"))
                 .parse::<f32>()
                 .unwrap_or_else(|error| unreachable!("{key}: {error}"));
-            (key.to_owned(), height)
+            // **The width was measured, recorded and dropped here.** Every row
+            // of this table has carried a Chrome width since it was written and
+            // this parser stopped at the height, so the assertion below could
+            // not have compared one. The column is data the check was narrower
+            // than.
+            let width = columns
+                .next()
+                .unwrap_or_else(|| unreachable!("{key} has no width"))
+                .parse::<f32>()
+                .unwrap_or_else(|error| unreachable!("{key}: {error}"));
+            (key.to_owned(), height, width)
         })
         .collect()
 }
@@ -765,7 +936,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        26,
+        32,
         "the table changed shape; the scenes here are per row"
     );
 
@@ -774,8 +945,9 @@ fn every_row_paints_the_band_chrome_measured() {
     // raises is whether it moved a row somewhere else in the table.
     let mut failing = Vec::new();
     let mut stale = Vec::new();
-    for (key, chrome) in &rows {
+    for (key, chrome, chrome_wide) in &rows {
         let painted = painted_height(&scene_for(key));
+        let painted_wide = painted_width(&scene_for(key));
         // Within one pixel, and stated rather than assumed: Chrome reports a
         // fractional used height and this counts whole rows of pixels, so
         // 141.17 and 141 are the same answer. The rows this exists for are
@@ -784,8 +956,33 @@ fn every_row_paints_the_band_chrome_measured() {
             - chrome)
             .abs()
             <= 1.0;
+        // **A row Chrome measures as zero-tall has no ink to measure a width
+        // from**, so the width is not compared there. `inflow-100-no-ratio` is
+        // the case: Chrome reports `120 x 0`, a box that exists and paints
+        // nothing, and this walk over painted pixels reports `0 x 0`. The row's
+        // point is the zero height and it is asserted; skipping the width is
+        // narrower than the data by one column on one row, said here rather
+        // than left for the next reader to find as a silent pass.
+        // **And a box wider than the page reports the page.** `painted_width`
+        // walks painted pixels, so a box Chrome measures at 1000 on a 400-wide
+        // sheet can only ink 400 -- the measurement is truncated by the surface
+        // rather than disagreeing with the browser.
+        // `ratio-far-above-one-vanishing` is the case, and its point is the
+        // height: it came back `0 x 0` before the compensation, so the row is
+        // about whether the box exists at all.
+        let off_page = *chrome_wide > PAGE;
+        let wide_agrees = *chrome < 1.0
+            || off_page
+            || (f32::from(u16::try_from(painted_wide).unwrap_or(u16::MAX))
+                - chrome_wide)
+                .abs()
+                <= 1.0;
+        let agrees = agrees && wide_agrees;
         if !agrees && !KNOWN.contains(&key.as_str()) {
-            failing.push(format!("{key}: chrome {chrome:.2}, here {painted}"));
+            failing.push(format!(
+                "{key}: chrome {chrome_wide:.2} x {chrome:.2}, here \
+                 {painted_wide} x {painted}"
+            ));
         }
         if agrees && KNOWN.contains(&key.as_str()) {
             stale.push(key.clone());

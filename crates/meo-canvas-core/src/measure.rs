@@ -211,6 +211,18 @@ pub struct SceneMeasurer<'resolved> {
     /// A solve asks about one leaf at several widths and repeats questions
     /// between passes; a laid-out paragraph is not free to interrogate, and
     /// the key is 24 bytes.
+    /// **Never cleared, and the two-pass solve is why that has to be said.**
+    /// `compensate_ratio_direction` runs the whole page twice with one
+    /// measurer, so every answer the first pass produced is still here for the
+    /// second. That is correct because a measurement is a pure function of its
+    /// key: this reads `resolved`, which does not change, and `text`, which
+    /// caches by the same question. Nothing else.
+    ///
+    /// **The day one depends on the tree, a sibling, or what a previous pass
+    /// decided, this serves a stale answer** -- and only in a two-pass render,
+    /// so the single-pass path stays correct and the symptom is a wrong size
+    /// that cannot be reproduced by rendering the same scene without a ratio
+    /// box in it.
     answers: HashMap<Question, MeasuredLeaf>,
 }
 

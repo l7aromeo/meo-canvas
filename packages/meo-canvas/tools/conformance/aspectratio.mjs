@@ -271,11 +271,105 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-far-above-one',
+    // **The family nothing else in this table reaches.** Every other row sits
+    // at 0.85, 2 or 3, and at 3 the derivation and the content are both 10 --
+    // so a table sampling 0.85, 2 and 3 reports perfect agreement across a
+    // family that was broken from 4 upward. That coincidence is why the
+    // existing coverage found nothing, and it is the reason to measure here
+    // rather than to add a fourth point near the ones that already agree.
+    note: 'a definite width well above ratio 3, where the derived height was wrong by a factor rather than absent',
+    html: `<div style="width:30px">
+             <div id="m" style="aspect-ratio:10">
+               <div style="height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-far-above-one-vanishing',
+    // **The other end of the same family, and a different kind of failure.**
+    // At 10 the box came back 3 tall -- a wrong size. At 100 it came back
+    // `0 x 0` -- an absent box, which a caller meets as a missing element
+    // rather than a misplaced one. One row cannot stand for both.
+    //
+    // 1e30 behaves as this does and is deliberately absent: it would pin
+    // nothing extra and would suggest the family is about extreme values when
+    // it starts at 4.
+    note: 'the same at a ratio far enough that the box rendered nothing at all, which a wrong size is not',
+    html: `<div style="width:30px">
+             <div id="m" style="aspect-ratio:100">
+               <div style="height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-gt-one-taller-content',
     note: 'the same ratio with content past the derived height',
     html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
              <div id="m" style="aspect-ratio:2">
                <div style="width:30px;height:40px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-definite-clipped',
+    // **Does the automatic minimum survive clipping?** CSS gives a box with an
+    // aspect ratio an automatic minimum block size only while `overflow` is
+    // `visible`. If that is what puts `ratio-with-taller-content` at 300, then
+    // clipping should remove it and Chrome should report the 118 the ratio
+    // implies -- which is the number this renderer already gives, and a
+    // compensation that always floors would be wrong for every clipped box.
+    // Three further spellings were measured and are not rows here, because no
+    // scene can reach them. `overflow: clip` gives **300** where `hidden`,
+    // `scroll` and `auto` give 117.64 -- it is the one non-visible value that
+    // establishes no scroll container, and `Overflow` in this renderer has no
+    // `Clip` variant to express it. And text content at 100 wide gives 120 with
+    // the ratio and 120 without, against 160 at its min-content width, which is
+    // what says the floor is the content's height at the used width rather than
+    // its min-content height.
+    note: 'the same box clipped -- if the automatic minimum is what makes 300, this is 118',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:hidden">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-definite-overflow-scroll',
+    // The predicate is a set rather than a value: CSS removes the automatic
+    // minimum for a non-`visible` overflow, and that is a reading until each
+    // spelling is measured.
+    note: 'overflow: scroll -- does it drop the automatic minimum the way hidden does',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:scroll">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-definite-overflow-auto',
+    // The predicate is a set rather than a value: CSS removes the automatic
+    // minimum for a non-`visible` overflow, and that is a reading until each
+    // spelling is measured.
+    note: 'overflow: auto -- does it drop the automatic minimum the way hidden does',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:auto">
+               <div style="height:300px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-definite-clipped-author-min',
+    // **The row that separates CSS's two minimums.** Clipping removes the
+    // automatic one; an author's `min-height` survives it and, unlike the
+    // automatic one, transfers back through the ratio into the inline axis --
+    // 200 x 0.85 = 170, on a box whose containing block is 100 wide. That
+    // asymmetry is the whole of `l7aromeo/meo-canvas#104`'s upstream half:
+    // taffy has one slot and it behaves like the explicit kind.
+    note: 'clipped and carrying an author min-height -- the explicit minimum survives and takes the width with it',
+    html: `<div style="width:100px">
+             <div id="m" style="aspect-ratio:.85;overflow:hidden;min-height:200px">
+               <div style="height:300px"></div>
              </div>
            </div>`,
   },
