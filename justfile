@@ -1204,6 +1204,14 @@ example: build-js addon
       || { echo "error: the two surfaces did not write the same bytes; each line above names a file they disagree on"; exit 1; }
     @echo "both surfaces wrote the same bytes in $(find examples/bun/out -type f | wc -l | tr -d ' ') files"
 
+# The conformance tools, in the order a full run measures them.
+#
+# Written out rather than derived from the directory: `browser.mjs` and
+# `png.mjs` share it and are not tools, so a glob would run two files that
+# measure nothing and write no table. One list, because a second one -- in a
+# validation arm, say -- is the copy nobody updates.
+conformance_tools := "ellipsis gradients flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio"
+
 # Re-measure Chrome and rewrite the conformance tables.
 #
 # **Deliberately not part of `ci`.** The harness produces tables and the gates
@@ -1213,29 +1221,38 @@ example: build-js addon
 # belongs in a commit rather than in a suite going red on whichever machine
 # updated first.
 #
+# A bare `just conformance` measures every tool, in the order above. Naming
+# one -- `just conformance aspectratio` -- measures that one and rewrites its
+# table alone, so a one-row change arrives as one row rather than as every
+# table re-measured against whatever Chrome the contributor happens to have.
+#
 # Every number this writes comes from a page that **asserts its font loaded**
 # rather than assuming it, and every sample point is derived from a rectangle
 # the browser reported rather than written down. Both rules exist because the
 # hand-written pages these replace got them wrong.
 [doc("Re-measure Chrome with Playwright and rewrite the conformance tables.")]
-conformance: ensure-deps ensure-browser
-    WRITE=1 node packages/meo-canvas/tools/conformance/ellipsis.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/gradients.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/flex.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/borders.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/dotted.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/blend.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/boxshadow.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/shadowextent.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/objectfit.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/objectfit-overflow.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/grid.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/mincontent.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/replacedinsets.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/replacedratio.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/overflowposition.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/abspositioned.mjs
-    WRITE=1 node packages/meo-canvas/tools/conformance/aspectratio.mjs
+conformance tool="": ensure-deps ensure-browser
+    #!/usr/bin/env bash
+    set -euo pipefail
+    requested="{{ tool }}"
+    tools="{{ conformance_tools }}"
+    if [ -n "$requested" ]; then
+      # A name nobody predicted is not a request to measure nothing. A `for`
+      # over an empty list would exit 0 having done nothing, which is the
+      # failure a misspelling deserves least: the person is told it worked and
+      # goes looking at the table that did not move.
+      case " $tools " in
+        *" $requested "*) tools="$requested" ;;
+        *)
+          echo "error: no conformance tool named '$requested'" >&2
+          echo "the tools are: $tools" >&2
+          exit 1
+          ;;
+      esac
+    fi
+    for tool in $tools; do
+      WRITE=1 node "packages/meo-canvas/tools/conformance/$tool.mjs"
+    done
 
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
