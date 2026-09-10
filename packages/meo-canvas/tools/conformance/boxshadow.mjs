@@ -88,6 +88,28 @@ const CASES = [
   ['opaque', 'blue then red', `${PAIR('10px')} ${BLUE}, ${PAIR('10px')} ${RED}`],
   ['opaque', 'inset red then blue', `inset ${PAIR('10px')} ${RED}, inset ${PAIR('10px')} ${BLUE}`],
   ['opaque', 'inset blue then red', `inset ${PAIR('10px')} ${BLUE}, inset ${PAIR('10px')} ${RED}`],
+
+  // **`overflow` against a shadow.** `overflow` clips an element's content and
+  // its descendants; an outer shadow is painted outside the border edge and is
+  // neither, so the element's own `overflow` does not touch it. An inset shadow
+  // is painted inside and is clipped — and those two rows in one table are what
+  // separates "the clip is too broad" from "shadows are broken under a clip".
+  //
+  // `scroll` and `auto` are here because nothing had asked. `hidden` is the
+  // reported case; the other two take the same painter path here and whether
+  // Chrome treats them alike is a measurement rather than a reading.
+  //
+  // The last row is the axis question: `overflow-x: hidden` with `overflow-y:
+  // visible`. CSS computes a `visible` alongside a non-`visible` to `auto`, so
+  // the expectation is that Chrome clips both — and that expectation is exactly
+  // the sort this table exists to replace.
+  ['opaque', 'outer, overflow visible', SHADOW, { overflow: 'visible' }],
+  ['opaque', 'outer, overflow hidden', SHADOW, { overflow: 'hidden' }],
+  ['opaque', 'outer, overflow scroll', SHADOW, { overflow: 'scroll' }],
+  ['opaque', 'outer, overflow auto', SHADOW, { overflow: 'auto' }],
+  ['opaque', 'outer, overflow hidden, radius', SHADOW, { overflow: 'hidden', radius: '10px' }],
+  ['translucent', 'inset, overflow hidden', `inset ${SHADOW}`, { overflow: 'hidden' }],
+  ['opaque', 'outer, overflow x hidden y visible', SHADOW, { overflowX: 'hidden', overflowY: 'visible' }],
 ]
 
 const browser = await open()
@@ -95,18 +117,23 @@ try {
   const rows = []
   await browser.page.setViewportSize(CELL)
 
-  for (const [background, shadow, css] of CASES) {
+  for (const [background, shadow, css, extra = {}] of CASES) {
     await browser.page.evaluate(
-      ({ cell, page, box, fill, css }) => {
+      ({ cell, page, box, fill, css, extra }) => {
         document.body.innerHTML = ''
         const ground = document.createElement('div')
         ground.style.cssText = `position:absolute;left:0;top:0;width:${cell.width}px;height:${cell.height}px;background:${page};`
         const inner = document.createElement('div')
-        inner.style.cssText = `position:absolute;left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px;background:${fill};box-shadow:${css};`
+        const clip =
+          (extra.overflow === undefined ? '' : `overflow:${extra.overflow};`) +
+          (extra.overflowX === undefined ? '' : `overflow-x:${extra.overflowX};`) +
+          (extra.overflowY === undefined ? '' : `overflow-y:${extra.overflowY};`) +
+          (extra.radius === undefined ? '' : `border-radius:${extra.radius};`)
+        inner.style.cssText = `position:absolute;left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px;background:${fill};box-shadow:${css};${clip}`
         ground.append(inner)
         document.body.append(ground)
       },
-      { cell: CELL, page: PAGE, box: BOX, fill: BACKGROUNDS[background], css },
+      { cell: CELL, page: PAGE, box: BOX, fill: BACKGROUNDS[background], css, extra },
     )
     await settle(browser.page)
 

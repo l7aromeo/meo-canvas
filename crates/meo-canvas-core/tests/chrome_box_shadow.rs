@@ -51,7 +51,7 @@ use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
     Corners, Scene, Sides, Size,
     node::{Node, NodeId, NodeKind},
-    style::{Dimension, effect::BoxShadow, paint::Color},
+    style::{Dimension, effect::BoxShadow, layout::Overflow, paint::Color},
 };
 
 /// One scene: a page, a box inset from every edge, and the shadows it casts.
@@ -70,6 +70,8 @@ struct Cell {
     radius: f32,
     /// The shadows it casts, in the order CSS writes them.
     shadows: Vec<BoxShadow>,
+    /// The box's own `overflow`, which clips its content and not its shadow.
+    overflow: Overflow,
 }
 
 /// Renders a cell and returns its raw RGBA bytes.
@@ -108,6 +110,7 @@ fn render(cell: &Cell) -> Vec<u8> {
             bottom_left: cell.radius,
         };
         node.effects.box_shadows.clone_from(&cell.shadows);
+        node.layout.overflow = (cell.overflow, cell.overflow);
     }
 
     let mut renderer = Renderer::new();
@@ -187,6 +190,25 @@ const fn clip_cell(fill: Color, shadows: Vec<BoxShadow>) -> Cell {
         fill,
         radius: 0.0,
         shadows,
+        overflow: Overflow::Visible,
+    }
+}
+
+/// The same cell, clipping itself.
+const fn clipping_cell(
+    fill: Color,
+    shadows: Vec<BoxShadow>,
+    overflow: Overflow,
+) -> Cell {
+    Cell {
+        size: CLIP_CELL,
+        inset: CLIP_INSET,
+        box_size: CLIP_BOX,
+        page: CLIP_PAGE,
+        fill,
+        radius: 0.0,
+        shadows,
+        overflow,
     }
 }
 
@@ -682,6 +704,7 @@ const fn extent_cell(radius: f32, shadows: Vec<BoxShadow>) -> Cell {
         fill: WHITE,
         radius,
         shadows,
+        overflow: Overflow::Visible,
     }
 }
 
@@ -884,4 +907,97 @@ fn the_blur_falls_off_the_way_chromes_does() {
 
     assert_eq!(checked, wanted.len(), "a profile row went unread");
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+// ---------------------------------------------------------------------------
+// Issue l7aromeo/meo-canvas#83: a node's own `overflow` against its own outer
+// shadow.
+// ---------------------------------------------------------------------------
+
+/// An outer shadow survives the node's own `overflow`, at every clipping value.
+///
+/// `overflow` clips an element's content and its descendants. An outer shadow
+/// is painted outside the border edge and is neither, so the element's own
+/// `overflow` does not reach it -- CSS Backgrounds and Borders 3 §7.1.1, and
+/// Chrome, whose rows are in the table.
+///
+/// **The probe reads ink outside the box**, because the report was that nothing
+/// is drawn: a scene or style assertion sees the shadow it was given and
+/// passes. `scroll` and `auto` are here because nothing had asked whether they
+/// behave like `hidden`; Chrome says all three draw the shadow, and so must we.
+#[test]
+fn an_outer_shadow_survives_the_nodes_own_overflow() {
+    let rows = chrome();
+    let point = probe(&rows, "below");
+
+    let bare = at(
+        &render(&clip_cell(TRANSLUCENT, Vec::new())),
+        CLIP_CELL.0,
+        point,
+    );
+    let unclipped = at(
+        &render(&clip_cell(TRANSLUCENT, vec![clip_shadow(false)])),
+        CLIP_CELL.0,
+        point,
+    );
+
+    // `Auto` is not a variant of this scene's `Overflow` -- it has `Visible`,
+    // `Hidden` and `Scroll` and nothing else -- so Chrome's `auto` row has no
+    // input on this surface to compare against. It is measured in the table
+    // anyway, where it reads exactly as `hidden` and `scroll` do, so the row
+    // records that the three agree in the browser and that two of them are all
+    // we can express.
+    for overflow in [Overflow::Hidden, Overflow::Scroll] {
+        let clipped = at(
+            &render(&clipping_cell(
+                TRANSLUCENT,
+                vec![clip_shadow(false)],
+                overflow,
+            )),
+            CLIP_CELL.0,
+            point,
+        );
+        assert!(
+            clipped.0 < bare.0,
+            "under `overflow: {overflow:?}` the point below the box reads              {clipped:?} against {bare:?} with no shadow at all -- the node's              own clip is eating its own outer shadow"
+        );
+        assert_eq!(
+            clipped, unclipped,
+            "`overflow: {overflow:?}` changed the outer shadow's ink below the              box: {clipped:?} against {unclipped:?} unclipped. The clip is not              the shadow's to obey"
+        );
+    }
+}
+
+/// And the control: an INSET shadow is still clipped by the same `overflow`.
+///
+/// This is the row a careless repair breaks. Lifting the outer shadows above
+/// the clip is one line; lifting both is the same line written slightly wider,
+/// and it would leak an inset shadow outside the box where CSS puts none.
+/// Chrome's `inset, overflow hidden` row reads its ink inside the top edge and
+/// unshadowed ground below the box, which is what these two assertions are.
+#[test]
+fn an_inset_shadow_is_still_clipped_by_the_nodes_own_overflow() {
+    let rows = chrome();
+    let top = probe(&rows, "inside top");
+    let below = probe(&rows, "below");
+
+    let bare =
+        render(&clipping_cell(TRANSLUCENT, Vec::new(), Overflow::Hidden));
+    let cast = render(&clipping_cell(
+        TRANSLUCENT,
+        vec![clip_shadow(true)],
+        Overflow::Hidden,
+    ));
+
+    assert!(
+        at(&cast, CLIP_CELL.0, top).0 < at(&bare, CLIP_CELL.0, top).0,
+        "an inset shadow under `overflow: hidden` reads {:?} inside the top          edge against {:?} without it; the clip has taken the inset arm too",
+        at(&cast, CLIP_CELL.0, top),
+        at(&bare, CLIP_CELL.0, top)
+    );
+    assert_eq!(
+        at(&cast, CLIP_CELL.0, below),
+        at(&bare, CLIP_CELL.0, below),
+        "an inset shadow put ink BELOW the box under `overflow: hidden`;          moving the outer arm above the clip has dragged the inset arm with it"
+    );
 }
