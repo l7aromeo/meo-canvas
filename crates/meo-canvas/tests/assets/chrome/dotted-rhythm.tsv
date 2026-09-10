@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. The rhythm of a dotted border.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # A dot is `w` wide and the gap between two dots is `w`, at every width here.
 # A side carries an OPEN run: `n` dots and `n - 1` gaps, covering `(2n - 1)w`,

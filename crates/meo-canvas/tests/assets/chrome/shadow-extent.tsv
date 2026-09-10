@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. How far an outer box-shadow reaches.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # Cell 160x160 of #fff carrying a 50x50 box of #fff at
 # 55,55. The box is white on a white page, so it is invisible and

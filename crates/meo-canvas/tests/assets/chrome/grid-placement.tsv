@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Where a grid places its items.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # 120x90, 3 equal columns and 3 equal rows, no gaps.
 # Six items in document order; the second spans all three columns and the fifth

@@ -55,6 +55,9 @@ const TOOLS = join(HERE, 'conformance')
 /** How many guarded writes the directory holds today. */
 const FLOOR = 14
 
+/** How many stamped `.tsv` tables there are today. */
+const STAMPED_FLOOR = 14
+
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([
   'appendFile',
@@ -206,4 +209,57 @@ if (guardedWrites < FLOOR) {
   process.exit(1)
 }
 
+// **Every recorded table says which browser produced it.**
+//
+// CI launches no browser: the tables are measured by hand and committed, so the
+// suite checks this renderer against a *recording* of Chrome. That is
+// deliberate. What was missing is which Chrome — earlier tables came from
+// whatever was installed whenever someone last ran `just conformance`, so a row
+// disagreeing with an older row could be a renderer change or a browser change
+// and nothing said which.
+//
+// `ensure-browser` proves the executable exists; its own comment records that an
+// earlier version exited 0 whether or not anything was there. What neither it
+// nor anything else can see is a browser that exists and is stale.
+//
+// The stamp is a measurement, not a back-fill: `just conformance` was run end to
+// end on 153.0.8010.12 and no committed table moved, so every number here is
+// reproduced by that build.
+//
+// **The two `.json` tables are not stamped and that is a gap, not a decision.**
+// JSON carries no comment, and `chrome_tables.rs` reads them with a `read_rows`
+// that expects a bare array — stamping them means changing that parser, which is
+// a Rust file and another lane. Named here rather than left for someone to
+// notice the check only ever looked at fourteen of sixteen.
+const TABLES = join(HERE, '..', '..', '..', 'crates', 'meo-canvas', 'tests', 'assets', 'chrome')
+const STAMP = /^#.*\b\d+\.\d+\.\d+\.\d+\b/
+const unstamped = []
+let stamped = 0
+for (const file of readdirSync(TABLES).sort()) {
+  if (!file.endsWith('.tsv')) continue
+  const head = readFileSync(join(TABLES, file), 'utf8').split('\n').slice(0, 6)
+  if (head.some(line => STAMP.test(line))) stamped += 1
+  else unstamped.push(file)
+}
+
+if (unstamped.length > 0) {
+  for (const one of unstamped) process.stdout.write(`  no browser version in the first six lines: ${one}\n`)
+  process.stderr.write(
+    '\nA recorded conformance table has to say which browser produced it, in a comment among its first six ' +
+      'lines, as a four-part version. Without it a row that disagrees with an older row could be a renderer ' +
+      'change or a browser change and nobody can tell which. `just conformance` writes these; run it and record ' +
+      'the version it used.\n',
+  )
+  process.exit(1)
+}
+
+if (stamped < STAMPED_FLOOR) {
+  process.stderr.write(
+    `\nFound ${stamped} stamped tables and expected at least ${STAMPED_FLOOR}. Either tables were removed, or this ` +
+      'check stopped recognising the stamp -- and the second is what a green with nothing matched looks like.\n',
+  )
+  process.exit(1)
+}
+
 process.stdout.write(`${guardedWrites} conformance writes, every one behind WRITE, across ${scanned} files that reach no further than a sibling.\n`)
+process.stdout.write(`${stamped} recorded tables, every one naming the browser that produced it.\n`)

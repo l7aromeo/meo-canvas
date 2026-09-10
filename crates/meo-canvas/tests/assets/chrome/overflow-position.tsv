@@ -1,4 +1,5 @@
 # Chrome 151.0.7922.34, 2026-09-06: overflow x clipper position x child
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 # position x transform x the child offsets. The 120 rows without offsets
 # were measured by hand on 2026-08-23 and are reproduced here unchanged.
 # Scene exactly as MC Agent Zero specified: outer 200x120 position:relative;

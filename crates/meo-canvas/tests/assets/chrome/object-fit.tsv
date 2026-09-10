@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Where each object-fit rule puts a picture.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # An <img> on a #f0f0f0 cell at 72x72, 6x6, source 
 # `crates/meo-canvas/tests/assets/fit-marks.png` — eight by four, magenta at its

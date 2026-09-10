@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Every blend mode over one ramp.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # Cell 56x40 carrying linear-gradient(90deg, #181838, #f0e0a0).
 # Source 36x24 of #4090c0 at 10,8, with

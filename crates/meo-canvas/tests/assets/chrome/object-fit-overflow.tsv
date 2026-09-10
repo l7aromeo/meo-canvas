@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Whether a picture stays inside its element.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # `object-fit.tsv` cannot answer this: its cell is `overflow:hidden`, its
 # viewport is the box, and its screenshot is clipped to the box. Three reasons

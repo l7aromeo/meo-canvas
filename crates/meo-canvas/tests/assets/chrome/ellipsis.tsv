@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. What a line keeps when it does not fit.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # Measured with `measureText` on the repository's own face, which the page
 # asserts has loaded rather than assuming it. `text-overflow: ellipsis` is not

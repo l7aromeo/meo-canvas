@@ -1,4 +1,5 @@
 # Chrome, through `just conformance`. Where a gradient ramp has got to.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
 # The ramp is #000000 to #ffffff, so `t` IS the red channel over 255 -- no
 # inverse of an interpolation, which is the arithmetic a gradient table must
