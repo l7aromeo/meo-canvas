@@ -97,11 +97,42 @@ defaults:
 jobs:
   prune:
     name: prune
-    # A `workflow_run` fires whatever the conclusion. Pruning after a red run is
-    # not wrong -- the caches are the same either way -- but a failed run may
-    # not have saved, so there is nothing new to supersede and the call is
-    # spent for nothing.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # **Every conclusion, and the version that asked for `success` deadlocked.**
+    #
+    # It read `conclusion == 'success'`, on the reasoning that a failed run may
+    # not have saved so there is nothing new to supersede. That is true of a run
+    # that failed at `test` or `lint`. It is false of the one run that matters:
+    # when the cache passes the floor, `cache-budget-check` fails, `ci` on `main`
+    # fails with it, and a pruner that declines a failed run declines exactly the
+    # run it exists to clear. Nothing is deleted, the cache stays over the floor,
+    # every pull request in the repository is red on `portable`, and the next
+    # `main` run fails the same way. **The condition that makes pruning necessary
+    # was the condition that stopped it.**
+    #
+    # Observed in the first hour: run 34496520148, `ci` on `main`, `portable`
+    # failed at 8.42 GiB against a 7.5 floor while ubuntu and macos passed, and
+    # the pruner declined it. Two merges had moved `Cargo.lock` -- the trailing
+    # key segment went `8983e69d` to `33720197` -- minting three keys and
+    # stranding 3.4 GiB of superseded entries in twenty-three minutes. A person
+    # deleted them, which is the outcome this file exists to prevent.
+    #
+    # **Correctness over waste, and the waste is one API call.** What a red run
+    # costs here is a single `GET /actions/caches`; if nothing is superseded the
+    # tool prints so and exits. A red `ci` does not make a superseded entry
+    # un-superseded, the selection cannot take the last entry for a prefix, and
+    # both self-tests run before the network.
+    #
+    # **Not "success, or a failure whose failing job was `portable`".** The
+    # `workflow_run` payload carries `conclusion`, `status` and a `jobs_url`, and
+    # no per-job result -- checked against the run object, which has no `jobs`
+    # key. Which job failed needs a second API call, which needs the job to have
+    # started, which is after the `if:` has been evaluated. A condition that
+    # cannot be evaluated in an `if:` is not a condition.
+    #
+    # A cancelled run prunes too. It is the same listing either way, and
+    # `concurrency` above queues rather than piling them up when a burst of
+    # pushes cancels several.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' }}
     runs-on: ubuntu-latest
     # Seconds of API calls. The bound is on a wedged fetch, not on the work.
     timeout-minutes: 10
