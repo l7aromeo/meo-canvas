@@ -35,7 +35,7 @@ use meo_canvas_scene::{
     style::{
         Dimension, Length, PaintOrder,
         effect::{BoxShadow, Effects, FillRule, Mask, MaskShape, Transform},
-        layout::{Display, Overflow, PositionType},
+        layout::{Direction, Display, Overflow, PositionType},
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
             BorderStyle, Color, Gradient, GradientGeometry, LinearDirection,
@@ -1229,6 +1229,34 @@ fn paint_kind(
 /// one, because a flex pass narrows an item and then re-offers it. v1 re-wraps
 /// in its render pass for exactly this reason and says so. The shaping is
 /// cached, so what this costs is the wrap arithmetic and not the shaping.
+/// `Start` and `End` resolved against the direction, leaving the rest alone.
+///
+/// **The enum is the specification and it distinguishes them.**
+/// `TextAlign::Start` is documented as "at the inline start, which flips under
+/// a right-to-left direction" and `TextAlign::Left` as "at the left edge
+/// regardless of direction", and the placement below folded the two together
+/// so neither could flip. `l7aromeo/meo-canvas#109`.
+///
+/// Measured rather than read off the specification: under `rtl` Chrome puts
+/// `start` where it puts `right` and `end` where it puts `left`, while `left`
+/// and `right` do not move --
+/// `crates/meo-canvas/tests/assets/chrome/text-align-direction.tsv` carries all
+/// ten, and its `ltr` rows are the control that makes the physical
+/// arms' stillness a measurement rather than an assumption.
+///
+/// `Justify` and `Center` pass through: a centred line is the same rectangle
+/// under either direction, which the table records and its note says witnesses
+/// nothing.
+const fn physical(align: TextAlign, direction: Direction) -> TextAlign {
+    match (align, direction) {
+        (TextAlign::Start, Direction::Ltr)
+        | (TextAlign::End, Direction::Rtl) => TextAlign::Left,
+        (TextAlign::Start, Direction::Rtl)
+        | (TextAlign::End, Direction::Ltr) => TextAlign::Right,
+        (other, _) => other,
+    }
+}
+
 fn draw_text(
     context: &mut Context2D,
     measurer: &mut SceneMeasurer<'_>,
@@ -1292,11 +1320,13 @@ fn draw_text(
             // **Justification skips the last line**, which is CSS's rule and
             // v1's: stretching a line that ends a paragraph spaces out a few
             // words across the whole measure.
-            let justify = matches!(style.align, TextAlign::Justify)
-                && index != last
+            let justify = matches!(
+                physical(style.align, node.layout.direction),
+                TextAlign::Justify
+            ) && index != last
                 && width < content.size.width;
             let mut x = content.origin.x
-                + match style.align {
+                + match physical(style.align, node.layout.direction) {
                     TextAlign::Start | TextAlign::Left | TextAlign::Justify => {
                         0.0
                     }
