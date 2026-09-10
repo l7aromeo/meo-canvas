@@ -52,11 +52,32 @@ import ts from 'typescript'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const TOOLS = join(HERE, 'conformance')
 
-/** How many guarded writes the directory holds today. */
-const FLOOR = 14
+/**
+ * How many guarded writes the directory holds today.
+ *
+ * Fifteen since `abspositioned.mjs` joined, which is a **new tool** rather than
+ * a new table -- an unrelated reason from the one that moved the floor below,
+ * and they happened to move together only because one change brought both.
+ */
+const FLOOR = 15
 
-/** How many stamped `.tsv` tables there are today. */
-const STAMPED_FLOOR = 14
+/**
+ * How many stamped `.tsv` tables there are today.
+ *
+ * Fifteen since `absolute-percentage.tsv` joined. **Stamping it alone would
+ * have left this at fourteen and still passed**, because the comparison is
+ * `>=` -- green, with the floor one short of the truth. A floor that lags has
+ * stopped catching removals, which is the failure this constant's own error
+ * message names: *"Either tables were removed, or this check stopped
+ * recognising the stamp."* A ratchet that is not wound is a rubber stamp.
+ *
+ * **Not the same quantity as `FLOOR` above**, and the two are equal by
+ * coincidence rather than by construction: this counts stamped tables, that
+ * counts guarded writes across the whole tool directory. They diverge the first
+ * time a tool writes something that is not a table, or a table is produced by a
+ * tool that already existed.
+ */
+const STAMPED_FLOOR = 15
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([
