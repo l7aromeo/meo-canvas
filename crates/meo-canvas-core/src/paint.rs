@@ -34,7 +34,7 @@ use meo_canvas_scene::{
     node::{Node, NodeId, NodeKind, PathPaint},
     style::{
         Dimension, Length, PaintOrder,
-        effect::{BoxShadow, FillRule, Mask, MaskShape, Transform},
+        effect::{BoxShadow, Effects, FillRule, Mask, MaskShape, Transform},
         layout::{Display, Overflow, PositionType},
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
@@ -855,14 +855,50 @@ fn paint_own_content(
     // moves no bytes with it on -- and `RGB565` and `ARGB4444` are the
     // layouts it exists for.
     context.set_dither(node.paint.dither);
-    if clips_its_children(node) {
-        clip_to_box(context, &node.paint, rect)?;
-    }
-    let result = paint_box(context, resolved, id, node, rect).and_then(|()| {
-        paint_kind(context, resolved, measurer, id, node, rect, content)
-    });
+
+    // **Outer shadows are drawn before the node's own clip, because that clip
+    // is not theirs.** `overflow` clips an element's content and its
+    // descendants; an outer shadow is painted outside the border edge and is
+    // neither, so the element's own `overflow` does not reach it. Chrome
+    // agrees, measured: with `hidden`, `scroll`, `auto` and a `border-radius`
+    // alongside, the ink under the box reads 169,15,30 against 176,16,32 for
+    // unshadowed ground -- the same as with no `overflow` at all.
+    //
+    // Inset shadows stay inside `paint_box`, under the clip, because they are
+    // painted within the border box and CSS does clip them. Chrome again: an
+    // inset shadow under `overflow: hidden` reads exactly as it does without
+    // one. **Moving both would have been the easy repair and the wrong one.**
+    let result = draw_outer_shadows(context, &node.paint, &node.effects, rect)
+        .and_then(|()| {
+            if clips_its_children(node) {
+                clip_to_box(context, &node.paint, rect)?;
+            }
+            paint_box(context, resolved, id, node, rect).and_then(|()| {
+                paint_kind(context, resolved, measurer, id, node, rect, content)
+            })
+        });
     context.restore();
     result
+}
+
+/// The node's outer box shadows, in paint order.
+///
+/// Split out of [`paint_box`] so it can be drawn before the node's own
+/// `overflow` clip is established -- see [`paint_own_content`]. Reversed,
+/// because CSS Backgrounds and Borders 3 §7.1 paints a shadow list **front to
+/// back**: the first one written is the one on top, so it has to be drawn last.
+/// Drawn in list order the last one won instead. Measured: `10px 0 0 red, 10px
+/// 0 0 blue` reads red beside the box in Chrome and read blue here.
+fn draw_outer_shadows(
+    context: &mut Context2D,
+    paint: &PaintStyle,
+    effects: &Effects,
+    rect: Rect,
+) -> Result<(), Error> {
+    for shadow in effects.box_shadows.iter().rev().filter(|s| !s.inset) {
+        draw_box_shadow(context, paint, rect, shadow)?;
+    }
+    Ok(())
 }
 
 /// Applies the transform and opens whatever isolation layers the node needs.
@@ -928,17 +964,10 @@ fn paint_box(
     rect: Rect,
 ) -> Result<(), Error> {
     let paint = &node.paint;
-    // Outer shadows first, and **clipped out of the border box** rather than
-    // merely covered by it -- see `draw_box_shadow`.
-    //
-    // Reversed, because CSS Backgrounds and Borders 3 §7.1 paints a shadow
-    // list **front to back**: the first one written is the one on top, so it
-    // has to be drawn last. Drawn in list order the last one won instead.
-    // Measured: `10px 0 0 red, 10px 0 0 blue` reads red beside the box in
-    // Chrome and read blue here.
-    for shadow in node.effects.box_shadows.iter().rev().filter(|s| !s.inset) {
-        draw_box_shadow(context, paint, rect, shadow)?;
-    }
+    // The outer shadows were drawn by [`paint_own_content`] before this node's
+    // own `overflow` clip was established, because that clip is not theirs.
+    // They are still first in paint order, and still **clipped out of the
+    // border box** rather than merely covered by it -- see `draw_box_shadow`.
 
     if !paint.background_color.is_invisible() {
         context.set_fill_style(to_skia_color(paint.background_color));

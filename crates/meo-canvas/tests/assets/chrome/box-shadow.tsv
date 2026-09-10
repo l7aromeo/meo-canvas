@@ -73,3 +73,38 @@ opaque	inset blue then red	inside top	40	22	108	15	19
 opaque	inset blue then red	below	40	62	176	16	32
 opaque	inset blue then red	beside	65	40	176	16	32
 opaque	inset blue then red	inside left	23	40	40	60	220
+opaque	outer, overflow visible	inside	40	40	108	15	19
+opaque	outer, overflow visible	inside top	40	22	108	15	19
+opaque	outer, overflow visible	below	40	62	169	15	30
+opaque	outer, overflow visible	beside	65	40	176	16	32
+opaque	outer, overflow visible	inside left	23	40	108	15	19
+opaque	outer, overflow hidden	inside	40	40	108	15	19
+opaque	outer, overflow hidden	inside top	40	22	108	15	19
+opaque	outer, overflow hidden	below	40	62	169	15	30
+opaque	outer, overflow hidden	beside	65	40	176	16	32
+opaque	outer, overflow hidden	inside left	23	40	108	15	19
+opaque	outer, overflow scroll	inside	40	40	108	15	19
+opaque	outer, overflow scroll	inside top	40	22	108	15	19
+opaque	outer, overflow scroll	below	40	62	169	15	30
+opaque	outer, overflow scroll	beside	65	40	176	16	32
+opaque	outer, overflow scroll	inside left	23	40	108	15	19
+opaque	outer, overflow auto	inside	40	40	108	15	19
+opaque	outer, overflow auto	inside top	40	22	108	15	19
+opaque	outer, overflow auto	below	40	62	169	15	30
+opaque	outer, overflow auto	beside	65	40	176	16	32
+opaque	outer, overflow auto	inside left	23	40	108	15	19
+opaque	outer, overflow hidden, radius	inside	40	40	108	15	19
+opaque	outer, overflow hidden, radius	inside top	40	22	108	15	19
+opaque	outer, overflow hidden, radius	below	40	62	171	15	31
+opaque	outer, overflow hidden, radius	beside	65	40	176	16	32
+opaque	outer, overflow hidden, radius	inside left	23	40	108	15	19
+translucent	inset, overflow hidden	inside	40	40	88	8	16
+translucent	inset, overflow hidden	inside top	40	22	85	7	15
+translucent	inset, overflow hidden	below	40	62	176	16	32
+translucent	inset, overflow hidden	beside	65	40	176	16	32
+translucent	inset, overflow hidden	inside left	23	40	88	8	16
+opaque	outer, overflow x hidden y visible	inside	40	40	108	15	19
+opaque	outer, overflow x hidden y visible	inside top	40	22	108	15	19
+opaque	outer, overflow x hidden y visible	below	40	62	169	15	30
+opaque	outer, overflow x hidden y visible	beside	65	40	176	16	32
+opaque	outer, overflow x hidden y visible	inside left	23	40	108	15	19
