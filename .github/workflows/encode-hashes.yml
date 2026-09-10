@@ -1,0 +1,133 @@
+name: encode-hashes
+
+# Measures the encode-agreement hashes on a platform this machine is not, and
+# uploads what it found.
+#
+# **An encoded byte string can be a property of the platform that wrote it.**
+# `crates/meo-canvas/tests/encode_agreement.rs` and its TypeScript half compare
+# eight formats against `flat-hashes.txt`, written on macOS, with a per-row
+# overlay `flat-hashes.<os>-<arch>.txt` for the rows a platform genuinely
+# moves. Measured: `windows-x86_64` moves `tiff` and nothing else, from both
+# surfaces, while `ubuntu-latest` moves nothing. There is no way to produce a
+# Windows row on a developer's Mac, and this is it.
+#
+# **It writes nothing to the branch.** The run prints the rows that differ and
+# uploads them; a person writes the overlay, with the evidence that the
+# difference is real, and commits it. The row is a claim about a platform and a
+# bare hash is unreviewable -- `fixtures.yml` makes the same choice for the
+# same reason, and its sentence is the one to keep: a workflow that pushed
+# accepted values would be a workflow that can turn a regression into a commit
+# without anyone seeing it.
+#
+# The dispatch and the branch push are both here for the reason `fixtures.yml`
+# gives: a workflow is only dispatchable once it is on the default branch, so
+# until this file merges, a push to `encode-hashes/**` is how it runs.
+run-name: >-
+  encode-hashes — measure on ${{ inputs.os || 'every runner' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'The runner to measure on'
+        type: choice
+        options: [windows-latest, ubuntu-latest, macos-latest]
+        default: windows-latest
+  push:
+    branches: ['encode-hashes/**']
+
+permissions:
+  contents: read
+
+# Keyed by ref and by runner, because measuring one branch on Windows and on
+# Linux is the ordinary use and those two must not cancel each other. A run
+# that has spent an hour building Skia is not superseded by a newer one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.os || 'matrix' }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure:
+    name: measure on ${{ inputs.os || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ inputs.os && fromJSON(format('["{0}"]', inputs.os)) || fromJSON('["windows-latest","ubuntu-latest"]') }}
+    runs-on: ${{ inputs.os || matrix.os }}
+    # A cold Skia is the long pole, as it is in `fixtures.yml`. The bound is on
+    # a build that has stopped rather than one that is slow.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the pinned toolchain
+        id: toolchain
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
+          test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      # Restores, never saves -- the reasoning is `fixtures.yml`'s and applies
+      # unchanged: every cache this could write is scoped to a branch that is
+      # deleted with its pull request.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: 'false'
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.1'
+
+      - run: bun install --frozen-lockfile
+
+      # The addon, because the JavaScript half renders through it. This is the
+      # hour.
+      - run: just addon
+
+      # **Both surfaces, and the JavaScript one is what prints.** The Rust half
+      # asserts and says which formats moved; the TypeScript half, with
+      # `UPDATE_ENCODE_HASHES=1` on a platform that is not the reference,
+      # prints the rows and writes nothing. Neither is allowed to fail the run
+      # -- a divergence is the thing being measured, so a red step here would
+      # mean the artifact never uploads and the numbers are only in a log.
+      - name: Measure
+        run: |
+          set -uo pipefail
+          mkdir -p target/encode-hashes
+          {
+            echo "runner: ${{ inputs.os || matrix.os }}"
+            echo "commit: ${GITHUB_SHA}"
+            echo
+            echo "--- the Rust half, asserting"
+            cargo test -p meo-canvas --test encode_agreement 2>&1 || true
+            echo
+            echo "--- the TypeScript half, reporting"
+            UPDATE_ENCODE_HASHES=1 ./node_modules/.bin/vitest run encode.agreement 2>&1 || true
+          } | tee "target/encode-hashes/${{ inputs.os || matrix.os }}.txt"
+
+      # **`if-no-files-found: error`.** This step runs on every path, so no
+      # rehearsal covers an empty upload -- and an artifact that came out empty
+      # would download as nothing and read as "no rows differ", which is a
+      # result rather than an absence.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: encode-hashes-${{ inputs.os || matrix.os }}
+          path: target/encode-hashes
+          if-no-files-found: error
+          retention-days: 7

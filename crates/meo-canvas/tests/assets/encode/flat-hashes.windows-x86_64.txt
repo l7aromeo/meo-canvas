@@ -1,0 +1,40 @@
+# Rows where windows-x86_64 differs from the reference, and only those.
+#
+# The base file is written on macos-aarch64. A row here replaces the row of the
+# same name; every other format is read from the base, so a value that agrees
+# on this platform is stored once and cannot drift from itself.
+#
+# A row that has stopped differing is an error rather than a no-op: the arm
+# asserts that each row here is genuinely different from the one it replaces,
+# and says to delete the line when it is not. An override that agrees with what
+# it overrides is indistinguishable from a working one.
+#
+# ---------------------------------------------------------------------------
+#
+# tiff, and the evidence that it is the container rather than the picture.
+#
+# `raw` and `bmp` are byte-identical to the reference on this platform, and
+# `raw` is the pixel buffer with no container at all -- so the rasteriser
+# produced the same pixels. `png` is byte-identical too, and PNG is deflate, so
+# it is not the compressor underneath. The TIFF carries no `Software` (305) or
+# `DateTime` (306) tag, so it is not a stamp. What is left is Skia's TIFF
+# container on this platform.
+#
+# Two measurements, one from each surface, on the same runner:
+#
+#     run 34412740820   Rust,       ci (windows-latest)   2d53a12a013360c6
+#     PR #88            JavaScript, ci (windows-latest)   2d53a12a013360c6
+#
+# They agree with each other and both differ from the reference, which is what
+# makes this a platform row rather than the cross-surface disagreement this arm
+# exists to catch. Had they disagreed, a row here would have pinned that
+# disagreement into the asset and turned the arm green over its own defect.
+#
+# **The axis is Windows, and the limit of that claim.** ubuntu-latest agrees
+# with the reference, so it is not "every platform except the reference". What
+# one runner cannot separate is *Windows* from *this runner's Skia build*.
+# `win32-arm64` is a published target that CI does not gate; if it is ever run,
+# agreeing with this row makes the axis the operating system and differing from
+# both makes it operating system and architecture. That is why the file is
+# keyed `<os>-<arch>` and not `<os>`.
+tiff 2d53a12a013360c6
