@@ -65,7 +65,17 @@ const CASES = [
   // and is the obvious wrong generalisation.
   ['img right 0 only', 'img', 'right:0;', 'a lone end inset positions and must not be dropped'],
   ['img bottom 0 only', 'img', 'bottom:0;', 'the same on the block axis'],
-  ['img inset 0 fill', 'img', 'inset:0;object-fit:fill;', 'object-fit paints, it does not size'],
+  // **These five record the border box and nothing about the picture.**
+  // `getBoundingClientRect` is the box; where the picture lands inside it is
+  // what `object-fit` decides, and no number here can see that. That half is
+  // `object-fit.tsv`, and it takes three separators rather than one: the
+  // rectangle tells `contain` from the rest; the magenta and cyan columns tell
+  // `cover` from `fill`, which share a rectangle and differ in that only
+  // `cover` crops the art's corner marks out of the cell; and a cell narrower
+  // than the art tells `scale-down` from `none`, which are identical at 72x72
+  // and differ at 6x6. Kept here because a rule that changed the box would
+  // show in these rows, and that is worth a row each.
+  ['img inset 0 fill', 'img', 'inset:0;object-fit:fill;', 'the box under fill; the picture is object-fit.tsv'],
   ['img inset 0 contain', 'img', 'inset:0;object-fit:contain;', 'the same, and the reporter used fill'],
   ['img inset 0 cover', 'img', 'inset:0;object-fit:cover;', 'the same'],
   ['img inset 0 none', 'img', 'inset:0;object-fit:none;', 'the same'],
@@ -140,6 +150,16 @@ try {
     '# `x` and `y` are parent-relative, and they are what says WHICH inset was',
     '# dropped when both on an axis were given: the element sits against the',
     '# one that was honoured.',
+    '#',
+    '# **Every number here is a border box, read from getBoundingClientRect.**',
+    '# What the browser paints INSIDE that box is not recorded and cannot be:',
+    '# the five `object-fit` rows say what each rule does to the element’s box,',
+    '# not where it puts the picture. That question is `object-fit.tsv`, whose',
+    '# walker reads pixels, and it takes three separators rather than one: the',
+    '# rectangle for `contain`; the magenta and cyan columns for `cover` against',
+    '# `fill`, which share a rectangle and differ in that only `cover` crops the',
+    '# art’s corner marks out of the cell; and a cell narrower than the art for',
+    '# `scale-down` against `none`, identical at 72x72 and different at 6x6.',
     '#',
     '# case\tx\ty\twidth\theight\tdeclarations\tnote',
     ...rows,
