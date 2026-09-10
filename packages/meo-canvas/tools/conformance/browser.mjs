@@ -45,9 +45,21 @@ export const FONT = {
  * inlined. This throws instead, naming the family, so a run either measures
  * the right face or does not finish.
  */
+/**
+ * What the last {@link open} launched, for {@link table} to stamp into a header.
+ *
+ * **Module state rather than a parameter, and one place rather than fifteen.**
+ * Every tool here writes its table through `table`, so stamping there reaches
+ * all of them and reaches the sixteenth without anyone remembering to. Fifteen
+ * copies of one line is fifteen chances to forget it, and the tool that forgets
+ * is the one whose table then claims nothing.
+ */
+let launched
+
 export async function open() {
   const font = await readFile(FONT.path)
   const browser = await chromium.launch()
+  launched = browser.version()
   const page = await browser.newPage()
 
   await page.setContent(`<!doctype html>
@@ -120,5 +132,21 @@ export async function settle(page) {
  * often as by a test, and a table of short rows reads better as columns.
  */
 export function table(lines) {
-  return `${lines.join('\n')}\n`
+  // **The stamp is written here, at the moment of measurement, and not by
+  // hand.** It went into the fourteen committed files once and into none of the
+  // tools that write them, so the next `just conformance` would have stripped
+  // all fourteen and `conformance-writes` — the check that demands the stamp —
+  // would have failed on every one. The check was right and the tables were the
+  // thing that broke.
+  //
+  // Worse than a missing line: the cheapest repair from there is to paste the
+  // stamps back, at which point they name a browser that did not produce the
+  // rows. **A stamp that survives regeneration by being retyped is a claim
+  // about provenance that provenance no longer backs.**
+  if (launched === undefined) {
+    throw new Error('table() before open(): the browser version is not known, and an unstamped table cannot say which Chrome produced it')
+  }
+  const [first, ...rest] = lines
+  const stamp = `# Measured on Chrome Headless Shell ${launched}, the chromium Playwright pins here.`
+  return `${[first, stamp, ...rest].join('\n')}\n`
 }

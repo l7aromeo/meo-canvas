@@ -187,15 +187,18 @@ try {
   // the line vanish, and pastes back a version that may name a browser which
   // produced none of the rows beneath it.
   //
-  // The other fourteen tables carry a hand-written stamp and their tools do not
-  // emit one, so those lines do not survive their own regeneration. That is
-  // tracked separately. This is the shape they should take rather than this
-  // being the odd one out.
-  const version = page.context().browser()?.version() ?? 'unknown'
-
+  // **The stamp is no longer emitted here.** This tool was right that a table
+  // has to name the browser that produced it, and right that a hand-written
+  // line does not survive its own regeneration -- and it fixed that for one
+  // table out of fifteen. `table()` in `browser.mjs` now does it for all of
+  // them, from the version the launch recorded, so a second line here would be
+  // a duplicate stamp and a second mechanism for the thing being centralised.
+  //
+  // The `?? 'unknown'` fallback goes with it, and is not replaced: `table()`
+  // throws when it is called before `open()`, so an unstamped table is a
+  // failure rather than a table claiming it does not know.
   const lines = [
     '# What a percentage height resolves against when the box is out of flow.',
-    `# Measured on Chrome Headless Shell ${version}, the chromium Playwright pins here.`,
     `# Chrome, viewport ${VIEWPORT.width}x${VIEWPORT.height}.`,
     '# Written by packages/meo-canvas/tools/conformance/abspositioned.mjs.',
     '# case\theight\tnote',
