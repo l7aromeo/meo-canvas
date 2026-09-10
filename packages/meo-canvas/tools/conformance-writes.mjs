@@ -55,19 +55,22 @@ const TOOLS = join(HERE, 'conformance')
 /**
  * How many guarded writes the directory holds today.
  *
- * Fifteen since `abspositioned.mjs` joined, which is a **new tool** rather than
- * a new table -- an unrelated reason from the one that moved the floor below,
- * and they happened to move together only because one change brought both.
+ * Seventeen since `replacedinsets.mjs` and `aspectratio.mjs` joined, and
+ * fifteen since `abspositioned.mjs` before them -- each a **new tool** rather
+ * than a new table, an unrelated reason from the one that moved the floor
+ * below, and they happened to move together only because one change brought
+ * both.
  */
-const FLOOR = 15
+const FLOOR = 17
 
 /**
  * How many stamped `.tsv` tables there are today.
  *
- * Fifteen since `absolute-percentage.tsv` joined. **Stamping it alone would
- * have left this at fourteen and still passed**, because the comparison is
- * `>=` -- green, with the floor one short of the truth. A floor that lags has
- * stopped catching removals, which is the failure this constant's own error
+ * Seventeen since `replaced-insets.tsv` and `aspect-ratio-percentage.tsv`
+ * joined, fifteen since `absolute-percentage.tsv` before them. **Stamping one
+ * alone would leave this a table short and still pass**, because the comparison
+ * is `>=` -- green, with the floor one short of the truth. A floor that lags
+ * has stopped catching removals, which is the failure this constant's own error
  * message names: *"Either tables were removed, or this check stopped
  * recognising the stamp."* A ratchet that is not wound is a rubber stamp.
  *
@@ -77,7 +80,7 @@ const FLOOR = 15
  * time a tool writes something that is not a table, or a table is produced by a
  * tool that already existed.
  */
-const STAMPED_FLOOR = 15
+const STAMPED_FLOOR = 17
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([

@@ -1,0 +1,34 @@
+# What insets do to a replaced element, measured on a real `<img>`.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Containing block 200x30, art 60x40 as an SVG data URL.
+# Written by packages/meo-canvas/tools/conformance/replacedinsets.mjs.
+#
+# A replaced element’s `auto` width and height are its own dimensions, and
+# CSS drops an inset rather than stretching it -- CSS 2.2 §10.3.8, §10.6.5.
+# The `div` rows are the contrast and must keep stretching.
+#
+#
+# `x` and `y` are parent-relative, and they are what says WHICH inset was
+# dropped when both on an axis were given: the element sits against the
+# one that was honoured.
+#
+# case	x	y	width	height	declarations	note
+img inset 0	0.00	0.00	60.00	40.00	inset:0;	the defect: no width or height, insets alone
+img inset 0 + size 100%	0.00	0.00	200.00	30.00	inset:0;width:100%;height:100%;	an explicit size wins over the intrinsic one
+img size 100%	0.00	0.00	200.00	30.00	width:100%;height:100%;	control: sizing without insets must not move
+div inset 0	0.00	0.00	200.00	30.00	inset:0;	control: a non-replaced box DOES stretch to its insets
+div inset 0 + size 100%	0.00	0.00	200.00	30.00	inset:0;width:100%;height:100%;	control: and agrees with itself when sized
+img top 0 only	0.00	0.00	60.00	40.00	top:0;	one inset cannot over-constrain anything
+img left 0 right 0	0.00	0.00	60.00	40.00	left:0;right:0;	opposing insets on one axis: which one is dropped
+img top 0 bottom 0	0.00	0.00	60.00	40.00	top:0;bottom:0;	the same question on the other axis
+img no insets	0.00	0.00	60.00	40.00		absolute, no insets: intrinsic size against a shorter block
+img right 0 only	140.00	0.00	60.00	40.00	right:0;	a lone end inset positions and must not be dropped
+img bottom 0 only	0.00	-10.00	60.00	40.00	bottom:0;	the same on the block axis
+img inset 0 fill	0.00	0.00	60.00	40.00	inset:0;object-fit:fill;	object-fit paints, it does not size
+img inset 0 contain	0.00	0.00	60.00	40.00	inset:0;object-fit:contain;	the same, and the reporter used fill
+img inset 0 cover	0.00	0.00	60.00	40.00	inset:0;object-fit:cover;	the same
+img inset 0 none	0.00	0.00	60.00	40.00	inset:0;object-fit:none;	the same
+img inset 0 scale-down	0.00	0.00	60.00	40.00	inset:0;object-fit:scale-down;	the same
+text inset 0	0.00	0.00	200.00	30.00	inset:0;	a non-replaced measured node stretches both axes
+text top 0 bottom 0	0.00	0.00	8.00	30.00	top:0;bottom:0;	the block axis stretches, the inline one shrink-fits
+text no insets	0.00	0.00	8.00	18.00		content size, and the height here is a font metric

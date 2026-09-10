@@ -1,0 +1,428 @@
+//! What a percentage height resolves against when a ratio settles the parent.
+//!
+//! `l7aromeo/meo-canvas#91`: an in-flow `height: 100%` under a box sized by
+//! `width` and `aspect-ratio` painted nothing, while the parent's own box was
+//! right. The renderer decides definiteness itself and hands taffy the answer,
+//! so the rule is ours -- and it knew a declared length and opposing insets and
+//! nothing about ratios.
+//!
+//! # Why this reads ink
+//!
+//! The report is that nothing is drawn, and a solved rectangle can carry a
+//! height no pixel ever receives. Every row renders the scene and measures the
+//! painted band, which is the instrument the reporter used.
+//!
+//! # The third repair to one rule, so the controls are half the table
+//!
+//! `ratio-and-declared-height` is 60 rather than 141 because a declared height
+//! wins outright, and `inflow-100-no-ratio` paints nothing because without a
+//! ratio a content-sized parent settles nothing -- the same shape as
+//! `inflow-percent-content-cb` in `absolute-percentage.tsv`, re-measured here
+//! so the ratio is the only difference between it and the row above it. A
+//! repair that made every ratio parent definite breaks the first; one that made
+//! every parent definite breaks the second.
+
+use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
+use meo_canvas_scene::{
+    Scene, Size,
+    node::{Node, NodeId, NodeKind},
+    style::{
+        Dimension, Length,
+        layout::{Align, Display, FlexDirection, LayoutStyle, PositionType},
+        paint::Color,
+    },
+};
+
+/// The page, and the viewport the Chrome side states.
+const PAGE: f32 = 400.0;
+
+/// The measured box's colour. Nothing else on any page is this.
+const INK: (u8, u8, u8) = (232, 40, 200);
+
+/// Every other page's colour, so "not paper" is unambiguous.
+const PAPER: (u8, u8, u8) = (0, 255, 0);
+
+/// The ratio every case shares, and the numbers it produces.
+///
+/// `0.85` is width over height, so a 120-wide box is 141.17 tall. Written as
+/// the fraction CSS writes rather than as its reciprocal, because the table is
+/// generated from `aspect-ratio:.85` and a reader comparing the two should not
+/// have to invert one of them.
+const RATIO: f32 = 0.85;
+
+fn boxed(layout: LayoutStyle) -> Node {
+    let mut node = Node::new(NodeKind::Box);
+    node.layout = layout;
+    node
+}
+
+fn measured(layout: LayoutStyle) -> Node {
+    let mut node = boxed(layout);
+    node.paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    node
+}
+
+fn page() -> Scene {
+    let mut scene = Scene::new(Size::new(PAGE, PAGE));
+    scene.nodes[0].paint.background_color =
+        Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+    scene.nodes[0].layout.align_items = Some(Align::FlexStart);
+    scene
+}
+
+fn push(scene: &mut Scene, parent: NodeId, node: Node) -> NodeId {
+    scene
+        .push(parent, node)
+        .unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// A parent sized on one axis with the ratio deriving the other.
+fn ratio_parent(size: (Dimension, Dimension)) -> LayoutStyle {
+    LayoutStyle {
+        size,
+        aspect_ratio: Some(RATIO),
+        align_items: Some(Align::FlexStart),
+        ..LayoutStyle::default()
+    }
+}
+
+/// A child asking for a fraction of its parent's height.
+fn tall(fraction: f32) -> LayoutStyle {
+    LayoutStyle {
+        size: (Dimension::Points(30.0), Dimension::Percent(fraction)),
+        ..LayoutStyle::default()
+    }
+}
+
+/// The height of the painted band in whole pixels, zero for nothing drawn.
+fn painted_height(scene: &Scene) -> u32 {
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    let bytes = renderer
+        .render_to_buffer(scene, ImageFormat::Raw, &EncodeOptions::default())
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let side = PAGE as u32;
+    let mut top: Option<u32> = None;
+    let mut bottom: Option<u32> = None;
+    for y in 0..side {
+        let inked = (0..side).any(|x| {
+            let at = ((y * side + x) * 4) as usize;
+            (bytes[at], bytes[at + 1], bytes[at + 2]) == INK
+        });
+        if inked {
+            top = top.or(Some(y));
+            bottom = Some(y);
+        }
+    }
+    match (top, bottom) {
+        (Some(first), Some(last)) => last - first + 1,
+        _ => 0,
+    }
+}
+
+/// One scene per row, written out rather than assembled by a helper.
+///
+/// Split in two because the rows ask two different questions. One set varies
+/// the **child** under a parent that is always width-plus-ratio; the other
+/// varies **how the parent is sized** and keeps the child at `height: 100%`.
+/// A helper that assembled either would hide the thing being varied.
+fn scene_for(case: &str) -> Scene {
+    let mut scene = page();
+    if PARENT_SHAPE.contains(&case) {
+        parent_shape_case(&mut scene, case);
+    } else {
+        child_percentage_case(&mut scene, case);
+    }
+    scene
+}
+
+/// The rows where what varies is how the parent gets its height.
+///
+/// Named rather than matched on a prefix: `min-height-200-under-ratio` ends in
+/// the same word as these and belongs with the other group, which a
+/// `starts_with` split got wrong.
+const PARENT_SHAPE: &[&str] = &[
+    "ratio-parent-box",
+    "ratio-and-declared-height",
+    "ratio-from-height",
+    "ratio-with-no-definite-length",
+    "ratio-with-percentage-width",
+    "inflow-100-no-ratio",
+];
+
+/// The rows where the parent is width-plus-ratio and the child varies.
+fn child_percentage_case(scene: &mut Scene, case: &str) {
+    match case {
+        "inflow-100-under-ratio" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(ratio_parent((
+                    Dimension::Points(120.0),
+                    Dimension::Auto,
+                ))),
+            );
+            push(scene, parent, measured(tall(1.0)));
+        }
+        "inflow-50-under-ratio" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(ratio_parent((
+                    Dimension::Points(120.0),
+                    Dimension::Auto,
+                ))),
+            );
+            push(scene, parent, measured(tall(0.5)));
+        }
+        "abs-100-under-ratio" => {
+            let mut parent =
+                ratio_parent((Dimension::Points(120.0), Dimension::Auto));
+            parent.position_type = PositionType::Relative;
+            let parent = push(scene, NodeId::ROOT, boxed(parent));
+            let mut layout = tall(1.0);
+            layout.position_type = PositionType::Absolute;
+            layout.inset.top = Some(Length::Points(0.0));
+            push(scene, parent, measured(layout));
+        }
+        "min-height-200-under-ratio" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(ratio_parent((
+                    Dimension::Points(120.0),
+                    Dimension::Auto,
+                ))),
+            );
+            let mut layout = LayoutStyle {
+                size: (Dimension::Points(30.0), Dimension::Points(20.0)),
+                ..LayoutStyle::default()
+            };
+            layout.min_size = (Dimension::Auto, Dimension::Percent(2.0));
+            push(scene, parent, measured(layout));
+        }
+        "max-height-25-under-ratio" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(ratio_parent((
+                    Dimension::Points(120.0),
+                    Dimension::Auto,
+                ))),
+            );
+            let mut layout = LayoutStyle {
+                size: (Dimension::Points(30.0), Dimension::Points(300.0)),
+                ..LayoutStyle::default()
+            };
+            layout.max_size = (Dimension::Auto, Dimension::Percent(0.25));
+            push(scene, parent, measured(layout));
+        }
+        other => unreachable!("no child-percentage scene for `{other}`"),
+    }
+}
+
+/// The rows where the parent's own sizing is what is under test.
+fn parent_shape_case(scene: &mut Scene, case: &str) {
+    match case {
+        "ratio-parent-box" => {
+            push(
+                scene,
+                NodeId::ROOT,
+                measured(ratio_parent((
+                    Dimension::Points(120.0),
+                    Dimension::Auto,
+                ))),
+            );
+        }
+        "ratio-and-declared-height" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(ratio_parent((
+                    Dimension::Points(120.0),
+                    Dimension::Points(60.0),
+                ))),
+            );
+            push(scene, parent, measured(tall(1.0)));
+        }
+        "ratio-from-height" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(ratio_parent((
+                    Dimension::Auto,
+                    Dimension::Points(120.0),
+                ))),
+            );
+            push(scene, parent, measured(tall(1.0)));
+        }
+        "ratio-with-no-definite-length" => {
+            // Neither axis states a length. The parent's width is
+            // shrink-to-fit from the child's 30, the ratio derives the height
+            // from that, and the percentage resolves against it -- which is
+            // what says the rule is about the ratio rather than about a
+            // declared width.
+            // The column wrapper is Chrome's and is carried rather than
+            // dropped: it is what makes the ratio box shrink-to-fit on both
+            // axes. Without it the box is a flex item of the page root and
+            // takes the page's height, which is a different scene.
+            let wrapper = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    align_items: Some(Align::FlexStart),
+                    ..LayoutStyle::default()
+                }),
+            );
+            let parent = push(
+                scene,
+                wrapper,
+                boxed(ratio_parent((Dimension::Auto, Dimension::Auto))),
+            );
+            push(scene, parent, measured(tall(1.0)));
+        }
+        "ratio-with-percentage-width" => {
+            let outer = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    size: (Dimension::Points(200.0), Dimension::Points(50.0)),
+                    align_items: Some(Align::FlexStart),
+                    ..LayoutStyle::default()
+                }),
+            );
+            let parent = push(
+                scene,
+                outer,
+                boxed(ratio_parent((Dimension::Percent(0.5), Dimension::Auto))),
+            );
+            push(scene, parent, measured(tall(1.0)));
+        }
+        "inflow-100-no-ratio" => {
+            let parent = push(
+                scene,
+                NodeId::ROOT,
+                boxed(LayoutStyle {
+                    size: (Dimension::Points(120.0), Dimension::Auto),
+                    align_items: Some(Align::FlexStart),
+                    ..LayoutStyle::default()
+                }),
+            );
+            push(scene, parent, measured(tall(1.0)));
+        }
+        other => unreachable!("no parent-shape scene for `{other}`"),
+    }
+}
+
+/// Chrome's answers, as measured.
+const TABLE: &str = include_str!("assets/chrome/aspect-ratio-percentage.tsv");
+
+/// Rows this renderer is known to disagree with.
+///
+/// **`ratio-with-no-definite-length` fails for a different reason than this
+/// file is about, and the difference is measurable.** Painting the *parent*
+/// rather than the child in that scene gives **10** -- its content height --
+/// where Chrome gives 35.28. So the ratio is not deriving a height from a
+/// shrink-to-fit width at all, and the percentage beneath it has nothing right
+/// to resolve against. `to_taffy_style` passes the ratio through: `0.85` is
+/// finite and positive, so it survives the filter and taffy has it.
+///
+/// **The cause is upstream, measured by driving taffy 0.14 directly** in a
+/// scratch crate with none of this renderer in the path:
+///
+/// ```text
+/// no-definite-length parent    30.0 x  10.0    Chrome 29.98 x 35.28
+/// control, ratio removed       30.0 x  10.0    want   29.98 x 10
+/// control, percentage width   100.0 x 118.0    Chrome 100.00 x 117.64
+/// ```
+///
+/// **The first two rows together are the finding.** With the ratio and without
+/// it taffy returns the identical box, so the ratio is not applied badly -- it
+/// is not applied at all when the inline axis is shrink-to-fit. The third row
+/// is what stops that being a claim about ratios in general: given a width
+/// taffy sizes itself, it derives the height correctly, the 118 against 117.64
+/// being taffy's whole-pixel rounding, which is also why 29.98 reads as 30.0
+/// above. So the boundary is exact: **a ratio settles the block axis when the
+/// inline axis is definite and is discarded when it is shrink-to-fit.**
+///
+/// **Not repaired by narrowing `ratio_settles_it`, deliberately.** It says
+/// "there is a usable ratio" and does not ask about the width, so on this shape
+/// it answers *definite* while taffy discards the ratio, and the percentage
+/// resolves against a height taffy never produced. Excluding shrink-to-fit here
+/// would make this renderer wrong in a second way to compensate for taffy being
+/// wrong in the first, and the day taffy fixes it somebody has to find that
+/// compensation and undo it.
+///
+/// The rule this file tests is still pinned without the row --
+/// `ratio-with-percentage-width` is the same claim with a width taffy does
+/// size, and it agrees -- so this entry records a second defect rather than
+/// excusing the first.
+///
+/// The list fails in **both** directions: a row named here that starts agreeing
+/// fails and says to delete the entry, so this cannot outlive the divergence.
+const KNOWN: &[&str] = &["ratio-with-no-definite-length"];
+
+/// One row: the case's key and the height Chrome gave it.
+fn rows() -> Vec<(String, f32)> {
+    TABLE
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| {
+            let mut columns = line.split('\t');
+            let key = columns
+                .next()
+                .unwrap_or_else(|| unreachable!("a row with no case"));
+            let height = columns
+                .next()
+                .unwrap_or_else(|| unreachable!("{key} has no height"))
+                .parse::<f32>()
+                .unwrap_or_else(|error| unreachable!("{key}: {error}"));
+            (key.to_owned(), height)
+        })
+        .collect()
+}
+
+#[test]
+fn every_row_paints_the_band_chrome_measured() {
+    let rows = rows();
+    assert_eq!(
+        rows.len(),
+        11,
+        "the table changed shape; the scenes here are per row"
+    );
+
+    // Every row is measured before anything is asserted: a per-row assertion
+    // stops at the first disagreement, and the question a repair to this rule
+    // raises is whether it moved a row somewhere else in the table.
+    let mut failing = Vec::new();
+    let mut stale = Vec::new();
+    for (key, chrome) in &rows {
+        let painted = painted_height(&scene_for(key));
+        // Within one pixel, and stated rather than assumed: Chrome reports a
+        // fractional used height and this counts whole rows of pixels, so
+        // 141.17 and 141 are the same answer. The rows this exists for are
+        // separated by a hundred pixels, not one.
+        let agrees = (f32::from(u16::try_from(painted).unwrap_or(u16::MAX))
+            - chrome)
+            .abs()
+            <= 1.0;
+        if !agrees && !KNOWN.contains(&key.as_str()) {
+            failing.push(format!("{key}: chrome {chrome:.2}, here {painted}"));
+        }
+        if agrees && KNOWN.contains(&key.as_str()) {
+            stale.push(key.clone());
+        }
+    }
+    assert!(
+        failing.is_empty(),
+        "{} row(s) disagree: {failing:#?}",
+        failing.len()
+    );
+    assert!(
+        stale.is_empty(),
+        "these rows agree and are still in KNOWN; delete them: {stale:?}"
+    );
+}

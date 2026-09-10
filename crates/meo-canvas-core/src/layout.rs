@@ -500,8 +500,86 @@ fn child_height_is_definite(
         Dimension::Percent(_) => out_of_flow(child) || parent_is_definite,
         Dimension::Auto => {
             insets_settle_it(child)
+                || ratio_settles_it(child)
                 || parent_is_definite && flex_settles_it(parent, child)
         }
+    }
+}
+
+/// Whether this node is a **replaced** element in CSS's sense.
+///
+/// A replaced element's `auto` width and height are its own intrinsic
+/// dimensions, and CSS resolves an over-constrained pair of insets by dropping
+/// one rather than by stretching the element -- CSS 2.2 §10.3.8 and §10.6.5.
+/// Measured on a real `<img>`, containing block 200x30, art 60x40: `inset: 0`
+/// gives **60x40**, and so do one inset, opposing insets on either axis, and
+/// every `object-fit`. A `div` in the same scene gives 200x30. Both are rows in
+/// `replaced-insets.tsv`.
+///
+/// **Only `Image`, and only childless.** Text is not replaced -- its size comes
+/// from its content, which is what a measured leaf already expresses -- and a
+/// path is drawn into whatever box it is given.
+///
+/// **The arity is not a detail.** This module already decides replaced-ness by
+/// arity thirty lines below, where a childless node is given the measurer's
+/// context and a node with children is not: an `Image` with a subtree is never
+/// measured, has no intrinsic size to prefer, and is a container whatever it
+/// draws. Keying on the kind alone contradicted a rule the file states in its
+/// own words, and it cost a real answer -- an absolutely positioned `Image`
+/// with `top`/`bottom` and a `height: 100%` child painted **30** before this
+/// predicate existed and **0** after, because `unstretch_replaced` removed the
+/// inset that was its only height and left it sized by the child that was
+/// waiting on it.
+///
+/// **Chrome cannot arbitrate the scene**, because an `<img>` cannot have
+/// children in HTML — so this rule comes from the engine's own leaf-container
+/// split rather than from conformance, and saying so is what stops the next
+/// reader looking for a row in `replaced-insets.tsv` that cannot exist.
+const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
+    node.children.is_empty()
+        && matches!(node.kind, meo_canvas_scene::node::NodeKind::Image { .. })
+}
+
+/// Drops the end inset on any axis where a replaced element would be stretched.
+///
+/// **taffy cannot be told about this and it is not taffy's bug.** Its `Style`
+/// carries no way to say "this box is replaced", so an absolutely positioned
+/// leaf with opposing insets is sized from them -- which is correct CSS for a
+/// non-replaced box and wrong for this one. The knowledge is ours, in
+/// `NodeKind`, so the rule has to be expressed here.
+///
+/// Dropping the **end** inset rather than the start one is what Chrome does:
+/// every row of `replaced-insets.tsv` sits at `x=0, y=0`, so `left` and `top`
+/// are honoured and `right` and `bottom` are discarded. With one inset gone the
+/// axis is no longer over-constrained, taffy asks the measurer, and the
+/// intrinsic extent comes back.
+///
+/// Only where the size is `auto`: a declared width or height wins over the
+/// intrinsic one in Chrome too -- `inset: 0` with `width/height: 100%` is
+/// 200x30 there and here.
+const fn unstretch_replaced(
+    style: &mut taffy::Style,
+    source: &meo_canvas_scene::node::Node,
+) {
+    if !is_replaced(source) || !out_of_flow(source) {
+        return;
+    }
+    let layout = &source.layout;
+    // Asked of the scene's own style rather than of taffy's, for the same
+    // reason `insets_settle_it` does: `Dimension::Auto` and `Option::None` are
+    // this crate's vocabulary, and reading them back out of the converted
+    // struct would be a second, weaker statement of what was just written.
+    if matches!(layout.size.0, Dimension::Auto)
+        && layout.inset.left.is_some()
+        && layout.inset.right.is_some()
+    {
+        style.inset.right = taffy::LengthPercentageAuto::auto();
+    }
+    if matches!(layout.size.1, Dimension::Auto)
+        && layout.inset.top.is_some()
+        && layout.inset.bottom.is_some()
+    {
+        style.inset.bottom = taffy::LengthPercentageAuto::auto();
     }
 }
 
@@ -529,9 +607,75 @@ const fn out_of_flow(node: &meo_canvas_scene::node::Node) -> bool {
 /// A declared height needs no help from this: it is the `Points` arm, and
 /// `abs-declared-over-insets-child` is the row that says so.
 const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
-    out_of_flow(node)
+    // **Not for a replaced element.** Insets do not settle its height --
+    // `replaced-insets.tsv` gives a 60x40 image 40 under `top: 0; bottom: 0`
+    // in a 30-tall block. The guard is one term and the predicate already
+    // exists for the sizing rule above.
+    //
+    // **Unmeasured, and deliberately so.** After that rule the box IS its
+    // intrinsic height, which is a height a percentage child should resolve
+    // against, so this may have been returning the right answer by a route
+    // other than the one it names. The guard makes the reasoning honest; the
+    // number is measured separately, and if it was already right this comment
+    // is the change.
+    !is_replaced(node)
+        && out_of_flow(node)
         && node.layout.inset.top.is_some()
         && node.layout.inset.bottom.is_some()
+}
+
+/// Whether a ratio derives this box's height from its width.
+///
+/// **The inline axis is already definite and that is what makes this work.** A
+/// shrink-to-fit box still has a used width -- the note in [`build`] about
+/// dropping only block-axis percentages says so -- and a ratio turns that width
+/// into a height before the contents are laid out. Nothing here asks whether
+/// the width was *declared*, because Chrome does not: measured, a box whose
+/// only width is 30 pixels of shrink-to-fit content is 35.28 tall under
+/// `aspect-ratio: .85` and its `height: 100%` child paints all of it, and the
+/// same holds where the width is itself a percentage. Both rows are in
+/// `aspect-ratio-percentage.tsv`, and a repair demanding a declared width
+/// leaves them painting nothing.
+///
+/// A declared height needs none of this: it is the `Points` arm, and
+/// `ratio-and-declared-height` is 60 rather than 141 because a stated height
+/// wins outright and the ratio does not fight it.
+///
+/// **[`usable_ratio`] decides what counts as one**, here and in
+/// [`to_taffy_style`], because the two must not drift: a value taffy discards
+/// and this rule calls definite is a box whose height is indefinite in the
+/// layout engine and definite in the predicate at once, and a percentage child
+/// then resolves against a height nothing produced.
+fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
+    node.layout.aspect_ratio.is_some_and(usable_ratio)
+}
+
+/// Whether a declared aspect ratio is one at all.
+///
+/// A ratio is a positive finite number or it is not a ratio, and Chrome lays
+/// the others out as though none were declared -- measured, a 120-wide box
+/// with a 50-tall child is 120x50 under `aspect-ratio: 0`, under
+/// `calc(infinity)`, under `-2` and with no ratio at all, against 120x141.17
+/// under `.85`.
+///
+/// **It reaches that by two routes and only the outcome is shared.** `-2` is
+/// rejected at parse and computes to `auto`; `0` and `calc(infinity)` compute
+/// to `0 / 1` and `infinity / 1` -- kept as values -- and are then not applied.
+/// The distinction is worth stating because a probe with an *empty* parent
+/// reads `0` tall for all three and looks like the ratio being applied to
+/// nothing; it is the content-carrying probe that shows the height is the
+/// content's.
+///
+/// **One function rather than the same expression at two call sites.**
+/// [`to_taffy_style`] uses it to decide what taffy is given and
+/// [`ratio_settles_it`] to decide whether a percentage beneath the box can
+/// resolve, and those two answers have to be the same answer. Written twice
+/// they would agree until somebody widened one -- and the disagreement would
+/// not be a compile error or a wrong number in a test, but a box taffy treats
+/// as ratio-less while the predicate calls its height settled. That is the
+/// same shape as the defect this predicate exists to fix.
+const fn usable_ratio(ratio: f32) -> bool {
+    ratio.is_finite() && ratio > 0.0
 }
 
 /// Whether flex layout gives this child a height its own contents did not.
@@ -576,6 +720,7 @@ fn pin_page_root(
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    unstretch_replaced(&mut style, source);
     if style.size.width.is_auto() {
         style.size.width =
             taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
@@ -683,6 +828,7 @@ fn build(
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    unstretch_replaced(&mut style, source);
     // **A percentage against an indefinite containing block resolves to
     // `auto`**, which for a size is no size and for a minimum or maximum is no
     // constraint. taffy resolves it against the parent's height whether or not
@@ -802,11 +948,23 @@ fn build(
     }
 
     // A childless node is given the measurer's context whatever it draws.
-    // Layout does not know which kinds have an intrinsic size -- that is what
-    // `measure` is for -- and the trait's own contract says a node the measurer
-    // was never prepared for answers `MeasuredLeaf::EMPTY`. Deciding here would
-    // put a second, disagreeing copy of that knowledge in the module that
-    // deliberately holds none of it.
+    // Layout does not know **what** any kind's intrinsic size is -- that is
+    // what `measure` is for -- and the trait's own contract says a node the
+    // measurer was never prepared for answers `MeasuredLeaf::EMPTY`. Deciding
+    // a size here would put a second, disagreeing copy of that knowledge in
+    // the module that deliberately holds none of it.
+    //
+    // **`is_replaced` is the one thing about kind this module does read, and
+    // the line is between an extent and a classification.** It answers whether
+    // CSS calls a node replaced, which decides whether opposing insets may
+    // size it -- and then it removes an inset and lets the measurer answer.
+    // No dimension is derived here and none is compared against one; if this
+    // module ever reads an image's width, that is the copy this paragraph
+    // refuses. Measured, because the two are easy to conflate: a `Text` node
+    // measures and is **not** replaced, and an absolutely positioned one with
+    // opposing insets stretches to them -- 200x30 under `inset: 0` in Chrome
+    // and 200x30 here. A rule keyed on "the measurer answered" would have
+    // taken that row with it.
     let created = if children.is_empty() {
         tree.new_leaf_with_context(style, node)
     } else {
@@ -915,13 +1073,7 @@ pub fn to_taffy_style(
             width: to_auto_length(sized(layout.max_size.0)),
             height: to_auto_length(sized(layout.max_size.1)),
         },
-        aspect_ratio: layout.aspect_ratio.filter(|ratio| {
-            // A ratio is a positive finite number or it is not a ratio.
-            // Chrome drops `0`, `-2`, `NaN` and `Infinity` alike and keeps the
-            // declared size; applying any of them abandons that size and
-            // shrinks the box to its content.
-            ratio.is_finite() && *ratio > 0.0
-        }),
+        aspect_ratio: layout.aspect_ratio.filter(|ratio| usable_ratio(*ratio)),
 
         margin: taffy::Rect {
             left: to_auto_length(margin(layout.margin.left)),
@@ -2627,6 +2779,48 @@ mod tests {
     /// that repair, a `min-height: 200%` child of a 60, 120 and 200 tall box
     /// gave 20 where Chrome gives 120, 240 and 400 -- so the definite rows are
     /// what makes this test constrain the fix rather than restate it.
+    /// A ratio the renderer will not use does not settle a height either.
+    ///
+    /// **The surface the shared filter had no test on.** Mutating
+    /// [`usable_ratio`] to accept everything reddens
+    /// `an_unusable_value_is_dropped_where_it_becomes_layout_input` and nothing
+    /// else -- that pins [`to_taffy_style`], where a bad ratio is dropped
+    /// before taffy sees it, and left [`ratio_settles_it`] free to call the
+    /// height settled anyway. That is the pair this predicate's own doc warns
+    /// about: indefinite in taffy and definite in this rule at once, with a
+    /// percentage child resolving against a height nothing derived.
+    ///
+    /// **Asserted on the predicate rather than as a rendered row**, because a
+    /// row would pass whatever this predicate did. Chrome lays an unusable
+    /// ratio out as though none were declared -- a 120-wide box with a 50-tall
+    /// child is 120x50 under `0`, `calc(infinity)`, `-2` and no ratio alike --
+    /// and so do we, by discarding it. **Agreement, but the row cannot show
+    /// which of us discarded what**, and with an empty parent both sides read
+    /// zero for reasons that have nothing in common.
+    ///
+    /// A negative is the one a caller reaches by arithmetic and it crosses both
+    /// surfaces: the npm writer's `decimal` refuses `NaN` and passes `-2` and
+    /// `Infinity`, so those two arrive from either door.
+    #[test]
+    fn a_ratio_this_renderer_will_not_use_settles_nothing() {
+        let parent = Node::new(meo_canvas_scene::node::NodeKind::Box);
+        let mut child = Node::new(meo_canvas_scene::node::NodeKind::Box);
+        child.layout.size = (Dimension::Points(30.0), Dimension::Auto);
+
+        for bad in [-2.0, 0.0, f32::NAN, f32::INFINITY] {
+            child.layout.aspect_ratio = Some(bad);
+            assert!(
+                !super::child_height_is_definite(&parent, &child, false),
+                "a ratio of {bad} was treated as settling the height"
+            );
+        }
+
+        // The control, and it is what stops this passing for a predicate that
+        // refuses every ratio: the one usable value must still settle it.
+        child.layout.aspect_ratio = Some(0.85);
+        assert!(super::child_height_is_definite(&parent, &child, false));
+    }
+
     #[test]
     fn a_percentage_height_resolves_only_against_a_definite_one() {
         fn probe(parent_height: Dimension) -> f32 {

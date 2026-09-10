@@ -779,11 +779,29 @@ declaration is a promise about the future value, and Chrome honours the promise.
 
 ### Layout defaults
 
-`LayoutStyle::default()` is CSS's: `Display::Flex`, row direction,
+`LayoutStyle::default()` is CSS's: **`Display::Block`**, row direction,
 `flex_shrink: 1.0`. Yoga's raw defaults are a column direction and
-`flex-shrink: 0`, so a bare box would change meaning between the two. Following
-CSS makes the bare case agree with `Row` and `Column` instead of inheriting an
-exception.
+`flex-shrink: 0`, so a bare box would change meaning between the two, and
+following CSS is what makes a bare `Node` behave like a bare `<div>`.
+
+**Every factory on both surfaces overrides it, and that is the fact with
+consequences.** `Box::new`, `Row::new` and `Column::new` in `element.rs` each
+name `Display::Flex`, and so does npm's `Box` in `node.ts` -- because a
+container that inherited `block` would silently stop honouring `gap`,
+`align_items` and `justify_content`. So the default is not what a caller
+ordinarily meets. **A scene built through the factories is a flex container; a
+scene assembled from `Node` values is a block one.**
+
+**Which means a hand-built repro and a ported JavaScript probe are not the same
+probe**, and nothing about them says so. Two numbers from one investigation:
+900 from cross-axis stretch through `Box()`, 200 from block-level fill in a
+hand-assembled test, treated as one symptom for an hour. The scene that came
+through a factory was laying out under a different display than the one that did
+not, and both were "the same scene" in the report.
+
+The test helpers in `layout.rs` name their display for exactly this reason.
+Anything reproducing a surface's behaviour from raw `Node` values has to name it
+too, or it is measuring a different box.
 
 ### Errors
 
