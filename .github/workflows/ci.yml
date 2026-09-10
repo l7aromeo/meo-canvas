@@ -186,7 +186,7 @@ jobs:
       # **`save-if` restricts writing to the default branch, so the repository
       # stops going over GitHub's cache limit as pull requests accumulate.**
       # Over the limit, eviction takes a leg at random. Measured 2026-09-09,
-      # with PR #59 merged and its caches still held:
+      # with PR l7aromeo/meo-canvas#59 merged and its caches still held:
       #
       #     total                11.73 GiB
       #       refs/heads/main      8.20 GiB
