@@ -217,3 +217,18 @@ leaving it to be met.
 
   Both are compensations and both are marked as such, each with a probe that
   fails the day the layout engine underneath stops needing it. (#107)
+
+- A `flexWrap: 'wrap-reverse'` container with a percentage `paddingBottom` put
+  its overflowing rows in the wrong place. A 200-wide box inside a 400-wide
+  parent, `paddingBottom: '10%'`, resolved the padding to 20 rather than 40, so
+  the stack sat twenty pixels below where a browser puts it.
+
+  A percentage padding resolves against the containing block's content width —
+  the parent's — and this resolved it against the box's own border box, which
+  is two errors at once and they cancel whenever the box is stretched to its
+  parent with no padding of its own. That is the default shape, so a box had to
+  carry both a width of its own and a percentage padding before anything moved.
+
+  Only the correction that bottom-aligns a reversed wrap read the wrong number;
+  the layout itself was always right, so a box whose rows fit inside it was
+  never affected. (#141)

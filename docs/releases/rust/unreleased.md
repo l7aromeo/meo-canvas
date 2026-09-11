@@ -262,3 +262,21 @@ another shape worse, the entry names that shape rather than leaving it to be met
   DioxusLabs/taffy#1163, and
   `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fails the day taffy
   stops needing either. (#107)
+
+- A `FlexWrap::WrapReverse` container with a percentage `padding.bottom` placed
+  its overflowing lines twenty pixels low. A 200-wide box inside a 400-wide
+  parent at `Length::Percent(0.10)` resolved the padding to `20` where CSS
+  gives `40`.
+
+  A percentage padding resolves against the containing block's content width,
+  and this resolved it against the node's own border box — the wrong box and
+  the wrong edge, two errors that cancel exactly when the node is stretched to
+  its parent and carries no padding of its own. That is the default shape,
+  which is why a node needed both a width of its own and a percentage padding
+  before anything moved.
+
+  The solve was never wrong: taffy resolves the padding correctly and the
+  rectangles it produces already carry it. Only `bottom_align_reversed_wraps`
+  derived the number a second time, and it now reads what `collect` recorded
+  from the same `Layout`. A container whose lines fit inside it never reached
+  that path at all. (#141)

@@ -312,7 +312,7 @@ where
     let mut rects = HashMap::with_capacity(to_scene.len());
     let mut insets = HashMap::with_capacity(to_scene.len());
     collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects, &mut insets)?;
-    bottom_align_reversed_wraps(scene, page, &mut rects);
+    bottom_align_reversed_wraps(scene, page, &insets, &mut rects);
 
     Ok(LayoutResult {
         rects,
@@ -354,6 +354,7 @@ where
 fn bottom_align_reversed_wraps(
     scene: &Scene,
     page: NodeId,
+    insets: &HashMap<NodeId, Sides<f32>>,
     rects: &mut HashMap<NodeId, Rect>,
 ) {
     let mut pending = vec![page];
@@ -393,17 +394,24 @@ fn bottom_align_reversed_wraps(
 
         // The content box's own bottom: the border box less the edges taffy
         // took off before it placed anything.
-        // A percentage padding resolves against the containing block's
-        // width, which for this node's own padding is its own width.
-        let padding = match node.layout.padding.bottom {
-            Length::Points(points) => points,
-            Length::Percent(fraction) => fraction * rect.size.width,
+        //
+        // **Read from [`collect`] rather than derived again**, which is the
+        // whole of the repair. Re-deriving it here resolved a percentage
+        // against this node's own border box, where CSS resolves it against
+        // the containing block's content box -- two errors that cancel on a
+        // stretched child with no padding of its own, which is the default
+        // shape and is why nothing caught it. `collect` takes both edges from
+        // the `Layout` taffy solved, so the number here is the room taffy
+        // actually reserved rather than a second implementation of the rule
+        // that decides it.
+        //
+        // A node with no entry is one `collect` did not reach, which is a node
+        // with no rectangle either; the `rects` lookup above has already
+        // returned for that case, so this cannot be the first place a missing
+        // node is noticed.
+        let Some(inset) = insets.get(&id).map(|sides| sides.bottom) else {
+            continue;
         };
-        // The used width, as everywhere else: this inset has to agree with
-        // the room taffy reserved, or the stack lands on the wrong edge.
-        let inset = used_border(node.layout.border, node.paint.border_style)
-            .bottom
-            + padding;
         let content_bottom = rect.bottom() - inset;
         let shift = content_bottom - bottom;
         if shift >= 0.0 {
@@ -3902,6 +3910,84 @@ mod tests {
         assert_eq!(
             placed(FlexWrap::WrapReverse, 140.0),
             vec![96, 96, 96, 26, 26, 26]
+        );
+    }
+
+    /// A percentage padding resolves against the containing block, not the
+    /// node.
+    ///
+    /// **The node's own width is held fixed and the parent's is varied**, which
+    /// is the only way to separate the two bases here: varying the node's width
+    /// changes how many children fit on a line, so the two scenes would differ
+    /// for a second reason and the row would measure that instead.
+    ///
+    /// Both errors in the site this pins vanish together when the node's
+    /// border box equals its parent's content box -- the default stretched
+    /// shape -- so a row that varies only the percentage passes either way.
+    #[test]
+    fn a_percentage_padding_resolves_against_the_containing_block() {
+        use meo_canvas_scene::style::{Length, layout::FlexWrap};
+
+        // The node is 200 wide in every scene; only the containing block moves.
+        // Six 80x44 children wrap into three lines inside 200 either way -- two
+        // fit across -- so the flow the correction shifts is identical and the
+        // padding is the one thing that differs.
+        let placed = |containing: f32| {
+            let mut scene = Scene::new(Size::new(900.0, 600.0));
+            let mut parent = Node::container();
+            parent.layout.display = Display::Flex;
+            parent.layout.size =
+                (Dimension::Points(containing), Dimension::Points(400.0));
+            let parent = scene
+                .push(NodeId::ROOT, parent)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut outer = Node::container();
+            outer.layout.display = Display::Flex;
+            outer.layout.flex_wrap = FlexWrap::WrapReverse;
+            outer.layout.size =
+                (Dimension::Points(200.0), Dimension::Points(56.0));
+            outer.layout.padding.bottom = Length::Percent(0.10);
+            let outer = scene
+                .push(parent, outer)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut ids = Vec::new();
+            for _ in 0..6 {
+                let mut child = Node::container();
+                child.layout.size =
+                    (Dimension::Points(80.0), Dimension::Points(44.0));
+                ids.push(
+                    scene
+                        .push(outer, child)
+                        .unwrap_or_else(|error| unreachable!("{error}")),
+                );
+            }
+            let result = solved(&scene, NodeId::ROOT);
+            let origin = result
+                .get(outer)
+                .unwrap_or_else(|| unreachable!("the box is laid out"))
+                .origin;
+            ids.into_iter()
+                .filter_map(|id| result.get(id))
+                .map(|rect| (rect.origin.y - origin.y) as i32)
+                .collect::<Vec<_>>()
+        };
+
+        // Three lines of 44 stack to 132 in a 56-tall border box, so the
+        // correction shifts them up by `content_bottom - 132`. A containing
+        // block of 200 gives a padding of 20 and a content bottom of 36; one
+        // of 400 gives 40 and 16. The pair differs by exactly that 20.
+        assert_eq!(
+            placed(200.0),
+            vec![-8, -8, -52, -52, -96, -96],
+            "10% of a 200-wide containing block is 20"
+        );
+        assert_eq!(
+            placed(400.0),
+            vec![-28, -28, -72, -72, -116, -116],
+            "10% of a 400-wide containing block is 40, and the node's own 200 \
+             is not what the percentage resolves against"
         );
     }
 
