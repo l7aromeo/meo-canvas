@@ -177,3 +177,34 @@ leaving it to be met.
 
   **It is a workaround and it is marked as one**, with a probe that fails the
   day the layout engine underneath stops needing it. (#123)
+
+- A negative margin on a flex item with `flexGrow` was dropped from the
+  container's height, and the item was laid out at the wrong size with it. A
+  903-wide column holding a 500-tall child at `marginTop: -24` came out 500 tall
+  where a browser gives 476, and the child was grown to 524 rather than kept at
+  its own 500.
+
+  **Both halves scale with the margin and neither is the one you notice first.**
+  Where several growing children carry negative margins, every one of them was
+  dropped rather than one — two 200-tall children at `-24` and `-10` gave 400
+  against a browser's 366. Percentage margins were dropped in exactly the same
+  way, `marginTop: '-10%'` of a 903-wide container giving 500 against 409.7. A
+  margin too small to survive rounding into a rendered pixel was never
+  observable either way, before or after.
+
+  A static item was correct, a positive margin was correct, a row direction was
+  correct, and a container with a stated height was correct — a container that
+  is stretched by its parent never resolves its own height and never met this at
+  all.
+
+- A grid item with `overflow: 'hidden'` or `'scroll'` made an ancestor's height
+  ignore a negative margin. A strip at `marginTop: -32` above a grid holding a
+  100-tall clipping item gave an ancestor of 100 where a browser gives 68.
+
+  **`'scroll'` is affected exactly as `'hidden'` is**, which is not what the
+  names suggest: the two are grouped by the minimum size they give an item
+  rather than by whether they clip. `'visible'` was correct, wrapping the item
+  was correct, and a flex container in place of the grid was correct.
+
+  Both are compensations and both are marked as such, each with a probe that
+  fails the day the layout engine underneath stops needing it. (#107)

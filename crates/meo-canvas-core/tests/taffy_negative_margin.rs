@@ -336,6 +336,14 @@ fn the_same_rows_without_growing_are_not_wrong() {
 /// strip's height less the 32 it is pulled up by, in all eight.
 fn clipped_item_parent_height(hidden: bool, grid: bool, wrapped: bool) -> f32 {
     let mut tree: TaffyTree<()> = TaffyTree::new();
+    // **Rounding is off in every harness in this file and on in `solve`, and
+    // the two are different questions.** A probe pins taffy's raw arithmetic,
+    // so a fraction has to survive to the assertion; `solve` rounds because
+    // that is what a caller's rendered pixel does. This helper was the one
+    // without the call while its two neighbours had it -- the rows here are
+    // integers and could not tell, but a future row at a fractional margin
+    // would have disagreed with its neighbour and nothing would have said why.
+    tree.disable_rounding();
     let content = tree
         .new_leaf(Style {
             size: Size {
@@ -468,6 +476,264 @@ fn the_seven_configurations_around_it_agree_with_chrome() {
             if grid { "grid" } else { "flex" },
             if wrapped { "wrapped" } else { "direct" },
             if hidden { "hidden" } else { "visible" },
+        );
+    }
+}
+
+/// One container, one pin, and the whole subtree read back.
+fn pinned_subtree(
+    kids: &[(f32, f32)],
+    pin: Option<f32>,
+) -> (f32, Vec<(f32, f32)>) {
+    let mut tree: TaffyTree<()> = TaffyTree::new();
+    tree.disable_rounding();
+    let ids: Vec<_> = kids
+        .iter()
+        .map(|&(grow, margin)| {
+            tree.new_leaf(Style {
+                size: Size {
+                    width: length(476.0),
+                    height: length(200.0),
+                },
+                flex_grow: grow,
+                margin: Rect {
+                    left: length(0.0),
+                    right: length(0.0),
+                    top: length(margin),
+                    bottom: length(0.0),
+                },
+                ..Style::default()
+            })
+            .unwrap_or_else(|error| unreachable!("{error}"))
+        })
+        .collect();
+    let container = tree
+        .new_with_children(
+            Style {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                size: Size {
+                    width: length(903.0),
+                    height: pin.map_or_else(auto, length),
+                },
+                ..Style::default()
+            },
+            &ids,
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    tree.compute_layout(
+        container,
+        Size {
+            width: AvailableSpace::Definite(903.0),
+            height: AvailableSpace::MaxContent,
+        },
+    )
+    .unwrap_or_else(|error| unreachable!("{error}"));
+    (
+        tree.layout(container)
+            .unwrap_or_else(|error| unreachable!("{error}"))
+            .size
+            .height,
+        ids.iter()
+            .map(|id| {
+                let solved = tree
+                    .layout(*id)
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                (solved.size.height, solved.location.y)
+            })
+            .collect(),
+    )
+}
+
+/// [FOUNDATION] taffy's error is confined to resolving the container's main
+/// size: every quantity downstream of that size is a correct function of it.
+///
+/// **This is what `compensate_dropped_margins` rests on.** It writes one number
+/// and trusts taffy with the whole subtree afterwards. If that stops holding,
+/// the compensation produces a container of the right size holding children of
+/// the wrong size or in the wrong place -- worse than the defect, because
+/// nothing announces that the contents are wrong once the box is right.
+///
+/// **The unpinned column is what makes the property non-trivial.** The children
+/// come out wrong by four different amounts across these four shapes -- 224,
+/// 217, 224 beside 200, and 212 -- so this is not one error propagating
+/// uniformly. It is the container's size being wrong once and the flex
+/// algorithm distributing that error differently in each shape, and correcting
+/// the single number corrects all of them.
+///
+/// Chrome's figures measured through the conformance harness's Playwright,
+/// `getBoundingClientRect()` unrounded, one shape per emptied page.
+#[test]
+fn a_correct_main_size_lays_the_subtree_out_correctly() {
+    /// One shape: its name, its children as `(flex_grow, margin-top)` at 200
+    /// tall, Chrome's container height, and Chrome's `(height, y)` per child.
+    type Shape<'a> = (&'a str, &'a [(f32, f32)], f32, &'a [(f32, f32)]);
+
+    let shapes: &[Shape<'_>] = &[
+        ("one growing", &[(1.0, -24.0)], 176.0, &[(200.0, -24.0)]),
+        (
+            "two growing",
+            &[(1.0, -24.0), (1.0, -10.0)],
+            366.0,
+            &[(200.0, -24.0), (200.0, 166.0)],
+        ),
+        (
+            "growing beside static",
+            &[(1.0, -24.0), (0.0, -10.0)],
+            366.0,
+            &[(200.0, -24.0), (200.0, 166.0)],
+        ),
+        (
+            "negative beside positive",
+            &[(1.0, -24.0), (1.0, 10.0)],
+            386.0,
+            &[(200.0, -24.0), (200.0, 186.0)],
+        ),
+    ];
+
+    for (name, kids, chrome_container, chrome_kids) in shapes {
+        let (unpinned, _) = pinned_subtree(kids, None);
+        assert!(
+            (unpinned - chrome_container).abs() > 0.5,
+            "{name}: taffy resolved {unpinned} unpinned, which is Chrome's \
+             {chrome_container} -- the defect this rests on is gone and the \
+             compensation can go with it"
+        );
+
+        let (container, kids_out) =
+            pinned_subtree(kids, Some(*chrome_container));
+        assert!(
+            (container - chrome_container).abs() < 0.01,
+            "{name}: pinned to {chrome_container} and taffy resolved \
+             {container} -- writing the main size is no longer enough to \
+             reach it, which is the half of this property the compensation \
+             does itself"
+        );
+        for (index, ((height, y), (want_height, want_y))) in
+            kids_out.iter().zip(chrome_kids.iter()).enumerate()
+        {
+            assert!(
+                (height - want_height).abs() < 0.01
+                    && (y - want_y).abs() < 0.01,
+                "{name}: child {index} is {height} tall at {y}, Chrome has it \
+                 {want_height} tall at {want_y} -- a correct main size no \
+                 longer yields a correct subtree"
+            );
+        }
+    }
+}
+
+/// [FOUNDATION] in the grid case the children's geometry is already correct and
+/// only the ancestor's own size ignores the margin.
+///
+/// **This is the opposite fact from the row above**, which is why the two
+/// compensations carry two markers rather than one. The flex clause rests on
+/// the children being wrong-but-derived from a correctable number; this one
+/// rests on them being right, so the extent over them is the answer the
+/// ancestor should have reached.
+///
+/// If it stops holding, the extent stops being the correct size and a
+/// compensation reading it writes a number with nothing behind it.
+#[test]
+fn a_clipping_grid_item_leaves_only_the_aggregate_wrong() {
+    for overflow in [Overflow::Hidden, Overflow::Scroll] {
+        let mut tree: TaffyTree<()> = TaffyTree::new();
+        tree.disable_rounding();
+        let content = tree
+            .new_leaf(Style {
+                size: Size {
+                    width: length(100.0),
+                    height: length(100.0),
+                },
+                ..Style::default()
+            })
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let item = tree
+            .new_with_children(
+                Style {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    overflow: Point {
+                        x: overflow,
+                        y: overflow,
+                    },
+                    ..Style::default()
+                },
+                &[content],
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let grid = tree
+            .new_with_children(
+                Style {
+                    display: Display::Grid,
+                    grid_template_columns: vec![length(100.0)],
+                    ..Style::default()
+                },
+                &[item],
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let strip = tree
+            .new_with_children(
+                Style {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    margin: Rect {
+                        left: length(0.0),
+                        right: length(0.0),
+                        top: length(-32.0),
+                        bottom: length(0.0),
+                    },
+                    ..Style::default()
+                },
+                &[grid],
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let ancestor = tree
+            .new_with_children(
+                Style {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    ..Style::default()
+                },
+                &[strip],
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        tree.compute_layout(
+            ancestor,
+            Size {
+                width: AvailableSpace::Definite(400.0),
+                height: AvailableSpace::MaxContent,
+            },
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+        let solved = tree
+            .layout(strip)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(
+            (solved.location.y - -32.0).abs() < 0.01
+                && (solved.size.height - 100.0).abs() < 0.01,
+            "{overflow:?}: the strip is {} tall at {}, and the property this \
+             rests on is that it is 100 tall at -32",
+            solved.size.height,
+            solved.location.y
+        );
+
+        let extent = solved.location.y + solved.size.height;
+        assert!(
+            (extent - 68.0).abs() < 0.01,
+            "{overflow:?}: the children reach {extent}, Chrome's answer is 68"
+        );
+
+        let own = tree
+            .layout(ancestor)
+            .unwrap_or_else(|error| unreachable!("{error}"))
+            .size
+            .height;
+        assert!(
+            (own - 100.0).abs() < 0.01,
+            "{overflow:?}: the ancestor is {own} and taffy no longer ignores \
+             the margin -- the compensation can go"
         );
     }
 }
