@@ -150,7 +150,8 @@ another shape worse, the entry names that shape rather than leaving it to be met
   inline axis, an author's `min_size` does, and writing the content-derived
   floor into `min_size.height` takes the same box to `255 x 300` — the right
   quantity in the wrong field. The compensation clears the ratio instead and
-  shares the ratio-free solve the entry above already performs.
+  shares the ratio-free solve the entry above already takes rather than
+  repeating it, at the cost of one more page solve where it fires.
 
   Two conditions decide it and both were measured. The inline size must not be
   an outcome of the ratio, read as whether removing the ratio moves the width: a

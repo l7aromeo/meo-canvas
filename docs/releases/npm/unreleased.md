@@ -113,8 +113,8 @@ leaving it to be met.
 
   **This is a workaround rather than a fix.** The layout engine underneath
   resolves a ratio box's axes in the wrong order, which is not something this
-  renderer can correct there, so it solves the box twice and puts the ratio back
-  between the two passes. The issue stays open until the engine is fixed, and a
+  renderer can correct there, so it lays the page out twice and puts the ratio
+  back between the two passes. The issue stays open until the engine is fixed, and a
   test pinned to what the engine does today fails the day it is — which is what
   stops the compensation outliving its reason.
 
@@ -138,8 +138,9 @@ leaving it to be met.
   `'scroll'` and `'auto'`, and 300 under `visible`. A scrolling box has no
   automatic minimum to restore, so that is agreement rather than a leftover.
 
-  **This is a workaround rather than a fix**, and it shares the pass the entry
-  above already performs. CSS has two minimums on that axis where the engine
+  **This is a workaround rather than a fix**, and it shares the ratio-free solve
+  the entry above already takes rather than repeating it — though when it fires
+  it lays the page out once more of its own. CSS has two minimums on that axis where the engine
   underneath has one slot for them, which is the thing this cannot repair at
   source. The issue stays open until it can be. (#104)
 
