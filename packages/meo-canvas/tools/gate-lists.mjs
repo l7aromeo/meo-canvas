@@ -117,15 +117,30 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 /**
  * How short each list may get before this asks whether it was meant.
  *
- * Two below today's fifteen and thirteen: removing a recipe deliberately
- * should not require editing a number here, and a list emptied by an edit must
- * not pass. This is the only assertion that sees a deletion at all, which is
- * why it is close rather than generous.
+ * **The rule is two below each list's length**, and the lengths are
+ * deliberately not written here. Removing a recipe should not require editing a
+ * number, and a list emptied by an edit must not pass; this is the only
+ * assertion that sees a deletion at all, which is why it is close rather than
+ * generous.
  *
- * The two numbers move with the lists and are meant to. A recipe added without
- * its floor raised leaves three notches of slack rather than two, which is
- * slack the next addition inherits; the arithmetic is one line in the commit
- * that adds the recipe.
+ * **A count restated in prose goes stale in step with the constant beside it,
+ * and that is how `portable: 9` survived.** The sentence and the number were
+ * consistent with each other and wrong about the `justfile`, so every reading
+ * of this block was internally coherent and externally false -- and the reader
+ * best placed to notice is the one the agreeing pair sends past. Rewriting the
+ * sentence at each bump is the same mechanism asking to be trusted once more.
+ *
+ * **Today's numbers come from the failure, not from here.** When a floor fires
+ * it names both -- the length it measured and the floor it measured against --
+ * so a reader who needs them reads what the tree is rather than what a comment
+ * once said it was. The two constants below still move with the lists: a recipe
+ * added without its floor raised leaves three notches of slack rather than two,
+ * which is slack the next addition inherits, and the arithmetic is one line in
+ * the commit that adds the recipe.
+ *
+ * **Deriving them from the lists is refused rather than overlooked.** A floor
+ * computed from the thing it guards cannot notice a deletion, which is the
+ * whole of what these two numbers are for.
  */
 const FLOORS = { portable: 13, native: 11 }
 
