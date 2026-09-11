@@ -108,3 +108,28 @@
   Only the two direction-relative values moved. The four left-to-right rows of
   the comparison table were green before this and after it, which is what says
   the repair is about the direction rather than about alignment. (#109)
+
+- A flex item with `flexGrow: 1` and an `aspectRatio` came out with no width in
+  a column. Growing settles the item's height and the ratio should turn that
+  into a width; instead the item was 0 wide where a browser gives 248 x 248, so
+  anything inside it had nowhere to draw.
+
+  The ratio now supplies the cross size wherever the item did not already get
+  one from something else. None of the things that look like they should matter
+  do: all five `alignItems` values behave the same, so do a `flexGrow` of 2 and
+  two competing siblings, and so does the ratio's own value — measured across
+  twenty-seven shapes.
+
+  **An `Image` in that shape was already correct** and is unchanged. A replaced
+  element brings its own dimensions, so it never depended on the transfer; the
+  shape that diverged is a plain `Box`.
+
+  **Two cases are still wrong and are worth knowing about.** An item stretched
+  across its line and then asked for a main size from that stretch is not
+  compensated here, because the browser's answer overflows the line and shipping
+  that ahead of the upstream fix would be a layout change nobody asked for. And
+  a `maxWidth` binding the cross axis takes the other axis down with it — 100 x
+  100 against a browser's 100 x 248, tracked at (#129).
+
+  **It is a workaround and it is marked as one**, with a probe that fails the
+  day the layout engine underneath stops needing it. (#123)

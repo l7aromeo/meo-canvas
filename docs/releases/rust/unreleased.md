@@ -150,3 +150,37 @@ because a count in prose is a claim nothing checks.
   The addon reaches it with no JavaScript change: `direction` and `textAlign`
   are neighbouring arena slots, so a JavaScript caller could already express the
   pair and both land in the same core.
+
+- A flex item with `flex_grow` and an `aspect_ratio` came out with no inline
+  size in a column. Growing settles the block axis and the ratio should transfer
+  that into the inline one; the item solved to 0 wide where Chrome gives
+  248 x 248.
+
+  taffy applies a ratio's transferred size only where the item already has a
+  cross contribution of its own, and that one condition has four causes that
+  disagree about the number: an empty item contributes 0, padding alone
+  contributes the padding, a border alone contributes 0, and a 30-pixel child
+  contributes 30 — against the ratio's 248 in every case. So the compensation
+  reads the outcome rather than the construction: an item whose cross size is
+  not the ratio's derivation, whatever produced it.
+
+  The item's own `Display` is deliberately not part of that test. It changes the
+  answer in taffy — a block item with content gets the derivation, a flex item
+  with the same content does not — and changes nothing in Chrome, where all four
+  combinations of display and content are 248 x 248, so reading it would write a
+  taffy artefact into this renderer.
+
+  **A `NodeKind::Image` in that shape was already correct** and is untouched: a
+  replaced element carries its own dimensions and never needed the transfer.
+
+  **Two cases remain divergent, both on purpose.** An item wanting a main size
+  derived from a stretched cross size is left alone, because Chrome's answer
+  overflows its line and `DioxusLabs/taffy#1182` will produce it upstream — this
+  renderer should not get there first. And a `max_size` binding the cross axis
+  takes the other axis with it, so a maximum-bound item solves to 100 x 100
+  against Chrome's 100 x 248; that is filed separately.
+
+  **It is a workaround and it is marked as one.** `[WORKAROUND]` in
+  `crates/meo-canvas-core/src/layout.rs` names `DioxusLabs/taffy#804`, and
+  `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fails the day taffy stops
+  needing it.
