@@ -60,6 +60,9 @@ whole content is a type needs `just typecheck` as well, and a green suite says n
 `just ci` takes a lock, so two of them cannot run in one tree at once. Run it before opening a pull
 request. Each recipe below is also one you can run alone while you work.
 
+No gate reads the release notes, so a green `just ci` is not a finished pull request — see
+[Release notes](#release-notes) below, which every pull request fills or says why it does not.
+
 **The table is a selection rather than the list.** `portable` and `native` in the `justfile` are
 what `just ci` runs and are the authority on it; they name several recipes this table does not. A
 full copy here would go stale with nothing to report it, which is why there is not one.
@@ -158,18 +161,28 @@ note — `docs/releases/npm/unreleased.md` and `docs/releases/rust/unreleased.md
 release renames that file to the version it ships under, so nobody has to know
 the version while writing the entry.
 
-Append the entry under its Keep a Changelog heading, and cite the issue it
-closes at the end of it — `(#104)` — because the issue is where the measurement
-and the argument live, and the release page is not the place to repeat them.
+Append the entry at the end of its Keep a Changelog heading, and cite the issue
+it answers in parentheses at the end of it, because the issue is where the
+measurement and the argument live and the release page should not repeat them.
+**Answers rather than closes**: an issue compensated by a workaround stays open
+until the upstream fix ships, and its entry cites it exactly the same way. A
+change with no issue cites nothing — do not open one so the entry has a number.
+
+**A breaking change is marked in the entry rather than given a section**, with
+**Breaking.** at the front and what to write instead. `docs/releases/README.md`
+says why: Keep a Changelog has no such heading, and inventing one splits a
+removal across two places.
 
 Which channel is decided by where the change lands, not by which surface you
 were thinking about. A change under `crates/meo-canvas-core/` reaches both, so
 it gets an entry in each, written in that channel's vocabulary — `aspectRatio`
 on the npm side, `aspect_ratio` on the crate side. A change under
 `packages/meo-canvas/src/` reaches npm alone. A change to a gate, a test, a
-workflow or this file reaches no caller at all: say so in the pull request
-rather than inventing an entry, because a release page listing gate edits tells
-someone installing the package nothing.
+workflow or this file reaches no caller at all. Say so in one line of the pull
+request description — "no release note: nothing a caller meets" — rather than
+inventing an entry, because a release page listing gate edits tells someone
+installing the package nothing, and because a reviewer cannot tell a change
+that needed no entry from one that forgot.
 
 **Write it as the person who hit it met it**, not as the fix. "A percentage
 height under a ratio parent came out at zero" is the symptom someone searches
