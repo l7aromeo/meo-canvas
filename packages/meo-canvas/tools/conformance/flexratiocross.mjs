@@ -109,6 +109,19 @@ const CASES = [
   // Deliberately not compensated, and a divergence deliberately pinned.
   ['uncompensated stretch', `${COLUMN};align-items:stretch`, ITEM, '', 'the derivation overflows its line; upstream has not shipped it'],
   ['known max-width', `${COLUMN};align-items:center`, `${ITEM};max-width:100px`, '', 'a maximum binding the cross axis does not transfer back here'],
+  // **The far end of the same divergence, and the row that shows it scales.**
+  // The height this renderer produces is the maximum where Chrome keeps the
+  // line's 248, so the error is `248 - max`: one pixel at `max-width: 247px`
+  // and 247 here. The near end is deliberately not a row -- it agrees only
+  // because its error is under the table's slack, and a green row inside a
+  // known-divergent family reads as the family agreeing.
+  [
+    'known max-width amplified',
+    `${COLUMN};align-items:center`,
+    `${ITEM};max-width:1px`,
+    '',
+    'the same divergence at its far end: the error is 248 minus the maximum',
+  ],
 ]
 
 const browser = await open()
