@@ -258,6 +258,21 @@ where
         &mut baselines,
     )?;
 
+    // [WORKAROUND] `compensate_dropped_margins` explains this pair; a column
+    // container's automatic main size drops negative margins it should apply.
+    // `DioxusLabs/taffy#1162` and `DioxusLabs/taffy#1163`, reported as
+    // `l7aromeo/meo-canvas#107`, probed by
+    // `crates/meo-canvas-core/tests/taffy_negative_margin.rs`.
+    compensate_dropped_margins(
+        scene,
+        &mut tree,
+        &to_scene,
+        root,
+        available,
+        measure,
+        &mut baselines,
+    )?;
+
     let mut rects = HashMap::with_capacity(to_scene.len());
     let mut insets = HashMap::with_capacity(to_scene.len());
     collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects, &mut insets)?;
@@ -1367,6 +1382,239 @@ where
     )
 }
 
+/// Every container whose own main size dropped a child's negative margin, and
+/// by how much.
+///
+/// **Two defects, one repair, and they are kept apart deliberately.** Both end
+/// with a container resolving a main size that is short by a margin taffy did
+/// not apply, and both are repaired by writing the size taffy should have
+/// reached. They are separate clauses because they rest on different facts --
+/// see each `[WORKAROUND]` below -- and because the survivor has to stay
+/// readable when only one of them can be deleted.
+///
+/// **Chrome has no condition here at all.** Across 33 measured cells it applies
+/// every margin, whatever the overflow, the container kind, the wrapping or the
+/// direction. So every clause below describes taffy's bug surface and none of
+/// them encodes a CSS rule: when the fix ships, the whole of this goes, and
+/// nothing in it is knowledge about layout that would have to survive.
+fn dropped_margin_candidates(
+    scene: &Scene,
+    tree: &taffy::TaffyTree<NodeId>,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+) -> Vec<(taffy::NodeId, f32)> {
+    to_scene
+        .iter()
+        .filter_map(|(taffy_id, scene_id)| {
+            let container = scene.get(*scene_id)?;
+            // Column containers with an automatic main size, which is where
+            // both defects live: a definite main size is correct in every
+            // measured cell, and so is every row-direction cell.
+            if !matches!(container.layout.display, Display::Flex)
+                || !matches!(
+                    container.layout.flex_direction,
+                    FlexDirection::Column | FlexDirection::ColumnReverse
+                )
+                || !matches!(container.layout.size.1, Dimension::Auto)
+            {
+                return None;
+            }
+            // The containing block's inline size, which is what a percentage
+            // margin resolves against on every edge. The width is correct in
+            // every measured cell -- the defect is confined to the main axis --
+            // so reading it before the repair is sound.
+            let basis = tree.layout(*taffy_id).ok()?.size.width;
+            let dropped = children_of(tree, *taffy_id)
+                .into_iter()
+                .filter_map(|child| {
+                    let source = scene.get(*to_scene.get(&child)?)?;
+                    let margin = main_axis_margin(&source.layout, basis);
+                    (margin < 0.0
+                        && (source.layout.flex_grow > 0.0
+                            || holds_clipping_grid_item(
+                                scene, tree, to_scene, child,
+                            )))
+                    .then_some(margin)
+                })
+                .sum::<f32>();
+            (dropped < 0.0).then_some((*taffy_id, dropped))
+        })
+        .collect()
+}
+
+/// A node's own main-axis margin in a column, resolved to points.
+///
+/// **Percentages are resolved rather than skipped, because skipping them would
+/// have shipped the defect.** A percentage margin resolves against the
+/// containing block's *inline* size on every edge, including the block ones, so
+/// `basis` is the container's solved width. Measured: taffy drops a percentage
+/// margin on a growing child exactly as it drops a length one -- container 500
+/// against Chrome's 409.70 at `-10%`, and the child grown to 590.30 against
+/// Chrome's 500 -- and gets both right at `flex_grow: 0` and on positive
+/// values, which is the same conjunction the length case obeys.
+///
+/// The carve-out that was nearly written here is the one
+/// `l7aromeo/meo-canvas#136` exists for: a conservative exclusion, honestly
+/// recorded as unmeasured, whose excluded half turned out to be a live
+/// divergence. Measuring it cost one sweep.
+///
+/// **`auto` contributes nothing, and the skip is on the edge rather than on the
+/// child.** The first version returned `None` for a child with any `auto` main
+/// edge, which dropped the whole child -- so `margin-top: auto` beside
+/// `margin-bottom: -24px` kept the defect inside the change that exists to
+/// repair it. Measured in a column with an automatic main size, where these
+/// clauses live: an `auto` edge contributes zero in Chrome, the length edge is
+/// applied whichever side carries it, and taffy drops that length identically
+/// whether or not the other edge is `auto`.
+///
+/// Fenced rather than indented: four spaces is layout in a commit body and a
+/// code block in a `///` comment, so an indented table here becomes a doctest
+/// on a private item and `just docs` refuses it. `lint-check` does not read doc
+/// comments and says nothing about it.
+///
+/// ```text
+/// top 0     bottom -24    taffy 200.00   chrome 176.00
+/// top auto  bottom -24    taffy 200.00   chrome 176.00
+/// top -24   bottom auto   taffy 200.00   chrome 176.00
+/// top auto  bottom 0      taffy 200.00   chrome 200.00
+/// top auto  bottom auto   taffy 200.00   chrome 200.00
+/// ```
+///
+/// Zero is right **in this scope** and not in general: an `auto` margin absorbs
+/// free space, and a container with an automatic main size has none to absorb.
+/// A definite main size does, and is not a candidate here.
+fn main_axis_margin(layout: &LayoutStyle, basis: f32) -> f32 {
+    let resolved = |dimension: Dimension| match dimension {
+        Dimension::Points(points) => points,
+        Dimension::Percent(fraction) => fraction * basis,
+        // Zero rather than absent: every edge resolves now, so this returns a
+        // number rather than an `Option` nothing could make empty. The earlier
+        // signature said *this may not resolve* and, once the `auto` edge
+        // stopped being a reason to skip the child, nothing could produce that.
+        Dimension::Auto => 0.0,
+    };
+    resolved(layout.margin.top) + resolved(layout.margin.bottom)
+}
+
+/// Whether a subtree holds a grid container with a clipping direct item.
+///
+/// **The grouping is by automatic minimum size, not by whether the box clips**,
+/// and the two are not the same partition. taffy gives `Hidden` and `Scroll` an
+/// automatic minimum of zero and takes it from content for `Clip` and
+/// `Visible`; the names suggest the opposite pairing, since three of the four
+/// clip. Measured across every value: `hidden` and `scroll` diverge, `visible`
+/// and `clip` do not, and Chrome answers the same for all four.
+///
+/// [`clips`] one screen below asks a different question -- whether a box
+/// establishes a scroll container -- and returns the same answers for every
+/// input a scene can express. They part on `Clip`, which `Overflow` here has no
+/// variant for, so the two predicates coincide by an absence rather than by
+/// agreement and must not be merged.
+///
+/// **A concept three independent artefacts get subtly wrong is a shape of the
+/// domain rather than three mistakes**: the report that prompted this sampled
+/// `hidden` against `visible` and missed `scroll`, taffy's own names suggest a
+/// grouping its doc comments contradict, and the helper below encodes the other
+/// question a screen away. The fourth reader will be tempted the same way.
+fn holds_clipping_grid_item(
+    scene: &Scene,
+    tree: &taffy::TaffyTree<NodeId>,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    id: taffy::NodeId,
+) -> bool {
+    let Some(source) =
+        to_scene.get(&id).and_then(|scene_id| scene.get(*scene_id))
+    else {
+        return false;
+    };
+    let children = children_of(tree, id);
+    if matches!(source.layout.display, Display::Grid)
+        && children.iter().any(|child| {
+            to_scene
+                .get(child)
+                .and_then(|scene_id| scene.get(*scene_id))
+                .is_some_and(|item| {
+                    let zero_minimum = |overflow| {
+                        matches!(overflow, Overflow::Hidden | Overflow::Scroll)
+                    };
+                    zero_minimum(item.layout.overflow.0)
+                        || zero_minimum(item.layout.overflow.1)
+                })
+        })
+    {
+        return true;
+    }
+    // Depth does not matter: measured with none, one and two plain boxes
+    // between the margined child and the grid, and the ancestor is short in all
+    // three.
+    children
+        .into_iter()
+        .any(|child| holds_clipping_grid_item(scene, tree, to_scene, child))
+}
+
+/// Writes the main size taffy should have reached, and solves again.
+///
+/// [WORKAROUND] taffy resolves a column container's automatic main size
+/// without the negative margins it should have applied, so the container comes
+/// out long and the flex algorithm then distributes that error into its
+/// children. `DioxusLabs/taffy#1162` and `DioxusLabs/taffy#1163`, reported
+/// together as `l7aromeo/meo-canvas#107`. Both are fixed by `adef6dd`, which is
+/// two commits past the `v0.14.0` tag this workspace requires and in no release
+/// -- checked by ancestry rather than by dates, since a backport would satisfy
+/// the dates and not the tree.
+///
+/// Retires when `a_correct_main_size_lays_the_subtree_out_correctly` or
+/// `a_clipping_grid_item_leaves_only_the_aggregate_wrong` in
+/// `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fires. They pin what
+/// taffy does today, so the release that repairs either one turns a probe red
+/// and names this block.
+///
+/// **One handle, two clauses, and a shared mechanism does not make a shared
+/// predicate.** Both defects are repaired by writing one number, which is why
+/// this function serves both; they are collected separately because they rest
+/// on opposite facts about the rest of the tree, and a condition reading
+/// *growing children with negative margins **or** a clipping grid item* is
+/// unreadable once half of it is dead.
+fn compensate_dropped_margins<M>(
+    scene: &Scene,
+    tree: &mut taffy::TaffyTree<NodeId>,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    root: taffy::NodeId,
+    available: taffy::Size<taffy::AvailableSpace>,
+    measure: &mut M,
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let candidates = dropped_margin_candidates(scene, tree, to_scene);
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    for (id, dropped) in &candidates {
+        let solved = tree
+            .layout(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .size
+            .height;
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.size.height = taffy::Dimension::length(solved + dropped);
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    solve_once(tree, root, available, measure, baselines)
+}
+
+/// A node's children, or nothing if taffy will not say.
+fn children_of(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+) -> Vec<taffy::NodeId> {
+    tree.children(id).unwrap_or_default()
+}
+
 /// The size a ratio'd item should have taken, or `None` if it already has it.
 ///
 /// **Reads the solved tree rather than the style**, which is what makes one
@@ -1430,6 +1678,10 @@ fn derived_cross(
 ///
 /// `Overflow` here has no `Clip`, so no scene reaches that case today. Adding
 /// one is **not** a synonym for `Hidden` on this axis.
+/// A second predicate nearby shares this one's answers for a different reason:
+/// [`holds_clipping_grid_item`] asks whether an item's automatic minimum size
+/// is zero, which is `Hidden` and `Scroll` rather than every non-visible value.
+/// The two part on `Clip`, and the argument is written there rather than twice.
 const fn clips(overflow: taffy::Point<taffy::Overflow>) -> bool {
     !matches!(overflow.x, taffy::Overflow::Visible)
         || !matches!(overflow.y, taffy::Overflow::Visible)
@@ -2631,6 +2883,188 @@ mod tests {
     fn solved(scene: &Scene, page: NodeId) -> LayoutResult {
         solve(scene, page, &mut Fixed::new(0.0, 0.0))
             .unwrap_or_else(|error| unreachable!("{error}"))
+    }
+
+    /// A growing child's negative margin reaches the container's own height.
+    ///
+    /// **The row that says the compensation fires.** Without
+    /// `compensate_dropped_margins` the container comes out at the child's own
+    /// height with the margin discarded, and the child is grown into that wrong
+    /// height as well. Deleting the call reddens this.
+    #[test]
+    fn a_growing_child_s_negative_margin_reaches_the_container() {
+        let (mut scene, page) = scene_with_page(903.0, 2000.0);
+        // A column page, content-sized: the shape the defect needs is a
+        // container whose own main size is automatic. A row page stretches its
+        // children on the cross axis, which is the height here, and the
+        // container never resolves its own.
+        scene.content_height = true;
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.flex_direction = FlexDirection::Column;
+        }
+        let container = scene
+            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(container) {
+            node.layout.display = Display::Flex;
+            node.layout.flex_direction = FlexDirection::Column;
+            node.layout.size = (Dimension::Points(903.0), Dimension::Auto);
+        }
+        let child = scene
+            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(child) {
+            node.layout.size =
+                (Dimension::Points(476.0), Dimension::Points(500.0));
+            node.layout.flex_grow = 1.0;
+            node.layout.margin.top = Dimension::Points(-24.0);
+        }
+
+        // **A second child with a different margin, because one child cannot
+        // tell the sum from the largest.** With `-24` alone the two rules give
+        // the same number, and a compensation folding with `f32::min` instead
+        // of summing passes every other row in this tree. Two children at `-24`
+        // and `-10` separate them by 10: Chrome gives 366 and the rival gives
+        // 376.
+        let second = scene
+            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(second) {
+            node.layout.size =
+                (Dimension::Points(476.0), Dimension::Points(200.0));
+            node.layout.flex_grow = 1.0;
+            node.layout.margin.top = Dimension::Points(-10.0);
+        }
+        // An `auto` edge beside the length one, which the first version of
+        // `main_axis_margin` dropped the whole child for.
+        if let Some(node) = scene.get_mut(second) {
+            node.layout.margin.bottom = Dimension::Auto;
+        }
+
+        let result = solved(&scene, page);
+        let container_height = result.rects[&container].size.height;
+        let child_height = result.rects[&child].size.height;
+        // Chrome's answer for this scene, measured on the page: the
+        // container, both children, and the positions.
+        assert!(
+            (container_height - 666.0).abs() < 0.01,
+            "children carry margins of -24 and -10 and the container came out \
+             {container_height}; Chrome gives 666. 676 is what reaches this \
+             assertion when only one of the two is applied, by whichever \
+             route"
+        );
+        assert!(
+            (child_height - 500.0).abs() < 0.01,
+            "child {child_height}, Chrome 500"
+        );
+    }
+
+    /// A percentage margin reaches the container's height too.
+    ///
+    /// **The row that stopped a carve-out shipping.** `main_axis_margin` nearly
+    /// excluded percentages as unmeasured; the sweep found taffy drops one on a
+    /// growing child exactly as it drops a length -- container 500 against
+    /// Chrome's 409.70, the child grown to 590.30 against Chrome's 500 -- so
+    /// the exclusion would have been a live divergence recorded as a scope
+    /// note.
+    #[test]
+    fn a_percentage_margin_reaches_the_container() {
+        let (mut scene, page) = scene_with_page(903.0, 2000.0);
+        scene.content_height = true;
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.flex_direction = FlexDirection::Column;
+        }
+        let container = scene
+            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(container) {
+            node.layout.display = Display::Flex;
+            node.layout.flex_direction = FlexDirection::Column;
+            node.layout.size = (Dimension::Points(903.0), Dimension::Auto);
+        }
+        let child = scene
+            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(child) {
+            node.layout.size =
+                (Dimension::Points(476.0), Dimension::Points(500.0));
+            node.layout.flex_grow = 1.0;
+            node.layout.margin.top = Dimension::Percent(-0.10);
+        }
+
+        // **Half a pixel, because this path rounds and Chrome's answer is not
+        // integral.** `solve` leaves taffy's rounding on, so a container Chrome
+        // puts at 409.70 lands on 410 here; the length rows above assert
+        // exactly because their answers are whole numbers. The discrimination
+        // is unaffected -- uncompensated this is 500.
+        let result = solved(&scene, page);
+        let height = result.rects[&container].size.height;
+        assert!(
+            (height - 409.70).abs() < 0.5,
+            "container {height}, Chrome 409.70"
+        );
+    }
+
+    /// A clipping grid item stops an ancestor ignoring a negative margin.
+    ///
+    /// **The row that says the grid clause fires**, and it is a different
+    /// defect from the one above: here taffy's geometry is already right -- the
+    /// strip sits at its margin with its own height -- and only the ancestor's
+    /// own size ignores it. Deleting the call, or dropping `Overflow::Scroll`
+    /// from the clause and running the `scroll` spelling, reddens this.
+    #[test]
+    fn a_clipping_grid_item_reaches_an_ancestor_s_height() {
+        for overflow in [Overflow::Hidden, Overflow::Scroll] {
+            let (mut scene, page) = scene_with_page(400.0, 2000.0);
+            scene.content_height = true;
+            if let Some(node) = scene.get_mut(page) {
+                node.layout.flex_direction = FlexDirection::Column;
+            }
+            let parent = scene
+                .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(parent) {
+                node.layout.display = Display::Flex;
+                node.layout.flex_direction = FlexDirection::Column;
+            }
+            let strip = scene
+                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(strip) {
+                node.layout.display = Display::Flex;
+                node.layout.flex_direction = FlexDirection::Column;
+                node.layout.margin.top = Dimension::Points(-32.0);
+            }
+            let grid = scene
+                .push(strip, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(grid) {
+                node.layout.display = Display::Grid;
+                node.layout.grid_template_columns =
+                    vec![TrackSize::Points(100.0)];
+            }
+            let item = scene
+                .push(grid, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(item) {
+                node.layout.display = Display::Flex;
+                node.layout.flex_direction = FlexDirection::Column;
+                node.layout.overflow = (overflow, overflow);
+            }
+            let content = scene
+                .push(item, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(content) {
+                node.layout.size =
+                    (Dimension::Points(100.0), Dimension::Points(100.0));
+            }
+
+            let height = solved(&scene, page).rects[&parent].size.height;
+            assert!(
+                (height - 68.0).abs() < 0.01,
+                "{overflow:?}: ancestor {height}, Chrome 68"
+            );
+        }
     }
 
     /// A box as wide as the ceiling still fills the space it is given.

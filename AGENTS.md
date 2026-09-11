@@ -769,10 +769,15 @@ that findable from the compensation rather than only from the probe.
 fn the_dependency_still_gets_this_right() {
 ```
 
-**A probe that compensates nothing carries no marker**, and
-`taffy_negative_margin.rs` is the case: it pins inherited defects nothing in
-this tree works around, so no code rests on it and there is no property to name.
-The marker belongs to the pair, not to the genre.
+**A probe that compensates nothing carries no marker**: it pins a defect nothing
+in this tree works around, so no code rests on it and there is no property to
+name. The marker belongs to the pair, not to the genre.
+
+**No file is named as the example, and that is the rule rather than an
+omission.** Which probes carry a marker changes as the tree changes -- the file
+that illustrated this paragraph gained a compensation and stopped illustrating
+it -- so naming one freezes a fact that is meant to move. `git grep` for the
+marker answers the question against the tree of the day.
 
 **A check enumerating every tagged site and asserting each still has a live
 probe runs in `portable`**, beside `issue-refs` and `gate-lists-check`:

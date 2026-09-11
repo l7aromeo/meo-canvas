@@ -220,3 +220,37 @@ another shape worse, the entry names that shape rather than leaving it to be met
   DioxusLabs/taffy#804, and
   `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fails the day taffy stops
   needing it. (#123)
+
+- A negative main-axis margin on a flex item with `flex_grow` was dropped from
+  the container's resolved size, and the item was grown to the wrong size with
+  it. A 903-wide `FlexDirection::Column` holding a 500-tall child at
+  `margin.top` of `Dimension::Points(-24.0)` solved to 500 against Chrome's 476,
+  and the child came out 524 rather than its own 500.
+
+  **Both halves scale with the margin and neither is the one met first.** Every
+  negative margin on a growing child was dropped rather than one — two 200-tall
+  children at `-24` and `-10` solved to 400 against Chrome's 366 — and
+  `Dimension::Percent` margins went the same way, `-0.10` of a 903-wide
+  container solving to 500 against 409.7. A margin smaller than the rounding
+  granularity was not observable either way.
+
+  `flex_grow` of zero was correct, a positive margin was correct, a row
+  direction was correct, and a definite main size was correct. A container
+  stretched by its parent never resolves its own main size and never reached
+  this.
+
+- A grid item at `Overflow::Hidden` or `Overflow::Scroll` made an ancestor's
+  resolved height ignore a negative margin: a strip at `-32.0` above a grid
+  holding a 100-tall clipping item solved to 100 against Chrome's 68.
+
+  **`Scroll` is affected exactly as `Hidden` is**, and the grouping is by the
+  automatic minimum size taffy gives an item rather than by whether the box
+  clips — `Clip` and `Visible` take that minimum from content and are both
+  correct here. `Overflow` in the scene carries no `Clip`, so the value that
+  behaves differently is the one a scene cannot express.
+
+  **Both are workarounds and both are marked as such.** `[WORKAROUND]` in
+  `crates/meo-canvas-core/src/layout.rs` names DioxusLabs/taffy#1162 and
+  DioxusLabs/taffy#1163, and
+  `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fails the day taffy
+  stops needing either. (#107)
