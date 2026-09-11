@@ -163,6 +163,18 @@ fn a_grown_main_size_never_reaches_the_ratio() {
     }
 }
 
+// [FOUNDATION] the property `compensate_ratio_direction`'s third arm rests on:
+// **taffy grows the main size to the number Chrome gives.** The compensation
+// reads that solved main size and multiplies it by the ratio, so the `grow with
+// no ratio` row below -- `0 x 248`, Chrome's own answer -- is the 248 every
+// derived cross size is computed from.
+//
+// If taffy's growth stopped being Chrome's, the compensation would derive a
+// width from a wrong height and **every conformance row would stay green**: no
+// table in this tree has a grown flex item with a ratio in it except
+// `flex-ratio-cross.tsv`, whose rows are all computed from the same wrong
+// number and would move together. The first sign would be a golden shifting
+// with nothing saying why.
 #[test]
 fn the_rows_taffy_gets_right_agree_with_chrome() {
     // The controls, and each removes one suspect. A percentage main size

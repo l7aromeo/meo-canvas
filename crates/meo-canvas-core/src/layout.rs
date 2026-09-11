@@ -691,6 +691,23 @@ fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
     node.layout.aspect_ratio.is_some_and(usable_ratio)
 }
 
+/// How far a correctly derived cross size may sit from `main x ratio`.
+///
+/// **One pixel, because taffy rounds each edge and a size is the difference of
+/// two of them.** Half a pixel per edge, and the sign depends on where the box
+/// sits, so a row that is already Chrome's answer reads 210 against 210.8 at
+/// ratio 0.85 and 82 against 82.67 at ratio 1/3 -- measured on rows this tree
+/// agrees with the browser about. An `f32::EPSILON` comparison would call every
+/// non-integer ratio a divergence and compensate a box that is already right.
+///
+/// **The magnitude has a gap around it rather than being tuned.** The largest
+/// rounding artefact measured is one pixel; the smallest genuine divergence is
+/// 218 -- a flex item with a 30-pixel child reading 30 where the ratio wants
+/// 248. `derived-tolerance-rounds` and `derived-tolerance-diverges` in
+/// `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv` sit on either
+/// side of it.
+const DERIVED_TOLERANCE: f32 = 1.0;
+
 /// Whether a declared aspect ratio is one at all.
 ///
 /// A ratio is a positive finite number or it is not a ratio, and Chrome lays
@@ -1085,6 +1102,40 @@ where
     // candidate list is the iteration order in both places.
     let mut cleared: Vec<(taffy::NodeId, f32, f32)> = Vec::new();
     let mut pins: Vec<(taffy::NodeId, f32)> = Vec::new();
+    // [WORKAROUND] taffy applies a ratio's transferred size only where the item
+    // already has a cross contribution of its own, so a grown flex item with
+    // nothing in it keeps a cross size of zero where the ratio should turn its
+    // main size into one. Chrome derives it regardless -- a 248-tall item at
+    // ratio 1 is 248 wide there and 0 here. `DioxusLabs/taffy#804`, reported as
+    // `l7aromeo/meo-canvas#123`.
+    //
+    // Retires when `a_grown_main_size_never_reaches_the_ratio` in
+    // `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins what
+    // taffy does today, so the day a release derives the cross size that test
+    // fails and names this block. `DioxusLabs/taffy#1182` is the likely
+    // carrier and is not the trigger -- whichever release carries it is.
+    //
+    // **The condition is the outcome, not the construction.** Four causes give
+    // one symptom -- an empty item, padding alone, a border alone, and a flex
+    // item whose content is narrower than the derivation -- and a predicate
+    // written from any of them is wrong about the other three. Measured, all
+    // five `align-items` values behave alike, a grow of 2 and two competing
+    // siblings behave alike, and the ratio's value does not matter, so none of
+    // those is a clause here.
+    //
+    // **The item's own `display` is not a clause either, deliberately.** It
+    // changes the answer in taffy -- a block item with content gets the
+    // derivation and a flex item with the same content does not -- and changes
+    // nothing in Chrome, where all four combinations are 248x248. A predicate
+    // reading it would write a taffy artefact into this renderer's source.
+    //
+    // **Not compensated: the stretched family.** `align-items: stretch` with a
+    // ratio wants a main size derived from the stretched cross size, and
+    // Chrome's answer overflows its line -- 424x424 in a 248-tall content box.
+    // That is correct and `DioxusLabs/taffy#1182` will produce it upstream;
+    // shipping it here first would be a layout change nobody asked for, in the
+    // direction that PR itself calls the one most likely to be read as a bug.
+    let mut derive: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
     for (id, ratio) in candidates {
         let solved = tree
             .layout(*id)
@@ -1092,6 +1143,13 @@ where
         cleared.push((*id, solved.size.width, solved.size.height));
         if solved.size.width / ratio >= solved.size.height {
             pins.push((*id, solved.size.width));
+            // **Disjoint by this inequality rather than by a scope.** The pin
+            // and the derivation read one comparison and take opposite
+            // branches of it, so a node reaching one cannot reach the other.
+            continue;
+        }
+        if let Some(size) = derived_cross(tree, *id, *ratio, solved.size) {
+            derive.push((*id, size));
         }
     }
 
@@ -1101,6 +1159,20 @@ where
             .map_err(|error| Error::Layout(error.to_string()))?
             .clone();
         style.aspect_ratio = Some(*ratio);
+        // The derivation taffy did not make, written as a length so the
+        // re-solve below carries it. Disjoint from the pin by the inequality
+        // that chose between them, so the two arms cannot both apply.
+        //
+        // **Both axes, and writing only the cross one changes nothing.**
+        // Measured: with the ratio back on the node, taffy re-derives the
+        // other axis from whichever one a bound clamps, so restricting this
+        // to the axis that carries the information moves no row in the
+        // twenty-seven. The main size written here is the one the solve
+        // already produced, so it says nothing new and costs nothing.
+        if let Some((_, size)) = derive.iter().find(|(node, _)| node == id) {
+            style.size.width = taffy::Dimension::length(size.width);
+            style.size.height = taffy::Dimension::length(size.height);
+        }
         if let Some((_, width)) = pins.iter().find(|(pinned, _)| pinned == id) {
             // **The pinned width stays on the style after the solve,
             // deliberately.** Nothing removes it, and nothing needs to:
@@ -1140,6 +1212,54 @@ where
     floor_ratio_heights(
         tree, candidates, &cleared, &pins, root, available, measure, baselines,
     )
+}
+
+/// The size a ratio'd item should have taken, or `None` if it already has it.
+///
+/// **Reads the solved tree rather than the style**, which is what makes one
+/// condition cover four causes: whatever produced the cross size -- content,
+/// padding, a border, or nothing at all -- the question is only whether it is
+/// the ratio's answer.
+///
+/// The main axis is the parent's, so a row container derives a height from a
+/// width and a column one a width from a height. A candidate whose parent is
+/// not a flex container is left alone: the defect is the flex algorithm's
+/// transferred size, and block layout reaches the ratio by another path.
+fn derived_cross(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    ratio: f32,
+    solved: taffy::Size<f32>,
+) -> Option<taffy::Size<f32>> {
+    let parent = tree.parent(id)?;
+    let parent_style = tree.style(parent).ok()?;
+    if !matches!(parent_style.display, taffy::Display::Flex) {
+        return None;
+    }
+    let row = matches!(
+        parent_style.flex_direction,
+        taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+    );
+    let (main, cross) = if row {
+        (solved.width, solved.height)
+    } else {
+        (solved.height, solved.width)
+    };
+    let want = if row { main / ratio } else { main * ratio };
+    if (cross - want).abs() <= DERIVED_TOLERANCE {
+        return None;
+    }
+    Some(if row {
+        taffy::Size {
+            width: main,
+            height: want,
+        }
+    } else {
+        taffy::Size {
+            width: want,
+            height: main,
+        }
+    })
 }
 
 /// Whether this box clips, which is what removes CSS's automatic minimum.

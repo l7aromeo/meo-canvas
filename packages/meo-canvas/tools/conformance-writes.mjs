@@ -66,7 +66,7 @@ const TOOLS = join(HERE, 'conformance')
  * below, and they happened to move together only because one change brought
  * both.
  */
-const FLOOR = 20
+const FLOOR = 22
 
 /**
  * How many stamped `.tsv` tables there are today.
@@ -87,7 +87,7 @@ const FLOOR = 20
  * time a tool writes something that is not a table, or a table is produced by a
  * tool that already existed.
  */
-const STAMPED_FLOOR = 20
+const STAMPED_FLOOR = 22
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([

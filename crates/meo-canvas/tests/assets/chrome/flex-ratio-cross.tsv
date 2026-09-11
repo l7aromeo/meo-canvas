@@ -1,0 +1,42 @@
+# What a ratio does to a grown flex item’s cross size.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Container 440x264, border-box, 8px padding, so a 424x248 content box.
+# Written by packages/meo-canvas/tools/conformance/flexratiocross.mjs.
+#
+# `l7aromeo/meo-canvas#123`, upstream `DioxusLabs/taffy#804`. taffy applies
+# the transferred size only where the item has a cross contribution of its
+# own; Chrome derives it regardless.
+#
+# **The `display` column is the item’s own, and it is our axis rather than
+# CSS’s** — Chrome gives the same answer for all four combinations of
+# display and content, and taffy does not. A row differing by it is evidence
+# about taffy.
+#
+# key	width	height	display	note
+center	248.00	248.00	default	the reported shape
+flex-start	248.00	248.00	default	predicted to differ from centre and does not
+flex-end	248.00	248.00	default	nor does this
+baseline	248.00	248.00	default	nor this
+ratio 0.5	124.00	248.00	default	below 1
+ratio 2	496.00	248.00	default	above 1, and wider than the container
+ratio 8	1984.00	248.00	default	the derivation overflows by 1560
+two siblings	124.00	124.00	default	each takes half the free space
+item padding	248.00	248.00	default	the padding is a contribution and is not the ratio
+item border	248.00	248.00	default	so is a border
+item flex with content	248.00	248.00	flex	a contribution narrower than the derivation
+item block with content	248.00	248.00	block	the one taffy gets right, and only as a block
+item clips	248.00	248.00	default	the item is a scroll container
+container clips	248.00	248.00	default	the container is
+wrap	248.00	248.00	default	taffy carries !is_wrap nearby and this does not need it
+control no grow	0.00	0.00	default	control: nothing grown, nothing to derive from
+control no ratio	0.00	248.00	default	control: nothing to transfer
+control auto container	0.00	0.00	default	control: nothing to grow into
+control height 100%	248.00	248.00	default	control: a percentage main size already reaches the ratio
+control row container	424.00	424.00	default	control: the axes swap and it is already right
+control stretch no main	424.00	424.00	default	control: DioxusLabs/taffy#1081 family, and we agree
+derived-tolerance-rounds	82.66	248.00	default	a correct row 0.67 from main x ratio: must read as equal
+derived-tolerance-diverges	248.00	248.00	flex	a wrong row 218 from it: must not
+pin-fires-min-width	300.00	300.00	default	width/ratio >= height: the pin takes it, not this
+pin-quiet-empty	248.00	248.00	default	width/ratio < height: this takes it, not the pin
+uncompensated stretch	424.00	424.00	default	the derivation overflows its line; upstream has not shipped it
+known max-width	100.00	248.00	default	a maximum binding the cross axis does not transfer back here
