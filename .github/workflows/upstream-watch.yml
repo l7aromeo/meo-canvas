@@ -1,0 +1,100 @@
+name: upstream-watch
+
+# What upstream has done about the defects this tree works around.
+#
+# # The window this closes
+#
+# A **released** upstream fix already goes red without this: Dependabot opens a
+# bump, `just ci` runs, and the probe beside the workaround fails with a message
+# naming the `[WORKAROUND]` to delete. That chain has no gap in it.
+#
+# A fix that is **merged and in no release** is invisible to every part of it.
+# Dependabot sees published versions, so there is nothing to bump, so nothing
+# runs and nothing goes red. The taffy fix this tree compensates for was merged
+# twenty hours after the release that would have carried it and sat in no
+# release for weeks; it was noticed because somebody looked by hand. This is the
+# thing that looks instead.
+#
+# **The example is described rather than cited, and that is load-bearing.** A
+# reference spelled here is a reference the tool watches, so a row would go on
+# being reported by the prose explaining the tool long after the workaround it
+# names was deleted -- and the claim that this clears itself would be false.
+# The rows follow the references in the code; nothing that merely talks about
+# the mechanism may spell one.
+#
+# # Why a schedule, where `cache-prune` uses `workflow_run`
+#
+# A superseded cache entry comes into existence at one identifiable moment, so
+# the pruner fires at the cause. **An upstream merge has no moment on this side
+# at all** -- nothing in this repository changes when it happens, which is
+# exactly why the window is invisible. A clock is the only trigger available,
+# and weekly is chosen against the cost of being wrong: the state it reports is
+# standing rather than transient, so a week's delay is a week, not a miss.
+#
+# # It reads, and it writes nothing anywhere
+#
+# `contents: read` and nothing else. The tool queries GitHub about the
+# repositories this tree cites and changes none of them. Anything it finds
+# becomes an issue on this tracker, raised by a person.
+#
+# # What a red here means, and why it is red rather than logged
+#
+# This is not on a pull request's critical path: no change anyone makes turns it
+# red, and nothing about the diff is being judged. **It goes red on two things
+# only.**
+#
+# A reference it could not query -- a rate limit, a network failure, a renamed
+# repository. Each returns no findings, and no findings is what a quiet week
+# looks like, so a watcher that cannot see must not report a clean one.
+#
+# And a fix merged into no release, which is the window this file exists for.
+# **A finding inside a green scheduled run is a finding nobody reads**: nothing
+# draws a person to the log of a job that says it succeeded. The ask was that an
+# error or a gate should appear for the workaround, and a green tick is neither.
+#
+# **It stays red for as long as there is something to do and clears itself when
+# that is done** -- the row follows the reference in the tree, so deleting the
+# workaround and its citation is what makes this green again. A scheduled job
+# that is permanently red would be a fair objection if the red were not
+# actionable; this one names a file, a line and a deletion.
+#
+# **The name states the trigger and claims no result.** A run name is evaluated
+# before the step runs, so any verdict it states is a second guess at what the
+# step will decide -- which is how `cache-prune`'s name came to label a deleting
+# run a dry run.
+run-name: upstream-watch — ${{ github.event_name }}
+
+on:
+  schedule:
+    # Mondays, 07:00 UTC. A weekday morning rather than a weekend, so the run
+    # that finds something lands where somebody is present to read it.
+    - cron: '0 7 * * 1'
+  # The first run of a new workflow and any run after an upstream release both
+  # want a person's finger on it, and a schedule gives neither.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: watch
+    runs-on: ubuntu-latest
+    # Seconds of API calls. The bound is on a wedged fetch, not on the work.
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+
+      - name: Watch
+        env:
+          # The default token reads public repositories, which is every
+          # repository this tree cites. A reference to a private one would come
+          # back as a 404 -- indistinguishable from a renamed repository, and
+          # loud for that reason rather than silently skipped.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: just upstream-watch

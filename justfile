@@ -1604,6 +1604,33 @@ cache-budget-check:
 cache-prune *args:
     node packages/meo-canvas/tools/cache-prune.mjs {{ args }}
 
+# What upstream has done about the defects this tree works around.
+#
+# **The gap is a fix that is merged and in no release.** A released fix already
+# goes red: Dependabot bumps the crate, the probe beside the workaround fails,
+# and its message names the `[WORKAROUND]` to delete. A fix merged upstream and
+# sitting in no release is invisible to all of it, because there is no published
+# version to bump. The taffy fix this tree compensates for sat in exactly that
+# state for weeks, having been merged twenty hours after the release that would
+# have carried it.
+#
+# The example is described rather than cited: a reference spelled in prose about
+# the tool is one the tool then watches, and the row would outlive the workaround
+# it names.
+#
+# Its input is the tree: every upstream reference in a comment, in both the
+# `owner/repo#N` and the full-URL spelling, through the same lexer `issue-refs`
+# uses. A pinned list of what to watch is the thing that goes stale exactly when
+# it matters.
+#
+# **Not in `ci-steps`**, for the reason `cache-prune` and `audit` are not: it
+# reaches the network, and it asks about the world rather than about the diff. A
+# gate that fails because GitHub is rate-limiting is a gate that has stopped
+# being about the change.
+[doc("Report what upstream has done about the defects this tree works around.")]
+upstream-watch:
+    node packages/meo-canvas/tools/upstream-watch.mjs
+
 # The two release channels, and the filter that decides which of them gets a
 # JavaScript reference.
 #
