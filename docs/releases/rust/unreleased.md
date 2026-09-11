@@ -205,15 +205,21 @@ another shape worse, the entry names that shape rather than leaving it to be met
   so the title and this paragraph disagree and this paragraph is the later
   reading.
 
-  **Two cases remain divergent, both on purpose.** An item wanting a main size
+  **A `max_size` bound on the cross axis clamps that axis alone**, which is
+  Chrome's rule: a grown item at `aspect_ratio: 1` under a `max_size` width of
+  100 solves to `100 x 248` rather than `100 x 100`, and at a width of 1 to
+  `1 x 248` rather than `1 x 1` -- the error scaled with the bound. taffy
+  transfers a maximum through the ratio and clamps the main size with it; the
+  compensation applies the maximum to the cross size itself and takes it off
+  the style, so nothing is left to transfer. A maximum on the main axis is
+  unchanged and still lets the ratio settle the cross. (#129)
+
+  **One case remains divergent, on purpose.** An item wanting a main size
   derived from a stretched cross size solves to `424 x 248` against Chrome's
   `424 x 424`, which overflows its own 248-tall line. It is left alone because
   producing an overflowing box ahead of the engine underneath is a layout change
   nobody asked for; DioxusLabs/taffy#1182 proposes to make it taffy's answer
-  and is open rather than merged, so nothing about the timing is settled. And a
-  `max_size` binding the cross axis takes the other axis with it, so a
-  maximum-bound item solves to `100 x 100` against Chrome's `100 x 248`; that is
-  (#129).
+  and is open rather than merged, so nothing about the timing is settled.
 
   **It is a workaround rather than a fix, and it is marked as one in the
   source.** `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs` names
@@ -231,7 +237,9 @@ another shape worse, the entry names that shape rather than leaving it to be met
   negative margin on a growing child was dropped rather than one — two 200-tall
   children at `-24` and `-10` solved to 400 against Chrome's 366 — and
   `Dimension::Percent` margins went the same way, `-0.10` of a 903-wide
-  container solving to 500 against 409.7. A margin smaller than the rounding
+  container with no padding solving to 500 against 409.7 -- a case that
+  witnesses the drop and not what the percentage resolved against, which an
+  unpadded container cannot separate. A margin smaller than the rounding
   granularity was not observable either way.
 
   `flex_grow` of zero was correct, a positive margin was correct, a row
@@ -254,3 +262,21 @@ another shape worse, the entry names that shape rather than leaving it to be met
   DioxusLabs/taffy#1163, and
   `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fails the day taffy
   stops needing either. (#107)
+
+- A `FlexWrap::WrapReverse` container with a percentage `padding.bottom` placed
+  its overflowing lines twenty pixels low. A 200-wide box inside a 400-wide
+  parent at `Length::Percent(0.10)` resolved the padding to `20` where CSS
+  gives `40`.
+
+  A percentage padding resolves against the containing block's content width,
+  and this resolved it against the node's own border box — the wrong box and
+  the wrong edge, two errors that cancel exactly when the node is stretched to
+  its parent and carries no padding of its own. That is the default shape,
+  which is why a node needed both a width of its own and a percentage padding
+  before anything moved.
+
+  The solve was never wrong: taffy resolves the padding correctly and the
+  rectangles it produces already carry it. Only `bottom_align_reversed_wraps`
+  derived the number a second time, and it now reads what `collect` recorded
+  from the same `Layout`. A container whose lines fit inside it never reached
+  that path at all. (#141)

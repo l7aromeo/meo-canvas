@@ -240,3 +240,102 @@ fn the_rows_taffy_gets_right_agree_with_chrome() {
         );
     }
 }
+
+/// A grown item's solved size with a written size and an optional cross-axis
+/// maximum, in a `424x248` column.
+///
+/// Written rather than derived, because that is the state
+/// `compensate_ratio_direction` leaves a node in before the second solve: the
+/// compensation has already put a size on both axes and the question is what
+/// taffy does with the maximum still sitting beside them.
+fn written_with_maximum(
+    ratio: Option<f32>,
+    max_width: Option<f32>,
+) -> (f32, f32) {
+    let mut tree: TaffyTree<()> = TaffyTree::new();
+    let mut style = Style {
+        flex_grow: 1.0,
+        aspect_ratio: ratio,
+        size: Size {
+            width: Dimension::length(100.0),
+            height: Dimension::length(248.0),
+        },
+        ..Default::default()
+    };
+    if let Some(limit) = max_width {
+        style.max_size.width = LengthPercentageAuto::length(limit);
+    }
+    let child = tree
+        .new_leaf(style)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let column = tree
+        .new_with_children(
+            Style {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                size: Size {
+                    width: Dimension::length(424.0),
+                    height: Dimension::length(248.0),
+                },
+                ..Default::default()
+            },
+            &[child],
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    tree.compute_layout(
+        column,
+        Size {
+            width: AvailableSpace::Definite(424.0),
+            height: AvailableSpace::Definite(248.0),
+        },
+    )
+    .unwrap_or_else(|error| unreachable!("{error}"));
+    let solved = tree
+        .layout(child)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    (solved.size.width, solved.size.height)
+}
+
+/// taffy transfers a cross-axis maximum through the ratio and clamps the main
+/// size with it, where Chrome clamps only the axis the maximum was written on.
+#[test]
+fn a_cross_maximum_transfers_into_the_main_size() {
+    let (width, height) = written_with_maximum(Some(1.0), Some(100.0));
+    assert!(
+        (width - 100.0).abs() < 0.01 && (height - 100.0).abs() < 0.01,
+        "taffy gives {width} x {height} for a written 100x248 at ratio 1 under \
+         `max-width: 100px`, where it gave 100 x 100. Chrome gives 100 x 248: \
+         the maximum clamps the axis it is written on and the main size keeps \
+         the line's. If this is now 100 x 248 the transfer is gone and the \
+         `[WORKAROUND]` for `l7aromeo/meo-canvas#129` in \
+         `crates/meo-canvas-core/src/layout.rs` can be deleted"
+    );
+}
+
+// [FOUNDATION] the property the `l7aromeo/meo-canvas#129` compensation rests
+// on: **with no maximum on the style, the main size the compensation writes is
+// the main size taffy solves.** The repair is to apply the maximum itself and
+// take it off the style, which buys nothing if a written main size does not
+// hold on its own.
+//
+// It is the third row of the isolation that found the mechanism, and the one
+// that separates *the maximum transfers* from *a definite cross drags the main
+// down*: the same written pair with the ratio and no maximum keeps 248.
+//
+// If this stopped holding, the compensation would remove the maximum and still
+// get the wrong main size, and every row of `flex-ratio-cross.tsv` would go red
+// at once rather than silently -- which is the good case, and is why this row
+// is cheap insurance rather than the only thing standing between us and a
+// silent failure.
+#[test]
+fn a_written_main_size_holds_without_a_maximum() {
+    let (width, height) = written_with_maximum(Some(1.0), None);
+    assert!(
+        (width - 100.0).abs() < 0.01 && (height - 248.0).abs() < 0.01,
+        "taffy gives {width} x {height} for a written 100x248 at ratio 1 with \
+         no maximum, where it gave 100 x 248. The compensation for \
+         `l7aromeo/meo-canvas#129` writes a main size and removes the maximum so that nothing transfers into it; \
+         if a written main size no longer holds, removing the maximum is not \
+         what makes it hold and the compensation is resting on nothing"
+    );
+}

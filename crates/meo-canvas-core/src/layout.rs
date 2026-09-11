@@ -246,6 +246,31 @@ where
     // [WORKAROUND] `compensate_ratio_direction` explains this pair; the ratios
     // come off before the solve so it reports a fit-content inline size, and go
     // back on after it.
+    // [WORKAROUND] every compensation below decides by comparing two solved
+    // sizes, and taffy rounds each edge, so a size is the difference of two
+    // rounded numbers and a decision could read a rounding artefact as a
+    // divergence. Measured: a percentage minimum resolving to `339.20` against
+    // a width taffy rounded to `340` missed its clause, and which percentages
+    // missed alternated with the fractional part -- `79` bound, `80` missed,
+    // `85` bound, `90` missed. `l7aromeo/meo-canvas#140`.
+    //
+    // Retires when the comparisons no longer read solved sizes, which is the
+    // same day the three compensations below retire; there is no upstream fix
+    // to wait for, because the rounding is taffy doing what it is asked.
+    //
+    // **No solve precedes this line**, which is what makes every read below
+    // unrounded by construction rather than by inspection. A mixed comparison
+    // -- one operand from a rounded pass, one from an unrounded one -- would
+    // be wrong by up to half a pixel in the pass whose point is exactness, and
+    // the way to be sure of that is not to enumerate the reads. Six sites read
+    // solved geometry in this file and a seventh added next month would not
+    // appear in any list written today; what holds is that the first
+    // `compute_layout` in this function is the one below, so anything a
+    // compensation reads was produced with rounding off.
+    //
+    // The one read outside the region is [`collect`], after the rounded pass,
+    // and it is the geometry a caller gets rather than an input to a decision.
+    tree.disable_rounding();
     let candidates = ratio_direction_candidates(scene, &tree, &to_scene);
     clear_ratios(&mut tree, &candidates)?;
     solve_once(&mut tree, root, available, measure, &mut baselines)?;
@@ -273,10 +298,21 @@ where
         &mut baselines,
     )?;
 
+    // **One extra pass, and the cheaper alternative is refused on purpose.**
+    // Re-enabling rounding before whichever solve happens to be last inside
+    // the compensations would save this one -- and would make *which
+    // compensation runs last* load-bearing. Two were added tonight and a third
+    // refused; the next one would have to know it inherited that duty, and
+    // nothing would say so. The pass is the price of the compensations being
+    // independent of each other.
+    tree.enable_rounding();
+    baselines.clear();
+    solve_once(&mut tree, root, available, measure, &mut baselines)?;
+
     let mut rects = HashMap::with_capacity(to_scene.len());
     let mut insets = HashMap::with_capacity(to_scene.len());
     collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects, &mut insets)?;
-    bottom_align_reversed_wraps(scene, page, &mut rects);
+    bottom_align_reversed_wraps(scene, page, &insets, &mut rects);
 
     Ok(LayoutResult {
         rects,
@@ -318,6 +354,7 @@ where
 fn bottom_align_reversed_wraps(
     scene: &Scene,
     page: NodeId,
+    insets: &HashMap<NodeId, Sides<f32>>,
     rects: &mut HashMap<NodeId, Rect>,
 ) {
     let mut pending = vec![page];
@@ -357,17 +394,24 @@ fn bottom_align_reversed_wraps(
 
         // The content box's own bottom: the border box less the edges taffy
         // took off before it placed anything.
-        // A percentage padding resolves against the containing block's
-        // width, which for this node's own padding is its own width.
-        let padding = match node.layout.padding.bottom {
-            Length::Points(points) => points,
-            Length::Percent(fraction) => fraction * rect.size.width,
+        //
+        // **Read from [`collect`] rather than derived again**, which is the
+        // whole of the repair. Re-deriving it here resolved a percentage
+        // against this node's own border box, where CSS resolves it against
+        // the containing block's content box -- two errors that cancel on a
+        // stretched child with no padding of its own, which is the default
+        // shape and is why nothing caught it. `collect` takes both edges from
+        // the `Layout` taffy solved, so the number here is the room taffy
+        // actually reserved rather than a second implementation of the rule
+        // that decides it.
+        //
+        // A node with no entry is one `collect` did not reach, which is a node
+        // with no rectangle either; the `rects` lookup above has already
+        // returned for that case, so this cannot be the first place a missing
+        // node is noticed.
+        let Some(inset) = insets.get(&id).map(|sides| sides.bottom) else {
+            continue;
         };
-        // The used width, as everywhere else: this inset has to agree with
-        // the room taffy reserved, or the stack lands on the wrong edge.
-        let inset = used_border(node.layout.border, node.paint.border_style)
-            .bottom
-            + padding;
         let content_bottom = rect.bottom() - inset;
         let shift = content_bottom - bottom;
         if shift >= 0.0 {
@@ -718,20 +762,82 @@ fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
 
 /// How far a correctly derived cross size may sit from `main x ratio`.
 ///
-/// **One pixel, because taffy rounds each edge and a size is the difference of
-/// two of them.** Half a pixel per edge, and the sign depends on where the box
-/// sits, so a row that is already Chrome's answer reads 210 against 210.8 at
-/// ratio 0.85 and 82 against 82.67 at ratio 1/3 -- measured on rows this tree
-/// agrees with the browser about. An `f32::EPSILON` comparison would call every
-/// non-integer ratio a divergence and compensate a box that is already right.
+/// **Float representation, not rounding.** Both operands reach this comparison
+/// unrounded -- `l7aromeo/meo-canvas#140` takes the decision passes off taffy's
+/// rounding -- so the pixel this used to allow has no reason left. What remains
+/// is that `cross` and `main x ratio` are two `f32`s arrived at by different
+/// routes and are not bit-equal when they should be: measured, a candidate
+/// whose real difference is `0.6` reports `-0.6000003815`, which is `3.8e-7`
+/// of residue on a quantity of 30. `==` would refuse to fire on a shape no
+/// table contains.
 ///
-/// **The magnitude has a gap around it rather than being tuned.** The largest
-/// rounding artefact measured is one pixel; the smallest genuine divergence is
-/// 218 -- a flex item with a 30-pixel child reading 30 where the ratio wants
-/// 248. `derived-tolerance-rounds` and `derived-tolerance-diverges` in
-/// `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv` sit on either
-/// side of it.
-const DERIVED_TOLERANCE: f32 = 1.0;
+/// **Chosen for the regime it guards, and the regime is named.** Four facts,
+/// each measured:
+///
+/// - it is below `0.6`, the smallest real difference **on the two conformance
+///   tables**, so it absorbs no divergence those tables contain
+/// - it is above the accumulated error **at the sizes those tables cover**,
+///   where `k` -- the expression is a multiply and a subtract over operands
+///   with their own history, so the error is `k` ULPs rather than one -- never
+///   exceeds `0.235`, measured by evaluating the same expression in `f64` from
+///   the widened `f32` operands and differencing
+/// - at 16384 it is **two percent** above that error rather than a multiple of
+///   it: a node just under its derivation at ratio `0.85` reports `delta
+///   0.009766` against `one ULP 0.001660`, so `k` is `5.882` there --
+///   twenty-five times the figure the tables give, because `k` is a property of
+///   the regime rather than of the expression
+/// - and beyond roughly 16400 it is **under** one accumulation, so the arm
+///   below fires where it need not
+///
+/// **No absolute value does better.** `FINITE_CEILING` is `3.3554432e7`, where
+/// one ULP is `4.0`, so a tolerance that covered the ceiling would have to
+/// exceed `0.94` -- and stay under `0.6` to absorb nothing on the tables. That
+/// is empty. A quantity whose ULP spans seven orders of magnitude has no
+/// absolute tolerance that is right at both ends, and a different constant is
+/// not the fix.
+///
+/// **Being too generous is the safe direction at both ends.** Declining a
+/// candidate leaves a cross size already within `0.01` of its derivation, and
+/// taffy quantises to whole pixels, so the value declined is correct beyond
+/// anything observable. Firing where it need not writes `main x ratio` onto a
+/// node whose cross is already within a hair of it -- the number that was
+/// already there. Measured at 440, 16384, 1e6, 1e7 and 3.3e7, every result is
+/// exactly `side x 0.85` and none moves under nudges of `0`, `0.005` or `0.5`.
+///
+/// **A node exactly at its derivation reaches this arm only through an `f32`
+/// tie.** In exact arithmetic it cannot: `cross == want` makes
+/// `width / ratio == height`, the pin's `>=` is true, and the node takes the
+/// pin and leaves the loop -- so the tolerance arbitrates a cross *below* its
+/// derivation and nothing else. In `f32` the pin's operands do not round-trip,
+/// `(L * r) / r` is not `L`, and at the boundary the comparison misses by a
+/// unit in the last place and the node arrives here after all. The bite is
+/// bounded by one ULP of the operands either way, so the equality case is
+/// still not the one at risk -- but it is reachable rather than excluded, and
+/// the arm below carries the measurement.
+///
+/// **A relative tolerance would close both ends and is not worth adding.** It
+/// would stop a fire that produces the correct answer, so the constant would
+/// exist to avoid redundant work at sizes nobody asks for -- and it would need
+/// its own justification, its own row and its own review.
+/// `l7aromeo/meo-canvas#142` records that argument so the next person meets it
+/// rather than re-deriving it.
+///
+/// **`0.6` is the smallest real difference *in these two tables*, not a
+/// property of the renderer.** A small box at a ratio near one can produce a
+/// genuine difference under `0.01`, and by the paragraph above that case is
+/// benign: the derivation declines and the node keeps a value already correct
+/// to the pixel. The sixty-times figure describes what has been measured
+/// rather than a floor anything guarantees.
+///
+/// **No row pins it, and that is stated rather than implied.** Tightening both
+/// readers to an exact comparison and running all 26 rows at `1.0`, `0.01` and
+/// `0.0` paints identical output every time: taffy's rounding absorbs a
+/// sub-pixel write, so a magnitude anywhere in this gap is invisible to the
+/// tables. The bounds above are what justify it; nothing currently fails if it
+/// moves. Finding a shape whose painted output separates them would be
+/// searching for a row to justify a constant rather than measuring something
+/// the renderer needs.
+const DERIVED_TOLERANCE: f32 = 0.01;
 
 /// Whether a declared aspect ratio is one at all.
 ///
@@ -1272,31 +1378,29 @@ where
         // ratio-free solve an empty flex item is zero wide, so every
         // definite minimum binds there -- including one far under the
         // derivation -- and that node still needs the derivation arm.
-        // **Lengths only, and the gap is measured rather than assumed.** A
-        // percentage takes the `None` arm below, because comparing a raw
-        // percentage against a solved width is not a comparison. Measured in
-        // the `424x248` column with `aspect-ratio: 1`: a percentage minimum
-        // agrees with Chrome up to 70% -- `296.80 x 296.80` there against
-        // `296 x 297` here -- and diverges above it, `min-width: 80%` giving
-        // `340 x 248` against `339.19 x 339.19` and `100%` giving
-        // `424 x 248` against `424 x 424`. So the length case is fixed and
-        // the percentage case keeps the height frozen at the line, which is
-        // this defect with a different spelling. Resolving the percentage
-        // needs the containing block's width and is not done here:
-        // `l7aromeo/meo-canvas#136`.
+        // **A percentage resolves against the containing block's content
+        // width**, which is the same quantity a percentage margin resolves
+        // against one function down and is not the border box: measured,
+        // `min-width: 70%` of a 440-wide container with 8px of padding is
+        // Chrome's `296.80`, where the border box gives `308` -- which is
+        // exactly what the *unpadded* container gives, so a row without
+        // padding cannot tell the two apart. `l7aromeo/meo-canvas#136`.
         //
-        // **Not caused by this clause.** Before it, a binding length
-        // minimum behaved the way a percentage one still does, so the
-        // percentage case is where the length case was rather than
-        // somewhere this change put it.
+        // **The identity test needs both sides unrounded and that is why
+        // `l7aromeo/meo-canvas#140` exists.** Against a rounded width this
+        // missed on roughly half of all percentages, alternating with
+        // the fractional part: `339.20` against a width taffy rounded
+        // to `340` is not `>=`, so `80%` and `90%` kept the pin while
+        // `79%` and `85%` did not. With the decision passes unrounded
+        // all nine measured percentages bind.
         let min_binds = tree
             .style(*id)
             .ok()
-            .and_then(|style| match style.min_size.width.expand() {
-                taffy::ExpandedLengthPercentageAuto::Length(value) => {
-                    Some(value)
-                }
-                _ => None,
+            .and_then(|style| {
+                style.min_size.width.resolve_to_option(
+                    containing_inline_size(tree, *id),
+                    |_, _| 0.0,
+                )
             })
             .is_some_and(|value| value >= solved.size.width);
         if solved.size.width / ratio >= solved.size.height && !min_binds {
@@ -1350,11 +1454,83 @@ where
         // That is why `l7aromeo/meo-canvas#129` is not repaired by clamping
         // what this writes: the clamp reads the author's `max_size`, not the
         // size written here, so pre-clamping the derived cross moves no row.
+        let cross_is_height = parent_is_row(tree, *id);
         if let Some((_, size)) = derive.iter().find(|(node, _)| node == id) {
+            let mut size = *size;
+            // **The height branch runs, and away from one boundary its clamp
+            // does nothing.** `cross_is_height` is a row parent, so the cross
+            // is the block axis and the maximum is a `max-height`. For the
+            // clamp to matter the derived cross has to exceed the limit -- and
+            // a limit that low also caps the *cleared* width through the same
+            // transferred maximum, which makes the pin's
+            // `width / ratio >= height` true and takes the node out of this
+            // arm a branch earlier. In exact arithmetic that is a partition:
+            // either the pin has it or the `min` is a no-op.
+            //
+            // **In `f32` it is not, and this change is what exposed that.**
+            // `(L * r) / r` does not round-trip to `L`, so at the boundary the
+            // pin's comparison can miss by a unit in the last place, the node
+            // falls into this arm, and the clamp bites. **The worst bite is
+            // exactly one ULP of the limit**: `0.001953` throughout
+            // `[2^14, 2^15)` and `2.0` throughout `[2^24, 2^25)`, which is
+            // where `FINITE_CEILING` sits. That is arithmetic rather than a
+            // sample, and it is relative -- a pixel figure here would be true
+            // at today's scene sizes and quietly false at `1e7`.
+            //
+            // **No rate, deliberately.** How often the boundary is hit is a
+            // property of how `(width, ratio, limit)` are drawn rather than of
+            // this code: two sweeps over 200,000 triples gave `0.55%` and
+            // `1.05%` from different ranges for the ratio. A figure like that
+            // in a comment cannot be reproduced from what the comment says,
+            // and a later measurement landing elsewhere would read as the code
+            // having changed. The bound is the half that carries an argument.
+            //
+            // Reachable because `l7aromeo/meo-canvas#140` took the decision
+            // pass off taffy's rounding. `round_layout_inner` computes a size
+            // as `round(cumulative + w) - round(cumulative)`, so the pin used
+            // to compare integers and the raw product never reached it.
+            //
+            // Away from the boundary the measurements hold: across three
+            // ratios, four limits, grown and not, the branch fires with
+            // `limit` above the value it is clamping -- `limit=900
+            // before=424`, `limit=500 before=424`, `limit=300 before=212` --
+            // and every limit tight enough to bite sends the node to the pin,
+            // where `row max-height` in `flex-ratio-cross.tsv` covers it.
+            //
+            // Kept rather than deleted because the two branches are one
+            // statement about the cross axis, and because it is the branch
+            // that catches the boundary case: an error of one ULP is below
+            // what the rounded pass can express, and the alternative is
+            // reasoning about which sub-pixel errors survive rounding.
+            if let Some(limit) = take_cross_maximum(&mut style, cross_is_height)
+            {
+                if cross_is_height {
+                    size.height = size.height.min(limit);
+                } else {
+                    size.width = size.width.min(limit);
+                }
+            }
             style.size.width = taffy::Dimension::length(size.width);
             style.size.height = taffy::Dimension::length(size.height);
         }
         if let Some((_, width)) = pins.iter().find(|(pinned, _)| pinned == id) {
+            if let Some(limit) = take_cross_maximum(&mut style, cross_is_height)
+            {
+                // In a row the pin writes the *main* axis, so the cross is
+                // what the ratio derives from it; in a column the pinned
+                // width is itself the cross.
+                let cross = if cross_is_height {
+                    *width / ratio
+                } else {
+                    *width
+                };
+                let clamped = cross.min(limit);
+                if cross_is_height {
+                    style.size.height = taffy::Dimension::length(clamped);
+                } else {
+                    style.size.width = taffy::Dimension::length(clamped);
+                }
+            }
             // **The pinned width stays on the style after the solve,
             // deliberately.** Nothing removes it, and nothing needs to:
             // `collect` reads `tree.layout`, so what a `LayoutResult` reports
@@ -1435,7 +1611,18 @@ fn dropped_margin_candidates(
             // margin resolves against on every edge. The width is correct in
             // every measured cell -- the defect is confined to the main axis --
             // so reading it before the repair is sound.
-            let basis = tree.layout(*taffy_id).ok()?.size.width;
+            //
+            // **The content box rather than the border box.** `Layout::size` is
+            // the border box, and a container with padding resolves a child's
+            // percentage against the smaller number: measured, `-10%` in a
+            // 903-wide border-box container with 20px of padding is Chrome's
+            // `-86.30` against the border box's `-90.30`, and our container
+            // came out 450.00 against Chrome's 453.70 before this read the
+            // right quantity. An unpadded container cannot tell the two apart,
+            // which is why
+            // `a_percentage_margin_resolves_against_the_content_box`
+            // carries padding and the row beside it does not.
+            let basis = content_inline_size(tree, *taffy_id);
             let dropped = children_of(tree, *taffy_id)
                 .into_iter()
                 .filter_map(|child| {
@@ -1626,6 +1813,106 @@ fn children_of(
     id: taffy::NodeId,
 ) -> Vec<taffy::NodeId> {
     tree.children(id).unwrap_or_default()
+}
+
+/// The inline size a percentage on this node resolves against: the parent's
+/// **content** box, not its border box.
+///
+/// **Measured rather than assumed, and the two differ by the padding.** Chrome
+/// resolves `min-width: 70%` in a `440`-wide border-box container with `8px` of
+/// padding against the `424` content width and gives `296.80`; against the
+/// border box it would give `308`, which is what the same container with no
+/// padding gives -- so an unpadded container cannot tell the two apart and a
+/// row that pins this has to carry padding.
+///
+/// Zero when there is no parent, which makes a percentage resolve to zero and
+/// bind nothing. That is the conservative direction: the clause then leaves the
+/// pin alone, which is where the node was before any of this.
+fn containing_inline_size(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+) -> f32 {
+    tree.parent(id)
+        .map_or(0.0, |parent| content_inline_size(tree, parent))
+}
+
+/// A solved node's own content-box width.
+///
+/// **The border box less what the box reserves**, which is what a percentage
+/// on a child resolves against. `Layout::size` is the border box, so padding,
+/// border and any scrollbar come off it.
+fn content_inline_size(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+) -> f32 {
+    tree.layout(id).map_or(0.0, |solved| {
+        solved.size.width
+            - solved.padding.left
+            - solved.padding.right
+            - solved.border.left
+            - solved.border.right
+            - solved.scrollbar_size.width
+    })
+}
+
+/// Whether this node's parent lays out as a row, so its cross axis is the
+/// block one.
+fn parent_is_row(tree: &taffy::TaffyTree<NodeId>, id: taffy::NodeId) -> bool {
+    tree.parent(id)
+        .and_then(|parent| tree.style(parent).ok())
+        .is_some_and(|style| {
+            matches!(
+                style.flex_direction,
+                taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+            )
+        })
+}
+
+// [WORKAROUND] taffy transfers a cross-axis maximum through the ratio into the
+// main axis and clamps the main size with the result, where Chrome clamps only
+// the axis the maximum was written on -- `max-width: 100px` on a grown item at
+// ratio 1 gives `100 x 100` against Chrome's `100 x 248`, and the error is
+// `line - max`, so it is 247 at `max-width: 1px`. Reported as
+// `l7aromeo/meo-canvas#129`; the upstream defect is not filed, because taffy is
+// another team's repository and that is the maintainer's call to make.
+//
+// Retires when `a_cross_maximum_transfers_into_the_main_size` in
+// `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins the
+// transfer as taffy performs it today, so the release that stops performing it
+// turns that test red and names this block. Deleting it is deleting this
+// function and the two calls to it in [`compensate_ratio_direction`].
+//
+// **The clamp reads the author's `max_size` rather than the size written, so
+// pre-clamping what the compensation writes does nothing** -- measured, it
+// moved no row. Removing the maximum is what works, and applying it here first
+// is what makes removing it safe.
+//
+/// Removes the cross-axis maximum from `style` and returns it.
+///
+/// **Taking rather than reading, because the caller applies it itself.**
+/// Applying the maximum to the cross size and removing it from the style
+/// leaves nothing for taffy to transfer into the main axis.
+///
+/// **Lengths only, and unlike the minimum side this one is not resolved.**
+/// [`containing_inline_size`] would give a percentage maximum the same basis
+/// the minimum clause uses, and nothing here has measured what Chrome does
+/// with one -- so it stays on the style and the node behaves as it did before
+/// this clause. Unmeasured rather than refused.
+fn take_cross_maximum(
+    style: &mut taffy::Style,
+    cross_is_height: bool,
+) -> Option<f32> {
+    let slot = if cross_is_height {
+        &mut style.max_size.height
+    } else {
+        &mut style.max_size.width
+    };
+    let taffy::ExpandedLengthPercentageAuto::Length(limit) = slot.expand()
+    else {
+        return None;
+    };
+    *slot = taffy::LengthPercentageAuto::auto();
+    Some(limit)
 }
 
 /// The size a ratio'd item should have taken, or `None` if it already has it.
@@ -3018,6 +3305,63 @@ mod tests {
         );
     }
 
+    /// A percentage margin resolves against the container's content box.
+    ///
+    /// **The row above cannot pin the basis and this one can.** Its container
+    /// is 903 wide with no padding, where the content width and the border box
+    /// are the same number, so reading either gives `-90.30` and the row is
+    /// green whichever is read. With 20px of padding they are 863 and 903, and
+    /// Chrome resolves against the smaller: `-86.30`, container 453.70 against
+    /// the 450.00 the border box produces.
+    ///
+    /// Measured in Chrome on both box-sizing values, because the pair is what
+    /// shows the quantity is the content box rather than the stated width: at
+    /// `box-sizing: content-box` the same 903 and 20px give a content width of
+    /// 903 again and Chrome returns to `-90.30`.
+    #[test]
+    fn a_percentage_margin_resolves_against_the_content_box() {
+        let (mut scene, page) = scene_with_page(1200.0, 2000.0);
+        scene.content_height = true;
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.flex_direction = FlexDirection::Column;
+        }
+        let container = scene
+            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(container) {
+            node.layout.display = Display::Flex;
+            node.layout.flex_direction = FlexDirection::Column;
+            node.layout.size = (Dimension::Points(903.0), Dimension::Auto);
+            node.layout.box_sizing = BoxSizing::BorderBox;
+            for edge in [
+                &mut node.layout.padding.left,
+                &mut node.layout.padding.right,
+                &mut node.layout.padding.top,
+                &mut node.layout.padding.bottom,
+            ] {
+                *edge = Length::Points(20.0);
+            }
+        }
+        let child = scene
+            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(child) {
+            node.layout.size =
+                (Dimension::Points(476.0), Dimension::Points(500.0));
+            node.layout.flex_grow = 1.0;
+            node.layout.margin.top = Dimension::Percent(-0.10);
+        }
+
+        let result = solved(&scene, page);
+        let height = result.rects[&container].size.height;
+        assert!(
+            (height - 453.70).abs() < 0.5,
+            "container {height}, Chrome 453.70 -- reading the border box \
+             instead of the content box gives 450.00, which is what this row \
+             exists to refuse"
+        );
+    }
+
     /// A clipping grid item stops an ancestor ignoring a negative margin.
     ///
     /// **The row that says the grid clause fires**, and it is a different
@@ -3566,6 +3910,84 @@ mod tests {
         assert_eq!(
             placed(FlexWrap::WrapReverse, 140.0),
             vec![96, 96, 96, 26, 26, 26]
+        );
+    }
+
+    /// A percentage padding resolves against the containing block, not the
+    /// node.
+    ///
+    /// **The node's own width is held fixed and the parent's is varied**, which
+    /// is the only way to separate the two bases here: varying the node's width
+    /// changes how many children fit on a line, so the two scenes would differ
+    /// for a second reason and the row would measure that instead.
+    ///
+    /// Both errors in the site this pins vanish together when the node's
+    /// border box equals its parent's content box -- the default stretched
+    /// shape -- so a row that varies only the percentage passes either way.
+    #[test]
+    fn a_percentage_padding_resolves_against_the_containing_block() {
+        use meo_canvas_scene::style::{Length, layout::FlexWrap};
+
+        // The node is 200 wide in every scene; only the containing block moves.
+        // Six 80x44 children wrap into three lines inside 200 either way -- two
+        // fit across -- so the flow the correction shifts is identical and the
+        // padding is the one thing that differs.
+        let placed = |containing: f32| {
+            let mut scene = Scene::new(Size::new(900.0, 600.0));
+            let mut parent = Node::container();
+            parent.layout.display = Display::Flex;
+            parent.layout.size =
+                (Dimension::Points(containing), Dimension::Points(400.0));
+            let parent = scene
+                .push(NodeId::ROOT, parent)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut outer = Node::container();
+            outer.layout.display = Display::Flex;
+            outer.layout.flex_wrap = FlexWrap::WrapReverse;
+            outer.layout.size =
+                (Dimension::Points(200.0), Dimension::Points(56.0));
+            outer.layout.padding.bottom = Length::Percent(0.10);
+            let outer = scene
+                .push(parent, outer)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+
+            let mut ids = Vec::new();
+            for _ in 0..6 {
+                let mut child = Node::container();
+                child.layout.size =
+                    (Dimension::Points(80.0), Dimension::Points(44.0));
+                ids.push(
+                    scene
+                        .push(outer, child)
+                        .unwrap_or_else(|error| unreachable!("{error}")),
+                );
+            }
+            let result = solved(&scene, NodeId::ROOT);
+            let origin = result
+                .get(outer)
+                .unwrap_or_else(|| unreachable!("the box is laid out"))
+                .origin;
+            ids.into_iter()
+                .filter_map(|id| result.get(id))
+                .map(|rect| (rect.origin.y - origin.y) as i32)
+                .collect::<Vec<_>>()
+        };
+
+        // Three lines of 44 stack to 132 in a 56-tall border box, so the
+        // correction shifts them up by `content_bottom - 132`. A containing
+        // block of 200 gives a padding of 20 and a content bottom of 36; one
+        // of 400 gives 40 and 16. The pair differs by exactly that 20.
+        assert_eq!(
+            placed(200.0),
+            vec![-8, -8, -52, -52, -96, -96],
+            "10% of a 200-wide containing block is 20"
+        );
+        assert_eq!(
+            placed(400.0),
+            vec![-28, -28, -72, -72, -116, -116],
+            "10% of a 400-wide containing block is 40, and the node's own 200 \
+             is not what the percentage resolves against"
         );
     }
 

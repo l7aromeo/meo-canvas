@@ -103,8 +103,9 @@ leaving it to be met.
 
   **This is a workaround rather than a fix.** The layout engine underneath
   resolves a ratio box's axes in the wrong order, which is not something this
-  renderer can correct there, so it lays the page out twice and puts the ratio
-  back between the two passes. The issue stays open until the engine is fixed, and a
+  renderer can correct there, so it lays the page out three times: once with
+  the ratio removed to see what the box asks for, once with it back and the
+  answer written in, and once more to produce the geometry you get. The issue stays open until the engine is fixed, and a
   test pinned to what the engine does today fails the day it is — which is what
   stops the compensation outliving its reason.
 
@@ -166,14 +167,20 @@ leaving it to be met.
   found the image was never the failing shape — so the title and this paragraph
   disagree, and this paragraph is the later reading.
 
-  **Two cases are still wrong and are worth knowing about.** An item stretched
+  **A `maxWidth` or `maxHeight` on the cross axis clamps that axis and leaves
+  the other one alone**, which is what a browser does: a grown item at
+  `aspectRatio: 1` under `maxWidth: 100` is 100 x 248 rather than 100 x 100,
+  and the same item under `maxWidth: 1` is 1 x 248 rather than 1 x 1. The
+  engine underneath carries the maximum through the ratio into the other axis;
+  this puts it back where it was written. A maximum on the _main_ axis still
+  clamps that axis and lets the ratio settle the other, unchanged. (#129)
+
+  **One case is still wrong and is worth knowing about.** An item stretched
   across its line and then asked for a main size from that stretch comes out
   424 x 248 where a browser gives 424 x 424 — which overflows its own 248-tall
   line. That one is deliberately not compensated: producing an overflowing box
   is a layout change nobody asked for, and the proposal to make it the engine's
-  own answer is an open pull request rather than a shipped one. And a `maxWidth`
-  binding the cross axis takes the other axis down with it — 100 x 100 against a
-  browser's 100 x 248, tracked at (#129).
+  own answer is an open pull request rather than a shipped one.
 
   **It is a workaround and it is marked as one**, with a probe that fails the
   day the layout engine underneath stops needing it. (#123)
@@ -188,7 +195,9 @@ leaving it to be met.
   Where several growing children carry negative margins, every one of them was
   dropped rather than one — two 200-tall children at `-24` and `-10` gave 400
   against a browser's 366. Percentage margins were dropped in exactly the same
-  way, `marginTop: '-10%'` of a 903-wide container giving 500 against 409.7. A
+  way, `marginTop: '-10%'` of a 903-wide container with no padding giving 500
+  against 409.7 — a case that witnesses the drop and not what the percentage
+  resolved against, which an unpadded container cannot separate. A
   margin too small to survive rounding into a rendered pixel was never
   observable either way, before or after.
 
@@ -208,3 +217,18 @@ leaving it to be met.
 
   Both are compensations and both are marked as such, each with a probe that
   fails the day the layout engine underneath stops needing it. (#107)
+
+- A `flexWrap: 'wrap-reverse'` container with a percentage `paddingBottom` put
+  its overflowing rows in the wrong place. A 200-wide box inside a 400-wide
+  parent, `paddingBottom: '10%'`, resolved the padding to 20 rather than 40, so
+  the stack sat twenty pixels below where a browser puts it.
+
+  A percentage padding resolves against the containing block's content width —
+  the parent's — and this resolved it against the box's own border box, which
+  is two errors at once and they cancel whenever the box is stretched to its
+  parent with no padding of its own. That is the default shape, so a box had to
+  carry both a width of its own and a percentage padding before anything moved.
+
+  Only the correction that bottom-aligns a reversed wrap read the wrong number;
+  the layout itself was always right, so a box whose rows fit inside it was
+  never affected. (#141)

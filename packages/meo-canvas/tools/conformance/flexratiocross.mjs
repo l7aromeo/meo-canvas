@@ -109,6 +109,17 @@ const CASES = [
   // Deliberately not compensated, and a divergence deliberately pinned.
   ['uncompensated stretch', `${COLUMN};align-items:stretch`, ITEM, '', 'the derivation overflows its line; upstream has not shipped it'],
   ['known max-width', `${COLUMN};align-items:center`, `${ITEM};max-width:100px`, '', 'a maximum binding the cross axis does not transfer back here'],
+  // **The pin arm's own row.** A row container puts the maximum on the cross
+  // axis while the pin writes the main one, so this shape reaches the pin
+  // where every other bounded row here reaches the derivation. Without it,
+  // disabling the pin's half of the compensation reddens nothing.
+  [
+    'row max-height',
+    `display:flex;flex-direction:row;width:440px;height:264px;padding:8px;box-sizing:border-box;align-items:center`,
+    `${ITEM};max-height:100px`,
+    '',
+    'a cross maximum in a row container, where the pin writes the main axis',
+  ],
   // **The far end of the same divergence, and the row that shows it scales.**
   // The height this renderer produces is the maximum where Chrome keeps the
   // line's 248, so the error is `248 - max`: one pixel at `max-width: 247px`
