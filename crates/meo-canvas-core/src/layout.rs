@@ -1142,9 +1142,11 @@ where
     // **Not compensated: the stretched family.** `align-items: stretch` with a
     // ratio wants a main size derived from the stretched cross size, and
     // Chrome's answer overflows its line -- 424x424 in a 248-tall content box.
-    // That is correct and `DioxusLabs/taffy#1182` will produce it upstream;
-    // shipping it here first would be a layout change nobody asked for, in the
-    // direction that PR itself calls the one most likely to be read as a bug.
+    // That is correct, and `DioxusLabs/taffy#1182` proposes to make it taffy's
+    // own answer -- open rather than merged, so nothing about when it arrives
+    // is settled. Shipping it here first would be a layout change nobody asked
+    // for, in the direction that pull request itself calls the one most likely
+    // to be read as a bug.
     let mut derive: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
     for (id, ratio) in candidates {
         let solved = tree
