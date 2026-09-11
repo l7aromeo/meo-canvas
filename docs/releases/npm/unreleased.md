@@ -140,11 +140,13 @@
   shape that diverged is a plain `Box`.
 
   **Two cases are still wrong and are worth knowing about.** An item stretched
-  across its line and then asked for a main size from that stretch is not
-  compensated here, because the browser's answer overflows the line and shipping
-  that ahead of the upstream fix would be a layout change nobody asked for. And
-  a `maxWidth` binding the cross axis takes the other axis down with it — 100 x
-  100 against a browser's 100 x 248, tracked at (#129).
+  across its line and then asked for a main size from that stretch comes out
+  424 x 248 where a browser gives 424 x 424 — which overflows its own 248-tall
+  line. That one is deliberately not compensated: producing an overflowing box
+  is a layout change nobody asked for, and the proposal to make it the engine's
+  own answer is an open pull request rather than a shipped one. And a `maxWidth`
+  binding the cross axis takes the other axis down with it — 100 x 100 against a
+  browser's 100 x 248, tracked at (#129).
 
   **It is a workaround and it is marked as one**, with a probe that fails the
   day the layout engine underneath stops needing it. (#123)

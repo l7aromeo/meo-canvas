@@ -187,11 +187,14 @@ because a count in prose is a claim nothing checks.
   replaced element carries its own dimensions and never needed the transfer.
 
   **Two cases remain divergent, both on purpose.** An item wanting a main size
-  derived from a stretched cross size is left alone, because Chrome's answer
-  overflows its line and `DioxusLabs/taffy#1182` will produce it upstream — this
-  renderer should not get there first. And a `max_size` binding the cross axis
-  takes the other axis with it, so a maximum-bound item solves to 100 x 100
-  against Chrome's 100 x 248; that is (#129).
+  derived from a stretched cross size solves to `424 x 248` against Chrome's
+  `424 x 424`, which overflows its own 248-tall line. It is left alone because
+  producing an overflowing box ahead of the engine underneath is a layout change
+  nobody asked for; `DioxusLabs/taffy#1182` proposes to make it taffy's answer
+  and is open rather than merged, so nothing about the timing is settled. And a
+  `max_size` binding the cross axis takes the other axis with it, so a
+  maximum-bound item solves to `100 x 100` against Chrome's `100 x 248`; that is
+  (#129).
 
   **It is a workaround and it is marked as one.** `[WORKAROUND]` in
   `crates/meo-canvas-core/src/layout.rs` names `DioxusLabs/taffy#804`, and
