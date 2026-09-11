@@ -1370,7 +1370,9 @@ is never listed, and never advances `latest/` -- with nothing red. Someone
 It was published as `@l7aromeo/meo-canvas` for a while, to let v10 install beside
 `meo-canvas@9`. The requirement was real; the scope was the wrong answer to it --
 an alias lets the consumer choose the local name:
-`npm install meo-canvas-v10@npm:meo-canvas@next`.
+`npm install meo-canvas-v9@npm:meo-canvas@9`. The example runs that way round
+now that 10.x holds `latest`: the alias goes on whichever generation is not the
+bare install, and that swapped when the first stable shipped.
 
 ### The targets, and the one missing on purpose
 

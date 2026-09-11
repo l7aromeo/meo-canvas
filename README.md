@@ -22,11 +22,10 @@ Layout, text shaping, painting and encoding all happen in Rust. The Node surface
 The JavaScript API reference is at **<https://l7aromeo.github.io/meo-canvas/>**,
 one directory per published version, generated from the type declarations each
 release ships. `latest/` follows the newest **stable** release the way npm's
-`latest` dist-tag does — so while 10.x is in prerelease there is no `latest/`
-and the index says so.
+`latest` dist-tag does; every version also keeps its own directory,
+prereleases included.
 
-The Rust reference will be on docs.rs once the crate is published; it is not
-yet, so there is deliberately no link here rather than a dead one.
+The Rust reference is on docs.rs: **<https://docs.rs/meo-canvas>**.
 
 ## Installation
 
@@ -39,21 +38,19 @@ cargo add meo-canvas
 Node.js:
 
 ```text
-npm install meo-canvas@next
+npm install meo-canvas
 ```
 
-**The `@next` is not optional while 10.x is in prerelease.** 10.x continues v1's
-lineage under the same `meo-canvas` name, and npm resolves `latest` for a bare
-install — so `npm install meo-canvas` gives you the 9.x line. Every 10.x
-prerelease carries a hyphen, which keeps it off `latest` and out of any semver
-range.
+**A bare install gives you 10.x.** This line continues the same `meo-canvas`
+package name, so `latest` moved from 9.x to 10.x when 10.0.0 shipped. To stay on
+9.x, ask for it by name: `npm install meo-canvas@9`.
 
-npm resolves one directory per package name, so installing both majors at once
-is done with an alias, and the consumer picks the local name rather than us
-picking it for them:
+npm resolves one directory per package name, so running both majors at once is
+done with an alias, and the consumer picks the local name rather than us picking
+it for them:
 
 ```text
-npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
+npm install meo-canvas-v9@npm:meo-canvas@9 meo-canvas
 ```
 
 ## Usage

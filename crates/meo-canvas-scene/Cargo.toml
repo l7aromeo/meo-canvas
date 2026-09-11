@@ -1,6 +1,6 @@
 [package]
 name = "meo-canvas-scene"
-description = "Scene description types and the binary wire format that carries them between the Node addon, the CLI and the renderer."
+description = "The scene types and binary codec behind meo-canvas. No Skia, no layout engine, no bindings."
 keywords = ["canvas", "scene", "serialization", "layout", "graphics"]
 categories = ["graphics", "data-structures", "encoding"]
 readme = "README.md"
@@ -9,6 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 # No dependencies at all. The scene is the contract three crates agree on, and a

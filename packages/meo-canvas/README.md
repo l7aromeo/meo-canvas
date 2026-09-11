@@ -11,20 +11,18 @@ Server-side image generation for Node. Describe a layout the way you would descr
 ## Installation
 
 ```text
-npm install meo-canvas@next
+npm install meo-canvas
 ```
 
-**The `@next` is not optional.** `meo-canvas@latest` is the 9.x line, and npm
-resolves `latest` for a bare install — so `npm install meo-canvas` gives you 9.x
-today and will keep doing so until 10 is out of prerelease. Every 10.x
-prerelease carries a hyphen in its version, which is what keeps it off `latest`
-and out of any semver range: nothing reaches it without asking for it by name.
+**A bare install gives you 10.x.** This line continues v9's package name rather
+than starting a new one, so `latest` moved from 9.x to 10.x when 10.0.0 shipped.
+If you want to stay on 9.x, ask for it by name: `npm install meo-canvas@9`.
 
 To run 9.x and 10.x side by side, alias one of them. npm resolves one directory
 per package name, so two names is what it takes:
 
 ```text
-npm install meo-canvas meo-canvas-v10@npm:meo-canvas@next
+npm install meo-canvas-v9@npm:meo-canvas@9 meo-canvas
 ```
 
 Requires Node 22 or newer. The package is written as ES modules and `require`
@@ -35,8 +33,8 @@ in.
 The API reference for every published version is at
 **<https://l7aromeo.github.io/meo-canvas/>**, generated from the type
 declarations each release ships. `latest/` follows the newest stable release
-the way npm's `latest` dist-tag does, so while 10.x is in prerelease it is
-absent and the index says so — go to the version's own directory.
+the way npm's `latest` dist-tag does; every version also keeps its own
+directory, prereleases included.
 
 **Coming from v9?** Read
 [MIGRATING.md](https://github.com/l7aromeo/meo-canvas/blob/main/MIGRATING.md) first. Most calls

@@ -1,6 +1,6 @@
 [package]
 name = "meo-canvas"
-description = "Declarative 2D scene rendering on Skia with CSS flexbox, grid and block layout."
+description = "Describe a picture, get image bytes back. CSS flexbox, grid and block layout on a Skia backend."
 keywords = ["canvas", "layout", "flexbox", "grid", "rendering"]
 categories = ["graphics", "rendering", "multimedia::images"]
 readme = "README.md"
@@ -9,6 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 # **Naming both `metal` and `vulkan` builds, and Metal wins.** It did not
