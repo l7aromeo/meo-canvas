@@ -65,7 +65,22 @@ const TABLE: &str = include_str!("assets/chrome/flex-ratio-cross.tsv");
 /// `100x100` against Chrome's `100x248`. Before the compensation the row was
 /// `0x248` -- neither dominates, and a zero-wide box paints nothing where a
 /// short one is at least visible.
-const KNOWN: &[&str] = &["uncompensated stretch", "known max-width"];
+///
+/// **`known max-width amplified`** is the same divergence at its far end, and
+/// it is here because the family is a continuum rather than a case. The height
+/// produced is the maximum itself where Chrome keeps the line's 248, so the
+/// error is `248 - max`: `1x1` against Chrome's `1x248` at `max-width: 1px`.
+///
+/// **The near end is deliberately not a row.** At `max-width: 247px` this
+/// renderer gives `247x247` against Chrome's `247x248` and the error is one
+/// pixel, which `SLACK` swallows -- so the row would pass, inside a family
+/// that diverges, and a sweep landing there would conclude the family agrees.
+/// A row that cannot fail next to rows that do is worse than the prose.
+const KNOWN: &[&str] = &[
+    "uncompensated stretch",
+    "known max-width",
+    "known max-width amplified",
+];
 
 /// One row of the table.
 fn chrome(case: &str) -> (f32, f32) {
@@ -463,6 +478,13 @@ fn rows_at_a_boundary() -> Vec<(&'static str, Case)> {
             "known max-width",
             Case {
                 max_w: Some(100.0),
+                ..Case::new()
+            },
+        ),
+        (
+            "known max-width amplified",
+            Case {
+                max_w: Some(1.0),
                 ..Case::new()
             },
         ),

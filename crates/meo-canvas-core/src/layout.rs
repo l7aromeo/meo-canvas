@@ -1332,11 +1332,24 @@ where
         // candidate, and the loop above says why.
         //
         // **Both axes, and writing only the cross one changes nothing.**
-        // Measured: with the ratio back on the node, taffy re-derives the
-        // other axis from whichever one a bound clamps, so restricting this
-        // to the axis that carries the information moves no row in the
-        // twenty-seven. The main size written here is the one the solve
-        // already produced, so it says nothing new and costs nothing.
+        // Measured: restricting this to the axis that carries the information
+        // moves no row in `flex-ratio-cross.tsv`. The main size written here
+        // is the one the solve already produced, so it says nothing new and
+        // costs nothing.
+        //
+        // **A definite cross does not drag the main down with it.** Isolated
+        // in raw taffy, one variable at a time: a written `100 x 248` under
+        // `aspect-ratio: 1` solves to `100 x 248` with no maximum present, to
+        // `100 x 100` with `max-width: 100px`, and to `100 x 248` again with
+        // that maximum and no ratio. **The main collapses only where the
+        // ratio and the maximum are both there**, because `max-width`
+        // transfers through the ratio into a `max-height` which clamps the
+        // hypothetical main size -- `compute/flexbox.rs:1068` in taffy 0.14,
+        // over the transfer built in `geometry.rs:604`.
+        //
+        // That is why `l7aromeo/meo-canvas#129` is not repaired by clamping
+        // what this writes: the clamp reads the author's `max_size`, not the
+        // size written here, so pre-clamping the derived cross moves no row.
         if let Some((_, size)) = derive.iter().find(|(node, _)| node == id) {
             style.size.width = taffy::Dimension::length(size.width);
             style.size.height = taffy::Dimension::length(size.height);
