@@ -271,6 +271,7 @@ where
     // The one read outside the region is [`collect`], after the rounded pass,
     // and it is the geometry a caller gets rather than an input to a decision.
     tree.disable_rounding();
+    collapse_definite_bases(&mut tree, root)?;
     let candidates = ratio_direction_candidates(scene, &tree, &to_scene);
     clear_ratios(&mut tree, &candidates)?;
     solve_once(&mut tree, root, available, measure, &mut baselines)?;
@@ -1834,6 +1835,212 @@ fn containing_inline_size(
 ) -> f32 {
     tree.parent(id)
         .map_or(0.0, |parent| content_inline_size(tree, parent))
+}
+
+// [WORKAROUND] taffy builds a flex container's content-based main size from
+// its items' **content contributions** where CSS Flexbox builds it from their
+// outer **hypothetical main sizes**, so an item that says "ignore my content"
+// is not believed. Measured: a 600-wide row holding a 300x200 sibling and a
+// stretch-sized column whose item carries `flex-basis: 0` and `min-height: 0`
+// around 1024 of content comes out 1024 tall where Chrome gives 200.
+// `l7aromeo/meo-canvas#145`.
+//
+// **No upstream issue covers it and I did not find one to cite.**
+// `DioxusLabs/taffy#950` is percentages against a stretched item with an
+// indefinite basis and `DioxusLabs/taffy#733` is node sizing with flex and
+// images; neither is this step. Saying so is better than attaching a number
+// that does not cover it, which is a reference a reader follows and then has to
+// unpick.
+//
+// Retires when `a_definite_base_is_not_the_content` in
+// `crates/meo-canvas-core/tests/taffy_definite_basis.rs` fires: it pins what
+// taffy does today, so the day a release builds the container's content size
+// from hypothetical main sizes that test fails and names this block.
+//
+// # Where each term lives in the specification
+//
+// **§9.2 Line Length Determination.** An item's flex base size comes from
+// `flex-basis` when it is definite, from the main size property next, and from
+// content last; its **hypothetical main size** is that base clamped by the min
+// and max on the main axis. With a definite basis and a definite minimum, that
+// number owes nothing to the content -- which is the whole of what a caller is
+// asking for when they write the pair.
+//
+// **§4.5 Automatic Minimum Size** is why neither property works alone.
+// `min-height: auto` floors a flex item at its content-based minimum, so
+// zeroing the base alone leaves the floor and zeroing the floor alone leaves
+// the base. Both cells are rows in
+// `crates/meo-canvas/tests/assets/chrome/flex-basis-collapse.tsv`.
+//
+// **§9.4 Cross Size Determination** settles an indefinite cross size by
+// stretch *after* the base sizes are decided, which is the ordering that makes
+// this reachable at all: the container has to ask its own content how big it
+// is before the stretch it is waiting for exists.
+//
+// **§9.7 Resolving Flexible Lengths** is what makes the repair safe. Free
+// space is distributed from the base, so writing the hypothetical main size as
+// a definite `size` does not freeze the item -- measured, the item ends at the
+// line's 200 rather than at the 0 it was given.
+//
+// # Why the condition is not a list of the cells that failed
+//
+// Every row of the table follows from the one substitution above rather than
+// from a rule fitted to it. `flex-basis: auto` and `flex-basis: 0%` agree with
+// Chrome because the hypothetical main size **is** the content in both -- a
+// percentage against a container with no definite main size resolves as
+// `auto`, so `0%` is not `0`. `min-height: auto` agrees because §4.5 floors
+// the hypothetical at the content. A container with a stated length or a
+// definite ancestor agrees because it never asks its content at all. None of
+// those is a clause here; they are cases the rule already covers.
+//
+// **Two exclusions, and both are about which specification governs rather than
+// about a cell that disagreed.**
+//
+// A **grid item has no `flex-basis`**, so there is no §9.2 and no hypothetical
+// main size to write; a rule that wrote one would be inventing flex semantics
+// inside grid. Measured, applying this to a grid container takes a row Chrome
+// puts at 1024 to 200.
+//
+// An **inline-axis container is sized by max-content**, where a flex
+// container's main size is **§9.9 Intrinsic Sizes** -- a different computation
+// that accounts for flex factors, which `DioxusLabs/taffy#351` says is
+// unimplemented and `DioxusLabs/taffy#1182` exists to close. That is a missing
+// step rather than this one, and compensating it here would ship §9.9 by
+// accident in one corner. Measured the same way: the width-direction mirror is
+// 1024 in Chrome and this takes it to 200.
+//
+// Both are rows in the table, named and annotated as controls rather than as
+// divergences -- **no row there records a divergence at all**: every one of
+// the thirty matches Chrome, and these two pass because the compensation is
+// scoped away from them. Each goes red the moment it reaches them, which is
+// what keeps a cell left alone deliberately distinguishable from one nobody
+// looked at. `known` in this tree means the opposite -- a divergence we accept
+// -- and using it here would say we are knowingly wrong where we are
+// knowingly right.
+fn collapse_definite_bases(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    root: taffy::NodeId,
+) -> Result<(), Error> {
+    let mut pending = vec![root];
+    let mut writes: Vec<(taffy::NodeId, bool, f32)> = Vec::new();
+    while let Some(id) = pending.pop() {
+        let children = tree
+            .children(id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        pending.extend(children.iter().copied());
+
+        let style = tree
+            .style(id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        // Flex only: the exclusion above, expressed as the one thing it is
+        // about rather than as a list of displays.
+        if style.display != taffy::Display::Flex {
+            continue;
+        }
+        // **The inline-axis exclusion, encoded rather than only argued.** A
+        // container whose main axis is the inline one is sized by max-content,
+        // where §9.9 Intrinsic Sizes governs and accounts for flex factors --
+        // `DioxusLabs/taffy#351`, unimplemented, with `DioxusLabs/taffy#1182`
+        // open to close it. Writing a hypothetical main size there
+        // compensates a step that is missing rather than a step that is
+        // wrong, and `row-direction mirror` in `flex-basis-collapse.tsv` is the
+        // row that says so: Chrome and taffy agree at 1024 and this
+        // took it to 200 until the clause existed.
+        if !matches!(
+            style.flex_direction,
+            taffy::FlexDirection::Column | taffy::FlexDirection::ColumnReverse
+        ) {
+            continue;
+        }
+
+        // Named here rather than assumed by the helper: the guard above is
+        // the whole of the scope decision, so widening it shows up in the
+        // `row-direction mirror` control instead of being caught a second
+        // time by a helper that only ever read the block axis.
+        let row = matches!(
+            style.flex_direction,
+            taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+        );
+
+        for child in children {
+            let child_style = tree
+                .style(child)
+                .map_err(|error| Error::Layout(error.to_string()))?;
+            let Some(hypothetical) = hypothetical_main_size(child_style, row)
+            else {
+                continue;
+            };
+            writes.push((child, row, hypothetical));
+        }
+    }
+
+    for (id, row, size) in writes {
+        let mut style = tree
+            .style(id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        if row {
+            style.size.width = taffy::Dimension::length(size);
+        } else {
+            style.size.height = taffy::Dimension::length(size);
+        }
+        tree.set_style(id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    Ok(())
+}
+
+/// §9.2's hypothetical main size, where it owes nothing to the content.
+///
+/// `None` where the content decides it, which is every case this compensation
+/// leaves alone: an `auto` basis, a percentage basis against a container whose
+/// main size is not definite -- taffy hands both of those back as `Percent` or
+/// `Auto` rather than a length -- and an `auto` minimum, which is §4.5's
+/// automatic minimum and floors the item at its content.
+fn hypothetical_main_size(style: &taffy::Style, row: bool) -> Option<f32> {
+    let taffy::ExpandedDimension::Length(basis) = style.flex_basis.expand()
+    else {
+        return None;
+    };
+    // **A percentage minimum is a floor of zero here, not a reason to stop.**
+    // This runs only where the container's main size is indefinite, and a
+    // percentage that cannot resolve against one gives zero for a minimum --
+    // where the same percentage gives `auto` for a *basis*, which is why `0%`
+    // on the basis leaves the content deciding and `0%` on the minimum does
+    // not. `min 0%` and `basis 0%` in `flex-basis-collapse.tsv` are the pair
+    // that separates them, and Chrome collapses one and not the other.
+    let main_min = if row {
+        style.min_size.width
+    } else {
+        style.min_size.height
+    };
+    let floor = match main_min.expand() {
+        taffy::ExpandedLengthPercentageAuto::Length(value) => value,
+        taffy::ExpandedLengthPercentageAuto::Percent(_) => 0.0,
+        taffy::ExpandedLengthPercentageAuto::Auto => return None,
+    };
+    let main_max = if row {
+        style.max_size.width
+    } else {
+        style.max_size.height
+    };
+    let ceiling = match main_max.expand() {
+        taffy::ExpandedLengthPercentageAuto::Length(value) => Some(value),
+        _ => None,
+    };
+    // Clamped the way §9.2 clamps: the minimum last, so a minimum above the
+    // maximum wins, which is what CSS says and what a bare `clamp` would get
+    // backwards.
+    let mut size = basis;
+    if let Some(ceiling) = ceiling
+        && size > ceiling
+    {
+        size = ceiling;
+    }
+    if size < floor {
+        size = floor;
+    }
+    Some(size)
 }
 
 /// A solved node's own content-box width.

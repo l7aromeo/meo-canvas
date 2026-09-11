@@ -77,7 +77,7 @@ const TOOLS = join(HERE, 'conformance')
  * what makes a stale narration worse than a bare number. git records when a
  * tool arrived; prose does not maintain it.
  */
-const GUARDED_WRITES = 22
+const GUARDED_WRITES = 23
 
 /**
  * How many stamped `.tsv` tables the assets directory holds.
@@ -94,7 +94,7 @@ const GUARDED_WRITES = 22
  * tool writes something that is not a table, or a table is produced by a tool
  * that already existed.
  */
-const STAMPED_TABLES = 22
+const STAMPED_TABLES = 23
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([
