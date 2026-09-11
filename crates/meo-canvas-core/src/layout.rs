@@ -1213,12 +1213,14 @@ where
         //
         // **The comparison asks whether the minimum reaches the solved
         // width, not whether it is near it.** taffy has already applied the
-        // minimum by this point, so a binding one *is* the solved width and
-        // a slack one sits under it; `>=` is that statement and a tolerance
-        // is not. Written as `|solved - value| <= DERIVED_TOLERANCE` it
-        // reports `29 x 34` for a `min-width: 29px` under a fit-content 30
-        // while `29.98` and `20` either side are both right -- a band one
-        // pixel wide where a slack minimum reads as binding, which
+        // minimum by this point, so `solved.width >= value` holds by
+        // construction and this is an **identity test**: true exactly when
+        // the minimum is the width. That is why it cannot have a band, where
+        // a threshold always can. Written as `|solved - value| <=
+        // DERIVED_TOLERANCE` it reports `29 x 34` for a `min-width:
+        // 29px` under a fit-content 30 while `29.98` and `20` either
+        // side are both right -- a band one pixel wide where a slack
+        // minimum reads as binding, which
         // `ratio-shrink-min-width-just-under` sits inside. That constant is
         // for two solved sizes, where taffy rounds each edge and a size is
         // the difference of two rounded ones; an author's length is neither.
@@ -1255,6 +1257,23 @@ where
         // ratio-free solve an empty flex item is zero wide, so every
         // definite minimum binds there -- including one far under the
         // derivation -- and that node still needs the derivation arm.
+        // **Lengths only, and the gap is measured rather than assumed.** A
+        // percentage takes the `None` arm below, because comparing a raw
+        // percentage against a solved width is not a comparison. Measured in
+        // the `424x248` column with `aspect-ratio: 1`: a percentage minimum
+        // agrees with Chrome up to 70% -- `296.80 x 296.80` there against
+        // `296 x 297` here -- and diverges above it, `min-width: 80%` giving
+        // `340 x 248` against `339.19 x 339.19` and `100%` giving
+        // `424 x 248` against `424 x 424`. So the length case is fixed and
+        // the percentage case keeps the height frozen at the line, which is
+        // this defect with a different spelling. Resolving the percentage
+        // needs the containing block's width and is not done here:
+        // `l7aromeo/meo-canvas#136`.
+        //
+        // **Not caused by this clause.** Before it, a binding length
+        // minimum behaved the way a percentage one still does, so the
+        // percentage case is where the length case was rather than
+        // somewhere this change put it.
         let min_binds = tree
             .style(*id)
             .ok()

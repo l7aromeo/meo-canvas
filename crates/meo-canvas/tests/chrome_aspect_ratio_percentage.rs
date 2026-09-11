@@ -348,9 +348,25 @@ fn shrink_ratio_box(
 /// folding them in would put three block-axis arguments and two inline ones on
 /// one signature with only one pair ever set.
 ///
-/// The pair is measured together on purpose: a minimum and a maximum reach the
+/// A minimum and a maximum are measured together on purpose: they reach the
 /// solved width by the same route and Chrome treats them differently, so a row
-/// for one without the other would read as a rule about author bounds.
+/// for one without the other would read as a rule about author bounds. No
+/// count here -- the rows calling this grow, and a number in prose beside a
+/// list that grows is the defect rather than the wrong number.
+///
+/// **What these rows are green for, because a green here is easy to read as
+/// more than it is.** Delete the pin's minimum clause in
+/// `crates/meo-canvas-core/src/layout.rs` and **every row of this file still
+/// passes**, all of them; the rows that go red are in
+/// `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv`. So that file
+/// answers whether the clause is needed and this one answers whether it is
+/// written right, and neither stands in for the other. A reader treating these
+/// greens as cover for the clause has the wrong file.
+///
+/// Each bounded row says at its case in
+/// `packages/meo-canvas/tools/conformance/aspectratio.mjs` which mutation it
+/// fails against, and two of the five fail against none tried and record
+/// Chrome for a corner instead.
 fn bounded_ratio_box(
     scene: &mut Scene,
     min_width: Option<f32>,

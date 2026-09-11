@@ -326,7 +326,10 @@ const CASES = [
     // same: it clamps the width and the block size still follows the ratio, so
     // taffy's own answer here is `9 x 10` and the pin is what reaches Chrome's
     // `19.98 x 23.52`. A clause written about author bounds in general rather
-    // than about the minimum would take this row down with it.
+    // than about the minimum would take this row down with it -- point the
+    // pin's clause at `max_size.width` instead of `min_size.width` and this
+    // row reports that `9 x 10`, which is the mutation that shows the label
+    // rather than the label standing on its own.
     note: 'a maximum below the fit-content width: clamped, and the pin is still what reaches Chrome',
     html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
              <div id="m" style="aspect-ratio:.85;max-width:20px">
