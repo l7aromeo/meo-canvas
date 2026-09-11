@@ -752,9 +752,37 @@ and the first sign would be a golden moving, with nothing saying why. So the
 probe pins it, beside the defect, and a file asserting only that the defect
 exists is half a probe.
 
+**That half carries its own tag: `[FOUNDATION]`, on the test rather than on the
+code.** The defect rows in a probe announce themselves -- they assert the wrong
+numbers and say so -- and the foundation row looks like any other passing test,
+which is what makes it the one a tidy-up deletes.
+`clearing_the_ratio_reports_the_content_height_at_that_width`, in
+`crates/meo-canvas-core/tests/taffy_ratio_direction.rs`, states the cost in the
+file itself: "If this stopped holding, the compensation would floor with the
+wrong number and every conformance row would stay green." The tag is what makes
+that findable from the compensation rather than only from the probe.
+
+```rust
+// [FOUNDATION] the property <which compensation> rests on, and what a change
+// here would cost.
+#[test]
+fn the_dependency_still_gets_this_right() {
+```
+
+**A probe that compensates nothing carries no marker**, and
+`taffy_negative_margin.rs` is the case: it pins inherited defects nothing in
+this tree works around, so no code rests on it and there is no property to name.
+The marker belongs to the pair, not to the genre.
+
 **A check enumerating every tagged site and asserting each still has a live
-probe belongs in `portable`**, beside `issue-refs` and `gate-lists-check`. It
-does not exist yet; the convention here is written for it.
+probe runs in `portable`**, beside `issue-refs` and `gate-lists-check`:
+`just workaround-probes`. It reads that each site names a probe -- or defers to
+a site in the same file that does -- that the probe is a real test target with a
+test carrying no `#[ignore]`, and that it marks at least one test
+`[FOUNDATION]`. **It sees markers, not properties.** Whether the marked row
+pins the thing the compensation actually rests on is not a question a program
+here can ask, and the tool says so in its own header; what the check buys is
+that the question was answered once, deliberately, where a reader lands.
 
 ### A default that means something different from the same value stated explicitly cannot be a default
 

@@ -128,6 +128,9 @@ fn the_same_holds_for_a_ratio_above_one() {
 
 /// Without the ratio the inline size is fit-content, which is what the
 /// compensation asks taffy for.
+// [FOUNDATION] the property `compensate_ratio_direction` rests on. It reads
+// this number and derives the block size from it, so a taffy release that
+// changed it would leave every conformance row green and move a golden.
 #[test]
 fn clearing_the_ratio_restores_the_fit_content_width() {
     let (width, height) = shrink_box(None);
@@ -216,6 +219,9 @@ fn a_content_derived_floor_is_transferred_into_the_width() {
 /// text 100 wide is 120 tall with a ratio and 120 without, against 160 at its
 /// min-content width. If this stopped holding, the compensation would floor
 /// with the wrong number and every conformance row would stay green.
+// [FOUNDATION] the property `floor_ratio_heights` rests on, as the row above
+// is the first compensation's. The paragraph above says what a change here
+// would cost; the tag is what makes it findable from the other end.
 #[test]
 fn clearing_the_ratio_reports_the_content_height_at_that_width() {
     let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();

@@ -117,12 +117,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 /**
  * How short each list may get before this asks whether it was meant.
  *
- * Two below today's thirteen and thirteen: removing a recipe deliberately
+ * Two below today's fifteen and thirteen: removing a recipe deliberately
  * should not require editing a number here, and a list emptied by an edit must
  * not pass. This is the only assertion that sees a deletion at all, which is
  * why it is close rather than generous.
+ *
+ * The two numbers move with the lists and are meant to. A recipe added without
+ * its floor raised leaves three notches of slack rather than two, which is
+ * slack the next addition inherits; the arithmetic is one line in the commit
+ * that adds the recipe.
  */
-const FLOORS = { portable: 11, native: 11 }
+const FLOORS = { portable: 13, native: 11 }
 
 const recipes = JSON.parse(execFileSync('just', ['--dump', '--dump-format', 'json'], { cwd: ROOT, encoding: 'utf8' })).recipes
 
