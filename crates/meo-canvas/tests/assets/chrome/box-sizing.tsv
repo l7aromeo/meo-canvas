@@ -1,0 +1,87 @@
+# Chrome, through `just conformance`. What `box-sizing` moves.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+#
+# A 200px host in each of block, flex, grid; the child is 40px tall,
+# `display: block`, with the row's sizing, width, border and padding. `outer` is
+# the child's own border box; `content` is a grandchild at 100% of it.
+#
+# 3 parents x 2 sizings x 3 widths x 2 borders x 2 paddings
+# = 72 rows, a complete cross-product with no gaps.
+#
+# THE COLUMN LINE BELOW IS ASSERTED BY THE READER, not skipped. A tab-separated
+# table is positional, so a column emitted in a different order would be read as
+# a different field and the test would stay green measuring something else.
+#
+# parent	sizing	width	border	padding	outer	content
+block	content-box	100px	0	0	100	100
+block	content-box	100px	0	10	120	100
+block	content-box	100px	6	0	112	100
+block	content-box	100px	6	10	132	100
+block	content-box	50%	0	0	100	100
+block	content-box	50%	0	10	120	100
+block	content-box	50%	6	0	112	100
+block	content-box	50%	6	10	132	100
+block	content-box	auto	0	0	200	200
+block	content-box	auto	0	10	200	180
+block	content-box	auto	6	0	200	188
+block	content-box	auto	6	10	200	168
+block	border-box	100px	0	0	100	100
+block	border-box	100px	0	10	100	80
+block	border-box	100px	6	0	100	88
+block	border-box	100px	6	10	100	68
+block	border-box	50%	0	0	100	100
+block	border-box	50%	0	10	100	80
+block	border-box	50%	6	0	100	88
+block	border-box	50%	6	10	100	68
+block	border-box	auto	0	0	200	200
+block	border-box	auto	0	10	200	180
+block	border-box	auto	6	0	200	188
+block	border-box	auto	6	10	200	168
+flex	content-box	100px	0	0	100	100
+flex	content-box	100px	0	10	120	100
+flex	content-box	100px	6	0	112	100
+flex	content-box	100px	6	10	132	100
+flex	content-box	50%	0	0	100	100
+flex	content-box	50%	0	10	120	100
+flex	content-box	50%	6	0	112	100
+flex	content-box	50%	6	10	132	100
+flex	content-box	auto	0	0	0	0
+flex	content-box	auto	0	10	20	0
+flex	content-box	auto	6	0	12	0
+flex	content-box	auto	6	10	32	0
+flex	border-box	100px	0	0	100	100
+flex	border-box	100px	0	10	100	80
+flex	border-box	100px	6	0	100	88
+flex	border-box	100px	6	10	100	68
+flex	border-box	50%	0	0	100	100
+flex	border-box	50%	0	10	100	80
+flex	border-box	50%	6	0	100	88
+flex	border-box	50%	6	10	100	68
+flex	border-box	auto	0	0	0	0
+flex	border-box	auto	0	10	20	0
+flex	border-box	auto	6	0	12	0
+flex	border-box	auto	6	10	32	0
+grid	content-box	100px	0	0	100	100
+grid	content-box	100px	0	10	120	100
+grid	content-box	100px	6	0	112	100
+grid	content-box	100px	6	10	132	100
+grid	content-box	50%	0	0	100	100
+grid	content-box	50%	0	10	120	100
+grid	content-box	50%	6	0	112	100
+grid	content-box	50%	6	10	132	100
+grid	content-box	auto	0	0	200	200
+grid	content-box	auto	0	10	200	180
+grid	content-box	auto	6	0	200	188
+grid	content-box	auto	6	10	200	168
+grid	border-box	100px	0	0	100	100
+grid	border-box	100px	0	10	100	80
+grid	border-box	100px	6	0	100	88
+grid	border-box	100px	6	10	100	68
+grid	border-box	50%	0	0	100	100
+grid	border-box	50%	0	10	100	80
+grid	border-box	50%	6	0	100	88
+grid	border-box	50%	6	10	100	68
+grid	border-box	auto	0	0	200	200
+grid	border-box	auto	0	10	200	180
+grid	border-box	auto	6	0	200	188
+grid	border-box	auto	6	10	200	168
