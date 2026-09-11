@@ -65,11 +65,16 @@
 //! report substituted a `div` for the image when measuring the browser, and
 //! the `div` is the thing that diverges.
 //!
-//! **Neither `[WORKAROUND]` in `layout.rs` covers this.** Both are about a
-//! ratio box whose *inline* size is fit-content; this is one whose *main* size
-//! arrives from flex growth, which is a different question about the same
-//! upstream defect. Nothing here compensates for it -- the probe exists so
-//! that the day it is fixed is a day somebody hears about.
+//! **This is the third `[WORKAROUND]` in `layout.rs`.** The other two are
+//! about a ratio box whose *inline* size is fit-content; this is one whose
+//! *main* size arrives from flex growth, which is a different question about
+//! the same upstream defect.
+//!
+//! The compensation covers the half where the item has no cross contribution
+//! of its own: `derived_cross` multiplies the grown main size by the ratio.
+//! The stretched half is left alone deliberately -- Chrome's answer overflows
+//! the line, and the `align-items: stretch` row below pins what taffy does
+//! with it instead.
 
 use taffy::prelude::*;
 
