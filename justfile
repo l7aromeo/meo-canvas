@@ -1210,7 +1210,7 @@ example: build-js addon
 # `png.mjs` share it and are not tools, so a glob would run two files that
 # measure nothing and write no table. One list, because a second one -- in a
 # validation arm, say -- is the copy nobody updates.
-conformance_tools := "ellipsis gradients flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing"
+conformance_tools := "ellipsis gradients flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder"
 
 # Re-measure Chrome and rewrite the conformance tables.
 #

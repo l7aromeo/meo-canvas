@@ -356,7 +356,12 @@ fn name(row: &Row) -> String {
 
 #[test]
 fn paint_order_matches_chrome() {
-    let table = read_rows(include_str!("assets/chrome/paint-order.json"));
+    let table = read_columns(
+        include_str!("assets/chrome/paint-order.tsv"),
+        &[
+            "section", "display", "a", "b", "za", "zb", "parent_z", "top",
+        ],
+    );
     let mut wrong = Vec::new();
     let mut excluded = 0_usize;
     let mut compared = 0_usize;
@@ -567,8 +572,12 @@ fn box_sizing_matches_chrome() {
 /// names or order do not match `want` is a broken checkout rather than a case
 /// to skip.
 ///
-/// This is the first of the fifteen to do it. The other fourteen are
-/// unconverted, so a reader here is not evidence about a reader there.
+/// **Two tables check their header and most do not.** `box-sizing` and
+/// `paint-order` read through this; four other readers in this same file and
+/// fifteen further files under `crates/*/tests` split on tabs and index by
+/// position with no header check at all. A reader here is not evidence about a
+/// reader there, and the count moves as tables arrive -- it was fifteen files
+/// before `chrome_text_align_direction.rs` landed.
 ///
 /// **The limit, named rather than left to be discovered.** This catches a
 /// table that *declares* a different order. It cannot catch one whose header
@@ -635,129 +644,6 @@ fn read_columns(text: &str, want: &[&str]) -> Vec<Row> {
          format read against the wrong names measures the wrong fields"
     );
     rows
-}
-
-/// A reader for the tables, which are flat enough not to need a dependency.
-///
-/// **One caller left.** `box-sizing` moved to a `.tsv` read by
-/// [`read_columns`], so this and its four helpers exist for
-/// `paint-order.json` alone. Moving that table too deletes about a hundred
-/// lines of hand-rolled JSON, and is issue 114 rather than this change.
-///
-/// An array of objects whose values are strings or numbers, one row per
-/// combination. Every value is kept as the text it was written as: a row's
-/// `border` is `"6"` and its `outer` is `"112"`, and the walker that reads
-/// them decides which is a number. Stopping at the seam between JSON and
-/// meaning is what keeps this short enough to be obviously right.
-/// Every row of a table.
-///
-/// Panics naming the byte offset when the text is not the flat array of
-/// flat objects this reads: a malformed table is a broken checkout rather
-/// than a case to skip.
-fn read_rows(text: &str) -> Vec<Row> {
-    let bytes = text.as_bytes();
-    let mut at = read_space(bytes, 0);
-    assert_eq!(bytes.get(at), Some(&b'['), "a table is an array of rows");
-    at += 1;
-
-    let mut rows = Vec::new();
-    loop {
-        at = read_space(bytes, at);
-        match bytes.get(at) {
-            Some(&b']') | None => return rows,
-            Some(&b',') => at += 1,
-            Some(&b'{') => {
-                let (row, next) = read_object(bytes, at);
-                rows.push(row);
-                at = next;
-            }
-            other => {
-                unreachable!("byte {at}: expected a row, found {other:?}")
-            }
-        }
-    }
-}
-
-/// One `{ "key": value, .. }`, and where it ended.
-fn read_object(bytes: &[u8], from: usize) -> (Row, usize) {
-    let mut row = Row::new();
-    let mut at = from + 1;
-    loop {
-        at = read_space(bytes, at);
-        match bytes.get(at) {
-            Some(&b'}') => return (row, at + 1),
-            Some(&b',') => at += 1,
-            Some(&b'"') => {
-                let (key, next) = read_string(bytes, at);
-                at = read_space(bytes, next);
-                assert_eq!(
-                    bytes.get(at),
-                    Some(&b':'),
-                    "byte {at}: a key takes a colon"
-                );
-                let (value, next) =
-                    read_value(bytes, read_space(bytes, at + 1));
-                row.insert(key, value);
-                at = next;
-            }
-            other => {
-                unreachable!("byte {at}: expected a key, found {other:?}")
-            }
-        }
-    }
-}
-
-/// A string or a number, as the text it was written as.
-fn read_value(bytes: &[u8], from: usize) -> (String, usize) {
-    if bytes.get(from) == Some(&b'"') {
-        return read_string(bytes, from);
-    }
-    let mut at = from;
-    while at < bytes.len()
-        && !matches!(bytes[at], b',' | b'}' | b' ' | b'\n' | b'\r' | b'\t')
-    {
-        at += 1;
-    }
-    let text = String::from_utf8_lossy(&bytes[from..at]).into_owned();
-    // `112.0` and `112` are the same answer, and a walker comparing text
-    // would call them different. Only a number with a point is trimmed:
-    // trimming zeros off every number turns `10` into `1` and `0` into
-    // nothing, which is a defect this had for exactly one run.
-    if !text.contains('.') {
-        return (text, at);
-    }
-    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
-    (trimmed.to_owned(), at)
-}
-
-/// A quoted string, with the escapes these tables actually use.
-fn read_string(bytes: &[u8], from: usize) -> (String, usize) {
-    let mut out = String::new();
-    let mut at = from + 1;
-    while at < bytes.len() {
-        match bytes[at] {
-            b'"' => return (out, at + 1),
-            b'\\' => {
-                at += 1;
-                out.push(char::from(*bytes.get(at).unwrap_or(&b'"')));
-                at += 1;
-            }
-            byte => {
-                out.push(char::from(byte));
-                at += 1;
-            }
-        }
-    }
-    unreachable!("byte {from}: a string is never closed");
-}
-
-/// Past any whitespace.
-const fn read_space(bytes: &[u8], from: usize) -> usize {
-    let mut at = from;
-    while at < bytes.len() && bytes[at].is_ascii_whitespace() {
-        at += 1;
-    }
-    at
 }
 
 /// The overflow rows this renderer answers differently from Chrome today.
