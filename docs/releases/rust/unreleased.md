@@ -116,25 +116,16 @@ another shape worse, the entry names that shape rather than leaving it to be met
   untouched, because a pair like that resolves in one ordered sweep that already
   matches Chrome.
 
+  **What the pass is worth, since it is a workaround and a reader will ask.**
+  A grown row container solves to `424 x 424`, which is Chrome's answer, where
+  taffy on its own gives `424 x 0` — a box with no height, and nothing inside
+  it drawn.
+
   **It is a workaround rather than a fix, and it is marked as one in the
   source.** `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs` names the
   upstream defect, and
   `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` fails the day it is
   fixed upstream so the compensation cannot outlive its reason.
-
-  **What this costs, and it is new in this release.** The compensation decides
-  on a solve taken with the ratio cleared, reading `width / ratio >= height` off
-  it, and that inequality has no clause about where the cross size came from. An
-  item under `flex_grow` carrying `aspect_ratio: 1` and a binding `min_size`
-  width of 300 solves to `300 x 248` against Chrome's `300 x 300` — which taffy
-  alone produces, so on that shape the compensation is worse than no
-  compensation. One measured case; a binding maximum on the same axis does not
-  show it, so the boundary between the two has not been found — though a binding
-  maximum diverges for a different reason, in the last entry below.
-
-  Tracked at (#126). Stated rather than left to be met, and it does not outweigh
-  the rest: the same pass takes a grown row container from `424 x 0` to Chrome's
-  `424 x 424`.
 
   **A second case in the same area is the entry below**, and it is fixed in this
   release too: at a definite inline size the derived height capped the box

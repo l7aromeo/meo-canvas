@@ -284,6 +284,9 @@ const RATIO_BOX: &[&str] = &[
     "ratio-shrink-50-child",
     "ratio-shrink-taller-content",
     "ratio-shrink-issue-97",
+    "ratio-shrink-min-width-binds",
+    "ratio-shrink-min-width-slack",
+    "ratio-shrink-max-width-binds",
     "ratio-under-definite-ratio-parent",
     "ratio-shrink-content-just-under",
     "ratio-shrink-content-just-over",
@@ -328,6 +331,52 @@ fn shrink_ratio_box(
         parent,
         boxed(LayoutStyle {
             size: (Dimension::Points(30.0), Dimension::Points(child_height)),
+            ..LayoutStyle::default()
+        }),
+    );
+    parent
+}
+
+/// The same shape with an author bound on the **inline** axis.
+///
+/// **Separate from [`shrink_ratio_box`] because it asks the other axis's
+/// question.** That builder varies the child's height and a block-axis floor,
+/// which is what decides whether the content beats the derived height. These
+/// two rows vary what settles the width before any derivation happens, and
+/// folding them in would put three block-axis arguments and two inline ones on
+/// one signature with only one pair ever set.
+///
+/// The pair is measured together on purpose: a minimum and a maximum reach the
+/// solved width by the same route and Chrome treats them differently, so a row
+/// for one without the other would read as a rule about author bounds.
+fn bounded_ratio_box(
+    scene: &mut Scene,
+    min_width: Option<f32>,
+    max_width: Option<f32>,
+) -> NodeId {
+    let wrapper = push(
+        scene,
+        NodeId::ROOT,
+        boxed(LayoutStyle {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            align_items: Some(Align::FlexStart),
+            ..LayoutStyle::default()
+        }),
+    );
+    let mut style = bare_ratio(RATIO);
+    if let Some(value) = min_width {
+        style.min_size = (Dimension::Points(value), Dimension::Auto);
+    }
+    if let Some(value) = max_width {
+        style.max_size = (Dimension::Points(value), Dimension::Auto);
+    }
+    let parent = push(scene, wrapper, measured(style));
+    push(
+        scene,
+        parent,
+        boxed(LayoutStyle {
+            size: (Dimension::Points(30.0), Dimension::Points(10.0)),
             ..LayoutStyle::default()
         }),
     );
@@ -470,6 +519,15 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
         }
         "ratio-shrink-issue-97" => {
             shrink_ratio_box(scene, RATIO, 10.0, None);
+        }
+        "ratio-shrink-min-width-binds" => {
+            bounded_ratio_box(scene, Some(100.0), None);
+        }
+        "ratio-shrink-min-width-slack" => {
+            bounded_ratio_box(scene, Some(20.0), None);
+        }
+        "ratio-shrink-max-width-binds" => {
+            bounded_ratio_box(scene, None, Some(20.0));
         }
         "ratio-under-definite-ratio-parent" => {
             // **The control on the entanglement predicate.** The outer carries
@@ -936,7 +994,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        32,
+        35,
         "the table changed shape; the scenes here are per row"
     );
 

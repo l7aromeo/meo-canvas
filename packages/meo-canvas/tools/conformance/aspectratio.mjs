@@ -229,6 +229,50 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-shrink-min-width-binds',
+    // **A binding minimum on the axis the compensation pins.** The pin exists
+    // for a width the content settled; a `min-width` above that settles it
+    // instead, and Chrome derives the block size from the bound width --
+    // `100 x 117.64` rather than the `29.98 x 35.28` the content alone gives.
+    // `l7aromeo/meo-canvas#126` is the same condition on a grown flex item.
+    note: 'a minimum above the fit-content width settles the inline axis, and the block size follows it',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;min-width:100px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-min-width-slack',
+    // **The row that tells the two candidate repairs apart.** A minimum is
+    // present and does not decide the width -- 20 under a fit-content 30 -- so
+    // Chrome's answer is the unbounded one. A clause asking whether the node
+    // *carries* a minimum skips the pin here and reports taffy's `20 x 24`; a
+    // clause asking whether the solved width *is* the minimum leaves the row
+    // alone. Without it, presence and outcome pass every row in this file.
+    note: 'a minimum below the fit-content width: present, not binding, and the answer is the unbounded one',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;min-width:20px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-max-width-binds',
+    // **The control, and it is the row that keeps the pin.** A maximum binds
+    // the same axis with the same provenance and Chrome does not treat it the
+    // same: it clamps the width and the block size still follows the ratio, so
+    // taffy's own answer here is `9 x 10` and the pin is what reaches Chrome's
+    // `19.98 x 23.52`. A clause written about author bounds in general rather
+    // than about the minimum would take this row down with it.
+    note: 'a maximum below the fit-content width: clamped, and the pin is still what reaches Chrome',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;max-width:20px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-under-definite-ratio-parent',
     // **The control on what counts as entangled.** The parent carries a ratio
     // and a declared width, so its own width is not an outcome and nothing the

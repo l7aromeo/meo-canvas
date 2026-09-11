@@ -1091,11 +1091,14 @@ fn clear_ratios(
 //
 // **The width is pinned only where the derivation wins.** Chrome takes the
 // largest of the derived block size, the content's own height and any author
-// minimum, and the solved height already carries the other two -- so `derived`
-// winning is the whole of the test. Where another term wins, taffy's
-// block-to-inline transfer already lands on Chrome's answer and the node is
-// left as it is: pinning there would stop that transfer and break
+// `min-height`, and the solved height already carries the other two -- so on
+// that axis `derived` winning is the whole of the test. Where another term
+// wins, taffy's block-to-inline transfer already lands on Chrome's answer and
+// the node is left as it is: pinning there would stop that transfer and break
 // `ratio-shrink-taller-content`, which Chrome gives 300 x 255.
+//
+// **A `min-width` is on the other axis and the inequality cannot see it**, so
+// it takes a clause of its own beside the pin below.
 /// Restores the ratios, pins the width where the derivation wins, and solves
 /// again.
 fn compensate_ratio_direction<M>(
@@ -1145,6 +1148,19 @@ where
     // nothing in Chrome, where all four combinations are 248x248. A predicate
     // reading it would write a taffy artefact into this renderer's source.
     //
+    // **Where that rule stops, so the clause beside the pin does not read as
+    // an exception nobody accounted for.** It holds because those four causes
+    // are interchangeable in the answer: one outcome, and Chrome gives it
+    // whichever cause produced it. A binding `min-width` and a binding
+    // `max-width` are not interchangeable -- they reach the same two numbers
+    // on the ratio-free solve and Chrome answers them oppositely -- so there
+    // is no outcome to separate them by and one of the two has to be named.
+    // The clause still compares against the solved width rather than asking
+    // whether a minimum exists, and `ratio-shrink-min-width-slack` in
+    // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` is
+    // the row that keeps it doing so -- but it names the minimum, and the
+    // experiment for why is where the clause is rather than repeated here.
+    //
     // **Not compensated: the stretched family.** `align-items: stretch` with a
     // ratio wants a main size derived from the stretched cross size, and
     // Chrome's answer overflows its line -- 424x424 in a 248-tall content box.
@@ -1159,11 +1175,96 @@ where
             .layout(*id)
             .map_err(|error| Error::Layout(error.to_string()))?;
         cleared.push((*id, solved.size.width, solved.size.height));
-        if solved.size.width / ratio >= solved.size.height {
+        // **The pin is for a width the derivation produced, and an author's
+        // minimum is not one.** Chrome takes the largest of the derived
+        // block size, the content's own height and any author minimum; a
+        // cross size equal to a definite `min-width` is the minimum
+        // winning, and the transferred minimum it owes the other axis is
+        // exactly what a pin would freeze out. taffy makes that transfer
+        // correctly, so the whole of the repair is staying out of its way.
+        //
+        // Measured, `l7aromeo/meo-canvas#126`: a ratio-1 item under
+        // `min-width: 300px` is `300 x 300` in Chrome and in taffy alone,
+        // and `300 x 248` with the width pinned. Three rows in
+        // `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv` fail
+        // without this clause -- `pin-fires-min-width`, the same shape at a
+        // ratio whose transfer is not the identity
+        // (`pin-min-width ratio 0.5`, Chrome's `300 x 600`), and the same
+        // with no growth at all (`pin-min-width no grow`), which is why the
+        // clause is about the minimum rather than about flex.
+        //
+        // **`min-width slack` is the control and must not move.** A
+        // minimum under the derivation leaves the cross size where the
+        // ratio put it, so the comparison is against the solved width
+        // rather than against the minimum's presence: a node that merely
+        // *has* a `min-width` still reaches the pin.
+        //
+        // **A maximum reaches this width by the same route and wants the
+        // opposite**, which is why the clause names the minimum rather than
+        // author bounds in general. Measured on the shrink-to-fit shape
+        // above: `min-width: 100px` gives Chrome's `100 x 117.64` and taffy
+        // reaches it alone, where `max-width: 20px` gives Chrome's
+        // `19.98 x 23.52` and taffy alone gives `9 x 10` -- so the pin is
+        // required there. Read `max_size.width` here instead and
+        // `ratio-shrink-max-width-binds` in
+        // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv`
+        // reports that `9 x 10`. There is no provenance test that separates
+        // the two, because provenance is not what decides it.
+        //
+        // **The comparison is against the solved width, not against the
+        // minimum's presence**, which is the difference the file asks for
+        // two hundred lines up: the condition is the outcome, not the
+        // construction. `ratio-shrink-min-width-slack` is the row that can
+        // tell them apart -- a `min-width: 20px` under a fit-content 30,
+        // present and deciding nothing. Read `.is_some()` here instead and
+        // it reports `20 x 24` against Chrome's `29.98 x 35.28`, while
+        // every row of `flex-ratio-cross.tsv` stays green: in all three of
+        // those a minimum both exists and binds, so presence and outcome
+        // agree there and only this row separates them.
+        //
+        // **`ratio-shrink-min-width-binds` on its own passes either way**,
+        // because pinning a bound width and leaving it alone both reach
+        // Chrome on a shrink-to-fit box. It is a guard; the two rows beside
+        // it are the evidence.
+        //
+        // **What the clause reaches is taffy's own answer, not one derived
+        // here.** With `ratio_direction_candidates` returning nothing, 16 of
+        // the 30 rows in `flex-ratio-cross.tsv` disagree with Chrome and the
+        // binding-minimum rows are not among them -- so the repair is to
+        // stop overriding a transfer taffy already makes, and the day
+        // `DioxusLabs/taffy#1182` lands nothing here has to be unwound.
+        //
+        // **It removes the pin rather than the candidate**, and the
+        // difference is measured: skipping both arms takes `min-width slack`
+        // to taffy's `100 x 248` against Chrome's `248 x 248`. In the
+        // ratio-free solve an empty flex item is zero wide, so every
+        // definite minimum binds there -- including one far under the
+        // derivation -- and that node still needs the derivation arm.
+        let min_binds = tree
+            .style(*id)
+            .ok()
+            .and_then(|style| match style.min_size.width.expand() {
+                taffy::ExpandedLengthPercentageAuto::Length(value) => {
+                    Some(value)
+                }
+                _ => None,
+            })
+            .is_some_and(|value| {
+                (solved.size.width - value).abs() <= DERIVED_TOLERANCE
+            });
+        if solved.size.width / ratio >= solved.size.height && !min_binds {
             pins.push((*id, solved.size.width));
-            // **Disjoint by this inequality rather than by a scope.** The pin
-            // and the derivation read one comparison and take opposite
-            // branches of it, so a node reaching one cannot reach the other.
+            // **Disjoint because the pin leaves here, not because a scope
+            // keeps the two apart.** A node that takes the pin cannot also
+            // derive.
+            //
+            // **They do not partition the candidates**, and reading them as
+            // if they did is the mistake to avoid: the pin wants the
+            // inequality *and* a width no minimum settled, so a node the
+            // inequality alone would pin can still fall through to the
+            // derivation -- and one whose cross size is already the ratio's
+            // answer takes neither, which is `derived_cross` returning
+            // `None`.
             continue;
         }
         if let Some(size) = derived_cross(tree, *id, *ratio, solved.size) {
@@ -1178,8 +1279,10 @@ where
             .clone();
         style.aspect_ratio = Some(*ratio);
         // The derivation taffy did not make, written as a length so the
-        // re-solve below carries it. Disjoint from the pin by the inequality
-        // that chose between them, so the two arms cannot both apply.
+        // re-solve below carries it. A node that took the pin left the loop
+        // above before reaching the derivation, so the two arms cannot both
+        // apply to one node -- which is not the same as their covering every
+        // candidate, and the loop above says why.
         //
         // **Both axes, and writing only the cross one changes nothing.**
         // Measured: with the ratio back on the node, taffy re-derives the
