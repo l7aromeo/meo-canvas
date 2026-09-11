@@ -4,18 +4,23 @@
 
 Fixes land on the current major. Older majors are not patched — the upgrade path is the fix.
 
-| What                             | Where            | Supported                    |
-| -------------------------------- | ---------------- | ---------------------------- |
-| `meo-canvas` 9.x                 | npm, `latest`    | yes                          |
-| `meo-canvas` 10.x                | not yet released | n/a                          |
-| `meo-canvas` < 9                 | npm              | no                           |
-| `meo-canvas*` crates             | not published    | n/a                          |
-| `meo-canvas-<platform>` packages | npm              | with the version they pin to |
+| What                                           | Where                         | Supported                    |
+| ---------------------------------------------- | ----------------------------- | ---------------------------- |
+| `meo-canvas` 10.x                              | npm, `latest`                 | yes                          |
+| `meo-canvas` 9.x                               | npm, by name (`meo-canvas@9`) | no                           |
+| `meo-canvas` < 9                               | npm                           | no                           |
+| `meo-canvas`, `-core`, `-scene`, `-cli` crates | crates.io                     | yes                          |
+| `@meo-canvas/<platform>` packages              | npm                           | with the version they pin to |
 
-10.x is being built on the `v10` branch and nothing from it is on npm: `npm view meo-canvas dist-tags`
-answers `latest: 9.0.3` and no other tag. The Rust crates are not on crates.io. If you are reading
-this on the `v10` branch, the published surface is still 9.x, and a report against something that
-exists only here is a bug report rather than an advisory — say so and it will be treated as one.
+**9.x is frozen.** It is preserved on the `v9` branch and will not be bumped again, so the row above
+follows the rule at the top of this section rather than making an exception to it: the upgrade path
+is the fix, and [MIGRATING.md](MIGRATING.md) is what it costs.
+
+**Read the dist-tags rather than trusting a number written here.** `npm view meo-canvas dist-tags`
+and `cargo info meo-canvas` answer for themselves, and a version quoted in this file would be stale
+the week after it was written. What does not move is the rule: a version carrying a hyphen is a
+prerelease, never reaches `latest`, and is not covered by this policy — a report against one is a
+bug report rather than an advisory, and saying so gets it treated as one.
 
 ## Reporting a vulnerability
 
