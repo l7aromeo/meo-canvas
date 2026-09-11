@@ -28,8 +28,10 @@ leaving it to be met.
 
   **This is a regression introduced in 10.0.0-alpha.6.** It renders correctly in
   alpha.5, so a caller who stopped there can move forward rather than back.
-  Measured against Chrome across eleven cases before anything changed, five of
-  which had to come out unchanged and did. (#91)
+  Measured against Chrome across eleven cases before anything changed: three
+  were nominated as controls and had to come out unchanged, and five came out
+  unchanged in the end. Only the three are evidence — a control counts because
+  it was named in advance. (#91)
 
 - An `Image` with no `width` or `height` was resized by its surroundings. Two
   ways, and both are fixed: positioned with `position: 'absolute'` and opposing
@@ -162,7 +164,10 @@ leaving it to be met.
 
   **An `Image` in that shape was already correct** and is unchanged. A replaced
   element brings its own dimensions, so it never depended on the transfer; the
-  shape that diverged is a plain `Box`.
+  shape that diverged is a plain `Box`. The issue cited below is named for the
+  image because that is what the original report named, and the investigation
+  found the image was never the failing shape — so the title and this paragraph
+  disagree, and this paragraph is the later reading.
 
   **Two cases are still wrong and are worth knowing about.** An item stretched
   across its line and then asked for a main size from that stretch comes out

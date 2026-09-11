@@ -33,8 +33,9 @@ another shape worse, the entry names that shape rather than leaving it to be met
   is no earlier version to fall back to. The change that caused it predates that
   tag; on the npm lineage, which ships from the same core on its own schedule,
   the same defect arrived in 10.0.0-alpha.6. Measured against Chrome across
-  eleven cases before anything changed, five of which had to come out unchanged
-  and did. (#91)
+  eleven cases before anything changed: three were nominated as controls and had
+  to come out unchanged, and five came out unchanged in the end. Only the three
+  are evidence — a control counts because it was named in advance. (#91)
 
 - A `NodeKind::Image` with `Dimension::Auto` on both axes was resized by its
   surroundings. Out of flow with opposing insets on an axis it was stretched to
@@ -196,7 +197,11 @@ another shape worse, the entry names that shape rather than leaving it to be met
   taffy artefact into this renderer.
 
   **A `NodeKind::Image` in that shape was already correct** and is untouched: a
-  replaced element carries its own dimensions and never needed the transfer.
+  replaced element carries its own dimensions and never needed the transfer. The
+  issue cited below is named for the image because that is what the original
+  report named; the investigation found the image was never the failing shape,
+  so the title and this paragraph disagree and this paragraph is the later
+  reading.
 
   **Two cases remain divergent, both on purpose.** An item wanting a main size
   derived from a stretched cross size solves to `424 x 248` against Chrome's
