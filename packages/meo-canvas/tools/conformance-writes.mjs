@@ -53,41 +53,48 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const TOOLS = join(HERE, 'conformance')
 
 /**
- * How many guarded writes the directory holds today.
+ * How many guarded writes the conformance directory holds.
  *
- * Nineteen since `textaligndirection.mjs` joined, which is a **new tool**
- * rather than a new table -- the same reason the two before it moved, and the
- * reason this constant and the one below move together only when both happen
- * at once.
+ * **Compared as an equality, and that is the whole of what this constant is
+ * for.** A bound cannot see an addition: a tool added without winding the
+ * number leaves a green check and a wrong number, and the number is what the
+ * check exists to state. It drifted twice that way -- wound to 22 by a commit
+ * whose body said twenty-one, and to 20 by one where the tree already held 20.
+ * Neither was a forgotten wind. Both were a wrong one, and a floor is silent
+ * about both.
  *
- * Seventeen since `replacedinsets.mjs` and `aspectratio.mjs` joined, and
- * fifteen since `abspositioned.mjs` before them -- each a **new tool** rather
- * than a new table, an unrelated reason from the one that moved the floor
- * below, and they happened to move together only because one change brought
- * both.
+ * **Equality is not extra work.** A commit that adds a tool or a table winds
+ * one of these numbers as part of adding it; winding is the ritual already.
+ * What equality adds is a failure that names the number to write, rather than
+ * a new obligation.
+ *
+ * **It still catches the scan matching nothing**, which is what the bound was
+ * for and the only thing it caught: emptying `MUTATORS` so no writer is
+ * recognised gives 0, and 0 is not equal to this either.
+ *
+ * No history here. The block this replaces listed which tool joined when, went
+ * two winds stale, and read as coherent while the value was wrong -- which is
+ * what makes a stale narration worse than a bare number. git records when a
+ * tool arrived; prose does not maintain it.
  */
-const FLOOR = 22
+const GUARDED_WRITES = 22
 
 /**
- * How many stamped `.tsv` tables there are today.
+ * How many stamped `.tsv` tables the assets directory holds.
  *
- * Nineteen since `text-align-direction.tsv` joined.
+ * Equality for the reason above, and this one had the sharper version of the
+ * argument already written against it: stamping one table alone would leave
+ * this a table short and still pass, because the comparison was a bound. The
+ * same sentence applies to the constant lagging the directory, which is what
+ * happened.
  *
- * Seventeen since `replaced-insets.tsv` and `aspect-ratio-percentage.tsv`
- * joined, fifteen since `absolute-percentage.tsv` before them. **Stamping one
- * alone would leave this a table short and still pass**, because the comparison
- * is `>=` -- green, with the floor one short of the truth. A floor that lags
- * has stopped catching removals, which is the failure this constant's own error
- * message names: *"Either tables were removed, or this check stopped
- * recognising the stamp."* A ratchet that is not wound is a rubber stamp.
- *
- * **Not the same quantity as `FLOOR` above**, and the two are equal by
- * coincidence rather than by construction: this counts stamped tables, that
- * counts guarded writes across the whole tool directory. They diverge the first
- * time a tool writes something that is not a table, or a table is produced by a
- * tool that already existed.
+ * **Not the same quantity as [`GUARDED_WRITES`]**, and equal to it by
+ * coincidence rather than construction: this counts stamped tables, that counts
+ * guarded writes across the whole tool directory. They diverge the first time a
+ * tool writes something that is not a table, or a table is produced by a tool
+ * that already existed.
  */
-const STAMPED_FLOOR = 22
+const STAMPED_TABLES = 22
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([
@@ -231,11 +238,40 @@ if (unguarded.length > 0) {
   process.exit(1)
 }
 
-if (guardedWrites < FLOOR) {
+// **The two directions do not take the same advice, which is why they are two
+// branches.** Above the constant, the measured number is the answer and writing
+// it is the whole repair. Below it, the measured number may be the symptom --
+// writing `0` because the scan matched nothing would make a broken check permanent
+// and green.
+// **At zero the advice is withheld, because following it kills the check.**
+// The message below hands over the measured number, and at zero that number is
+// `0` -- a constant of zero passes against a scan that matches nothing, which
+// is a permanently green check with a success line saying every one of no
+// writes is guarded. A conditional clause asking the reader not to is not an
+// obstacle. So the number is named where either cause is live, and not here:
+// a directory still holding tool files has not had every tool stop writing.
+if (guardedWrites === 0 && scanned > 0) {
   process.stderr.write(
-    `\nFound ${guardedWrites} guarded writes across ${scanned} files, and expected at least ${FLOOR}. ` +
-      'Either a tool stopped writing, or this check stopped recognising how it writes -- and the ' +
-      'second is what a green with nothing matched looks like. Raise or lower FLOOR deliberately.\n',
+    `\nFound no guarded writes at all across ${scanned} files. Every tool would have had to stop writing at ` +
+      'once, so the live cause is that this check no longer recognises how a tool writes. No number is offered ' +
+      'here on purpose: winding GUARDED_WRITES to nought is what a dead check looks like from the outside.\n',
+  )
+  process.exit(1)
+}
+
+if (guardedWrites > GUARDED_WRITES) {
+  process.stderr.write(
+    `\nFound ${guardedWrites} guarded writes across ${scanned} files where GUARDED_WRITES says ${GUARDED_WRITES}. ` +
+      `A tool was added and the constant was not wound: write ${guardedWrites}.\n`,
+  )
+  process.exit(1)
+}
+
+if (guardedWrites < GUARDED_WRITES) {
+  process.stderr.write(
+    `\nFound ${guardedWrites} guarded writes across ${scanned} files where GUARDED_WRITES says ${GUARDED_WRITES}. ` +
+      'Either a tool stopped writing, or this check stopped recognising how it writes -- and the second is what a ' +
+      `green with nothing matched looks like. Write ${guardedWrites} only once you know which.\n`,
   )
   process.exit(1)
 }
@@ -266,8 +302,10 @@ const TABLES = join(HERE, '..', '..', '..', 'crates', 'meo-canvas', 'tests', 'as
 const STAMP = /^#.*\b\d+\.\d+\.\d+\.\d+\b/
 const unstamped = []
 let stamped = 0
+let tables = 0
 for (const file of readdirSync(TABLES).sort()) {
   if (!file.endsWith('.tsv')) continue
+  tables += 1
   const head = readFileSync(join(TABLES, file), 'utf8').split('\n').slice(0, 6)
   if (head.some(line => STAMP.test(line))) stamped += 1
   else unstamped.push(file)
@@ -284,10 +322,35 @@ if (unstamped.length > 0) {
   process.exit(1)
 }
 
-if (stamped < STAMPED_FLOOR) {
+// **Zero withheld for the reason above, and the cause named is the one that is
+// live.** A stamp this no longer recognises is caught before here, by the
+// unstamped list -- every table lands in it and that guard fires first, which
+// was measured by replacing the pattern. What reaches this is no `.tsv` in the
+// directory at all: a path that stopped resolving, or a directory that moved.
+// Naming the recogniser here would send a reader to look at a pattern that is
+// working.
+if (stamped === 0) {
   process.stderr.write(
-    `\nFound ${stamped} stamped tables and expected at least ${STAMPED_FLOOR}. Either tables were removed, or this ` +
-      'check stopped recognising the stamp -- and the second is what a green with nothing matched looks like.\n',
+    `\nFound no stamped tables, from ${tables} \`.tsv\` files in ${TABLES}. A stamp this no longer recognises ` +
+      'is caught above, by every table landing in the unstamped list -- so what is left is that there are no ' +
+      'tables to read, and the directory is the thing to look at. No number is offered here on purpose: winding ' +
+      'STAMPED_TABLES to nought is what a dead check looks like from the outside.\n',
+  )
+  process.exit(1)
+}
+
+if (stamped > STAMPED_TABLES) {
+  process.stderr.write(
+    `\nFound ${stamped} stamped tables where STAMPED_TABLES says ${STAMPED_TABLES}. A table was added and the ` + `constant was not wound: write ${stamped}.\n`,
+  )
+  process.exit(1)
+}
+
+if (stamped < STAMPED_TABLES) {
+  process.stderr.write(
+    `\nFound ${stamped} stamped tables where STAMPED_TABLES says ${STAMPED_TABLES}. Either tables were removed, or ` +
+      'this check stopped recognising the stamp -- and the second is what a green with nothing matched looks like. ' +
+      `Write ${stamped} only once you know which.\n`,
   )
   process.exit(1)
 }
