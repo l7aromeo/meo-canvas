@@ -1062,6 +1062,21 @@ _release_npm dry:
         *)   tag=latest ;;
     esac
 
+    # The note the workflow will demand, checked before anything is dispatched.
+    #
+    # Notes accumulate in `docs/releases/<channel>/unreleased.md` because the
+    # version is not known while the change is being written, and cutting a
+    # release renames that file to the version. A cut that forgets the rename
+    # fails inside the workflow -- for npm, after the matrix has built seven
+    # addons -- so the same condition is read here, where it costs nothing and
+    # the message can name the file to rename.
+    notes="docs/releases/npm/${version}.md"
+    if [[ ! -f "${notes}" ]]; then
+        echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
+        echo "       rename docs/releases/npm/unreleased.md to it and commit" >&2
+        exit 1
+    fi
+
     if [[ "{{ dry }}" == "true" ]]; then
         echo "==> rehearsing ${version} (would go to dist-tag ${tag}); nothing is published"
     else
@@ -1133,6 +1148,21 @@ _release_crate dry:
     fi
 
     version=$(cargo metadata --format-version 1 --no-deps --manifest-path crates/meo-canvas/Cargo.toml         | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).packages.find(p => p.name === 'meo-canvas').version")
+
+    # The note the workflow will demand, checked before anything is dispatched.
+    #
+    # Notes accumulate in `docs/releases/<channel>/unreleased.md` because the
+    # version is not known while the change is being written, and cutting a
+    # release renames that file to the version. A cut that forgets the rename
+    # fails inside the workflow -- for npm, after the matrix has built seven
+    # addons -- so the same condition is read here, where it costs nothing and
+    # the message can name the file to rename.
+    notes="docs/releases/rust/${version}.md"
+    if [[ ! -f "${notes}" ]]; then
+        echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
+        echo "       rename docs/releases/rust/unreleased.md to it and commit" >&2
+        exit 1
+    fi
 
     if [[ "{{ dry }}" == "true" ]]; then
         echo "==> rehearsing ${version}; nothing is published"

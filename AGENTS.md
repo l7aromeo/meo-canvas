@@ -1334,6 +1334,22 @@ carry the channel: `npm-v*` and `rust-v*`. Release notes are hand-written per
 channel at `docs/releases/{npm,rust}/<version>.md`, against the previous release
 _of that channel_, and a missing note fails the release.
 
+**A note is written before its version exists, so it accumulates in
+`docs/releases/{npm,rust}/unreleased.md` and the release renames that file to
+the version.** Every pull request fills it, in the commit that makes the change
+and under the channel or channels the change reaches; a change that reaches
+neither -- a gate, a test, a workflow -- says so in the pull request rather than
+inventing an entry. Writing it at release time instead is what produces a note
+describing the fix rather than the defect, because the log records the fix and
+the reader is looking for their own symptom. `just release-npm` and
+`just release-crate` refuse to dispatch when the version's note is missing, so
+the forgotten rename stops locally rather than inside a workflow that has
+already built seven addons. `docs/releases/README.md` is the authority on the
+headings and on what belongs under each, and `CONTRIBUTING.md` on what to do
+when a change contradicts an entry already in the file -- the short version
+being that an unreleased entry has no reader, so it is edited rather than
+corrected.
+
 **The 68 existing `v*` tags were not rewritten, and a bare `v10.0.0` is still a
 valid npm tag.** `docs.yml`'s filter is `^(npm-)?v...` on purpose, because
 `workflow_dispatch` backfills exactly those releases, and `release-tags-check`

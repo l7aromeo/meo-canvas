@@ -150,6 +150,72 @@ one, which reads exactly like a real defect.
 
 If you add a capability to one surface, the honest question is what the other one now lacks.
 
+## Release notes
+
+**Every pull request fills one.** The two channels each keep an accumulating
+note — `docs/releases/npm/unreleased.md` and `docs/releases/rust/unreleased.md`
+— and the entry lands in the same commit as the change it describes. Cutting a
+release renames that file to the version it ships under, so nobody has to know
+the version while writing the entry.
+
+Append the entry under its Keep a Changelog heading, and cite the issue it
+closes at the end of it — `(#104)` — because the issue is where the measurement
+and the argument live, and the release page is not the place to repeat them.
+
+Which channel is decided by where the change lands, not by which surface you
+were thinking about. A change under `crates/meo-canvas-core/` reaches both, so
+it gets an entry in each, written in that channel's vocabulary — `aspectRatio`
+on the npm side, `aspect_ratio` on the crate side. A change under
+`packages/meo-canvas/src/` reaches npm alone. A change to a gate, a test, a
+workflow or this file reaches no caller at all: say so in the pull request
+rather than inventing an entry, because a release page listing gate edits tells
+someone installing the package nothing.
+
+**Write it as the person who hit it met it**, not as the fix. "A percentage
+height under a ratio parent came out at zero" is the symptom someone searches
+for; "resolve the ratio before the percentage rule" is the commit subject and
+belongs there. `docs/releases/README.md` has the headings, their order and what
+belongs under each — they are Keep a Changelog's.
+
+### When your change contradicts an entry that is already there
+
+**An unreleased entry has no reader.** Nobody has installed the version it
+describes, so there is nothing to correct and nobody to tell. Edit the entry.
+Do not append a second one that undoes the first, and do not write "previously
+announced", "as of this release" or any other sentence that only makes sense to
+someone who read a file that was never published.
+
+Read the file before you append. The entry you contradict is almost always the
+one nearest your own area, which is also the one you are least likely to reread
+because you already know what it says.
+
+Three shapes, and they are decided by what a caller ends up with:
+
+- **Your change completes something an entry called a known limitation.** Edit
+  that entry to drop the limitation, and add your own beside it. This has
+  already happened here: the aspect-ratio entry ended by saying one case was
+  "not fixed here" and named the issue, and the next pull request fixed that
+  issue before either had shipped. Left alone, one release page would have told
+  a caller a thing was broken and then, four paragraphs later, that it was not.
+
+- **Your change supersedes an unreleased one** — a different fix for the same
+  defect, a renamed API, a reworked option. Rewrite the original entry to
+  describe what actually ships. The release page describes the version, not the
+  route the repository took to it.
+
+- **Your change reverts an unreleased one.** Delete the entry. Nothing shipped,
+  so there is nothing to announce, and a pair of entries adding and removing the
+  same thing is noise a reader has to resolve.
+
+**A released note is never edited**, and the rule above is why: a version-named
+file is what somebody already read. A defect found in one is fixed in the next
+release's note, naming the version it was wrong in.
+
+**Two pull requests appending at once will conflict**, both at the end of the
+same section, and that conflict is doing its job. Resolve it by keeping both
+entries in merge order — never by taking one side of the file wholesale, which
+is how an entry disappears with nothing red to say so.
+
 ## Style
 
 Comments here say **why**, not what. The code says what it does; a comment earns its place by

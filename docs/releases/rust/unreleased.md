@@ -1,6 +1,7 @@
-Three of these are in `meo-canvas-core`, so they reach the Rust surface and the
-Node addon alike. The fourth is a dependency requirement and is the one with a
-condition attached — see its entry.
+All of these but one are in `meo-canvas-core`, so they reach the Rust surface
+and the Node addon alike. The exception is a dependency requirement, and it is
+the one with a condition attached — see its entry. No count is given here
+because a count in prose is a claim nothing checks.
 
 ### Fixed
 
@@ -104,8 +105,48 @@ condition attached — see its entry.
   `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` fails the day it is
   fixed upstream so the compensation cannot outlive its reason.
 
-  **One case remains wrong.** At a `Dimension::Points` width the derived height
-  caps the box rather than flooring it, so a 100-wide ratio box holding 300 of
-  content reports 118 against Chrome's 300. That is a different defect in the
-  same area, filed separately, and it is the one row this renderer's
-  aspect-ratio table still records as a divergence.
+  **A second case in the same area is the entry below**, and it is fixed in this
+  release too: at a definite inline size the derived height capped the box
+  rather than flooring it.
+
+- A `NodeKind::Box` with `aspect_ratio` and an inline size settled by something
+  other than the ratio capped its block size at the ratio's value instead of
+  letting taller content push past it. A 100-wide box holding 300 of content
+  solved to 118 tall against Chrome's 300.
+
+  CSS has two minimums on that axis and taffy has one slot for them: an
+  automatic minimum taken from the content does not transfer back into the
+  inline axis, an author's `min_size` does, and writing the content-derived
+  floor into `min_size.height` takes the same box to `255 x 300` — the right
+  quantity in the wrong field. The compensation clears the ratio instead and
+  shares the ratio-free solve the entry above already performs.
+
+  Two conditions decide it and both were measured. The inline size must not be
+  an outcome of the ratio, read as whether removing the ratio moves the width: a
+  100-wide block box reports 100 either way, its shrink-to-fit sibling reports
+  255 with and 30 without, and a predicate missing this condition takes
+  `ratio-shrink-taller-content` from `300 x 255` to 30. And the box must not
+  establish a scroll container — Chrome on the same box gives 117.64 under
+  `Overflow::Hidden`, `Scroll` and `Auto`, and 300 under `Visible` — because a
+  scrolling box has no automatic minimum to restore.
+
+  **It is a workaround and it is marked as one**, in the same way as the entry
+  above: `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs`, with the
+  probe in `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` that fails
+  the day taffy stops needing it.
+
+- `TextAlign::Start` and `TextAlign::End` did not resolve against the node's
+  direction. `Start` folded into the same arm as `Left`, so it was the left edge
+  under `Direction::Rtl` as well — which is the enum's own documentation failing
+  rather than a missing feature, since `Start` is defined as flipping and `Left`
+  as not. `Left` and `Right` were correct throughout and are unchanged.
+
+  Both readers of the alignment go through one resolution now, the placement and
+  the justify decision alike, because a justified line reads the same value and
+  would otherwise disagree with the line it sits in. The four left-to-right rows
+  of the comparison table were green before and after, which is what makes this
+  evidence about the direction rather than about alignment.
+
+  The addon reaches it with no JavaScript change: `direction` and `textAlign`
+  are neighbouring arena slots, so a JavaScript caller could already express the
+  pair and both land in the same core.

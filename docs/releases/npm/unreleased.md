@@ -78,8 +78,33 @@
   nested inside another: the pair resolves in order, the inner ends taller than
   the outer, and that is what a browser does.
 
-  **One case is still wrong and is worth knowing about.** At a **declared**
-  width, a ratio-derived height still caps the box instead of setting a floor
-  it can exceed: a 100-wide box with `aspectRatio: 0.85` holding 300 of content
-  reports 118 where a browser reports 300. That is a separate defect in the
-  layout engine underneath, tracked at (#104), and it is not fixed here. (#97)
+  **A second case in the same area is the entry below**, and it is fixed in this
+  release too: at a declared width a ratio-derived height capped the box rather
+  than flooring it. (#97)
+
+- A `Box` with `aspectRatio` and a width it got from its parent capped its
+  height at the ratio instead of letting taller content push past it. A
+  100-wide box with `aspectRatio: 0.85` holding 300 of content came back 118
+  tall where a browser gives 300.
+
+  Content now exceeds a ratio-derived height wherever the width is not itself a
+  consequence of the ratio. The distinction is what a browser does rather than a
+  simplification: where removing the ratio moves the width — a shrink-to-fit box
+  — the old behaviour was already correct and is untouched, which is why a
+  `300 x 255` box stays `300 x 255` rather than collapsing to its content.
+
+  **One thing to expect rather than report: a scroll container still caps.**
+  Measured on the same box, Chrome gives 117.64 under `overflow: 'hidden'`,
+  `'scroll'` and `'auto'`, and 300 under `visible`. A scrolling box has no
+  automatic minimum to restore, so that is agreement rather than a leftover.
+  (#104)
+
+- `textAlign: 'start'` and `'end'` did not flip under `direction: 'rtl'`.
+  `'start'` was the left edge under both directions, so a right-to-left
+  paragraph drew against the wrong margin, and a justified line's last row went
+  with it. `'left'` and `'right'` were correct throughout and are unchanged —
+  they are the two that are meant not to flip.
+
+  Only the two direction-relative values moved. The four left-to-right rows of
+  the comparison table were green before this and after it, which is what says
+  the repair is about the direction rather than about alignment. (#109)
