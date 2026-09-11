@@ -19,8 +19,17 @@ accumulates entries, and cutting a release renames it:
     docs/releases/npm/unreleased.md   ->  docs/releases/npm/<version>.md
     docs/releases/rust/unreleased.md  ->  docs/releases/rust/<version>.md
 
+`just cut-notes npm` and `just cut-notes rust` do it, reading the version from
+the same manifest the release recipe reads rather than taking it as an
+argument — a typed version is a second source that can disagree, and the
+disagreement surfaces as the workflow refusing a note that exists under a name
+nobody expected.
+
 Renamed rather than copied, so the next cycle starts from an empty file rather
-than from the last release's text with somebody's edits on top.
+than from the last release's text with somebody's edits on top. **The recipe
+leaves that empty file behind**, because a rename alone makes the path stop
+existing the moment a release is cut, and the next contributor is then told by
+`CONTRIBUTING.md` to edit a file that is not there.
 
 **Every pull request fills it.** Add the entry in the same commit as the change,
 under the channel or channels the change reaches -- a change in
@@ -41,9 +50,11 @@ conflict when two pull requests append at once.
 
 **The version-named file is the released one.** `just release-npm` and
 `just release-crate` refuse to dispatch when the note for the version they are
-about to publish is missing, and name `unreleased.md` in the message -- because
-the failure otherwise arrives from inside a workflow after the matrix has
-already built seven addons.
+about to publish is missing **or empty**, because the failure otherwise arrives
+from inside a workflow after the matrix has already built seven addons. Empty
+counts because that is the shape a forgotten cycle actually takes: the stub
+`cut-notes` leaves is a real file, so a run that never wrote an entry would
+otherwise publish a blank release page rather than stopping.
 
 **Write it against the previous release of the same channel**, not against the
 previous commit. The two channels cut from one trunk, so the commits between

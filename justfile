@@ -988,6 +988,57 @@ bump-npm *bump="prerelease": ensure-deps
       process.stderr.write(`${d.name}@${d.version}\n`)
     '
 
+# Cut a channel's accumulating note into the version it ships under.
+#
+# Notes are written while the change is being made, when the version is not
+# known, so they accumulate in `docs/releases/<channel>/unreleased.md` and a
+# release renames that file. Renamed rather than copied, so the next cycle
+# starts empty instead of from the last release's text with edits on top -- and
+# a fresh `unreleased.md` is left behind, because otherwise the path stops
+# existing the moment a release is cut and the next contributor is told by
+# `CONTRIBUTING.md` to edit a file that is not there.
+#
+# The version is read from the same place the release recipe reads it rather
+# than taken as an argument. A typed version would be a second source that can
+# disagree with the manifest, and the disagreement would surface as the release
+# workflow refusing a note that exists under a name nobody expected.
+[doc("Rename a channel's unreleased.md to the version it ships under.")]
+cut-notes channel:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    case "{{ channel }}" in
+        npm)  version=$(node -p "require('./packages/meo-canvas/package.json').version") ;;
+        rust) version=$(cargo metadata --format-version 1 --no-deps --manifest-path crates/meo-canvas/Cargo.toml | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).packages.find(p => p.name === 'meo-canvas').version") ;;
+        *)    echo "error: channel is npm or rust, not {{ channel }}" >&2; exit 1 ;;
+    esac
+
+    dir="docs/releases/{{ channel }}"
+    from="${dir}/unreleased.md"
+    to="${dir}/${version}.md"
+
+    if [[ ! -f "${from}" ]]; then
+        echo "error: ${from} does not exist, so there is nothing to cut" >&2
+        exit 1
+    fi
+    # An empty note and a missing one are the same failure: a release page with
+    # nothing on it. Caught here rather than at dispatch, because here there is
+    # something to do about it.
+    if [[ ! -s "${from}" ]]; then
+        echo "error: ${from} is empty; a release needs a hand-written note" >&2
+        exit 1
+    fi
+    if [[ -e "${to}" ]]; then
+        echo "error: ${to} already exists; ${version} has been cut before" >&2
+        exit 1
+    fi
+
+    git mv "${from}" "${to}"
+    : > "${from}"
+    git add --intent-to-add "${from}"
+    echo "==> ${from} -> ${to}, and a fresh ${from} left behind"
+    echo "    both are staged; commit them before dispatching the release"
+
 # The repository the release workflow runs in.
 #
 # Named rather than left to `gh`'s default, because a clone with more than one
@@ -1073,7 +1124,15 @@ _release_npm dry:
     notes="docs/releases/npm/${version}.md"
     if [[ ! -f "${notes}" ]]; then
         echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
-        echo "       rename docs/releases/npm/unreleased.md to it and commit" >&2
+        echo "       run \`just cut-notes npm\` and commit what it stages" >&2
+        exit 1
+    fi
+    # An empty note is the same failure wearing a different sign: the workflow
+    # finds the file, publishes, and the release page is blank. `cut-notes`
+    # leaves an empty `unreleased.md` behind by design, so this is the shape a
+    # forgotten cycle actually takes.
+    if [[ ! -s "${notes}" ]]; then
+        echo "error: ${notes} is empty; a release page is the note, and there is nothing in it" >&2
         exit 1
     fi
 
@@ -1160,7 +1219,15 @@ _release_crate dry:
     notes="docs/releases/rust/${version}.md"
     if [[ ! -f "${notes}" ]]; then
         echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
-        echo "       rename docs/releases/rust/unreleased.md to it and commit" >&2
+        echo "       run \`just cut-notes rust\` and commit what it stages" >&2
+        exit 1
+    fi
+    # An empty note is the same failure wearing a different sign: the workflow
+    # finds the file, publishes, and the release page is blank. `cut-notes`
+    # leaves an empty `unreleased.md` behind by design, so this is the shape a
+    # forgotten cycle actually takes.
+    if [[ ! -s "${notes}" ]]; then
+        echo "error: ${notes} is empty; a release page is the note, and there is nothing in it" >&2
         exit 1
     fi
 

@@ -161,6 +161,11 @@ note — `docs/releases/npm/unreleased.md` and `docs/releases/rust/unreleased.md
 release renames that file to the version it ships under, so nobody has to know
 the version while writing the entry.
 
+**At the start of a cycle the file is empty, and that is not a mistake.**
+`just cut-notes <channel>` renames the last one away and leaves an empty file
+in its place, so the path always exists and the first entry of a cycle is an
+ordinary edit rather than a decision about what a new file should look like.
+
 Append the entry at the end of its Keep a Changelog heading, and cite the issue
 it answers in parentheses at the end of it, because the issue is where the
 measurement and the argument live and the release page should not repeat them.
