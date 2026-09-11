@@ -1350,11 +1350,38 @@ where
         // That is why `l7aromeo/meo-canvas#129` is not repaired by clamping
         // what this writes: the clamp reads the author's `max_size`, not the
         // size written here, so pre-clamping the derived cross moves no row.
+        let cross_is_height = parent_is_row(tree, *id);
         if let Some((_, size)) = derive.iter().find(|(node, _)| node == id) {
+            let mut size = *size;
+            if let Some(limit) = take_cross_maximum(&mut style, cross_is_height)
+            {
+                if cross_is_height {
+                    size.height = size.height.min(limit);
+                } else {
+                    size.width = size.width.min(limit);
+                }
+            }
             style.size.width = taffy::Dimension::length(size.width);
             style.size.height = taffy::Dimension::length(size.height);
         }
         if let Some((_, width)) = pins.iter().find(|(pinned, _)| pinned == id) {
+            if let Some(limit) = take_cross_maximum(&mut style, cross_is_height)
+            {
+                // In a row the pin writes the *main* axis, so the cross is
+                // what the ratio derives from it; in a column the pinned
+                // width is itself the cross.
+                let cross = if cross_is_height {
+                    *width / ratio
+                } else {
+                    *width
+                };
+                let clamped = cross.min(limit);
+                if cross_is_height {
+                    style.size.height = taffy::Dimension::length(clamped);
+                } else {
+                    style.size.width = taffy::Dimension::length(clamped);
+                }
+            }
             // **The pinned width stays on the style after the solve,
             // deliberately.** Nothing removes it, and nothing needs to:
             // `collect` reads `tree.layout`, so what a `LayoutResult` reports
@@ -1626,6 +1653,64 @@ fn children_of(
     id: taffy::NodeId,
 ) -> Vec<taffy::NodeId> {
     tree.children(id).unwrap_or_default()
+}
+
+/// Whether this node's parent lays out as a row, so its cross axis is the
+/// block one.
+fn parent_is_row(tree: &taffy::TaffyTree<NodeId>, id: taffy::NodeId) -> bool {
+    tree.parent(id)
+        .and_then(|parent| tree.style(parent).ok())
+        .is_some_and(|style| {
+            matches!(
+                style.flex_direction,
+                taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+            )
+        })
+}
+
+// [WORKAROUND] taffy transfers a cross-axis maximum through the ratio into the
+// main axis and clamps the main size with the result, where Chrome clamps only
+// the axis the maximum was written on -- `max-width: 100px` on a grown item at
+// ratio 1 gives `100 x 100` against Chrome's `100 x 248`, and the error is
+// `line - max`, so it is 247 at `max-width: 1px`. Reported as
+// `l7aromeo/meo-canvas#129`; the upstream defect is not filed, because taffy is
+// another team's repository and that is the maintainer's call to make.
+//
+// Retires when `a_cross_maximum_transfers_into_the_main_size` in
+// `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins the
+// transfer as taffy performs it today, so the release that stops performing it
+// turns that test red and names this block. Deleting it is deleting this
+// function and the two calls to it in [`compensate_ratio_direction`].
+//
+// **The clamp reads the author's `max_size` rather than the size written, so
+// pre-clamping what the compensation writes does nothing** -- measured, it
+// moved no row. Removing the maximum is what works, and applying it here first
+// is what makes removing it safe.
+//
+/// Removes the cross-axis maximum from `style` and returns it.
+///
+/// **Taking rather than reading, because the caller applies it itself.**
+/// Applying the maximum to the cross size and removing it from the style
+/// leaves nothing for taffy to transfer into the main axis.
+///
+/// Lengths only. A percentage has no resolved value at this point, so it stays
+/// on the style and the node behaves as it did before this clause -- the same
+/// boundary `l7aromeo/meo-canvas#136` names on the minimum side.
+fn take_cross_maximum(
+    style: &mut taffy::Style,
+    cross_is_height: bool,
+) -> Option<f32> {
+    let slot = if cross_is_height {
+        &mut style.max_size.height
+    } else {
+        &mut style.max_size.width
+    };
+    let taffy::ExpandedLengthPercentageAuto::Length(limit) = slot.expand()
+    else {
+        return None;
+    };
+    *slot = taffy::LengthPercentageAuto::auto();
+    Some(limit)
 }
 
 /// The size a ratio'd item should have taken, or `None` if it already has it.

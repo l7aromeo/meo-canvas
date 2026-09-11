@@ -205,15 +205,21 @@ another shape worse, the entry names that shape rather than leaving it to be met
   so the title and this paragraph disagree and this paragraph is the later
   reading.
 
-  **Two cases remain divergent, both on purpose.** An item wanting a main size
+  **A `max_size` bound on the cross axis clamps that axis alone**, which is
+  Chrome's rule: a grown item at `aspect_ratio: 1` under a `max_size` width of
+  100 solves to `100 x 248` rather than `100 x 100`, and at a width of 1 to
+  `1 x 248` rather than `1 x 1` -- the error scaled with the bound. taffy
+  transfers a maximum through the ratio and clamps the main size with it; the
+  compensation applies the maximum to the cross size itself and takes it off
+  the style, so nothing is left to transfer. A maximum on the main axis is
+  unchanged and still lets the ratio settle the cross. (#129)
+
+  **One case remains divergent, on purpose.** An item wanting a main size
   derived from a stretched cross size solves to `424 x 248` against Chrome's
   `424 x 424`, which overflows its own 248-tall line. It is left alone because
   producing an overflowing box ahead of the engine underneath is a layout change
   nobody asked for; DioxusLabs/taffy#1182 proposes to make it taffy's answer
-  and is open rather than merged, so nothing about the timing is settled. And a
-  `max_size` binding the cross axis takes the other axis with it, so a
-  maximum-bound item solves to `100 x 100` against Chrome's `100 x 248`; that is
-  (#129).
+  and is open rather than merged, so nothing about the timing is settled.
 
   **It is a workaround rather than a fix, and it is marked as one in the
   source.** `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs` names

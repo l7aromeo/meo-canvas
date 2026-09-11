@@ -76,11 +76,7 @@ const TABLE: &str = include_str!("assets/chrome/flex-ratio-cross.tsv");
 /// pixel, which `SLACK` swallows -- so the row would pass, inside a family
 /// that diverges, and a sweep landing there would conclude the family agrees.
 /// A row that cannot fail next to rows that do is worse than the prose.
-const KNOWN: &[&str] = &[
-    "uncompensated stretch",
-    "known max-width",
-    "known max-width amplified",
-];
+const KNOWN: &[&str] = &["uncompensated stretch"];
 
 /// One row of the table.
 fn chrome(case: &str) -> (f32, f32) {
@@ -125,6 +121,7 @@ struct Case {
     pct_height: bool,
     min_w: Option<f32>,
     max_w: Option<f32>,
+    max_h: Option<f32>,
     item_clips: bool,
     container_clips: bool,
     content: bool,
@@ -146,6 +143,7 @@ impl Case {
             pct_height: false,
             min_w: None,
             max_w: None,
+            max_h: None,
             item_clips: false,
             container_clips: false,
             content: false,
@@ -206,6 +204,9 @@ fn item_of(case: Case) -> Node {
     }
     if let Some(value) = case.max_w {
         item.layout.max_size.0 = Dimension::Points(value);
+    }
+    if let Some(value) = case.max_h {
+        item.layout.max_size.1 = Dimension::Points(value);
     }
     if case.item_clips {
         item.layout.overflow = (Overflow::Hidden, Overflow::Hidden);
@@ -478,6 +479,14 @@ fn rows_at_a_boundary() -> Vec<(&'static str, Case)> {
             "known max-width",
             Case {
                 max_w: Some(100.0),
+                ..Case::new()
+            },
+        ),
+        (
+            "row max-height",
+            Case {
+                row: true,
+                max_h: Some(100.0),
                 ..Case::new()
             },
         ),

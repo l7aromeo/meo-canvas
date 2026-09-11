@@ -43,4 +43,5 @@ min-width slack	248.00	248.00	default	control: a minimum under the derivation ch
 pin-quiet-empty	248.00	248.00	default	width/ratio < height: this takes it, not the pin
 uncompensated stretch	424.00	424.00	default	the derivation overflows its line; upstream has not shipped it
 known max-width	100.00	248.00	default	a maximum binding the cross axis does not transfer back here
+row max-height	424.00	100.00	default	a cross maximum in a row container, where the pin writes the main axis
 known max-width amplified	1.00	248.00	default	the same divergence at its far end: the error is 248 minus the maximum

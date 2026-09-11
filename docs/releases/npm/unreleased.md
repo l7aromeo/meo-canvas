@@ -166,14 +166,20 @@ leaving it to be met.
   found the image was never the failing shape — so the title and this paragraph
   disagree, and this paragraph is the later reading.
 
-  **Two cases are still wrong and are worth knowing about.** An item stretched
+  **A `maxWidth` or `maxHeight` on the cross axis clamps that axis and leaves
+  the other one alone**, which is what a browser does: a grown item at
+  `aspectRatio: 1` under `maxWidth: 100` is 100 x 248 rather than 100 x 100,
+  and the same item under `maxWidth: 1` is 1 x 248 rather than 1 x 1. The
+  engine underneath carries the maximum through the ratio into the other axis;
+  this puts it back where it was written. A maximum on the _main_ axis still
+  clamps that axis and lets the ratio settle the other, unchanged. (#129)
+
+  **One case is still wrong and is worth knowing about.** An item stretched
   across its line and then asked for a main size from that stretch comes out
   424 x 248 where a browser gives 424 x 424 — which overflows its own 248-tall
   line. That one is deliberately not compensated: producing an overflowing box
   is a layout change nobody asked for, and the proposal to make it the engine's
-  own answer is an open pull request rather than a shipped one. And a `maxWidth`
-  binding the cross axis takes the other axis down with it — 100 x 100 against a
-  browser's 100 x 248, tracked at (#129).
+  own answer is an open pull request rather than a shipped one.
 
   **It is a workaround and it is marked as one**, with a probe that fails the
   day the layout engine underneath stops needing it. (#123)
