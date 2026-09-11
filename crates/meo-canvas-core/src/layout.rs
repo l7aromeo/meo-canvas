@@ -1211,6 +1211,18 @@ where
         // reports that `9 x 10`. There is no provenance test that separates
         // the two, because provenance is not what decides it.
         //
+        // **The comparison asks whether the minimum reaches the solved
+        // width, not whether it is near it.** taffy has already applied the
+        // minimum by this point, so a binding one *is* the solved width and
+        // a slack one sits under it; `>=` is that statement and a tolerance
+        // is not. Written as `|solved - value| <= DERIVED_TOLERANCE` it
+        // reports `29 x 34` for a `min-width: 29px` under a fit-content 30
+        // while `29.98` and `20` either side are both right -- a band one
+        // pixel wide where a slack minimum reads as binding, which
+        // `ratio-shrink-min-width-just-under` sits inside. That constant is
+        // for two solved sizes, where taffy rounds each edge and a size is
+        // the difference of two rounded ones; an author's length is neither.
+        //
         // **The comparison is against the solved width, not against the
         // minimum's presence**, which is the difference the file asks for
         // two hundred lines up: the condition is the outcome, not the
@@ -1252,9 +1264,7 @@ where
                 }
                 _ => None,
             })
-            .is_some_and(|value| {
-                (solved.size.width - value).abs() <= DERIVED_TOLERANCE
-            });
+            .is_some_and(|value| value >= solved.size.width);
         if solved.size.width / ratio >= solved.size.height && !min_binds {
             pins.push((*id, solved.size.width));
             // **Disjoint because the pin leaves here, not because a scope

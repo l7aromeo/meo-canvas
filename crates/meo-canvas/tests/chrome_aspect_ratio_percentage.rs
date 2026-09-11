@@ -286,6 +286,8 @@ const RATIO_BOX: &[&str] = &[
     "ratio-shrink-issue-97",
     "ratio-shrink-min-width-binds",
     "ratio-shrink-min-width-slack",
+    "ratio-shrink-min-width-just-under",
+    "ratio-shrink-min-over-max",
     "ratio-shrink-max-width-binds",
     "ratio-under-definite-ratio-parent",
     "ratio-shrink-content-just-under",
@@ -525,6 +527,12 @@ fn shrink_family_case(scene: &mut Scene, case: &str) {
         }
         "ratio-shrink-min-width-slack" => {
             bounded_ratio_box(scene, Some(20.0), None);
+        }
+        "ratio-shrink-min-width-just-under" => {
+            bounded_ratio_box(scene, Some(29.0), None);
+        }
+        "ratio-shrink-min-over-max" => {
+            bounded_ratio_box(scene, Some(100.0), Some(20.0));
         }
         "ratio-shrink-max-width-binds" => {
             bounded_ratio_box(scene, None, Some(20.0));
@@ -994,7 +1002,7 @@ fn every_row_paints_the_band_chrome_measured() {
     let rows = rows();
     assert_eq!(
         rows.len(),
-        35,
+        37,
         "the table changed shape; the scenes here are per row"
     );
 

@@ -25,6 +25,8 @@ ratio-shrink-taller-content	300.00	255.00	shrink-to-fit ratio box whose content 
 ratio-shrink-issue-97	35.28	29.98	the issue shape itself: a plain 30x10 child under ratio .85 on a shrink-to-fit parent
 ratio-shrink-min-width-binds	117.64	100.00	a minimum above the fit-content width settles the inline axis, and the block size follows it
 ratio-shrink-min-width-slack	35.28	29.98	a minimum below the fit-content width: present, not binding, and the answer is the unbounded one
+ratio-shrink-min-width-just-under	35.28	29.98	a minimum one pixel under the fit-content width: still slack, and the answer is the unbounded one
+ratio-shrink-min-over-max	117.64	100.00	a minimum and a maximum both written: CSS resolves the minimum last, and the block size follows it
 ratio-shrink-max-width-binds	23.52	19.98	a maximum below the fit-content width: clamped, and the pin is still what reaches Chrome
 ratio-under-definite-ratio-parent	35.28	29.98	a shrink-to-fit ratio child inside a ratio parent whose width is declared -- the parent is not entangled
 ratio-shrink-content-just-under	35.28	29.98	content one pixel short of the derived height -- the derived one should win and the width should not move

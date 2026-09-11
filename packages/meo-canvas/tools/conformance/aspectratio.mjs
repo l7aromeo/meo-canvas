@@ -278,6 +278,48 @@ const CASES = [
            </div>`,
   },
   {
+    key: 'ratio-shrink-min-width-just-under',
+    // **The corner where a slack minimum is nearest to looking like a binding
+    // one**: `29px` under a fit-content `29.98`, so the two differ by less
+    // than the pixel `DERIVED_TOLERANCE` allows between two solved sizes. The
+    // minimum decides nothing here and Chrome gives the unbounded answer,
+    // which is why the pin's clause asks whether the minimum reaches the
+    // solved width rather than whether it is near it. Written as a tolerance,
+    // the clause reported `29 x 34` on this row alone while `29.98` and `20`
+    // either side of it were both right -- a band one pixel wide, and this is
+    // the row inside it.
+    note: 'a minimum one pixel under the fit-content width: still slack, and the answer is the unbounded one',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;min-width:29px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
+    key: 'ratio-shrink-min-over-max',
+    // **Where the pin's minimum clause and the maximum path meet, and agree.**
+    // CSS resolves a minimum over a maximum, so `min-width: 100px` with
+    // `max-width: 20px` is 100 wide and the block size follows the minimum --
+    // `100 x 117.64`, the same as the minimum alone. The maximum is present
+    // and decides nothing.
+    //
+    // It is pinned because it looks wrong, not because it fails against
+    // anything. A reader meeting a box wider than its own `max-width` reaches
+    // for a clamp, and `ratio-shrink-max-width-binds` below says a maximum
+    // binds the axis -- so this is the row that says which of the two wins
+    // when both are written. Measured, removing the pin's minimum clause
+    // leaves it green, and the minimum equals the solved width here so every
+    // spelling of that clause agrees on it by identity. Like
+    // `ratio-shrink-min-width-binds` it records Chrome for a corner rather
+    // than guarding the code.
+    note: 'a minimum and a maximum both written: CSS resolves the minimum last, and the block size follows it',
+    html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
+             <div id="m" style="aspect-ratio:.85;min-width:100px;max-width:20px">
+               <div style="width:30px;height:10px"></div>
+             </div>
+           </div>`,
+  },
+  {
     key: 'ratio-shrink-max-width-binds',
     // **The control, and it is the row that keeps the pin.** A maximum binds
     // the same axis with the same provenance and Chrome does not treat it the
