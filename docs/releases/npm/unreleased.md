@@ -99,8 +99,8 @@ leaving it to be met.
   binds comes out 300 x 248 where a browser gives 300 x 300 — and where this
   renderer gave 300 x 300 before, because the layout engine underneath is right
   about that shape on its own. One measured case, and the family around it has
-  not been enumerated: a binding `maxWidth` does not show the fault. Tracked at
-  (#126).
+  not been enumerated: a binding `maxWidth` does not show **this** fault, though
+  it has a divergence of its own — see the last entry below. Tracked at (#126).
 
   It is not a reason to hold the rest back, and the row beside it is why: the
   same machinery takes a grown row container from 424 x 0 to Chrome's 424 x 424.

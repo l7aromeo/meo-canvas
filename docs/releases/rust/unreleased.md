@@ -123,7 +123,8 @@ another shape worse, the entry names that shape rather than leaving it to be met
   width of 300 solves to `300 x 248` against Chrome's `300 x 300` — which taffy
   alone produces, so on that shape the compensation is worse than no
   compensation. One measured case; a binding maximum on the same axis does not
-  show it, so the boundary between the two has not been found.
+  show it, so the boundary between the two has not been found — though a binding
+  maximum diverges for a different reason, in the last entry below.
 
   Tracked at (#126). Stated rather than left to be met, and it does not outweigh
   the rest: the same pass takes a grown row container from `424 x 0` to Chrome's
