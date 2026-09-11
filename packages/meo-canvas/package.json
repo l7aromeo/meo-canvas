@@ -1,7 +1,7 @@
 {
   "name": "meo-canvas",
   "version": "10.0.0",
-  "description": "Declarative 2D scene rendering on Skia with CSS flexbox, grid and block layout.",
+  "description": "Server-side image generation for Node. Declarative scenes with CSS flexbox and grid layout, rendered on Skia.",
   "keywords": [
     "canvas",
     "server-side",

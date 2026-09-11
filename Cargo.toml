@@ -14,6 +14,7 @@ edition = "2024"
 rust-version = "1.98"
 license = "MIT"
 repository = "https://github.com/l7aromeo/meo-canvas"
+homepage = "https://l7aromeo.github.io/meo-canvas/"
 authors = ["L A Romeo <ukasyahrz@outlook.com>"]
 # `readme` is deliberately not inherited: an inherited path resolves against the
 # workspace root, so every member would advertise the same file. Each member

@@ -9,6 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 # **Naming both `metal` and `vulkan` builds, and Metal wins.** It did not
