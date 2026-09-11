@@ -169,7 +169,7 @@ ci:
 # exceptions: all eleven here are `cargo`-free through their dependencies, and
 # all thirteen there reach it. `gate-lists-check` asserts the arithmetic of that
 # sentence rather than leaving it to a reader.
-portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-js private-docs issue-refs conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
+portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-js private-docs issue-refs fixture-notes conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
 
 # The checks that compile, link, or run the addon, and so have to run per host.
 #
@@ -1548,6 +1548,18 @@ docs-js: build-js
 [doc("Fail if a comment names an issue without naming its repository.")]
 issue-refs:
     node packages/meo-canvas/tools/issue-refs.mjs
+
+# Fail if a golden fixture carries no note, or a note missing a field.
+#
+# **The image says what was drawn and nothing else says what it was for.**
+# `fixtures.rs` compares bytes and never opens a note, so a fixture added
+# without one is a picture the next reader can only accept or re-derive. This
+# reads that the three fields are there and say something; whether they are true
+# is not a property a program here can test, and the tool says so in its own
+# header.
+[doc("Fail if a fixture has no notes.json, or one missing a field.")]
+fixture-notes:
+    node packages/meo-canvas/tools/fixture-notes.mjs
 
 # Fail if a conformance tool writes a tracked fixture unguarded.
 #
