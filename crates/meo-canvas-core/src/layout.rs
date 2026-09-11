@@ -1278,10 +1278,14 @@ fn derived_cross(
 ///
 /// **A scroll container rather than a non-`visible` overflow**, and the two are
 /// not the same set. Measured in Chrome on a 100-wide ratio box holding 300 of
-/// content: `hidden`, `scroll` and `auto` all report 117.64 and `clip` reports
-/// 300. `clip` is the one non-visible value that establishes no scroll
-/// container, so a predicate written from the specification's wording would be
-/// right on three spellings and silently wrong on the fourth.
+/// content, all five values: `visible` 300, `clip` 300, and `hidden`, `scroll`
+/// and `auto` 117.64. `clip` is the one non-visible value that establishes no
+/// scroll container, so a predicate written from the specification's wording
+/// would be right on three spellings and silently wrong on the fourth.
+///
+/// **`visible` is in that list because it is the arm this function takes**, not
+/// as context for the other four: 300 is the number [`floor_ratio_heights`]
+/// restores, so that row is the measurement behind the `false` return.
 ///
 /// `Overflow` here has no `Clip`, so no scene reaches that case today. Adding
 /// one is **not** a synonym for `Hidden` on this axis.
