@@ -67,7 +67,20 @@ function token() {
 
 /** This repository, so its own issues are not watched as if they were upstream. */
 function self() {
-  const url = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim()
+  // **Both ways it can fail arrive at the same refusal.** A checkout with no
+  // `origin` makes `git` exit non-zero and a remote that is not GitHub parses
+  // to nothing; either leaves the filter unable to say what is ours, and an
+  // uncaught `git` error would report that as a stack trace rather than as the
+  // refusal it is.
+  let url
+  try {
+    url = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return undefined
+  }
   const match = /github\.com[/:](?<owner>[\w.-]+)\/(?<repo>[\w.-]+?)(?:\.git)?$/u.exec(url)
   return match?.groups === undefined ? undefined : `${match.groups['owner']}/${match.groups['repo']}`
 }
@@ -179,6 +192,19 @@ verifyLexers()
 verifySummary()
 
 const mine = self()
+if (mine === undefined) {
+  // **Not watching everything instead.** With no name for this repository the
+  // filter that drops our own references matches nothing, so the run would
+  // quietly widen from the upstream set to every reference in the tree --
+  // fifteen of our own issues reported weekly as if they were upstream, which
+  // is the report nobody reads. A filter that cannot identify what it excludes
+  // has not excluded anything.
+  process.stderr.write(
+    'upstream watch: `git remote get-url origin` named no owner/repo, so there is no way to tell this ' +
+      "repository's own references from an upstream one. Refusing rather than watching every reference in the tree.\n",
+  )
+  process.exit(1)
+}
 const auth = token()
 const all = referenced()
 const watched = [...all].filter(([key]) => !key.startsWith(`${mine}#`)).sort(([one], [two]) => one.localeCompare(two))

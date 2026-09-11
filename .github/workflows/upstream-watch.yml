@@ -90,6 +90,30 @@ jobs:
         with:
           node-version: lts/*
 
+      # **The step runs the recipe, so the runner needs `just`.** The first
+      # dispatch of this file died at `line 1: just: command not found`, exit
+      # 127 -- and a red run was the designed outcome, since there is a real
+      # finding waiting, so the colour was right and the cause was not. An exit
+      # status alone cannot tell a finding from a step that never started.
+      #
+      # Same action, same pinned commit and same version as `ci.yml`,
+      # `release.yml`, `encode-hashes.yml` and `fixtures.yml`, rather than a
+      # fifth spelling of one prerequisite.
+      #
+      # **Through the recipe rather than around it**, which `cache-prune.yml`
+      # does not do -- it invokes `node` directly and needs no `just`, which is
+      # the shape this file was copied from and where the missing install came
+      # from. Calling the recipe is what keeps this and a person's own
+      # `just upstream-watch` the same command; a workflow that bypasses it can
+      # drift from it silently.
+      #
+      # `gh` needs no install: it is present on GitHub-hosted runners, which
+      # `cache-prune.yml`, `crates-io.yml` and `release.yml` all rely on
+      # already.
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
+
       - name: Watch
         env:
           # The default token reads public repositories, which is every
