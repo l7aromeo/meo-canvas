@@ -94,7 +94,6 @@ dependencies, installed where the bundle runs.
 ## Usage
 
 ```ts
-import { writeFileSync } from 'node:fs'
 import { Box, Column, Root, Text } from 'meo-canvas'
 
 const canvas = await Root({
@@ -111,7 +110,7 @@ const canvas = await Root({
   }),
 })
 
-writeFileSync('card.png', await canvas.toBuffer('png'))
+await canvas.toFile('card.png')
 canvas.release()
 ```
 

@@ -9,7 +9,6 @@
 
 import { Box, Column, Image, Path, Root, Row, Text, formatColor, mixColor, parseColor } from '../index.js'
 import type { Gradient } from '../index.js'
-import { writeFileSync } from 'node:fs'
 
 /** `color.ts, parseColor`. */
 export async function example_parseColor(): Promise<void> {
@@ -98,7 +97,7 @@ export async function example_README_md(): Promise<void> {
     }),
   })
 
-  writeFileSync('card.png', await canvas.toBuffer('png'))
+  await canvas.toFile('card.png')
   canvas.release()
 }
 
@@ -172,6 +171,6 @@ export async function example_______README_md(): Promise<void> {
     }),
   })
 
-  writeFileSync('card.png', await canvas.toBuffer('png'))
+  await canvas.toFile('card.png')
   canvas.release()
 }

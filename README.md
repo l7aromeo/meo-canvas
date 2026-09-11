@@ -56,7 +56,6 @@ npm install meo-canvas-v9@npm:meo-canvas@9 meo-canvas
 ## Usage
 
 ```ts
-import { writeFileSync } from 'node:fs'
 import { Box, Column, Root, Text } from 'meo-canvas'
 
 const canvas = await Root({
@@ -73,7 +72,7 @@ const canvas = await Root({
   }),
 })
 
-writeFileSync('card.png', await canvas.toBuffer('png'))
+await canvas.toFile('card.png')
 canvas.release()
 ```
 
@@ -83,7 +82,7 @@ on seven node types:
 
 ```rust,no_run
 use meo_canvas::{
-    Box, Column, Format, Renderer, Root, Styled, Text, all, hex_rgb, px,
+    Box, Column, Renderer, Root, Styled, Text, all, hex_rgb, px,
 };
 
 let card = Column::new().gap(px(10.0)).children([
@@ -105,7 +104,7 @@ let mut canvas = Root::new(320.0)
     .children([card])
     .render(&Renderer::new())?;
 
-std::fs::write("card.png", canvas.to_buffer(Format::Png)?)?;
+canvas.to_file("card.png")?;
 # // `Box` here is the node, so the heap allocation is spelled in full.
 # Ok::<(), std::boxed::Box<dyn std::error::Error>>(())
 ```
