@@ -114,8 +114,9 @@ because a count in prose is a claim nothing checks.
   compensation. One measured case; a binding maximum on the same axis does not
   show it, so the boundary between the two has not been found.
 
-  Stated rather than left to be met, and it does not outweigh the rest: the same
-  pass takes a grown row container from `424 x 0` to Chrome's `424 x 424`. (#126)
+  Tracked at (#126). Stated rather than left to be met, and it does not outweigh
+  the rest: the same pass takes a grown row container from `424 x 0` to Chrome's
+  `424 x 424`.
 
   **A second case in the same area is the entry below**, and it is fixed in this
   release too: at a definite inline size the derived height capped the box
