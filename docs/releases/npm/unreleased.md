@@ -78,6 +78,21 @@
   nested inside another: the pair resolves in order, the inner ends taller than
   the outer, and that is what a browser does.
 
+  **What this costs, because it is new in this release and it is a
+  regression.** The compensation decides from a solve taken with the ratio
+  removed, and it cannot tell a width the ratio derived from a width a minimum
+  bound. So an item with `flexGrow: 1`, `aspectRatio: 1` and a `minWidth` that
+  binds comes out 300 x 248 where a browser gives 300 x 300 — and where this
+  renderer gave 300 x 300 before, because the layout engine underneath is right
+  about that shape on its own. One measured case, and the family around it has
+  not been enumerated: a binding `maxWidth` does not show the fault. Tracked at
+  (#126).
+
+  It is not a reason to hold the rest back, and the row beside it is why: the
+  same machinery takes a grown row container from 424 x 0 to Chrome's 424 x 424.
+  The compensation is a net gain with one known cost, stated here rather than
+  discovered.
+
   **A second case in the same area is the entry below**, and it is fixed in this
   release too: at a declared width a ratio-derived height capped the box rather
   than flooring it. (#97)

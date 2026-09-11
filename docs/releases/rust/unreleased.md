@@ -24,7 +24,7 @@ because a count in prose is a claim nothing checks.
   tag; on the npm lineage, which ships from the same core on its own schedule,
   the same defect arrived in 10.0.0-alpha.6. Measured against Chrome across
   eleven cases before anything changed, five of which had to come out unchanged
-  and did.
+  and did. (#91)
 
 - A `NodeKind::Image` with `Dimension::Auto` on both axes was resized by its
   surroundings. Out of flow with opposing insets on an axis it was stretched to
@@ -36,7 +36,7 @@ because a count in prose is a claim nothing checks.
   An image with no stated extent now keeps its intrinsic one. The end inset is
   dropped on an over-constrained axis and the start inset positions it, which is
   what Chrome does — every measured row sits at the start corner. A stated
-  `Dimension::Points` or `Percent` on **both** axes still wins.
+  `Dimension::Points` or `Percent` on **both** axes still wins. (#92)
 
 - A `NodeKind::Image` with a definite inline size and `Dimension::Auto` on the
   block axis came back at its intrinsic height in block flow. A 60x40 picture at
@@ -48,7 +48,7 @@ because a count in prose is a claim nothing checks.
   flow. **`Display::Flex` is unchanged and was correct before**: a flex item with
   an `auto` cross size stretches to its line and the ratio does not override
   that, which is what a browser does, so those rows are the control on this
-  change rather than evidence about it.
+  change rather than evidence about it. (#94)
 
 - A `NodeKind::Image` whose source is an SVG document ignored `ObjectFit` under
   every rule that scales. `Fill`, `Contain` and `Cover` drew the document at its
@@ -77,7 +77,7 @@ because a count in prose is a claim nothing checks.
   its own `preserveAspectRatio`, defaulting to `xMidYMid meet`, so it meets
   uniformly instead of stretching. On a box whose aspect differs from the
   picture's, `Fill` on a document lands where `Contain` does; a bitmap has no
-  such rule and stretches. Every other rule agrees across the two kinds.
+  such rule and stretches. Every other rule agrees across the two kinds. (#95)
 
 - A `NodeKind::Box` with `aspect_ratio` and `Dimension::Auto` on both axes
   ignored the ratio, coming back at its content's height and at a width of
@@ -105,9 +105,21 @@ because a count in prose is a claim nothing checks.
   `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` fails the day it is
   fixed upstream so the compensation cannot outlive its reason.
 
+  **What this costs, and it is new in this release.** The compensation decides
+  on a solve taken with the ratio cleared, reading `width / ratio >= height` off
+  it, and that inequality has no clause about where the cross size came from. An
+  item under `flex_grow` carrying `aspect_ratio: 1` and a binding `min_size`
+  width of 300 solves to `300 x 248` against Chrome's `300 x 300` — which taffy
+  alone produces, so on that shape the compensation is worse than no
+  compensation. One measured case; a binding maximum on the same axis does not
+  show it, so the boundary between the two has not been found.
+
+  Stated rather than left to be met, and it does not outweigh the rest: the same
+  pass takes a grown row container from `424 x 0` to Chrome's `424 x 424`. (#126)
+
   **A second case in the same area is the entry below**, and it is fixed in this
   release too: at a definite inline size the derived height capped the box
-  rather than flooring it.
+  rather than flooring it. (#97)
 
 - A `NodeKind::Box` with `aspect_ratio` and an inline size settled by something
   other than the ratio capped its block size at the ratio's value instead of
@@ -133,7 +145,7 @@ because a count in prose is a claim nothing checks.
   **It is a workaround and it is marked as one**, in the same way as the entry
   above: `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs`, with the
   probe in `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` that fails
-  the day taffy stops needing it.
+  the day taffy stops needing it. (#104)
 
 - `TextAlign::Start` and `TextAlign::End` did not resolve against the node's
   direction. `Start` folded into the same arm as `Left`, so it was the left edge
@@ -149,7 +161,7 @@ because a count in prose is a claim nothing checks.
 
   The addon reaches it with no JavaScript change: `direction` and `textAlign`
   are neighbouring arena slots, so a JavaScript caller could already express the
-  pair and both land in the same core.
+  pair and both land in the same core. (#109)
 
 - A flex item with `flex_grow` and an `aspect_ratio` came out with no inline
   size in a column. Growing settles the block axis and the ratio should transfer
@@ -178,9 +190,9 @@ because a count in prose is a claim nothing checks.
   overflows its line and `DioxusLabs/taffy#1182` will produce it upstream — this
   renderer should not get there first. And a `max_size` binding the cross axis
   takes the other axis with it, so a maximum-bound item solves to 100 x 100
-  against Chrome's 100 x 248; that is filed separately.
+  against Chrome's 100 x 248; that is (#129).
 
   **It is a workaround and it is marked as one.** `[WORKAROUND]` in
   `crates/meo-canvas-core/src/layout.rs` names `DioxusLabs/taffy#804`, and
   `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fails the day taffy stops
-  needing it.
+  needing it. (#123)
