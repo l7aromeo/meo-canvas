@@ -3,6 +3,16 @@ and the Node addon alike. The exception is a dependency requirement, and it is
 the one with a condition attached — see its entry. No count is given here
 because a count in prose is a claim nothing checks.
 
+**Some of them are workarounds rather than fixes**, and each says so where it
+sits. The defect is taffy's, and what ships here is compensation around it — so
+the issue this repository filed stays open after the release, by design rather
+than by oversight, and the entry cites it anyway. Two things follow. A
+compensation is removed the day taffy stops needing it, and each is held to that
+by a probe pinned to what taffy does today, which fails on that day rather than
+waiting for someone to remember — so the behaviour can move again, toward the
+browser. And a compensation is narrower than a fix: where one is known to make
+another shape worse, the entry names that shape rather than leaving it to be met.
+
 ### Fixed
 
 - A percentage height under a parent sized by `size.0` and `aspect_ratio` came
@@ -100,8 +110,9 @@ because a count in prose is a claim nothing checks.
   untouched, because a pair like that resolves in one ordered sweep that already
   matches Chrome.
 
-  **It is a workaround and it is marked as one.** `[WORKAROUND]` in
-  `crates/meo-canvas-core/src/layout.rs` names the upstream defect, and
+  **It is a workaround rather than a fix, and it is marked as one in the
+  source.** `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs` names the
+  upstream defect, and
   `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` fails the day it is
   fixed upstream so the compensation cannot outlive its reason.
 
@@ -143,7 +154,7 @@ because a count in prose is a claim nothing checks.
   `Overflow::Hidden`, `Scroll` and `Auto`, and 300 under `Visible` — because a
   scrolling box has no automatic minimum to restore.
 
-  **It is a workaround and it is marked as one**, in the same way as the entry
+  **It is a workaround rather than a fix**, marked in the same way as the entry
   above: `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs`, with the
   probe in `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` that fails
   the day taffy stops needing it. (#104)
@@ -196,7 +207,8 @@ because a count in prose is a claim nothing checks.
   maximum-bound item solves to `100 x 100` against Chrome's `100 x 248`; that is
   (#129).
 
-  **It is a workaround and it is marked as one.** `[WORKAROUND]` in
-  `crates/meo-canvas-core/src/layout.rs` names `DioxusLabs/taffy#804`, and
+  **It is a workaround rather than a fix, and it is marked as one in the
+  source.** `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs` names
+  `DioxusLabs/taffy#804`, and
   `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fails the day taffy stops
   needing it. (#123)

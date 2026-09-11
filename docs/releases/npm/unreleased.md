@@ -1,3 +1,17 @@
+**Some of the entries below are workarounds rather than fixes**, and each says so
+where it sits — no count here, because a count in prose is a claim nothing
+checks and this file grows. The defect is in the layout engine this renderer sits on, and
+what ships here is compensation around it — so the issue this repository filed
+stays open after the release, by design rather than by oversight, and the entry
+cites it anyway.
+
+Two things follow for a caller. A compensation is removed the day the engine
+stops needing it, and each is held to that by a test that fails on the day
+rather than by anyone remembering — so the behaviour can move again, in the
+direction of the browser. And a compensation is narrower than a fix: where one
+is known to make some other shape worse, the entry names that shape rather than
+leaving it to be met.
+
 ### Fixed
 
 - A percentage height under a parent sized by `width` and `aspectRatio` came out
@@ -93,6 +107,13 @@
   The compensation is a net gain with one known cost, stated here rather than
   discovered.
 
+  **This is a workaround rather than a fix.** The layout engine underneath
+  resolves a ratio box's axes in the wrong order, which is not something this
+  renderer can correct there, so it solves the box twice and puts the ratio back
+  between the two passes. The issue stays open until the engine is fixed, and a
+  test pinned to what the engine does today fails the day it is — which is what
+  stops the compensation outliving its reason.
+
   **A second case in the same area is the entry below**, and it is fixed in this
   release too: at a declared width a ratio-derived height capped the box rather
   than flooring it. (#97)
@@ -112,7 +133,11 @@
   Measured on the same box, Chrome gives 117.64 under `overflow: 'hidden'`,
   `'scroll'` and `'auto'`, and 300 under `visible`. A scrolling box has no
   automatic minimum to restore, so that is agreement rather than a leftover.
-  (#104)
+
+  **This is a workaround rather than a fix**, and it shares the pass the entry
+  above already performs. CSS has two minimums on that axis where the engine
+  underneath has one slot for them, which is the thing this cannot repair at
+  source. The issue stays open until it can be. (#104)
 
 - `textAlign: 'start'` and `'end'` did not flip under `direction: 'rtl'`.
   `'start'` was the left edge under both directions, so a right-to-left
