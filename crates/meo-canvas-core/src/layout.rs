@@ -515,11 +515,21 @@ const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
 /// non-replaced box and wrong for this one. The knowledge is ours, in
 /// `NodeKind`, so the rule has to be expressed here.
 ///
-/// Dropping the **end** inset rather than the start one is what Chrome does:
-/// every row of `replaced-insets.tsv` sits at `x=0, y=0`, so `left` and `top`
-/// are honoured and `right` and `bottom` are discarded. With one inset gone the
-/// axis is no longer over-constrained, taffy asks the measurer, and the
-/// intrinsic extent comes back.
+/// Dropping the **end** inset rather than the start one is what Chrome does
+/// **on an over-constrained axis**: every row of `replaced-insets.tsv` naming
+/// both insets on an axis sits at `x=0, y=0`, so `left` and `top` are honoured
+/// and `right` and `bottom` are discarded. With one inset gone the axis is no
+/// longer over-constrained, taffy asks the measurer, and the intrinsic extent
+/// comes back.
+///
+/// **A lone end inset is a different case and still positions**, which is why
+/// the condition above tests for both insets rather than for a replaced node:
+/// `img right 0 only` sits at `x=140` and `img bottom 0 only` at `y=-10` in
+/// the same table. `a_lone_end_inset_still_positions` in
+/// `crates/meo-canvas/tests/chrome_replaced_insets.rs` pins both, because
+/// "drop the end inset for a replaced node" reads like a tidy-up of this
+/// paragraph and is the wrong generalisation of it. A lone *start* inset does
+/// sit at the start corner, which is what makes the wrong reading look safe.
 ///
 /// Only where the size is `auto`: a declared width or height wins over the
 /// intrinsic one in Chrome too -- `inset: 0` with `width/height: 100%` is

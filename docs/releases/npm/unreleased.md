@@ -54,7 +54,9 @@ leaving it to be met.
   The ratio now settles the free axis in block flow, as it already did for an
   absolutely positioned image. **Flex is unchanged and was never wrong**: an
   item with an `auto` cross size stretches to its line and the ratio does not
-  stop it, so 200 x 40 is what a browser gives there too. Those rows were the
+  stop it, so 200 x 40 is what a browser gives there too — **where there is a
+  line to stretch to.** With nothing to stretch to the ratio settles the cross
+  size after all, and the same 200-wide item comes back 200 x 133.33. Those rows were the
   control — a repair that moved them would have broken something Chrome agrees
   with us about. (#94)
 
@@ -162,9 +164,13 @@ leaving it to be met.
   two competing siblings, and so does the ratio's own value — measured across
   twenty-seven shapes.
 
-  **An `Image` in that shape was already correct** and is unchanged. A replaced
-  element brings its own dimensions, so it never depended on the transfer; the
-  shape that diverged is a plain `Box`. The issue cited below is named for the
+  **An `Image` in that shape was already correct** and is unchanged; the shape
+  that diverged is a plain `Box`. Do not read that as _a picture keeps its own
+  size in flex_ — the entry above measures the opposite, an auto cross size
+  taking 200 x 133.33 from the ratio rather than the picture's own 40. The image
+  case was measured during this investigation and is recorded beside the probe
+  rather than as a row in a comparison table, which is the weaker of the two
+  places for it. The issue cited below is named for the
   image because that is what the original report named, and the investigation
   found the image was never the failing shape — so the title and this paragraph
   disagree, and this paragraph is the later reading.

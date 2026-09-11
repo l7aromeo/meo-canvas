@@ -46,8 +46,11 @@ another shape worse, the entry names that shape rather than leaving it to be met
 
   An image with no stated extent now keeps its intrinsic one. The end inset is
   dropped on an over-constrained axis and the start inset positions it, which is
-  what Chrome does — every measured row sits at the start corner. A stated
-  `Dimension::Points` or `Percent` on **both** axes still wins. (#92)
+  what Chrome does — every measured row naming both insets on an axis sits at
+  the start corner. **A lone end inset is not that case and still positions from
+  the end**, measured: `right: 0` alone puts the picture at `x=140` and
+  `bottom: 0` alone at `y=-10`. A stated `Dimension::Points` or `Percent` on
+  **both** axes still wins. (#92)
 
 - A `NodeKind::Image` with a definite inline size and `Dimension::Auto` on the
   block axis came back at its intrinsic height in block flow. A 60x40 picture at
@@ -59,7 +62,9 @@ another shape worse, the entry names that shape rather than leaving it to be met
   flow. **`Display::Flex` is unchanged and was correct before**: a flex item with
   an `auto` cross size stretches to its line and the ratio does not override
   that, which is what a browser does, so those rows are the control on this
-  change rather than evidence about it. (#94)
+  change rather than evidence about it — **where there is a line to stretch
+  to.** `flex tall auto w200` in the same table has none, and the ratio settles
+  the cross size there: 200 x 133.33 rather than the picture's own 40. (#94)
 
 - A `NodeKind::Image` whose source is an SVG document ignored `ObjectFit` under
   every rule that scales. `Fill`, `Contain` and `Cover` drew the document at its
@@ -196,8 +201,13 @@ another shape worse, the entry names that shape rather than leaving it to be met
   combinations of display and content are 248 x 248, so reading it would write a
   taffy artefact into this renderer.
 
-  **A `NodeKind::Image` in that shape was already correct** and is untouched: a
-  replaced element carries its own dimensions and never needed the transfer. The
+  **A `NodeKind::Image` in that shape was already correct** and is untouched;
+  the shape that diverges is a plain box. Not because a replaced element carries
+  its own dimensions — the entry above measures a flex `NodeKind::Image` taking
+  200 x 133.33 from its ratio rather than its intrinsic 40. The image case was
+  measured during this investigation and is recorded beside the probe rather
+  than as a row in a comparison table, which is the weaker of the two places
+  for it. The
   issue cited below is named for the image because that is what the original
   report named; the investigation found the image was never the failing shape,
   so the title and this paragraph disagree and this paragraph is the later
@@ -207,7 +217,7 @@ another shape worse, the entry names that shape rather than leaving it to be met
   derived from a stretched cross size solves to `424 x 248` against Chrome's
   `424 x 424`, which overflows its own 248-tall line. It is left alone because
   producing an overflowing box ahead of the engine underneath is a layout change
-  nobody asked for; `DioxusLabs/taffy#1182` proposes to make it taffy's answer
+  nobody asked for; DioxusLabs/taffy#1182 proposes to make it taffy's answer
   and is open rather than merged, so nothing about the timing is settled. And a
   `max_size` binding the cross axis takes the other axis with it, so a
   maximum-bound item solves to `100 x 100` against Chrome's `100 x 248`; that is
@@ -215,6 +225,6 @@ another shape worse, the entry names that shape rather than leaving it to be met
 
   **It is a workaround rather than a fix, and it is marked as one in the
   source.** `[WORKAROUND]` in `crates/meo-canvas-core/src/layout.rs` names
-  `DioxusLabs/taffy#804`, and
+  DioxusLabs/taffy#804, and
   `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fails the day taffy stops
   needing it. (#123)
