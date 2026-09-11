@@ -38,7 +38,9 @@
 //! when the ratio is absent. Without that row this file would say the defect
 //! exists and nothing about whether it can be worked around.
 //!
-//! Upstream: `DioxusLabs/taffy#804`, tracked as `l7aromeo/meo-canvas#97`.
+//! Upstream: `DioxusLabs/taffy#804`, tracked as `l7aromeo/meo-canvas#97` for
+//! the shrink-to-fit rows. The definite-width rows are
+//! `l7aromeo/meo-canvas#104`, which has no upstream issue of its own.
 //! Reproduced against taffy 0.14.0.
 
 use meo_canvas_core::layout::to_taffy_style;
@@ -208,6 +210,84 @@ fn a_content_derived_floor_is_transferred_into_the_width() {
         "taffy no longer transfers a `min_size.height` into the width at a \
          definite width. Chrome gives 100 x 300. If it now distinguishes an \
          automatic minimum from an author's, `floor_ratio_heights` in \
+         `crates/meo-canvas-core/src/layout.rs` can be deleted"
+    );
+}
+
+/// The second workaround's defect as the compensation actually meets it: no
+/// author minimum anywhere, and the ratio caps the box.
+///
+/// **This is the row `floor_ratio_heights` exists for, and it is not the row
+/// above.** That one writes an author `min-height` and pins that taffy
+/// transfers it into the width -- which is what CSS asks for, so it can only
+/// fire if taffy stops doing something correct. It says why a floor cannot be
+/// written; it says nothing about whether the defect is still there. The
+/// `[WORKAROUND]` at `layout.rs` names two retirement conditions,
+/// "distinguishes the two" and "applies the automatic minimum itself", and only
+/// the first is visible from that row. On the second -- the likelier fix -- the
+/// compensation would go dead with every test in this tree still green.
+///
+/// So this pins the defect itself. 118 is `round(100 / 0.85)`: taffy takes the
+/// ratio-derived height as a ceiling where CSS gives a ratio box an automatic
+/// minimum block size from its content, which a non-scrolling box keeps.
+#[test]
+fn a_ratio_caps_a_definite_width_box_with_no_author_minimum() {
+    let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();
+    let child = tree
+        .new_leaf(taffy::Style {
+            size: taffy::Size {
+                width: taffy::Dimension::auto(),
+                height: taffy::Dimension::length(300.0),
+            },
+            ..taffy::Style::default()
+        })
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    // Through `to_taffy_style` rather than a hand-written `taffy::Style`, as
+    // every other row here is: `LayoutStyle::default()` is `Display::Block` and
+    // a bare `taffy::Style` is too, so the two agree today and agreeing is not
+    // the point. A reproduction that names its own display is measuring a box
+    // it chose; this one measures the box the renderer builds.
+    let style = to_taffy_style(
+        &LayoutStyle {
+            aspect_ratio: Some(RATIO),
+            ..LayoutStyle::default()
+        },
+        BorderStyle::Solid,
+    );
+    let box_node = tree
+        .new_with_children(style, &[child])
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let outer = tree
+        .new_with_children(
+            taffy::Style {
+                display: taffy::Display::Block,
+                size: taffy::Size {
+                    width: taffy::Dimension::length(100.0),
+                    height: taffy::Dimension::auto(),
+                },
+                ..taffy::Style::default()
+            },
+            &[box_node],
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    tree.compute_layout(
+        outer,
+        taffy::Size {
+            width: taffy::AvailableSpace::Definite(400.0),
+            height: taffy::AvailableSpace::Definite(400.0),
+        },
+    )
+    .unwrap_or_else(|error| unreachable!("{error}"));
+    let solved = tree
+        .layout(box_node)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    assert_eq!(
+        (solved.size.width, solved.size.height),
+        (100.0, 118.0),
+        "taffy no longer caps a definite-width ratio box at its ratio-derived \
+         height. Chrome gives 100 x 300, keeping the automatic minimum the \
+         content asks for. If this is now 100 x 300, taffy applies that \
+         minimum itself and `floor_ratio_heights` in \
          `crates/meo-canvas-core/src/layout.rs` can be deleted"
     );
 }

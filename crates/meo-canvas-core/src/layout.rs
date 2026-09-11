@@ -1305,9 +1305,11 @@ const fn clips(overflow: taffy::Point<taffy::Overflow>) -> bool {
 // Retires when taffy distinguishes the two, or applies the automatic minimum
 // itself -- `ratio-with-taller-content` in
 // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fails in
-// both directions and will say so, and
-// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
-// needs this.
+// both directions and will say so. Both conditions are pinned by name in
+// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs`, because a file that
+// asserts something says nothing about which of the two it sees:
+// `a_content_derived_floor_is_transferred_into_the_width` is the first, and
+// `a_ratio_caps_a_definite_width_box_with_no_author_minimum` is the second.
 //
 // **It shares the ratio-free solve above rather than running its own.** One
 // clearing pass serves both compensations and the decision splits afterwards,
