@@ -1222,10 +1222,13 @@ where
         // those a minimum both exists and binds, so presence and outcome
         // agree there and only this row separates them.
         //
-        // **`ratio-shrink-min-width-binds` on its own passes either way**,
-        // because pinning a bound width and leaving it alone both reach
-        // Chrome on a shrink-to-fit box. It is a guard; the two rows beside
-        // it are the evidence.
+        // **`ratio-shrink-min-width-binds` beside it separates no repair at
+        // all**, and saying so is worth more than the row: pinning a bound
+        // width and leaving it alone both reach Chrome on a shrink-to-fit
+        // box, and four mutations of this clause leave it green -- as
+        // written, removed, reading `.is_some()`, and inverted. It records
+        // Chrome for that corner and nothing here rests on it. The two rows
+        // beside it are the evidence.
         //
         // **What the clause reaches is taffy's own answer, not one derived
         // here.** With `ratio_direction_candidates` returning nothing, 16 of

@@ -235,6 +235,26 @@ const CASES = [
     // instead, and Chrome derives the block size from the bound width --
     // `100 x 117.64` rather than the `29.98 x 35.28` the content alone gives.
     // `l7aromeo/meo-canvas#126` is the same condition on a grown flex item.
+    //
+    // **This row asserts nothing about the compensation and is kept anyway.**
+    // Four mutations of the pin's minimum clause leave it green: the clause as
+    // written, the clause removed, the clause reading `.is_some()` instead of
+    // the solved width, and the comparison inverted. Pinning a bound width and
+    // leaving it alone both reach Chrome on a shrink-to-fit box, so there is
+    // no repair it separates -- `ratio-shrink-min-width-slack` below is the
+    // row that does that. What it is, is Chrome's measured answer for the
+    // fourth corner of minimum-or-maximum by binds-or-slack, which is what
+    // this file is for before it is an assertion that we match.
+    //
+    // **The test for keeping it is what the remaining rows could no longer
+    // say.** It is half a contrast with `ratio-shrink-max-width-binds`: a
+    // minimum and a maximum bind the same axis and Chrome splits them, taffy
+    // reaching `100 x 117.64` unaided where it gives `9 x 10` against
+    // `19.98 x 23.52`. Delete this row and that one stands alone asserting
+    // that a maximum needs the pin, with nothing on the page saying why a
+    // minimum does not -- which is the reading `bounded_ratio_box` exists to
+    // stop. The next person meets one row rather than a square, so the pair
+    // is named here.
     note: 'a minimum above the fit-content width settles the inline axis, and the block size follows it',
     html: `<div style="display:flex;flex-direction:column;align-items:flex-start">
              <div id="m" style="aspect-ratio:.85;min-width:100px">
