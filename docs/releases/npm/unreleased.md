@@ -103,8 +103,9 @@ leaving it to be met.
 
   **This is a workaround rather than a fix.** The layout engine underneath
   resolves a ratio box's axes in the wrong order, which is not something this
-  renderer can correct there, so it lays the page out twice and puts the ratio
-  back between the two passes. The issue stays open until the engine is fixed, and a
+  renderer can correct there, so it lays the page out three times: once with
+  the ratio removed to see what the box asks for, once with it back and the
+  answer written in, and once more to produce the geometry you get. The issue stays open until the engine is fixed, and a
   test pinned to what the engine does today fails the day it is — which is what
   stops the compensation outliving its reason.
 

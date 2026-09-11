@@ -566,16 +566,27 @@ fn the_construction_axis_moves_one_row() {
     }
 }
 
+/// How far a rounding artefact sits from a real divergence, measured.
+///
+/// **Neither row reaches `DERIVED_TOLERANCE` and the name used to say they
+/// did.** `derived-tolerance-rounds` carries a percentage main size, so
+/// `size.1` is `Dimension::Percent`, so `ratio_direction_candidates` -- which
+/// requires both axes `Auto` -- filters it out before `derived_cross` exists
+/// for it. It has never exercised the constant, and the assertions below are
+/// written against literals rather than against it, so they would not have
+/// noticed if it moved.
+///
+/// What the pair does record is a real fact and is worth keeping: a correct
+/// derivation sits `0.67` from `main x ratio` where a real divergence sat
+/// `218`, two orders of magnitude apart. `DERIVED_TOLERANCE`'s own doc carries
+/// what justifies its magnitude, and nothing here does.
 #[test]
-fn the_tolerance_has_a_row_on_each_side() {
-    // **`DERIVED_TOLERANCE` is a pixel and neither row is near it.** A correct
-    // derivation sits 0.67 from `main x ratio` because taffy rounds each edge;
-    // a real divergence sat 218 away. The threshold is in a gap of two orders
-    // of magnitude rather than tuned to either.
+fn a_rounding_artefact_and_a_real_divergence_are_orders_apart() {
     // **Ours, not Chrome's.** The browser reports the unrounded 82.66; the
-    // quantity the tolerance guards is what *this* renderer solves, which is
-    // 82 because taffy rounds each edge. Comparing Chrome's number here would
-    // have measured the browser's precision and called it our slack.
+    // quantity measured here is what *this* renderer solves, which is 82
+    // because taffy rounds each edge in the pass a caller gets. Comparing
+    // Chrome's number would have measured the browser's precision and called
+    // it our slack.
     let (rounds_width, _) = solved(Case {
         grow: 0.0,
         pct_height: true,
@@ -586,8 +597,8 @@ fn the_tolerance_has_a_row_on_each_side() {
     assert!(
         (rounds_width - ideal).abs() < 1.0
             && (rounds_width - ideal).abs() > 0.1,
-        "the rounding row is {} from main x ratio, which is no longer both \
-         inside the tolerance and outside an epsilon",
+        "the rounding row is {} from main x ratio, where it was 0.67 -- the \
+         gap this pair records has moved",
         (rounds_width - ideal).abs()
     );
     let (diverges_width, _) = chrome("derived-tolerance-diverges");
