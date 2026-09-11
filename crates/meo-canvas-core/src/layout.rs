@@ -1462,7 +1462,18 @@ fn dropped_margin_candidates(
             // margin resolves against on every edge. The width is correct in
             // every measured cell -- the defect is confined to the main axis --
             // so reading it before the repair is sound.
-            let basis = tree.layout(*taffy_id).ok()?.size.width;
+            //
+            // **The content box rather than the border box.** `Layout::size` is
+            // the border box, and a container with padding resolves a child's
+            // percentage against the smaller number: measured, `-10%` in a
+            // 903-wide border-box container with 20px of padding is Chrome's
+            // `-86.30` against the border box's `-90.30`, and our container
+            // came out 450.00 against Chrome's 453.70 before this read the
+            // right quantity. An unpadded container cannot tell the two apart,
+            // which is why
+            // `a_percentage_margin_resolves_against_the_content_box`
+            // carries padding and the row beside it does not.
+            let basis = content_inline_size(tree, *taffy_id);
             let dropped = children_of(tree, *taffy_id)
                 .into_iter()
                 .filter_map(|child| {
@@ -1653,6 +1664,25 @@ fn children_of(
     id: taffy::NodeId,
 ) -> Vec<taffy::NodeId> {
     tree.children(id).unwrap_or_default()
+}
+
+/// A solved node's own content-box width.
+///
+/// **The border box less what the box reserves**, which is what a percentage
+/// on a child resolves against. `Layout::size` is the border box, so padding,
+/// border and any scrollbar come off it.
+fn content_inline_size(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+) -> f32 {
+    tree.layout(id).map_or(0.0, |solved| {
+        solved.size.width
+            - solved.padding.left
+            - solved.padding.right
+            - solved.border.left
+            - solved.border.right
+            - solved.scrollbar_size.width
+    })
 }
 
 /// Whether this node's parent lays out as a row, so its cross axis is the
@@ -3100,6 +3130,63 @@ mod tests {
         assert!(
             (height - 409.70).abs() < 0.5,
             "container {height}, Chrome 409.70"
+        );
+    }
+
+    /// A percentage margin resolves against the container's content box.
+    ///
+    /// **The row above cannot pin the basis and this one can.** Its container
+    /// is 903 wide with no padding, where the content width and the border box
+    /// are the same number, so reading either gives `-90.30` and the row is
+    /// green whichever is read. With 20px of padding they are 863 and 903, and
+    /// Chrome resolves against the smaller: `-86.30`, container 453.70 against
+    /// the 450.00 the border box produces.
+    ///
+    /// Measured in Chrome on both box-sizing values, because the pair is what
+    /// shows the quantity is the content box rather than the stated width: at
+    /// `box-sizing: content-box` the same 903 and 20px give a content width of
+    /// 903 again and Chrome returns to `-90.30`.
+    #[test]
+    fn a_percentage_margin_resolves_against_the_content_box() {
+        let (mut scene, page) = scene_with_page(1200.0, 2000.0);
+        scene.content_height = true;
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.flex_direction = FlexDirection::Column;
+        }
+        let container = scene
+            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(container) {
+            node.layout.display = Display::Flex;
+            node.layout.flex_direction = FlexDirection::Column;
+            node.layout.size = (Dimension::Points(903.0), Dimension::Auto);
+            node.layout.box_sizing = BoxSizing::BorderBox;
+            for edge in [
+                &mut node.layout.padding.left,
+                &mut node.layout.padding.right,
+                &mut node.layout.padding.top,
+                &mut node.layout.padding.bottom,
+            ] {
+                *edge = Length::Points(20.0);
+            }
+        }
+        let child = scene
+            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        if let Some(node) = scene.get_mut(child) {
+            node.layout.size =
+                (Dimension::Points(476.0), Dimension::Points(500.0));
+            node.layout.flex_grow = 1.0;
+            node.layout.margin.top = Dimension::Percent(-0.10);
+        }
+
+        let result = solved(&scene, page);
+        let height = result.rects[&container].size.height;
+        assert!(
+            (height - 453.70).abs() < 0.5,
+            "container {height}, Chrome 453.70 -- reading the border box \
+             instead of the content box gives 450.00, which is what this row \
+             exists to refuse"
         );
     }
 
