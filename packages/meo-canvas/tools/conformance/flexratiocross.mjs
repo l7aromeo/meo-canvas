@@ -96,6 +96,15 @@ const CASES = [
   ['derived-tolerance-diverges', `${COLUMN};align-items:center`, `${ITEM};display:flex`, 'child', 'a wrong row 218 from it: must not'],
   // The pin's inequality, either side of it.
   ['pin-fires-min-width', `${COLUMN};align-items:center`, `${ITEM};min-width:300px`, '', 'width/ratio >= height: the pin takes it, not this'],
+  [
+    'pin-min-width ratio 0.5',
+    `${COLUMN};align-items:center`,
+    'flex-grow:1;aspect-ratio:0.5;min-width:300px',
+    '',
+    'the same minimum where the transfer is not the identity',
+  ],
+  ['pin-min-width no grow', `${COLUMN};align-items:center`, 'aspect-ratio:1;min-width:300px', '', 'the minimum without the growth'],
+  ['min-width slack', `${COLUMN};align-items:center`, `${ITEM};min-width:100px`, '', 'control: a minimum under the derivation changes nothing'],
   ['pin-quiet-empty', `${COLUMN};align-items:center`, ITEM, '', 'width/ratio < height: this takes it, not the pin'],
   // Deliberately not compensated, and a divergence deliberately pinned.
   ['uncompensated stretch', `${COLUMN};align-items:stretch`, ITEM, '', 'the derivation overflows its line; upstream has not shipped it'],

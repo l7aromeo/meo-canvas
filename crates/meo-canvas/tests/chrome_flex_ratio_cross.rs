@@ -59,22 +59,13 @@ const TABLE: &str = include_str!("assets/chrome/flex-ratio-cross.tsv");
 /// arrives is settled. Shipping it here first is a layout change nobody asked
 /// for.
 ///
-/// **`pin-fires-min-width`** is `l7aromeo/meo-canvas#126`: the existing pin
-/// takes a node whose cross size came from a binding minimum and leaves the
-/// other axis where it was. Not this compensation's -- it is here because it is
-/// the sharpest available test that this arm stays out of the pin's way.
-///
 /// **`known max-width`** is the asymmetry between a binding minimum and a
 /// binding maximum. Chrome does not re-derive from a clamped maximum and taffy
 /// does, so a max that binds the cross axis takes the other axis with it here:
 /// `100x100` against Chrome's `100x248`. Before the compensation the row was
 /// `0x248` -- neither dominates, and a zero-wide box paints nothing where a
 /// short one is at least visible.
-const KNOWN: &[&str] = &[
-    "uncompensated stretch",
-    "pin-fires-min-width",
-    "known max-width",
-];
+const KNOWN: &[&str] = &["uncompensated stretch", "known max-width"];
 
 /// One row of the table.
 fn chrome(case: &str) -> (f32, f32) {
@@ -434,6 +425,29 @@ fn rows_at_a_boundary() -> Vec<(&'static str, Case)> {
             "pin-fires-min-width",
             Case {
                 min_w: Some(300.0),
+                ..Case::new()
+            },
+        ),
+        (
+            "pin-min-width ratio 0.5",
+            Case {
+                min_w: Some(300.0),
+                ratio: Some(0.5),
+                ..Case::new()
+            },
+        ),
+        (
+            "pin-min-width no grow",
+            Case {
+                min_w: Some(300.0),
+                grow: 0.0,
+                ..Case::new()
+            },
+        ),
+        (
+            "min-width slack",
+            Case {
+                min_w: Some(100.0),
                 ..Case::new()
             },
         ),

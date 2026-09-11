@@ -37,6 +37,9 @@ control stretch no main	424.00	424.00	default	control: DioxusLabs/taffy#1081 fam
 derived-tolerance-rounds	82.66	248.00	default	a correct row 0.67 from main x ratio: must read as equal
 derived-tolerance-diverges	248.00	248.00	flex	a wrong row 218 from it: must not
 pin-fires-min-width	300.00	300.00	default	width/ratio >= height: the pin takes it, not this
+pin-min-width ratio 0.5	300.00	600.00	default	the same minimum where the transfer is not the identity
+pin-min-width no grow	300.00	300.00	default	the minimum without the growth
+min-width slack	248.00	248.00	default	control: a minimum under the derivation changes nothing
 pin-quiet-empty	248.00	248.00	default	width/ratio < height: this takes it, not the pin
 uncompensated stretch	424.00	424.00	default	the derivation overflows its line; upstream has not shipped it
 known max-width	100.00	248.00	default	a maximum binding the cross axis does not transfer back here

@@ -210,11 +210,24 @@ because you already know what it says.
 Three shapes, and they are decided by what a caller ends up with:
 
 - **Your change completes something an entry called a known limitation.** Edit
-  that entry to drop the limitation, and add your own beside it. This has
-  already happened here: the aspect-ratio entry ended by saying one case was
+  that entry to drop the limitation. **An entry replaces it only where a caller
+  is left with something to know**: where the limitation described a defect
+  introduced and removed inside the same unreleased cycle nobody ever met it,
+  so the page says nothing at all; where something in the same family still
+  diverges, the replacement says which, in the caller's terms. This has already
+  happened here both ways -- the aspect-ratio entry ended by saying one case was
   "not fixed here" and named the issue, and the next pull request fixed that
-  issue before either had shipped. Left alone, one release page would have told
-  a caller a thing was broken and then, four paragraphs later, that it was not.
+  issue before either had shipped; later that entry carried a regression the
+  compensation introduced, and the fix for it removed the paragraph rather than
+  answering it. Left alone, one release page would have told a caller a thing
+  was broken and then, four paragraphs later, that it was not.
+
+  **Read what leaves with the paragraph.** That regression paragraph closed by
+  defending the change, and the defence carried the only measured figure on
+  either page for what the compensation buys. Deleting it whole would have
+  taken that with the limitation it was arguing against -- so a figure the rest
+  of the entry still needs is re-homed on its own merits, in a sentence that
+  stands without the limitation it was written to answer.
 
 - **Your change supersedes an unreleased one** — a different fix for the same
   defect, a renamed API, a reworked option. Rewrite the original entry to
