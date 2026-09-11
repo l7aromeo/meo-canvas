@@ -1071,8 +1071,14 @@ fn clear_ratios(
 // parent -- `ratio-shrink-issue-97` and the rows beside it in
 // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fail in
 // both directions and will say so, and
+// `a_ratio_box_derives_its_width_from_its_height` in
 // `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
-// needs this. Deleting it is deleting this function,
+// needs this, with `the_same_holds_for_a_ratio_above_one` beside it. Named as
+// rows rather than as a file on purpose: that file holds six tests covering
+// two defects, a reader given only its name has no way to ask which of them
+// sees this condition, and `workaround-probes` is satisfied by a file too --
+// which is how the second workaround below came to have a condition no
+// assertion could see. Deleting it is deleting this function,
 // [`ratio_direction_candidates`], [`clear_ratios`] and the two calls in
 // [`solve_page`] that bracket the first solve.
 //
