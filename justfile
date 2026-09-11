@@ -1773,6 +1773,85 @@ tests pattern="":
     fi
     echo "$found"
 
+# The rung between one test file and the whole gate, and it says what it is not.
+#
+# There was nothing between `cargo test -p meo-canvas-core --test fixtures`,
+# which is seconds and covers one thing, and `just ci`, which takes a lock and
+# about twenty minutes. So people ran the narrow thing and pushed, or ran the
+# gate and waited.
+#
+# **The danger is not that it is incomplete -- it is that a green teaches you it
+# is enough.** `just lint` once exited 0 with a clippy failure left in the tree,
+# which is worse than a no-op: a no-op tells you nothing and that told you
+# something false. A fast rung is the same hazard by construction rather than by
+# defect, because it is *designed* to leave things out. So it prints, on
+# success, exactly what it did not run -- the report-shape rule applied to a
+# recipe instead of to a report.
+#
+# **That list is derived rather than typed.** It is `portable` and `native`
+# minus what ran here, read out of `just --dump` -- the same resolver a recipe
+# runs under, which is why `gate-lists.mjs` reads it too. A hand-written list in
+# an `echo` would be a pinned list with nothing asserting it, one file away from
+# the tool built to stop exactly that, and it would go stale the first time
+# somebody added a recipe to `native`.
+#
+# **The budget is a minute, warm, and here is what it buys.** Each candidate
+# run twice, the second figure given because a rung is reached for repeatedly:
+#
+#     layout-check         0.03s     gate-lists-check     0.07s
+#     issue-refs           0.12s     typecheck            1.75s
+#     fmt-check            1.82s     clippy -D warnings   0.16s
+#     cargo test          31.29s
+#
+# And after touching one core source file, which is what someone actually pays
+# on the run that matters: **clippy 2.22s, `cargo test` 87.15s.** The whole
+# recipe, warm, is **35.85s and 35.72s** on consecutive runs.
+#
+# `cargo test --workspace` is 88% of the warm figure and is the only member here
+# that can catch a behaviour regression; everything else together is under four
+# seconds. `just test` runs cargo four times and each run has a reason -- read
+# it -- but a rung does not need the GPU-feature passes, which is what the other
+# three are.
+#
+# **The conditions, because a duration without them is not a measurement.**
+# Taken with the process list clear -- nothing of ours on the CPU, the busiest
+# process under 8% apart from macOS's own scanner. The load averages read
+# 3.4-5.1 throughout and that is *not* contention: an average decays over a past
+# window, so it reports a gate that ended minutes earlier. **Ask what is running
+# now (`ps -Ao pcpu,comm -r`); `uptime` answers whether anything ran recently,
+# which is a different question.** An earlier set of these numbers was taken
+# while a teammate's gate started on the same machine and was discarded rather
+# than labelled -- a labelled bad number still gets copied, and this one is a
+# budget the next person spends against.
+#
+# Anything added here spends against that minute. If it stops being a minute it
+# stops being the rung and becomes a second gate nobody runs either.
+[doc("The fast rung: cheap checks plus one test pass, and a list of what it skipped.")]
+precheck: layout-check gate-lists-check issue-refs typecheck fmt-check
+    # **`-- -D warnings` is the whole of clippy's gate**, and without it this
+    # line exits 0 on every lint in the tree. Written bare first, and the
+    # mutation that was supposed to prove it -- a `&Vec<u8>` parameter, which
+    # `lint-check` refuses -- passed. A member that cannot fail is decoration
+    # with a duration.
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace
+    @just --dump --dump-format json | node -e ' \
+      const dump = JSON.parse(require("fs").readFileSync(0, "utf8")).recipes; \
+      const deps = name => dump[name].dependencies.map(one => one.recipe); \
+      const gate = new Set([...deps("portable"), ...deps("native")]); \
+      for (const ran of deps("precheck")) gate.delete(ran); \
+      const partly = { \
+        "lint-check": "clippy ran here; ESLint did not", \
+        test: "one cargo run here; the three GPU-feature runs did not", \
+      }; \
+      for (const name of Object.keys(partly)) gate.delete(name); \
+      console.log("\nRAN IN PART, so a green here is not a green there:"); \
+      for (const [name, what] of Object.entries(partly)) console.log("  " + name + " -- " + what); \
+      console.log("\nNOT RUN AT ALL, and each of these can fail on its own:"); \
+      console.log("  " + [...gate].join("  ")); \
+      console.log("\n`just ci` is the gate. This was not it."); \
+    '
+
 # Remove all build output.
 clean:
     cargo clean
