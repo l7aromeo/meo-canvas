@@ -515,11 +515,21 @@ const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
 /// non-replaced box and wrong for this one. The knowledge is ours, in
 /// `NodeKind`, so the rule has to be expressed here.
 ///
-/// Dropping the **end** inset rather than the start one is what Chrome does:
-/// every row of `replaced-insets.tsv` sits at `x=0, y=0`, so `left` and `top`
-/// are honoured and `right` and `bottom` are discarded. With one inset gone the
-/// axis is no longer over-constrained, taffy asks the measurer, and the
-/// intrinsic extent comes back.
+/// Dropping the **end** inset rather than the start one is what Chrome does
+/// **on an over-constrained axis**: every row of `replaced-insets.tsv` naming
+/// both insets on an axis sits at `x=0, y=0`, so `left` and `top` are honoured
+/// and `right` and `bottom` are discarded. With one inset gone the axis is no
+/// longer over-constrained, taffy asks the measurer, and the intrinsic extent
+/// comes back.
+///
+/// **A lone end inset is a different case and still positions**, which is why
+/// the condition above tests for both insets rather than for a replaced node:
+/// `img right 0 only` sits at `x=140` and `img bottom 0 only` at `y=-10` in
+/// the same table. `a_lone_end_inset_still_positions` in
+/// `crates/meo-canvas/tests/chrome_replaced_insets.rs` pins both, because
+/// "drop the end inset for a replaced node" reads like a tidy-up of this
+/// paragraph and is the wrong generalisation of it. A lone *start* inset does
+/// sit at the start corner, which is what makes the wrong reading look safe.
 ///
 /// Only where the size is `auto`: a declared width or height wins over the
 /// intrinsic one in Chrome too -- `inset: 0` with `width/height: 100%` is
@@ -1061,8 +1071,14 @@ fn clear_ratios(
 // parent -- `ratio-shrink-issue-97` and the rows beside it in
 // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fail in
 // both directions and will say so, and
+// `a_ratio_box_derives_its_width_from_its_height` in
 // `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
-// needs this. Deleting it is deleting this function,
+// needs this, with `the_same_holds_for_a_ratio_above_one` beside it. Named as
+// rows rather than as a file on purpose: that file holds six tests covering
+// two defects, a reader given only its name has no way to ask which of them
+// sees this condition, and `workaround-probes` is satisfied by a file too --
+// which is how the second workaround below came to have a condition no
+// assertion could see. Deleting it is deleting this function,
 // [`ratio_direction_candidates`], [`clear_ratios`] and the two calls in
 // [`solve_page`] that bracket the first solve.
 //
@@ -1132,9 +1148,11 @@ where
     // **Not compensated: the stretched family.** `align-items: stretch` with a
     // ratio wants a main size derived from the stretched cross size, and
     // Chrome's answer overflows its line -- 424x424 in a 248-tall content box.
-    // That is correct and `DioxusLabs/taffy#1182` will produce it upstream;
-    // shipping it here first would be a layout change nobody asked for, in the
-    // direction that PR itself calls the one most likely to be read as a bug.
+    // That is correct, and `DioxusLabs/taffy#1182` proposes to make it taffy's
+    // own answer -- open rather than merged, so nothing about when it arrives
+    // is settled. Shipping it here first would be a layout change nobody asked
+    // for, in the direction that pull request itself calls the one most likely
+    // to be read as a bug.
     let mut derive: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
     for (id, ratio) in candidates {
         let solved = tree
@@ -1266,10 +1284,14 @@ fn derived_cross(
 ///
 /// **A scroll container rather than a non-`visible` overflow**, and the two are
 /// not the same set. Measured in Chrome on a 100-wide ratio box holding 300 of
-/// content: `hidden`, `scroll` and `auto` all report 117.64 and `clip` reports
-/// 300. `clip` is the one non-visible value that establishes no scroll
-/// container, so a predicate written from the specification's wording would be
-/// right on three spellings and silently wrong on the fourth.
+/// content, all five values: `visible` 300, `clip` 300, and `hidden`, `scroll`
+/// and `auto` 117.64. `clip` is the one non-visible value that establishes no
+/// scroll container, so a predicate written from the specification's wording
+/// would be right on three spellings and silently wrong on the fourth.
+///
+/// **`visible` is in that list because it is the arm this function takes**, not
+/// as context for the other four: 300 is the number [`floor_ratio_heights`]
+/// restores, so that row is the measurement behind the `false` return.
 ///
 /// `Overflow` here has no `Clip`, so no scene reaches that case today. Adding
 /// one is **not** a synonym for `Hidden` on this axis.
@@ -1289,9 +1311,11 @@ const fn clips(overflow: taffy::Point<taffy::Overflow>) -> bool {
 // Retires when taffy distinguishes the two, or applies the automatic minimum
 // itself -- `ratio-with-taller-content` in
 // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fails in
-// both directions and will say so, and
-// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
-// needs this.
+// both directions and will say so. Both conditions are pinned by name in
+// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs`, because a file that
+// asserts something says nothing about which of the two it sees:
+// `a_content_derived_floor_is_transferred_into_the_width` is the first, and
+// `a_ratio_caps_a_definite_width_box_with_no_author_minimum` is the second.
 //
 // **It shares the ratio-free solve above rather than running its own.** One
 // clearing pass serves both compensations and the decision splits afterwards,

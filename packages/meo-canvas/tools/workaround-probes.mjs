@@ -29,6 +29,19 @@
 // leave out. `taffy_negative_margin.rs` carries no marker and is not required
 // to: it compensates nothing, so nothing rests on it.
 //
+// **And it sees marks rather than compensations: a site that stops being one
+// is invisible here.** Measured by deleting the tag from a site that named a
+// probe, leaving the code and the other sites alone -- four marked sites became
+// three, three naming a probe became two, and the run exited 0. `SITES_FLOOR`
+// is 1, so the count can fall that far before anything speaks, and the only
+// witness is a summary line nobody diffs. The compensation is still there and
+// is no longer greppable, no longer examined here, and free to rot afterwards
+// through any of the three failures above with this green throughout. The same
+// three breaks, measured on the same tree, each exit 1: a probe naming no
+// `[FOUNDATION]` row, a path that does not exist, and a test marked
+// `#[ignore]`. A reader who has watched those go red would reasonably expect
+// the fourth to, and it does not.
+//
 // **Marks and mentions are told apart by position, not presence.** The tag
 // appears nine times in this tree and marks code three times; the others are
 // the convention being described in prose, in a `//!` header and inside an
