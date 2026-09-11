@@ -237,7 +237,9 @@ another shape worse, the entry names that shape rather than leaving it to be met
   negative margin on a growing child was dropped rather than one — two 200-tall
   children at `-24` and `-10` solved to 400 against Chrome's 366 — and
   `Dimension::Percent` margins went the same way, `-0.10` of a 903-wide
-  container solving to 500 against 409.7. A margin smaller than the rounding
+  container with no padding solving to 500 against 409.7 -- a case that
+  witnesses the drop and not what the percentage resolved against, which an
+  unpadded container cannot separate. A margin smaller than the rounding
   granularity was not observable either way.
 
   `flex_grow` of zero was correct, a positive margin was correct, a row

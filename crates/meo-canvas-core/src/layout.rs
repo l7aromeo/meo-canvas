@@ -258,23 +258,18 @@ where
     // same day the three compensations below retire; there is no upstream fix
     // to wait for, because the rounding is taffy doing what it is asked.
     //
-    // **Every value a decision reads is produced inside this region**, which
-    // is what makes the comparisons exact rather than nearly so. A mixed
-    // comparison -- one operand from a rounded pass, one from an unrounded one
-    // -- would be wrong by up to half a pixel in the pass whose point is
-    // exactness, so the inputs are enumerated rather than assumed. There are
-    // five reads of solved geometry in this file: `compensate_ratio_direction`
-    // and the `cleared` and `pins` vectors it fills,
-    // `compensate_dropped_margins` through `content_inline_size`, and
-    // `floor_ratio_heights` including the `moved` test that compares a
-    // solved width against a `cleared` one. All four are inside this
-    // region. The fifth is [`collect`], which runs after the rounded pass
-    // below and is the geometry a caller gets rather than an input to any
-    // decision.
+    // **No solve precedes this line**, which is what makes every read below
+    // unrounded by construction rather than by inspection. A mixed comparison
+    // -- one operand from a rounded pass, one from an unrounded one -- would
+    // be wrong by up to half a pixel in the pass whose point is exactness, and
+    // the way to be sure of that is not to enumerate the reads. Six sites read
+    // solved geometry in this file and a seventh added next month would not
+    // appear in any list written today; what holds is that the first
+    // `compute_layout` in this function is the one below, so anything a
+    // compensation reads was produced with rounding off.
     //
-    // **Nothing reads geometry before this line.** The tree is built and the
-    // candidate scans read styles; the first `compute_layout` in this function
-    // is the one below.
+    // The one read outside the region is [`collect`], after the rounded pass,
+    // and it is the geometry a caller gets rather than an input to a decision.
     tree.disable_rounding();
     let candidates = ratio_direction_candidates(scene, &tree, &to_scene);
     clear_ratios(&mut tree, &candidates)?;
@@ -768,23 +763,56 @@ fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
 /// of residue on a quantity of 30. `==` would refuse to fire on a shape no
 /// table contains.
 ///
-/// **Derived from both ends of the gap rather than chosen inside it.** One ULP
-/// of `f32` is `0.0000019` at 30, `0.0004883` at 4096 and `0.0019531` at
-/// 16384 -- the top of the range, so the bound holds across it rather than at
-/// a sample. This is just over **five times** one ULP there, which is the
-/// accumulation budget: the expression is a multiply and a subtract over
-/// operands with their own history, so the error is `k` ULPs rather than one.
-/// **Measured, `k` never exceeds `0.235`** across every candidate in both
-/// conformance tables -- computed by evaluating the same expression in `f64`
-/// from the widened `f32` operands and differencing -- so the margin on
-/// measured data is about twenty times rather than five.
+/// **Chosen for the regime it guards, and the regime is named.** Four facts,
+/// each measured:
 ///
-/// **Being too generous is the safe direction, and that is what makes an
-/// absolute bound sound at every size.** Declining a candidate means leaving a
-/// cross size that is already within `0.01` of its derivation, and taffy
-/// quantises the result to whole pixels: the value declined is correct far
-/// beyond anything observable. The expensive error would be firing on a node
-/// that is already right, and the tolerance cannot cause that.
+/// - it is below `0.6`, the smallest real difference **on the two conformance
+///   tables**, so it absorbs no divergence those tables contain
+/// - it is above the accumulated error **at the sizes those tables cover**,
+///   where `k` -- the expression is a multiply and a subtract over operands
+///   with their own history, so the error is `k` ULPs rather than one -- never
+///   exceeds `0.235`, measured by evaluating the same expression in `f64` from
+///   the widened `f32` operands and differencing
+/// - at 16384 it is **two percent** above that error rather than a multiple of
+///   it: a node just under its derivation at ratio `0.85` reports `delta
+///   0.009766` against `one ULP 0.001660`, so `k` is `5.882` there --
+///   twenty-five times the figure the tables give, because `k` is a property of
+///   the regime rather than of the expression
+/// - and beyond roughly 16400 it is **under** one accumulation, so the arm
+///   below fires where it need not
+///
+/// **No absolute value does better.** `FINITE_CEILING` is `3.3554432e7`, where
+/// one ULP is `4.0`, so a tolerance that covered the ceiling would have to
+/// exceed `0.94` -- and stay under `0.6` to absorb nothing on the tables. That
+/// is empty. A quantity whose ULP spans seven orders of magnitude has no
+/// absolute tolerance that is right at both ends, and a different constant is
+/// not the fix.
+///
+/// **Being too generous is the safe direction at both ends.** Declining a
+/// candidate leaves a cross size already within `0.01` of its derivation, and
+/// taffy quantises to whole pixels, so the value declined is correct beyond
+/// anything observable. Firing where it need not writes `main x ratio` onto a
+/// node whose cross is already within a hair of it -- the number that was
+/// already there. Measured at 440, 16384, 1e6, 1e7 and 3.3e7, every result is
+/// exactly `side x 0.85` and none moves under nudges of `0`, `0.005` or `0.5`.
+///
+/// **A node exactly at its derivation reaches this arm only through an `f32`
+/// tie.** In exact arithmetic it cannot: `cross == want` makes
+/// `width / ratio == height`, the pin's `>=` is true, and the node takes the
+/// pin and leaves the loop -- so the tolerance arbitrates a cross *below* its
+/// derivation and nothing else. In `f32` the pin's operands do not round-trip,
+/// `(L * r) / r` is not `L`, and at the boundary the comparison misses by a
+/// unit in the last place and the node arrives here after all. The bite is
+/// bounded by one ULP of the operands either way, so the equality case is
+/// still not the one at risk -- but it is reachable rather than excluded, and
+/// the arm below carries the measurement.
+///
+/// **A relative tolerance would close both ends and is not worth adding.** It
+/// would stop a fire that produces the correct answer, so the constant would
+/// exist to avoid redundant work at sizes nobody asks for -- and it would need
+/// its own justification, its own row and its own review.
+/// `l7aromeo/meo-canvas#142` records that argument so the next person meets it
+/// rather than re-deriving it.
 ///
 /// **`0.6` is the smallest real difference *in these two tables*, not a
 /// property of the renderer.** A small box at a ratio near one can produce a
@@ -1421,6 +1449,51 @@ where
         let cross_is_height = parent_is_row(tree, *id);
         if let Some((_, size)) = derive.iter().find(|(node, _)| node == id) {
             let mut size = *size;
+            // **The height branch runs, and away from one boundary its clamp
+            // does nothing.** `cross_is_height` is a row parent, so the cross
+            // is the block axis and the maximum is a `max-height`. For the
+            // clamp to matter the derived cross has to exceed the limit -- and
+            // a limit that low also caps the *cleared* width through the same
+            // transferred maximum, which makes the pin's
+            // `width / ratio >= height` true and takes the node out of this
+            // arm a branch earlier. In exact arithmetic that is a partition:
+            // either the pin has it or the `min` is a no-op.
+            //
+            // **In `f32` it is not, and this change is what exposed that.**
+            // `(L * r) / r` does not round-trip to `L`, so at the boundary the
+            // pin's comparison can miss by a unit in the last place, the node
+            // falls into this arm, and the clamp bites. **The worst bite is
+            // exactly one ULP of the limit**: `0.001953` throughout
+            // `[2^14, 2^15)` and `2.0` throughout `[2^24, 2^25)`, which is
+            // where `FINITE_CEILING` sits. That is arithmetic rather than a
+            // sample, and it is relative -- a pixel figure here would be true
+            // at today's scene sizes and quietly false at `1e7`.
+            //
+            // **No rate, deliberately.** How often the boundary is hit is a
+            // property of how `(width, ratio, limit)` are drawn rather than of
+            // this code: two sweeps over 200,000 triples gave `0.55%` and
+            // `1.05%` from different ranges for the ratio. A figure like that
+            // in a comment cannot be reproduced from what the comment says,
+            // and a later measurement landing elsewhere would read as the code
+            // having changed. The bound is the half that carries an argument.
+            //
+            // Reachable because `l7aromeo/meo-canvas#140` took the decision
+            // pass off taffy's rounding. `round_layout_inner` computes a size
+            // as `round(cumulative + w) - round(cumulative)`, so the pin used
+            // to compare integers and the raw product never reached it.
+            //
+            // Away from the boundary the measurements hold: across three
+            // ratios, four limits, grown and not, the branch fires with
+            // `limit` above the value it is clamping -- `limit=900
+            // before=424`, `limit=500 before=424`, `limit=300 before=212` --
+            // and every limit tight enough to bite sends the node to the pin,
+            // where `row max-height` in `flex-ratio-cross.tsv` covers it.
+            //
+            // Kept rather than deleted because the two branches are one
+            // statement about the cross axis, and because it is the branch
+            // that catches the boundary case: an error of one ULP is below
+            // what the rounded pass can express, and the alternative is
+            // reasoning about which sub-pixel errors survive rounding.
             if let Some(limit) = take_cross_maximum(&mut style, cross_is_height)
             {
                 if cross_is_height {

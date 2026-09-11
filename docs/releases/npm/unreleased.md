@@ -195,7 +195,9 @@ leaving it to be met.
   Where several growing children carry negative margins, every one of them was
   dropped rather than one — two 200-tall children at `-24` and `-10` gave 400
   against a browser's 366. Percentage margins were dropped in exactly the same
-  way, `marginTop: '-10%'` of a 903-wide container giving 500 against 409.7. A
+  way, `marginTop: '-10%'` of a 903-wide container with no padding giving 500
+  against 409.7 — a case that witnesses the drop and not what the percentage
+  resolved against, which an unpadded container cannot separate. A
   margin too small to survive rounding into a rendered pixel was never
   observable either way, before or after.
 

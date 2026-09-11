@@ -580,6 +580,13 @@ fn the_construction_axis_moves_one_row() {
 /// derivation sits `0.67` from `main x ratio` where a real divergence sat
 /// `218`, two orders of magnitude apart. `DERIVED_TOLERANCE`'s own doc carries
 /// what justifies its magnitude, and nothing here does.
+///
+/// **Two rows are not a taxonomy.** A third kind exists and this pair does not
+/// measure it: at the pin's boundary `(L * r) / r` does not round-trip in
+/// `f32`, so a difference of one unit in the last place can put a node in the
+/// derivation arm -- smaller than the `0.67` artefact by four orders and not
+/// the same thing as it. The name says these two are far apart, which is what
+/// is asserted; it does not say they are the only two.
 #[test]
 fn a_rounding_artefact_and_a_real_divergence_are_orders_apart() {
     // **Ours, not Chrome's.** The browser reports the unrounded 82.66; the
