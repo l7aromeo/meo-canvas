@@ -48,6 +48,12 @@ it describes, so there is nothing to correct and nobody to tell.
 `CONTRIBUTING.md` has the three shapes this takes and how to resolve the
 conflict when two pull requests append at once.
 
+**Bump first, then cut.** The recipe names the file after whatever the manifest
+says at the moment it runs, so cutting before the bump names it for the version
+just published and leaves `unreleased.md` empty. Nothing is lost — the release
+refuses, and renaming back re-cuts it — but the failure arrives at dispatch
+rather than at the mistake.
+
 **The version-named file is the released one.** `just release-npm` and
 `just release-crate` refuse to dispatch when the note for the version they are
 about to publish is missing **or empty**, because the failure otherwise arrives
@@ -55,6 +61,30 @@ from inside a workflow after the matrix has already built seven addons. Empty
 counts because that is the shape a forgotten cycle actually takes: the stub
 `cut-notes` leaves is a real file, so a run that never wrote an entry would
 otherwise publish a blank release page rather than stopping.
+
+**Write it against the previous release the reader could have installed.**
+Usually that is the previous release of the same channel, and for a prerelease
+it always is: `next` moves one prerelease at a time, so whoever installs this
+one installed the last one.
+
+**It stops being the same file once per major.** A hyphenated version never
+reaches `latest`, so a stable release is the first thing a `latest` consumer
+has seen since the previous stable — today that is `9.0.4`, an entire lineage
+back. Written by the ordinary rule, `10.0.0`'s page would describe what changed
+since its last alpha and hand it to someone crossing a rewritten API. The
+prerelease pages describing the journey exist and nobody on `latest` has read
+one.
+
+So a stable release that follows a prerelease series carries two things a
+prerelease note does not. **An index of the prerelease pages it subsumes**, one
+line each, because the detail is already written and should be reachable rather
+than repeated. And **the crossing itself**: what a caller on the previous
+stable has to change, in their terms. `../../AGENTS.md` has the porting hazards
+under _Porting a v9 component_, and they are the source for that section rather
+than something to re-derive.
+
+Neither applies to the crate's first stable: `0.1.0-alpha.1` was that channel's
+first release, so nobody crossing into `0.1.0` is leaving an earlier lineage.
 
 **Write it against the previous release of the same channel**, not against the
 previous commit. The two channels cut from one trunk, so the commits between

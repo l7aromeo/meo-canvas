@@ -998,6 +998,12 @@ bump-npm *bump="prerelease": ensure-deps
 # existing the moment a release is cut and the next contributor is told by
 # `CONTRIBUTING.md` to edit a file that is not there.
 #
+# **Bump first, then cut.** The version is read from the manifest at the moment
+# this runs, so cutting before the bump names the file after the version just
+# published and leaves `unreleased.md` empty. Nothing is lost -- the release
+# refuses on a missing note and renaming back re-cuts it -- but the failure
+# arrives at dispatch rather than at the mistake.
+#
 # The version is read from the same place the release recipe reads it rather
 # than taken as an argument. A typed version would be a second source that can
 # disagree with the manifest, and the disagreement would surface as the release
