@@ -1515,16 +1515,16 @@ an incident:
 
 Every dependency is on its latest stable release, and the exceptions say why.
 
-| crate             |      |                                                           |
-| ----------------- | ---- | --------------------------------------------------------- |
-| `meo-skia-canvas` | 0.16 | Skia, text shaping, encoding. `default-features = false`. |
-| `taffy`           | 0.14 | Flexbox, CSS grid, block layout. Without `calc`.          |
-| `csscolorparser`  | 0.8  | CSS colour syntax. Holds channels as `f32` -- see below.  |
-| `neon`            | 1.1  | Node addon.                                               |
-| `clap`            | 4.6  | CLI.                                                      |
-| `thiserror`       | 2.0  | Error types.                                              |
-| `ureq`            | 3.4  | Remote images, behind the optional `net` feature.         |
-| `rayon`           | 1.11 | The addon's asynchronous encode. Not an async runtime.    |
+| crate             |        |                                                           |
+| ----------------- | ------ | --------------------------------------------------------- |
+| `meo-skia-canvas` | 0.16.1 | Skia, text shaping, encoding. `default-features = false`. |
+| `taffy`           | 0.14   | Flexbox, CSS grid, block layout. Without `calc`.          |
+| `csscolorparser`  | 0.8    | CSS colour syntax. Holds channels as `f32` -- see below.  |
+| `neon`            | 1.1    | Node addon.                                               |
+| `clap`            | 4.6    | CLI.                                                      |
+| `thiserror`       | 2.0    | Error types.                                              |
+| `ureq`            | 3.4    | Remote images, behind the optional `net` feature.         |
+| `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.    |
 
 | tool       |       |                                                                |
 | ---------- | ----- | -------------------------------------------------------------- |
@@ -1534,7 +1534,7 @@ Every dependency is on its latest stable release, and the exceptions say why.
 | prettier   | 3.9   | Whole tree; `.prettierignore` names the machine-written files. |
 | vitest     | 5     | Tests and the JavaScript coverage floor.                       |
 | typedoc    | 0.28  | Its own package, so it pins the TypeScript it loads.           |
-| playwright | 1.62  | Drives Chrome for the conformance tables.                      |
+| playwright | 1.63  | Drives Chrome for the conformance tables.                      |
 
 **The core requires no async runtime and performs no network I/O unless built
 with `net`.** `just runtime-free` fails if a runtime enters the tree.
