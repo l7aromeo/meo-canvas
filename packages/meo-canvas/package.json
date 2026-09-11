@@ -48,7 +48,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@types/node": "^26.2.0"
+    "@types/node": "^26.5.1"
   },
   "optionalDependencies": {
     "@meo-canvas/darwin-arm64": "10.0.0-alpha.8",
