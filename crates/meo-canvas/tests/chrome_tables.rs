@@ -204,6 +204,40 @@ fn box_of(row: &Row, is_b: bool, painted: bool) -> Element {
         element = element.z_index(value);
     }
 
+    // **`Fixed` takes an inset here and the table was measured without one.
+    // Checked, and it changes no answer.** The probe that produced
+    // `paint-order.tsv` left `fixed` boxes at their static position, so for
+    // this family the scene below is not the scene Chrome was asked about.
+    // Re-measuring all 281 cases with the inset applied, against the committed
+    // table:
+    //
+    //     rows naming `fixed`            45
+    //       no overlap under insets      11
+    //       answered and different        0
+    //       answered and the same        34
+    //     non-fixed rows differing        0
+    //
+    // The last line is the control: the re-measurement still reproduced
+    // everything else, so the zero above is a property of the `fixed` family
+    // rather than of a tool that had stopped measuring.
+    //
+    // **What that establishes**: Chrome's answer does not depend on the
+    // difference, in every case where both scenes can be posed. So the table's
+    // answer is correct for the scene built here, and comparing against it is
+    // sound. **What it does not**: whether this renderer's own answer is
+    // scene-independent, which was not measured and which the argument does not
+    // need -- it runs through Chrome alone.
+    //
+    // **So the inset stays.** `Fixed` and `Sticky` differ from `Relative` in
+    // where they resolve rather than in when they paint, and `to_taffy_inset`
+    // drops the inset for `Static` alone; removing it here to match one table
+    // would read as a claim about that rule rather than about this scene.
+    //
+    // The nine rows excluded below for non-overlap and the eleven that had no
+    // overlap under the re-measurement are **not the same rows**. A fixed box
+    // resolves against the page here and against the viewport there, so the two
+    // scenes disagree about geometry while agreeing about paint order. Two
+    // counts one apart are not a near-match to be tidied into one exclusion.
     let out_of_flow =
         matches!(kind, PositionType::Absolute | PositionType::Fixed);
     if out_of_flow {
