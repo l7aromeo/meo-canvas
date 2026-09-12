@@ -70,11 +70,13 @@
 //! *main* size arrives from flex growth, which is a different question about
 //! the same upstream defect.
 //!
-//! The compensation covers the half where the item has no cross contribution
-//! of its own: `derived_cross` multiplies the grown main size by the ratio.
-//! The stretched half is left alone deliberately -- Chrome's answer overflows
-//! the line, and the `align-items: stretch` row below pins what taffy does
-//! with it instead.
+//! **Both halves are compensated, and by different code.** Where the item has
+//! no cross contribution of its own, `derived_cross` multiplies the grown main
+//! size by the ratio. Where the item is stretched, `stretched_ratio_minimum`
+//! gives it the main-axis automatic minimum CSS Flexbox 1 §4.5 owes it --
+//! `l7aromeo/meo-canvas#147`, whose answer overflows the line, which is what
+//! all three engines measured there do. The `align-items: stretch` row below
+//! pins what taffy does without it.
 
 use taffy::prelude::*;
 
@@ -166,6 +168,66 @@ fn a_grown_main_size_never_reaches_the_ratio() {
              defect is fixed and this test has done its job"
         );
     }
+}
+
+// [FOUNDATION] the property `stretched_ratio_minimum` rests on: **the cross
+// size it reads is unrounded.** The compensation divides a stretched item's
+// solved cross size by its ratio to get the transferred size suggestion, and
+// that read happens in `solve_page`'s unrounded region -- the fractional part
+// is the whole reason `disable_rounding` is called before any of this.
+//
+// If that stopped holding, the minimum would be wrong by up to half a pixel
+// and **every conformance row would stay green**: `ratio-stretch-main.tsv` is
+// integers throughout and compares within a pixel of slack, so a half-pixel
+// error has nowhere to show. The first sign would be a golden shifting with
+// nothing saying why.
+#[test]
+fn a_stretched_cross_size_is_reported_unrounded() {
+    let (width, height) = fractional_stretched_item();
+    assert!(
+        (width - 424.4).abs() < 0.01,
+        "a stretched item in a 424.4-wide content box is {width} wide. The          transferred minimum is this number divided by the ratio, so a          rounded 424 here is a minimum wrong by 0.4 that no conformance row          can see"
+    );
+    assert!(
+        (height - 248.0).abs() < 0.01,
+        "the main axis is {height} rather than the line's 248, so this is no          longer measuring what the compensation reads"
+    );
+}
+
+/// A stretched, ratio-free item in a container whose inner cross size has a
+/// fractional part, solved with rounding off the way `solve_page` solves.
+fn fractional_stretched_item() -> (f32, f32) {
+    let mut tree: TaffyTree<()> = TaffyTree::new();
+    tree.disable_rounding();
+    let child = tree
+        .new_leaf(Style {
+            flex_grow: 1.0,
+            ..Style::DEFAULT
+        })
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let parent = tree
+        .new_with_children(
+            Style {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                align_items: Some(AlignItems::STRETCH),
+                size: Size {
+                    width: Dimension::length(440.4),
+                    height: Dimension::length(264.0),
+                },
+                box_sizing: BoxSizing::BorderBox,
+                padding: Rect::length(8.0),
+                ..Style::DEFAULT
+            },
+            &[child],
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    tree.compute_layout(parent, Size::MAX_CONTENT)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let solved = tree
+        .layout(child)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    (solved.size.width, solved.size.height)
 }
 
 // [FOUNDATION] the property `compensate_ratio_direction`'s third arm rests on:

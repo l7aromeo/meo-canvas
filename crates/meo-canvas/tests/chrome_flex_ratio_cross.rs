@@ -52,31 +52,25 @@ const TABLE: &str = include_str!("assets/chrome/flex-ratio-cross.tsv");
 
 /// Rows this renderer answers differently, each with its reason.
 ///
-/// **`uncompensated stretch`** wants a main size derived from the stretched
-/// cross size, and Chrome's answer overflows its line -- `424x424` in a
-/// 248-tall content box. Correct, and `DioxusLabs/taffy#1182` proposes to make
-/// it taffy's own answer -- open rather than merged, so nothing about when it
-/// arrives is settled. Shipping it here first is a layout change nobody asked
-/// for.
+/// **Empty, and that is the result rather than an oversight.** Every row of
+/// this table now agrees with the browser. The list is kept because
+/// [`every_row_agrees_with_chrome_or_is_known`] asserts in both directions: a
+/// row that starts diverging has somewhere to be recorded, and a row recorded
+/// here that stops diverging is reported as stale rather than left standing.
 ///
-/// **`known max-width`** is the asymmetry between a binding minimum and a
-/// binding maximum. Chrome does not re-derive from a clamped maximum and taffy
-/// does, so a max that binds the cross axis takes the other axis with it here:
-/// `100x100` against Chrome's `100x248`. Before the compensation the row was
-/// `0x248` -- neither dominates, and a zero-wide box paints nothing where a
-/// short one is at least visible.
+/// **`stretched ratio` was the last entry**, and it was `uncompensated
+/// stretch` until the compensation arrived. A row whose *key* asserts
+/// something about this renderer is a claim in the one place nothing checks
+/// it, so the key says what the case is rather than what we do about it.
 ///
-/// **`known max-width amplified`** is the same divergence at its far end, and
-/// it is here because the family is a continuum rather than a case. The height
-/// produced is the maximum itself where Chrome keeps the line's 248, so the
-/// error is `248 - max`: `1x1` against Chrome's `1x248` at `max-width: 1px`.
-///
-/// **The near end is deliberately not a row.** At `max-width: 247px` this
-/// renderer gives `247x247` against Chrome's `247x248` and the error is one
-/// pixel, which `SLACK` swallows -- so the row would pass, inside a family
-/// that diverges, and a sweep landing there would conclude the family agrees.
-/// A row that cannot fail next to rows that do is worse than the prose.
-const KNOWN: &[&str] = &["uncompensated stretch"];
+/// **`max-width binds` and `max-width binds amplified` were named that way
+/// too, and for longer.** They were `known max-width` and `known max-width
+/// amplified`; they were repaired, deleted from this list, and left with keys
+/// and a paragraph here still describing them as live divergences at `100x100`
+/// and `1x1`. Both are `100x248` and `1x248` here and in all three engines.
+/// The stale-entry assertion could not catch it, because it reads this list
+/// and the wrong claim was in the prose beside it.
+const KNOWN: &[&str] = &[];
 
 /// One row of the table.
 fn chrome(case: &str) -> (f32, f32) {
@@ -469,14 +463,14 @@ fn rows_at_a_boundary() -> Vec<(&'static str, Case)> {
         ),
         ("pin-quiet-empty", Case::new()),
         (
-            "uncompensated stretch",
+            "stretched ratio",
             Case {
                 align: Align::Stretch,
                 ..Case::new()
             },
         ),
         (
-            "known max-width",
+            "max-width binds",
             Case {
                 max_w: Some(100.0),
                 ..Case::new()
@@ -491,7 +485,7 @@ fn rows_at_a_boundary() -> Vec<(&'static str, Case)> {
             },
         ),
         (
-            "known max-width amplified",
+            "max-width binds amplified",
             Case {
                 max_w: Some(1.0),
                 ..Case::new()

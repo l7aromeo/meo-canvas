@@ -107,8 +107,8 @@ const CASES = [
   ['min-width slack', `${COLUMN};align-items:center`, `${ITEM};min-width:100px`, '', 'control: a minimum under the derivation changes nothing'],
   ['pin-quiet-empty', `${COLUMN};align-items:center`, ITEM, '', 'width/ratio < height: this takes it, not the pin'],
   // Deliberately not compensated, and a divergence deliberately pinned.
-  ['uncompensated stretch', `${COLUMN};align-items:stretch`, ITEM, '', 'the derivation overflows its line; upstream has not shipped it'],
-  ['known max-width', `${COLUMN};align-items:center`, `${ITEM};max-width:100px`, '', 'a maximum binding the cross axis does not transfer back here'],
+  ['stretched ratio', `${COLUMN};align-items:stretch`, ITEM, '', 'the derivation overflows its line, and three engines let it'],
+  ['max-width binds', `${COLUMN};align-items:center`, `${ITEM};max-width:100px`, '', 'a maximum binding the cross axis does not transfer back here'],
   // **The pin arm's own row.** A row container puts the maximum on the cross
   // axis while the pin writes the main one, so this shape reaches the pin
   // where every other bounded row here reaches the derivation. Without it,
@@ -127,11 +127,11 @@ const CASES = [
   // because its error is under the table's slack, and a green row inside a
   // known-divergent family reads as the family agreeing.
   [
-    'known max-width amplified',
+    'max-width binds amplified',
     `${COLUMN};align-items:center`,
     `${ITEM};max-width:1px`,
     '',
-    'the same divergence at its far end: the error is 248 minus the maximum',
+    'the same shape at its far end, where a wrong answer would be furthest from this one',
   ],
 ]
 

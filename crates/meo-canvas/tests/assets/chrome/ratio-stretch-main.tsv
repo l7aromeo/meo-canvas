@@ -1,0 +1,83 @@
+# Whether a stretched flex item derives its main size from its aspect ratio.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Firefox 155.0, the firefox Playwright pins here.
+# Measured on WebKit 26.6, the webkit Playwright pins here.
+# Container 440x264, border-box, 8px padding, so a 424x248 content box.
+# Written by packages/meo-canvas/tools/conformance/ratiostretchmain.mjs.
+#
+# key	engine	width	height	note
+stretch	chromium	424.00	424.00	the reported shape: the cross size comes from stretch and the main size should follow the ratio
+stretch	firefox	424.00	424.00	the reported shape: the cross size comes from stretch and the main size should follow the ratio
+stretch	webkit	424.00	424.00	the reported shape: the cross size comes from stretch and the main size should follow the ratio
+escape min-height 0	chromium	424.00	248.00	CSS's own spelling: the automatic minimum carries the transferred size suggestion, and zeroing it removes the floor
+escape min-height 0	firefox	424.00	248.00	CSS's own spelling: the automatic minimum carries the transferred size suggestion, and zeroing it removes the floor
+escape min-height 0	webkit	424.00	248.00	CSS's own spelling: the automatic minimum carries the transferred size suggestion, and zeroing it removes the floor
+escape height 100%	chromium	424.00	248.00	a definite main size of its own, so there is nothing to derive
+escape height 100%	firefox	424.00	248.00	a definite main size of its own, so there is nothing to derive
+escape height 100%	webkit	424.00	248.00	a definite main size of its own, so there is nothing to derive
+escape max-height 100%	chromium	424.00	248.00	the obvious clamp, and the row to read before recommending it
+escape max-height 100%	firefox	424.00	248.00	the obvious clamp, and the row to read before recommending it
+escape max-height 100%	webkit	248.00	248.00	the obvious clamp, and the row to read before recommending it
+escape max-height 248px	chromium	424.00	248.00	the same clamp written as a length rather than a percentage
+escape max-height 248px	firefox	424.00	248.00	the same clamp written as a length rather than a percentage
+escape max-height 248px	webkit	248.00	248.00	the same clamp written as a length rather than a percentage
+escape overflow hidden	chromium	424.00	248.00	a scroll container has no automatic minimum, so the floor goes with it
+escape overflow hidden	firefox	424.00	248.00	a scroll container has no automatic minimum, so the floor goes with it
+escape overflow hidden	webkit	424.00	248.00	a scroll container has no automatic minimum, so the floor goes with it
+align-self stretch	chromium	424.00	424.00	the stretch on the item rather than on the container
+align-self stretch	firefox	424.00	424.00	the stretch on the item rather than on the container
+align-self stretch	webkit	424.00	424.00	the stretch on the item rather than on the container
+align-items default	chromium	424.00	424.00	stretch is the initial value, so saying nothing is saying stretch
+align-items default	firefox	424.00	424.00	stretch is the initial value, so saying nothing is saying stretch
+align-items default	webkit	424.00	424.00	stretch is the initial value, so saying nothing is saying stretch
+no stretch	chromium	248.00	248.00	control: no stretched cross size, so nothing to transfer
+no stretch	firefox	248.00	248.00	control: no stretched cross size, so nothing to transfer
+no stretch	webkit	248.00	248.00	control: no stretched cross size, so nothing to transfer
+ratio 0.5	chromium	424.00	848.00	below one: the derived main size is half the cross
+ratio 0.5	firefox	424.00	848.00	below one: the derived main size is half the cross
+ratio 0.5	webkit	424.00	848.00	below one: the derived main size is half the cross
+ratio 2	chromium	424.00	248.00	above one
+ratio 2	firefox	424.00	248.00	above one
+ratio 2	webkit	424.00	248.00	above one
+no ratio	chromium	424.00	248.00	control: nothing to transfer through
+no ratio	firefox	424.00	248.00	control: nothing to transfer through
+no ratio	webkit	424.00	248.00	control: nothing to transfer through
+no grow	chromium	424.00	424.00	stretched across but not grown along, so the main size has only the ratio to come from
+no grow	firefox	424.00	424.00	stretched across but not grown along, so the main size has only the ratio to come from
+no grow	webkit	424.00	424.00	stretched across but not grown along, so the main size has only the ratio to come from
+item content	chromium	424.00	424.00	a content contribution smaller than the derivation
+item content	firefox	424.00	424.00	a content contribution smaller than the derivation
+item content	webkit	424.00	424.00	a content contribution smaller than the derivation
+item content taller	chromium	424.00	600.00	a content contribution larger than the derivation
+item content taller	firefox	424.00	600.00	a content contribution larger than the derivation
+item content taller	webkit	424.00	600.00	a content contribution larger than the derivation
+item padding	chromium	424.00	424.00	padding sits outside the ratio unless box-sizing says otherwise
+item padding	firefox	424.00	424.00	padding sits outside the ratio unless box-sizing says otherwise
+item padding	webkit	424.00	424.00	padding sits outside the ratio unless box-sizing says otherwise
+item border-box	chromium	424.00	424.00	and with the padding inside the ratio
+item border-box	firefox	424.00	424.00	and with the padding inside the ratio
+item border-box	webkit	424.00	424.00	and with the padding inside the ratio
+two items	chromium	424.00	424.00	a second grown item, so each takes half the main free space
+two items	firefox	424.00	424.00	a second grown item, so each takes half the main free space
+two items	webkit	424.00	424.00	a second grown item, so each takes half the main free space
+max-width 100px	chromium	100.00	248.00	a maximum binding the stretched axis: the bound size transfers, or the stretch does
+max-width 100px	firefox	100.00	248.00	a maximum binding the stretched axis: the bound size transfers, or the stretch does
+max-width 100px	webkit	100.00	248.00	a maximum binding the stretched axis: the bound size transfers, or the stretch does
+max-width 1px	chromium	1.00	248.00	the same at its far end, where the two answers are furthest apart
+max-width 1px	firefox	1.00	248.00	the same at its far end, where the two answers are furthest apart
+max-width 1px	webkit	1.00	248.00	the same at its far end, where the two answers are furthest apart
+min-width 600px	chromium	600.00	600.00	a minimum above the stretched size, which the cross axis takes first
+min-width 600px	firefox	600.00	600.00	a minimum above the stretched size, which the cross axis takes first
+min-width 600px	webkit	600.00	600.00	a minimum above the stretched size, which the cross axis takes first
+row container	chromium	424.00	248.00	the axes swapped: the stretch is on the block axis and the main size is inline
+row container	firefox	424.00	248.00	the axes swapped: the stretch is on the block axis and the main size is inline
+row container	webkit	424.00	248.00	the axes swapped: the stretch is on the block axis and the main size is inline
+container auto cross	chromium	424.00	424.00	control: a container with no cross size of its own, so the stretch has nothing definite to take
+container auto cross	firefox	424.00	424.00	control: a container with no cross size of its own, so the stretch has nothing definite to take
+container auto cross	webkit	424.00	424.00	control: a container with no cross size of its own, so the stretch has nothing definite to take
+container wrap	chromium	424.00	248.00	a wrapped line takes its cross size from its items rather than from the container
+container wrap	firefox	424.00	248.00	a wrapped line takes its cross size from its items rather than from the container
+container wrap	webkit	424.00	248.00	a wrapped line takes its cross size from its items rather than from the container
+nested	chromium	424.00	424.00	the ratio item one flex container deeper
+nested	firefox	424.00	424.00	the ratio item one flex container deeper
+nested	webkit	424.00	424.00	the ratio item one flex container deeper

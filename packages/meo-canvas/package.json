@@ -1,6 +1,6 @@
 {
   "name": "meo-canvas",
-  "version": "10.0.1",
+  "version": "10.0.2",
   "description": "Server-side image generation for Node. Declarative scenes with CSS flexbox and grid layout, rendered on Skia.",
   "keywords": [
     "canvas",
@@ -51,12 +51,12 @@
     "@types/node": "^26.5.1"
   },
   "optionalDependencies": {
-    "@meo-canvas/darwin-arm64": "10.0.1",
-    "@meo-canvas/linux-arm64-gnu": "10.0.1",
-    "@meo-canvas/linux-arm64-musl": "10.0.1",
-    "@meo-canvas/linux-x64-gnu": "10.0.1",
-    "@meo-canvas/linux-x64-musl": "10.0.1",
-    "@meo-canvas/win32-arm64": "10.0.1",
-    "@meo-canvas/win32-x64": "10.0.1"
+    "@meo-canvas/darwin-arm64": "10.0.2",
+    "@meo-canvas/linux-arm64-gnu": "10.0.2",
+    "@meo-canvas/linux-arm64-musl": "10.0.2",
+    "@meo-canvas/linux-x64-gnu": "10.0.2",
+    "@meo-canvas/linux-x64-musl": "10.0.2",
+    "@meo-canvas/win32-arm64": "10.0.2",
+    "@meo-canvas/win32-x64": "10.0.2"
   }
 }

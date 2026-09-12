@@ -1283,20 +1283,85 @@ where
     // the row that keeps it doing so -- but it names the minimum, and the
     // experiment for why is where the clause is rather than repeated here.
     //
-    // **Not compensated: the stretched family.** `align-items: stretch` with a
-    // ratio wants a main size derived from the stretched cross size, and
-    // Chrome's answer overflows its line -- 424x424 in a 248-tall content box.
-    // That is correct, and `DioxusLabs/taffy#1182` proposes to make it taffy's
-    // own answer -- open rather than merged, so nothing about when it arrives
-    // is settled. Shipping it here first would be a layout change nobody asked
-    // for, in the direction that pull request itself calls the one most likely
-    // to be read as a bug.
+    // [WORKAROUND] taffy does not give a stretched flex item the automatic
+    // minimum its ratio owes it, so an item whose cross size comes from
+    // `stretch` takes its main size from the line instead of from the ratio:
+    // a ratio-1 item in a 424x248 content box is 424x248 here where WebKit,
+    // Chromium and Gecko all give 424x424. `DioxusLabs/taffy#351` is the
+    // unimplemented section and `DioxusLabs/taffy#1182` proposes to close it;
+    // reported as `l7aromeo/meo-canvas#147`.
+    //
+    // Retires when the `align-items: stretch` row of
+    // `a_grown_main_size_never_reaches_the_ratio` in
+    // `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins taffy's
+    // 424x248 beside the browser's 424x424, so the day a release gives the
+    // item its minimum that row fails and names this block. Named as a row
+    // rather than as a file because that file pins two defects and a reader
+    // given only its name cannot tell which of them sees this condition.
+    // Deleting it is deleting [`stretched_ratio_minimum`],
+    // [`content_main_size`], the `stretched` arm of this loop and the write in
+    // the loop below.
+    //
+    // **Derived from the text rather than from the three engines.** CSS
+    // Flexbox 1 §9.8 makes a stretched item's outer cross size *definite*
+    // when a single-line flex container has a definite cross size, clamped to
+    // the item's own min and max cross size. §4.5 turns a definite cross size
+    // on a ratio'd item into the **transferred size suggestion**, converted
+    // through the ratio; the content-based minimum of a non-replaced item is
+    // the larger of that and the content size suggestion, clamped by the
+    // maximum main size where that is definite; and the automatic minimum is
+    // that, except on a main-axis scroll container where it is zero. The
+    // three engines agreeing is the corroboration, not the derivation -- and
+    // every exclusion below is a sentence of that text rather than a cell
+    // that did not fit.
+    //
+    // **The minimum is read off the ratio-free solve rather than computed.**
+    // That solve has no ratio on the node, so the item's cross size there is
+    // exactly what §9.8 describes -- the container's inner cross size already
+    // clamped to the item's own bounds -- and its main size there is already
+    // the larger of the grown size and taffy's own content-based minimum,
+    // which is the content size suggestion's term. So the two suggestions
+    // §4.5 asks for are both in that solve and neither is re-derived here.
     let mut derive: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
+    let mut stretched: Vec<(taffy::NodeId, f32)> = Vec::new();
     for (id, ratio) in candidates {
         let solved = tree
             .layout(*id)
             .map_err(|error| Error::Layout(error.to_string()))?;
         cleared.push((*id, solved.size.width, solved.size.height));
+        // **Which compensation owns the cross size, since two of them want
+        // it.** A reader arrives at the `l7aromeo/meo-canvas#123` block above
+        // first and has to be told why it does not apply here. That one owns
+        // the cross size of an item that has none of its own: it multiplies
+        // the grown main size by the ratio, because nothing else was going to
+        // produce one. A
+        // stretched item is the opposite case -- the stretch already produced
+        // its cross size, and §9.8 calls that number *definite*, which is
+        // precisely what makes it the input the ratio transfers **from**.
+        // Deriving it from the main size would overwrite the one number this
+        // whole compensation reads.
+        //
+        // So the two do not overlap and the order between them is not a
+        // tie-break: the stretch settles the cross axis and the ratio settles
+        // the main one, where the block above has the ratio settle the cross
+        // axis because the main one was already settled by growth. Each owns
+        // the axis the other's input came from.
+        //
+        // **Measured, because the interaction is the part that bites.**
+        // `ratio 2` in
+        // `crates/meo-canvas/tests/assets/chrome/ratio-stretch-main.tsv` is
+        // `424x248` in all three engines; with that derivation left to fire
+        // on a stretched item it is `496x248` -- the cross size derived
+        // from the main one, over the top of the stretch. `item content
+        // taller` and `two items` move the same way, so a repair that added
+        // the minimum and left the derivation alone would have fixed the
+        // reported row and broken three others.
+        if let Some(minimum) =
+            stretched_ratio_minimum(tree, *id, *ratio, solved)
+        {
+            stretched.push((*id, minimum));
+            continue;
+        }
         // **The pin is for a width the derivation produced, and an author's
         // minimum is not one.** Chrome takes the largest of the derived
         // block size, the content's own height and any author minimum; a
@@ -1430,6 +1495,20 @@ where
             .map_err(|error| Error::Layout(error.to_string()))?
             .clone();
         style.aspect_ratio = Some(*ratio);
+        // [WORKAROUND] the transferred minimum of `l7aromeo/meo-canvas#147`,
+        // written as a length so the re-solve carries it. The block above
+        // carries the derivation and the probe.
+        if let Some((_, minimum)) =
+            stretched.iter().find(|(other, _)| *other == *id)
+        {
+            if parent_is_row(tree, *id) {
+                style.min_size.width =
+                    taffy::LengthPercentageAuto::length(*minimum);
+            } else {
+                style.min_size.height =
+                    taffy::LengthPercentageAuto::length(*minimum);
+            }
+        }
         // The derivation taffy did not make, written as a length so the
         // re-solve below carries it. A node that took the pin left the loop
         // above before reaching the derivation, so the two arms cannot both
@@ -2059,6 +2138,123 @@ fn content_inline_size(
             - solved.border.left
             - solved.border.right
             - solved.scrollbar_size.width
+    })
+}
+
+/// The main-axis minimum a stretched flex item's ratio owes it, by CSS
+/// Flexbox 1 §4.5, or `None` where that text gives it none.
+///
+/// **Every `None` here is a sentence of the specification** and names the row
+/// in `crates/meo-canvas/tests/assets/chrome/ratio-stretch-main.tsv` that
+/// holds it, so a reader can check the exclusion rather than take it.
+///
+/// Returns the minimum even where it does not bind, because the caller uses
+/// `Some` to mean *this item is stretched* -- and a stretched item must not
+/// reach the `l7aromeo/meo-canvas#123` derivation whatever its ratio works
+/// out to. `ratio 2` is
+/// the row: its minimum is under the line's own answer and its cross size is
+/// still the stretch's.
+fn stretched_ratio_minimum(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    ratio: f32,
+    solved: &taffy::Layout,
+) -> Option<f32> {
+    let parent = tree.parent(id)?;
+    let container = tree.style(parent).ok()?;
+    // §9.8 says *flex container* and says *single-line*: a wrapped line takes
+    // its cross size from its items, so there is no container cross size for
+    // the item to be stretched to. `container wrap`.
+    if container.display != taffy::Display::Flex
+        || container.flex_wrap != taffy::FlexWrap::NoWrap
+    {
+        return None;
+    }
+    let style = tree.style(id).ok()?;
+    // Stretch is the initial value, so a container saying nothing is saying
+    // stretch -- `align-items default` is what keeps the `None` arm here.
+    // `no stretch` is what keeps the rest of the match.
+    let align = style.align_self.or(container.align_items);
+    if !align.is_none_or(|value| value == taffy::AlignItems::STRETCH) {
+        return None;
+    }
+    let row = matches!(
+        container.flex_direction,
+        taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+    );
+    let (min_main, overflow_main, max_main) = if row {
+        (style.min_size.width, style.overflow.x, style.max_size.width)
+    } else {
+        (
+            style.min_size.height,
+            style.overflow.y,
+            style.max_size.height,
+        )
+    };
+    // §4.5 gives an automatic minimum only where the main-axis minimum is
+    // `auto`; any definite minimum replaces it. `escape min-height 0`.
+    if !matches!(min_main.expand(), taffy::ExpandedLengthPercentageAuto::Auto) {
+        return None;
+    }
+    // §4.5: "for main-axis scroll containers the automatic minimum size is
+    // zero, as usual". `escape overflow hidden`.
+    if overflow_main != taffy::Overflow::Visible {
+        return None;
+    }
+    // The transferred size suggestion. The ratio is width over height, so it
+    // divides where the main axis is the block one and multiplies where it is
+    // the inline one. `ratio 0.5` and `row container` are the two rows that
+    // would swap if this were the other way round.
+    let (cross, main) = if row {
+        (solved.size.height, solved.size.width)
+    } else {
+        (solved.size.width, solved.size.height)
+    };
+    let transferred = if row { cross * ratio } else { cross / ratio };
+    if !transferred.is_finite() {
+        return None;
+    }
+    // The larger of the transferred and content suggestions -- `main` is the
+    // ratio-free solve's own answer and already carries the second -- and then
+    // §4.5's clamp by a definite maximum main size. `item content taller`
+    // takes the content term and `escape max-height 248px` takes the clamp,
+    // which `every_row_matches_the_reference` in
+    // `crates/meo-canvas/tests/chrome_ratio_stretch_main.rs` pins: delete the
+    // ceiling and those two rows come out `424x424` against Chromium's and
+    // Firefox's `424x248`. WebKit alone sends the clamped size back through
+    // the ratio, so the row is compared rather than exempted.
+    let mut minimum = transferred.max(main);
+    let ceiling = match max_main.expand() {
+        taffy::ExpandedLengthPercentageAuto::Length(value) => Some(value),
+        taffy::ExpandedLengthPercentageAuto::Percent(fraction) => {
+            Some(fraction * content_main_size(tree, parent, row))
+        }
+        taffy::ExpandedLengthPercentageAuto::Auto => None,
+    };
+    if let Some(ceiling) = ceiling
+        && minimum > ceiling
+    {
+        minimum = ceiling;
+    }
+    Some(minimum)
+}
+
+/// The content-box extent of a solved node on the axis named.
+fn content_main_size(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    row: bool,
+) -> f32 {
+    if row {
+        return content_inline_size(tree, id);
+    }
+    tree.layout(id).map_or(0.0, |solved| {
+        solved.size.height
+            - solved.padding.top
+            - solved.padding.bottom
+            - solved.border.top
+            - solved.border.bottom
+            - solved.scrollbar_size.height
     })
 }
 
