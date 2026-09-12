@@ -10,10 +10,9 @@
 //! **Three engines rather than one.** Blink and `WebKit` share an ancestor
 //! and Gecko shares none, so a row all three give is a reading of CSS rather
 //! than of a codebase. The table carries one row per engine and this walker
-//! reads
-//! Chromium's, because a row the three disagree on is refused by
-//! [`the_engines_agree_except_where_the_table_says_so`] before any comparison
-//! against this renderer happens.
+//! compares against Chromium's, because
+//! [`the_engines_agree_except_where_the_table_says_so`] has already refused
+//! any row the three split on in a way [`WEBKIT_ALONE`] does not describe.
 //!
 //! **Solved rectangles rather than ink**, for the reason
 //! `chrome_flex_ratio_cross.rs` gives: an item with no content paints nothing
@@ -59,28 +58,39 @@ const TABLE: &str = include_str!("assets/chrome/ratio-stretch-main.tsv");
 ///
 /// **Chromium rather than a vote**, because a majority would hide the thing
 /// the three-engine measurement is for: where they differ, the row is a
-/// finding rather than a target, and it is named in [`ENGINES_DIFFER`] instead
-/// of being averaged away.
+/// finding rather than a target, and it is named in [`WEBKIT_ALONE`] with the
+/// sentence that settles it, instead of being averaged away.
 const REFERENCE: &str = "chromium";
 
-/// The rows the three engines do not agree on, with what the disagreement is.
+/// The engine that reads one family of rows differently from the other two.
+const OUTLIER: &str = "webkit";
+
+/// The rows [`OUTLIER`] alone reads differently, and what settles them.
 ///
-/// **`WebKit` feeds a bound main size back through the ratio and the other
+/// **`WebKit` feeds a clamped main size back through the ratio and the other
 /// two do not.** With `max-height` on the item -- as a percentage or as a
 /// length, which is the part that says it is not about percentages --
 /// Chromium and Firefox clamp the main axis and leave the stretched cross
 /// size alone, giving `424x248`; `WebKit` takes the clamped `248` back
 /// through the ratio and gives `248x248`.
 ///
-/// **So `max-height` is not the escape to recommend**, and that is why both
-/// rows are here rather than one: measuring only the percentage would have
-/// read as a percentage-resolution difference, which is a thing engines do
-/// differ about, and the length row is what rules that reading out.
+/// **Two against one is not what decides it; the specification is.** §4.5
+/// ends the content-based minimum with "the size is clamped by the maximum
+/// main size if it's definite" -- a clamp of the *minimum*, and neither §4.5
+/// nor §9.8 sends a clamped main size back across the ratio to the cross
+/// axis. So these rows are compared against [`REFERENCE`] like every other
+/// row here, `stretched_ratio_minimum`'s own ceiling is what answers them,
+/// and [`OUTLIER`] is recorded as the outlier rather than excused from being
+/// one.
 ///
-/// Nothing here is compensated. A rule fitted to one engine where the others
-/// differ is a rule fitted to that engine's defect, and this renderer has no
-/// basis for choosing which of the three is right.
-const ENGINES_DIFFER: &[&str] =
+/// **`max-height` is still not the escape to recommend, for a different
+/// reason than it was.** Not because the answer is unsettled, but because a
+/// caller who writes it gets one box here, in Chromium and in Firefox, and a
+/// different one in Safari -- which is a portability cost rather than an open
+/// question. Both spellings are named because measuring only the percentage
+/// would have read as a percentage-resolution difference, which engines do
+/// differ about, and the length row is what rules that reading out.
+const WEBKIT_ALONE: &[&str] =
     &["escape max-height 100%", "escape max-height 248px"];
 
 /// One row of the table, for one engine.
@@ -369,8 +379,10 @@ fn reported_rows() -> Vec<(&'static str, Case)> {
 /// -- a definite main size leaves nothing to derive -- and `overflow: hidden`
 /// for a third, since a scroll container has no automatic minimum at all.
 ///
-/// **`max-height` is not on that list**, and its two rows are in
-/// [`ENGINES_DIFFER`] rather than here.
+/// **`max-height` is on this list and is the one not to recommend**, which is
+/// a different sentence from the other four: it gives the same box here as in
+/// Chromium and Firefox, and a smaller one in Safari. [`WEBKIT_ALONE`] has
+/// the split and the sentence of §4.5 that decides it.
 fn escape_rows() -> Vec<(&'static str, Case)> {
     vec![
         (
@@ -547,11 +559,14 @@ fn container_and_bound_rows() -> Vec<(&'static str, Case)> {
 /// **The engines are checked against each other before this renderer is
 /// checked against any of them.**
 ///
-/// A row the three disagree on is a finding rather than a target, so it is
-/// named in [`ENGINES_DIFFER`] and excluded from the comparison. This test is
-/// what keeps that list honest in both directions: a row that starts
-/// disagreeing is refused, and a row that stops is reported as stale so the
-/// exclusion does not outlive its reason.
+/// Three refusals rather than the two an exclusion list needs, because
+/// [`WEBKIT_ALONE`] claims something narrower than "these rows are
+/// unsettled": it claims [`OUTLIER`] differs *and the rest agree*. So a row
+/// nothing names where any engine disagrees is refused; a named row where the
+/// engines other than [`OUTLIER`] stop agreeing with each other is refused,
+/// since the list would then be describing a split it does not describe; and
+/// a named row [`OUTLIER`] has come to agree with is reported as stale, so
+/// the naming does not outlive its reason.
 #[test]
 fn the_engines_agree_except_where_the_table_says_so() {
     let all = engines();
@@ -561,40 +576,68 @@ fn the_engines_agree_except_where_the_table_says_so() {
          that three of them agree, and two cannot make it",
         all.len()
     );
+    assert!(
+        all.contains(&OUTLIER) && REFERENCE != OUTLIER,
+        "{OUTLIER} has to be a column of the table and cannot also be \
+         {REFERENCE}, or naming a row in WEBKIT_ALONE would assert nothing"
+    );
+    let cells = |key: &str| -> String {
+        all.iter()
+            .map(|engine| {
+                let (width, height) = measured(key, engine);
+                format!("{engine} {width}x{height}")
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
+    };
     let mut unexpected = Vec::new();
+    let mut not_a_split = Vec::new();
     let mut stale = Vec::new();
     for (key, _) in rows() {
-        let first = measured(key, all[0]);
-        let agree = all
+        let named = WEBKIT_ALONE.contains(&key);
+        let expected_to_agree: Vec<&str> = all
+            .iter()
+            .copied()
+            .filter(|engine| !named || *engine != OUTLIER)
+            .collect();
+        let first = measured(key, expected_to_agree[0]);
+        let agree = expected_to_agree
             .iter()
             .all(|engine| approximately(measured(key, engine), first));
-        if !agree && !ENGINES_DIFFER.contains(&key) {
-            let cells: Vec<String> = all
-                .iter()
-                .map(|engine| {
-                    let (width, height) = measured(key, engine);
-                    format!("{engine} {width}x{height}")
-                })
-                .collect();
-            unexpected.push(format!("{key}: {}", cells.join(", ")));
-        }
-        if agree && ENGINES_DIFFER.contains(&key) {
+        if !agree {
+            if named {
+                not_a_split.push(format!("{key}: {}", cells(key)));
+            } else {
+                unexpected.push(format!("{key}: {}", cells(key)));
+            }
+        } else if named && approximately(measured(key, OUTLIER), first) {
             stale.push(key);
         }
     }
     assert!(
         unexpected.is_empty(),
-        "{} row(s) the engines disagree on and ENGINES_DIFFER does not name:\n{}\n\
+        "{} row(s) the engines disagree on and WEBKIT_ALONE does not name:\n{}\n\
          A disagreement is a finding rather than a defect here. Do not \
-         compensate it: record it, and say which engines gave what",
+         compensate it on a majority: say which engines gave what, and name \
+         the sentence of the specification that settles it, if one does",
         unexpected.len(),
         unexpected.join("\n")
     );
     assert!(
+        not_a_split.is_empty(),
+        "{} row(s) WEBKIT_ALONE names where the engines other than {OUTLIER} \
+         no longer agree either:\n{}\n\
+         The list claims one engine reads these differently. That has stopped \
+         being true, so the comparison against {REFERENCE} is no longer \
+         standing on two engines and a specification sentence",
+        not_a_split.len(),
+        not_a_split.join("\n")
+    );
+    assert!(
         stale.is_empty(),
         "{stale:?} now agree across every engine -- delete them from \
-         ENGINES_DIFFER, and check whether the release note still needs to \
-         warn about them"
+         WEBKIT_ALONE, and check whether the release notes still need to warn \
+         that Safari differs"
     );
 }
 
@@ -603,18 +646,18 @@ fn approximately(left: (f32, f32), right: (f32, f32)) -> bool {
     (left.0 - right.0).abs() <= SLACK && (left.1 - right.1).abs() <= SLACK
 }
 
-/// **Every row the engines agree on, with no exemptions.**
+/// **Every row, with no exemptions.**
 ///
-/// There is no `KNOWN` list here and that is the result rather than an
-/// omission: the compensation covers every row of this family that the
-/// engines settle.
+/// There is no `KNOWN` list here and no row is skipped, and both are results
+/// rather than omissions: the compensation covers every row of this family,
+/// including the two [`WEBKIT_ALONE`] names -- those are compared against
+/// [`REFERENCE`] like the rest, and are the only rows that reach
+/// `stretched_ratio_minimum`'s clamp by a definite maximum main size. Skip
+/// them and that clamp could be deleted with every row here still green.
 #[test]
-fn every_agreed_row_matches_the_reference() {
+fn every_row_matches_the_reference() {
     let mut wrong = Vec::new();
     for (key, case) in rows() {
-        if ENGINES_DIFFER.contains(&key) {
-            continue;
-        }
         let (want_width, want_height) = measured(key, REFERENCE);
         let (width, height) = solved(case);
         if !approximately((width, height), (want_width, want_height)) {

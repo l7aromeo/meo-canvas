@@ -2217,7 +2217,12 @@ fn stretched_ratio_minimum(
     // The larger of the transferred and content suggestions -- `main` is the
     // ratio-free solve's own answer and already carries the second -- and then
     // §4.5's clamp by a definite maximum main size. `item content taller`
-    // takes the content term and `escape max-height 248px` takes the clamp.
+    // takes the content term and `escape max-height 248px` takes the clamp,
+    // which `every_row_matches_the_reference` in
+    // `crates/meo-canvas/tests/chrome_ratio_stretch_main.rs` pins: delete the
+    // ceiling and those two rows come out `424x424` against Chromium's and
+    // Firefox's `424x248`. WebKit alone sends the clamped size back through
+    // the ratio, so the row is compared rather than exempted.
     let mut minimum = transferred.max(main);
     let ceiling = match max_main.expand() {
         taffy::ExpandedLengthPercentageAuto::Length(value) => Some(value),

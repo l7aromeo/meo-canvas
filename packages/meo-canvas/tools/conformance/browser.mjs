@@ -51,9 +51,11 @@ export const FONT = {
  * **Three rather than one, and Gecko is why.** Blink and WebKit share an
  * ancestor, so the two of them agreeing is one lineage answering twice; Gecko
  * shares none, and a row all three give is a reading of CSS rather than of a
- * codebase. A row they disagree on is a finding in its own right and is not
- * something to compensate: see `ratio-stretch-main.tsv`, where
- * `escape max-height 100%` is one.
+ * codebase. A row they disagree on is a finding in its own right: record it,
+ * say which engine gave what, and reach for the specification rather than for
+ * a majority. `ratio-stretch-main.tsv`'s `escape max-height 100%` is one a
+ * sentence of Flexbox §4.5 settles, and `WEBKIT_ALONE` in the test beside that
+ * table is where a settled split is written down.
  */
 const ENGINES = { chromium, firefox, webkit }
 
