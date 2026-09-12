@@ -4,9 +4,19 @@
 # of its own; the item holds 1024 of content.
 # Written by packages/meo-canvas/tools/conformance/flexbasiscollapse.mjs.
 #
-# **No row here records a divergence.** Every one of the thirty matches
-# Chrome: eighteen because the compensation makes them, twelve because they
-# already did -- and those twelve are what says it does not over-reach.
+# **No row here records a divergence.** Every one of the forty-four
+# matches Chrome: thirty because the compensation makes them, fourteen
+# because they already did -- and those fourteen are what says it does not
+# over-reach. The counts are measured: commenting out the call to
+# `collapse_definite_bases` turns exactly thirty of these rows red.
+#
+# **An out-of-flow item is not measurable here, and that is why there is no
+# `position: absolute` row.** The number is the outer box's extent, an
+# absolutely positioned item contributes nothing to an ancestor’s content
+# size, and so such a row reports the sibling’s 200 whatever the
+# compensation does -- with the compensation, without it, and over-reaching.
+# It would read as a scope control and could not fail. Measuring that axis
+# needs an instrument that reports the item rather than the row.
 #
 # The number is the OUTER box on the axis named: 1024 means the content
 # dictated it, 200 means the item collapsed and the sibling set it.
@@ -58,4 +68,18 @@ combo border-box padding	200.00	height	and with the padding inside the stated si
 combo item ratio	200.00	height	a ratio transfers a main size into a cross size that is itself indefinite
 combo container wrap	200.00	height	a wrapped line takes its cross size from the items rather than the container
 combo nested percentage	200.00	height	a percentage at each level, none of which resolves
+two items	200.00	height	a second item on the line, so the free space is shared
+align-items center	200.00	height	cross alignment, a different axis from the one that collapses
+justify-content center	200.00	height	main alignment, after the sizes are settled
+column-reverse	200.00	height	the same main axis, walked the other way
+item margin auto	200.00	height	an auto margin absorbs free space before the item does
+no grow, definite basis	200.00	height	the base with nothing to grow into: §9.7 never runs
+max-height 50%	200.00	height	a percentage maximum against a container with no definite main size
+container ratio	300.00	height	the ratio settles the container cross size, which is the axis whose indefiniteness is the mechanism
+min-height 50%	200.00	height	a percentage minimum that is not zero
+align-items baseline	200.00	height	taffy does not attempt baseline in a column direction at all
+two levels deeper	200.00	height	the collapsing item a great-grandchild of the column
+three levels deeper	200.00	height	one further, in case the stretch resolves differently per level
+grid inside the item	200.00	height	the grid exclusion from the other side: grid below the item rather than above
+measured leaf	200.00	height	text rather than a box with a stated height: a different path through the measurer
 row-direction mirror	1024.00	width	control: the container’s main axis is inline and sized by max-content, which is §9.9 Intrinsic Sizes -- unimplemented in taffy (`DioxusLabs/taffy#351`) and a different computation from this one

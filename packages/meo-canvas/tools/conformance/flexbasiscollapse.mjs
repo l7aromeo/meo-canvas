@@ -128,6 +128,45 @@ const CASES = [
   ['combo container wrap', OUTER, `${COLUMN};flex-wrap:wrap`, ITEM, TALL, 'a wrapped line takes its cross size from the items rather than the container'],
   ['combo nested percentage', OUTER, `${COLUMN};height:100%`, `${ITEM};height:100%`, TALL, 'a percentage at each level, none of which resolves'],
 
+  ['two items', OUTER, COLUMN, ITEM, TALL, 'a second item on the line, so the free space is shared'],
+  ['align-items center', OUTER, `${COLUMN};align-items:center`, ITEM, TALL, 'cross alignment, a different axis from the one that collapses'],
+  ['justify-content center', OUTER, `${COLUMN};justify-content:center`, ITEM, TALL, 'main alignment, after the sizes are settled'],
+  ['column-reverse', OUTER, 'display:flex;flex-direction:column-reverse;flex-grow:1', ITEM, TALL, 'the same main axis, walked the other way'],
+  ['item margin auto', OUTER, COLUMN, `${ITEM};margin-top:auto`, TALL, 'an auto margin absorbs free space before the item does'],
+  ['no grow, definite basis', OUTER, COLUMN, 'flex-grow:0;flex-basis:0;min-height:0', TALL, 'the base with nothing to grow into: §9.7 never runs'],
+  ['max-height 50%', OUTER, COLUMN, `${ITEM};max-height:50%`, TALL, 'a percentage maximum against a container with no definite main size'],
+  [
+    'container ratio',
+    OUTER,
+    `${COLUMN};aspect-ratio:1`,
+    ITEM,
+    TALL,
+    'the ratio settles the container cross size, which is the axis whose indefiniteness is the mechanism',
+  ],
+  ['min-height 50%', OUTER, COLUMN, 'flex-grow:1;flex-basis:0;min-height:50%', TALL, 'a percentage minimum that is not zero'],
+  ['align-items baseline', OUTER, `${COLUMN};align-items:baseline`, ITEM, TALL, 'taffy does not attempt baseline in a column direction at all'],
+  ['two levels deeper', OUTER, COLUMN, ITEM, TALL, 'the collapsing item a great-grandchild of the column'],
+  ['three levels deeper', OUTER, COLUMN, ITEM, TALL, 'one further, in case the stretch resolves differently per level'],
+  [
+    'grid inside the item',
+    OUTER,
+    COLUMN,
+    ITEM,
+    '<div style="display:grid"><div style="width:100px;height:1024px"></div></div>',
+    'the grid exclusion from the other side: grid below the item rather than above',
+  ],
+  [
+    'measured leaf',
+    OUTER,
+    COLUMN,
+    ITEM,
+    // 32 line boxes at a line height of 32 is 1024, the same extent every
+    // other row states outright -- so the row varies where the extent comes
+    // from and nothing else.
+    `<span style="font:400 16px/2 monospace;display:block;width:100px">${'x<br>'.repeat(31)}x</span>`,
+    'text rather than a box with a stated height: a different path through the measurer',
+  ],
+
   // The scope control on the other axis.
   [
     'row-direction mirror',
@@ -145,18 +184,25 @@ try {
   const rows = []
   for (const [key, outer, column, item, content, note] of CASES) {
     const mirror = key === 'row-direction mirror'
-    const deeper = key === 'item one level deeper'
+    const second = key === 'two items'
+    const levels = key === 'item one level deeper' ? 1 : key === 'two levels deeper' ? 2 : key === 'three levels deeper' ? 3 : 0
     await browser.page.evaluate(
-      ({ outer, column, item, content, mirror, deeper }) => {
+      ({ outer, column, item, content, mirror, levels, second }) => {
         const sibling = mirror ? '<div style="width:200px;height:300px"></div>' : '<div style="width:300px;height:200px"></div>'
         const inner = `<div style="${item}">${content}</div>`
-        const wrapped = deeper ? `<div style="display:flex;flex-direction:column;flex-grow:1">${inner}</div>` : inner
-        const box = `<div id="c" style="${outer};background:#eee">${sibling}<div style="${column}">${wrapped}</div></div>`
+        let wrapped = inner
+        for (let n = 0; n < levels; n += 1) {
+          wrapped = `<div style="display:flex;flex-direction:column;flex-grow:1">${wrapped}</div>`
+        }
+        // A second item shares the line's free space, so §9.7 distributes
+        // between two written bases rather than giving the whole line to one.
+        const pair = second ? `${wrapped}<div style="${item}"></div>` : wrapped
+        const box = `<div id="c" style="${outer};background:#eee">${sibling}<div style="${column}">${pair}</div></div>`
         // A block element's `width: auto` fills where `height: auto` fits, so
         // the mirror needs a parent that shrinks to fit or it reports the page.
         document.body.innerHTML = mirror ? `<div style="display:flex;align-items:flex-start">${box}</div>` : box
       },
-      { outer, column, item, content, mirror, deeper },
+      { outer, column, item, content, mirror, levels, second },
     )
     await settle(browser.page)
     const box = await browser.page.evaluate(() => {
@@ -174,9 +220,19 @@ try {
     '# of its own; the item holds 1024 of content.',
     '# Written by packages/meo-canvas/tools/conformance/flexbasiscollapse.mjs.',
     '#',
-    '# **No row here records a divergence.** Every one of the thirty matches',
-    '# Chrome: eighteen because the compensation makes them, twelve because they',
-    '# already did -- and those twelve are what says it does not over-reach.',
+    '# **No row here records a divergence.** Every one of the forty-four',
+    '# matches Chrome: thirty because the compensation makes them, fourteen',
+    '# because they already did -- and those fourteen are what says it does not',
+    '# over-reach. The counts are measured: commenting out the call to',
+    '# `collapse_definite_bases` turns exactly thirty of these rows red.',
+    '#',
+    '# **An out-of-flow item is not measurable here, and that is why there is no',
+    "# `position: absolute` row.** The number is the outer box's extent, an",
+    '# absolutely positioned item contributes nothing to an ancestor\u2019s content',
+    '# size, and so such a row reports the sibling\u2019s 200 whatever the',
+    '# compensation does -- with the compensation, without it, and over-reaching.',
+    '# It would read as a scope control and could not fail. Measuring that axis',
+    '# needs an instrument that reports the item rather than the row.',
     '#',
     '# The number is the OUTER box on the axis named: 1024 means the content',
     '# dictated it, 200 means the item collapsed and the sibling set it.',

@@ -26,20 +26,35 @@ use meo_canvas_scene::{
     style::{
         Dimension, Length,
         layout::{
-            Align, BoxSizing, Display, FlexDirection, FlexWrap, Overflow,
+            Align, BoxSizing, Display, FlexDirection, FlexWrap, Justify,
+            Overflow,
         },
     },
 };
 
-/// Every scene here is boxes, so nothing needs measuring.
-struct NoLeaves;
-impl Measure for NoLeaves {
+/// Every box in these scenes states its own size, so only the row that asks
+/// for a measured leaf has anything to measure.
+///
+/// **It answers for one node rather than for every leaf**, because a childless
+/// box is a leaf here too: `content empty`'s item has no children, and a
+/// measurer answering 1024 for anything it is handed would size that row's
+/// item from the mock instead of from the row.
+struct Leaves {
+    /// The node standing in for Chrome's block of text, when the row has one.
+    measured: Option<NodeId>,
+}
+impl Measure for Leaves {
     fn measure(
         &mut self,
-        _: NodeId,
+        node: NodeId,
         _: (Option<f32>, Option<f32>),
         _: (Available, Available),
     ) -> MeasuredLeaf {
+        if self.measured == Some(node) {
+            // Chrome's leaf is 32 monospace lines at a line height of 32,
+            // which is the same 1024 every other row states outright.
+            return MeasuredLeaf::sized(Size::new(100.0, 1024.0));
+        }
         MeasuredLeaf::EMPTY
     }
 }
@@ -91,6 +106,7 @@ fn rows() -> Vec<(&'static str, Case)> {
     let mut all = container_rows();
     all.extend(value_rows());
     all.extend(combination_rows());
+    all.extend(reach_rows());
     all
 }
 
@@ -111,6 +127,10 @@ enum Content {
     Tall,
     Nested,
     Empty,
+    /// The tall box under a grid container, inside the collapsing item.
+    Grid,
+    /// A leaf whose extent comes from the measurer rather than from a style.
+    Measured,
 }
 
 #[expect(
@@ -126,7 +146,8 @@ struct Case {
     basis: Option<Dimension>,
     min: Option<Dimension>,
     content: Content,
-    deeper: bool,
+    /// How many flex containers sit between the column and the item.
+    levels: u8,
     mirror: bool,
     /// The combination axes: what a caller writes beside the pair.
     clips: Option<Overflow>,
@@ -138,6 +159,14 @@ struct Case {
     ratio: Option<f32>,
     wrap: bool,
     item_percent_main: bool,
+    /// The reach axes: what a scene puts around the pair without touching it.
+    second_item: bool,
+    align_items: Option<Align>,
+    justify: Option<Justify>,
+    reverse: bool,
+    margin_auto: bool,
+    no_grow: bool,
+    column_ratio: Option<f32>,
 }
 
 impl Case {
@@ -147,7 +176,7 @@ impl Case {
             basis: Some(Dimension::Points(0.0)),
             min: Some(Dimension::Points(0.0)),
             content: Content::Tall,
-            deeper: false,
+            levels: 0,
             mirror: false,
             clips: None,
             max: None,
@@ -158,6 +187,13 @@ impl Case {
             ratio: None,
             wrap: false,
             item_percent_main: false,
+            second_item: false,
+            align_items: None,
+            justify: None,
+            reverse: false,
+            margin_auto: false,
+            no_grow: false,
+            column_ratio: None,
         }
     }
 }
@@ -175,12 +211,18 @@ fn column_of(case: Case, across: bool) -> Node {
     } else {
         Display::Flex
     };
-    column.layout.flex_direction = if across {
-        FlexDirection::Column
-    } else {
-        FlexDirection::Row
+    column.layout.flex_direction = match (across, case.reverse) {
+        (true, false) => FlexDirection::Column,
+        (true, true) => FlexDirection::ColumnReverse,
+        (false, false) => FlexDirection::Row,
+        (false, true) => FlexDirection::RowReverse,
     };
     column.layout.flex_grow = 1.0;
+    column.layout.align_items = case.align_items;
+    column.layout.justify_content = case.justify;
+    if let Some(ratio) = case.column_ratio {
+        column.layout.aspect_ratio = Some(ratio);
+    }
     match case.column {
         Column::Explicit if across => {
             column.layout.size.1 = Dimension::Points(200.0);
@@ -220,7 +262,16 @@ fn column_of(case: Case, across: bool) -> Node {
 /// The collapsing item, carrying whichever of the pair the row writes.
 fn item_of(case: Case, across: bool) -> Node {
     let mut item = Node::new(NodeKind::Box);
-    item.layout.flex_grow = 1.0;
+    item.layout.flex_grow = if case.no_grow { 0.0 } else { 1.0 };
+    if case.margin_auto {
+        // The auto margin is on the main-axis start edge, which is where it
+        // takes the free space before §9.7 can give it to the item.
+        if across {
+            item.layout.margin.top = Dimension::Auto;
+        } else {
+            item.layout.margin.left = Dimension::Auto;
+        }
+    }
     if let Some(basis) = case.basis {
         item.layout.flex_basis = basis;
     }
@@ -256,6 +307,54 @@ fn item_of(case: Case, across: bool) -> Node {
         }
     }
     item
+}
+
+/// What the collapsing item holds, and the node the measurer answers for.
+///
+/// **Split from [`solved`] for the reason [`column_of`] and [`item_of`] were**:
+/// a row varies the container, the item, or what is inside it, and the three
+/// are set by different columns of the table.
+fn fill_item(
+    scene: &mut Scene,
+    item: NodeId,
+    case: Case,
+    across: bool,
+) -> Option<NodeId> {
+    if case.content == Content::Empty {
+        return None;
+    }
+    let holder = match case.content {
+        Content::Nested => scene
+            .push(item, Node::new(NodeKind::Box))
+            .unwrap_or_else(|error| unreachable!("{error}")),
+        Content::Grid => {
+            let mut grid = Node::new(NodeKind::Box);
+            grid.layout.display = Display::Grid;
+            scene
+                .push(item, grid)
+                .unwrap_or_else(|error| unreachable!("{error}"))
+        }
+        Content::Tall | Content::Measured | Content::Empty => item,
+    };
+    if case.content == Content::Measured {
+        // A childless box with no stated size is what reaches the measurer,
+        // which is the path Chrome's paragraph takes.
+        return Some(
+            scene
+                .push(holder, Node::new(NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}")),
+        );
+    }
+    let mut tall = Node::new(NodeKind::Box);
+    tall.layout.size = if across {
+        (Dimension::Points(100.0), Dimension::Points(1024.0))
+    } else {
+        (Dimension::Points(1024.0), Dimension::Points(100.0))
+    };
+    scene
+        .push(holder, tall)
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    None
 }
 
 /// The outer box's extent on the axis the table names.
@@ -309,7 +408,8 @@ fn solved(case: Case) -> f32 {
         .push(outer, column_of(case, across))
         .unwrap_or_else(|error| unreachable!("{error}"));
 
-    let parent = if case.deeper {
+    let mut parent = column;
+    for _ in 0..case.levels {
         let mut middle = Node::new(NodeKind::Box);
         middle.layout.display = Display::Flex;
         middle.layout.flex_direction = if across {
@@ -318,38 +418,24 @@ fn solved(case: Case) -> f32 {
             FlexDirection::Row
         };
         middle.layout.flex_grow = 1.0;
-        scene
-            .push(column, middle)
-            .unwrap_or_else(|error| unreachable!("{error}"))
-    } else {
-        column
-    };
+        parent = scene
+            .push(parent, middle)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+    }
 
     let item = scene
         .push(parent, item_of(case, across))
         .unwrap_or_else(|error| unreachable!("{error}"));
 
-    if case.content != Content::Empty {
-        let mut tall = Node::new(NodeKind::Box);
-        tall.layout.size = if across {
-            (Dimension::Points(100.0), Dimension::Points(1024.0))
-        } else {
-            (Dimension::Points(1024.0), Dimension::Points(100.0))
-        };
-        let holder = if case.content == Content::Nested {
-            let wrapper = Node::new(NodeKind::Box);
-            scene
-                .push(item, wrapper)
-                .unwrap_or_else(|error| unreachable!("{error}"))
-        } else {
-            item
-        };
+    let measured = fill_item(&mut scene, item, case, across);
+
+    if case.second_item {
         scene
-            .push(holder, tall)
+            .push(parent, item_of(case, across))
             .unwrap_or_else(|error| unreachable!("{error}"));
     }
 
-    let result = solve(&scene, NodeId::ROOT, &mut NoLeaves)
+    let result = solve(&scene, NodeId::ROOT, &mut Leaves { measured })
         .unwrap_or_else(|error| unreachable!("{error}"));
     let rect = result
         .get(outer)
@@ -472,7 +558,7 @@ fn value_rows() -> Vec<(&'static str, Case)> {
         (
             "item one level deeper",
             Case {
-                deeper: true,
+                levels: 1,
                 ..Case::new()
             },
         ),
@@ -498,8 +584,9 @@ fn value_rows() -> Vec<(&'static str, Case)> {
 const SLACK: f32 = 1.0;
 
 /// **Every row, with no exemptions**, because no row here records a
-/// divergence: eighteen match Chrome because the compensation makes them and
-/// twelve because they already did.
+/// divergence: thirty match Chrome because the compensation makes them and
+/// fourteen because they already did. Both counts are measured -- commenting
+/// out the call in `layout.rs` turns exactly thirty of them red.
 #[test]
 fn every_row_agrees_with_chrome() {
     let mut wrong = Vec::new();
@@ -643,6 +730,128 @@ fn combination_rows() -> Vec<(&'static str, Case)> {
             Case {
                 column: Column::Percent,
                 item_percent_main: true,
+                ..Case::new()
+            },
+        ),
+    ]
+}
+
+/// The rows that vary what a scene puts *around* the pair.
+///
+/// **Every row above changes something the compensation reads.** These change
+/// things it does not: an alignment, a second item on the line, a margin, a
+/// nesting level, where the content's extent comes from. So they are the rows
+/// that say how far it reaches, and a divergence in one would be the rule
+/// keyed on something it should not be keyed on.
+///
+/// Two of them are scoped rather than merely incidental. **`container ratio`**
+/// settles the container's cross size, which is the indefiniteness the whole
+/// mechanism rests on -- it is the one row here whose Chrome number is not 200.
+/// **`grid inside the item`** is the grid exclusion from below rather than
+/// above: a grid under the collapsing item must not stop it collapsing, where
+/// `container grid` says a grid above it must not start one.
+///
+/// **There is no `position: absolute` row, and the table says why**: an
+/// out-of-flow item contributes nothing to the extent this table measures, so
+/// such a row would report the sibling's 200 under every mutation including an
+/// over-reaching one.
+fn reach_rows() -> Vec<(&'static str, Case)> {
+    vec![
+        (
+            "two items",
+            Case {
+                second_item: true,
+                ..Case::new()
+            },
+        ),
+        (
+            "align-items center",
+            Case {
+                align_items: Some(Align::Center),
+                ..Case::new()
+            },
+        ),
+        (
+            "justify-content center",
+            Case {
+                justify: Some(Justify::Center),
+                ..Case::new()
+            },
+        ),
+        (
+            "column-reverse",
+            Case {
+                reverse: true,
+                ..Case::new()
+            },
+        ),
+        (
+            "item margin auto",
+            Case {
+                margin_auto: true,
+                ..Case::new()
+            },
+        ),
+        (
+            "no grow, definite basis",
+            Case {
+                no_grow: true,
+                ..Case::new()
+            },
+        ),
+        (
+            "max-height 50%",
+            Case {
+                max: Some(Dimension::Percent(0.5)),
+                ..Case::new()
+            },
+        ),
+        (
+            "container ratio",
+            Case {
+                column_ratio: Some(1.0),
+                ..Case::new()
+            },
+        ),
+        (
+            "min-height 50%",
+            Case {
+                min: Some(Dimension::Percent(0.5)),
+                ..Case::new()
+            },
+        ),
+        (
+            "align-items baseline",
+            Case {
+                align_items: Some(Align::Baseline),
+                ..Case::new()
+            },
+        ),
+        (
+            "two levels deeper",
+            Case {
+                levels: 2,
+                ..Case::new()
+            },
+        ),
+        (
+            "three levels deeper",
+            Case {
+                levels: 3,
+                ..Case::new()
+            },
+        ),
+        (
+            "grid inside the item",
+            Case {
+                content: Content::Grid,
+                ..Case::new()
+            },
+        ),
+        (
+            "measured leaf",
+            Case {
+                content: Content::Measured,
                 ..Case::new()
             },
         ),
