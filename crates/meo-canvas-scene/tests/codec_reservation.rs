@@ -22,6 +22,14 @@ static LIVE: AtomicUsize = AtomicUsize::new(0);
 
 struct Counting;
 
+// **`realloc` and `alloc_zeroed` are deliberately left to their defaults**,
+// because those defaults call `self.alloc` and `self.dealloc` -- so a growing
+// `Vec` is counted without either being written here. Forwarding either to
+// `System` directly is faster and stops the counting silently, and
+// `a_declared_count_cannot_reserve_much_more_than_the_input_is_long` cannot
+// catch that: its bound is an upper one, so an allocator that sees less
+// passes it more easily.
+//
 // SAFETY: every method forwards to `System`, which is a correct allocator, and
 // adds only two relaxed atomic counters around it. The pointer handed to
 // `dealloc` is one `System` returned, because `alloc` is the only source.
