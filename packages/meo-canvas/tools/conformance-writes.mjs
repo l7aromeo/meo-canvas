@@ -77,7 +77,7 @@ const TOOLS = join(HERE, 'conformance')
  * what makes a stale narration worse than a bare number. git records when a
  * tool arrived; prose does not maintain it.
  */
-const GUARDED_WRITES = 23
+const GUARDED_WRITES = 24
 
 /**
  * How many stamped `.tsv` tables the assets directory holds.
@@ -94,7 +94,7 @@ const GUARDED_WRITES = 23
  * tool writes something that is not a table, or a table is produced by a tool
  * that already existed.
  */
-const STAMPED_TABLES = 23
+const STAMPED_TABLES = 24
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([
@@ -299,6 +299,14 @@ if (guardedWrites < GUARDED_WRITES) {
 // a Rust file and another lane. Named here rather than left for someone to
 // notice the check only ever looked at fourteen of sixteen.
 const TABLES = join(HERE, '..', '..', '..', 'crates', 'meo-canvas', 'tests', 'assets', 'chrome')
+// **A table measured on more than one engine is counted on the strength of
+// one line, and that is narrower than what this check is cited for.**
+// `ratio-stretch-main.tsv` names Chrome, Firefox and WebKit; only Chrome's
+// version has the four parts this pattern wants, so the file would still
+// read as stamped with the other two lines deleted. Widening the pattern
+// would admit any two numbers separated by a dot, which is most of a note
+// column. Said here rather than left for the next reader to assume the
+// check saw all three.
 const STAMP = /^#.*\b\d+\.\d+\.\d+\.\d+\b/
 const unstamped = []
 let stamped = 0
