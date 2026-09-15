@@ -430,3 +430,142 @@ fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
     });
     agrees("bar chart", &encoded(chart), THEIR_HATCHES);
 }
+
+/// As [`THEIR_LINE`], for the chart whose y-axis colour comes from the
+/// fallback.
+const THEIR_AXIS_FALLBACK: &str =
+    include_str!("assets/chart/axis-fallback-bytes.txt");
+/// As [`THEIR_LINE`], for the doughnut at a caller-chosen hole.
+const THEIR_DOUGHNUT_INNER: &str =
+    include_str!("assets/chart/doughnut-inner-bytes.txt");
+
+/// Every option of [`everything`], with the y-axis colour taken away and
+/// `axis_color` put in its place.
+///
+/// **Written out rather than spread from [`everything`]**, and the reason is
+/// the one this file already warns about: the first disagreement of a new case
+/// is usually two option bags that differ. The TypeScript bag cannot be
+/// spread-and-dropped under `exactOptionalPropertyTypes`, so it is a literal
+/// there; making this one a literal too means the two are read side by side
+/// rather than one derived and one written.
+///
+/// **`y_axis_color: None` is stated even though it is the default**, because
+/// its absence is the whole of the case. A reader who deletes the line as
+/// redundant deletes the branch.
+///
+/// The colour is neither `y_axis_color`'s `#778899` nor the `TEXT_COLOR` the
+/// chain ends at, so a surface taking the wrong arm of
+/// `y_axis_color.or(axis_color)` encodes differently from one taking this one.
+fn axis_fallback() -> Options {
+    Options {
+        show_labels: true,
+        show_values: true,
+        show_y_axis: true,
+        show_legend: true,
+        legend_position: LegendPosition::Bottom,
+        grid: Grid {
+            show: true,
+            color: Some("#e0e0e0".to_owned()),
+        },
+        label_font_size: Some(11.0),
+        value_font_size: Some(10.0),
+        y_axis_font_size: Some(9.0),
+        label_color: Some(hex_rgb(0x11_22_33)),
+        value_color: Some(hex_rgb(0x44_55_66)),
+        y_axis_color: None,
+        axis_color: Some(hex_rgb(0x22_cc_88)),
+        ..Options::default()
+    }
+}
+
+/// The hole this side is **told**, rather than the one it defaults to.
+///
+/// `doughnut` carries v1's `0.6` itself and the TypeScript surface falls back
+/// to the same number, so the doughnut case above has the two agreeing about a
+/// value neither was given. `0.35` is given to both.
+const CHOSEN_INNER_FRACTION: f64 = 0.35;
+
+/// `axis_color` is the fallback under an absent `y_axis_color`, and nothing
+/// reached it.
+///
+/// `everything` always sets `y_axis_color`, so every case above takes the
+/// first arm of `y_axis_color.or(axis_color)` and the second is a branch this
+/// suite had never executed on either surface.
+#[test]
+fn both_surfaces_encode_the_same_chart_through_the_axis_colour_fallback() {
+    let (labels, datasets) = cartesian();
+    let chart =
+        bar(&labels, &datasets, &axis_fallback()).unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    agrees("bar chart", &encoded(chart), THEIR_AXIS_FALLBACK);
+}
+
+/// The doughnut at a hole the caller chose rather than the one both sides
+/// default to.
+#[test]
+fn both_surfaces_encode_the_same_doughnut_at_a_chosen_inner_fraction() {
+    let options = Options {
+        inner_fraction: Some(CHOSEN_INNER_FRACTION),
+        ..everything(LegendPosition::Bottom)
+    };
+    let chart = doughnut(&three_slices(), &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    agrees("doughnut chart", &encoded(chart), THEIR_DOUGHNUT_INNER);
+}
+
+/// **The two new cases can fail, which is not what a byte match shows.**
+///
+/// A comparison against a committed asset says the two surfaces agree; it does
+/// not say the option under test reached the output. Both of these agree with
+/// the option removed too — the fallback colour would silently be `TEXT_COLOR`
+/// on both sides, and the hole would silently be `0.6` on both — so what makes
+/// the cases above evidence is that taking the option away moves the bytes
+/// here.
+#[test]
+fn the_two_new_options_reach_the_encoded_scene() {
+    let (labels, datasets) = cartesian();
+    let with_axis = encoded(
+        bar(&labels, &datasets, &axis_fallback())
+            .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    let without_axis = encoded(
+        bar(
+            &labels,
+            &datasets,
+            &Options {
+                axis_color: None,
+                ..axis_fallback()
+            },
+        )
+        .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    assert_ne!(
+        hex(from_the_chart(&with_axis, "bar chart")),
+        hex(from_the_chart(&without_axis, "bar chart")),
+        "`axis_color` does not change the encoded chart, so the case that \
+         pins it would pass with the fallback arm never taken"
+    );
+
+    let chosen = encoded(
+        doughnut(
+            &three_slices(),
+            &Options {
+                inner_fraction: Some(CHOSEN_INNER_FRACTION),
+                ..everything(LegendPosition::Bottom)
+            },
+        )
+        .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    let defaulted = encoded(
+        doughnut(&three_slices(), &everything(LegendPosition::Bottom))
+            .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    assert_ne!(
+        hex(from_the_chart(&chosen, "doughnut chart")),
+        hex(from_the_chart(&defaulted, "doughnut chart")),
+        "a chosen `inner_fraction` encodes the same as the default, so the \
+         case that pins it is pinning the default a second time"
+    );
+}
