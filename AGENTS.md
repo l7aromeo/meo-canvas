@@ -1524,7 +1524,7 @@ Every dependency is on its latest stable release, and the exceptions say why.
 
 | crate             |        |                                                           |
 | ----------------- | ------ | --------------------------------------------------------- |
-| `meo-skia-canvas` | 0.16.1 | Skia, text shaping, encoding. `default-features = false`. |
+| `meo-skia-canvas` | 0.16.2 | Skia, text shaping, encoding. `default-features = false`. |
 | `taffy`           | 0.14   | Flexbox, CSS grid, block layout. Without `calc`.          |
 | `csscolorparser`  | 0.8    | CSS colour syntax. Holds channels as `f32` -- see below.  |
 | `neon`            | 1.1    | Node addon.                                               |
