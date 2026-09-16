@@ -67,7 +67,7 @@ vulkan = ["meo-skia-canvas/vulkan"]
 # The two numbers are one decision. Sixty seconds against thirty-two mebibytes
 # is a claim that a host sustains about 4.5 Mbit/s, and moving either alone
 # makes the other the real limit. `resolve::fetch` carries the derivation.
-net = ["dep:ureq"]
+net = ["dep:ureq", "dep:rustls"]
 
 [dependencies]
 base64 = { workspace = true }
@@ -99,6 +99,19 @@ thiserror = { workspace = true }
 # `smol` across the whole tree and it is clean -- **no runtime anywhere, which
 # is the claim, and it is bigger than the note suggests, which is not.**
 ureq = { workspace = true, optional = true }
+# **Declared to raise a floor, not to be used.** Nothing here imports `rustls`;
+# it arrives under `net` because `ureq` speaks TLS with it. `ureq` requires
+# `^0.23`, which resolves happily to `0.23.44` -- and `RUSTSEC-2026-0285`,
+# published 14 September 2026, is a TLS 1.3 handshake flaw fixed in `0.23.45`.
+#
+# A lockfile pin is a fix only this repository has: a consumer of the published
+# crate resolves the manifest requirement and gets whatever `^0.23` gives them.
+# Naming a minimum here is what carries the fix to them, and it is the only
+# mechanism that does while `ureq`'s own requirement stays where it is.
+#
+# Delete this the day `ureq` requires `0.23.45` or newer, at which point the
+# floor is theirs to hold and this line is a dependency nobody imports.
+rustls = { workspace = true, optional = true }
 
 [[bench]]
 name = "render"
@@ -112,7 +125,7 @@ workspace = true
 # entry here is a pass not yet written, and an entry still here when the crate
 # is finished is a dependency to delete.
 [package.metadata.cargo-machete]
-ignored = ["taffy"]
+ignored = ["taffy", "rustls"]
 
 [dev-dependencies]
 # Decoders, not encoders: an encode test that asserts on byte length proves

@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 # 1.98 is the floor the workspace actually needs and the current stable
 # (`rustc 1.98.0 (88d9e12ae 2026-08-18)`). Nothing here reaches below it, and a
@@ -24,8 +24,8 @@ authors = ["L A Romeo <ukasyahrz@outlook.com>"]
 # Internal members. Both a `path` and a `version` because a member published to
 # crates.io carries the version and a local build follows the path; naming only
 # one makes the crate either unpublishable or untestable.
-meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.1.3" }
-meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.3" }
+meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.1.4" }
+meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.4" }
 
 # The drawing backend, from crates.io rather than a path or a workspace member.
 # `default-features = false` is what keeps its `node-addon` feature off, and so
@@ -45,7 +45,7 @@ meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.3" }
 # reads ours.** `"0.16"` admits 0.16.0, and a crate depending on `meo-canvas`
 # resolves this requirement against the registry -- so a fix expressed only in
 # `Cargo.lock` is a fix only this repository has.
-meo-skia-canvas = { version = "0.16.2", default-features = false }
+meo-skia-canvas = { version = "0.16.3", default-features = false }
 
 # Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
 # `*const ()` handle the caller resolves, so it adds a surface with no
@@ -99,6 +99,17 @@ clap = { version = "4.6", features = ["derive"] }
 # lists `tokio`, `hyper`, `hyper-util` and `tower` as non-optional even before
 # its `blocking` feature is asked for.
 ureq = "3.4"
+# **A floor rather than a use.** Nothing in this workspace imports `rustls`; it
+# enters the graph under `net` because `ureq` speaks TLS with it. `ureq`
+# requires `^0.23`, which resolves to `0.23.44` -- and `RUSTSEC-2026-0285`,
+# published 14 September 2026, is a TLS 1.3 handshake flaw fixed in `0.23.45`.
+# A lockfile pin fixes that here and nowhere else, because a consumer of the
+# published crate resolves the manifest requirement rather than this lockfile.
+# Naming the minimum is what carries the fix to them.
+#
+# Retires the day `ureq` requires `0.23.45` or newer: the floor is theirs to
+# hold, and this becomes a dependency nobody imports.
+rustls = ">=0.23.45"
 thiserror = "2.0"
 # Benchmarking. Not in the `ci` chain: a bench is an instrument, not a gate --
 # it answers "what is this worth" rather than "is this correct", and a number
