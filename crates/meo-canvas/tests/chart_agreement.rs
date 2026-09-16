@@ -733,3 +733,45 @@ fn an_unreadable_colour_is_refused_rather_than_drawn_in_black() {
          folded into the unreadable one"
     );
 }
+
+/// A doughnut is named for what the caller asked for, not for its hole.
+///
+/// **`inner_fraction: Some(0.0)` is the only way in**, which is why no
+/// committed asset can see it: the doughnut cases above pass `0.35` and the
+/// default `0.6`, and every caller who says nothing lands above zero. A hole
+/// of zero draws the same circle a pie does, and the two are still different
+/// charts -- the other surface names the node from the type it was given.
+///
+/// The name is encoded, so this is not cosmetic: anything reading the scene by
+/// name saw `pie chart` for a chart the caller had asked to be a doughnut.
+#[test]
+fn a_doughnut_with_no_hole_is_still_a_doughnut() {
+    let flat = Options {
+        inner_fraction: Some(0.0),
+        ..Options::default()
+    };
+    let chart = doughnut(&three_slices(), &flat).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    assert!(
+        contains(&encoded(chart), "doughnut chart"),
+        "a doughnut with a hole of zero names its own node `pie chart`, so a \
+         caller who asked for one cannot find it by name"
+    );
+
+    // The control: a pie is still a pie, so the repair is about the kind
+    // rather than about naming everything a doughnut.
+    let chart =
+        pie(&three_slices(), &Options::default()).unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    let bytes = encoded(chart);
+    assert!(
+        contains(&bytes, "pie chart"),
+        "a pie is no longer named as one"
+    );
+    assert!(
+        !contains(&bytes, "doughnut chart"),
+        "a pie is named as a doughnut"
+    );
+}
