@@ -2329,6 +2329,15 @@ fn take_cross_maximum(
 /// width and a column one a width from a height. A candidate whose parent is
 /// not a flex container is left alone: the defect is the flex algorithm's
 /// transferred size, and block layout reaches the ratio by another path.
+///
+/// The two arms fail in different files. The column arm moves every row of
+/// `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv`, which is
+/// built on a column container. The row arm moves nothing there and is
+/// asserted by `crates/meo-canvas-core/tests/ratio_row_cross.rs` instead --
+/// **off `ratio: 1` on purpose**, because the height it writes is
+/// `width / ratio` and at ratio one that is a number several unrelated rules
+/// also produce, so a row-container case at ratio one agrees with this
+/// function whether or not it ran.
 fn derived_cross(
     tree: &taffy::TaffyTree<NodeId>,
     id: taffy::NodeId,

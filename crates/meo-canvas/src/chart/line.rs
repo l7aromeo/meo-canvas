@@ -22,7 +22,7 @@ use crate::{
         frame::{framed, legend},
         geometry::{LINE_SPACE, line_path, line_points, series_color},
     },
-    fraction, hex_rgb, px,
+    fraction, px,
     unit::sides,
 };
 
@@ -53,7 +53,8 @@ const POINT_RADIUS: f32 = 4.0;
 ///
 /// # Errors
 ///
-/// Returns [`Error::Chart`] for a negative value, as the other kinds do.
+/// Returns [`Error::Chart`] for a negative value, as the other kinds do, and
+/// for a colour that cannot be read.
 pub fn line(
     labels: &[String],
     datasets: &[Dataset],
@@ -70,7 +71,7 @@ pub fn line(
 
     let mut inside: Vec<Element> = Vec::new();
     for (index, dataset) in datasets.iter().enumerate() {
-        inside.push(series(index, dataset, labels.len(), max_value));
+        inside.push(series(index, dataset, labels.len(), max_value)?);
     }
     // Markers after every series, so a line never covers a point of a series
     // drawn before it -- v1 draws them per dataset and interleaves them, which
@@ -81,11 +82,11 @@ pub fn line(
             .iter()
             .enumerate()
         {
-            inside.push(marker(index, at, point.x, point.y, &colour));
+            inside.push(marker(index, at, point.x, point.y, &colour)?);
         }
     }
 
-    let mut body: Vec<Element> = vec![plot_area(options, max_value, inside)];
+    let mut body: Vec<Element> = vec![plot_area(options, max_value, inside)?];
     if options.show_labels {
         body.push(label_strip(labels, options));
     }
@@ -93,7 +94,7 @@ pub fn line(
     Ok(framed(
         options,
         Column::new().name("body").flex_grow(1.0).children(body),
-        legend(options, &series_labels(datasets)),
+        legend(options, &series_labels(datasets))?,
         "line chart",
     ))
 }
@@ -104,33 +105,35 @@ fn series(
     dataset: &Dataset,
     labels: usize,
     max_value: f64,
-) -> Element {
+) -> Result<Element, Error> {
     let colour = series_color(index, dataset.color.as_deref());
     #[expect(
         clippy::cast_possible_truncation,
         reason = "the plot's own space, narrowed once at the style boundary"
     )]
     let space = LINE_SPACE as f32;
-    Path::d(line_path(&line_points(labels, &dataset.data, max_value)))
-        .name(format!("series {index}"))
-        .view_box(Some((0.0, 0.0, space, space)))
-        .stretch(true)
-        .fill(None)
-        .stroke(Some(PathPaint::Solid(
-            meo_canvas_core::parse_color(&colour)
-                .unwrap_or(hex_rgb(0x00_00_00)),
-        )))
-        .line_width(SERIES_STROKE)
-        .with_style(
-            Style::new()
-                .position_type(PositionType::Absolute)
-                .position(sides(
-                    Some(px(0.0)),
-                    Some(px(0.0)),
-                    Some(px(0.0)),
-                    Some(px(0.0)),
-                )),
-        )
+    Ok(
+        Path::d(line_path(&line_points(labels, &dataset.data, max_value)))
+            .name(format!("series {index}"))
+            .view_box(Some((0.0, 0.0, space, space)))
+            .stretch(true)
+            .fill(None)
+            .stroke(Some(PathPaint::Solid(
+                meo_canvas_core::parse_color(&colour)
+                    .ok_or(Error::Chart("a series colour could not be read"))?,
+            )))
+            .line_width(SERIES_STROKE)
+            .with_style(
+                Style::new().position_type(PositionType::Absolute).position(
+                    sides(
+                        Some(px(0.0)),
+                        Some(px(0.0)),
+                        Some(px(0.0)),
+                        Some(px(0.0)),
+                    ),
+                ),
+            ),
+    )
 }
 
 /// One point marker, centred on its point by a half-its-own-size translation.
@@ -140,8 +143,8 @@ fn marker(
     x: f64,
     y: f64,
     colour: &str,
-) -> Element {
-    BoxElement::new()
+) -> Result<Element, Error> {
+    Ok(BoxElement::new()
         .name(format!("point {series}.{index}"))
         .with_style(
             Style::new()
@@ -161,8 +164,9 @@ fn marker(
                     ..Transform::default()
                 })
                 .background_color(
-                    meo_canvas_core::parse_color(colour)
-                        .unwrap_or(hex_rgb(0x00_00_00)),
+                    meo_canvas_core::parse_color(colour).ok_or(
+                        Error::Chart("a point colour could not be read"),
+                    )?,
                 ),
-        )
+        ))
 }

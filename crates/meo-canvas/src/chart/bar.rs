@@ -283,7 +283,8 @@ const VALUE_LIFT: f32 = 5.0;
 /// # Errors
 ///
 /// Returns [`Error::Chart`] for a negative value, which v1 mis-draws three
-/// different ways rather than supporting.
+/// different ways rather than supporting, and for a colour that cannot be
+/// read -- on a dataset or on the grid.
 pub fn bar(
     labels: &[String],
     datasets: &[Dataset],
@@ -299,11 +300,11 @@ pub fn bar(
         for (dataset, bar) in group.iter().enumerate() {
             bars.push(one_bar(
                 *bar, index, dataset, &values, datasets, options,
-            ));
+            )?);
         }
     }
 
-    let mut body: Vec<Element> = vec![plot_area(options, max_value, bars)];
+    let mut body: Vec<Element> = vec![plot_area(options, max_value, bars)?];
     if options.show_labels {
         body.push(label_strip(labels, options));
     }
@@ -317,7 +318,7 @@ pub fn bar(
         // either spelling is safe, but the defect it caused is pinned by
         // `the_label_strip_sits_under_the_plot_rather_than_beside_it`.
         Column::new().name("body").flex_grow(1.0).children(body),
-        legend(options, &series_labels(datasets)),
+        legend(options, &series_labels(datasets))?,
         "bar chart",
     ))
 }
@@ -330,7 +331,7 @@ fn one_bar(
     values: &[Vec<f64>],
     datasets: &[Dataset],
     options: &Options,
-) -> Element {
+) -> Result<Element, Error> {
     let colour = series_color(dataset, datasets[dataset].color.as_deref());
     let value = values
         .get(dataset)
@@ -352,13 +353,15 @@ fn one_bar(
                 .width(fraction(bar.width))
                 .height(fraction(bar.height))
                 .background_color(
-                    meo_canvas_core::parse_color(&colour).unwrap_or(TEXT_COLOR),
+                    meo_canvas_core::parse_color(&colour).ok_or(
+                        Error::Chart("a bar colour could not be read"),
+                    )?,
                 ),
         );
     if options.show_values {
         drawn = drawn.children([value_label(value, index, dataset, options)]);
     }
-    drawn
+    Ok(drawn)
 }
 
 /// A value sitting five pixels above its bar, centred on it.
@@ -394,8 +397,23 @@ fn value_label(
                 .align_items(Align::Center),
         )
         .children([drawn.unwrap_or_else(|| {
+            // The value as written, not as rounded. `format_number` is the
+            // y-axis default formatter's two-decimal spelling and belongs to
+            // that axis: a value label showing `2.35` for a bar of `2.345`
+            // reports a number the caller never gave.
+            //
+            // **This path spells a number differently from the other surface
+            // at and above 1e21**, which is a deliberate deviation rather than
+            // an oversight: `Display` never switches to exponential and
+            // JavaScript does, so `1e21` is `1000000000000000000000` here and
+            // `1e+21` there. Closing it means implementing another language's
+            // number formatting, and nothing else in this workspace spells a
+            // number that way.
+            // `a_value_label_at_1e21_is_spelled_differently_on_each_surface`
+            // in `crates/meo-canvas/tests/chart_number_spelling.rs` pins it,
+            // and fails if the two ever agree.
             text(
-                &format_number(value),
+                &value.to_string(),
                 options,
                 options.value_font_size,
                 options.value_color,
@@ -473,8 +491,8 @@ pub(crate) fn plot_area(
     options: &Options,
     max_value: f64,
     bars: Vec<Element>,
-) -> Element {
-    let mut inside = grid(options);
+) -> Result<Element, Error> {
+    let mut inside = grid(options)?;
     inside.extend(bars);
     let plot = BoxElement::new()
         .name("plot")
@@ -486,7 +504,7 @@ pub(crate) fn plot_area(
         .children(inside);
 
     if !options.show_y_axis {
-        return plot;
+        return Ok(plot);
     }
 
     // v1: `maxValue - (maxValue / 5) * i`, so the first row is the maximum
@@ -495,6 +513,20 @@ pub(crate) fn plot_area(
         .into_iter()
         .map(|fraction| {
             let value = max_value - max_value * fraction;
+            // **The default rounds here on purpose**, because the other
+            // surface rounds with it -- `Math.round(value * 100) / 100` -- so
+            // `format_number` is this caller's spelling and not the value
+            // label's.
+            //
+            // **It parts from the other surface a decade later than the value
+            // path does, and the rounding is why.** Rounding `1e21` lands a
+            // fraction below it, which both languages then write out in full;
+            // only at `1e22` does one switch to exponential and the other not.
+            // `a_y_axis_label_at_1e22_is_spelled_differently_on_each_surface`
+            // in `crates/meo-canvas/tests/chart_number_spelling.rs` pins that,
+            // beside `a_y_axis_label_at_1e21_is_spelled_the_same_on_both_surfaces`,
+            // which is the control saying these are two paths rather than one
+            // condition.
             options
                 .y_axis_label_formatter
                 .as_ref()
@@ -566,27 +598,30 @@ pub(crate) fn plot_area(
         );
     }
 
-    Row::new().name("plot area").flex_grow(1.0).children([
+    Ok(Row::new().name("plot area").flex_grow(1.0).children([
         Column::new()
             .name("y axis")
             .position_type(PositionType::Relative)
             .children(gutter),
         plot,
-    ])
+    ]))
 }
 
 /// The gridlines behind the plot, or nothing.
-fn grid(options: &Options) -> Vec<Element> {
+fn grid(options: &Options) -> Result<Vec<Element>, Error> {
     if !options.grid.show {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let colour = options
-        .grid
-        .color
-        .as_deref()
-        .and_then(meo_canvas_core::parse_color)
-        .unwrap_or(GRID_COLOR);
-    grid_lines(GRID_DIVISIONS)
+    // **An absent grid colour and an unreadable one are different answers**,
+    // and `and_then` gave them the same one. Saying nothing takes the default;
+    // writing something that cannot be read is the caller's mistake and is
+    // refused rather than drawn in a colour they did not ask for.
+    let colour = match options.grid.color.as_deref() {
+        None => GRID_COLOR,
+        Some(written) => meo_canvas_core::parse_color(written)
+            .ok_or(Error::Chart("the grid colour could not be read"))?,
+    };
+    Ok(grid_lines(GRID_DIVISIONS)
         .into_iter()
         .map(|at| {
             BoxElement::new().name(format!("gridline {at}")).with_style(
@@ -602,7 +637,7 @@ fn grid(options: &Options) -> Vec<Element> {
                     .background_color(colour),
             )
         })
-        .collect()
+        .collect())
 }
 
 /// A piece of chart text in the chart's own family, size and colour.

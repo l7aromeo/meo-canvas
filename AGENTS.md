@@ -1524,13 +1524,14 @@ Every dependency is on its latest stable release, and the exceptions say why.
 
 | crate             |        |                                                           |
 | ----------------- | ------ | --------------------------------------------------------- |
-| `meo-skia-canvas` | 0.16.2 | Skia, text shaping, encoding. `default-features = false`. |
+| `meo-skia-canvas` | 0.16.3 | Skia, text shaping, encoding. `default-features = false`. |
 | `taffy`           | 0.14   | Flexbox, CSS grid, block layout. Without `calc`.          |
 | `csscolorparser`  | 0.8    | CSS colour syntax. Holds channels as `f32` -- see below.  |
 | `neon`            | 1.1    | Node addon.                                               |
 | `clap`            | 4.6    | CLI.                                                      |
 | `thiserror`       | 2.0    | Error types.                                              |
 | `ureq`            | 3.4    | Remote images, behind the optional `net` feature.         |
+| `rustls`          | 0.23   | A floor, not a use -- see `Cargo.toml`. Under `net`.      |
 | `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.    |
 
 | tool       |       |                                                                |

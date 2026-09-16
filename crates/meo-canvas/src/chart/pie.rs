@@ -27,9 +27,9 @@
 use meo_canvas_scene::{Length, node::PathPaint, style::effect::Transform};
 
 use crate::{
-    Box as BoxElement, Element, Error, Path, PositionType, Style, Text,
+    Box as BoxElement, Element, Error, Path, PositionType, Style,
     chart::{
-        bar::{DEFAULT_INNER_FRACTION, LabelItem, LegendEntry, Options},
+        bar::{DEFAULT_INNER_FRACTION, LabelItem, LegendEntry, Options, text},
         frame::{framed, legend},
         geometry::{series_color, slice_angles},
     },
@@ -73,12 +73,12 @@ pub struct Slice {
 /// # Errors
 ///
 /// Returns [`Error::Chart`] for a negative value, as the bar chart does and
-/// for the same reason.
+/// for the same reason, and for a slice colour that cannot be read.
 pub fn pie(slices: &[Slice], options: &Options) -> Result<Element, Error> {
     // A pie has no hole, and `inner_fraction` is a doughnut's option -- the
     // other surface passes a literal `0` down this path and reads the option
     // only down the other one.
-    wedges(slices, 0.0, options)
+    wedges(slices, 0.0, Kind::Pie, options)
 }
 
 /// A doughnut: a pie with a hole of [`Options::inner_fraction`].
@@ -102,14 +102,40 @@ pub fn doughnut(slices: &[Slice], options: &Options) -> Result<Element, Error> {
     wedges(
         slices,
         options.inner_fraction.unwrap_or(DEFAULT_INNER_FRACTION),
+        Kind::Doughnut,
         options,
     )
+}
+
+/// Which of the two this is, as the caller declared it.
+///
+/// **Declared rather than read off the hole.** The size of the hole and the
+/// kind of chart are different facts: a doughnut whose `inner_fraction` is
+/// zero is still a doughnut, and the other surface names its node from the
+/// type the caller asked for. Inferring it from the number named such a chart
+/// `pie chart` -- and the name is encoded, so anything reading the scene by
+/// name saw a pie where the caller had asked for a doughnut.
+#[derive(Clone, Copy)]
+enum Kind {
+    Pie,
+    Doughnut,
+}
+
+impl Kind {
+    /// The chart's own node name.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Pie => "pie chart",
+            Self::Doughnut => "doughnut chart",
+        }
+    }
 }
 
 /// What both kinds draw, given the hole they differ by.
 fn wedges(
     slices: &[Slice],
     inner_fraction: f64,
+    kind: Kind,
     options: &Options,
 ) -> Result<Element, Error> {
     if slices.iter().any(|slice| slice.value < 0.0) {
@@ -137,7 +163,7 @@ fn wedges(
             .view_box(Some((0.0, 0.0, space, space)))
             .fill(Some(PathPaint::Solid(
                 meo_canvas_core::parse_color(&colour)
-                    .unwrap_or(hex_rgb(0x00_00_00)),
+                    .ok_or(Error::Chart("a slice colour could not be read"))?,
             )))
             .stroke(Some(PathPaint::Solid(hex_rgb(0xff_ff_ff))))
             .line_width(SLICE_STROKE)
@@ -193,12 +219,8 @@ fn wedges(
                     )
                 })
                 .collect::<Vec<_>>(),
-        ),
-        if inner_fraction > 0.0 {
-            "doughnut chart"
-        } else {
-            "pie chart"
-        },
+        )?,
+        kind.name(),
     ))
 }
 
@@ -246,12 +268,11 @@ fn slice_label(
             .as_ref()
             .and_then(|draw| draw(LabelItem { item: label, index }))
             .unwrap_or_else(|| {
-                Text::new(label).with_style(
-                    Style::new()
-                        .font_size(options.label_font_size.unwrap_or(12.0))
-                        .color(
-                            options.label_color.unwrap_or(hex_rgb(0x00_00_00)),
-                        ),
+                text(
+                    label,
+                    options,
+                    options.label_font_size,
+                    options.label_color,
                 )
             })])
 }

@@ -430,3 +430,348 @@ fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
     });
     agrees("bar chart", &encoded(chart), THEIR_HATCHES);
 }
+
+/// As [`THEIR_LINE`], for the chart whose y-axis colour comes from the
+/// fallback.
+const THEIR_AXIS_FALLBACK: &str =
+    include_str!("assets/chart/axis-fallback-bytes.txt");
+/// As [`THEIR_LINE`], for the doughnut at a caller-chosen hole.
+const THEIR_DOUGHNUT_INNER: &str =
+    include_str!("assets/chart/doughnut-inner-bytes.txt");
+
+/// Every option of [`everything`], with the y-axis colour taken away and
+/// `axis_color` put in its place.
+///
+/// **Written out rather than spread from [`everything`]**, and the reason is
+/// the one this file already warns about: the first disagreement of a new case
+/// is usually two option bags that differ. The TypeScript bag cannot be
+/// spread-and-dropped under `exactOptionalPropertyTypes`, so it is a literal
+/// there; making this one a literal too means the two are read side by side
+/// rather than one derived and one written.
+///
+/// **`y_axis_color: None` is stated even though it is the default**, because
+/// its absence is the whole of the case. A reader who deletes the line as
+/// redundant deletes the branch.
+///
+/// The colour is neither `y_axis_color`'s `#778899` nor the `TEXT_COLOR` the
+/// chain ends at, so a surface taking the wrong arm of
+/// `y_axis_color.or(axis_color)` encodes differently from one taking this one.
+fn axis_fallback() -> Options {
+    Options {
+        show_labels: true,
+        show_values: true,
+        show_y_axis: true,
+        show_legend: true,
+        legend_position: LegendPosition::Bottom,
+        grid: Grid {
+            show: true,
+            color: Some("#e0e0e0".to_owned()),
+        },
+        label_font_size: Some(11.0),
+        value_font_size: Some(10.0),
+        y_axis_font_size: Some(9.0),
+        label_color: Some(hex_rgb(0x11_22_33)),
+        value_color: Some(hex_rgb(0x44_55_66)),
+        y_axis_color: None,
+        axis_color: Some(hex_rgb(0x22_cc_88)),
+        ..Options::default()
+    }
+}
+
+/// The hole this side is **told**, rather than the one it defaults to.
+///
+/// `doughnut` carries v1's `0.6` itself and the TypeScript surface falls back
+/// to the same number, so the doughnut case above has the two agreeing about a
+/// value neither was given. `0.35` is given to both.
+const CHOSEN_INNER_FRACTION: f64 = 0.35;
+
+/// `axis_color` is the fallback under an absent `y_axis_color`, and nothing
+/// reached it.
+///
+/// `everything` always sets `y_axis_color`, so every case above takes the
+/// first arm of `y_axis_color.or(axis_color)` and the second is a branch this
+/// suite had never executed on either surface.
+#[test]
+fn both_surfaces_encode_the_same_chart_through_the_axis_colour_fallback() {
+    let (labels, datasets) = cartesian();
+    let chart =
+        bar(&labels, &datasets, &axis_fallback()).unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    agrees("bar chart", &encoded(chart), THEIR_AXIS_FALLBACK);
+}
+
+/// The doughnut at a hole the caller chose rather than the one both sides
+/// default to.
+#[test]
+fn both_surfaces_encode_the_same_doughnut_at_a_chosen_inner_fraction() {
+    let options = Options {
+        inner_fraction: Some(CHOSEN_INNER_FRACTION),
+        ..everything(LegendPosition::Bottom)
+    };
+    let chart = doughnut(&three_slices(), &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    agrees("doughnut chart", &encoded(chart), THEIR_DOUGHNUT_INNER);
+}
+
+/// **The two new cases can fail, which is not what a byte match shows.**
+///
+/// A comparison against a committed asset says the two surfaces agree; it does
+/// not say the option under test reached the output. Both of these agree with
+/// the option removed too — the fallback colour would silently be `TEXT_COLOR`
+/// on both sides, and the hole would silently be `0.6` on both — so what makes
+/// the cases above evidence is that taking the option away moves the bytes
+/// here.
+#[test]
+fn the_two_new_options_reach_the_encoded_scene() {
+    let (labels, datasets) = cartesian();
+    let with_axis = encoded(
+        bar(&labels, &datasets, &axis_fallback())
+            .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    let without_axis = encoded(
+        bar(
+            &labels,
+            &datasets,
+            &Options {
+                axis_color: None,
+                ..axis_fallback()
+            },
+        )
+        .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    assert_ne!(
+        hex(from_the_chart(&with_axis, "bar chart")),
+        hex(from_the_chart(&without_axis, "bar chart")),
+        "`axis_color` does not change the encoded chart, so the case that \
+         pins it would pass with the fallback arm never taken"
+    );
+
+    let chosen = encoded(
+        doughnut(
+            &three_slices(),
+            &Options {
+                inner_fraction: Some(CHOSEN_INNER_FRACTION),
+                ..everything(LegendPosition::Bottom)
+            },
+        )
+        .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    let defaulted = encoded(
+        doughnut(&three_slices(), &everything(LegendPosition::Bottom))
+            .unwrap_or_else(|error| unreachable!("{error}")),
+    );
+    assert_ne!(
+        hex(from_the_chart(&chosen, "doughnut chart")),
+        hex(from_the_chart(&defaulted, "doughnut chart")),
+        "a chosen `inner_fraction` encodes the same as the default, so the \
+         case that pins it is pinning the default a second time"
+    );
+}
+
+/// Whether a run of bytes holds a piece of text the scene should carry.
+///
+/// The codec writes strings literally, so a label's spelling is greppable in
+/// the encoded page. Cruder than decoding, and it is the right crudeness here:
+/// what these two tests ask is whether a particular spelling reached the scene
+/// at all.
+fn contains(bytes: &[u8], needle: &str) -> bool {
+    bytes
+        .windows(needle.len())
+        .any(|window| window == needle.as_bytes())
+}
+
+/// A value label is the number the caller gave, not a rounded one.
+///
+/// **The committed assets cannot see this**, and that is why the test is
+/// written this way rather than as another agreement case: every case above
+/// uses whole numbers, and rounding a whole number changes nothing. A bar of
+/// `2.345` is the smallest case where the two spellings differ.
+///
+/// The y-axis is off because its own default formatter *does* round to two
+/// decimals -- correctly, since the other surface rounds there too -- and its
+/// labels would otherwise put `2.35` in the scene and make the second
+/// assertion pass for the wrong reason.
+#[test]
+fn a_value_label_is_written_as_given_rather_than_rounded() {
+    let labels = ["a".to_owned()];
+    let datasets = [Dataset {
+        label: None,
+        color: None,
+        data: vec![2.345],
+    }];
+    let options = Options {
+        show_values: true,
+        show_y_axis: false,
+        ..Options::default()
+    };
+    let chart = bar(&labels, &datasets, &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    let bytes = encoded(chart);
+    assert!(
+        contains(&bytes, "2.345"),
+        "the value label does not carry the value as written"
+    );
+    assert!(
+        !contains(&bytes, "2.35"),
+        "the value label is rounded to two decimals, where the other surface \
+         writes the number it was given"
+    );
+}
+
+/// A slice label is drawn in the chart's own font family.
+///
+/// **The committed assets cannot see this either**: no pie or doughnut case
+/// above sets a family, so the family being dropped and the family being
+/// absent encode identically. The legend is off so that the only text in the
+/// scene is the slice labels themselves -- with it on, the legend sets the
+/// family and the assertion would hold whatever the slice did.
+#[test]
+fn a_slice_label_takes_the_chart_font_family() {
+    let options = Options {
+        show_labels: true,
+        show_legend: false,
+        font_family: Some("Fixture".to_owned()),
+        ..Options::default()
+    };
+    let chart = pie(&three_slices(), &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    assert!(
+        contains(&encoded(chart), "Fixture"),
+        "a slice label does not carry the chart's font family, so a pie drawn \
+         in a stated family renders its labels in the default one"
+    );
+}
+
+/// A colour the caller wrote and this crate cannot read is refused.
+///
+/// **The other surface already refuses it**: a colour string crosses the
+/// boundary unparsed and the addon rejects it. A crate caller used to get a
+/// black swatch for the same input, so the same scene was a failed render
+/// through one door and a wrong picture through the other.
+///
+/// Each row names a different one of the sites that resolves a written colour.
+/// A dataset's colour reaches the series stroke, the point markers and the
+/// legend swatch from one string, so the first of those to run is the one that
+/// reports -- which is why there is no separate row for the other two.
+#[test]
+fn an_unreadable_colour_is_refused_rather_than_drawn_in_black() {
+    let labels = ["a".to_owned()];
+    let bad = "not a colour";
+
+    let coloured = |colour: Option<&str>| {
+        [Dataset {
+            label: None,
+            color: colour.map(ToOwned::to_owned),
+            data: vec![1.0],
+        }]
+    };
+    let slices = |colour: Option<&str>| {
+        vec![Slice {
+            label: "a".to_owned(),
+            value: 1.0,
+            color: colour.map(ToOwned::to_owned),
+        }]
+    };
+    let with_grid = |colour: &str| Options {
+        grid: Grid {
+            show: true,
+            color: Some(colour.to_owned()),
+        },
+        ..Options::default()
+    };
+
+    assert!(
+        bar(&labels, &coloured(Some(bad)), &Options::default()).is_err(),
+        "a bar drawn in an unreadable colour is not refused"
+    );
+    assert!(
+        bar(&labels, &coloured(None), &with_grid(bad)).is_err(),
+        "an unreadable grid colour is not refused"
+    );
+    assert!(
+        line(&labels, &coloured(Some(bad)), &Options::default()).is_err(),
+        "a series drawn in an unreadable colour is not refused"
+    );
+    assert!(
+        pie(&slices(Some(bad)), &Options::default()).is_err(),
+        "a slice drawn in an unreadable colour is not refused"
+    );
+
+    // **The control, and it is what makes the four above about the colour.**
+    // Every one of these builds the same chart with a colour that reads, so a
+    // refusal that fired on the shape rather than on the string would show up
+    // here as a chart that no longer builds at all.
+    assert!(
+        bar(&labels, &coloured(Some("#3366cc")), &Options::default()).is_ok()
+    );
+    assert!(bar(&labels, &coloured(None), &with_grid("#e0e0e0")).is_ok());
+    assert!(
+        line(&labels, &coloured(Some("#3366cc")), &Options::default()).is_ok()
+    );
+    assert!(pie(&slices(Some("#3366cc")), &Options::default()).is_ok());
+
+    // An unset grid colour keeps its default rather than being refused: saying
+    // nothing and saying something unreadable are different answers.
+    assert!(
+        bar(
+            &labels,
+            &coloured(None),
+            &Options {
+                grid: Grid {
+                    show: true,
+                    color: None,
+                },
+                ..Options::default()
+            }
+        )
+        .is_ok(),
+        "a chart with no grid colour is refused, so the absent case was \
+         folded into the unreadable one"
+    );
+}
+
+/// A doughnut is named for what the caller asked for, not for its hole.
+///
+/// **`inner_fraction: Some(0.0)` is the only way in**, which is why no
+/// committed asset can see it: the doughnut cases above pass `0.35` and the
+/// default `0.6`, and every caller who says nothing lands above zero. A hole
+/// of zero draws the same circle a pie does, and the two are still different
+/// charts -- the other surface names the node from the type it was given.
+///
+/// The name is encoded, so this is not cosmetic: anything reading the scene by
+/// name saw `pie chart` for a chart the caller had asked to be a doughnut.
+#[test]
+fn a_doughnut_with_no_hole_is_still_a_doughnut() {
+    let flat = Options {
+        inner_fraction: Some(0.0),
+        ..Options::default()
+    };
+    let chart = doughnut(&three_slices(), &flat).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    assert!(
+        contains(&encoded(chart), "doughnut chart"),
+        "a doughnut with a hole of zero names its own node `pie chart`, so a \
+         caller who asked for one cannot find it by name"
+    );
+
+    // The control: a pie is still a pie, so the repair is about the kind
+    // rather than about naming everything a doughnut.
+    let chart =
+        pie(&three_slices(), &Options::default()).unwrap_or_else(|error| {
+            unreachable!("the chart did not build: {error}")
+        });
+    let bytes = encoded(chart);
+    assert!(
+        contains(&bytes, "pie chart"),
+        "a pie is no longer named as one"
+    );
+    assert!(
+        !contains(&bytes, "doughnut chart"),
+        "a pie is named as a doughnut"
+    );
+}

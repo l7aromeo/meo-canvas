@@ -235,6 +235,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-lc-rs"
+version = "1.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
+dependencies = [
+ "aws-lc-sys",
+ "zeroize",
+]
+
+[[package]]
+name = "aws-lc-sys"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bff6c3b54fad79a2e60b8102caf565819711497c1f5f092f49508e2f5c31b27"
+dependencies = [
+ "cc",
+ "cmake",
+ "dunce",
+ "fs_extra",
+ "pkg-config",
+]
+
+[[package]]
 name = "base64"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -778,6 +801,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -915,6 +944,12 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+
+[[package]]
+name = "fs_extra"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "funty"
@@ -1327,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "meo-canvas-core",
  "meo-canvas-scene",
@@ -1336,7 +1371,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-cli"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "clap",
  "meo-canvas-core",
@@ -1347,7 +1382,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64",
  "criterion",
@@ -1356,6 +1391,7 @@ dependencies = [
  "meo-canvas-scene",
  "meo-skia-canvas",
  "png",
+ "rustls",
  "taffy",
  "thiserror 2.0.20",
  "ureq",
@@ -1363,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-node"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "meo-canvas-core",
  "meo-canvas-scene",
@@ -1374,13 +1410,13 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-scene"
-version = "0.1.3"
+version = "0.1.4"
 
 [[package]]
 name = "meo-skia-canvas"
-version = "0.16.2"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3383dee3e9474352fcbd17534bee29a11b853a3523ad237339842d5db8b71c7a"
+checksum = "220f0639f1197f41995b58c541646436daafa57cea3d9b5fa3d4440dcc284df5"
 dependencies = [
  "allsorts",
  "ash",
@@ -2487,6 +2523,7 @@ version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
+ "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
@@ -2511,6 +2548,7 @@ version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
+ "aws-lc-rs",
  "ring",
  "rustls-pki-types",
  "untrusted",
@@ -3086,9 +3124,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "3.4.1"
+version = "3.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af5546be8f5378d5414f83733f5c9a2526f4645829edbc1c41790aeef1b38e8b"
+checksum = "9a7ac20be9b7726e0bbdbf974c059676d9acb1cd414961f570a4e8231cacd7fc"
 dependencies = [
  "base64",
  "flate2",
@@ -3103,9 +3141,9 @@ dependencies = [
 
 [[package]]
 name = "ureq-proto"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fabc3e92916c89c95b20eef7b06b00b066bc217ef9ea3a4ac9bf1a7e35261e10"
+checksum = "5b0809a01d1ca5a51ca70db32bb2a19157582a526505ef3c19e3b343a59aa5ad"
 dependencies = [
  "base64",
  "http",

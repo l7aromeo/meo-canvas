@@ -239,6 +239,59 @@ const CASES = [
       }),
   },
   {
+    // **`axisColor`, which is reached only when `yAxisColor` is absent.**
+    // `EVERY_OPTION` always sets `yAxisColor`, so every case above takes the
+    // first arm of `options.yAxisColor ?? options.axisColor ?? '#000000'` and
+    // the fallback is a branch neither surface has ever executed.
+    //
+    // **The bag is written out rather than spread from `EVERY_OPTION`**, for
+    // the reason the bar case is: a spread cannot drop a key under
+    // `exactOptionalPropertyTypes`, and the Rust side's bag is written out to
+    // match this one field for field. The file's own warning is that the
+    // first disagreement of a new case is usually two option bags that differ
+    // -- so these two are readable side by side rather than one derived and
+    // one literal.
+    //
+    // The colour is neither `yAxisColor`'s `#778899` nor the `'#000000'` the
+    // chain ends at, so a surface that took the wrong arm encodes differently
+    // from one that took this one.
+    kind: 'axis-fallback',
+    mark: 'bar 0.0',
+    chart: () =>
+      Chart({
+        type: 'bar',
+        data: CARTESIAN,
+        options: {
+          showLabels: true,
+          showValues: true,
+          showYAxis: true,
+          showLegend: true,
+          legendPosition: 'bottom',
+          grid: { show: true, color: '#e0e0e0' },
+          labelFontSize: 11,
+          valueFontSize: 10,
+          yAxisFontSize: 9,
+          labelColor: '#112233',
+          valueColor: '#445566',
+          axisColor: '#22cc88',
+        },
+      }),
+  },
+  {
+    // **`innerRadius` at a value the caller chose.** The doughnut case below
+    // passes `0.6`, which is this surface's own fallback and the Rust
+    // builder's default -- so the two agree about a number neither was told.
+    // `0.35` is told to both.
+    kind: 'doughnut-inner',
+    mark: 'slice 0',
+    chart: () =>
+      Chart({
+        type: 'doughnut',
+        data: SLICES,
+        options: { ...EVERY_OPTION, legendPosition: 'bottom', innerRadius: 0.35 },
+      }),
+  },
+  {
     // v1's `outerRadius * (innerRadius ?? 0.6)`, and 0.6 is what this surface
     // passes when the caller says nothing — **not the Rust `pie()` default,
     // which has none.** Written out rather than left off, so the two sides are
@@ -294,9 +347,11 @@ describe('the two chart implementations agree', () => {
     expect(encode(other).hex).not.toBe(encode(CASES[0].chart()).hex)
   })
 
-  // And the four are four different pictures rather than one repeated, which
-  // is what a copied case would look like from here.
-  it('gives the four kinds four different byte strings', () => {
+  // And the cases are that many different pictures rather than one repeated,
+  // which is what a copied case would look like from here. Counted from
+  // `CASES` rather than written as a number -- the name said "four" while six
+  // were running, which is the shape of claim this file exists to refuse.
+  it('gives every case its own byte string', () => {
     const encoded = CASES.map(one => encode(one.chart()).hex)
     expect(new Set(encoded).size).toBe(CASES.length)
   })
