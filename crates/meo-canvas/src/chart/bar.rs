@@ -401,6 +401,17 @@ fn value_label(
             // y-axis default formatter's two-decimal spelling and belongs to
             // that axis: a value label showing `2.35` for a bar of `2.345`
             // reports a number the caller never gave.
+            //
+            // **This path spells a number differently from the other surface
+            // at and above 1e21**, which is a deliberate deviation rather than
+            // an oversight: `Display` never switches to exponential and
+            // JavaScript does, so `1e21` is `1000000000000000000000` here and
+            // `1e+21` there. Closing it means implementing another language's
+            // number formatting, and nothing else in this workspace spells a
+            // number that way.
+            // `a_value_label_at_1e21_is_spelled_differently_on_each_surface`
+            // in `crates/meo-canvas/tests/chart_number_spelling.rs` pins it,
+            // and fails if the two ever agree.
             text(
                 &value.to_string(),
                 options,
@@ -502,6 +513,20 @@ pub(crate) fn plot_area(
         .into_iter()
         .map(|fraction| {
             let value = max_value - max_value * fraction;
+            // **The default rounds here on purpose**, because the other
+            // surface rounds with it -- `Math.round(value * 100) / 100` -- so
+            // `format_number` is this caller's spelling and not the value
+            // label's.
+            //
+            // **It parts from the other surface a decade later than the value
+            // path does, and the rounding is why.** Rounding `1e21` lands a
+            // fraction below it, which both languages then write out in full;
+            // only at `1e22` does one switch to exponential and the other not.
+            // `a_y_axis_label_at_1e22_is_spelled_differently_on_each_surface`
+            // in `crates/meo-canvas/tests/chart_number_spelling.rs` pins that,
+            // beside `a_y_axis_label_at_1e21_is_spelled_the_same_on_both_surfaces`,
+            // which is the control saying these are two paths rather than one
+            // condition.
             options
                 .y_axis_label_formatter
                 .as_ref()
