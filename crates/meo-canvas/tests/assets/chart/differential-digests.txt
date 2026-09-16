@@ -65,6 +65,14 @@ data/mark-collision/bar	fac9ba68	8538
 data/mark-collision/line	f8003134	8055
 data/mark-collision/pie	243b54f9	3279
 data/mark-collision/doughnut	f1e0f508	3382
+data/unreadable-series-colour/bar	refused	-
+option/unreadable-grid-colour/bar	refused	-
+data/unreadable-series-colour/line	refused	-
+option/unreadable-grid-colour/line	refused	-
+data/unreadable-slice-colour/pie	refused	-
+option/unreadable-grid-colour/pie	ec8ac2db	4699
+data/unreadable-slice-colour/doughnut	refused	-
+option/unreadable-grid-colour/doughnut	1217d07c	4836
 option/all-default/bar	08655500	1265
 option/all-default/line	7ad957b5	1998
 option/all-default/pie	f269a436	1184

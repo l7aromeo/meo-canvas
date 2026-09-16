@@ -211,18 +211,22 @@ fn data_for(kind: Kind) -> Data {
     }
 }
 
+/// A string no CSS syntax spells as a colour.
+const UNREADABLE: &str = "not-a-colour";
+
 /// Long enough to wrap and to dwarf its slot, which is where a label's box
 /// stops agreeing.
 fn long_label() -> String {
     "l".repeat(200)
 }
 
-/// The whole sweep, assembled from the five tables below.
+/// The whole sweep, assembled from the six tables below.
 fn cases() -> Vec<Case> {
     let mut out: Vec<Case> = Vec::new();
     push_data_cases(&mut out);
     push_slice_cases(&mut out);
     push_mark_collision_cases(&mut out);
+    push_unreadable_colour_cases(&mut out);
     push_option_cases(&mut out);
     push_combination_cases(&mut out);
     out
@@ -505,6 +509,64 @@ fn push_slice_cases(out: &mut Vec<Case>) {
                 every(),
             );
         }
+    }
+}
+
+/// A colour no CSS syntax spells.
+///
+/// Both surfaces refuse it rather than drawing a default, and the two rows that
+/// build are the shape of the claim: a pie has no grid, so an unreadable grid
+/// colour is an option nothing consumes rather than a value something refuses.
+fn push_unreadable_colour_cases(out: &mut Vec<Case>) {
+    for kind in CARTESIAN_KINDS {
+        push(
+            out,
+            format!("data/unreadable-series-colour/{}", kind.name()),
+            kind,
+            cartesian(
+                &["a", "b"],
+                vec![series(&[1.0, 2.0], Some("S"), Some(UNREADABLE))],
+            ),
+            every(),
+        );
+        push(
+            out,
+            format!("option/unreadable-grid-colour/{}", kind.name()),
+            kind,
+            bar_data(),
+            Options {
+                grid: Grid {
+                    show: true,
+                    color: Some(label(UNREADABLE)),
+                },
+                ..every()
+            },
+        );
+    }
+    for kind in RADIAL_KINDS {
+        push(
+            out,
+            format!("data/unreadable-slice-colour/{}", kind.name()),
+            kind,
+            Data::Radial(vec![
+                slice("a", 3.0, Some(UNREADABLE)),
+                slice("b", 1.0, None),
+            ]),
+            every(),
+        );
+        push(
+            out,
+            format!("option/unreadable-grid-colour/{}", kind.name()),
+            kind,
+            Data::Radial(pie_data()),
+            Options {
+                grid: Grid {
+                    show: true,
+                    color: Some(label(UNREADABLE)),
+                },
+                ..every()
+            },
+        );
     }
 }
 
@@ -1178,6 +1240,94 @@ fn bytes_of(kind: Kind, options: Options) -> Vec<u8> {
         Encoded::Bytes(bytes) => bytes,
         Encoded::Refused | Encoded::Misnamed(_) => {
             unreachable!("the probe chart for {} did not encode", kind.name())
+        }
+    }
+}
+
+/// The unreadable colour is what makes those cases refuse.
+///
+/// Both surfaces refusing is the assertion, and two surfaces refusing for an
+/// unrelated reason would satisfy it just as well -- a harness that had stopped
+/// producing charts at all would pass every refusal row. So each refusing shape
+/// is built again with a colour that reads, and must encode.
+///
+/// What is asserted is **that** a chart refuses and never which role the
+/// message names. The role that reports first is an order of execution rather
+/// than a contract, and a test reading it would redden the day somebody
+/// reorders a function for an unrelated reason.
+#[test]
+fn an_unreadable_colour_is_what_makes_a_chart_refuse() {
+    /// The shapes an unreadable colour can reach, and whether each refuses.
+    fn shapes(kind: Kind, colour: &str) -> Vec<(&'static str, Case, bool)> {
+        let grid = Options {
+            grid: Grid {
+                show: true,
+                color: Some(label(colour)),
+            },
+            ..every()
+        };
+        let case = |role: &'static str,
+                    data: Data,
+                    options: Options,
+                    refuses: bool| {
+            (
+                role,
+                Case {
+                    name: format!("colour/{}/{role}", kind.name()),
+                    kind,
+                    data,
+                    options,
+                },
+                refuses,
+            )
+        };
+        if kind.draws_an_axis() {
+            vec![
+                case(
+                    "series colour",
+                    cartesian(
+                        &["a", "b"],
+                        vec![series(&[1.0, 2.0], Some("S"), Some(colour))],
+                    ),
+                    every(),
+                    true,
+                ),
+                case("grid colour", bar_data(), grid, true),
+            ]
+        } else {
+            vec![
+                case(
+                    "slice colour",
+                    Data::Radial(vec![
+                        slice("a", 3.0, Some(colour)),
+                        slice("b", 1.0, None),
+                    ]),
+                    every(),
+                    true,
+                ),
+                case("grid colour", Data::Radial(pie_data()), grid, false),
+            ]
+        }
+    }
+
+    for kind in EVERY_KIND {
+        for ((role, unreadable, refuses), (_, readable, _)) in
+            shapes(kind, UNREADABLE)
+                .into_iter()
+                .zip(shapes(kind, "#336699"))
+        {
+            assert!(
+                !matches!(encoded(&readable), Encoded::Refused),
+                "a {} chart with a {role} that reads is refused too, so the colour is not what this \
+                 measures",
+                kind.name()
+            );
+            assert_eq!(
+                matches!(encoded(&unreadable), Encoded::Refused),
+                refuses,
+                "a {} chart with an unreadable {role} did not do what this file records",
+                kind.name()
+            );
         }
     }
 }

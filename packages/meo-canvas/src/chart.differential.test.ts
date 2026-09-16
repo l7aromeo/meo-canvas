@@ -114,6 +114,9 @@ const EVERY: BaseChartOptions = { ...EVERY_BUT_Y_AXIS_COLOUR, yAxisColor: '#7788
 /** Long enough to wrap and to dwarf its slot, which is where a label's box stops agreeing. */
 const LONG = 'l'.repeat(200)
 
+/** A string no CSS syntax spells as a colour. */
+const UNREADABLE = 'not-a-colour'
+
 const cartesian = (labels: readonly string[], datasets: readonly { data: readonly number[]; label?: string; color?: string }[]) => ({ labels, datasets })
 const series = (data: readonly number[], label?: string, color?: string) => ({
   data,
@@ -213,6 +216,18 @@ function cases(): Case[] {
     add(`data/mark-collision/${kind}`, kind, [slice(MARK[kind], 3), slice('b', 1)], EVERY)
   }
 
+  // A colour no CSS syntax spells. Both surfaces refuse it rather than
+  // drawing a default, and the two that build are the shape of the claim: a
+  // pie has no grid, so the option is unused rather than unreadable.
+  for (const kind of CARTESIAN_KINDS) {
+    add(`data/unreadable-series-colour/${kind}`, kind, cartesian(['a', 'b'], [series([1, 2], 'S', UNREADABLE)]), EVERY)
+    add(`option/unreadable-grid-colour/${kind}`, kind, BAR_DATA, { ...EVERY, grid: { show: true, color: UNREADABLE } })
+  }
+  for (const kind of RADIAL_KINDS) {
+    add(`data/unreadable-slice-colour/${kind}`, kind, [slice('a', 3, UNREADABLE), slice('b', 1)], EVERY)
+    add(`option/unreadable-grid-colour/${kind}`, kind, PIE_DATA, { ...EVERY, grid: { show: true, color: UNREADABLE } })
+  }
+
   const data = (kind: ChartType) => (kind === 'bar' || kind === 'line' ? BAR_DATA : PIE_DATA)
   const everyKind = (name: string, options?: BaseChartOptions) => {
     for (const kind of EVERY_KIND) add(`option/${name}/${kind}`, kind, data(kind), options)
@@ -296,15 +311,19 @@ function fnv1a(bytes: Buffer): string {
 }
 
 function encode(one: Case): Encoded {
-  let node: SceneNode
+  // The whole route, not just the build. A colour the caller cannot spell
+  // crosses this surface unparsed and is refused by the addon at decode, so
+  // `Chart()` returns happily and the refusal arrives from `sceneBytes` —
+  // catching only the build would report a refusal as bytes that were never
+  // produced.
+  let bytes: Buffer
   try {
-    node = one.build()
+    const arena = encodeScene([Box({ children: one.build() })], 200, 120, false, 1)
+    const values = arena.values.map(value => (typeof value === 'string' ? value : Buffer.from(value)))
+    bytes = fromTheChart(addon().sceneBytes(arena.slots, values), MARK[one.kind])
   } catch {
     return { refused: true }
   }
-  const arena = encodeScene([Box({ children: node })], 200, 120, false, 1)
-  const values = arena.values.map(value => (typeof value === 'string' ? value : Buffer.from(value)))
-  const bytes = fromTheChart(addon().sceneBytes(arena.slots, values), MARK[one.kind])
   return { refused: false, digest: fnv1a(bytes), length: bytes.length, hex: bytes.toString('hex') }
 }
 
@@ -464,6 +483,45 @@ describe('every option this file varies can be seen in the bytes', () => {
     else expect(fallback.hex, 'a kind with no y axis took an axis colour').toBe(plain.hex)
     expect(overridden.hex, 'an explicit y-axis colour did not override the axis colour').toBe(yOnly.hex)
   })
+})
+
+/**
+ * The unreadable colour is what makes those cases refuse.
+ *
+ * Both surfaces refusing is the assertion, and two surfaces refusing for an
+ * unrelated reason would satisfy it just as well — a harness that had stopped
+ * producing charts at all would pass every refusal row. So each refusing shape
+ * is built again with a colour that reads, and must encode.
+ *
+ * The two grid rows on a radial kind are the other half: a pie has no grid, so
+ * an unreadable grid colour is an option nothing consumes rather than a value
+ * something refuses.
+ */
+describe('an unreadable colour is what makes a chart refuse', () => {
+  const shapes = (kind: ChartType, colour: string): { role: string; build: () => SceneNode; refuses: boolean }[] =>
+    kind === 'bar' || kind === 'line'
+      ? [
+          { role: 'series colour', build: chart(kind, cartesian(['a', 'b'], [series([1, 2], 'S', colour)]), EVERY), refuses: true },
+          { role: 'grid colour', build: chart(kind, BAR_DATA, { ...EVERY, grid: { show: true, color: colour } }), refuses: true },
+        ]
+      : [
+          { role: 'slice colour', build: chart(kind, [slice('a', 3, colour), slice('b', 1)], EVERY), refuses: true },
+          { role: 'grid colour', build: chart(kind, PIE_DATA, { ...EVERY, grid: { show: true, color: colour } }), refuses: false },
+        ]
+
+  it.each(EVERY_KIND.flatMap(kind => shapes(kind, UNREADABLE).map(({ role, refuses }) => ({ kind, role, refuses }))))(
+    'a $kind chart with an unreadable $role',
+    ({ kind, role, refuses }) => {
+      const unreadable = shapes(kind, UNREADABLE).find(one => one.role === role)
+      const readable = shapes(kind, '#336699').find(one => one.role === role)
+      if (unreadable === undefined || readable === undefined) throw new Error(`no ${role} shape for a ${kind} chart`)
+      expect(
+        encode({ name: `readable/${kind}/${role}`, kind, build: readable.build }).refused,
+        'the same chart with a colour that reads also refuses, so the colour is not what this measures',
+      ).toBe(false)
+      expect(encode({ name: `unreadable/${kind}/${role}`, kind, build: unreadable.build }).refused).toBe(refuses)
+    },
+  )
 })
 
 /**
