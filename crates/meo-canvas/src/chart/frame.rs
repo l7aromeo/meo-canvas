@@ -10,8 +10,8 @@
 use meo_canvas_scene::style::{Dimension, paint::Color};
 
 use crate::{
-    Align, Box as BoxElement, Column, Element, FlexWrap, Row, Style, Styled,
-    Text,
+    Align, Box as BoxElement, Column, Element, Error, FlexWrap, Row, Style,
+    Styled, Text,
     chart::bar::{LegendEntry, LegendItem, Options},
     hex_rgb, pct, px,
     unit::sides,
@@ -62,73 +62,81 @@ impl LegendPosition {
 pub(crate) fn legend(
     options: &Options,
     entries: &[(String, String, LegendEntry<'_>)],
-) -> Option<Element> {
+) -> Result<Option<Element>, Error> {
     if !options.show_legend || entries.is_empty() {
-        return None;
+        return Ok(None);
     }
     let upright = options.legend_position.upright();
     let items: Vec<Element> = entries
         .iter()
         .enumerate()
-        .map(|(index, (label, colour, source))| {
-            // A caller drawing the row themselves still gets the resolved
-            // colour, because the palette fallback happened before this point
-            // and they cannot recompute it.
-            if let Some(draw) = options.render_legend_item.as_ref()
-                && let Some(drawn) = draw(LegendItem {
-                    item: match source {
-                        LegendEntry::Series(set) => LegendEntry::Series(set),
-                        LegendEntry::Slice(slice) => LegendEntry::Slice(slice),
-                    },
-                    index,
-                    color: colour,
-                })
-            {
-                return drawn;
-            }
-            let spacing = if upright {
-                sides(
-                    Dimension::Points(0.0),
-                    Dimension::Points(0.0),
-                    Dimension::Points(GAP),
-                    Dimension::Points(0.0),
-                )
-            } else {
-                sides(
-                    Dimension::Points(0.0),
-                    Dimension::Points(PADDING),
-                    Dimension::Points(0.0),
-                    Dimension::Points(0.0),
-                )
-            };
-            Row::new()
-                .name(format!("legend item {index}"))
-                .align_items(Align::Center)
-                .gap(px(GAP))
-                .margin(spacing)
-                .children([
-                    BoxElement::new().name("swatch").with_style(
-                        Style::new()
-                            .width(px(SWATCH))
-                            .height(px(SWATCH))
-                            .background_color(
-                                meo_canvas_core::parse_color(colour)
-                                    .unwrap_or(TEXT_COLOR),
-                            ),
-                    ),
-                    Text::new(label).with_style(text_style(options)),
-                ])
-        })
-        .collect();
+        .map(
+            |(index, (label, colour, source))| -> Result<Element, Error> {
+                // A caller drawing the row themselves still gets the resolved
+                // colour, because the palette fallback happened before this
+                // point and they cannot recompute it.
+                if let Some(draw) = options.render_legend_item.as_ref()
+                    && let Some(drawn) = draw(LegendItem {
+                        item: match source {
+                            LegendEntry::Series(set) => {
+                                LegendEntry::Series(set)
+                            }
+                            LegendEntry::Slice(slice) => {
+                                LegendEntry::Slice(slice)
+                            }
+                        },
+                        index,
+                        color: colour,
+                    })
+                {
+                    return Ok(drawn);
+                }
+                let spacing = if upright {
+                    sides(
+                        Dimension::Points(0.0),
+                        Dimension::Points(0.0),
+                        Dimension::Points(GAP),
+                        Dimension::Points(0.0),
+                    )
+                } else {
+                    sides(
+                        Dimension::Points(0.0),
+                        Dimension::Points(PADDING),
+                        Dimension::Points(0.0),
+                        Dimension::Points(0.0),
+                    )
+                };
+                Ok(Row::new()
+                    .name(format!("legend item {index}"))
+                    .align_items(Align::Center)
+                    .gap(px(GAP))
+                    .margin(spacing)
+                    .children([
+                        BoxElement::new().name("swatch").with_style(
+                            Style::new()
+                                .width(px(SWATCH))
+                                .height(px(SWATCH))
+                                .background_color(
+                                    meo_canvas_core::parse_color(colour)
+                                        .ok_or(Error::Chart(
+                                            "a legend colour could not be read",
+                                        ))?,
+                                ),
+                        ),
+                        Text::new(label).with_style(text_style(options)),
+                    ]))
+            },
+        )
+        .collect::<Result<Vec<Element>, Error>>()?;
 
-    Some(if upright {
+    Ok(Some(if upright {
         Column::new().name("legend").children(items)
     } else {
         Row::new()
             .name("legend")
             .flex_wrap(FlexWrap::Wrap)
             .children(items)
-    })
+    }))
 }
 
 /// The chart's own frame: the legend on whichever side, and everything else.
