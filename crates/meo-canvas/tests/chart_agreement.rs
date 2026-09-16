@@ -569,3 +569,167 @@ fn the_two_new_options_reach_the_encoded_scene() {
          case that pins it is pinning the default a second time"
     );
 }
+
+/// Whether a run of bytes holds a piece of text the scene should carry.
+///
+/// The codec writes strings literally, so a label's spelling is greppable in
+/// the encoded page. Cruder than decoding, and it is the right crudeness here:
+/// what these two tests ask is whether a particular spelling reached the scene
+/// at all.
+fn contains(bytes: &[u8], needle: &str) -> bool {
+    bytes
+        .windows(needle.len())
+        .any(|window| window == needle.as_bytes())
+}
+
+/// A value label is the number the caller gave, not a rounded one.
+///
+/// **The committed assets cannot see this**, and that is why the test is
+/// written this way rather than as another agreement case: every case above
+/// uses whole numbers, and rounding a whole number changes nothing. A bar of
+/// `2.345` is the smallest case where the two spellings differ.
+///
+/// The y-axis is off because its own default formatter *does* round to two
+/// decimals -- correctly, since the other surface rounds there too -- and its
+/// labels would otherwise put `2.35` in the scene and make the second
+/// assertion pass for the wrong reason.
+#[test]
+fn a_value_label_is_written_as_given_rather_than_rounded() {
+    let labels = ["a".to_owned()];
+    let datasets = [Dataset {
+        label: None,
+        color: None,
+        data: vec![2.345],
+    }];
+    let options = Options {
+        show_values: true,
+        show_y_axis: false,
+        ..Options::default()
+    };
+    let chart = bar(&labels, &datasets, &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    let bytes = encoded(chart);
+    assert!(
+        contains(&bytes, "2.345"),
+        "the value label does not carry the value as written"
+    );
+    assert!(
+        !contains(&bytes, "2.35"),
+        "the value label is rounded to two decimals, where the other surface \
+         writes the number it was given"
+    );
+}
+
+/// A slice label is drawn in the chart's own font family.
+///
+/// **The committed assets cannot see this either**: no pie or doughnut case
+/// above sets a family, so the family being dropped and the family being
+/// absent encode identically. The legend is off so that the only text in the
+/// scene is the slice labels themselves -- with it on, the legend sets the
+/// family and the assertion would hold whatever the slice did.
+#[test]
+fn a_slice_label_takes_the_chart_font_family() {
+    let options = Options {
+        show_labels: true,
+        show_legend: false,
+        font_family: Some("Fixture".to_owned()),
+        ..Options::default()
+    };
+    let chart = pie(&three_slices(), &options).unwrap_or_else(|error| {
+        unreachable!("the chart did not build: {error}")
+    });
+    assert!(
+        contains(&encoded(chart), "Fixture"),
+        "a slice label does not carry the chart's font family, so a pie drawn \
+         in a stated family renders its labels in the default one"
+    );
+}
+
+/// A colour the caller wrote and this crate cannot read is refused.
+///
+/// **The other surface already refuses it**: a colour string crosses the
+/// boundary unparsed and the addon rejects it. A crate caller used to get a
+/// black swatch for the same input, so the same scene was a failed render
+/// through one door and a wrong picture through the other.
+///
+/// Each row names a different one of the sites that resolves a written colour.
+/// A dataset's colour reaches the series stroke, the point markers and the
+/// legend swatch from one string, so the first of those to run is the one that
+/// reports -- which is why there is no separate row for the other two.
+#[test]
+fn an_unreadable_colour_is_refused_rather_than_drawn_in_black() {
+    let labels = ["a".to_owned()];
+    let bad = "not a colour";
+
+    let coloured = |colour: Option<&str>| {
+        [Dataset {
+            label: None,
+            color: colour.map(ToOwned::to_owned),
+            data: vec![1.0],
+        }]
+    };
+    let slices = |colour: Option<&str>| {
+        vec![Slice {
+            label: "a".to_owned(),
+            value: 1.0,
+            color: colour.map(ToOwned::to_owned),
+        }]
+    };
+    let with_grid = |colour: &str| Options {
+        grid: Grid {
+            show: true,
+            color: Some(colour.to_owned()),
+        },
+        ..Options::default()
+    };
+
+    assert!(
+        bar(&labels, &coloured(Some(bad)), &Options::default()).is_err(),
+        "a bar drawn in an unreadable colour is not refused"
+    );
+    assert!(
+        bar(&labels, &coloured(None), &with_grid(bad)).is_err(),
+        "an unreadable grid colour is not refused"
+    );
+    assert!(
+        line(&labels, &coloured(Some(bad)), &Options::default()).is_err(),
+        "a series drawn in an unreadable colour is not refused"
+    );
+    assert!(
+        pie(&slices(Some(bad)), &Options::default()).is_err(),
+        "a slice drawn in an unreadable colour is not refused"
+    );
+
+    // **The control, and it is what makes the four above about the colour.**
+    // Every one of these builds the same chart with a colour that reads, so a
+    // refusal that fired on the shape rather than on the string would show up
+    // here as a chart that no longer builds at all.
+    assert!(
+        bar(&labels, &coloured(Some("#3366cc")), &Options::default()).is_ok()
+    );
+    assert!(bar(&labels, &coloured(None), &with_grid("#e0e0e0")).is_ok());
+    assert!(
+        line(&labels, &coloured(Some("#3366cc")), &Options::default()).is_ok()
+    );
+    assert!(pie(&slices(Some("#3366cc")), &Options::default()).is_ok());
+
+    // An unset grid colour keeps its default rather than being refused: saying
+    // nothing and saying something unreadable are different answers.
+    assert!(
+        bar(
+            &labels,
+            &coloured(None),
+            &Options {
+                grid: Grid {
+                    show: true,
+                    color: None,
+                },
+                ..Options::default()
+            }
+        )
+        .is_ok(),
+        "a chart with no grid colour is refused, so the absent case was \
+         folded into the unreadable one"
+    );
+}

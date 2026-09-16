@@ -27,9 +27,9 @@
 use meo_canvas_scene::{Length, node::PathPaint, style::effect::Transform};
 
 use crate::{
-    Box as BoxElement, Element, Error, Path, PositionType, Style, Text,
+    Box as BoxElement, Element, Error, Path, PositionType, Style,
     chart::{
-        bar::{DEFAULT_INNER_FRACTION, LabelItem, LegendEntry, Options},
+        bar::{DEFAULT_INNER_FRACTION, LabelItem, LegendEntry, Options, text},
         frame::{framed, legend},
         geometry::{series_color, slice_angles},
     },
@@ -73,7 +73,7 @@ pub struct Slice {
 /// # Errors
 ///
 /// Returns [`Error::Chart`] for a negative value, as the bar chart does and
-/// for the same reason.
+/// for the same reason, and for a slice colour that cannot be read.
 pub fn pie(slices: &[Slice], options: &Options) -> Result<Element, Error> {
     // A pie has no hole, and `inner_fraction` is a doughnut's option -- the
     // other surface passes a literal `0` down this path and reads the option
@@ -137,7 +137,7 @@ fn wedges(
             .view_box(Some((0.0, 0.0, space, space)))
             .fill(Some(PathPaint::Solid(
                 meo_canvas_core::parse_color(&colour)
-                    .unwrap_or(hex_rgb(0x00_00_00)),
+                    .ok_or(Error::Chart("a slice colour could not be read"))?,
             )))
             .stroke(Some(PathPaint::Solid(hex_rgb(0xff_ff_ff))))
             .line_width(SLICE_STROKE)
@@ -193,7 +193,7 @@ fn wedges(
                     )
                 })
                 .collect::<Vec<_>>(),
-        ),
+        )?,
         if inner_fraction > 0.0 {
             "doughnut chart"
         } else {
@@ -246,12 +246,11 @@ fn slice_label(
             .as_ref()
             .and_then(|draw| draw(LabelItem { item: label, index }))
             .unwrap_or_else(|| {
-                Text::new(label).with_style(
-                    Style::new()
-                        .font_size(options.label_font_size.unwrap_or(12.0))
-                        .color(
-                            options.label_color.unwrap_or(hex_rgb(0x00_00_00)),
-                        ),
+                text(
+                    label,
+                    options,
+                    options.label_font_size,
+                    options.label_color,
                 )
             })])
 }
