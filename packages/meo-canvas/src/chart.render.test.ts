@@ -5,45 +5,14 @@ import { Chart, type ChartType } from './chart.js'
 import { Box, Root } from './index.js'
 
 /**
- * What a chart actually draws, as opposed to what tree it builds.
- *
- * # Why this file exists
- *
- * `chart.test.ts` has eighty-odd assertions and **not one of them goes through
- * a render.** They assert the tree — that a node exists, that a prop is set —
- * and a builder emitting a perfectly shaped tree that draws the wrong picture
- * passes every one of them.
- *
- * Every geometry number in `chart.ts` was in fact verified by rendering, and
- * **none of those renders was kept.** That is the `borders-per-edge` shape
- * with the roles reversed: geometry certified from a render and then
- * discarded, so nothing could notice it changing. **A measurement that lives
- * outside the repository is indistinguishable from one never taken.**
- *
- * # Why it matters more here than elsewhere
- *
- * **Chrome has no charts.** Nothing external adjudicates any of this, so the
- * arithmetic in `chart.ts` *is* the specification — and the Rust port is being
- * derived from that file rather than from v1. If a number there is wrong, the
- * port reproduces it faithfully and a byte comparison confirms two surfaces
- * agreeing on a wrong picture. **A shared reference with no check is a single
- * point of failure that looks like agreement.**
- *
- * # Per kind, not per behaviour
- *
- * The gridlines, the gutter and the label strip each serve several kinds
- * through one helper. Covering one caller is not covering the helper's
- * callers: an hour before this file was written, the line chart's label strip
- * was untested while the bar's identical code was covered, and a formatter
- * that worked on bars and threw on lines would have passed everything.
+ * What a chart actually draws, as opposed to what tree it builds: no browser draws
+ * a chart, so `chart.ts`'s arithmetic is the reference, and the agreement suites
+ * would confirm two surfaces agreeing on a wrong picture. Covered per kind, since a
+ * helper serving several kinds is not covered by one caller.
  */
 
 /** The test font, so a label's width is the same on every machine. */
-// `fileURLToPath`, not `.pathname`. A file URL's pathname on Windows is
-// `/D:/a/...`, and handing that to anything that resolves paths prepends the
-// current drive: `D:\D:\a\...`, ENOENT, in the three test files that read an
-// asset from disk and nowhere else. Nine other files here already did this
-// correctly; these three were the ones that had never run on Windows.
+// `fileURLToPath`, not `.pathname`: see `chart.agreement.test.ts`.
 const FONT = fileURLToPath(new URL('../../../crates/meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf', import.meta.url))
 
 /** One rendered page, as `[r, g, b, a]` rows. */
@@ -54,11 +23,8 @@ interface Shot {
 }
 
 /**
- * Renders a chart on a white page.
- *
- * **Throws rather than skips when the addon is missing.** A render test that
- * quietly does not run is the same silence this file exists to remove, and it
- * reads as coverage.
+ * Renders a chart on a white page. Throws rather than skips when the addon is
+ * missing: a render test that quietly does not run reads as coverage.
  */
 async function shot(width: number, height: number, chart: ReturnType<typeof Chart>): Promise<Shot> {
   let raw: Buffer
@@ -152,12 +118,9 @@ describe('gridlines, in every kind that draws them', () => {
   ] as const)('divides a %s plot into five equal bands', async (_kind, props) => {
     const page = await shot(200, 120, Chart({ ...props, fontFamily: 'Fixture', options: { grid: { show: true } } }))
     const rows = rowsIn(page, 4, GREY)
-    // **Five, not six.** `gridLines()` returns six fractions and the last is
-    // `1.0`, which puts a one-pixel rule with its top on the plot's bottom
-    // edge — one row past the last row there is. v1 does the same: it strokes
-    // at `chartY + finalChartHeight`, which is equally outside. So the bottom
-    // line is drawn and never seen, in both engines, and this asserts what is
-    // visible rather than what was emitted.
+    // Five, not six: the sixth gridline sits at `1.0`, a one-pixel rule whose top is
+    // the plot's bottom edge, one row past the last there is. It is drawn and never
+    // seen, so this asserts what is visible.
     expect(rows).toHaveLength(5)
     const gaps = rows.slice(1).map((row, index) => row - (rows[index] as number))
     // Even to within a pixel: 120 does not divide by five into whole numbers.
@@ -171,9 +134,9 @@ describe('a pie is solid and a doughnut is not', () => {
     { label: 'b', value: 3, color: '#3366cc' },
   ]
 
-  // **A single pixel cannot tell these apart.** v1 strokes every slice white
-  // and two slices meet at the centre, so the exact centre is white in both.
-  // The discriminator is the coloured share of a disc.
+  // A single pixel cannot tell these apart: every slice is stroked white and two
+  // meet at the centre, so the exact centre is white in both. The discriminator is
+  // the coloured share of a disc.
   it.each([
     ['pie', 'pie', 0.9],
     ['doughnut', 'doughnut', 0],
@@ -276,15 +239,10 @@ describe('the y-axis gutter measures its widest label', () => {
 })
 
 describe('these measurements can fail', () => {
-  // **A control, and the reason it is here rather than in a mutation run.**
-  // Every assertion above passed the first time it was correct, which says
-  // nothing about whether it would notice a wrong picture. Mutating a constant
-  // in `chart.ts` would prove it and would move a file someone else is reading,
-  // so the discrimination is proved against a hand-built tree instead: the same
-  // shapes at deliberately wrong positions, measured by the same helpers.
-  //
-  // If this ever passes without the wrong tree differing from the right one,
-  // the helpers have stopped measuring and every assertion above is decoration.
+  // A control: every assertion above passed the first time it was correct, which
+  // says nothing about whether it notices a wrong picture. The same shapes at wrong
+  // positions, measured by the same helpers, must differ; if they stop differing,
+  // the helpers have stopped measuring.
   it('reports different geometry for a deliberately wrong bar layout', async () => {
     const right = await shot(200, 120, Chart({ type: 'bar', data: cartesian, fontFamily: 'Fixture' }))
     const wrong = await shot(
@@ -330,15 +288,9 @@ describe('these measurements can fail', () => {
 })
 
 describe('the label strip centres each label in its slot', () => {
-  // **The case that justifies this whole file.** Both surfaces set
-  // `alignItems: 'center'` on a row, where `align-items` is the cross axis —
-  // so the labels centred vertically and sat against their slots' left edges.
-  // Measured before the fix on a 200-wide chart: ink at x 2 and x 102 where
-  // the slot centres are 50 and 150.
-  //
-  // **No byte comparison could see it**, because both surfaces were wrong in
-  // the same way, and no geometry row covers it. A pixel is the only
-  // instrument that could ever have caught it.
+  // Labels centred with `alignItems` on a row centre only vertically and sit at
+  // their slots' left edges: ink at x 2 and 102 where the centres are 50 and 150.
+  // No byte comparison sees that, since both surfaces would agree; a pixel does.
   it.each([['bar'], ['line']] as const)('centres a %s chart s labels', async type => {
     const page = await shot(200, 120, Chart({ type, fontFamily: 'Fixture', data: cartesian, options: { showLabels: true } }))
     // The strip's own band, below the plot, so bar ink cannot be mistaken for
