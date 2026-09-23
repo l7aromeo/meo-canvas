@@ -17,7 +17,6 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/target/**',
       'fixtures/**',
-      'packages/*/vendor/**',
       'packages/*/src/generated/**',
       'release/**',
       'coverage/**',
