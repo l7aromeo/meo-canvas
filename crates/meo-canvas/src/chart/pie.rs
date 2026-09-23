@@ -2,10 +2,7 @@
 //!
 //! **Every slice is drawn in the same square and stacked**, so each one's
 //! viewBox is the whole drawing rather than its own bounds -- which is what
-//! keeps them concentric. The square is why these two kinds needed nothing
-//! more than a viewBox: v1's `radius = min(w, h) / 2` keeps a pie circular in
-//! any box, and `xMidYMid meet` does the same thing. **A line chart is the one
-//! that does not**, since it should fill its box rather than stay square.
+//! keeps them concentric. `xMidYMid meet` keeps the pie circular in any box.
 
 #![expect(
     clippy::suboptimal_flops,
@@ -40,21 +37,17 @@ use crate::{
 /// The space a pie is drawn in, before it is scaled into its box.
 const PIE_SPACE: f64 = 100.0;
 
-/// How much of the radius v1's ten-pixel inset takes.
+/// How much of the radius the inset around a pie takes.
 ///
-/// **A stated divergence.** v1 writes `radius = min(w, h) / 2 - 10`, ten
-/// *pixels* regardless of size, which under a viewBox has no meaning -- the
-/// drawing is authored once and scaled, so a pixel is not a fixed quantity
-/// inside it. A proportion behaves better at both ends: v1's inset is a fifth
-/// of the radius on a hundred-pixel chart and invisible on a thousand-pixel
-/// one.
+/// A proportion rather than pixels: the drawing is authored once and scaled,
+/// so a pixel is not a fixed quantity inside it.
 const PIE_INSET: f64 = 0.05;
 
-/// How far along the radius v1 puts a slice's label: `radius * 0.7`.
+/// How far along the radius a slice's label sits.
 const PIE_LABEL_REACH: f64 = 0.7;
 
-/// v1 strokes every slice in white, which is what separates two slices of
-/// similar colour.
+/// The white stroke around every slice, in pixels, which separates two slices
+/// of similar colour.
 const SLICE_STROKE: f32 = 2.0;
 
 /// One wedge of a pie.
@@ -68,7 +61,8 @@ pub struct Slice {
     pub color: Option<String>,
 }
 
-/// A pie, or a doughnut when `inner_fraction` is above zero.
+/// A pie, with no hole: [`Options::inner_fraction`] is ignored here, and
+/// [`doughnut`] is the kind that reads it.
 ///
 /// # Errors
 ///
@@ -81,19 +75,12 @@ pub fn pie(slices: &[Slice], options: &Options) -> Result<Element, Error> {
     wedges(slices, 0.0, Kind::Pie, options)
 }
 
-/// A doughnut: a pie with a hole of [`Options::inner_fraction`].
+/// A doughnut: a pie with a hole of [`Options::inner_fraction`], or of
+/// [`DEFAULT_INNER_FRACTION`] when that is unset.
 ///
 /// **Split from [`pie`] because the default belongs to one kind and not the
-/// other.** `inner_fraction` moved out of a positional argument and into
-/// `Options`, and defaulting it inside a single shared function would have
-/// turned every pie into a doughnut. The other surface has the same shape: its
-/// `pie` passes a literal `0` and its `doughnut` reads
-/// `innerRadius ?? 0.6`.
-///
-/// **The default is why this matters rather than being a tidy-up.** This
-/// surface had no default at all, so a caller who said nothing got a pie here
-/// and a doughnut there -- and both agreement suites passed `0.6` explicitly,
-/// which is a test written around the gap rather than one that could see it.
+/// other**: a single shared function defaulting it would turn every pie into a
+/// doughnut.
 ///
 /// # Errors
 ///
@@ -109,12 +96,8 @@ pub fn doughnut(slices: &[Slice], options: &Options) -> Result<Element, Error> {
 
 /// Which of the two this is, as the caller declared it.
 ///
-/// **Declared rather than read off the hole.** The size of the hole and the
-/// kind of chart are different facts: a doughnut whose `inner_fraction` is
-/// zero is still a doughnut, and the other surface names its node from the
-/// type the caller asked for. Inferring it from the number named such a chart
-/// `pie chart` -- and the name is encoded, so anything reading the scene by
-/// name saw a pie where the caller had asked for a doughnut.
+/// Declared rather than read off the hole: a doughnut with a zero
+/// `inner_fraction` is still a doughnut, and its encoded node name says so.
 #[derive(Clone, Copy)]
 enum Kind {
     Pie,
@@ -209,9 +192,8 @@ fn wedges(
                 .iter()
                 .enumerate()
                 .map(|(index, slice)| {
-                    // v1 names a slice by its share as well as its label,
-                    // which is the one place a legend entry is not just the
-                    // series name.
+                    // A slice's legend entry carries its value beside its
+                    // label, unlike a series'.
                     (
                         format!("{} ({})", slice.label, slice.value),
                         series_color(index, slice.color.as_deref()),
@@ -250,13 +232,8 @@ fn slice_label(
                     None,
                     Some(fraction(left)),
                 ))
-                // **Half its own width and half its own height back from the
-                // point**, which is v1's
-                // `render(ctx, labelX - width / 2, labelY - height / 2)`.
-                // Without it the label's top-left corner sits on the point and
-                // the text hangs down and to the right of where it belongs.
-                // The same shape as the axis label's missing transform, and it
-                // survived longer here because no doc comment claimed it.
+                // Half its own width and height back from the point, so the
+                // label centres on it rather than hanging down and right.
                 .transform(Transform {
                     translate_x: Length::Percent(-0.5),
                     translate_y: Length::Percent(-0.5),

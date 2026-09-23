@@ -26,10 +26,10 @@ use crate::{
     unit::sides,
 };
 
-/// v1's `ctx.lineWidth = 2` for a line series.
+/// A line series' stroke width, in pixels.
 const SERIES_STROKE: f32 = 2.0;
 
-/// v1's point marker: `ctx.arc(pointX, pointY, 4, 0, Math.PI * 2)`.
+/// A point marker's radius, in pixels.
 const POINT_RADIUS: f32 = 4.0;
 
 /// A line chart of `labels` against `datasets`.
@@ -74,8 +74,7 @@ pub fn line(
         inside.push(series(index, dataset, labels.len(), max_value)?);
     }
     // Markers after every series, so a line never covers a point of a series
-    // drawn before it -- v1 draws them per dataset and interleaves them, which
-    // differs only where two series cross.
+    // drawn before it.
     for (index, dataset) in datasets.iter().enumerate() {
         let colour = series_color(index, dataset.color.as_deref());
         for (at, point) in line_points(labels.len(), &dataset.data, max_value)

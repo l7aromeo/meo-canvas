@@ -1,10 +1,8 @@
 //! A bar chart, built out of layout rather than draw calls.
 //!
 //! The plot is `flex-grow: 1` inside a column, so its height is whatever the
-//! label strip and legend leave -- which is v1's `finalChartHeight` arrived at
-//! by subtraction rather than by measurement. Bars are absolutely positioned
-//! inside it in percentages, anchored to the bottom, which is what v1's
-//! `barY = chartY + finalChartHeight - barHeight` says.
+//! label strip and legend leave. Bars are absolutely positioned inside it in
+//! percentages, anchored to the bottom.
 
 #![expect(
     clippy::suboptimal_flops,
@@ -48,16 +46,15 @@ pub struct Dataset {
 pub struct Grid {
     /// Whether to draw it at all.
     pub show: bool,
-    /// The rule's colour. v1's `#e0e0e0` when absent.
+    /// The rule's colour. `#e0e0e0` when absent.
     pub color: Option<String>,
 }
 
 /// What a label hatch is handed.
 ///
-/// **A struct rather than positional arguments, because TypeScript's is a
-/// named object** -- `{ item, index }` -- and matching it shape for shape is
-/// what lets the two surfaces be read against each other. It also makes a
-/// later field non-breaking on both sides.
+/// A struct rather than positional arguments: it reads field for field
+/// against the other surface's `{ item, index }`, and a later field is
+/// non-breaking on both.
 #[derive(Debug)]
 pub struct LabelItem<'a> {
     /// The label being drawn.
@@ -68,10 +65,9 @@ pub struct LabelItem<'a> {
 
 /// What a value hatch is handed.
 ///
-/// **The two `usize`s are the reason this is a struct and not a tuple.**
-/// Positionally, `index` and `dataset_index` are adjacent and identically
-/// typed, so a caller who swaps them gets no error, no warning and a chart
-/// that is quietly wrong. v1 uses a named object at exactly this signature.
+/// A struct rather than a tuple because `index` and `dataset_index` are
+/// adjacent `usize`s: swapped positionally, they compile and draw a quietly
+/// wrong chart.
 #[derive(Debug)]
 pub struct ValueItem {
     /// The value being drawn.
@@ -84,10 +80,9 @@ pub struct ValueItem {
 
 /// The thing a legend row stands for.
 ///
-/// **TypeScript spells this `ChartDataset | PieChartDataPoint`, and Rust has no
-/// untagged union.** So a TypeScript caller can write one function that ducks
-/// across both and a Rust caller must match. That asymmetry is forced by the
-/// languages rather than chosen here, and it cannot be removed.
+/// The other surface's `ChartDataset | PieChartDataPoint`. Rust has no
+/// untagged union, so a caller here matches where a TypeScript caller can
+/// write one function across both.
 #[derive(Debug)]
 pub enum LegendEntry<'a> {
     /// A cartesian chart's series.
@@ -110,20 +105,15 @@ pub struct LegendItem<'a> {
 
 /// Draws the label under a slot yourself.
 ///
-/// **`Rc` rather than `Arc`, deliberately.** The only two spellings without a
-/// `Send + Sync` bound on the closure are `Rc<dyn Fn>` and `Arc<dyn Fn>`, and
-/// **they are equally un-`Send`** -- `Arc<T>: Send` requires `T: Send + Sync`
-/// -- so `Arc` here would pay for atomics that nothing can use. Keeping
-/// `Options: Send + Sync` would mean bounding every closure, which rejects one
-/// capturing `Rc` data to buy a capability the scene cannot exercise: taffy's
-/// tree is neither `Send` nor `Sync` and is built and consumed on one thread.
-///
-/// **The cost is real and named here rather than discovered**: `Options` was
-/// `Send + Sync` before these fields and is not now.
+/// **`Rc` rather than `Arc`.** An unbounded `dyn Fn` is un-`Send` behind
+/// either -- `Arc<T>: Send` needs `T: Send + Sync` -- so `Arc` would pay for
+/// atomics nothing uses. Bounding every closure `Send + Sync` would reject one
+/// capturing `Rc` data, for a capability the scene cannot use: taffy's tree is
+/// built and consumed on one thread. **The cost is that `Options` is not
+/// `Send + Sync`.**
 ///
 /// `Rc` rather than `Box` because `Options` is `Clone`, and rather than a
-/// borrow because a lifetime on `Options` would infect every caller and
-/// anything that stores one.
+/// borrow because a lifetime on `Options` would reach every caller.
 pub type LabelHatch = Rc<dyn Fn(LabelItem<'_>) -> Option<Element>>;
 
 /// Draws the value against a bar yourself. See [`LabelHatch`] for why `Rc`.
@@ -132,23 +122,21 @@ pub type ValueHatch = Rc<dyn Fn(ValueItem) -> Option<Element>>;
 /// Draws one legend row yourself. See [`LabelHatch`] for why `Rc`.
 pub type LegendHatch = Rc<dyn Fn(LegendItem<'_>) -> Option<Element>>;
 
-/// Formats a category label before it is drawn, as v1 does, index included.
+/// Formats a category label before it is drawn, given the label's index too.
 pub type XAxisFormatter = Rc<dyn Fn(&str, usize) -> String>;
 
 /// Formats a y-axis value before it is drawn.
 pub type YAxisFormatter = Rc<dyn Fn(f64) -> String>;
 
-/// v1's `outerRadius * (innerRadius ?? 0.6)`, and the default both surfaces
-/// now share.
+/// A doughnut's hole when [`Options::inner_fraction`] is unset, as a fraction
+/// of its outer radius.
 pub const DEFAULT_INNER_FRACTION: f64 = 0.6;
 
-/// What every chart understands, as v1 spells it.
+/// What every chart understands.
 ///
-/// **Four `show_` flags, because v1 and the TypeScript surface have four.**
-/// Grouping them into an enum or a bitflag would make a caller port their
-/// options object rather than spell it, and the two surfaces would then name
-/// the same switch differently -- which is the thing the byte comparison is
-/// there to catch.
+/// Four `show_` flags rather than an enum or a bitflag, so this reads field
+/// for field against the other surface's option bag and the two name each
+/// switch the same way.
 #[derive(Clone, Default)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -164,7 +152,7 @@ pub struct Options {
     pub show_y_axis: bool,
     /// Draw the legend.
     pub show_legend: bool,
-    /// Which side the legend sits on. Below the plot when unset, as v1 does.
+    /// Which side the legend sits on. Below the plot when unset.
     pub legend_position: LegendPosition,
     /// The grid behind the plot.
     pub grid: Grid,
@@ -185,19 +173,12 @@ pub struct Options {
     /// The family every piece of chart text is set in.
     pub font_family: Option<String>,
     /// A doughnut's hole, as a fraction of its outer radius.
-    ///
-    /// **Moved here from a positional argument on
-    /// [`crate::chart::pie::pie`]**, where TypeScript has always had it as an
-    /// option. It defaulted to nothing on this surface and to `0.6` on the
-    /// other, so a caller who said nothing got a pie here and a doughnut
-    /// there -- and both agreement suites passed `0.6` explicitly, which is a
-    /// test written around the gap rather than one that could see it.
+    /// [`DEFAULT_INNER_FRACTION`] when unset.
     pub inner_fraction: Option<f64>,
     /// Draw the label under each slot yourself.
     ///
     /// The returned node is **placed** -- centred in the slot by ordinary
-    /// layout -- rather than measured and drawn detached, which is v1's
-    /// contract as the other surface has it.
+    /// layout -- rather than measured and drawn detached.
     pub render_label_item: Option<LabelHatch>,
     /// Draw the value against each bar yourself. Placed, as above.
     pub render_value_item: Option<ValueHatch>,
@@ -257,13 +238,13 @@ impl core::fmt::Debug for Options {
     }
 }
 
-/// v1's default gridline colour.
+/// The gridline colour when none is given.
 const GRID_COLOR: Color = crate::hex_rgb(0xe0_e0_e0);
 /// The default for every piece of chart text.
 const TEXT_COLOR: Color = crate::hex_rgb(0x00_00_00);
-/// v1's default point size for chart text.
+/// Chart text's point size when none is given.
 const TEXT_SIZE: f32 = 12.0;
-/// v1 puts a value five pixels above its bar.
+/// The gap between a bar's top and its value label, in pixels.
 const VALUE_LIFT: f32 = 5.0;
 
 /// A bar chart of `labels` against `datasets`.
@@ -282,9 +263,8 @@ const VALUE_LIFT: f32 = 5.0;
 ///
 /// # Errors
 ///
-/// Returns [`Error::Chart`] for a negative value, which v1 mis-draws three
-/// different ways rather than supporting, and for a colour that cannot be
-/// read -- on a dataset or on the grid.
+/// Returns [`Error::Chart`] for a negative value, which this geometry cannot
+/// draw, and for a colour that cannot be read -- on a dataset or on the grid.
 pub fn bar(
     labels: &[String],
     datasets: &[Dataset],
@@ -311,11 +291,7 @@ pub fn bar(
 
     Ok(framed(
         options,
-        // Flat setters. This was once the workaround for a `with_style`
-        // that replaced the whole style and so discarded the
-        // `flex-direction: column` `Column::new` had just set, laying the body
-        // and the label strip out side by side. `with_style` merges now and
-        // either spelling is safe, but the defect it caused is pinned by
+        // The column direction is pinned by
         // `the_label_strip_sits_under_the_plot_rather_than_beside_it`.
         Column::new().name("body").flex_grow(1.0).children(body),
         legend(options, &series_labels(datasets))?,
@@ -397,21 +373,10 @@ fn value_label(
                 .align_items(Align::Center),
         )
         .children([drawn.unwrap_or_else(|| {
-            // The value as written, not as rounded. `format_number` is the
-            // y-axis default formatter's two-decimal spelling and belongs to
-            // that axis: a value label showing `2.35` for a bar of `2.345`
-            // reports a number the caller never gave.
-            //
-            // **This path spells a number differently from the other surface
-            // at and above 1e21**, which is a deliberate deviation rather than
-            // an oversight: `Display` never switches to exponential and
-            // JavaScript does, so `1e21` is `1000000000000000000000` here and
-            // `1e+21` there. Closing it means implementing another language's
-            // number formatting, and nothing else in this workspace spells a
-            // number that way.
-            // `a_value_label_at_1e21_is_spelled_differently_on_each_surface`
-            // in `crates/meo-canvas/tests/chart_number_spelling.rs` pins it,
-            // and fails if the two ever agree.
+            // As written, not rounded: `format_number` is the y axis's, and
+            // `2.35` for a bar of `2.345` is a number the caller never gave.
+            // From 1e21 JavaScript switches to exponential and this does not;
+            // `a_value_label_at_1e21_is_spelled_differently_on_each_surface`.
             text(
                 &value.to_string(),
                 options,
@@ -428,15 +393,8 @@ pub(crate) fn label_strip(labels: &[String], options: &Options) -> Element {
             .iter()
             .enumerate()
             .map(|(index, label)| {
-                // **The hatch is handed the RAW label and the formatter
-                // feeds only the fallback text.** I wrote it the other way
-                // round first -- format, then hand the formatted string to the
-                // hatch -- which reads as the more sensible pipeline and is
-                // not what the other surface does: `renderLabelItem?.({ item:
-                // label, index })` takes `label`, and `shown` is computed
-                // beside it for the `drawn ?? Text(shown)` fallback. A caller
-                // supplying both gets the unformatted label here, and matching
-                // that is the whole point of the comparison.
+                // The hatch gets the raw label; the formatter feeds only the
+                // fallback text, as on the other surface.
                 let drawn = options
                     .render_label_item
                     .as_ref()
@@ -451,14 +409,8 @@ pub(crate) fn label_strip(labels: &[String], options: &Options) -> Element {
                         Style::new()
                             .flex_grow(1.0)
                             .flex_basis(Dimension::Points(0.0))
-                            // **`justify_content` is the one that centres a
-                            // label under its slot.** The strip is a row, so
-                            // `align_items` is the cross axis and centres it
-                            // vertically -- which is what both surfaces had,
-                            // and it left every label against the left edge
-                            // of its slot where v1 draws it centred. Neither
-                            // the byte comparison nor a geometry row could
-                            // see it: the two surfaces made the same mistake.
+                            // `justify_content` centres a label under its
+                            // slot; in a row, `align_items` is the vertical.
                             .justify_content(Justify::Center)
                             .align_items(Align::Center),
                     )
@@ -477,16 +429,8 @@ pub(crate) fn label_strip(labels: &[String], options: &Options) -> Element {
 
 /// The plot, with a y-axis gutter beside it when one is asked for.
 ///
-/// # How the gutter measures without measuring
-///
-/// Three properties are wanted at once: the gutter sizes to its widest label,
-/// the labels centre on the gridlines, and the plot is a sibling so a bar
-/// never covers the gutter. **Absolute children give the last two and do not
-/// size their parent; in-flow children give the first and drift on the
-/// second.** So the gutter holds both -- one zero-height in-flow copy of the
-/// widest label, which sets the width and draws nothing, and the visible
-/// labels absolutely positioned at their gridline fractions and pulled up by
-/// half their own height.
+/// Absolute labels centre on their gridlines but do not size the gutter, so a
+/// zero-height in-flow copy of the widest label sets its width.
 pub(crate) fn plot_area(
     options: &Options,
     max_value: f64,
@@ -507,42 +451,24 @@ pub(crate) fn plot_area(
         return Ok(plot);
     }
 
-    // v1: `maxValue - (maxValue / 5) * i`, so the first row is the maximum
-    // and the last is zero.
+    // The first row is the maximum and the last is zero.
     let labels: Vec<String> = grid_lines(GRID_DIVISIONS)
         .into_iter()
         .map(|fraction| {
             let value = max_value - max_value * fraction;
-            // **The default rounds here on purpose**, because the other
-            // surface rounds with it -- `Math.round(value * 100) / 100` -- so
-            // `format_number` is this caller's spelling and not the value
-            // label's.
-            //
-            // **It parts from the other surface a decade later than the value
-            // path does, and the rounding is why.** Rounding `1e21` lands a
-            // fraction below it, which both languages then write out in full;
-            // only at `1e22` does one switch to exponential and the other not.
-            // `a_y_axis_label_at_1e22_is_spelled_differently_on_each_surface`
-            // in `crates/meo-canvas/tests/chart_number_spelling.rs` pins that,
-            // beside `a_y_axis_label_at_1e21_is_spelled_the_same_on_both_surfaces`,
-            // which is the control saying these are two paths rather than one
-            // condition.
+            // Rounded, as the other surface's default is. The two spell the
+            // number differently from 1e22, a decade after the value path:
+            // `a_y_axis_label_at_1e22_is_spelled_differently_on_each_surface`.
             options
                 .y_axis_label_formatter
                 .as_ref()
                 .map_or_else(|| format_number(value), |format| format(value))
         })
         .collect();
-    // The widest by character count rather than by measurement, which is the
-    // one thing a builder cannot do. A proportional face can make a shorter
-    // string wider -- `111` against `00` -- so this is a heuristic, and the
-    // sizer is why it only has to be close.
-    // **The first of the widest, not the last.** `max_by_key` returns the
-    // last maximum where the TypeScript side's scan keeps the first, and a
-    // five-division axis ties constantly -- `1.6`, `1.2`, `0.8` and `0.4` are
-    // all three characters. The two surfaces then size the gutter from
-    // different strings, which a proportional face makes a different width.
-    // Found by the byte comparison; no rendered check would have asked.
+    // Widest by character count, since a builder cannot measure, and the sizer
+    // only needs it close. The first of the widest rather than `max_by_key`'s
+    // last: a five-division axis ties constantly, and the other surface keeps
+    // the first, so the gutter is sized from the same string.
     let widest = labels
         .iter()
         .fold(None::<&String>, |best, label| match best {
@@ -581,9 +507,7 @@ pub(crate) fn plot_area(
                             Some(px(0.0)),
                         ))
                         // Pulled up by half its own height, so the label
-                        // centres on its gridline rather than hanging from
-                        // it. The doc above always said this and the code did
-                        // not -- the byte comparison is what noticed.
+                        // centres on its gridline rather than hanging from it.
                         .transform(Transform {
                             translate_y: Length::Percent(-0.5),
                             ..Transform::default()
@@ -612,10 +536,8 @@ fn grid(options: &Options) -> Result<Vec<Element>, Error> {
     if !options.grid.show {
         return Ok(Vec::new());
     }
-    // **An absent grid colour and an unreadable one are different answers**,
-    // and `and_then` gave them the same one. Saying nothing takes the default;
-    // writing something that cannot be read is the caller's mistake and is
-    // refused rather than drawn in a colour they did not ask for.
+    // Absent takes the default; unreadable is refused rather than drawn in a
+    // colour the caller did not ask for.
     let colour = match options.grid.color.as_deref() {
         None => GRID_COLOR,
         Some(written) => meo_canvas_core::parse_color(written)
@@ -656,8 +578,7 @@ pub(crate) fn text(
     Text::new(content).with_style(style)
 }
 
-/// A number as the other surface writes it: two decimals at most, and no
-/// trailing zeros.
+/// A number to two decimals at most, with no trailing zeros.
 fn format_number(value: f64) -> String {
     let rounded = (value * 100.0).round() / 100.0;
     let text = format!("{rounded}");

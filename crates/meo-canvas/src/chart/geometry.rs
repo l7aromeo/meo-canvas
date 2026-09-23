@@ -1,13 +1,11 @@
 //! Where a chart's marks go, as fractions of the plot.
 //!
-//! # One derivation, two callers
+//! # One specification, two implementations
 //!
-//! **This is a port of `packages/meo-canvas/src/chart.ts`, not a second
-//! derivation from v1.** The TypeScript side worked the geometry out from v1
-//! and verified it by rendering; deriving it again here would produce a third
-//! set of numbers that could drift from the first two, **and nothing could
-//! referee the difference -- Chrome has no charts.** So the TypeScript is the
-//! specification and `tests/assets/chart/geometry.tsv` is it made checkable.
+//! **A port of `packages/meo-canvas/src/chart.ts`**, which is the
+//! specification; `tests/assets/chart/geometry.tsv` makes it checkable.
+//! Nothing external can referee a chart -- Chrome has none -- so an
+//! independent derivation here would be one more set of numbers free to drift.
 //!
 //! # `f64`, and no fused multiply-add
 //!
@@ -27,11 +25,10 @@ pub const GRID_DIVISIONS: u32 = 5;
 
 /// The share of a group's width left empty between groups.
 ///
-/// v1: `barSpacing = groupWidth * 0.2`, half at each end, so a group's bars
-/// occupy the middle 80% of their slot.
+/// Half at each end, so a group's bars occupy the middle 80% of their slot.
 pub const BAR_GROUP_SPACING: f64 = 0.2;
 
-/// v1's default series colours, in order.
+/// The colours a series takes in order when it names none.
 const PALETTE: [&str; 8] = [
     "#4e79a7", "#f28e2c", "#e15759", "#76b7b2", "#59a14f", "#edc949",
     "#af7aa1", "#ff9da7",
@@ -49,15 +46,10 @@ pub fn series_color(index: usize, given: Option<&str>) -> String {
 /// Where each gridline falls, as a fraction from the top of the plot.
 ///
 /// **`divisions + 1` fractions, and the last one is never seen.** A fraction
-/// of `1.0` puts a one-pixel rule with its *top* on the plot's bottom edge --
-/// one row past the last row there is -- so a plot with five divisions shows
-/// **five** lines rather than six. v1 does the same, stroking at
-/// `chartY + finalChartHeight`, equally outside.
-///
-/// Kept rather than trimmed, because it is what the other surface emits and
-/// this is a port. **But a test that counts six has counted emitted nodes and
-/// not drawn lines**, which is the distinction a tree-shaped assertion cannot
-/// make.
+/// of `1.0` puts a one-pixel rule with its *top* on the plot's bottom edge, so
+/// five divisions show **five** lines rather than six. Kept because the other
+/// surface emits it too -- **a test that counts six has counted emitted nodes,
+/// not drawn lines.**
 #[must_use]
 pub fn grid_lines(divisions: u32) -> Vec<f64> {
     (0..=divisions)
@@ -80,11 +72,8 @@ pub struct Bar {
 ///
 /// # Errors
 ///
-/// Returns [`Error::Chart`] for a negative value. **v1 mis-draws these three
-/// different ways** -- a bar below the plot, a bar five times the height for
-/// the *most* negative value, and nothing at all when every value is zero --
-/// so they are refused rather than reproduced. A stated divergence, not an
-/// omission.
+/// Returns [`Error::Chart`] for a negative value: bars rise from the plot's
+/// floor, and there is no zero baseline to draw one below.
 ///
 /// # Panics
 ///
@@ -121,11 +110,9 @@ pub fn bar_layout(
                     Bar {
                         x: index_f * group_width + spacing / 2.0 + s_f * width,
                         width,
-                        // **A deliberate divergence.** v1 divides by
-                        // `Math.max(...)`, so an all-zero chart divides zero
-                        // by zero; `NaN` reaches layout as an absent height
-                        // and the chart draws *nothing*, which reads as a
-                        // broken renderer rather than as an empty chart.
+                        // Zero rather than `0 / 0`: an all-zero chart would
+                        // reach layout as `NaN`, an absent height, and draw
+                        // nothing at all.
                         height: if max_value == 0.0 {
                             0.0
                         } else {
@@ -150,7 +137,7 @@ const PIE_SPACE: f64 = 100.0;
 #[must_use]
 pub fn slice_angles(values: &[f64]) -> Vec<(f64, f64)> {
     let total: f64 = values.iter().sum();
-    // v1 starts at `-PI / 2` -- twelve o'clock -- and sweeps clockwise.
+    // From `-PI / 2` -- twelve o'clock -- sweeping clockwise.
     let mut cursor = -std::f64::consts::PI / 2.0;
     values
         .iter()
@@ -172,12 +159,10 @@ pub fn slice_angles(values: &[f64]) -> Vec<(f64, f64)> {
 
 /// One slice as SVG path data, in the pie's own hundred-unit space.
 ///
-/// **The string is matched, not the numbers.** Four decimals is what makes two
-/// independently-computed paths comparable at all, and a path built by a
-/// different route -- different trailing zeros, a different separator --
-/// diverges in bytes with no numeric difference behind it. This mirrors
-/// `chart.ts` exactly: four decimals on every computed coordinate, and the
-/// centre printed bare because it is a constant rather than a computation.
+/// **The string is compared, not the numbers**, so it is built as `chart.ts`
+/// builds it: four decimals on every computed coordinate, and the centre
+/// printed bare because it is a constant. A path built another way diverges
+/// in bytes with no numeric difference behind it.
 #[must_use]
 pub fn slice_path(start: f64, end: f64, outer: f64, inner: f64) -> String {
     let centre = PIE_SPACE / 2.0;
@@ -227,10 +212,9 @@ pub struct Point {
 
 /// Where each point of a line series sits.
 ///
-/// **Points span edge to edge where bars are centred in slots.** v1 divides by
-/// `labels - 1` here and by `labels` there, so the first and last points sit
-/// on the plot's edges rather than inset. **A single label has no span to
-/// divide**, so v1 divides by one and the point sits at the left edge.
+/// **Points span edge to edge where bars are centred in slots**: the step is
+/// `1 / (labels - 1)`, so the first and last points sit on the plot's edges.
+/// A single label has no span to divide, so its point sits at the left edge.
 #[must_use]
 pub fn line_points(
     labels: usize,
