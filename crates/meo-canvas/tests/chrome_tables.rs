@@ -1,40 +1,7 @@
-//! Chrome's answers, one row per combination, put through this renderer.
-//!
-//! # Why a table and not more fixtures
-//!
-//! A fixture is a scene, and every defect this project found in a week was
-//! **combinational**: a zero-width edge beside a rounded corner, an absolute
-//! child under a static clipper, a negative `z_index` under a parent that
-//! establishes no context, a tile that divides its box evenly. Seventeen
-//! scenes cannot cover a product of properties, and seventeen hundred images
-//! would be unreadable. A row is cheap where a picture is not.
-//!
-//! Fixtures keep the job a table cannot do: saying that a picture *looks*
-//! right. This says only that an answer matches Chrome's.
-//!
-//! # Where the answers came from
-//!
-//! `tests/assets/chrome/*.json`, measured in a browser and checked in. They
-//! are the one thing here that is not downstream of our own arithmetic --
-//! every other expectation in this project is measured from what we drew.
-//!
-//! # How a row is answered on our side
-//!
-//! By rendering and reading pixels, not by asking the layout engine. A layout
-//! number compared against Chrome's shares nothing with what a caller sees; a
-//! pixel is the same currency Chrome's `elementFromPoint` and
-//! `getBoundingClientRect` were read in.
-//!
-//! Both walkers report **every** failing row rather than the first, for the
-//! reason `property_effect.rs` does: a fix usually moves a family, and the
-//! useful report is the family.
-//!
-//! # Rows this renderer cannot express
-//!
-//! Named, counted and excluded rather than skipped: a silent skip turns a
-//! conformance table into a self-portrait. `display: inline-block` and
-//! `table-cell` are Chrome's and have no variant in our `Display`, which is
-//! flex, grid, block and none.
+//! Chrome's answers, one row per combination, put through this renderer: the
+//! defects found here were combinational, and a row is cheaper than a fixture.
+//! Chrome's side is measured in a browser, ours read from pixels; a row this
+//! renderer cannot express is counted, never skipped.
 
 use std::collections::BTreeMap;
 
@@ -51,12 +18,9 @@ type Row = BTreeMap<String, String>;
 /// The page every paint-order case is drawn on.
 const PAGE: (f32, f32) = (200.0, 140.0);
 
-/// Where the parent sits on it.
-///
-/// Not at the origin, and that is the point: `fixed` resolves against the page
-/// and every other position against the parent, so a parent at 0,0 would make
-/// the two indistinguishable. Chrome's probe had the same offset for the same
-/// reason -- its cases sat inside a padded body.
+/// Where the parent sits on the page: not at the origin, since `fixed` resolves
+/// against the page and everything else against the parent, and at 0,0 the two
+/// are indistinguishable.
 const PARENT_AT: (f32, f32) = (44.0, 44.0);
 
 /// A's colour, B's colour, and the parent's.
@@ -64,13 +28,9 @@ const A_INK: Color = Color::rgb(220, 40, 40);
 const B_INK: Color = Color::rgb(40, 80, 220);
 const PARENT_INK: Color = Color::rgb(238, 238, 238);
 
-/// Which box a render paints.
-///
-/// Both boxes are in the tree every time. Hiding one by **not painting it**
-/// rather than by removing it is what keeps the layout identical: B is pulled
-/// back over A by a negative margin, and a B without an A beside it lands
-/// somewhere else entirely -- which is how this walker's first run reported
-/// 134 disagreements that were all its own.
+/// Which box a render paints. Both are always in the tree -- one is hidden by
+/// not painting it -- because B is pulled back over A by a negative margin and
+/// lands elsewhere without it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Draw {
     /// A, with B transparent.
@@ -204,40 +164,10 @@ fn box_of(row: &Row, is_b: bool, painted: bool) -> Element {
         element = element.z_index(value);
     }
 
-    // **`Fixed` takes an inset here and the table was measured without one.
-    // Checked, and it changes no answer.** The probe that produced
-    // `paint-order.tsv` left `fixed` boxes at their static position, so for
-    // this family the scene below is not the scene Chrome was asked about.
-    // Re-measuring all 281 cases with the inset applied, against the committed
-    // table:
-    //
-    //     rows naming `fixed`            45
-    //       no overlap under insets      11
-    //       answered and different        0
-    //       answered and the same        34
-    //     non-fixed rows differing        0
-    //
-    // The last line is the control: the re-measurement still reproduced
-    // everything else, so the zero above is a property of the `fixed` family
-    // rather than of a tool that had stopped measuring.
-    //
-    // **What that establishes**: Chrome's answer does not depend on the
-    // difference, in every case where both scenes can be posed. So the table's
-    // answer is correct for the scene built here, and comparing against it is
-    // sound. **What it does not**: whether this renderer's own answer is
-    // scene-independent, which was not measured and which the argument does not
-    // need -- it runs through Chrome alone.
-    //
-    // **So the inset stays.** `Fixed` and `Sticky` differ from `Relative` in
-    // where they resolve rather than in when they paint, and `to_taffy_inset`
-    // drops the inset for `Static` alone; removing it here to match one table
-    // would read as a claim about that rule rather than about this scene.
-    //
-    // The nine rows excluded below for non-overlap and the eleven that had no
-    // overlap under the re-measurement are **not the same rows**. A fixed box
-    // resolves against the page here and against the viewport there, so the two
-    // scenes disagree about geometry while agreeing about paint order. Two
-    // counts one apart are not a near-match to be tidied into one exclusion.
+    // `Fixed` takes an inset here though the table was measured without one.
+    // Re-measuring all 281 cases with it changes no answer: of 45 `fixed` rows,
+    // 34 agree and 11 do not overlap, and no other row moves. So the inset
+    // stays, as the rule that drops it only for `Static` says.
     let out_of_flow =
         matches!(kind, PositionType::Absolute | PositionType::Fixed);
     if out_of_flow {
@@ -279,11 +209,9 @@ fn parent_of(row: &Row, draw: Draw) -> Element {
         box_of(row, true, draw != Draw::A),
     ];
 
-    // The parent's own background is painted only when both boxes are, and
-    // that is load-bearing: a child at `z_index: -1` hoists out of a parent
-    // that establishes no stacking context and paints *behind* that parent's
-    // background, so a solo render with the grey drawn finds no such child at
-    // all and cannot say where it landed. The layout is identical either way.
+    // The parent's background is painted only when both boxes are: a `z_index:
+    // -1` child under a parent with no stacking context paints behind that
+    // background, so a solo render with it drawn cannot find the child.
     let ink = if draw == Draw::Both {
         PARENT_INK
     } else {
@@ -291,11 +219,9 @@ fn parent_of(row: &Row, draw: Draw) -> Element {
     };
     let mut parent = Box::new()
         .size(px(90.0), px(60.0))
-        // `Relative`, as Chrome's probe had it, and **not** `Absolute` even
-        // though that would place it in one property: an absolutely positioned
-        // box is a containing block either way, but the two differ on whether
-        // the parent establishes a stacking context, which is the very thing
-        // half these rows are about. The offset comes from a wrapper instead.
+        // `Relative`, as Chrome's probe had it, not `Absolute`: the two differ
+        // on whether the parent establishes a stacking context, which is what
+        // half these rows test. The offset comes from a wrapper.
         .position_type(PositionType::Relative)
         .background_color(ink)
         .display(display(&row["display"]).unwrap_or(Display::Block))
@@ -352,27 +278,10 @@ fn involves_fixed(row: &Row) -> bool {
     row["a"] == "fixed" || row["b"] == "fixed"
 }
 
-/// The rows this renderer answers differently from Chrome today.
-///
-/// Pinned rather than left failing, for the reason `property_effect.rs` pins
-/// its no-ops: a walker that fails is a walker nobody can run, and the useful
-/// signal is a **change** in this set. A row that starts agreeing is a fix and
-/// fails this test until it is deleted from here.
-///
-/// **Empty, and it was not.** Two families lived here and both are closed:
-///
-/// 1. `z_index: 0` against `auto` on a positioned box. CSS step 6 holds
-///    positioned descendants with `auto` and child stacking contexts with `0`
-///    **together**, in tree order, so the later box wins whichever spelling it
-///    uses. The painter had ranked the explicit zero above the automatic one.
-/// 2. `z_index` on a **static** flex or grid item. Flexbox §5.4 gives such an
-///    item a stacking context although it is not positioned, which puts it at
-///    step 6 above a static sibling with `auto` at step 5.
-///
-/// Those two pull in opposite directions -- the first says a zero does *not*
-/// outrank an auto, the second says it does -- and what separates them is
-/// whether the box is positioned. A painter that reads only the index gets one
-/// family right and the other wrong, which is what this table caught.
+/// The rows this renderer answers differently from Chrome: pinned, so a row
+/// that starts agreeing fails until it is deleted from here. Empty. A zero and
+/// an auto `z_index` tie on positioned boxes, while a static flex or grid
+/// item's zero outranks auto -- one index, two rules, split by position.
 const KNOWN: &[&str] = &[];
 
 /// How a row reads in a failure.
@@ -428,14 +337,10 @@ fn paint_order_matches_chrome() {
                 name(row),
                 row["top"]
             )),
-            // A `fixed` box resolves against the page here and against the
-            // viewport there, and Chrome's probe measured each case where the
-            // flow happened to put it -- so whether the two boxes overlap at
-            // all depends on an offset we cannot reproduce. Where they do
-            // overlap the row is compared, because which box is on top does
-            // not depend on that offset. Where they do not, the row is
-            // excluded and counted: a silent skip would report the rows we
-            // could answer as though they were the whole table.
+            // A `fixed` box resolves against the page here and the viewport
+            // there, so whether the pair overlaps depends on an offset we
+            // cannot reproduce. Overlapping rows are compared, since stacking
+            // does not depend on it; the rest are excluded and counted.
             Err(why) if involves_fixed(row) => {
                 unreachable_geometry += 1;
                 let _ = why;
@@ -594,36 +499,10 @@ fn box_sizing_matches_chrome() {
     );
 }
 
-/// A tab-separated table, read through a header this **asserts** rather than
-/// skips.
-///
-/// The fifteen readers in `crates/*/tests` that split on tabs all skip their
-/// `#` lines and then index fields by position. That is a convention rather
-/// than a guard: a tool emitting its columns in a different order produces a
-/// table this would read as different fields entirely, and the test would stay
-/// green while measuring something else. Nothing in a positional format
-/// notices. So the last commented line names the columns, and a table whose
-/// names or order do not match `want` is a broken checkout rather than a case
-/// to skip.
-///
-/// **Two tables check their header and most do not.** `box-sizing` and
-/// `paint-order` read through this; four other readers in this same file and
-/// fifteen further files under `crates/*/tests` split on tabs and index by
-/// position with no header check at all. A reader here is not evidence about a
-/// reader there, and the count moves as tables arrive -- it was fifteen files
-/// before `chrome_text_align_direction.rs` landed.
-///
-/// **The limit, named rather than left to be discovered.** This catches a
-/// table that *declares* a different order. It cannot catch one whose header
-/// still reads `border\tpadding` while the fields behind it were swapped --
-/// the names would match and the values would be read into the wrong columns.
-/// Guarding that needs the writer and the reader to share the list, which
-/// they do not. An unnamed limit gets mistaken for coverage.
-///
-/// # Panics
-///
-/// When the header is absent, or names columns other than `want`, or a row
-/// carries a different number of fields than the header does.
+/// A tab-separated table, read through a header this asserts rather than skips,
+/// so columns emitted in another order panic here instead of being read as
+/// other fields. It cannot see fields swapped under an unchanged header. Panics
+/// on a missing or different header, or a row of the wrong width.
 fn read_columns(text: &str, want: &[&str]) -> Vec<Row> {
     let mut names: Option<Vec<&str>> = None;
     let mut rows = Vec::new();
@@ -680,37 +559,15 @@ fn read_columns(text: &str, want: &[&str]) -> Vec<Row> {
     rows
 }
 
-/// The overflow rows this renderer answers differently from Chrome today.
-///
-/// **Empty: all 240 rows agree**, the 120 measured by hand and the 120 offset
-/// rows added with the fifth letter. Kept with its history rather than deleted,
-/// because an empty list with no history is a list nobody knows the shape of.
-///
-/// It has held two sets. The first was fifty-one rows and **every one of them
-/// was this walker's own scene**: `outer` was placed by absolute insets, which
-/// is the natural way to put a box at a known point and which establishes a
-/// block formatting context, so nothing could collapse out of it while
-/// everything collapses out of Chrome's `position: relative` one. It read as
-/// fifty-one renderer defects and as a missing layout feature, and taffy had
-/// implemented that feature in full. `outer` is now an in-flow box behind a
-/// padded wrapper, and it is **found by its colour** rather than assumed to be
-/// anywhere, because an escaping margin moves it.
-///
-/// The second was ten real rows: `hidden` or `scroll` on a clipper carrying a
-/// transform, with an out-of-flow child. The transform captured the child for
-/// positioning and the **clip** did not follow, because `escapes_clip` decided
-/// by position type where the layout pass decides by
-/// `layout::is_containing_block`. One predicate now answers both, and these
-/// ten rows are what said so.
+/// The overflow rows answered differently from Chrome: empty, all 240 agree.
+/// `outer` is an in-flow box behind a padded wrapper and found by its colour,
+/// since an absolutely placed `outer` establishes a formatting context no
+/// margin can collapse out of.
 const KNOWN_OVERFLOW: &[&str] = &[];
 
-/// The page the overflow cases are drawn on, and where `outer` sits on it.
-///
-/// Chrome's probe had `outer` at 40,40 -- its body carried that much padding --
-/// and a `fixed` box resolves against the viewport there and against the page
-/// here. Putting `outer` at the same offset makes those two the same thing, so
-/// the `fixed` rows are comparable instead of being excluded: without it every
-/// number in them is off by exactly the offset, which reads as a defect.
+/// The page the overflow cases are drawn on, with `outer` at Chrome's 40,40, so
+/// a `fixed` box resolving against the viewport there and the page here lands
+/// in the same place.
 const OVERFLOW_PAGE: (f32, f32) = (280.0, 200.0);
 
 /// Where `outer` sits on that page.
@@ -724,12 +581,8 @@ const PROBES: [(f32, f32); 3] = [(60.0, 45.0), (88.0, 50.0), (60.0, 68.0)];
 const CLIPPER_INK: Color = Color::rgb(238, 238, 238);
 const CHILD_INK: Color = Color::rgb(220, 40, 40);
 
-/// `outer`'s white, and the page behind it.
-///
-/// Two colours rather than one because `outer` no longer sits at a known
-/// place: an escaping margin moves it, which is the behaviour under test, so
-/// the walker finds it by its colour and reads every coordinate against what
-/// it finds. It is also what tells Chrome's `o` from its `b`.
+/// `outer`'s white, and the page behind it: `outer` is found by its colour,
+/// since an escaping margin -- the behaviour under test -- moves it.
 const OUTER_INK: Color = Color::rgb(255, 255, 255);
 const PAGE_INK: Color = Color::rgb(247, 247, 251);
 
@@ -763,14 +616,9 @@ fn position_letter(letter: &str) -> PositionType {
     }
 }
 
-/// The offsets a row's fifth letter names, as `(top, left)`.
-///
-/// Written on the child whatever its position type is. That a `static` child
-/// **ignores** them is the property the letter was added to measure -- the
-/// `PositionType::Static` arm of `layout.rs` returns `Rect::auto()` and until
-/// this letter existed nothing in the suite could see it do so -- and
-/// withholding the offsets from the static rows would assume that answer
-/// instead of measuring it.
+/// The offsets a row's fifth letter names, as `(top, left)`, written whatever
+/// the position type: that a `static` child ignores them is what the letter
+/// measures, so withholding them would assume the answer.
 fn offsets_of(code: &str) -> Option<(f32, f32)> {
     match &code[4..5] {
         "i" => Some((6.0, 8.0)),
@@ -779,13 +627,9 @@ fn offsets_of(code: &str) -> Option<(f32, f32)> {
     }
 }
 
-/// The clipper and its child, built from a row's five letters.
-///
-/// `clip` is false for the render that measures where the child *is*: Chrome
-/// reports a layout rectangle, which a clip does not move, and reading a
-/// clipped child's pixels would report the intersection instead. Our own
-/// `overflow` moves nothing, so turning it off costs no fidelity here -- and if
-/// it ever does, the rect rows are what will say so.
+/// The clipper and its child, from a row's five letters. `clip` is false for
+/// the render that measures where the child is: Chrome reports a layout
+/// rectangle, which a clip does not move.
 fn clipper_of(
     row: &Overflow<'_>,
     clip: bool,
@@ -850,16 +694,9 @@ fn clipper_of(
         clipper = clipper.transform(Transform::default());
     }
 
-    // `outer` is **in flow and relative**, as Chrome's was, and the offset
-    // comes from padding on a wrapper rather than from insets on `outer`
-    // itself.
-    //
-    // That distinction is the whole scene. An absolutely positioned box
-    // establishes a block formatting context, which is one of the four things
-    // that stop margin collapsing -- so an `outer` placed by insets cannot let
-    // a child's margin escape through it, and every in-flow row comes out
-    // twenty pixels low. Padding on the wrapper stops the margin escaping any
-    // further, which is exactly what the body's padding did in the browser.
+    // `outer` is in flow and relative, as Chrome's was, offset by padding on a
+    // wrapper: an `outer` placed by insets establishes a formatting context, so
+    // no margin escapes it and every in-flow row comes out twenty pixels low.
     let outer = Box::new()
         .size(px(200.0), px(120.0))
         .position_type(PositionType::Relative)
@@ -873,14 +710,9 @@ fn clipper_of(
         .children(outer)
 }
 
-/// The child's rectangle, minus `outer`'s, as it is actually drawn.
-///
-/// Measured with the clip **honoured**. An earlier version forced `overflow`
-/// to `Visible` here so the child's whole box would show, and that quietly
-/// removed the block formatting context the property establishes -- so every
-/// `hidden` row came back with a margin collapsed that Chrome had blocked.
-/// The clip cannot be turned off in order to measure what it clips, which is
-/// why only the `visible` rows compare a rectangle at all.
+/// The child's rectangle minus `outer`'s, as drawn, with the clip honoured:
+/// turning `overflow` off to see the whole box also removes the formatting
+/// context it establishes.
 fn rect_of(row: &Overflow<'_>) -> Option<[f32; 4]> {
     let page =
         render_on(OVERFLOW_PAGE, clipper_of(row, true, true, true), PAGE_INK);
@@ -963,15 +795,9 @@ fn overflow_rows(text: &str) -> Vec<Overflow<'_>> {
         .collect()
 }
 
-/// Whether the table can tell a `relative` child from a `static` one.
-///
-/// **For 120 rows it could not.** An in-flow child was placed by margins and
-/// never given an inset, and `position: relative` with no offsets *is*
-/// `position: static`, so a renderer that ignored `relative` entirely passed
-/// every row. The fifth letter is what fixed that, and this asks the property
-/// rather than the row count -- delete every offset row for tidiness and the
-/// caller fails by name instead of the suite going quietly back to passing for
-/// the wrong reason.
+/// Whether the table can tell `relative` from `static`: with no offsets they
+/// are the same, so a renderer ignoring `relative` passed every row until the
+/// fifth letter. This asks the property rather than the row count.
 fn separates_relative_from_static(rows: &[Overflow<'_>]) -> bool {
     rows.iter().any(|row| {
         &row.code[2..3] == "S"
@@ -1023,13 +849,9 @@ fn overflow_against_position_matches_chrome() {
     let mut uncomparable = 0_usize;
 
     for row in &rows {
-        // A `fixed` **child** is placed against the viewport there and the page
-        // here, and Chrome measured every case where the flow happened to put
-        // it -- so its rectangle minus `outer`'s carries an offset that varies
-        // per row and cannot be reproduced. Two rows prove it: `vFSn` is only
-        // consistent with `outer` at y=40 and `vSFn` only with y=60, because
-        // the collapsing margin in the second case moved `outer` itself.
-        // Excluded and counted rather than compared.
+        // A `fixed` child is placed against the viewport there and the page
+        // here, at an offset that varies per row: `vFSn` fits `outer` at y=40
+        // and `vSFn` only at y=60. Excluded and counted.
         let Some(ours) = rect_of(row) else {
             // A child with no pixels on the page: either it is off it entirely,
             // or the clip left nothing of it. Chrome reports a rectangle for
@@ -1038,15 +860,10 @@ fn overflow_against_position_matches_chrome() {
             continue;
         };
 
-        // The rectangle is compared on the `visible` rows only. There the
-        // painted box **is** the layout box, so the two numbers are the same
-        // quantity. Where a clip is on they are not: Chrome reports the layout
-        // rectangle and we can only see what survived the clip, and working
-        // out what *should* have survived means implementing the rule under
-        // test -- `overflow` does not clip a descendant whose containing block
-        // is an ancestor of the clipper, which is half of what these rows are
-        // about. Those rows are answered by the probes, which Chrome measured
-        // directly and which are the observable fact either way.
+        // Rectangles are compared on `visible` rows only, where the painted box
+        // is the layout box. Under a clip, knowing what should survive means
+        // implementing the rule under test; those rows are answered by the
+        // probes.
         if &row.code[0..1] == "v" {
             let apart = ours
                 .iter()
@@ -1079,11 +896,8 @@ fn overflow_against_position_matches_chrome() {
                 row.code, row.probes
             ));
         }
-        // A pinned row that has started agreeing says so, which is the half
-        // this walker was missing: `KNOWN_OVERFLOW` suppressed a failure and
-        // could not report a fix, so ten rows were silently correct for an
-        // hour and only a hand-emptied list found out. A pinned list that
-        // cannot tell you it is stale is a list that only grows.
+        // A pinned row that has started agreeing says so: a list that
+        // suppresses failures but cannot report a fix only ever grows.
         if seen == row.probes && known {
             painted.push(stale(row.code));
         }
@@ -1098,17 +912,9 @@ fn overflow_against_position_matches_chrome() {
         off_the_page,
         KNOWN_OVERFLOW.len()
     );
-    // **Every row has to have been compared.** Each of the three ways out of
-    // the loop above is a `continue`, and a row that leaves that way is
-    // reported in the summary and in nothing else -- so a renderer drawing
-    // *nothing* takes all 240 of them and the walker passes. Measured, not
-    // supposed: setting the child to `Display::None` gives `240 rows, 240
-    // placed off the page` and a green test. That is a check that cannot fail,
-    // and it was found by a control written for an unrelated survey.
-    //
-    // The three numbers are exact today, so pinning them costs nothing: a row
-    // that starts being skipped is either a renderer that stopped drawing or a
-    // scene that stopped being comparable, and both want a person.
+    // Every row has to have been compared: each way out of the loop is a
+    // `continue`, so a renderer drawing nothing would skip all 240 and pass.
+    // The three counts are exact, so pinning them costs nothing.
     assert_eq!(
         compared,
         rows.len(),
@@ -1133,29 +939,10 @@ fn overflow_against_position_matches_chrome() {
     );
 }
 
-/// The truncation rows this renderer answers differently from Chrome today.
-///
-/// Keyed by the string Chrome keeps, which is the answer under test.
-///
-/// **Empty, and it held two rows that were two different defects.**
-///
-/// `Antidisestabli…` was a word with no break opportunity in it: Chrome cuts
-/// mid-word rather than overflow and we drew the whole word, 171 pixels of ink
-/// in a box 90 wide. The character-level refill was ported and correct; what
-/// was missing was **when it ran**. Truncation fired on the line count, and a
-/// word placed whole however wide it is never overflows a count. `lines.rs`
-/// now triggers on the width as well: once `max_lines` has had its say, a
-/// marked line still wider than its box is rebuilt.
-///
-/// `Flower of …` was one **space**. v1 pops trailing whitespace before the
-/// marker so it is not pushed away from the text it belongs to; Chrome keeps
-/// the longest prefix that fits and a space is part of the string. It survives
-/// only while it fits, which is the same rule and not a second one -- the line
-/// is measured with the marker on it, so the 22px row in 90 keeps its space at
-/// 89.98 wide and the 16px row in 60 does not.
-///
-/// A width comparison would have called the second a rounding argument. It is
-/// a content difference, which is why this table is measured as a string.
+/// The truncation rows answered differently from Chrome, keyed by the string
+/// Chrome keeps: empty. Truncation fires on width as well as line count, so an
+/// unbreakable word is cut mid-word, and a trailing space survives only while
+/// it fits with the marker on.
 const KNOWN_ELLIPSIS: &[&str] = &[];
 
 /// The font every ellipsis case is measured in, and the file behind it.
@@ -1164,13 +951,9 @@ const ELLIPSIS_FONT: (&str, &str) = (
     "../meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf",
 );
 
-/// How wide the ink of one line is, in whole pixels, or `None` if there is
-/// none.
-///
-/// The comparison this feeds is **structural**: Chrome's rasteriser is not
-/// ours, so what is compared is which glyphs were drawn rather than which
-/// pixels. A line truncated by a word boundary and one truncated by character
-/// differ by a whole word, which is far outside any antialiasing margin.
+/// How wide the ink of one line is, in whole pixels, or `None`. The comparison
+/// is structural -- which glyphs were drawn -- since a word boundary and a
+/// character cut differ by a whole word, far beyond antialiasing.
 fn ink_width(text: &str, size: f32, width: Option<f32>) -> Option<f32> {
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
@@ -1284,13 +1067,9 @@ fn what_a_truncated_line_keeps_matches_chrome() {
     eprintln!("ellipsis: {compared} rows compared against Chrome");
 }
 
-/// The three children every flex case lays out, and the colour each is drawn
-/// in.
-///
-/// Sized by a **spacer inside them** rather than by a height of their own,
-/// which is what gives `Align::Stretch` something to change: an item with its
-/// own height stretches to the height it already had, and a matrix built that
-/// way reports one of its five alignments as a duplicate of another.
+/// The three children every flex case lays out, and their colours. Sized by a
+/// spacer inside rather than a height of their own, or `Align::Stretch` has
+/// nothing to change.
 const FLEX_CHILDREN: [(f32, f32, Color); 3] = [
     (24.0, 20.0, Color::rgb(220, 40, 40)),
     (30.0, 32.0, Color::rgb(40, 80, 220)),
@@ -1300,20 +1079,10 @@ const FLEX_CHILDREN: [(f32, f32, Color); 3] = [
 /// The container every flex case is laid out in.
 const FLEX_BOX: (f32, f32) = (160.0, 80.0);
 
-/// The rows we answer differently from Chrome today.
-///
-/// **Empty: all thirty cases agree**, baseline included — and that last part
-/// is worth reading carefully rather than as good news.
-///
-/// **The `baseline` rows here cannot fail on a baseline.** These children are
-/// boxes with no text in them, and a box's baseline *is* its bottom margin
-/// edge — in Chrome as much as here — so `baseline` and `flex-end` ask this
-/// matrix the same question and get one answer. The rows agreeing says our
-/// flex alignment is right; it says nothing about baselines, and a reader who
-/// took thirty green rows as covering `Align::Baseline` would be wrong.
-///
-/// The case that does discriminate is `fixtures/baseline-alignment`, where a
-/// measured text leaf reports a baseline of its own.
+/// The flex rows answered differently from Chrome: empty. The `baseline` rows
+/// cannot fail on a baseline -- a textless box's baseline is its bottom edge,
+/// so they ask what `flex-end` asks. `fixtures/baseline-alignment` is the case
+/// that discriminates.
 const KNOWN_FLEX: &[&str] = &[];
 
 /// The `Justify` a table's name asks for.
@@ -1339,12 +1108,9 @@ fn align_of(name: &str) -> meo_canvas::Align {
     }
 }
 
-/// Each child's rectangle, relative to the container, as we lay them out.
-///
-/// Read from the pixels because that is the currency both sides can be asked
-/// in: Chrome reports a layout rectangle and we have no such API, but a child
-/// drawn in a colour of its own has a bounding box, and the two are the same
-/// number when the layout agrees.
+/// Each child's rectangle relative to the container, read from pixels: a child
+/// drawn in its own colour has a bounding box, which equals Chrome's layout
+/// rectangle when the layout agrees.
 fn flex_rects(justify: &str, align: &str) -> Vec<[f32; 4]> {
     let children: Vec<Element> = FLEX_CHILDREN
         .iter()
@@ -1462,11 +1228,9 @@ fn flex_alignment_matches_chrome() {
     );
 }
 
-/// The six children the wrapping cases lay out, each in a colour of its own.
-///
-/// Six colours rather than the matrix's three repeated: a child is located by
-/// its ink, and two children sharing a colour would report one bounding box
-/// covering both. The widths and contents are the matrix's three, twice.
+/// The six children the wrapping cases lay out, each in its own colour: a child
+/// is located by its ink, and two sharing a colour would report one box
+/// covering both.
 const FLEX_SIX: [(f32, f32, Color); 6] = [
     (24.0, 20.0, Color::rgb(220, 40, 40)),
     (30.0, 32.0, Color::rgb(40, 80, 220)),
@@ -1479,43 +1243,18 @@ const FLEX_SIX: [(f32, f32, Color); 6] = [
 /// The box the wrapping cases use: narrow enough that six children cannot fit.
 const FLEX_WRAP_BOX: (f32, f32) = (88.0, 56.0);
 
-/// The page that box is drawn on.
-///
-/// **Taller than the box**, because a wrapped line can fall outside its
-/// container: Chrome puts `wrap`'s second line at `y = 44` in a box 56 tall
-/// and `wrap-reverse`'s at `y = -32`, so both overflow. Measured on a page the
-/// size of the box, the overflowing halves are not there to find and read as
-/// children we failed to place -- which is what this walker reported before
-/// the page grew.
+/// The page that box is drawn on, taller than the box: Chrome puts `wrap`'s
+/// second line at y=44 in a box 56 tall and `wrap-reverse`'s at y=-32, and a
+/// line off the page reads as a child never placed.
 const FLEX_WRAP_PAGE: (f32, f32) = (88.0, 200.0);
 
 /// Where the container sits on that page, so a line above it is still drawn.
 const FLEX_WRAP_AT: f32 = 72.0;
 
-/// Which wrapping cases we answer differently from Chrome today.
-///
-/// **One, and it is where the two lines sit rather than whether they exist.**
-/// `wrap` agrees exactly: line one at `y = 0` and line two at `y = 44`, both
-/// 44 tall in a box 56 tall, so the second overflows in Chrome and here alike.
-/// `wrap-reverse` reverses the stack in both, and the two disagree about where
-/// the pair is placed: Chrome puts it at `y = -32` and `y = 12`, bottom-
-/// aligned so the *last* line ends at the box's bottom edge; we put it at
-/// `y = 44` and `y = 0`, which is the same reversal packed from the top.
-/// Thirty-two pixels, one property -- how a reversed line stack is aligned in
-/// a container taller than it.
-///
-/// **This list held both cases an hour ago and the first was my measurement.**
-/// The page was the size of the box, so a line at `y = 44` in a box 56 tall
-/// had 12 of its 44 rows on the page and the other 32 nowhere -- and a child
-/// two thirds missing reads as a child that was never placed. The page is
-/// taller than the box now and the container is offset down it, so a line
-/// above the box is drawn rather than lost.
-/// **Empty, and it held `wrap-reverse` until the alignment was fixed.** taffy
-/// applies css-align-3's *safe* fallback when a distributed alignment
-/// overflows, which throws the reversal away at exactly the moment it would
-/// push content out of the box; Chrome keeps it. `layout.rs` shifts the stack
-/// after the solve, in `bottom_align_reversed_wraps`, and all three cases now
-/// agree.
+/// The wrapping cases answered differently from Chrome: empty. taffy's safe
+/// fallback for an overflowing distributed alignment throws the reversal away,
+/// where Chrome keeps it; `bottom_align_reversed_wraps` in `layout.rs` shifts
+/// the stack after the solve.
 const KNOWN_WRAP: &[&str] = &[];
 
 /// Each child's rectangle when six of them are wrapped in a narrow box.
@@ -1631,24 +1370,15 @@ fn flex_wrapping_matches_chrome() {
 /// The grid every placement case is laid out in: three columns, three rows.
 const GRID: (f32, f32) = (120.0, 90.0);
 
-/// The page it sits on, and where.
-///
-/// **Bigger than the grid, and offset into it**, for the reason the flex
-/// wrapping page is: an item the auto-placement algorithm pushes outside the
-/// explicit tracks is still drawn, and a page the size of the grid would lose
-/// it and report a placement failure that is really a measurement failure.
-/// Chrome puts `column` flow's fifth item at `x = 120`, one whole grid width
-/// to the right of the container.
+/// The page the grid sits on, larger than the grid and offset into it: an item
+/// placed outside the explicit tracks is still drawn -- Chrome puts `column`
+/// flow's fifth item at x=120 -- and must be on the page to be found.
 const GRID_PAGE: (f32, f32) = (240.0, 200.0);
 
 /// Where the grid sits on that page.
 const GRID_AT: f32 = 40.0;
 
-/// The six items, each in a colour of its own.
-///
-/// A colour each rather than a shared one, for the reason the wrapping cases
-/// have six: an item is located by its ink, and two items sharing a colour
-/// report one bounding box covering both.
+/// The six items, each in its own colour, so no two report one bounding box.
 const GRID_INK: [Color; 6] = [
     Color::rgb(220, 40, 40),
     Color::rgb(40, 80, 220),
@@ -1661,13 +1391,10 @@ const GRID_INK: [Color; 6] = [
 /// Which flows we place differently from Chrome today.
 const KNOWN_GRID: &[&str] = &[];
 
-/// Where each item lands, for one auto-placement flow.
-///
-/// The second item spans all three columns and the fifth spans two rows,
-/// which is the whole point of the table: uniform single-cell items are placed
-/// identically by all four flows, so a grid without a spanning item reports
-/// `dense` and its plain counterpart as the same keyword. `dense` exists only
-/// to go back for a hole, and an item that spans is what leaves one.
+/// Where each item lands for one auto-placement flow. The second item spans
+/// three columns and the fifth two rows, since uniform single cells place
+/// identically under all four flows and `dense` would read as its plain
+/// counterpart.
 fn grid_rects(flow: GridAutoFlow) -> Vec<Option<[f32; 4]>> {
     let children: Vec<Element> = GRID_INK
         .iter()
@@ -1767,12 +1494,9 @@ fn grid_placement_matches_chrome() {
         for (index, theirs) in theirs.iter().enumerate() {
             let empty = theirs[2] == 0.0 || theirs[3] == 0.0;
             match (ours.get(index).copied().flatten(), empty) {
-                // Chrome placed it in an implicit track of zero size. A
-                // rectangle with no area paints nothing, so **where** it went
-                // is not a question a pixel can answer -- but *that* it went
-                // nowhere is, and that is what this arm checks. Named and
-                // counted rather than skipped, because a silent skip turns a
-                // conformance table into a self-portrait.
+                // Chrome placed it in a zero-size implicit track, which paints
+                // nothing: where it went is not a pixel question, but that it
+                // went nowhere is, and that is what this arm counts.
                 (None, true) => unobservable += 1,
                 (Some(ours), true) => {
                     apart = true;

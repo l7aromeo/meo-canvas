@@ -1,44 +1,7 @@
-//! Every chart option, swept across every kind, compared as bytes with the
-//! TypeScript surface.
-//!
-//! # What this asks that `chart_agreement.rs` does not
-//!
-//! That file asks whether the two implementations agree about six charts. This
-//! one asks whether they agree about a *combination* -- an option paired with a
-//! kind, or with a shape of data, that no single pinned chart happens to carry.
-//!
-//! **Field coverage is not combination coverage**, and the gap is not
-//! hypothetical. `font_family` is set on one pinned case, a bar chart, and the
-//! bar chart is the kind that routes it correctly; a pie's slice label built
-//! its own style and dropped the family, and every pinned pie case passed
-//! because none of them set one. The second defect had the same shape: the
-//! pinned values are whole on purpose, and whole numbers are the one class for
-//! which rounding to two decimals and not rounding at all give the same string.
-//!
-//! So a suite can reach twenty of twenty fields, stay green, and say nothing
-//! about either. What closes that is varying one thing at a time against every
-//! kind, which is what [`cases`] does.
-//!
-//! # What is compared, and why it is not the bytes
-//!
-//! The bytes of every case run to about two megabytes, against roughly a
-//! hundred and fifty kilobytes for every other committed chart asset together.
-//! Each row of `assets/chart/differential-digests.txt` carries a hash and a
-//! **byte length**: a bare hash mismatch tells a reader nothing, and a length
-//! does -- both defects above were diagnosed from the four- and five-byte
-//! difference a dropped string leaves.
-//!
-//! The asset is written by `chart.differential.test.ts` and only by it. `ci`
-//! runs the Rust tests first, so a Rust test that wrote it would leave that
-//! side comparing against the previous run's output.
-//!
-//! # Why the two sides build their own cases
-//!
-//! A single case list read by both would make them agree by construction about
-//! *what* to build, which is the part worth testing. Each side constructs the
-//! table itself; the hashes hold them to the same chart, and
-//! [`the_asset_names_exactly_the_cases_this_file_builds`] refuses a case that
-//! exists on one side only.
+//! Every chart option, swept across every kind, compared with the TypeScript
+//! surface: a field set on one pinned chart says nothing about the kinds that
+//! route it differently. Each row of `differential-digests.txt` is a hash and a
+//! byte length, written by `chart.differential.test.ts` alone.
 
 use std::collections::BTreeMap;
 
@@ -66,14 +29,9 @@ const COLUMNS: &str = "# case\tdigest\tbytes";
 /// What a row carries where a chart refused to build.
 const REFUSED: &str = "refused";
 
-/// FNV-1a, 32-bit.
-///
-/// The offset basis and the prime are the values the FNV specification names
-/// (Fowler/Noll/Vo, as published in `draft-eastlake-fnv`). A hash rather than
-/// anything stronger because the other surface computes the same function from
-/// the same two constants, and this crate's dev-dependencies carry none;
-/// thirty-two bits is enough because a row passes only if its bytes hash equal
-/// *and* are the same length, over a fixed committed set.
+/// FNV-1a, 32-bit, with the specification's offset basis and prime, since the
+/// other surface computes the same function from the same constants. A row
+/// passes only if hash and length both match, over a fixed set.
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
 /// The multiplier of the same specification.
 const FNV_PRIME: u32 = 0x0100_0193;
@@ -411,12 +369,9 @@ fn push_data_cases(out: &mut Vec<Case>) {
 }
 
 /// A label spelled exactly like the node this file slices from, so the mark
-/// appears three times in the bytes instead of once.
-///
-/// The mark does two jobs -- it locates the comparison and it is part of what
-/// is compared -- and the collision itself is measured by
-/// [`a_label_spelling_the_mark_does_not_move_the_slice`]. What these cases add
-/// is the encoding of the repeated string, compared across the two surfaces.
+/// appears three times in the bytes;
+/// [`a_label_spelling_the_mark_does_not_move_the_slice`] measures the collision
+/// itself.
 fn push_mark_collision_cases(out: &mut Vec<Case>) {
     for kind in CARTESIAN_KINDS {
         push(
@@ -512,11 +467,8 @@ fn push_slice_cases(out: &mut Vec<Case>) {
     }
 }
 
-/// A colour no CSS syntax spells.
-///
-/// Both surfaces refuse it rather than drawing a default, and the two rows that
-/// build are the shape of the claim: a pie has no grid, so an unreadable grid
-/// colour is an option nothing consumes rather than a value something refuses.
+/// A colour no CSS syntax spells, which both surfaces refuse. A pie has no
+/// grid, so an unreadable grid colour there is an option nothing consumes.
 fn push_unreadable_colour_cases(out: &mut Vec<Case>) {
     for kind in CARTESIAN_KINDS {
         push(
@@ -744,12 +696,8 @@ fn push_combination_cases(out: &mut Vec<Case>) {
     }
 }
 
-/// What a case produced.
-///
-/// **A missing mark is a divergence, not a crash.** The node's name is part of
-/// what is encoded, so two surfaces can disagree about it as readily as about
-/// a byte -- and a harness that treated an absent mark as impossible would
-/// report that disagreement as its own defect.
+/// What a case produced. A missing mark is a divergence, not a crash: the
+/// node's name is encoded, so two surfaces can disagree about it.
 enum Encoded {
     /// The chart refused to build.
     Refused,
@@ -759,12 +707,8 @@ enum Encoded {
     Bytes(Vec<u8>),
 }
 
-/// One chart's bytes from its own node on.
-///
-/// The page frame is not part of the comparison: `Root::new` here and a page
-/// root handed to `encodeScene` there are different framings with different
-/// default styles, and their disagreement is about the harness rather than
-/// either chart.
+/// One chart's bytes from its own node on: the page frames of `Root::new` and
+/// `encodeScene` differ, and that is the harness rather than the chart.
 fn encoded(case: &Case) -> Encoded {
     let built = match (&case.data, case.kind) {
         (Data::Cartesian(labels, datasets), Kind::Bar) => {
@@ -859,12 +803,8 @@ fn the_asset_names_exactly_the_cases_this_file_builds() {
     assert_eq!(mine.len(), rows.len(), "this file builds a case twice");
 }
 
-/// Every case, and **every** divergence rather than the first.
-///
-/// A run that stopped at the first mismatch would report one case where a
-/// change had moved twenty, and a reader cannot tell a truncated list from a
-/// narrow break -- which is the same reason `just test` passes
-/// `--no-fail-fast`.
+/// Every case, and every divergence rather than the first: a truncated list
+/// cannot be told from a narrow break.
 #[test]
 fn every_case_encodes_to_the_bytes_the_other_surface_wrote() {
     let rows = committed();
@@ -917,12 +857,9 @@ fn every_case_encodes_to_the_bytes_the_other_surface_wrote() {
     );
 }
 
-/// The comparison has to be able to fail.
-///
-/// A hash compared against a constant passes for a scene that encoded nothing,
-/// and a row read from the wrong column passes for everything. Each of these is
-/// a real chart one option away from a committed one, and none may match the
-/// row it is named after.
+/// The comparison has to be able to fail: each of these is a real chart one
+/// option away from a committed one, and none may match the row it is named
+/// after.
 #[test]
 fn a_chart_one_option_away_from_a_committed_one_does_not_match_it() {
     let rows = committed();
@@ -984,13 +921,6 @@ fn a_chart_one_option_away_from_a_committed_one_does_not_match_it() {
     }
 }
 
-/// Which options a kind can see, stated rather than assumed.
-///
-/// A case that varies an option the kind ignores agrees for free and reads as
-/// coverage it is not. This pins both directions: an option that stops being
-/// observable fails here, and so does one that starts. The inert entries are
-/// not gaps -- a line chart draws no per-datum value and a pie has no y axis --
-/// and naming them is what stops the list being read as one.
 /// One option, how to vary it, and the kinds that cannot see it.
 struct Variation {
     option: &'static str,
@@ -1140,13 +1070,9 @@ fn variations() -> Vec<Variation> {
     ]
 }
 
-/// Which options a kind can see, stated rather than assumed.
-///
-/// A case that varies an option the kind ignores agrees for free and reads as
-/// coverage it is not. This pins both directions: an option that stops being
-/// observable fails here, and so does one that starts. The inert entries are
-/// not gaps -- a line chart draws no per-datum value and a pie has no y axis --
-/// and naming them is what stops the list being read as one.
+/// Which options a kind can see, stated rather than assumed, in both
+/// directions: an option that stops or starts being observable fails here.
+/// Inert entries are not gaps -- a line chart draws no per-datum value.
 #[test]
 fn every_option_this_file_varies_can_be_seen_in_the_bytes() {
     for kind in EVERY_KIND {
@@ -1177,11 +1103,8 @@ fn every_option_this_file_varies_can_be_seen_in_the_bytes() {
     }
 }
 
-/// An axis colour is reachable only with `y_axis_color` unset.
-///
-/// Which is why a sweep that switches every option on at once reports it inert
-/// on every kind: the fallback is masked by the option that overrides it, and
-/// a table built from that sweep would record a live option as dead.
+/// An axis colour is reachable only with `y_axis_color` unset, so a sweep
+/// switching every option on reports it inert on every kind.
 #[test]
 fn an_axis_colour_is_reachable_only_through_the_fallback() {
     for kind in EVERY_KIND {
@@ -1244,17 +1167,9 @@ fn bytes_of(kind: Kind, options: Options) -> Vec<u8> {
     }
 }
 
-/// The unreadable colour is what makes those cases refuse.
-///
-/// Both surfaces refusing is the assertion, and two surfaces refusing for an
-/// unrelated reason would satisfy it just as well -- a harness that had stopped
-/// producing charts at all would pass every refusal row. So each refusing shape
-/// is built again with a colour that reads, and must encode.
-///
-/// What is asserted is **that** a chart refuses and never which role the
-/// message names. The role that reports first is an order of execution rather
-/// than a contract, and a test reading it would redden the day somebody
-/// reorders a function for an unrelated reason.
+/// The unreadable colour is what makes those cases refuse: each refusing shape
+/// is rebuilt with a readable colour and must encode. Which role the message
+/// names is order of execution, not contract, and is not asserted.
 #[test]
 fn an_unreadable_colour_is_what_makes_a_chart_refuse() {
     /// The shapes an unreadable colour can reach, and whether each refuses.
@@ -1332,15 +1247,9 @@ fn an_unreadable_colour_is_what_makes_a_chart_refuse() {
     }
 }
 
-/// A label that spells the mark does not move where the slice begins.
-///
-/// The mark does two jobs: it locates the comparison and it is part of what is
-/// compared. A label is user text and can carry it, so the question is whether
-/// the first occurrence is still the chart's own node. It is -- the node's name
-/// is encoded before its subtree's strings -- and this measures that rather
-/// than assuming it: the same chart with a label of the same byte length that
-/// does not spell the mark must slice to the same number of bytes. A slice that
-/// began at the label would be shorter.
+/// A label spelling the mark does not move where the slice begins: the node's
+/// name is encoded before its subtree's strings, so the same chart with an
+/// equal-length label must slice to the same length.
 #[test]
 fn a_label_spelling_the_mark_does_not_move_the_slice() {
     for kind in EVERY_KIND {
@@ -1386,12 +1295,9 @@ fn a_label_spelling_the_mark_does_not_move_the_slice() {
     }
 }
 
-/// The framing here is the framing the pinned assets were written with.
-///
-/// Everything above compares against an asset the other surface generates from
-/// the same framing, so a change to the page wrapper or to where the slice
-/// begins would move both sides together and pass. This is the same bar chart
-/// `chart_agreement.rs` pins, checked against the bytes *that* file committed.
+/// The framing here is the one the pinned assets were written with: the same
+/// bar chart `chart_agreement.rs` pins, checked against the bytes that file
+/// committed.
 #[test]
 fn the_framing_agrees_with_the_pinned_bar_asset() {
     let theirs = PINNED_BAR.trim();

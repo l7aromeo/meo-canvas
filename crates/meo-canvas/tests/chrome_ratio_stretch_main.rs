@@ -1,31 +1,7 @@
-//! Whether a stretched flex item derives its main size from its aspect ratio.
-//!
-//! `l7aromeo/meo-canvas#147`: a column container with a definite cross size,
-//! holding one item at `flex-grow: 1; aspect-ratio: 1`. The item's cross size
-//! comes from `stretch`, which makes it definite, and CSS transfers a definite
-//! cross size through the ratio into the item's **automatic minimum** on the
-//! main axis. That floors the main size at `424` where the line offers `248`,
-//! so the item overflows its own line -- and three engines do exactly that.
-//!
-//! **Three engines rather than one.** Blink and `WebKit` share an ancestor
-//! and Gecko shares none, so a row all three give is a reading of CSS rather
-//! than of a codebase. The table carries one row per engine and this walker
-//! compares against Chromium's, because
-//! [`the_engines_agree_except_where_the_table_says_so`] has already refused
-//! any row the three split on in a way [`WEBKIT_ALONE`] does not describe.
-//!
-//! **Solved rectangles rather than ink**, for the reason
-//! `chrome_flex_ratio_cross.rs` gives: an item with no content paints nothing
-//! whatever it was sized to, so an ink scan would measure the absence.
-//!
-//! **Construction: every row here is hand-assembled**, so the item is
-//! `Display::Block` -- which is what a browser's `<div>` is, and what the
-//! measured page used.
-//!
-//! Compensated in `layout.rs` by `stretched_ratio_minimum`; the
-//! `align-items: stretch` row of `a_grown_main_size_never_reaches_the_ratio`
-//! in `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` pins what taffy does
-//! on its own.
+//! Whether a stretched flex item derives its main size from its ratio
+//! (`l7aromeo/meo-canvas#147`): its definite cross size transfers into the
+//! automatic minimum, flooring the main size at `424` where the line offers
+//! `248`. Three engines measured; `stretched_ratio_minimum` compensates.
 
 use meo_canvas_core::{Available, Measure, MeasuredLeaf, layout::solve};
 use meo_canvas_scene::{
@@ -54,42 +30,18 @@ impl Measure for NoLeaves {
 
 const TABLE: &str = include_str!("assets/chrome/ratio-stretch-main.tsv");
 
-/// The engine this renderer is compared against.
-///
-/// **Chromium rather than a vote**, because a majority would hide the thing
-/// the three-engine measurement is for: where they differ, the row is a
-/// finding rather than a target, and it is named in [`WEBKIT_ALONE`] with the
-/// sentence that settles it, instead of being averaged away.
+/// The engine this renderer is compared against: Chromium rather than a vote,
+/// so where engines differ the row is named in [`WEBKIT_ALONE`] instead of
+/// averaged away.
 const REFERENCE: &str = "chromium";
 
 /// The engine that reads one family of rows differently from the other two.
 const OUTLIER: &str = "webkit";
 
-/// The rows [`OUTLIER`] alone reads differently, and what settles them.
-///
-/// **`WebKit` feeds a clamped main size back through the ratio and the other
-/// two do not.** With `max-height` on the item -- as a percentage or as a
-/// length, which is the part that says it is not about percentages --
-/// Chromium and Firefox clamp the main axis and leave the stretched cross
-/// size alone, giving `424x248`; `WebKit` takes the clamped `248` back
-/// through the ratio and gives `248x248`.
-///
-/// **Two against one is not what decides it; the specification is.** §4.5
-/// ends the content-based minimum with "the size is clamped by the maximum
-/// main size if it's definite" -- a clamp of the *minimum*, and neither §4.5
-/// nor §9.8 sends a clamped main size back across the ratio to the cross
-/// axis. So these rows are compared against [`REFERENCE`] like every other
-/// row here, `stretched_ratio_minimum`'s own ceiling is what answers them,
-/// and [`OUTLIER`] is recorded as the outlier rather than excused from being
-/// one.
-///
-/// **`max-height` is still not the escape to recommend, for a different
-/// reason than it was.** Not because the answer is unsettled, but because a
-/// caller who writes it gets one box here, in Chromium and in Firefox, and a
-/// different one in Safari -- which is a portability cost rather than an open
-/// question. Both spellings are named because measuring only the percentage
-/// would have read as a percentage-resolution difference, which engines do
-/// differ about, and the length row is what rules that reading out.
+/// The rows [`OUTLIER`] alone reads differently: with `max-height`, `WebKit`
+/// feeds the clamped main size back through the ratio, `248x248` against
+/// `424x248`. §4.5 clamps only the minimum, so these compare against
+/// [`REFERENCE`] like the rest.
 const WEBKIT_ALONE: &[&str] =
     &["escape max-height 100%", "escape max-height 248px"];
 
@@ -275,11 +227,8 @@ fn item_of(case: Case) -> Node {
     item
 }
 
-/// The item under test, its content, and the sibling that shares its line.
-///
-/// **Split from [`solved`] along what a row varies**, the way [`container_of`]
-/// and [`item_of`] already are: a row varies the container, the item, or what
-/// is inside it.
+/// The item under test, its content, and the sibling sharing its line, split
+/// from [`solved`] along what a row varies.
 fn push_item(scene: &mut Scene, parent: NodeId, case: Case) -> NodeId {
     let item = scene
         .push(parent, item_of(case))
@@ -371,18 +320,9 @@ fn reported_rows() -> Vec<(&'static str, Case)> {
     ]
 }
 
-/// What a caller writes to keep the result this renderer gave before.
-///
-/// **`min-height: 0` is the one to recommend**, and it is CSS rather than a
-/// workaround: the floor is the item's *automatic* minimum, so naming any
-/// definite minimum replaces it. `height: 100%` works for a different reason
-/// -- a definite main size leaves nothing to derive -- and `overflow: hidden`
-/// for a third, since a scroll container has no automatic minimum at all.
-///
-/// **`max-height` is on this list and is the one not to recommend**, which is
-/// a different sentence from the other four: it gives the same box here as in
-/// Chromium and Firefox, and a smaller one in Safari. [`WEBKIT_ALONE`] has
-/// the split and the sentence of §4.5 that decides it.
+/// What a caller writes to keep the earlier result: `min-height: 0` replaces
+/// the automatic minimum; `height: 100%` and `overflow: hidden` also work.
+/// `max-height` works here but not in Safari -- see [`WEBKIT_ALONE`].
 fn escape_rows() -> Vec<(&'static str, Case)> {
     vec![
         (
@@ -493,14 +433,8 @@ fn item_rows() -> Vec<(&'static str, Case)> {
     ]
 }
 
-/// The bounds on the stretched axis, and what the container does.
-///
-/// **The three `max-width` and `min-width` rows are the adjacent family**, the
-/// one `flex-ratio-cross.tsv` carries as `max-width binds`. A bound cross size
-/// is still definite, so it still transfers -- §4.5 says the transferred size
-/// suggestion is the cross size "clamped by its minimum and maximum cross
-/// sizes if they are definite" -- and the minimum it produces is then under
-/// the line's own answer rather than over it, which is why these rows sit at
+/// The bounds on the stretched axis, and the container: a bound cross size is
+/// still definite and still transfers, clamped by §4.5, so these rows sit at
 /// `248` where the unbound ones sit at `424`.
 fn container_and_bound_rows() -> Vec<(&'static str, Case)> {
     vec![
@@ -556,17 +490,9 @@ fn container_and_bound_rows() -> Vec<(&'static str, Case)> {
     ]
 }
 
-/// **The engines are checked against each other before this renderer is
-/// checked against any of them.**
-///
-/// Three refusals rather than the two an exclusion list needs, because
-/// [`WEBKIT_ALONE`] claims something narrower than "these rows are
-/// unsettled": it claims [`OUTLIER`] differs *and the rest agree*. So a row
-/// nothing names where any engine disagrees is refused; a named row where the
-/// engines other than [`OUTLIER`] stop agreeing with each other is refused,
-/// since the list would then be describing a split it does not describe; and
-/// a named row [`OUTLIER`] has come to agree with is reported as stale, so
-/// the naming does not outlive its reason.
+/// The engines are checked against each other first: a row nothing names where
+/// any engine disagrees is refused, as is a named row where the other two stop
+/// agreeing, and a named row [`OUTLIER`] now agrees with is stale.
 #[test]
 fn the_engines_agree_except_where_the_table_says_so() {
     let all = engines();
@@ -646,14 +572,9 @@ fn approximately(left: (f32, f32), right: (f32, f32)) -> bool {
     (left.0 - right.0).abs() <= SLACK && (left.1 - right.1).abs() <= SLACK
 }
 
-/// **Every row, with no exemptions.**
-///
-/// There is no `KNOWN` list here and no row is skipped, and both are results
-/// rather than omissions: the compensation covers every row of this family,
-/// including the two [`WEBKIT_ALONE`] names -- those are compared against
-/// [`REFERENCE`] like the rest, and are the only rows that reach
-/// `stretched_ratio_minimum`'s clamp by a definite maximum main size. Skip
-/// them and that clamp could be deleted with every row here still green.
+/// Every row, with no exemptions, including the two [`WEBKIT_ALONE`] names:
+/// they are the only rows reaching `stretched_ratio_minimum`'s clamp by a
+/// definite maximum, so skipping them would leave it deletable.
 #[test]
 fn every_row_matches_the_reference() {
     let mut wrong = Vec::new();

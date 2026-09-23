@@ -1,44 +1,7 @@
-//! A paragraph that fits must not be truncated because its box was rounded.
-//!
-//! # The defect
-//!
-//! taffy rounds a rect to whole pixels, so a run whose exact width is `27.73`
-//! is handed a box of `27` or `28` depending on the fraction of its own `x`.
-//! At `27` the wrap breaks it, and `maxLines: 1` then truncates the break to a
-//! marker: `HP HP` renders as `HP …` in a box with room for all of it.
-//!
-//! `measure.rs` already carries the rescue for this -- it re-lays a paragraph
-//! that broke at unconstrained width, and takes that result when one more pixel
-//! would have been enough. **Its trigger is the line count of the laid-out
-//! block, tested after `max_lines` has already collapsed two lines into one
-//! plus a marker**, so the paragraph that most needs rescuing is the one the
-//! test can no longer see.
-//!
-//! # Why this asserts a pair rather than a picture
-//!
-//! Truncation that changes nothing is the claim, so the control is the same
-//! scene without `maxLines`. Where the text fits, the two renders must be
-//! **identical**: a paragraph that fits is not affected by a rule about what to
-//! do when it does not. That is a comparison the renderer cannot satisfy by
-//! being consistently wrong, and it needs no golden image.
-//!
-//! # Both directions, and the second is the one a careless fix breaks
-//!
-//! Making the rescue reachable for truncating paragraphs risks a paragraph that
-//! *should* truncate no longer doing so. The `< 1.0` guard should prevent it,
-//! but "should" is what the guard says rather than what a test says. So the
-//! over-long case asserts the opposite: the two renders must **differ**.
-//!
-//! # Two widths, because one proves one width
-//!
-//! The break is a function of where the box's left edge lands, so a fixture at
-//! a lucky offset passes on broken code and looks exactly like a passing test.
-//! `161.4` and `300` are the repro's own pair and they round differently.
-//!
-//! # The face is not optional
-//!
-//! On the fallback face the exact widths are different numbers and may never
-//! land badly. A render on it passes either side of this defect.
+//! A paragraph that fits must not be truncated because its box was rounded:
+//! taffy hands a `27.73`-wide run 27 or 28, and at 27 `maxLines: 1` turned `HP
+//! HP` into `HP …`. Asserted as a pair with the same scene without `maxLines`,
+//! on the repository's face, at offsets that round both ways.
 
 use meo_canvas::{
     BorderStyle, Column, Element, Format, Renderer, Root, Row, Styled, Text,
@@ -54,13 +17,8 @@ const FONT: (&str, &str) = (
     "../meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf",
 );
 
-/// The two container widths from the report.
-///
-/// Kept, though the sweep showed the **offset** is what decides the rounding
-/// rather than the width: widening the container moves every `x`, which is why
-/// the report saw the defect get worse at `300` than at `161.4` and read it as
-/// a width effect. Both are here so a future reader can see the width was not
-/// the variable, rather than being told.
+/// The two container widths from the report, kept though the offset rather than
+/// the width decides the rounding.
 const WIDTHS: [f32; 2] = [161.4, 300.0];
 
 /// The two shapes from the report that failed, and they differ in x offset.
@@ -149,11 +107,9 @@ fn render(
         .gap_xy(px(12.0), px(12.0))
         .align_items(Align::FlexStart)
         .children([
-            // A spacer of fractional width, which is what the report's five
-            // side-by-side cases supplied: it is the fraction of the label's
-            // own `x` that decides which way its box rounds, and a case
-            // sitting alone at a whole-numbered offset never
-            // reproduces.
+            // A spacer of fractional width, as the report's side-by-side cases
+            // supplied: the fraction of the label's own `x` decides which way
+            // its box rounds.
             Column::new()
                 .width(px(offset))
                 .children(Text::new(" ").font_size(1.0)),
@@ -168,24 +124,14 @@ fn render(
     })
 }
 
-/// The offsets the label's box is placed at.
-///
-/// **The container width is not the causal variable; the fraction of the
-/// label's own `x` is.** taffy rounds a rect as `round(x + w) - round(x)`, so a
-/// run whose exact width is `12.49` is handed `12` or `13` depending only on
-/// where its left edge falls. Swept across 400 offsets, every one with a
-/// fraction at or above `.5` reproduces and every one below it does not.
-///
-/// `0.0` is here as the **agreeing row**: it already renders correctly today.
-/// A run where every offset fails is a broken harness rather than a defect, and
-/// without a row whose answer is known there is nothing to tell the two apart.
+/// The offsets the label is placed at: taffy rounds a rect as `round(x + w) -
+/// round(x)`, and across 400 offsets every fraction at or above `.5`
+/// reproduces. `0.0` is the agreeing row, so a broken harness cannot pass as a
+/// defect.
 const OFFSETS: [f32; 3] = [0.0, 0.5, 0.7];
 
-/// A label that fits its box is drawn whole, whatever `maxLines` says.
-///
-/// Truncation is a rule about what to do when text does not fit. Applied to
-/// text that fits, it must change nothing -- so the control is the same scene
-/// without `maxLines`, and the two renders must be identical to the byte.
+/// A label that fits is drawn whole whatever `maxLines` says: the same scene
+/// without it must render identically to the byte.
 #[test]
 fn truncation_changes_nothing_for_a_label_that_fits() {
     let mut wrong = Vec::new();
@@ -214,19 +160,9 @@ fn truncation_changes_nothing_for_a_label_that_fits() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
-/// The control: a label that genuinely does not fit is still truncated.
-///
-/// The failure mode of the fix is a rescue that reaches too far and stops
-/// truncating anything. **This passes before the fix as well as after**, which
-/// is what makes it a control rather than a second copy of the case above: a
-/// run where both tests fail says nothing about this one.
-///
-/// **The label carries an explicit width, and the first version of this test
-/// did not.** Without one it is a flex item, and at a container of 300 the row
-/// simply overflows and hands the label its full natural width -- at which
-/// point the text fits and *not* truncating is the correct answer. The test
-/// failed and the code was right. A control has to constrain the thing it is
-/// controlling for.
+/// The control: a label that genuinely does not fit is still truncated, passing
+/// before the fix and after. It carries an explicit width, since as a free flex
+/// item it would take its natural width and fit.
 #[test]
 fn a_label_that_genuinely_overflows_is_still_truncated() {
     const LONG: &str = "Antidisestablishmentarianism and then some more words";

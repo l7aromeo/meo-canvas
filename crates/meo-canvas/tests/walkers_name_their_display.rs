@@ -1,43 +1,13 @@
-//! Every box a conformance walker builds names its display.
-//!
-//! # What this is for
-//!
-//! `Box::new` names `Display::Flex` and Chrome's `div` is `block`, so a walker
-//! that builds a box for a plain `div` and states nothing is measuring a flex
-//! container against a block one. Twelve boxes across four walkers did that
-//! until they were made to say `Block`, and **the survey behind that change
-//! showed the difference is currently invisible**: 1345 renders, byte
-//! identical either way, because every one of those scenes has an explicit
-//! size.
-//!
-//! **That is exactly why this exists.** The rule was worth applying for a
-//! reason that has not bitten yet -- the next fixture written against one of
-//! these scenes inherits the coincidence -- and a rule whose violation costs
-//! nothing today is a rule that decays. Nothing in the suite held it: the
-//! twelve were correct and the thirteenth would have been whatever
-//! `Box::new` defaults to.
-//!
-//! # Why a test rather than a lint or an assertion in each walker
-//!
-//! **An assertion inside a walker cannot catch a new walker.** The file that
-//! forgets to state a display is the file that forgets to assert it, so the
-//! obvious cheap shape protects only the files that already comply. This
-//! reads the sources instead, so a file added tomorrow is covered by a test
-//! written today.
-//!
-//! **And it asks for a display rather than for `Block`.** Three of these boxes
-//! are flex containers because Chrome's markup says `display:flex`, and the
-//! grid container says `Display::Grid` against a `display:grid` scene. A
-//! walker that states the property where Chrome states it is not the defect;
-//! **saying nothing is.**
+//! Every box a conformance walker builds names its display: `Box::new` is
+//! `Flex` and Chrome's `div` is `block`, a difference each scene's explicit
+//! size hides today. It reads the sources, so a new walker is covered, and
+//! accepts any stated display, since saying nothing is the defect.
 
 use std::{fs, path::Path};
 
-/// How far below a `Box::new()` a display may be stated.
-///
-/// Builders here are a chain of one call per line, and the longest of them
-/// reaches ten. Twelve leaves room without spanning two constructions: the
-/// shortest gap between two `Box::new()` calls in these files is larger.
+/// How far below a `Box::new()` a display may be stated: builders chain one
+/// call per line and reach ten, and the shortest gap between two constructions
+/// is larger than twelve.
 const WITHIN: usize = 12;
 
 /// The walkers this reads, by their own naming rule: a conformance walker is
@@ -89,12 +59,8 @@ fn every_box_in_a_conformance_walker_states_its_display() {
                 continue;
             }
             boxes += 1;
-            // **Stop at the next construction as well as at the window.**
-            // Written with the window alone first, and the mutation that adds
-            // an unstated box passed: the box it was inserted before stated a
-            // display four lines later, and the scan credited it to both. An
-            // unstated box hiding behind a stated neighbour is exactly the
-            // case this rule is for.
+            // Stop at the next construction as well as at the window, or an
+            // unstated box is credited with its neighbour's display.
             let end = (index + WITHIN).min(lines.len());
             let end = lines[index + 1..end]
                 .iter()

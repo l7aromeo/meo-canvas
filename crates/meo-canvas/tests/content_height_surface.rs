@@ -1,10 +1,6 @@
-//! The Rust surface's own half of the content-height contract.
-//!
+//! The Rust surface's half of the content-height contract:
 //! `crates/meo-canvas-core/tests/content_height.rs` proves the renderer does
-//! it; this proves the surface asks for it, and that the default is the one a
-//! caller gets by writing the least. They are different failures: a surface
-//! that never sets the flag renders a stated height correctly for ever and
-//! never content-sizes anything.
+//! it, and this that the surface asks for it by default.
 
 use meo_canvas::{Box, Root, Styled as _, px};
 

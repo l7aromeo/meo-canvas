@@ -1,23 +1,7 @@
-//! What a `viewBox` does to a path, and what it deliberately does not do to a
-//! pen.
-//!
-//! # The behaviour this file exists to hold
-//!
-//! **A `viewBox` scales the drawing and leaves the stroke width alone.** In
-//! SVG it does not: a two-pixel stroke in a box scaled five times is drawn ten
-//! pixels wide, which is why `vector-effect: non-scaling-stroke` exists at all.
-//! Ours is equivalent to SVG's `viewBox` **with** `non-scaling-stroke`.
-//!
-//! That is deliberate — a caller authoring a `d` in a unit square wants
-//! `line_width` to mean pixels, and a chart's gridlines to stay hairlines
-//! whatever the box — but **it was true by accident before this file existed**.
-//! It falls out of transforming the path's geometry rather than the coordinate
-//! system: `Path2D::transform` moves the points and leaves the pen. Nothing
-//! asserted it, and a future change that scaled the pen would look like a bug
-//! *fix* to whoever made it, since it would move us toward SVG.
-//!
-//! If something later wants scaled pens, `vector-effect` is the addable piece —
-//! the same subset-of-a-standard-vocabulary move as `preserve_aspect_ratio`.
+//! What a `viewBox` does to a path, and deliberately does not do to a pen: the
+//! drawing scales and the stroke width stays, as SVG's `viewBox` with
+//! `vector-effect: non-scaling-stroke`, since `Path2D::transform` moves the
+//! points. A change scaling the pen would look like a fix.
 
 use meo_canvas::{
     Box, Format, Path, PositionType, Renderer, Root, Styled, hex_rgb, px,

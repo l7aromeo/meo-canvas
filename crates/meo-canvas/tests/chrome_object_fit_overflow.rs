@@ -1,32 +1,7 @@
-//! That a picture stays inside the element it was placed in.
-//!
-//! `fit_image` returns a destination that may be larger than the box — its own
-//! documentation says so, and says the caller crops. The caller did not, so
-//! `objectFit: 'cover'` painted outside the element wherever the source's
-//! aspect did not match its box (`l7aromeo/meo-canvas#36`, a 152x186 avatar in
-//! a 26x26 frame painting 26x32).
-//!
-//! **Two fits can exceed, and only one was reported.** `Cover` scales by
-//! `max(sx, sy)`; `None` draws at intrinsic size, so any source larger than its
-//! box overflows on both axes. `Contain` cannot exceed, and is here as the
-//! control: it must paint *smaller* than the box, which is what shows these
-//! assertions are reading the picture rather than echoing the rectangle they
-//! compare against.
-//!
-//! Chrome's behaviour is the reason this is a defect rather than a preference,
-//! and the rows are read from its table rather than restated here. Measured
-//! with no `overflow` declared on the element or any ancestor and a page larger
-//! than the box: `cover` and `none` paint inside, the computed `overflow` is
-//! `clip`, and forcing `overflow: visible` makes the same picture spill.
-//!
-//! **The comparison is of rectangles relative to each box**, not absolute ones:
-//! the two harnesses put their element in different places, and what is being
-//! compared is where the picture sits within it.
-//!
-//! `object-fit.tsv` cannot answer this and never could — its cell is
-//! `overflow:hidden`, its viewport is the box and its screenshot is clipped to
-//! the box. It measures placement *given* a clip and is silent on whether
-//! Chrome applies one.
+//! A picture stays inside its element (`l7aromeo/meo-canvas#36`): `Cover` and
+//! `None` can exceed the box and Chrome clips both, with `Contain` the control
+//! that paints smaller. Rectangles are relative to each box, since the two
+//! harnesses place it differently.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -54,12 +29,8 @@ const INK: (u8, u8, u8) = (232, 40, 200);
 /// The page's colour.
 const PAPER: (u8, u8, u8) = (0, 255, 0);
 
-/// A flat RGBA PNG of the given size, written out rather than read from disk.
-///
-/// Generated because the two cases need different intrinsic sizes: `Cover`
-/// needs an aspect that does not match its box and `None` needs a source larger
-/// than its box, and one asset cannot be both without boxes so small the
-/// assertion becomes a rounding argument.
+/// A flat RGBA PNG of the given size, generated since `Cover` needs a
+/// mismatched aspect and `None` a source larger than its box.
 fn picture(width: u32, height: u32) -> Vec<u8> {
     let mut data = Vec::new();
     {
@@ -79,11 +50,9 @@ fn picture(width: u32, height: u32) -> Vec<u8> {
     data
 }
 
-/// Renders one image node and reports the bounding box of its ink.
-///
-/// `None` when nothing was drawn, which is a failure to distinguish from a
-/// picture that stayed inside its box: an absent picture satisfies "does not
-/// paint outside" and proves nothing.
+/// Renders one image node and reports its ink's bounding box, `None` when
+/// nothing was drawn: an absent picture trivially stays inside and proves
+/// nothing.
 fn painted(fit: ObjectFit, box_size: (f32, f32), source: (u32, u32)) -> Extent {
     render(fit, box_size, source, 0.0, 0.0, 0.0).0
 }
@@ -94,13 +63,9 @@ type Extent = Option<(u32, u32, u32, u32)>;
 /// One pixel, as red, green and blue.
 type Pixel = (u8, u8, u8);
 
-/// The ink's bounding box, the pixel at the box's own rectangular corner, and
-/// how many pixels the picture itself covers.
-///
-/// The last is the only one that reads a curve — a bounding box cannot — and
-/// the only one that separates a picture in the content box from one in the
-/// box, since with a border the non-paper extent is the whole element either
-/// way.
+/// The ink's bounding box, the pixel at the box's own corner, and how many
+/// pixels the picture covers: only the count reads a curve or tells a
+/// content-box placement from a border-box one.
 fn render(
     fit: ObjectFit,
     box_size: (f32, f32),
@@ -144,20 +109,15 @@ fn render(
         // that `BorderStyle::None` is the default.
         node.paint.border_style = BorderStyle::Solid;
         node.layout.padding = Sides::all(Length::Points(padding));
-        // **`solid` named rather than inherited from the default**, which is
-        // what the Chrome side of this fixture already does --
-        // `objectfit-overflow.mjs` writes `border:${border}px solid #0000ff`,
-        // because in CSS a width paints nothing without a style. Ours has said
-        // the same by default; naming it here keeps these rows measuring the
-        // border they were generated with, whatever the default becomes.
+        // `solid` named, as `objectfit-overflow.mjs` writes it, so these rows
+        // keep measuring the border they were generated with whatever the
+        // default becomes.
         node.paint.border_style = BorderStyle::Solid;
         node.paint.border_radius = Corners::all(radius);
         node.paint.border_color_all = Color::rgb(0, 0, 255);
-        // The padding band is only visible if something paints it, and the
-        // harness paints it with the element's background -- `padding:8px`
-        // there carries `background:#0000ff`. Without the same here the band
-        // is paper, the extent is the picture alone, and the two sides are
-        // measuring different pictures of the same element.
+        // The harness paints the padding band with the element's background, so
+        // this does too, or the two sides measure different pictures of one
+        // element.
         if padding > 0.0 {
             node.paint.background_color = Color::rgb(0, 0, 255);
         }
@@ -176,12 +136,8 @@ fn render(
         for x in 0..side {
             let at = ((y * side + x) * 4) as usize;
             let pixel = (bytes[at], bytes[at + 1], bytes[at + 2]);
-            // Counted separately, because the two answer different
-            // questions and the harness defines them the same way. The extent
-            // is everything that is not the page -- a border is ink too, so
-            // with one the extent is the whole element either way -- and the
-            // count is the picture alone, which is what reads the curve and
-            // the inset.
+            // Counted apart from the extent: the extent is everything not the
+            // page, a border included, and the count is the picture alone.
             if pixel == INK {
                 pixels += 1;
             }
@@ -330,20 +286,10 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
             row.fit
         );
 
-        // Only where a radius could have cut it. With no radius the corner is
-        // a statement about whether the fit reaches the corner at all, which
-        // `contain` does not, and asserting on it would pin an accident.
-        //
-        // **The `contain` row with a radius is the one that looks redundant
-        // and is not.** A square source in a square box fills it exactly and
-        // overflows by nothing, so "clipped to the radius" and "clipped to the
-        // box" predict different pixels there and agree everywhere else. Three
-        // people made four attempts on `l7aromeo/meo-canvas#37` without
-        // running it, and a sixth hypothesis was written and nearly adopted:
-        // that the missing ring and the unrounded picture were one defect.
-        // They are two, and this row is what tells them apart. Measured
-        // without the clip, this case paints 6400 pixels -- the full square,
-        // corners intact -- and 5976 with it.
+        // Only where a radius could have cut it. The `contain` row with a
+        // radius is the one that separates clipping to the radius from clipping
+        // to the box: unclipped it paints the full 6400-pixel square, clipped
+        // 5976.
         if row.radius > 0.0 {
             let ours = if corner == (PAPER.0, PAPER.1, PAPER.2) {
                 "paper"
@@ -357,17 +303,10 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
                 row.fit, row.radius, row.corner
             );
         }
-        // **The column a bounding box cannot read.** With a border the
-        // non-paper extent is the whole element -- the ring is ink too -- so
-        // only the picture's own area separates content-box placement from
-        // box placement: 4096 for an 80x80 element with an 8px border, 2304
-        // with 8px of padding as well.
-        //
-        // Exact where the edges are straight, and within two per cent where a
-        // radius curves them: `fixtures.rs` records that eight of twenty-three
-        // goldens differ between architectures and that all eight have a
-        // curve, a gradient or a glyph in them, so a curve compared exactly
-        // across two rasterisers is a flake waiting for the next platform.
+        // The picture's own area separates content-box from border-box
+        // placement, 4096 for an 80x80 element with an 8px border and 2304 with
+        // 8px of padding too. Exact on straight edges, within two per cent on a
+        // curve, which rasterisers differ on.
         let allowed = if row.radius > 0.0 {
             (f64::from(row.pixels) * 0.02).ceil() as i64
         } else {
@@ -392,11 +331,9 @@ fn every_row_chrome_clipped_is_a_row_this_renderer_clips() {
 
 #[test]
 fn the_table_still_carries_a_row_that_spills() {
-    // The control lives in the table rather than here. Three rows reading
-    // `inside` are also what a harness blind to everything outside the box
-    // would print, so one case forces `overflow: visible` and must spill. If a
-    // regeneration ever loses that row, the other rows stop meaning anything
-    // and this says so rather than passing quietly.
+    // The control is in the table: one case forces `overflow: visible` and must
+    // spill, since rows reading `inside` are also what a harness blind outside
+    // the box prints.
     let spilling: Vec<Row> = rows()
         .into_iter()
         .filter(|row| row.overflow == "visible")

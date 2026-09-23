@@ -1,38 +1,7 @@
-//! Where a gradient ramp has got to, against Chrome's own answers.
-//!
-//! # Why the ramp is black to white
-//!
-//! Because then `t` **is** the red channel over 255, and reading the table
-//! needs no inverse of an interpolation — which is the one piece of arithmetic
-//! a gradient table must not depend on, since it is the thing under test.
-//!
-//! # Why this cannot assert equality, and why it carries a tolerance
-//!
-//! **Chrome dithers its gradients and this renderer does not.** The table shows
-//! it in its own rows: `linear 0deg` reads 126 at mid-left and 125 at
-//! mid-right, two points that are analytically identical on a vertical ramp,
-//! and `180deg` reads 130 against 129. Dither is a per-pixel offset from a
-//! pattern tied to device coordinates and to a Skia build, so it is neither
-//! reproducible across renderers nor worth matching.
-//!
-//! Two consequences, both of which this file obeys:
-//!
-//! - **never assert that two samples at the same `t` are equal** — Chrome's own
-//!   are not, and a test built on that premise would be asserting the dither
-//! - **carry at least a unit per channel**, because an undithered surface
-//!   cannot land on a dithered number
-//!
-//! The tolerance here is stated and derived rather than tuned upward until the
-//! test passed: see [`TOLERANCE`].
-//!
-//! # Rows this renderer cannot express
-//!
-//! Named and counted rather than skipped, because a silent skip turns a
-//! conformance table into a self-portrait. **`radial circle` is Chrome's and
-//! has no variant here**: `GradientGeometry::Radial` carries a centre and no
-//! shape, and `paint.rs` always fits an ellipse to the box — drawing the circle
-//! of the wider radius and squashing it to the narrower. On a square box the
-//! two would coincide and this box is 88 by 56, so the distinction is live.
+//! Where a gradient ramp has got to, against Chrome's answers, on a
+//! black-to-white ramp so `t` is red over 255. Chrome dithers and this renderer
+//! does not, so samples at one `t` are never asserted equal and [`TOLERANCE`]
+//! allows for it. `radial circle` has no variant here and is counted.
 
 use meo_canvas::{
     Box, Display, Format, PositionType, Renderer, Root, Styled, hex_rgb, px,
@@ -44,50 +13,13 @@ use meo_canvas::{
 /// The box every case is drawn in.
 const BOX: (f32, f32) = (88.0, 56.0);
 
-/// How far a channel may sit from Chrome's.
-///
-/// **Two, and both units are accounted for.** One is Chrome's dither, which
-/// the table demonstrates on its own rows rather than asserting — 126 against
-/// 125 at two analytically identical points. The second is the rounding of a
-/// continuous ramp to a byte, which the two renderers may take in opposite
-/// directions at the same `t`.
-///
-/// A tolerance raised until a test passes has stopped measuring anything, so
-/// this one is checked from the other side: the worst deviation over every
-/// comparable row is reported at the end of the run, and if it ever approaches
-/// two the gap has stopped being dither and wants investigating.
+/// How far a channel may sit from Chrome's: two, one for Chrome's dither -- 126
+/// against 125 at analytically identical points -- and one for rounding a ramp
+/// to a byte. The worst deviation is reported each run.
 const TOLERANCE: i32 = 2;
 
-/// Which cases we answer differently from Chrome today.
-///
-/// **All three conic cases, and it is one defect measured to the degree: our
-/// sweep begins 270 degrees from where CSS begins it.**
-///
-/// Every sample of `conic from 0deg` is offset by the same amount, and the ramp
-/// being black-to-white makes the offset readable directly as a fraction of the
-/// turn:
-///
-/// ```text
-/// sample          chrome  ours   difference
-/// top-left           214   150    270 deg
-/// top-right           41   232    269
-/// bottom-left        169   105    270
-/// bottom-right        86    23    271
-/// mid-left           191   127    270
-/// mid-right           64     0    270
-/// mid-top              1   192    269
-/// mid-bottom         126    63    271
-/// ```
-///
-/// **Eight samples, spread of two degrees, which is the byte quantisation
-/// rather than a variation.** CSS starts a conic sweep at twelve o'clock;
-/// `mid-top` is where that shows plainest — Chrome reads 1 there, the very
-/// start of the ramp, and we read 192, three quarters through it.
-///
-/// Not worked around: `from` is passed through unchanged and the rows are
-/// pinned, so the day the sweep origin is fixed these three cases fail and say
-/// to delete this list. **A test that quietly added 270 degrees would draw the
-/// right picture for this table and the wrong one for every caller.**
+/// Which cases we answer differently from Chrome: empty. A pinned case that
+/// starts agreeing fails and says to delete its entry.
 const KNOWN_GRADIENT: &[&str] = &[];
 
 /// Cases Chrome measured that this renderer has no vocabulary for.
@@ -181,11 +113,8 @@ fn drawn(geometry: GradientGeometry) -> Vec<u8> {
     })
 }
 
-/// The other direction every pinned list here owes.
-///
-/// A case that has started agreeing is a fix, and **a fix that lands invisibly
-/// is how a pinned list becomes a lie** — so the list has to fail when it is
-/// wrong in either direction, not only when a pinned case is still wrong.
+/// The other direction a pinned list owes: a case that has started agreeing is
+/// a fix, and must fail rather than land invisibly.
 fn report(seen: &[String], still_apart: &[String], wrong: &mut Vec<String>) {
     for case in KNOWN_GRADIENT {
         assert!(

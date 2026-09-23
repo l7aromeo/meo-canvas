@@ -1,47 +1,7 @@
-//! Every paint property, drawn against the same scene without it.
-//!
-//! # Why this exists beside the golden fixtures
-//!
-//! A fixture asserts that a picture is *the* picture. That catches a property
-//! whose drawing changes and misses one that never drew: a scene setting
-//! `mask` renders, encodes and compares equal to its own committed image
-//! whether or not the mask is honoured, because the image was made by the same
-//! code that ignores it. The showcase found five such properties in an
-//! afternoon, and no gate in this project could see any of them.
-//!
-//! A control pair can. Each case renders the same scene twice, once with the
-//! property and once without, and asks only whether the two differ. That is a
-//! comparison the renderer cannot satisfy by being consistently wrong -- a
-//! property that reaches the painter and is dropped there produces two
-//! identical buffers, which is exactly what [`Effect::Nothing`] records.
-//!
-//! # Why one test rather than one per property
-//!
-//! A fix usually repairs a family -- `text_stroke` and `paint_order` were one
-//! defect, and the five `mask` arms another -- so the useful report names
-//! every property whose answer moved, not the first one. The whole table runs
-//! and the failure lists them together.
-//!
-//! # What to do when this fails
-//!
-//! A `Nothing` case that starts drawing is a defect fixed: change its row to
-//! `Draws` and the gate now guards the fix. A `Draws` case that stops drawing
-//! is a regression, and the row is already correct.
-//!
-//! # The control is the part that is easy to get wrong
-//!
-//! Three of these cases reported the wrong answer first, and every time the
-//! scene was right and the control was not. `backdrop_filter` drew nothing
-//! under an opaque square, because a filter on what is behind a node cannot
-//! show through the node that asked for it. `vertical_align` looked as though
-//! it drew, against a control with no `line_height` -- so the pair measured
-//! the line height and named it something else; and once the line height was
-//! on both sides it drew nothing, because the subject was a text node sized
-//! to its own text and a paragraph moved within a box that fits it exactly
-//! does not move. `mask image` would have joined them: an opaque picture
-//! masks nothing, so the asset it reads has to have an alpha channel worth
-//! reading. Before trusting a row, ask what the wrong answer would have
-//! looked like.
+//! Every paint property, drawn against the same scene without it, asking only
+//! whether the two differ: a fixture cannot see a property that never drew,
+//! since its image came from the code ignoring it. One test, so a fix that
+//! moves a family reports all of it; the control is the part to get wrong.
 
 use meo_canvas::{
     Box, Element, Format, Image, Renderer, Root, Style, Styled, Text, hex_rgb,
@@ -56,11 +16,9 @@ use meo_canvas::{
     sides,
 };
 
-/// The family the text cases name, and the file behind it.
-///
-/// The repository's own font rather than a platform face, for the reason the
-/// fixture harness gives: a family resolved from whatever the host installed is
-/// not the same family twice.
+/// The family the text cases name, and its file: the repository's own font,
+/// since a family resolved from the host's installed faces is not the same
+/// family twice.
 const FONT: (&str, &str) = (
     "Control",
     "../meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf",
@@ -235,11 +193,9 @@ fn fade() -> Gradient {
     }
 }
 
-/// Every property this suite reads, and what it does today.
-///
-/// Four lists rather than one, split where the subject changes: a square over
-/// a gradient, that square's own shape, a box filled edge to edge, a line of
-/// text. They are concatenated here and read as one table.
+/// Every property this suite reads, and what it does today, in four lists split
+/// where the subject changes: a square over a gradient, its shape, a box filled
+/// edge to edge, a line of text.
 fn cases() -> Vec<Case> {
     let mut all = composite_cases();
     all.extend(shape_cases());
@@ -274,16 +230,9 @@ fn composite_cases() -> Vec<Case> {
             without: || over(inner()),
             effect: Effect::Draws,
         },
-        // Over a *translucent* square, because a backdrop filter changes what
-        // is behind the node: with the opaque square of every other case, the
-        // filtered backdrop is covered by the thing that asked for it and the
-        // two renders agree however the property behaves.
-        //
-        // `grayscale` rather than `blur`, and deliberately. A blur of the
-        // gradient behind this square **is that gradient again** -- blurring
-        // a linear ramp returns it -- so the pair would report `Nothing` for
-        // a backdrop filter that works perfectly. Every filter here has to be
-        // one the backdrop is not already a fixed point of.
+        // Over a translucent square, since an opaque one covers the filtered
+        // backdrop. `grayscale` rather than `blur`: blurring the linear ramp
+        // behind returns the ramp, so a working blur would read as `Nothing`.
         Case {
             property: "backdrop_filter",
             with: || over(glass().backdrop_filter("grayscale(1)")),
@@ -307,11 +256,9 @@ fn composite_cases() -> Vec<Case> {
 /// The box's own shape, the shadows it casts, and the ramp it fills with.
 fn shape_cases() -> Vec<Case> {
     vec![
-        // A border wide enough for a dash to be longer than a pixel, on a box
-        // long enough to hold several. Against `solid` rather than against no
-        // border at all: the question is whether the *style* reaches the
-        // painter, and a pair against an unbordered box would report the
-        // border.
+        // A border wide enough for a dash longer than a pixel, against `solid`
+        // rather than no border, so the pair asks whether the style reaches
+        // the painter.
         Case {
             property: "border_style",
             with: || {
@@ -377,43 +324,20 @@ fn shape_cases() -> Vec<Case> {
     ]
 }
 
-/// A two-frame animation: frame 0 solid red, frame 1 solid blue.
-///
-/// **Solid colours a channel apart, and deliberately.** A frame index that
-/// reached nothing would draw frame 0 whatever the scene asked for, so the two
-/// frames have to differ in a way no rounding could produce -- an animation
-/// whose frames looked alike would pin "the property did nothing" exactly as
-/// an opaque mask asset nearly did.
-///
-/// Written by this repository's own encoder rather than by hand: 107 bytes,
-/// two pages at two frames a second.
+/// A two-frame animation, frame 0 solid red and frame 1 solid blue, so a frame
+/// index that reached nothing cannot pass by rounding. Written by this
+/// repository's own encoder: 107 bytes, two pages at two frames a second.
 const TWO_FRAMES: &[u8] = include_bytes!("assets/two-frames.gif");
 
-/// An 8x8 image whose left half is opaque and whose right half is clear.
-///
-/// A mask image is read for its **alpha**, so an opaque picture masks nothing
-/// and a case built on one reports `Nothing` however well the arm works. The
-/// repository's other image asset, `strip.png`, is opaque in all thirty-two
-/// pixels, which is exactly the control mistake this file keeps finding.
+/// An 8x8 image, left half opaque and right half clear: a mask is read for its
+/// alpha, and `strip.png` is opaque in every pixel, so a case built on it would
+/// report `Nothing`.
 const MASK_IMAGE: &[u8] = include_bytes!("assets/mask-half.png");
 
-/// The strip the background-image cases paint, and the fields that travel
-/// with it.
-///
-/// Seven rows rather than one: the source is a different question from the
-/// repeat, the size and the offset, and a source that draws while the three
-/// are ignored is exactly the shape this file exists to tell apart -- which is
-/// what it found. The painter drew the picture stretched to the box with
-/// `draw_image_sized` and said so in a comment: repetition wants a pattern
-/// shader.
-///
-/// It now tiles, the way v1 does -- by drawing the tiles rather than through a
-/// pattern, because `Space` shares the leftover out between whole tiles and
-/// `Round` scales them so a whole number fits, and a repeating fill can
-/// express neither. Those two have rows of their own for that reason: they are
-/// the pair a pattern-shader implementation would quietly collapse into
-/// `Repeat`, and on a box the tile divides evenly all three are the same
-/// picture -- so both rows use a tile the box does **not** divide.
+/// The strip the background-image cases paint, and the fields that travel with
+/// it: seven rows, since the source and its repeat, size and offset are
+/// separate questions. Tiles are drawn one by one, since `Space` and `Round`
+/// cannot be a repeating fill.
 fn background_image_cases() -> Vec<Case> {
     vec![
         Case {
@@ -446,11 +370,9 @@ fn background_image_cases() -> Vec<Case> {
             },
             effect: Effect::Draws,
         },
-        // The two axes against each other rather than against `Repeat`. This
-        // is the failure a tiling implementation is most likely to ship: an
-        // axis the right way round for one keyword and swapped for the other
-        // draws a picture for both, so a pair against the unrepeated case
-        // would pass while the two keywords meant each other.
+        // The two axes against each other rather than against `Repeat`: an
+        // axis swapped for one keyword draws a picture for both, so a
+        // pair against the unrepeated case would pass.
         Case {
             property: "background_image repeat axis",
             with: || {
@@ -521,20 +443,13 @@ fn frame_cases() -> Vec<Case> {
     }]
 }
 
-/// `Round` and `Space` against `Repeat`, on a tile the box does not divide.
-///
-/// Their own function rather than two more rows above, because the tile has to
-/// be the awkward one: on a box the tile divides evenly all three modes draw
-/// the same picture, and a pair written with the ordinary tile would report
-/// two working keywords as dead.
+/// `Round` and `Space` against `Repeat`, on a tile the box does not divide: on
+/// an even division all three draw one picture.
 fn background_tiling_cases() -> Vec<Case> {
     vec![
-        // A nine-wide tile in a box that is not a multiple of nine, so the
-        // three modes are three pictures: `Repeat` runs a partial tile off
-        // the far edge, `Round` scales the tile until a whole number fits,
-        // and `Space` keeps the tile and shares the remainder out as gaps.
-        // With a tile the box divides evenly all three agree, which is the
-        // control mistake this pair of rows is written to avoid.
+        // A nine-wide tile in a box that is not a multiple of nine, so
+        // `Repeat` runs a partial tile off the edge, `Round` scales to
+        // fit a whole number and `Space` shares the remainder as gaps.
         Case {
             property: "background_image round",
             with: || {
@@ -574,12 +489,8 @@ fn background_tiling_cases() -> Vec<Case> {
     ]
 }
 
-/// The five ways a mask can be written, all on a box filled edge to edge.
-///
-/// Each arm keeps a different part of the same square: a circle inscribed in
-/// it, an ellipse filling it, a triangle, a left-to-right fade, and the
-/// image's opaque half. All five moved together when masking landed, which is
-/// what "one defect, one family" means here.
+/// The five ways a mask can be written, on a box filled edge to edge: each arm
+/// keeps a different part of the square.
 fn mask_cases() -> Vec<Case> {
     vec![
         Case {
@@ -644,12 +555,9 @@ fn text_cases() -> Vec<Case> {
             without: || wide().text_align(TextAlign::Left),
             effect: Effect::Draws,
         },
-        // One word split across two runs must draw the same width as one run
-        // carrying it whole: runs are styles, not words, and a painter that
-        // puts an inter-word gap between every pair draws a space the text
-        // does not contain. `Nothing` here means the two agree, which is the
-        // one row in this file where agreement is the correct answer -- so it
-        // is written as a pair whose *difference* would be the defect.
+        // One word split across two runs draws the same width as one run
+        // carrying it: runs are styles, not words. The one row where agreement
+        // is correct, so the pair's difference would be the defect.
         Case {
             property: "runs are not words",
             with: || {
@@ -675,15 +583,10 @@ fn text_cases() -> Vec<Case> {
 /// What the font itself is asked to do, as against what is painted over it.
 fn font_feature_cases() -> Vec<Case> {
     vec![
-        // **`DiagonalFractions`, not small caps.** Seventeen OpenType tags
-        // swept against this repository's Oswald move exactly one of them:
-        // `frac`. The face has no small-caps glyphs and nothing synthesises
-        // them, so a control written with `SmallCaps` would report a working
-        // property as dead — the opaque mask asset, one layer in.
-        //
-        // The sample is a fraction for the same reason: `1/2` is what `frac`
-        // acts on, and a string without a slash gives the feature nothing to
-        // do however well it is plumbed.
+        // `DiagonalFractions`, not small caps: of seventeen OpenType tags
+        // swept against the repository's Oswald, only `frac` moves
+        // anything. The sample is `1/2`, since `frac` needs a slash to
+        // act on.
         Case {
             property: "font_variant",
             with: || {
@@ -737,11 +640,8 @@ fn glyph_paint_cases() -> Vec<Case> {
             without: line,
             effect: Effect::Draws,
         },
-        // Reordering a stroke that is not drawn cannot show, so this one came
-        // back with `text_stroke` rather than on its own -- both landed with
-        // the text port, and neither needed anything from the binding that
-        // was not already public. `stroke_text` is what v1 calls, and moving
-        // off the paragraph is what made it reachable.
+        // Reordering a stroke that is not drawn cannot show, so this pairs
+        // with `text_stroke`.
         Case {
             property: "paint_order",
             with: || {
@@ -760,13 +660,10 @@ fn glyph_paint_cases() -> Vec<Case> {
             },
             effect: Effect::Draws,
         },
-        // Two things this control has to carry. The same `line_height`, so
-        // that what is compared is where the text sits and not how tall the
-        // box is -- a control without it reports `line_height` and calls it
-        // `vertical_align`. And a **height taller than the text**, because
-        // the property moves the paragraph by what the box has left over and
-        // an auto-sized text node has nothing left over: every alignment
-        // agrees on a box that is exactly its own content.
+        // The control carries the same `line_height`, so the pair measures
+        // where the text sits and not the box's height, and a height taller
+        // than the text, since alignment moves the paragraph by what the box
+        // has left over.
         Case {
             property: "vertical_align",
             with: || {
@@ -780,31 +677,18 @@ fn glyph_paint_cases() -> Vec<Case> {
             },
             effect: Effect::Draws,
         },
-        // Space **between** line boxes, so the subject needs two lines: on one
-        // line there is no gap to add and the pair measures nothing. The text
-        // carries its own newline rather than relying on a wrap, so the two
-        // sides cannot differ in how they broke.
-        //
-        // Resolved, inherited, and read by nothing -- the same shape
-        // `vertical_align` had. Pinned before the text port rather than after
-        // it, so the port has to make it draw instead of being credited with
-        // it afterwards.
+        // Space between line boxes, so the subject has two lines, with its own
+        // newline so neither side can break differently.
         Case {
             property: "line_gap",
             with: || pair().line_gap(12.0),
             without: pair,
             effect: Effect::Draws,
         },
-        // A fixed box on both sides, so what moves is where the text sits
-        // inside it and not how big it is. Text is drawn from the border box
-        // today: neither the padding nor the border is taken off before the
-        // first glyph, so a padded text node's ink starts at the same pixel as
-        // an unpadded one's. v1 lays text out inside border and padding, so
-        // the text port closes this by construction.
-        // The border half of the same question, with the same fixed box on
-        // both sides. The border is transparent on purpose: a painted one
-        // would move pixels by drawing itself, and the row would pass while
-        // the text stayed exactly where it was.
+        // A fixed box on both sides, so what moves is where the text sits:
+        // text is laid out inside the border and the padding. The
+        // border is transparent, since a painted one would move pixels
+        // by drawing itself.
         Case {
             property: "text inside its border",
             with: || {

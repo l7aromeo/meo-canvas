@@ -1,27 +1,7 @@
-//! What a ratio does to a grown flex item's cross size.
-//!
-//! `l7aromeo/meo-canvas#123`: an item with `flex-grow: 1` and
-//! `aspect-ratio: 1` in a column came out with no width at all, where the ratio
-//! should turn its grown height into one. Compensated in `layout.rs`; upstream
-//! is `DioxusLabs/taffy#804` and `taffy_flex_ratio.rs` pins what taffy does.
-//!
-//! **Solved rectangles rather than ink.** A flex item centred on a cross axis
-//! with no content is zero wide, and a zero-wide box paints nothing whatever
-//! its height is -- an ink scan reports `0x0` for a box that grew, which is how
-//! three divergences were reported that were the instrument.
-//!
-//! **The item's own `display` is our axis and not CSS's.** Chrome gives
-//! `248x248` for all four combinations of display and content; taffy derives
-//! only for a block item that has a contribution. The table records which each
-//! row used.
-//!
-//! **Construction: every row here is hand-assembled**, so every item is
-//! `Display::Block`. The sweep behind this table measured all twenty-seven
-//! under both constructions and **exactly one moved** -- a content-bearing
-//! item, `248x248` as a block and `30x248` as a flex one -- so
-//! [`the_construction_axis_moves_one_row`] carries that pair and the rest do
-//! not pay for it. A row that does not name its construction is a row someone
-//! re-derives.
+//! What a ratio does to a grown flex item's cross size
+//! (`l7aromeo/meo-canvas#123`), compared as solved rectangles since a zero-wide
+//! box paints nothing. Rows are hand-assembled, so every item is
+//! `Display::Block`; one test covers the row where that matters.
 
 use meo_canvas_core::{Available, Measure, MeasuredLeaf, layout::solve};
 use meo_canvas_scene::{
@@ -50,26 +30,9 @@ impl Measure for NoLeaves {
 
 const TABLE: &str = include_str!("assets/chrome/flex-ratio-cross.tsv");
 
-/// Rows this renderer answers differently, each with its reason.
-///
-/// **Empty, and that is the result rather than an oversight.** Every row of
-/// this table now agrees with the browser. The list is kept because
-/// [`every_row_agrees_with_chrome_or_is_known`] asserts in both directions: a
-/// row that starts diverging has somewhere to be recorded, and a row recorded
-/// here that stops diverging is reported as stale rather than left standing.
-///
-/// **`stretched ratio` was the last entry**, and it was `uncompensated
-/// stretch` until the compensation arrived. A row whose *key* asserts
-/// something about this renderer is a claim in the one place nothing checks
-/// it, so the key says what the case is rather than what we do about it.
-///
-/// **`max-width binds` and `max-width binds amplified` were named that way
-/// too, and for longer.** They were `known max-width` and `known max-width
-/// amplified`; they were repaired, deleted from this list, and left with keys
-/// and a paragraph here still describing them as live divergences at `100x100`
-/// and `1x1`. Both are `100x248` and `1x248` here and in all three engines.
-/// The stale-entry assertion could not catch it, because it reads this list
-/// and the wrong claim was in the prose beside it.
+/// Rows this renderer answers differently, each with its reason: empty.
+/// [`every_row_agrees_with_chrome_or_is_known`] asserts both directions, so a
+/// stale entry fails. A key says what the case is, not what we do about it.
 const KNOWN: &[&str] = &[];
 
 /// One row of the table.
@@ -93,13 +56,9 @@ fn chrome(case: &str) -> (f32, f32) {
     unreachable!("{case} is not in flex-ratio-cross.tsv")
 }
 
-/// What a row varies. Everything else is the 440x264 container.
-///
-/// **One field per axis the sweep measured, and the booleans are independent
-/// rather than a state.** A bitfield or an enum would group axes that have no
-/// relationship -- an item that clips and an item that wraps are not two values
-/// of one thing -- and a reader checking a row against the table would have to
-/// decode it.
+/// What a row varies; everything else is the 440x264 container. One independent
+/// boolean per measured axis, since an item that clips and one that wraps are
+/// not two values of one thing.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "each is a separate axis of the sweep, and grouping them would \
@@ -363,13 +322,9 @@ fn rows_that_fire() -> Vec<(&'static str, Case)> {
     ]
 }
 
-/// The rows nothing should move, each removing one suspect.
-///
-/// **A table whose every row exercises the change would agree with a renderer
-/// that fired everywhere.** These are what make the fourteen above mean
-/// something: no growth, no ratio, nothing to grow into, a percentage main size
-/// that already reaches the ratio, a row container where the axes swap, and the
-/// `DioxusLabs/taffy#1081` shape we do not diverge on.
+/// The rows nothing should move, each removing one suspect: no growth, no
+/// ratio, nothing to grow into, a percentage main size, a row container, and
+/// the `DioxusLabs/taffy#1081` shape.
 fn rows_that_control() -> Vec<(&'static str, Case)> {
     vec![
         (
@@ -534,16 +489,9 @@ fn every_row_agrees_with_chrome_or_is_known() {
 
 #[test]
 fn the_construction_axis_moves_one_row() {
-    // **The only row of the twenty-seven that the item's own display changes.**
-    // Hand-assembled from `Node` values an item is `Display::Block`, and
-    // through any factory on either surface it is `Display::Flex`; taffy
-    // derives the cross size for the first and not the second. Chrome gives
-    // `248x248` for both, so this is a fact about taffy rather than about
-    // the browser -- which is why the compensation's predicate reads the
-    // solved outcome and not the style.
-    //
-    // Both must now be Chrome's answer. Before the compensation the flex one
-    // was `30x248`, the content's own contribution.
+    // The one row the item's own display changes: taffy derives the cross size
+    // for a `Block` item and not a `Flex` one, where Chrome gives `248x248` for
+    // both, so the compensation reads the solved outcome rather than the style.
     let (chrome_width, chrome_height) = chrome("item flex with content");
     for item_flex in [false, true] {
         let (width, height) = solved(Case {
@@ -560,34 +508,14 @@ fn the_construction_axis_moves_one_row() {
     }
 }
 
-/// How far a rounding artefact sits from a real divergence, measured.
-///
-/// **Neither row reaches `DERIVED_TOLERANCE` and the name used to say they
-/// did.** `derived-tolerance-rounds` carries a percentage main size, so
-/// `size.1` is `Dimension::Percent`, so `ratio_direction_candidates` -- which
-/// requires both axes `Auto` -- filters it out before `derived_cross` exists
-/// for it. It has never exercised the constant, and the assertions below are
-/// written against literals rather than against it, so they would not have
-/// noticed if it moved.
-///
-/// What the pair does record is a real fact and is worth keeping: a correct
-/// derivation sits `0.67` from `main x ratio` where a real divergence sat
-/// `218`, two orders of magnitude apart. `DERIVED_TOLERANCE`'s own doc carries
-/// what justifies its magnitude, and nothing here does.
-///
-/// **Two rows are not a taxonomy.** A third kind exists and this pair does not
-/// measure it: at the pin's boundary `(L * r) / r` does not round-trip in
-/// `f32`, so a difference of one unit in the last place can put a node in the
-/// derivation arm -- smaller than the `0.67` artefact by four orders and not
-/// the same thing as it. The name says these two are far apart, which is what
-/// is asserted; it does not say they are the only two.
+/// How far a rounding artefact sits from a real divergence: `0.67` from `main x
+/// ratio` against `218`. Neither row reaches `DERIVED_TOLERANCE`, whose own doc
+/// justifies it, and a last-place `f32` difference at the pin's boundary is a
+/// third kind this pair does not measure.
 #[test]
 fn a_rounding_artefact_and_a_real_divergence_are_orders_apart() {
-    // **Ours, not Chrome's.** The browser reports the unrounded 82.66; the
-    // quantity measured here is what *this* renderer solves, which is 82
-    // because taffy rounds each edge in the pass a caller gets. Comparing
-    // Chrome's number would have measured the browser's precision and called
-    // it our slack.
+    // Ours, not Chrome's: the browser reports 82.66 and this renderer solves
+    // 82, since taffy rounds each edge in the pass a caller gets.
     let (rounds_width, _) = solved(Case {
         grow: 0.0,
         pct_height: true,

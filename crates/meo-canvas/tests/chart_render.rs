@@ -1,24 +1,7 @@
-//! What a chart draws, read off the pixels.
-//!
-//! # Why this exists beside the agreement table
-//!
-//! `chart_geometry.rs` checks the Rust arithmetic against the TypeScript
-//! surface's own numbers. **Two implementations agreeing is evidence about the
-//! port and no evidence about the geometry** -- both surfaces agreeing on a
-//! wrong bar edge passes every row there. And there is nothing external to
-//! appeal to: Chrome has no charts.
-//!
-//! **So this renders and measures.** It is the only thing here that touches
-//! the picture.
-//!
-//! # Derived, then checked against the pin
-//!
-//! Every expectation below is worked out from the arithmetic rather than
-//! copied: two labels give a group width of half the plot, `BAR_GROUP_SPACING`
-//! takes a tenth, so a bar is 40% wide and the first starts at 5%. On a
-//! 200-pixel plot that is `x 10..89` and `x 110..189` -- **which is what the
-//! TypeScript render tests measured independently.** Two sources agreeing is
-//! the point; one source copied twice would not be.
+//! What a chart draws, read off the pixels: the only check here on the picture
+//! itself, since two implementations agreeing proves the port and not the
+//! geometry, and Chrome has no charts. Expectations are derived from the
+//! arithmetic -- two labels, bars at `x 10..89` and `x 110..189` of 200.
 
 use meo_canvas::{
     Element, EncodeOptions, Format, Renderer,
@@ -32,28 +15,20 @@ use meo_canvas::{
 
 /// The page every case is drawn on.
 const SIZE: (f32, f32) = (200.0, 120.0);
-/// A pixel counts as drawn when it is at least this opaque.
-///
-/// **Alpha rather than darkness.** The page has no background, so an unpainted
-/// pixel in the raw buffer is transparent black -- and a test reading the red
-/// channel called every one of them ink and passed nothing. The question here
-/// is whether a bar was drawn, which is what alpha answers.
+/// A pixel counts as drawn when at least this opaque: the page has no
+/// background, so an unpainted pixel is transparent black, and reading a colour
+/// channel would call it ink.
 const DRAWN: u8 = 128;
 
-/// Renders one chart and returns its pixels with the row stride.
-///
-/// **Raw rather than PNG**, so this crate needs no decoder in its
-/// dev-dependencies: `Format::Raw` is the surface's own bytes with no
-/// container, four channels per pixel in row order.
+/// Renders one chart and returns its pixels with the row stride, as
+/// `Format::Raw`, so this crate needs no decoder.
 fn pixels(chart: Element) -> (usize, Vec<u8>) {
     pixels_at(chart, SIZE)
 }
 
-/// The same, on a page of a stated size.
-///
-/// **A second size is what makes the pen measurable.** A stroke that scaled
-/// with the drawing would be thicker on a taller page and the same on both if
-/// it does not, so one page cannot answer the question and two can.
+/// The same, on a page of a stated size: two pages are what make the pen
+/// measurable, since a stroke that scaled with the drawing would thicken on the
+/// taller one.
 fn pixels_at(chart: Element, size: (f32, f32)) -> (usize, Vec<u8>) {
     let (scene, _) = chart.into_scene(size.0, size.1).unwrap_or_else(|error| {
         unreachable!("the chart is not a scene: {error}")
@@ -140,10 +115,8 @@ fn a_bar_is_as_tall_as_its_share_of_the_maximum() {
 
 #[test]
 fn an_all_zero_chart_draws_nothing_rather_than_failing() {
-    // The stated divergence: v1 divides by a zero maximum and `NaN` reaches
-    // layout as an absent height, so the chart draws nothing and reads as a
-    // broken renderer. Zero is the honest height, and an empty plot is the
-    // honest picture.
+    // An all-zero chart draws zero-height bars: dividing by a zero maximum
+    // would reach layout as `NaN`, an absent height, and draw nothing.
     let (stride, buffer) = pixels(two_bars(vec![0.0, 0.0]));
     let columns = inked(stride, &buffer, 119, true);
     assert!(
@@ -152,11 +125,9 @@ fn an_all_zero_chart_draws_nothing_rather_than_failing() {
         columns.len()
     );
 
-    // **The same scan, on a chart that must draw.** An absence is only
-    // evidence beside a presence: with `draw` returning early this test passed
-    // unchanged, because a renderer that paints nothing satisfies "nothing was
-    // painted" and the assertion above cannot tell its own subject from a
-    // broken painter. One non-zero value is the difference between the two.
+    // The same scan on a chart that must draw: an absence is only evidence
+    // beside a presence, since a painter drawing nothing also satisfies the
+    // assertion above.
     let (stride, buffer) = pixels(two_bars(vec![0.0, 1.0]));
     let drawn = inked(stride, &buffer, 119, true);
     assert!(
@@ -217,12 +188,9 @@ fn four_slices(inner: f64) -> Element {
     .unwrap_or_else(|error| unreachable!("{error}"))
 }
 
-/// How much of a small disc at the plot's centre is drawn.
-///
-/// **The measure that separates a pie from a doughnut**, and the one Agent
-/// Zero's TypeScript renders use: a pie fills its middle and a doughnut has a
-/// hole there, so the share of a centre disc that is painted is near total for
-/// one and nothing for the other.
+/// How much of a small disc at the plot's centre is drawn, which separates a
+/// pie, near total, from a doughnut, near nothing, as the TypeScript render
+/// tests measure it.
 fn centre_disc(stride: usize, buffer: &[u8], radius: usize) -> f64 {
     let height = buffer.len() / (stride * 4);
     let (cx, cy) = (stride / 2, height / 2);
@@ -361,12 +329,9 @@ fn thickness(
 
 #[test]
 fn the_pen_is_not_stretched_with_the_drawing() {
-    // A flat series halfway up, drawn on a page of 120 and again on one of
-    // 60. The vertical scale differs by two between them, so a pen that
-    // scaled would draw four pixels on one and two on the other. It draws two
-    // on both: `view_box` scales the drawing and not the pen.
-    //
-    // Measured at column 50, which is between the markers at 0, 100 and 200.
+    // A flat series halfway up, on pages of 120 and 60: a pen that scaled would
+    // draw four pixels on one and two on the other, and it draws two on both.
+    // Measured at column 50, between the markers.
     let flat = || {
         line(
             &["a".to_owned(), "b".to_owned(), "c".to_owned()],
@@ -470,17 +435,9 @@ fn a_point_marker_is_centred_on_its_point_and_is_round() {
 
 #[test]
 fn the_label_strip_sits_under_the_plot_rather_than_beside_it() {
-    // **The regression the pixels could not see until it was asked this
-    // question.** `with_style` used to replace a style rather than merge it,
-    // so a `Column::new().with_style(...)` discarded the column direction and
-    // laid the plot and the label strip out side by side. Every measurement of
-    // a bar *within* the plot still passed -- the arithmetic was never wrong
-    // -- and the picture was. Agent Zero's byte comparison found it; this is
-    // the rendered question that would have.
-    //
-    // `with_style` merges now, which removes the cause. The question stays:
-    // it asks whether the strip is under the plot, which is true of the
-    // layout and not of any one way of spelling it.
+    // Whether the label strip sits under the plot, which is true of the layout
+    // and of no one spelling of it: bars measured within the plot can all pass
+    // while the strip sits beside it.
     let chart = bar(
         &["a".to_owned(), "b".to_owned()],
         &[Dataset {
@@ -525,14 +482,9 @@ fn the_label_strip_sits_under_the_plot_rather_than_beside_it() {
 
 #[test]
 fn a_label_is_centred_under_its_own_slot() {
-    // **The only instrument that could ever have caught this.** Both surfaces
-    // set `align-items: center` on a row, where that is the *cross* axis --
-    // so the labels centred vertically and sat against the left edge of their
-    // slots. The two implementations agreed to the byte and the geometry
-    // table had no row for it; the pixels are what disagreed with v1.
-    //
-    // Two labels on a 200-wide page own 0..99 and 100..199, so their ink
-    // straddles x = 50 and x = 150 rather than starting at 1 and 101.
+    // Labels centre under their slots: `align-items` on a row is the vertical,
+    // and both surfaces agreeing on that did not make it right. Two labels on a
+    // 200-wide page straddle x = 50 and x = 150.
     let chart = bar(
         &["a".to_owned(), "b".to_owned()],
         &[Dataset {

@@ -1,30 +1,7 @@
-//! Where each `object-fit` rule puts a picture, against Chrome's own answers.
-//!
-//! # Why the rectangle is only half of it
-//!
-//! **`fill` and `cover` both fill the box.** Their rectangles are identical —
-//! `0,0,72,72` in Chrome's table for both — and they differ only in what they
-//! *cut*: `fill` stretches the whole picture, `cover` crops it. A test that
-//! compared rectangles alone would report the two as the same rule, and a
-//! renderer that implemented one for the other would pass.
-//!
-//! So the source carries a magenta column at its own `x = 0` and a cyan column
-//! at `x = 7`, and the table records whether each survives. Under `fill` both
-//! do; under `cover` neither does, because the crop takes the picture's ends.
-//! **A symmetric picture would read the same stretched as cropped**, which is
-//! why the marks are at the edges and in colours nothing else in the scene
-//! uses.
-//!
-//! # Why the marks are matched with a tolerance and the rectangle is not
-//!
-//! Chrome measured with `image-rendering: pixelated`, so an eight-pixel source
-//! scaled to 72 keeps hard columns. This renderer scales with its own filter,
-//! so a mark's colour arrives blended with its neighbour at the seams. The
-//! **presence** of a mark is therefore asked as *is any pixel near this
-//! colour*, with a distance well inside the gap between the four colours the
-//! source uses — they are far apart on purpose. The rectangle needs no
-//! tolerance, because it is a bound on what is not the cell colour rather than
-//! a claim about any particular pixel.
+//! Where each `object-fit` rule puts a picture, against Chrome's answers.
+//! `fill` and `cover` share a rectangle and differ in what they cut, so the
+//! source's magenta and cyan edge columns are checked for survival too -- by
+//! colour distance, since this renderer's filter blends a mark's seams.
 
 use meo_canvas::{
     Align, Box, Display, Format, Image, ObjectFit, Overflow, PositionType,
@@ -34,37 +11,24 @@ use meo_canvas::{
 /// The source: eight by four, magenta at its own `x = 0`, cyan at `x = 7`.
 const FIT_MARKS: &[u8] = include_bytes!("assets/fit-marks.png");
 
-/// The same picture as a document, which is the kind that placed it wrong.
-///
-/// **The same picture rather than a similar one**: rasterised at its own 8x4
-/// it is byte-identical to the bitmap on all thirty-two pixels. If the two arts
-/// differed, every row would differ and none of it would be about placement.
-///
-/// The divergence is `l7aromeo/meo-canvas#95`, and it is a property of
-/// `meo-skia-canvas` before 0.16.1 rather than of this crate
-/// (`l7aromeo/meo-skia-canvas#212`). The `svg` rows are why the workspace
-/// requires that version rather than admitting 0.16.0.
+/// The same picture as a document, byte-identical to the bitmap at its own 8x4,
+/// so the `svg` rows are about placement only. Why the workspace requires
+/// `meo-skia-canvas` 0.16.1 (`l7aromeo/meo-canvas#95`,
+/// `l7aromeo/meo-skia-canvas#212`).
 const FIT_MARKS_SVG: &[u8] = include_bytes!("assets/fit-marks.svg");
 
-/// The colour of the cell each rule is drawn in.
-///
-/// **The cell's size comes from the table rather than from here.** With one
-/// size, and a source that fits it, `scale-down` and `none` are the same rule
-/// by definition -- CSS makes `scale-down` the smaller of `none` and `contain`
-/// -- and the fixture carried two byte-identical rows for them. It could not
-/// have failed for `scale-down`, and neither could this test.
+/// The colour of the cell each rule is drawn in; the cell's size comes from the
+/// table, since with one size a fitting source makes `scale-down` and `none`
+/// the same rule.
 const CELL_INK: (u8, u8, u8) = (0xf0, 0xf0, 0xf0);
 
 /// The two marks, as the source spells them.
 const MAGENTA: (u8, u8, u8) = (232, 40, 200);
 const CYAN: (u8, u8, u8) = (40, 200, 200);
 
-/// How far a pixel may sit from a mark and still count as it.
-///
-/// The source uses four colours and no two are within 150 of each other in
-/// this metric, so 60 admits a blended edge and cannot admit a different mark.
-/// Stated rather than tuned: a tolerance chosen by raising it until a test
-/// passes is a tolerance that has stopped measuring anything.
+/// How far a pixel may sit from a mark and still count: no two of the source's
+/// four colours are within 150 in this metric, so 60 admits a blended edge and
+/// no other mark.
 const NEAR: u32 = 60;
 
 /// One row of the table.
@@ -77,11 +41,8 @@ struct Row {
     source: String,
 }
 
-/// Whether two rows describe the same cell.
-///
-/// **Both extents, because the boxes are no longer all square.** Comparing the
-/// width alone was right while every box was, and it silently pairs a 100x200
-/// row with a 100x100 one the moment they are not.
+/// Whether two rows describe the same cell, by both extents, since the boxes
+/// are not all square.
 fn same_box(a: (f32, f32), b: (f32, f32)) -> bool {
     (a.0 - b.0).abs() < f32::EPSILON && (a.1 - b.1).abs() < f32::EPSILON
 }
@@ -178,19 +139,11 @@ fn drawn(
 /// Which rules we answer differently from Chrome today.
 const KNOWN_FIT: &[&str] = &[];
 
-/// Refuses a table that could not fail, before anything is compared against it.
-///
-/// **Four checks, each of which a green run would otherwise hide.** They are
-/// here rather than inline because they are one idea -- whether this table is
-/// capable of reporting a defect -- and because the comparison loop below is
-/// long enough without them.
+/// Refuses a table that could not fail, before anything is compared against it:
+/// four checks on whether it can report a defect.
 fn assert_the_table_can_fail(rows: &[Row]) {
-    // **Counted first, because an empty list misdiagnoses itself.** Every
-    // guard below asks whether some row has a property, and each of them is
-    // false of no rows at all -- so a table this parser cannot read fires the
-    // first one and blames `scale-down` for a missing column. Seen exactly
-    // that way when the source column was added and the fixture had not been
-    // re-measured yet.
+    // Counted first: every guard below is false of an empty table, so an
+    // unreadable one would blame `scale-down` for a missing column.
     assert!(
         !rows.is_empty(),
         "no row of the table parsed: it has fewer fields than this reads, so \
@@ -198,13 +151,8 @@ fn assert_the_table_can_fail(rows: &[Row]) {
      not been run since"
     );
 
-    // **The table has to be able to tell `scale-down` from `none`.**
-    //
-    // Not a count: a count is what the fixture already passed while carrying
-    // two identical rows for two different rules. This asks the property the
-    // count was standing in for -- that somewhere in the table there is a cell
-    // size where the two rules give different answers. Delete the small boxes
-    // for tidiness and this fails by name rather than passing quietly.
+    // The table has to be able to tell `scale-down` from `none`: a cell size
+    // where the two differ, which a row count cannot stand in for.
     let separates = rows.iter().any(|row| {
         row.fit == "none"
             && rows.iter().any(|other| {
@@ -222,11 +170,8 @@ fn assert_the_table_can_fail(rows: &[Row]) {
      `contain`, which is `none` wherever the picture already fits"
     );
 
-    // **Both source kinds, because one kind is what let this through.** The
-    // table walked a PNG and only a PNG, so `object-fit` was guarded for one of
-    // the two kinds a caller can supply and the other placed three rules at the
-    // wrong rectangle with nothing red. A table that loses the vector rows is
-    // back to the state this defect was found in.
+    // Both source kinds, since walking only the PNG let three rules place the
+    // vector source at the wrong rectangle.
     for kind in ["raster", "svg"] {
         assert!(
             rows.iter().any(|row| row.source == kind),
@@ -235,13 +180,9 @@ fn assert_the_table_can_fail(rows: &[Row]) {
         );
     }
 
-    // **The box has to disagree with the picture about aspect.** Where they
-    // agree, `fill`, `contain` and `cover` are one rectangle and a renderer
-    // implementing only `fill` passes every row. Measured rather than supposed:
-    // a 200x100 box against this 2:1 picture agrees on all five rules with the
-    // defect present and with it fixed. This asks the property directly, so
-    // swapping the boxes for square-picture ones fails by name here instead of
-    // going green everywhere.
+    // The box has to disagree with the picture about aspect: a 200x100 box
+    // against this 2:1 picture agrees on all five rules with the defect present
+    // or fixed.
     let discriminates = rows.iter().any(|row| {
         row.fit == "fill"
             && rows.iter().any(|other| {

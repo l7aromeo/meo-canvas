@@ -1,58 +1,15 @@
 //! Every checked-in Chrome table is read by a test, and every table a test
-//! names exists.
-//!
-//! # The failure this exists to catch
-//!
-//! **An unread answer is indistinguishable from never having asked.** A table
-//! is measured in a browser, checked in, and then nothing consults it — and
-//! nothing fails, because a file that is never read cannot disagree with
-//! anything. The suite reports green while a browser's answers sit unused.
-//!
-//! The pinned `KNOWN` lists guard the opposite direction: a row that starts
-//! agreeing fails and says to delete it, which has caught four fixes in a day.
-//! **This is the other direction, and nothing was watching it.**
-//!
-//! # Why a mention is not a read
-//!
-//! Three ways a table can be unread, and only the first is obvious:
-//!
-//! 1. **nothing refers to it at all** — `gradient-truth.tsv` and
-//!    `object-fit.tsv` were measured and never consulted
-//! 2. **a doc comment names it** — `blend-modes.tsv` and `dotted-rhythm.tsv`
-//!    are cited in prose, which satisfies a `grep` and reads nothing
-//! 3. **its numbers are transcribed into a constant** — `border-rhythm.tsv` had
-//!    five rows copied into a `const CHROME`, so the test asserts against **a
-//!    copy that can drift from the table in silence**, and a regeneration that
-//!    changed an answer would leave the two disagreeing with nothing to say so
-//!
-//! # How far this reaches, exactly
-//!
-//! **It proves a table is opened. It does not prove its numbers are used.** A
-//! file may `include_str!` a table and still assert against a hand-written
-//! struct three lines below — case 3 surviving inside a file that now passes
-//! case 1. `border-rhythm.tsv` was caught only because it had no `include_str!`
-//! at all; one with both would go unnoticed here.
-//!
-//! Checking that a parsed value reaches an assertion is a different and much
-//! harder thing, and this does not attempt it. **An unnamed limit gets
-//! mistaken for coverage**, so it is named: the guard is a floor, and review is
-//! what covers the rest.
-//!
-//! So this looks for `include_str!` of the file, which is the one form that
-//! makes the committed bytes reach an assertion. A file that is read and never
-//! asserted on is still the same failure with a witness — that part cannot be
-//! checked mechanically, and is what review is for.
+//! names exists: an unread answer is indistinguishable from never having asked.
+//! Read means `include_str!` of the file -- a mention in prose reads nothing --
+//! and whether the parsed values reach an assertion is left to review.
 
 use std::{collections::BTreeSet, fs, path::Path};
 
 /// Where the tables live, relative to this crate.
 const TABLES: &str = "tests/assets/chrome";
 
-/// The trees searched for readers.
-///
-/// Both crates, tests and sources alike: `chrome_border_rhythm.rs` lives in
-/// `meo-canvas-core` and reads a table that lives here, so a search of this
-/// crate alone would report a false absence.
+/// The trees searched for readers, both crates: `chrome_border_rhythm.rs` lives
+/// in `meo-canvas-core` and reads a table that lives here.
 const SOURCES: &[&str] = &[
     "tests",
     "src",
@@ -60,11 +17,8 @@ const SOURCES: &[&str] = &[
     "../meo-canvas-core/src",
 ];
 
-/// Tables not yet read, each with the reason and the work that will remove it.
-///
-/// **A recorded exception a future reader can delete, not a silent omission.**
-/// Adding a name here to make the suite pass is the thing this file exists to
-/// prevent, so each entry carries what is expected to read it.
+/// Tables not yet read, each with the reason and what is expected to read it: a
+/// recorded exception, never a way to make the suite pass.
 const KNOWN_UNREAD: &[(&str, &str)] = &[];
 
 /// Every `.rs` file under `root`, recursively.
@@ -111,19 +65,10 @@ fn every_chrome_table_is_read_by_a_test() {
     let mut stale_exemption = Vec::new();
 
     for table in &tables {
-        // The `include_str!` form specifically. A doc comment naming the file
-        // matches a plain substring search and reads nothing. The path is
-        // matched by its tail rather than in full, because
-        // `chrome_border_rhythm.rs` lives in the other crate and reaches these
-        // tables through `../../meo-canvas/...`.
-        //
-        // **Whitespace is removed before the search, because rustfmt wraps the
-        // macro.** This asked for `include_str!` and the path on one line, and
-        // a `const` whose name and path together pass eighty columns is
-        // reformatted to three lines -- the macro on the first, the path alone
-        // on the second. The table was read and this reported it unread, which
-        // is a false absence rather than a missed reader, and the harder
-        // failure to notice: a real reader looks like a missing one.
+        // The `include_str!` form specifically, matched by the path's tail
+        // since the other crate reaches these tables through
+        // `../../meo-canvas/`. Whitespace is removed first, since rustfmt
+        // splits the macro and its path across lines.
         let flat: Vec<String> = text
             .iter()
             .map(|source| {
