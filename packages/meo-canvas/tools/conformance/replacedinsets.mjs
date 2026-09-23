@@ -1,28 +1,7 @@
-// What insets do to a replaced element, which is not what they do to a box.
-//
-// Reported as `l7aromeo/meo-canvas#92`: an `Image` with `inset: 0` and no width
-// or height is stretched to its containing block. Chrome keeps its intrinsic
-// size. A replaced element's `auto` width and height are its own dimensions,
-// and CSS resolves the over-constraint by **dropping an inset** rather than by
-// stretching the element -- CSS 2.2 §10.3.8 and §10.6.5.
-//
-// **Measured on a real `<img>`, and that is the whole reason this table
-// exists.** A `div` and an `img` give different answers to the same
-// declaration, so a harness that models an image as a plain box clears this
-// wrongly -- which is how the defect reached the reporter: an inset-only
-// workaround was checked in Chrome on a `<div>`, rendered correctly here, and
-// would have been wrong in a browser. Every `img` row below is an `<img>`
-// element with a real intrinsic size, and the `div` rows are here as the
-// contrast rather than as a stand-in.
-//
-// **The `div` rows are controls that must not move.** A repair that stops
-// insets sizing things breaks every non-replaced box, and only a table
-// carrying both kinds can see that happen.
-//
-// The source is an SVG data URL with explicit `width` and `height`, so the
-// intrinsic size is stated rather than decoded from pixels, and 60x40 is
-// deliberately neither square nor the containing block's shape: a stretched
-// box, an intrinsic box and a ratio-preserving box are three different numbers.
+// What insets do to a replaced element (`l7aromeo/meo-canvas#92`): its `auto` size
+// is its own, and CSS 2.2 §10.3.8 and §10.6.5 drop an inset rather than stretch it.
+// Measured on a real `<img>` of intrinsic 60x40, since a `div` answers differently;
+// the `div` rows are controls that must keep stretching.
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -51,42 +30,23 @@ const CASES = [
   ['img top 0 only', 'img', 'top:0;', 'one inset cannot over-constrain anything'],
   ['img left 0 right 0', 'img', 'left:0;right:0;', 'opposing insets on one axis: which one is dropped'],
   ['img top 0 bottom 0', 'img', 'top:0;bottom:0;', 'the same question on the other axis'],
-  // **No insets at all, and this is the row that pins the clamp.** It was
-  // missing until the Rust side asked for it: every other row here has a
-  // container the art either fits or is stretched into, and this one is the
-  // case where a renderer that narrows an intrinsic extent to the space
-  // offered reads 60x30 where Chrome reads 60x40.
+  // No insets: pins the clamp. A renderer narrowing an intrinsic extent to the
+  // space offered reads 60x30 where Chrome reads 60x40.
   ['img no insets', 'img', '', 'absolute, no insets: intrinsic size against a shorter block'],
-  // **The end inset alone, both axes.** The rule drops the END inset on an
-  // axis where BOTH are set; a lone `right` or `bottom` is untouched by
-  // construction. These two rows are what say the rule is scoped rather than
-  // merely stated -- and they are what goes red if someone later simplifies it
-  // to "drop the end inset for a replaced node", which reads like a tidy-up
-  // and is the obvious wrong generalisation.
+  // A lone end inset, both axes: the end inset is dropped only where both are set,
+  // and these go red if the rule is generalised to every replaced node.
   ['img right 0 only', 'img', 'right:0;', 'a lone end inset positions and must not be dropped'],
   ['img bottom 0 only', 'img', 'bottom:0;', 'the same on the block axis'],
-  // **These five record the border box and nothing about the picture.**
-  // `getBoundingClientRect` is the box; where the picture lands inside it is
-  // what `object-fit` decides, and no number here can see that. That half is
-  // `object-fit.tsv`, and it takes three separators rather than one: the
-  // rectangle tells `contain` from the rest; the magenta and cyan columns tell
-  // `cover` from `fill`, which share a rectangle and differ in that only
-  // `cover` crops the art's corner marks out of the cell; and a cell narrower
-  // than the art tells `scale-down` from `none`, which are identical at 72x72
-  // and differ at 6x6. Kept here because a rule that changed the box would
-  // show in these rows, and that is worth a row each.
+  // These five record the border box, not where `object-fit` puts the picture
+  // inside it -- that is `object-fit.tsv`. They show a rule that changes the box.
   ['img inset 0 fill', 'img', 'inset:0;object-fit:fill;', 'the box under fill; the picture is object-fit.tsv'],
   ['img inset 0 contain', 'img', 'inset:0;object-fit:contain;', 'the same, and the reporter used fill'],
   ['img inset 0 cover', 'img', 'inset:0;object-fit:cover;', 'the same'],
   ['img inset 0 none', 'img', 'inset:0;object-fit:none;', 'the same'],
   ['img inset 0 scale-down', 'img', 'inset:0;object-fit:scale-down;', 'the same'],
 
-  // **The rows that say the scope is a choice.** A `Text` node measures, like
-  // an image, and is *not* replaced — so a rule keyed on "the measurer answered"
-  // would have taken these with it. They stretch in Chrome and must keep
-  // stretching here. The block-axis numbers are font metrics rather than the
-  // property under test: this measures a 12px sans-serif line, and the same
-  // scene on our side is two pixels taller for that reason and no other.
+  // A `Text` node measures but is not replaced, so it stretches in Chrome and must
+  // here. Its block-axis numbers are font metrics: our 12px line is two pixels taller.
   ['text inset 0', 'text', 'inset:0;', 'a non-replaced measured node stretches both axes'],
   ['text top 0 bottom 0', 'text', 'top:0;bottom:0;', 'the block axis stretches, the inline one shrink-fits'],
   ['text no insets', 'text', '', 'content size, and the height here is a font metric'],

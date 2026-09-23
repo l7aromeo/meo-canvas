@@ -1,20 +1,7 @@
-// How far an outer box-shadow's ink reaches, and in which directions.
-//
-// The companion to `boxshadow.mjs`, which asks where the ink may *not* go.
-// This asks where it does go, and that is a number rather than an invariant:
-// offset, blur and spread each move the edge of the ink by an amount CSS
-// states and a browser is the authority on.
-//
-// **The box is white on a white page.** It is drawn and it is invisible, so
-// every pixel that is not white is shadow -- there is no box edge, no
-// antialiased rim and no background colour to subtract before the measurement
-// starts. That is what lets an extent be read by scanning rather than by
-// knowing where the box was.
-//
-// The reading is an **ink span against a stated threshold**, not a colour: two
-// rasterisers do not agree on a Gaussian's bytes and never will, but they
-// agree closely on where it has faded to nothing. The threshold is written
-// into the table so a row can be re-derived rather than trusted.
+// How far an outer box-shadow's ink reaches, and in which directions; the companion
+// to `boxshadow.mjs`, which asks where it may not go. The box is white on a white
+// page, so every non-white pixel is shadow. Read as an ink span against a threshold
+// written into the table, since rasterisers agree on where a Gaussian fades out.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -37,11 +24,8 @@ const THRESHOLD = 6
 /** Each case: what it is called, its `box-shadow`, and its `border-radius`. */
 const CASES = [
   ['none', 'none', 0],
-  // Offset, because with no offset at all the shadow sits entirely behind the
-  // 50x50 box that casts it and every ray reads -1 -- the six values `none`
-  // reads, from a different rule. 4 and 4 keep the edge hard while putting ink
-  // where a ray can find it; the axes stay symmetric here and asymmetric in
-  // `offset`, which is the row that catches a renderer swapping them.
+  // Offset 4,4: with none the shadow sits behind its 50x50 box and every ray reads
+  // -1, as `none` does. Symmetric here; `offset` is asymmetric and catches swapped axes.
   ['hard', '4px 4px 0 0 #000', 0],
   ['offset', '8px 4px 0 0 #000', 0],
   ['blur', '0 0 12px 0 #000', 0],
@@ -49,21 +33,14 @@ const CASES = [
   ['blur-spread', '0 0 8px 4px #000', 0],
   ['radius-spread', '0 0 0 6px #000', 16],
   ['radius-blur', '0 0 10px 0 #000', 16],
-  // Half-alpha, offset far enough that the band below the box is flat: what
-  // the profile reads there is the shadow's own colour and nothing else. It is
-  // the one case whose answer is arithmetic rather than a kernel -- half-alpha
-  // black over white is 128 -- so a renderer that applies the alpha twice
-  // reads 191 and is caught by a row it cannot blame on a rasteriser.
+  // Half-alpha, offset so the band below the box is flat: arithmetic rather than a
+  // kernel -- half-alpha black over white is 128, and alpha applied twice reads 191.
   ['alpha', '0 20px 0 0 rgba(0, 0, 0, 0.5)', 0],
 ]
 
 /**
- * The rays scanned, from the box's own edges outward.
- *
- * The four sides are read at their midpoints, where no corner can reach. The
- * two diagonals leave from the corner *point* -- which is where a radius shows
- * itself, because a rounded corner pulls the shadow's own corner in with it
- * and a square one does not.
+ * The rays scanned outward: the four sides at their midpoints, where no corner
+ * reaches, and two diagonals from the corner point, where a radius shows.
  */
 const RAYS = [
   ['left', -1, 0],
@@ -82,12 +59,9 @@ function start(dx, dy) {
 }
 
 /**
- * The cases whose ink is sampled step by step as well as scanned.
- *
- * An extent says where a Gaussian has faded out and says nothing about its
- * shape on the way there: a blur with the right reach and the wrong falloff
- * passes every span row. These are the two cases with a blur in them, read
- * down the ray from the bottom edge.
+ * The cases sampled step by step down the ray from the bottom edge as well as
+ * scanned: the blurs, since an extent says nothing about a Gaussian's falloff, and
+ * `alpha`, whose flat band is its answer.
  */
 const PROFILED = new Set(['blur', 'blur-spread', 'radius-blur', 'alpha'])
 

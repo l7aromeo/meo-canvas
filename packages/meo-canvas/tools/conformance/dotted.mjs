@@ -1,26 +1,7 @@
-// Whether Chrome fits a dotted border to its side, and what it does at a corner.
-//
-// Every question settled for dashed is open for dotted, and none of the answers
-// transfer by analogy: a dot is a round cap on a zero-length segment where a
-// dash is a stroked run, and the two go through different code before they
-// reach the same path. So this measures the same five things again rather than
-// assuming the dashed reading holds --
-//
-//   1. the period: is a dot `w` wide with a gap of `w`, at every width
-//   2. per-side fitting: does a side end flush at BOTH ends, and where does the
-//      remainder go -- into the gaps, or into the dots
-//   3. the corner: where the phase is anchored, read against the CSS Backgrounds
-//      3 section 4.4 division between the two edges
-//   4. the radius threshold: whether `radius > min(w_a, w_b)` switches a dotted
-//      border from per-side fitting to one run round the closed path, as it does
-//      for dashed
-//   5. what an arc carries below the threshold -- solid ink, or dots
-//
-// The instrument is `borders.mjs`'s, deliberately: same box, same threshold,
-// same sixteen samples per pixel on a curve, same `Math.floor` on a sample point
-// and `Math.round` on a browser-reported origin. A second instrument measuring
-// the same family would make the two tables incomparable, which is the whole
-// value of having both.
+// Whether Chrome fits a dotted border to its side, and what it does at a corner:
+// the period, per-side fitting, the corner phase, the radius threshold and what an
+// arc carries below it -- measured again, since a dot is a round cap on a zero-length
+// segment. `borders.mjs`'s instrument, so the two tables compare.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -33,17 +14,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/chrome/dotted-rhythm.tsv')
 
 /**
- * The boxes every straight-edge case is drawn in.
- *
- * **A sweep of edge lengths rather than one box, because the rule being
- * measured is a rounding rule and one box lands on one point of it.** An open
- * run of `n` dots has `n - 1` gaps, so it covers `(2n - 1)w` -- which makes the
- * exact count `(edge / w + 1) / 2`, and 240 puts that on an exact half at every
- * width here (120.5, 60.5, 40.5, 30.5, 15.5). **A tie is precisely where a
- * rounding rule is undetermined**, so a table built on 240 alone reports the
- * one case that cannot distinguish rounding up from rounding down -- and it
- * does not even answer consistently, which is the tell. The other lengths are
- * chosen to land away from a half at as many widths as possible.
+ * The boxes every straight-edge case is drawn in: a sweep, since `n` dots cover
+ * `(2n - 1)w` and 240 puts the exact count on a half at every width here -- a tie,
+ * where rounding up and down cannot be told apart. The others land off a half.
  */
 const BOXES = [131, 137, 149, 163, 179, 211, 240].map(width => ({ width, height: 48 }))
 
@@ -54,12 +27,8 @@ const LOOP_BOX = { width: 137, height: 120 }
 const WIDTHS = [1, 2, 3, 4, 8]
 
 /**
- * Ink is a red channel under this.
- *
- * The same 128 `border-rhythm.tsv` reads at, and it matters more here: a dot is
- * a circle, so its edge pixels are partial coverage over a larger share of the
- * mark than a dash's are. A run measured at one threshold and compared against a
- * table measured at another would differ by a pixel per dot for no reason.
+ * Ink is a red channel under this: the same 128 `border-rhythm.tsv` reads at, since
+ * a dot's edge pixels are a larger share of the mark than a dash's.
  */
 const THRESHOLD = 128
 
@@ -181,15 +150,8 @@ try {
       )
     }
   // ------------------------------------------------------------------
-  // The radius threshold, and what an arc carries either side of it.
-  //
-  // For dashed the branch is `radius > min(w_a, w_b)`: at or below it the inner
-  // radius `r - w` is non-positive, the inner corner is square, and each side is
-  // fitted on its own; above it one pattern runs round the closed path. Nothing
-  // says dotted takes the same branch, so it is measured rather than assumed.
-  //
-  // The discriminator is the one the dashed work settled on: a side fitted on
-  // its own is FLUSH at both tangents, and a closed run is not.
+  // The radius threshold: dashed fits each side alone at `radius <= min(w_a, w_b)`
+  // and runs round the path above it. Fitted alone, a side is flush at both tangents.
   // ------------------------------------------------------------------
   for (const radius of [0, 1, 2, 3, 4, 5, 6, 8, 12, 24]) {
     const width = 4
@@ -277,14 +239,8 @@ try {
   }
 
   // ------------------------------------------------------------------
-  // The closed-path walk, which is what actually separates the two branches.
-  //
-  // **The straight-portion reading above cannot do it**, and the rows show why:
-  // at radius 8 the band row at `y = 2` carries ink from `x = 5` where the
-  // tangent is at `x = 8`, so a window starting at the tangent reads a mark that
-  // belongs to the arc and reports flushness that is not fitting. The dashed
-  // work hit exactly this and settled it by counting marks round the whole loop
-  // instead, where the two hypotheses predict different totals.
+  // The closed-path walk: a straight window misreads an arc's mark as flushness (ink
+  // at `x = 5`, tangent at 8, radius 8), so marks are counted round the whole loop.
   // ------------------------------------------------------------------
   for (const radius of [5, 6, 8, 12, 24]) {
     const width = 4
@@ -303,15 +259,9 @@ try {
     await browser.page.setViewportSize(LOOP_BOX)
     const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...LOOP_BOX } }))
 
-    // **Floored at zero, because the centre path has no arc below `w/2`.**
-    // Unfloored this goes negative -- radius 1 at width 4 is `-1` -- and a
-    // quarter walked at a negative radius traces the arc BACKWARDS, so the
-    // samples land on the far side of the corner. The reading is not a small
-    // number, it is a reading of somewhere else. This is the same precondition
-    // as `height - 2 * radius > 0` on the straight, which was written for the
-    // shape and never turned on the arc: **every length the path model
-    // produces must be positive before the walk, not only the ones the shape
-    // suggested.**
+    // Floored at zero: below `w/2` the centre path has no arc, and a negative radius
+    // walks the quarter backwards onto the far side of the corner. Every length the
+    // path model produces must be positive before the walk.
     const inset = width / 2
     const r = Math.max(0, radius - inset)
     const left = Math.round(geometry.left) + inset
