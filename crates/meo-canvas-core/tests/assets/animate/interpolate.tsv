@@ -1,30 +1,7 @@
-# Ground truth for interpolate(), generated from meo-canvas v1's built module
-# (`dist/esm/animate/interpolate.js`) rather than from either v2 implementation.
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
-# the four original tables name, and verified rather than assumed: this
-# generator was first run against those tables and reproduced all 612 of their
-# rows exactly, which is what establishes it is the same v1 they came from.
-#
-# Neither surface may be written from the other: a misreading of v1 that reaches
-# both looks like agreement. Both are written against this, and this came from
-# v1 running, not from anyone reading it.
-#
-# Values are shortest-round-trip decimals, compared exactly. There is no
-# tolerance here.
-#
-# `ease` is a column rather than a fixed value because all three surfaces
-# take one -- v1 and the JavaScript surface as an optional `{ ease }`, Rust
-# as a required positional argument to `keyframes`. A walker that picked a
-# value silently would leave the column meaning nothing. `-` is the option
-# omitted entirely, which is not the same row as naming `linear`.
-#
-# `t` runs outside the declared stop range: v1 holds at the end values
-# rather than extrapolating, and only an out-of-range row can show that.
-#
+# `interpolate` as v9.0.2 (commit 890eed2) computes it. An `ease` of `-` omits
+# the option; `t` outside the stops holds at the end values.
 # t	stops	values	ease	result
 # rows: 54
-#
 -1	0;0.5;1	0;100;0	-	0
 0	0;0.5;1	0;100;0	-	0
 0.25	0;0.5;1	0;100;0	-	50

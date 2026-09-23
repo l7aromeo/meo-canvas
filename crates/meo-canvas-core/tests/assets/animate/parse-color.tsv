@@ -1,75 +1,7 @@
-# Ground truth for parseColor(), and the one table here whose expected values
-# are NOT v1's.
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean. Generated the same way
-# as its siblings -- that generator reproduced all 612 rows of the four original
-# tables exactly, which is what establishes it is the same v1 they came from.
-#
-# # Why this table records a third answer
-#
-# On alpha, **neither v1 nor this implementation is right**, so pinning either
-# would pin an artefact. v1 quantises alpha to eight bits and rounds to three
-# decimals, so `rgba(0, 0, 0, 0.1)` parses to `0.102`. Ours round-trips it
-# through `f32`, giving `0.10000000149011612`. Both are the float width of an
-# internal representation leaking through a public boundary.
-#
-# The browser is the tiebreak, as it was for the mix clamp: `getComputedStyle`
-# on `rgba(0, 0, 0, 0.1)` answers `0.1`. The rule is **`parseColor` returns the
-# number the author wrote**, and the `a` column carries that. Rows where v1 or
-# this surface disagrees are `diverges`, and the note records what each gives.
-#
-# **These rows failed on both surfaces when they were written, and that was
-# the point** -- they were the failing-first evidence for the finding. As of
-# `302c31e` they pass: `parse_channels` presents each channel as the shortest
-# decimal identifying its `f32`, and computes a hex alpha as `byte / 255`. The
-# `note` column records what v1 still gives, which is what these rows continue
-# to diverge from.
-#
-# There was no second fix to wait for. The JavaScript surface has no parser of
-# its own -- it reads through the addon, which calls `parse_channels` -- so one
-# change moved both surfaces at once.
-#
-# # What hid it, and what it narrows to
-#
-# Nothing anywhere parses a CSS string carrying an alpha -- the colour tests
-# build `{r, g, b, a}` objects directly, so the alpha never passes the parser.
-# The parameter no row varied, for the fourth time in this audit.
-#
-# Hex-byte alphas need their own rule, and two of these three rows are what
-# show it. Presenting the `f32` as its shortest identifying decimal fixes the
-# decimals and the percentages; a hex byte needs `byte / 255` computed where
-# the byte is known, because the ratio is not a decimal any `f32` reaches.
-#
-# `#0000007f` and `#0008` are the rows that discriminate: widening gives
-# `0.49803922` and `0.53333336`, and the rule gives `0.4980392156862745` and
-# `0.5333333333333333`. **`#000000cc` cannot tell the two apart** -- widening
-# gives the shortest decimal for `f32(0.8)`, which is `0.8`, and `204 / 255` is
-# also `0.8`. It is here as the row that agrees under both rules, which is the
-# same trap as the group whose members agree whether or not the count
-# propagates: an implementation checked only against it would report a passing
-# branch nothing took.
-#
-# Percentage spellings land on the same f32 as their decimal equivalents, so
-# `33%` fails exactly as `0.33` does. `12.5%` passes: it is a negative power of
-# two and exact in binary32.
-#
-# Only three of the six decimal alpha rows fail on this surface: `0.5`, `0.25` and
-# `0.75` are exactly representable in binary32 and already read back correctly.
-# It is `0.1`, `0.33` and `0.9` that do not -- which is why an eye passing over
-# the round numbers would have called it fine.
-#
-# # The css column is quoted, and that is not decoration
-#
-# A hex colour starts with `#`, which is this format's comment character, so
-# `#808080` as a bare first field is dropped by both walkers' own comment
-# filter -- silently, leaving a table that looks complete and tests three fewer
-# rows than it lists. This file lost three rows that way before the count was
-# checked against the generator's. Quoting follows `ellipsis.tsv`, which quotes
-# its strings for the same reason.
-#
+# `parseColor`: the `a` column is each alpha as written, as `getComputedStyle`
+# gives it; `note` holds v9.0.2's answer. `css` is quoted, as `#` is a comment.
 # css	kind	r	g	b	a	note
 # rows: 18
-#
 "#808080"	value	128	128	128	1	-
 "#f2aa4c"	value	242	170	76	1	-
 "rebeccapurple"	value	102	51	153	1	-
