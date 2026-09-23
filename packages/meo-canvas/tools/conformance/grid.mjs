@@ -1,14 +1,6 @@
-// Where a grid puts its items, for each auto-placement flow.
-//
-// The four flows differ only when the grid has a **hole** to fill: an item
-// that spans two tracks leaves a gap behind it, and `dense` goes back for that
-// gap while `row` and `column` do not. A grid of uniform single-cell items
-// places them identically under all four, so a table built that way reports
-// two working keywords as one.
-//
-// Rectangles rather than pixels, as with the flex matrix: `getBoundingClientRect`
-// is what Chrome laid out, and the equivalent on our side is the bounding box of
-// each item's own colour.
+// Where a grid puts its items, for each auto-placement flow. The flows differ only
+// when a spanning item leaves a hole for `dense` to fill. Read as rectangles, as
+// in the flex matrix.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -23,14 +15,9 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const GRID = { width: 120, height: 90, columns: 3, rows: 3 }
 
 /**
- * The items, in document order.
- *
- * The second spans **all three** columns, which is what leaves a hole for
- * `dense` to come back to: it cannot fit beside the first, so it starts a new
- * line and the two cells beside the first are left empty. A span of two would
- * have fitted in a three-column grid and left nothing behind -- and then the
- * dense flows draw the same picture as their plain counterparts, which is a
- * table reporting two working keywords as one.
+ * The items, in document order. The second spans all three columns, so it starts
+ * a new line and leaves a hole beside the first; a span of two would fit and leave
+ * the dense flows identical to the plain ones.
  */
 const ITEMS = [{ span: 'auto' }, { span: 'column 3' }, { span: 'auto' }, { span: 'auto' }, { span: 'row 2' }, { span: 'auto' }]
 

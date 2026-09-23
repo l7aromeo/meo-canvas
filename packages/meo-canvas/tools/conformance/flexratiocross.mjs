@@ -1,28 +1,7 @@
-// What a ratio does to a grown flex item's cross size.
-//
-// Reported as `l7aromeo/meo-canvas#123`: an item with `flex-grow: 1` and
-// `aspect-ratio: 1` in a column comes out with no width at all, where the ratio
-// should turn its grown height into one. taffy applies the transferred size
-// only where the item already has a cross contribution of its own;
-// `DioxusLabs/taffy#804` is the upstream defect and
-// `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` pins what taffy does.
-//
-// **Every row names the item's own `display`, and it is our axis rather than
-// CSS's.** A block item with content gets the derivation from taffy and a flex
-// item with the same content does not -- and Chrome gives `248x248` for all
-// four combinations of display and content. So a row that differs by the item's
-// display is evidence about taffy, and the rows here say which they used so
-// that nobody re-derives it.
-//
-// **The construction is the reader's axis, not this file's.** A scene built
-// through `Box()` is a flex container and one assembled from `Node` values is a
-// block one, which cost a control in the sweep behind this table -- `item has
-// content` agreed only as a hand-assembled block item. The browser has no such
-// distinction, so it is the Rust side that builds each row both ways.
-//
-// **The container is 440x264 with `box-sizing: border-box` and 8px of padding**,
-// so the content box is 424x248 in every row and the numbers below are all
-// derived from those two.
+// What a ratio does to a grown flex item's cross size (`l7aromeo/meo-canvas#123`,
+// upstream `DioxusLabs/taffy#804`, pinned in `taffy_flex_ratio.rs`). Chrome gives
+// 248x248 for every display and content; rows name the item's `display`, the axis
+// taffy differs on. The container's content box is 424x248 in every row.
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -120,12 +99,9 @@ const CASES = [
     '',
     'a cross maximum in a row container, where the pin writes the main axis',
   ],
-  // **The far end of the same divergence, and the row that shows it scales.**
-  // The height this renderer produces is the maximum where Chrome keeps the
-  // line's 248, so the error is `248 - max`: one pixel at `max-width: 247px`
-  // and 247 here. The near end is deliberately not a row -- it agrees only
-  // because its error is under the table's slack, and a green row inside a
-  // known-divergent family reads as the family agreeing.
+  // The far end of the divergence: this renderer's height is the maximum where
+  // Chrome keeps 248, so the error is `248 - max`. The near end is not a row, since
+  // it passes only because its error is under the table's slack.
   [
     'max-width binds amplified',
     `${COLUMN};align-items:center`,

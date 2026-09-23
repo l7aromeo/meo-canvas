@@ -1,16 +1,7 @@
-// What each blend mode does to one source over one backdrop.
-//
-// Unlike a blur, a blend mode is an **exact formula on channels** rather than
-// a filter kernel, so these numbers are something another engine has to
-// reproduce rather than approximate. That is why this table is worth asking
-// for at all, and the argument is already written down in
-// `fixtures/blend-modes/notes.json`.
-//
-// The backdrop is a **ramp**, and that is the whole design. On a flat backdrop
-// several of the sixteen collapse onto each other: `multiply` and `darken`
-// agree wherever the backdrop is lighter than the source, and `screen` and
-// `lighten` agree wherever it is darker. A ramp puts both halves of each pair
-// inside one cell, and the two sample points read one half each.
+// What each blend mode does to one source over one backdrop: an exact formula on
+// channels, so another engine must reproduce it (`fixtures/blend-modes/notes.json`).
+// The backdrop is a ramp, so `multiply`/`darken` and `screen`/`lighten`, which
+// agree on one side of the source, separate within one cell.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -52,11 +43,9 @@ const MODES = [
 ]
 
 /**
- * The two points each mode is read at, inside the source and derived from it.
- *
- * One where the backdrop under the source is dark and one where it is light —
- * the pair that stops `multiply` and `darken` reading the same, and `screen`
- * and `lighten` likewise.
+ * The two points each mode is read at, inside the source: one over dark backdrop
+ * and one over light, the pair that separates `multiply` from `darken` and
+ * `screen` from `lighten`.
  */
 const PROBES = [
   ['over dark', SOURCE.left + 4, SOURCE.top + 12],

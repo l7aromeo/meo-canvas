@@ -1,42 +1,7 @@
-// Which of two overlapping siblings Chrome paints on top.
-//
-// Four sections, each a complete cross-product, so the case list is
-// recoverable from the table rather than remembered:
-//
-//     position          125  = 5 displays x 5 positions(a) x 5 positions(b)
-//     z-positioned       75  = 3 displays x 5 za x 5 zb
-//     z-static           75  = 3 displays x 5 za x 5 zb
-//     stacking-context    6  = 3 displays x 2 za
-//
-// **The sample point comes from rectangles and the answer does not**, which is
-// how this obeys the rule differently from every other tool here. There is no
-// rectangle whose width is the answer: the answer is *which box is on top*. So
-// the two boxes' own reported rectangles give the true intersection, its centre
-// is the point, and `elementFromPoint` reads what is painted there. A reader who
-// knows the rule will look for a rectangle being measured and should find this
-// paragraph instead.
-//
-// **Every case is measured alone, and that is part of the measurement rather
-// than housekeeping.** A `position: fixed` box resolves against the viewport,
-// so a case left on the page can sit over a later case's intersection and
-// answer for the wrong pair. Four cases did exactly that while the method was
-// being worked out, which is why the body is emptied between them.
-//
-// **A `fixed` box is given no inset, and that is the other half of the same
-// rule -- established by measurement rather than chosen.** Written with
-// `left: 0; top: 0` it goes to the viewport's origin while its sibling sits at
-// the parent's, and the two never overlap: 11 of the 45 `fixed` cases had no
-// intersection to sample at all and this tool refused to write them. With the
-// inset omitted the box keeps its static position, all 281 cases have an
-// overlap, and the table reproduces the committed one exactly. So the absence
-// of an inset here is not an oversight to be tidied up: putting one back
-// removes eleven rows from a complete cross-product.
-//
-// **A pair that does not overlap fails the run rather than being dropped.**
-// 281 rows is a complete cross-product; a table arriving with 277 has found
-// something a person needs to see, and a tool that quietly emits fewer rows
-// than it has cases is the failure every check in this directory exists to
-// avoid.
+// Which of two overlapping siblings Chrome paints on top, over four complete
+// cross-products, 281 cases. Each is measured alone, read with `elementFromPoint`
+// at the centre of the two rectangles' intersection. A `fixed` box has no inset so
+// it overlaps its sibling; a pair that does not overlap fails the run.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'

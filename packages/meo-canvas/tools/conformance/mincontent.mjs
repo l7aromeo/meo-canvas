@@ -1,29 +1,7 @@
-// Whether a truncation changes an element's **intrinsic** width, in Chrome.
-//
-// The claim under test is that it does not: `text-overflow: ellipsis` and
-// `-webkit-line-clamp` describe what is drawn once the used width is already
-// below what the content wants, and CSS Sizing 3 §5.1 derives min-content from
-// the content alone. If that is right, a clamped element and a plain one
-// report the same `min-content`, and a flex item floored at that value cannot
-// be squeezed down to its ellipsis.
-//
-// **The pair is the measurement.** A single element's min-content is
-// consistent with any rule at all, so every string is measured four ways -- the
-// two truncations Chrome actually has, each against its own control -- and what
-// is read off is whether the two halves of a pair agree:
-//
-//   plain      wrapping, no truncation. The baseline.
-//   ellipsis   `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`
-//   nowrap     the same **without** `text-overflow`. The ellipsis control:
-//              `nowrap` raises min-content to the whole run on its own, so a
-//              pair that omitted this would credit that to the marker.
-//   clamp      `-webkit-line-clamp: 1`, which truncates while still wrapping
-//              and so is the analogue of this renderer's `maxLines`.
-//
-// A `min-content` that equals its own `max-content` in every row would be a
-// suite measuring nothing, which is why `Flower of Paradise` is here: it wraps
-// at spaces, so its two intrinsic widths genuinely differ and a rule that
-// collapsed to either end is visible in the table.
+// Whether a truncation changes an element's intrinsic width in Chrome (CSS Sizing 3
+// §5.1 says not). Each string is measured as `plain`, `ellipsis`, `nowrap` -- the
+// ellipsis control, since `nowrap` alone raises min-content -- and `clamp`, the
+// analogue of `maxLines`; the pairs are what is read.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -35,15 +13,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/chrome/min-content.tsv')
 
 /**
- * The strings to ask about, and the size to ask at.
- *
- * `HP` is the reported case: two letters, no break opportunity, and the label
- * that collapsed to an ellipsis in a row with room to spare. `Flower of
- * Paradise` is the discriminating one -- min-content is `Paradise` and
- * max-content is the whole run, and those differ by 56 pixels. The single long
- * word is the third shape: nowhere to break *and* wider than any container it
- * would be put in, where a rule that floors at min-content has to admit an
- * overflow rather than shrink.
+ * The strings to ask about, and the size: `HP`, the reported label with no break
+ * opportunity; `Flower of Paradise`, whose min- and max-content differ by 56
+ * pixels; and one long word wider than any container, which must overflow.
  */
 const CASES = [
   { text: 'HP', size: 12 },

@@ -1,10 +1,6 @@
-// A PNG reader, because a screenshot is the only way to ask Chrome what it
-// actually painted.
-//
-// Eight-bit RGB or RGBA, no interlacing — which is what Playwright writes.
-// Node's own `zlib` does the decompression, so this needs no dependency: the
-// rest is the filter loop from the specification, and refusing anything it
-// does not understand is what keeps it short enough to be obviously right.
+// A PNG reader for Playwright's screenshots: eight-bit RGB or RGBA, no interlacing,
+// Node's `zlib` for decompression and the specification's filter loop for the
+// rest. Anything else is refused.
 
 import { inflateSync } from 'node:zlib'
 
