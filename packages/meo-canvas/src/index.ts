@@ -111,9 +111,9 @@ export type TrackSize = number | 'auto' | `${number}px` | `${number}%` | `${numb
  *
  * **Upstream's spellings, exactly, and they are not this package's house
  * style.** Every other keyword union here is ours to name; this one is already
- * written down in callers' source — `colorType: 'RGBA8888'` is a string a v1
- * caller has. Renaming it would fail as an invalid *value* rather than as a
- * visible rename, with nothing pointing at what it became.
+ * written down in callers' source, as `colorType: 'RGBA8888'`. Renaming it would
+ * fail as an invalid *value* rather than as a visible rename, with nothing
+ * pointing at what it became.
  *
  * The aliases are upstream's too: `'rgba'` and `'RGBA8888'` are one layout,
  * `'rgb'` and `'RGB888x'` another.
@@ -154,7 +154,7 @@ export type ColorType =
  * What a render does when an image source cannot be resolved.
  *
  * `'placeholder'` draws a neutral mark and lets the render finish,
- * `'throw'` fails the whole render as every version before this one did, and
+ * `'throw'` fails the whole render, and
  * `'ignore'` draws nothing. **All three record the warning** — the choice is
  * what is drawn, never what is known.
  */
