@@ -18,19 +18,10 @@ authors.workspace = true
 # offering one would invite a dependency that drags Neon into a Rust-only build.
 crate-type = ["cdylib"]
 
-# **Naming both `metal` and `vulkan` builds, and Metal wins.** It did not
-# before 0.12.1: meo-skia-canvas bound both engines to one `Engine` name and a
-# build with both was `error[E0252]` inside a crate the caller never named
-# (l7aromeo/meo-skia-canvas#36). Upstream fixed it by precedence rather than by
-# refusal -- `#[cfg(all(feature = "vulkan", not(feature = "metal")))]` on the
-# module, the engine and the renderer -- because the overlap is only reachable
-# on macOS, where Vulkan runs through MoltenVK anyway.
-#
-# So the failure mode changed rather than went. **A build that names both is
-# silently a Metal build**, which matters because Cargo unifies features: a
-# binary depending on two crates that each want a different backend gets both,
-# and now compiles. `Renderer::engine` reports which one is live, and asking it
-# is the only way to know.
+# A build naming both `metal` and `vulkan` compiles and is a Metal build:
+# meo-skia-canvas gives Metal precedence, the overlap being reachable only on
+# macOS. Cargo unifies features, so two dependencies wanting different backends
+# get both, and `RenderedCanvas::engine` reports which one is live.
 [features]
 # The GPU backend, chosen at build time and named by the platform that has one:
 # Metal on Apple targets, Vulkan elsewhere. Neither is default -- a build with
@@ -48,18 +39,15 @@ neon = { workspace = true }
 # `cx.task`.
 rayon = { workspace = true }
 # Named here as well as under `meo-canvas-core` so the addon can re-export the
-# backend's own surface to JavaScript. `default-features = false` comes from the
-# workspace entry and is what keeps its `node-addon` feature -- and so its own
-# `#[neon::main]` -- out of this binary: a `.node` file has exactly one
-# module-init symbol, and the one in `src/lib.rs` is it.
+# backend's surface to JavaScript. The workspace entry's `default-features =
+# false` keeps its `node-addon` feature, and so its `#[neon::main]`, out: a
+# `.node` has one module-init symbol, the one in `src/lib.rs`.
 meo-skia-canvas = { workspace = true }
 
 [lints]
 workspace = true
 
-# Declared for the pass that owns them, which is a signature and an
-# `unimplemented!()` body at this stage -- `cargo-machete` reads imports, and a
-# skeleton has none yet. Each entry comes out the moment its pass is written;
-# an entry still here when the crate is finished is a dependency to delete.
+# Skipped by `cargo-machete`. `src` imports all three, so the list hides nothing
+# the tool would report.
 [package.metadata.cargo-machete]
 ignored = ["meo-canvas-core", "meo-canvas-scene", "meo-skia-canvas"]
