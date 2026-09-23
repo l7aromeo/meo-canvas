@@ -1,15 +1,7 @@
-// ESLint, flat config. Prettier owns formatting; this owns everything else.
-//
-// `eslint-config-prettier` goes last so that no rule here argues with the
-// formatter about whitespace -- the two tools are run together by `bun run
-// lint`, and a rule that fails on something prettier just wrote is a rule
-// that trains people to skip the gate.
-//
-// Type-aware rules are on. They are the ones that find a promise nobody
-// awaits or a `!` that hides a real `undefined`, which are the defects this
-// codebase has actually shipped; the cost is that ESLint parses with the
-// TypeScript program, which is why `parserOptions.projectService` is set and
-// why the root TypeScript is pinned to a version typescript-eslint supports.
+// ESLint, flat config. Prettier owns formatting, and `eslint-config-prettier` goes
+// last so no rule argues with it. Type-aware rules are on -- they find an unawaited
+// promise or a `!` hiding a real `undefined` -- so ESLint parses with the TypeScript
+// program, and the root TypeScript is pinned to a version typescript-eslint supports.
 
 import eslint from '@eslint/js'
 import prettier from 'eslint-config-prettier'
@@ -18,9 +10,8 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    // What is never linted: build output, installed packages, generated
-    // tables, the vendored v1 layer kept in its own style so it can be diffed
-    // against upstream, and the golden fixtures. Mirrors `.prettierignore`.
+    // What is never linted: build output, installed packages, generated tables and
+    // the golden fixtures. Mirrors `.prettierignore`.
     ignores: [
       '**/dist/**',
       '**/node_modules/**',
@@ -30,11 +21,9 @@ export default tseslint.config(
       'packages/*/src/generated/**',
       'release/**',
       'coverage/**',
-      // Agent scratch: probes and reports, gitignored at `.gitignore`. They are
-      // browser snippets run through a headless Chrome, so `document` and
-      // `getComputedStyle` are undefined to a lint that reads them as Node.
-      // eslint does not read `.gitignore`, so the two lists are kept in step by
-      // hand.
+      // Scratch probes and reports, gitignored: browser snippets that a Node lint
+      // reads as undefined names. eslint does not read `.gitignore`, so the two
+      // lists are kept in step by hand.
       '.tmp/**',
       // Config files at the root belong to no TypeScript project.
       '*.config.mts',
@@ -54,18 +43,15 @@ export default tseslint.config(
       },
     },
     rules: {
-      // Off, on purpose. `Canvas.toBuffer` and `toURL` are `async` with no
-      // `await` because the contract is a rejection, not a throw -- AGENTS.md
-      // "Throwing and rejecting are different failures". Dropping `async` to
-      // satisfy this rule would turn a validation error into a synchronous
-      // throw that a caller's `.catch` never sees.
+      // Off: `Canvas.toBuffer` and `toURL` are `async` with no `await` because the
+      // contract is a rejection, not a throw, which a caller's `.catch` sees (see
+      // AGENTS.md on throwing and rejecting).
       '@typescript-eslint/require-await': 'off',
-      // The surface is TypeScript; a `.mjs` tool that reads JSON is allowed
-      // to say `any` about it once. Elsewhere, a real type or `unknown`.
       // A parameter a signature forces on you may be named `_x` and left
       // unused. A variable may not: an unused variable is dead code, and
       // `const _ = x` to silence the rule is the thing the rule exists to stop.
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      // A real type or `unknown`, never `any`.
       '@typescript-eslint/no-explicit-any': 'error',
       // A floating promise is the failure mode of every `async` render call
       // in this package: the error goes nowhere and the process exits 0.
