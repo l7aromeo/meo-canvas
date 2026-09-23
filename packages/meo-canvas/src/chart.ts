@@ -63,9 +63,7 @@ function assertDrawable(values: readonly (readonly number[])[]): void {
   for (const series of values) {
     for (const value of series) {
       if (value < 0) {
-        throw new Error(
-          `[canvas] a chart cannot draw a negative value (got ${value}) — v1 mis-draws these rather than supporting them, so they are refused here instead of reproduced`,
-        )
+        throw new Error(`[canvas] a chart cannot draw a negative value (got ${value})`)
       }
     }
   }
