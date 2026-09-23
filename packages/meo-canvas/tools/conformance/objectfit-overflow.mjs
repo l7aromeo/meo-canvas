@@ -1,31 +1,7 @@
-// Whether Chrome clips a picture to the element it was placed in.
-//
-// **`objectfit.mjs` cannot answer this, and could not have.** It builds its
-// cell as `overflow:hidden`, sets the viewport to the box, and clips the
-// screenshot to the box as well — three separate reasons a pixel outside the
-// element can never reach the measurement. So its table says where each rule
-// puts the picture *given* a clip, and is silent on whether Chrome applies one.
-// It is green and always would have been.
-//
-// This asks the other half: the element sits on a page larger than itself, with
-// no `overflow` declared anywhere, and the shot covers the whole page. Anything
-// outside the element's box is ink Chrome chose to paint there.
-//
-// Two rules can exceed their box and both are measured. `cover` scales by
-// `max(sx, sy)`, so a source whose aspect differs from the box overflows on one
-// axis. `none` draws at intrinsic size, so any source larger than its box
-// overflows on both. Nobody has reported `none`, which is why it is here:
-// the report is a sample and the class is "fits that can exceed".
-//
-// `contain` is the control. It scales by `min(sx, sy)` and cannot exceed, so a
-// run that finds ink outside the box for `contain` is measuring something other
-// than overflow — a stray margin, a scrollbar, a background that is not the
-// colour this expects — and the table would be evidence about the harness.
-//
-// The source is generated in the page rather than read from `fit-marks.png`,
-// which is 8x4: `none` needs a source larger than its box and `cover` needs an
-// aspect that does not match it, and one asset cannot be both without boxes so
-// small the answer is a rounding argument.
+// Whether Chrome clips a picture to its element: the element sits on a larger page
+// with no `overflow` declared and the shot covers the page, which `objectfit.mjs`'s
+// clipped cells cannot show. `cover` and `none` can exceed their box; `contain`
+// cannot and is the control. The source is generated in the page at each size.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -59,46 +35,24 @@ const CASES = [
   { fit: 'none', box: { width: 20, height: 20 }, source: { width: 60, height: 60 } },
   // The control. `contain` scales by `min(sx, sy)` and cannot exceed its box.
   { fit: 'contain', box: { width: 40, height: 30 }, source: { width: 40, height: 10 } },
-  // **The positive control, and the row that makes the other three mean
-  // something.** Three `inside` verdicts are exactly what a harness that cannot
-  // see outside the box would print, so one case forces `overflow:visible` and
-  // must report `spills`. It also names the mechanism: the clip is the UA
-  // stylesheet's `overflow: clip` on the replaced element, and it is
-  // overridable -- which is why this row can exist at all.
+  // The positive control: forcing `overflow:visible` must report `spills`, since
+  // `inside` is what a harness blind outside the box prints. The clip is the UA
+  // stylesheet's `overflow: clip` on the replaced element, which is overridable.
   { fit: 'cover', box: { width: 40, height: 30 }, source: { width: 40, height: 10 }, overflow: 'visible' },
-  // **The symptom users actually report.** Not "my image overflows its box" but
-  // "my rounded image renders square": the element's radius is honoured, and
-  // then the overflowing picture paints over the corners it cut. So the
-  // interesting pixel is the box's own rectangular corner, which sits outside a
-  // 14px curve -- paper there means the picture was clipped to the shape rather
-  // than to its bounding rectangle.
+  // "My rounded image renders square": the radius is honoured, then the picture
+  // paints over the corners it cut. Paper at the box's own rectangular corner,
+  // outside a 14px curve, means the picture was clipped to the shape.
   { fit: 'cover', box: { width: 60, height: 40 }, source: { width: 60, height: 10 }, radius: 14 },
-  // **The case that separates two defects sharing one symptom, and it looks
-  // trivially redundant.** A square source in a square box under `contain`
-  // scales by `min(sx, sy)` with both equal, so the picture fills the box
-  // exactly and nothing overflows. That is the point: every other case here
-  // uses a fit that overflows or a source that letterboxes, and neither can
-  // tell "clipped to the radius" from "clipped to the box" -- both mechanisms
-  // predict the same pixels. Only a picture that reaches the corners without
-  // exceeding them makes them disagree.
-  //
-  // Three people made four attempts on `l7aromeo/meo-canvas#37` and a fifth
-  // hypothesis was written here, all of them missing it. The instruments were
-  // fine; **the cases were not discriminating.**
+  // A square source filling a square box exactly under `contain`: the only case
+  // where clipping to the radius and clipping to the box predict different pixels,
+  // since every other case overflows or letterboxes (`l7aromeo/meo-canvas#37`).
   { fit: 'contain', box: { width: 80, height: 80 }, source: { width: 40, height: 40 }, radius: 20 },
-  // **Where replaced content sits inside a decorated element.** CSS puts it in
-  // the content box, which is inside the border *and* the padding. Both of
-  // these inset it equally and the two add, which is the part worth measuring
-  // rather than assuming: a fix built from the border case alone is right for
-  // half the inputs and silently wrong for the other half.
+  // Replaced content sits in the content box, inside the border and the padding,
+  // and the two insets add -- so each is measured rather than one assumed.
   { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, border: 8 },
-  // **The padding row carries a background and that is load-bearing.** A
-  // padding band is only visible if something paints it, and for `padding` the
-  // element's own `background` is what does -- a border has its own colour, a
-  // padding band does not. The walker's scene sets the same background for the
-  // same reason. Drop either and that row measures the element on one side and
-  // the picture alone on the other, which reads as a placement defect and is
-  // not one.
+  // The padding row carries a background, since a padding band is visible only
+  // when the element's own `background` paints it; the walker's scene sets the same
+  // one. Without either, the row reads as a placement defect that is not one.
   { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, padding: 8 },
   { fit: 'cover', box: { width: 80, height: 80 }, source: { width: 80, height: 20 }, border: 8, padding: 8 },
   // And the corner the content box follows, which is tighter than the box's

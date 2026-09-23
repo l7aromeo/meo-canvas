@@ -1,11 +1,8 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# The formatting toolchain, by name. rustfmt.toml turns on options that only
-# nightly reads, and nightly rustfmt drifts daily, so the date is pinned and
-# `.github/workflows/ci.yml` installs this exact one, reading the value from
-# here rather than restating it. **There is no `fmt` job**: `ci.yml` has one
-# job, named `ci`, and this comment named a different one for long enough
-# that an audit had to find it.
+# The formatting toolchain, pinned by date because `rustfmt.toml` uses options
+# only nightly reads and nightly drifts daily. `.github/workflows/ci.yml`
+# installs this exact one, reading it from here.
 fmt_toolchain := "nightly-2026-08-10"
 
 # The GPU backend meo-skia-canvas compiles on this platform. Only
@@ -21,18 +18,9 @@ host_features := if os() == "macos" { "metal" } else { "vulkan" }
 lib_name := if os() == "macos" { "libmeo_canvas_node.dylib" } else if os() == "windows" { "meo_canvas_node.dll" } else { "libmeo_canvas_node.so" }
 addon_path := "packages/meo-canvas/meo-canvas.node"
 
-# Where a cross-build lands, and why it is not `addon_path`.
-#
-# **A container build must not overwrite the native addon.** It did, and the
-# consequence was invisible from the recipe's name: `just addon-container
-# linux-arm64-gnu` on a Mac left a Linux `.so` at `addon_path`, so `test-js`,
-# `example` and every other check needing the native binary failed with a format
-# error until someone rebuilt it -- and on a shared checkout it did that to
-# whoever else was mid-run, as a failure that reads like their own regression.
-#
-# One path per target, under `target/` where build output belongs. The suffix is
-# the same spelling `TARGETS` uses, because a second spelling of one target is
-# how a lookup silently matches no key.
+# Where a cross-build lands: one path per target under `target/`, never
+# `addon_path`, since a Linux `.so` there fails every check needing the native
+# addon with a format error. The suffix is `TARGETS`' spelling.
 container_addon := "target/container"
 
 # Default: show available recipes.
@@ -47,38 +35,17 @@ default:
 ensure-deps:
     @test -d node_modules || bun install --frozen-lockfile
 
-# The browser `conformance` measures with, checked only where it is needed.
-#
-# **Not folded into `ensure-deps`.** That recipe is on the path of `typecheck`,
-# `lint-check` and everything else that needs `node_modules`, and only this one
-# recipe drives a browser -- putting the check there makes every gate pay for a
-# probe it has no use for. The cost being weighed is *every recipe pays for a
-# browser check*, and it is written down because a taste question gets reversed
-# by someone who does not know it was weighed.
-#
-# `setup` installs it on a fresh clone. This exists so a clone that skipped
-# `setup` is told what is missing, rather than failing inside Playwright.
-#
-# **It asks Playwright where the binary is and looks.** The first spelling here
-# was `playwright install --dry-run chromium`, which reports what *would* be
-# installed and exits 0 whether or not anything is there -- a check that could
-# not fail, in a commit about a tool that did the wrong thing quietly. Measured
-# both ways before it was believed: with the browser present, exit 0; with
-# `PLAYWRIGHT_BROWSERS_PATH` pointed at nothing, `ENOENT` and exit 1.
+# The browser `conformance` measures with, checked here rather than in
+# `ensure-deps`, which every gate pays for. It asks Playwright where the binary
+# is and looks: `install --dry-run` exits 0 either way.
 [private]
 ensure-browser:
     @node -e 'import("playwright").then(async p => { const { accessSync } = await import("node:fs"); accessSync(p.chromium.executablePath()) })' > /dev/null 2>&1 \
       || { echo "error: no chromium for Playwright -- run \`just setup\`, or \`npx playwright install chromium\`"; exit 1; }
 
-# The examples are a consumer of the package and carry their own lockfile.
-#
-# Their `meo-canvas` is a `file:` dependency, and bun installs one of those by
-# **copying the directory at install time** -- so the copy has whatever
-# `dist/` had when `bun install` ran, and nothing afterwards. Installed before
-# `build-js`, it has no `dist` at all and every import resolves to an error
-# type; installed once and left, it keeps yesterday's declarations. So this
-# reinstalls whenever the copy's `index.d.ts` is missing or older than the real
-# one, which is why every recipe that needs it lists `build-js` first.
+# The examples take the package as a `file:` dependency, which bun installs by
+# copying, so the copy keeps `dist/` as it was. This reinstalls when the copy's
+# `index.d.ts` is missing or older, so every caller lists `build-js` first.
 [private]
 ensure-example-deps:
     #!/usr/bin/env bash
@@ -89,25 +56,10 @@ ensure-example-deps:
         (cd examples/bun && bun install --frozen-lockfile)
     fi
 
-# Aggregate: what CI runs. Uses non-fixing variants.
-#
-# Refuses to start while another gate is running in this tree, because two of
-# them share `target/llvm-cov-target` and one relinks a test binary while the
-# other executes it. The second sees `signal: 9 (SIGKILL)` or
-# `No such file or directory (os error 2)` from a doctest, both of which read
-# as defects in the code and neither of which points here. It cost two
-# sessions a wrong diagnosis before the pair of symptoms gave it away.
-#
-# A lock rather than a probe at the start: two gates can begin minutes apart
-# and still meet inside `coverage`, so a check that passes at the door proves
-# nothing about the next twenty minutes.
-#
-# `CARGO_TARGET_DIR` is the escape hatch and not the default, for two measured
-# reasons. It is a cold build, so it trades a full workspace rebuild for the
-# wait it avoids. And it does not cover everything: `coverage` writes
-# `--output-path target/lcov.info`, a literal relative path that no target-dir
-# setting moves, so two gates still write one file -- milder by a long way,
-# and not nothing.
+# Aggregate: what CI runs, with non-fixing variants. Refuses to start beside
+# another gate in this tree: two share `target/llvm-cov-target`, and a relink
+# under a running doctest reads as SIGKILL. `CARGO_TARGET_DIR` is the cold-build
+# escape hatch.
 [doc("Run every gate, once, in this tree.")]
 ci:
     #!/usr/bin/env bash
@@ -143,70 +95,26 @@ ci:
     trap 'rm -rf "$lock"' EXIT INT TERM
     just ci-steps
 
-# The checks that read the repository and nothing else.
-#
-# **The test for this list: does the recipe, or anything it depends on, name
-# `cargo`?** If it does it belongs in `native`, and the question is settled by
-# grep rather than by judgement. `runtime-free` is here to be looked at and
-# rejected -- it runs `cargo tree`, which compiles nothing and would ride along
-# for about a second, and it is native anyway. **A rule that admits an exception
-# for cheapness stops being a test.**
-#
-# **What it buys.** These run identically on every host, so running them once
-# rather than three times costs nothing and saves the slowest runner's wall
-# clock. Measured on run 34291240847, per command from the log's timestamps:
-# `typecheck` alone is 221s of Windows' 959s -- 176s for the examples project and
-# 45s for the package -- against 60s for the whole group on ubuntu. `tsc
-# --noEmit` emits nothing and reads a great many small files, which is a Windows
-# filesystem cost rather than a compilation one.
-#
-# **The dependency half of the test decides three recipes, one each way.**
-# `docs-js` names no `cargo` and stays here, because what it depends on --
-# `build-js` -- compiles TypeScript rather than Rust. `test-js` and `coverage-js`
-# name no `cargo` either and are native, because they reach `addon`. **A
-# dependency is what carries a recipe across without its own body changing**, so
-# grep the closure rather than the recipe. Stated that way the test has no
-# exceptions: all eleven here are `cargo`-free through their dependencies, and
-# all thirteen there reach it. `gate-lists-check` asserts the arithmetic of that
-# sentence rather than leaving it to a reader.
+# The checks that read the repository and nothing else: a recipe belongs here if
+# nothing in its dependency closure names `cargo`, which `gate-lists-check`
+# asserts. They run once, not per host; `typecheck` alone was 221s of a 959s
+# Windows run.
+[doc("The half of `ci` that reads the tree and runs no cargo, once per run.")]
 portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-js private-docs issue-refs fixture-notes workaround-probes conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
 
-# The checks that compile, link, or run the addon, and so have to run per host.
-#
-# Everything whose dependencies reach `cargo`. For `test-js` and `coverage-js`
-# that is `addon`, and loading the compiled `.node` is the one thing that
-# genuinely differs between platforms.
-#
-# **`test-js` runs before `test`, and the order is the point rather than a
-# tidying.** `just` stops at the first failure, so with `test` first a red Rust
-# suite meant the JavaScript suite never ran at all -- and a reader saw one
-# surface's failures and no information about the other. It cost a full round
-# trip on a Windows `tiff` disagreement where both figures reported were the
-# Rust side against a hash written on macOS, and the JavaScript side had not
-# executed. Two surfaces that can disagree should both report before anyone
-# reasons about which is wrong.
-#
-# `addon` stays ahead of `test-js`, which needs the compiled `.node`; that is
-# the only ordering constraint here, and `gate-lists-check` asserts both it and
-# the `test-js`-before-`test` rule, because nothing else would notice either
-# being undone.
+# The checks that compile, link or run the addon, per host. `addon` precedes
+# `test-js`, and `test-js` precedes `test`, so a red Rust suite cannot hide the
+# JavaScript result; `gate-lists-check` asserts both.
+[doc("The half of `ci` that compiles, links or runs the addon, once per host.")]
 native: fmt-check arena-cases-check media-types-check lint-check docs addon test-js test coverage coverage-js example runtime-free unused
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
 ci-steps: portable native
 
-# First-time setup on a fresh clone. Idempotent -- safe to re-run.
-#
-# The nightly carries llvm-tools-preview as well as rustfmt, because `coverage`
-# runs on it: `--branch` rests on `-Z coverage-options=branch`, which stable
-# rustc refuses. A nightly with rustfmt alone formats the tree and then fails
-# the first `just coverage` on a fresh clone.
-#
-# CLAUDE.md is a symlink, never a file: AGENTS.md is the only prose document in
-# the tree, and the symlink is what makes the same text reachable under the
-# other name without a second copy to keep in step. The .gitignore denies it,
-# so it stays local.
+# First-time setup, idempotent. The nightly carries `llvm-tools-preview`, since
+# `coverage` needs `-Z coverage-options=branch`. `CLAUDE.md` is a local symlink
+# to `AGENTS.md`, so one text answers to both names.
 [doc("Install the toolchain, the cargo tools, and the local symlink.")]
 setup:
     rustup component add rustfmt clippy llvm-tools-preview
@@ -216,11 +124,8 @@ setup:
     @test -L CLAUDE.md || ln -s AGENTS.md CLAUDE.md
     @echo "ready -- run \`just ci\`"
 
-# Build every crate, plus the addon with its platform backend.
-#
-# Two invocations because they take different feature sets and one command
-# cannot: a workspace-wide `--features` names features on every member, and
-# only the node crate has a backend to name.
+# Two invocations, since only the node crate has a backend and a workspace-wide
+# `--features` names it on every member.
 [doc("Build the workspace and the native addon for this platform.")]
 build:
     cargo build --workspace
@@ -233,39 +138,19 @@ build:
 [doc("Build the native addon into packages/meo-canvas.")]
 addon:
     cargo build -p meo-canvas-node --features "{{ host_features }}"
-    # **A fresh inode every build, deliberately.** `cp` over an existing file
-    # truncates it in place and keeps the inode, so anything the operating
-    # system has attached to that path's identity survives every rebuild. On
-    # this machine something -- Gatekeeper's cache, XProtect, or an endpoint
-    # agent -- marked this exact inode and killed node with SIGKILL on load: no
-    # output, no throw, exit 137, indistinguishable from an allocation abort.
-    # The identical bytes loaded from /tmp, loaded under any other name in this
-    # same directory, and loaded again the moment the file was removed and
-    # copied back. Rebuilding never cleared it, because `cp` handed the new
-    # bytes to the marked inode. `rm -f` first costs nothing and makes that
-    # class of failure unreproducible.
+    # A fresh inode every build: `cp` over the old file keeps its inode, and a
+    # marked inode here had node SIGKILLed on load, exit 137, while the same
+    # bytes loaded anywhere else. `rm -f` first.
     @rm -f {{ addon_path }}
     @cp target/debug/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }}"
 
-# Run the test suite.
-#
-# Twice for the two crates that name a GPU backend, because a build without one
-# rasterises on the CPU and a test asserting that the two rasterisers differ
-# would pass vacuously. A run without the features is a run where the assertion
-# that matters cannot fail.
+# Twice for the crates naming a GPU backend: without one, a test asserting the
+# two rasterisers differ passes vacuously.
 [doc("Run the Rust tests, the doctests and the golden fixtures.")]
 test:
-    # `--no-fail-fast` so a red run names every failing target in the
-    # workspace rather than the first one. Reading the first as the whole set
-    # is what makes a mutation table wrong: a truncated failure list and a
-    # mutation that only broke one thing are the same output.
-    #
-    # **It completes this line and not the recipe.** The three runs below are
-    # separate lines, so a failure here still stops `just` before any of them
-    # -- the claim is "every failure in the workspace run", not "every failure
-    # in the gate". Making the recipe continue past a failure is a different
-    # change with a real cost, and this is not it.
+    # `--no-fail-fast`, so this line names every failing target rather than the
+    # first. The lines below still stop at the first failure.
     cargo test --workspace --no-fail-fast
     cargo test -p meo-canvas-node --features "{{ host_features }}"
     cargo test -p meo-canvas --features "{{ host_features }}"
@@ -273,214 +158,60 @@ test:
     # compiled cannot tell whether the pin holds -- the two rasterisers differ on
     # eight of the ten scenes. This is the run that reads the pin.
     cargo test -p meo-canvas-core --features "{{ host_features }}"
-# What the dependency tree is known to be vulnerable to.
-#
-# **Not in `ci-steps`.** An advisory is a fact about the lockfile, not about the
-# platform, so running it on three runners would buy three copies of one answer.
-# CI calls it once, on Linux, as its own step.
-#
-# **Vulnerabilities fail; unmaintained notices report.** `cargo audit` already
-# draws that line -- an `unmaintained` advisory is a warning and exits zero --
-# and two crates sit there today, `paste` and `ttf-parser` through
-# `owned_ttf_parser`, both transitive. Failing on those would be red for a
-# condition nobody here can resolve, which is how a gate stops being read.
-#
-# **The ignores are flags rather than a config file, so the reasons live beside
-# them.** `cargo audit` reads `.cargo/audit.toml`, and this repository excludes
-# `.cargo/` on purpose -- it is where a local `config.toml` points at a sibling
-# checkout. A policy in a file git does not track is a policy that applies on
-# one machine.
-#
-# **RUSTSEC-2026-0194 and -0195**, both `quick-xml` 0.37.5, both denial of
-# service: quadratic time checking a start tag for duplicate attribute names,
-# and unbounded namespace-declaration allocation in `NsReader`. Both fixed in
-# 0.41.0, which **we cannot take**: the chain is
-# `quick-xml <- little_exif 0.6.23 <- meo-skia-canvas <- us`, and 0.6.23 is
-# little_exif's newest release requiring `^0.37.5`, which cannot resolve to
-# 0.41.0. On reachability, what was checked rather than what is comfortable:
-# `meo-skia-canvas` uses little_exif in `encode/webp.rs` and `context/page.rs`,
-# writing metadata during encode, and images are decoded through Skia rather
-# than little_exif -- so the path from untrusted input into the XML parser is
-# probably not open. That is a reading of the call sites, not a proof.
-# **Remove both the moment little_exif publishes a release requiring
-# quick-xml 0.41 or newer.** That is the entire condition.
-#
-# This exists because nothing scanned at all until 4 September 2026, when three
-# advisories were found by querying OSV by hand against the 385 crates in
-# `Cargo.lock`. A finding that needs someone to think of looking is not a gate.
+# An advisory is a fact about the lockfile, so this runs once, on Linux.
+# Vulnerabilities fail; unmaintained notices report. RUSTSEC-2026-0194/-0195
+# (`quick-xml` 0.37.5) are ignored because little_exif 0.6.23 needs `^0.37.5`;
+# drop both when it requires 0.41.
 [doc("Fail on a known vulnerability in the dependency tree.")]
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
-# The `net` feature, compiled and tested once.
-#
-# **Not in `ci-steps`**, for the reason `audit` is not: whether the HTTP path
-# compiles is a fact about the code rather than about the platform, so three
-# runners would buy three copies of one answer. `ci.yml` calls it on Linux as
-# its own step, where its verdict is legible on its own.
-#
-# **Nothing built this at all until 5 September 2026.** `--features` everywhere
-# else in this file means `metal` or `vulkan`, so `fetch_policy.rs` -- which
-# carries `#![cfg(feature = "net")]` at file scope -- compiled to nothing, and
-# the second arm of `net_feature.rs` never existed. Nor did the rustdoc: no
-# crate carries `[package.metadata.docs.rs]`, so docs.rs builds default features
-# and the derivation of the sixty-second timeout and the thirty-two mebibyte cap
-# rendered nowhere, while `MIGRATING.md` pointed readers at it.
-#
-# The cost was measured before it was accepted rather than argued about: 10 s
-# cold and 0 s warm, 17 crates added to the graph (157 to 174) -- `ring`,
-# `rustls`, `webpki-roots` and their tree. A cache miss on one runner, and
-# `Swatinem/rust-cache` covers `target/`.
-#
-# **The price of asking once is that a local `just ci` still does not build it**,
-# so a developer can break `net` and hear about it only from CI. That is already
-# true of `audit`, and it is the trade this shape makes.
+# Compiles and tests `net`, which no other recipe builds, once on Linux: whether
+# it compiles is a fact about the code. A local `just ci` does not build it.
+# Measured at 10s cold and 17 more crates.
 [doc("Compile and test the `net` feature, which no other recipe builds.")]
 net-check:
     cargo clippy -p meo-canvas -p meo-canvas-core --all-targets --features net -- -D warnings
     cargo test -p meo-canvas-core --features net --test fetch_policy
     cargo test -p meo-canvas --features net --test net_feature
-# The README banners, drawn by this library.
-#
-# **Not in `ci`.** It regenerates rather than checks, so it belongs with
-# `conformance`: the output is a diff someone looks at, and a gate that rewrites
-# four binaries on every run would make every unrelated change carry them.
-#
-# Reads `packages/meo-canvas/dist` and the addon, so it wants both built first,
-# the way `example` does.
+# Not in `ci`: it regenerates four images rather than checking, so it sits with
+# `conformance`. Wants `dist` and the addon built first.
 [doc("Redraw the README banners with the library itself.")]
 brand: build-js addon
     node tools/brand/banner.mjs
 
 
-# Does an ordinary addon survive being loaded in a worker thread?
-#
-# **This is a question about what we ship, not about coverage.** The `coverage`
-# recipe loads an *instrumented* addon under vitest's threads pool, and on
-# Windows that segfaults -- exit 139, nine test files in. Two candidates: the
-# profiling runtime writing a profile from a thread, or the addon itself under
-# Windows threads. Only the second matters to a consumer, and it matters a lot:
-# `worker_threads` is how a server keeps a render off its event loop, and a
-# crash there is a crash we published.
-#
-# The discriminator is this recipe: the same pool, the same suite, an **ordinary**
-# addon. Green means the instrumentation was the problem and the guard in
-# `coverage` is the whole fix. A segfault means we have a shipping defect on a
-# platform we build for, and it is worth finding before someone else does.
-#
-# Not in `ci-steps`. It runs as its own step so its verdict is legible on its
-# own, and it does not gate while the answer is unknown.
+# Whether an ordinary addon survives vitest's threads pool, where the
+# instrumented one segfaults on Windows. It passes there, so that crash is the
+# profiling runtime's; a crash here would be a shipping defect, since
+# `worker_threads` is how a server keeps a render off its loop. Gates on Windows.
 [doc("Check an ordinary addon survives a worker-thread pool.")]
 threads-probe: ensure-deps addon
     ./node_modules/.bin/vitest run --pool=threads
 
 
-# Coverage floor is 90%. `--fail-under-*` exits non-zero, so this is the gate
-# rather than a report.
-#
-# Regions, not lines, is the dimension that rots -- the one nothing guards
-# always does, and it is the one that drifts while lines hold.
-#
-# Runs on the pinned nightly so branches are measured at all: `--branch` needs
-# `-Z coverage-options=branch` and stable rustc refuses it. The same toolchain
-# formats the tree, so the pin is one date to move rather than two.
-#
-# The floor is lines and regions because those are the only ones the tool can
-# fail on -- there is no `--fail-under-branches`. Branch percentages reach the
-# report and `target/lcov.info` for reading; regions is what refuses a merge. A
-# region is a span with its own arm count, so an untaken arm still lands in the
-# number that gates.
-#
-# `--doctests` counts what `just test` already runs. Without it, code reached
-# only from a documentation example reads as uncovered and pulls the floor down
-# for being tested the one way the floor cannot see.
-#
-# One file is excluded, named here so the list is reviewable in a diff. The rule
-# used to be that only a generated file earns an exclusion; this is the second
-# category, and it is narrower than it sounds.
-#
-# **`meo-canvas-node/src/lib.rs` is 500 regions that no Rust test can execute.**
-# It is the Neon boundary -- `FunctionContext`, `JsBuffer`, the `paint` and
-# `encode` closures -- and every function in it is called by V8 and by nothing
-# else. `cargo llvm-cov` measures it at 4.80%, and no amount of Rust testing
-# moves that, because there is no Rust caller to write. The rest of the crate is
-# not excluded and does not need to be: `arena.rs` sits at 92.7%.
-#
-# The measurement that decided this. At `a54d259`, the last commit this gate
-# passed on, the workspace was at **90.06% -- six regions of margin**. Eight
-# commits later it was 89.92%, with the **identical 2536 missed regions**: no
-# new uncovered code, a denominator that shrank by 356 covered regions, and a
-# percentage that fell because of it. A floor that a well-tested deletion can
-# breach is not measuring what it claims to.
-#
-# Excluding this one file puts the same tree at 91.65%, which is the number that
-# describes the Rust code someone can actually write a test for.
-#
-# The pattern accepts either separator, because llvm-cov matches it against the
-# path the compiler reports and on Windows that is `meo-canvas-node\src\lib.rs`.
-# Written with `/` alone it excluded the file on Linux and macOS and nothing on
-# Windows, where the floor then failed for a reason the other two did not have.
-#
-# **The exclusion stays; the hole in it does not.** Those 499 regions used to be
-# measured by nothing: exercised thoroughly by the JavaScript suite, and
-# counted by neither gate, since `coverage-js` measures TypeScript rather than
-# these Rust regions. Since 5 September 2026 this recipe instruments the addon,
-# runs the JavaScript suite against it, and reports `lib.rs` from the profile
-# that run writes -- **64.13% of regions, 68.00% of lines, 57.89% of
-# functions**, against 4.81% from every Rust caller that will ever exist.
-#
-# It keeps its own floor rather than joining the workspace's, because 64% under
-# a 90% average would drag the whole number down to say something about the
-# Neon boundary instead of about the code. Two floors, one gate, one profile
-# directory.
+# Coverage fails below 90% of regions and lines -- no tool fails on branches --
+# on the pinned nightly so branches are measured; `--doctests` counts what
+# `test` runs. `meo-canvas-node/src/lib.rs`, which no Rust calls, is excluded
+# here and floored below.
 [doc("Measure coverage and fail below the 90% floor.")]
 coverage: ensure-deps
     #!/usr/bin/env bash
     set -euo pipefail
-    # One profile directory, two reports. `cargo llvm-cov` merges every
-    # `.profraw` under its target directory into one `.profdata` -- the
-    # JavaScript run's included -- but its own report cannot name the addon's
-    # `cdylib` as an object, so those counters land nowhere. Measured: with the
-    # JavaScript profile merged into that profdata, `report` still puts
-    # `lib.rs` at 4.81%, and the same profdata against the `.node` puts it at
-    # 64.13%. So the second report is `llvm-cov` invoked directly on the
-    # artefact the first one cannot see.
+    # One profile directory, two reports: `cargo llvm-cov report` cannot name
+    # the addon's `cdylib`, putting `lib.rs` at 4.81%, so the second report runs
+    # `llvm-cov` on the `.node` itself, 64.13%.
     cargo +{{ fmt_toolchain }} llvm-cov clean --workspace
     cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --no-report
 
-    # **The addon half does not run on Windows.** `2c1c9e1` died there with a
-    # segmentation fault -- `just ci` exit 139 -- on the `--pool=threads` line,
-    # after nine test files had passed, at the point the instrumented addon is
-    # loaded in-process. The Rust half above still runs on Windows and its
-    # floor still gates there; what Windows does not measure is the 499 regions
-    # of `lib.rs`, and that number does not vary by platform, so CI measures it
-    # on the other two runners.
-    #
-    # **What is not known, stated rather than assumed:** whether Windows dies
-    # from the instrumentation or from the addon. The addon loads and answers
-    # in a `worker_threads` worker on macOS uninstrumented, and no CI job has
-    # ever run the JavaScript suite under `--pool=threads` on Windows -- the
-    # `test-js` recipe takes vitest's default pool -- so this commit introduced
-    # the first such run anywhere. If it is the addon rather than the
-    # profiling runtime, then a consumer using `worker_threads` on Windows
-    # crashes, which is a shipping defect on a platform this publishes for. The
-    # measurement that settles it is one Windows job loading an **ordinary**
-    # `.node` under `--pool=threads`; it is not run here, and it is worth
-    # running before publish.
+    # Not on Windows, where the instrumented addon segfaults under
+    # `--pool=threads`; the Rust floor above still gates there, and `lib.rs`'s
+    # regions are measured on the other two runners.
     if [[ "{{ os() }}" != "windows" ]]; then
 
-    # The addon, built with the same instrumentation and left where the suite
-    # already looks. **Not `MEO_CANVAS_ADDON`**: that variable is the subject
-    # of `addon.resolve.test.ts`, and a value in the ambient environment fails
-    # 9 of its 12 tests -- the override under test cannot also be the harness.
-    #
-    # In a subshell, because `show-env` exports a dozen `CARGO_LLVM_COV_*`
-    # variables and one of them makes a later `report` exit non-zero after
-    # printing a clean result: a floor failure with no floor in it.
-    #
-    # The addon is instrumented when this finishes. Everything `ci` runs after
-    # it works on that binary, only slower; `just addon` puts an ordinary one
-    # back.
+    # The instrumented addon goes where the suite already looks, not
+    # `MEO_CANVAS_ADDON`, which is what `addon.resolve.test.ts` tests. In a
+    # subshell, since one `CARGO_LLVM_COV_*` variable fails a later `report`.
     (
       eval "$(cargo +{{ fmt_toolchain }} llvm-cov show-env --export-prefix)"
       unset CARGO_LLVM_COV_SHOW_ENV
@@ -488,14 +219,9 @@ coverage: ensure-deps
       cp "${CARGO_LLVM_COV_TARGET_DIR:-target}/debug/{{ lib_name }}" {{ addon_path }}
     )
 
-    # **`--pool=threads` is not a performance choice.** It is the difference
-    # between a measurement and a zero: vitest's default `forks` pool loads the
-    # instrumented addon in worker processes that never flush a profile, so
-    # every one of the 15 test files writes no `.profraw` at all and the run
-    # reads exactly like a suite that never touches the addon. Continuous mode
-    # (`%c`) is worse -- it writes files whose counters are all zero, which
-    # merge cleanly and report 0.00% across the whole workspace. Threads run in
-    # one process that exits normally, and its `atexit` writes the profile.
+    # `--pool=threads` is what makes a measurement: the default `forks` pool
+    # never flushes a profile, and continuous mode writes all-zero counters.
+    # Threads run in one process whose `atexit` writes it.
     LLVM_PROFILE_FILE="$PWD/target/llvm-cov-target/js-%p-%14m.profraw" \
       ./node_modules/.bin/vitest run --pool=threads
 
@@ -513,36 +239,23 @@ coverage: ensure-deps
     # which reads as the floor failing rather than as the plumbing.
     profdata=$(find target -name '*.profdata' -print -quit)
 
-    # The addon half, read through the toolchain's own `llvm-cov` rather than
-    # whatever is first on `PATH`: a stable `llvm-profdata` refuses these files
-    # with "raw profile version mismatch", which is at least loud.
-    #
-    # **A named source, not the whole artefact.** The `.node` links the core
-    # and scene crates into itself, so a report over the object measures those
-    # too and totals 45% -- a number about layout and Skia rather than about
-    # the boundary. `lib.rs` alone is the file this recipe exists for.
+    # Through the toolchain's own `llvm-cov`, which reads these profiles, and
+    # over `lib.rs` alone: the `.node` links the core and scene crates, and a
+    # whole-object report measures those too.
     llvm_cov="$(rustc +{{ fmt_toolchain }} --print target-libdir)/../bin/llvm-cov"
     boundary=crates/meo-canvas-node/src/lib.rs
     "$llvm_cov" report {{ addon_path }} -instr-profile="$profdata" "$boundary"
 
-    # A floor of its own, well under the workspace's: 64.13% of regions on 5
-    # September 2026, and 60 leaves room for a boundary function landing before
-    # the JavaScript that reaches it without turning the number into something
-    # to chase. Raising it means writing JavaScript that reaches the error
-    # arms, not writing Rust.
+    # A floor of its own under the workspace's: 64.13% of regions measured, 60
+    # to leave room. Raising it means JavaScript that reaches the error arms.
     measured=$("$llvm_cov" export {{ addon_path }} -instr-profile="$profdata" \
       -summary-only "$boundary" \
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["totals"]["regions"]["percent"])')
     printf 'the addon boundary is at %.2f%% of regions, floor 60\n' "$measured"
     python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= 60.0 else 1)' "$measured"
 
-    # **Put an ordinary addon back.** The instrumented one is the point of
-    # everything above, and leaving it is what the comment used to tell a reader
-    # to undo by hand -- a recipe describing its own cleanup rather than doing
-    # it. Worse, `ci-steps` runs `example` afterwards, so every example wrote a
-    # `.profraw` into whatever directory it ran from; nine of them were sitting
-    # in `examples/bun` when this was found. Gitignored, so nothing reached a
-    # commit, and accumulating anyway.
+    # Put an ordinary addon back, since `ci-steps` runs `example` next and every
+    # example would write a `.profraw` wherever it ran.
     just addon
 
     else
@@ -558,26 +271,14 @@ coverage-open:
 lint: ensure-deps build-js ensure-example-deps
     cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
     cargo clippy -p meo-canvas-node --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
-    # Same boundary `fmt` names below. `lint-check` lints across it and this
-    # did not, so the tool whose whole job is repairing clippy failures left
-    # the one kind `just ci` goes on to fail on. The feature set matches the
-    # check's, because a fixing pass over a different set repairs code the
-    # checking pass never compiles.
+    # The same boundary `fmt` names below, with the check's feature set, so this
+    # fixes what `lint-check` goes on to lint.
     cargo clippy --manifest-path examples/rust/Cargo.toml --fix --allow-dirty --allow-staged --all-targets --features "{{ host_features }}" -- -D warnings
     bun run eslint . --fix
 
-# Run clippy without fixing (CI-safe).
-#
-# Two passes, because one feature set does not lint the crate. Code reachable
-# only with a backend compiled is dead code without one, and `-D warnings`
-# refuses it -- so the addon goes unlinted unless its own pass names a backend.
-# ESLint is type-aware and `examples/bun` is in its project list, so linting
-# needs what the examples' TypeScript program resolves against: their own
-# `node_modules`, which only `just example` installed before, and
-# `packages/meo-canvas/dist`, which their `meo-canvas` dependency points at
-# for types. Locally both existed from earlier commands and the gate passed;
-# on a runner neither did, every import resolved to an error type, and
-# `no-unsafe-*` reported 102 errors in files with nothing wrong in them.
+# Two passes, since addon code reachable only with a backend is dead code
+# without one and `-D warnings` refuses it. ESLint is type-aware over
+# `examples/bun`, so it needs that project's `node_modules` and `dist` first.
 [doc("Run clippy without fixing (CI-safe).")]
 lint-check: ensure-deps build-js ensure-example-deps
     cargo clippy --workspace --all-targets -- -D warnings
@@ -607,17 +308,8 @@ fmt-check: ensure-deps
     cargo +{{ fmt_toolchain }} fmt --manifest-path examples/rust/Cargo.toml --all -- --check
     bun run fmt:check
 
-# The TypeScript surface is what the npm package publishes as its types, and
-# nothing else reads it: prettier parses the file without checking it, and no
-# Rust recipe sees it at all.
-#
-# Not `check`: the `-check` suffix on every other recipe here means "the variant
-# that reports instead of rewriting", and a bare `check` reads as the same idea
-# one word short.
-# Emit what the npm package publishes.
-#
-# `exports` names `dist`, so the package cannot be resolved by a consumer until
-# this has run -- which is what the example project exists to catch.
+# `exports` names `dist`, so no consumer can resolve the package until this has
+# run.
 [doc("Build the TypeScript package into dist.")]
 build-js: ensure-deps
     ./node_modules/.bin/tsc -p packages/meo-canvas/tsconfig.build.json
@@ -626,13 +318,9 @@ build-js: ensure-deps
     # runs. The tool says which declarations carry it, and refuses if none does.
     node packages/meo-canvas/tools/reference-node-types.mjs
 
-# The addon, optimised, where a release takes it from.
-#
-# `addon` builds debug because that is what a working loop wants; a 51 MB
-# binary shipped to anyone is built with optimisation or it is a different
-# product. Both write to the same path, so whichever ran last is what the
-# TypeScript surface loads -- which is the point of the in-tree path winning
-# over an installed platform package.
+# The addon, optimised, where a release takes it from; `addon` builds debug for
+# the working loop. Both write one path, so whichever ran last is what the
+# TypeScript surface loads.
 [doc("Build the native addon in release mode.")]
 addon-release:
     cargo build --locked --release -p meo-canvas-node --features "{{ host_features }}"
@@ -640,43 +328,10 @@ addon-release:
     @cp target/release/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }} (release)"
 
-# The Linux addon, built inside the image the release builds it in.
-#
-# **A Linux artefact is a property of its build base, not of the source.** Built
-# on `ubuntu-latest` the addon demanded glibc 2.35 and failed to load on five of
-# the six images a release claims; built in `containers/Dockerfile.glibc` it
-# demands 2.28 and loads on all six. Nothing in the tree changed between those
-# two runs. So the base belongs in the recipe, where a person can run it, rather
-# than only in a workflow nobody executes locally.
-#
-# The `.node` lands where `addon-release` leaves it, so everything downstream --
-# packing, the floor check, the acceptance harness -- reads one path and does
-# not care which of the two built it.
-#
-# `target/container/<suffix>/` rather than `target/`, because the container
-# builds as root and three different libcs would otherwise write
-# `libmeo_canvas_node.so` to the same place: a host build, a glibc build and a
-# musl build are three artefacts with one filename.
-#
-# **`--target` is deliberately NOT passed, and passing it broke musl.** With an
-# explicit `--target`, cargo builds build scripts for the HOST and does not
-# apply `RUSTFLAGS` to them -- so `-C target-feature=-crt-static` never reached
-# `skia-bindings`' build script, which on musl is then a static binary that
-# cannot `dlopen`:
-#
-#   Unable to find libclang: the `libclang` shared library at
-#   /usr/lib/llvm20/lib/libclang.so.20.1.8 could not be opened:
-#   Dynamic loading not supported
-#
-# Without it, host and target are one build and the flag reaches everything.
-# The image is chosen for the triple, so host IS target here -- which the step
-# below asserts rather than assumes, since that is the whole of what `--target`
-# was buying and it is worth keeping without the cost.
-#
-# `vulkan` is written here rather than taken from `host_features`, which is
-# `metal` on macOS: this recipe builds a Linux artefact whichever machine drives
-# it, and inheriting the driving host's feature would be wrong exactly when it
-# is convenient.
+# A Linux artefact is a property of its build base: built on `ubuntu-latest` it
+# needed glibc 2.35 and loaded on one of six images, in the release container
+# 2.28 and all six. No `--target`, which keeps `RUSTFLAGS` off build scripts and
+# broke musl; `vulkan` is written, not inherited.
 [doc("Build a Linux addon inside its release container.")]
 addon-container suffix:
     #!/usr/bin/env bash
@@ -726,17 +381,17 @@ addon-container suffix:
         --build-arg ASSEMBLER="$assembler" \
         -f "$dockerfile" -t "$tag" containers/
 
-    # The registry is mounted rather than re-downloaded, so a cache on the host
-    # -- the runner's, or a person's own -- reaches the build inside.
-    # What `--target` used to guarantee, asserted instead. A `manylinux` image
-    # under an `aarch64` suffix would otherwise build an x86_64 artefact and
-    # stage it under a name npm installs on machines that cannot load it.
+    # The image must build for the suffix's triple: under the wrong suffix it
+    # would build an x86_64 artefact and stage it under a name npm installs where
+    # it cannot load.
     host=$(docker run --rm "$tag" rustc -vV | sed -n 's/^host: //p')
     if [[ "$host" != "$triple" ]]; then
         echo "error: ${tag} builds for ${host}, but {{ suffix }} is ${triple}" >&2
         exit 1
     fi
 
+    # The registry is mounted rather than re-downloaded, so a host cache -- the
+    # runner's or a person's -- reaches the build inside.
     mkdir -p "$HOME/.cargo/registry"
     docker run --rm \
         -v "$PWD":/src -w /src \
@@ -745,22 +400,10 @@ addon-container suffix:
         "$tag" \
         cargo build --locked --release -p meo-canvas-node --features vulkan
 
-    # The container ran as root, so everything it wrote under `target/container`
-    # is root-owned. On a GitHub runner the cache action's `tar` then cannot
-    # read it and the post-job save fails -- `Failed to save: /usr/bin/tar
-    # failed with exit code 2` on every container-built target -- which is why
-    # the musl builds recompiled Skia from source on every run. Handing the
-    # tree back to the invoking user is what lets the next run start from the
-    # cache. Skipped where there is no `sudo` or no Linux, which is a Mac with
-    # Docker Desktop, where bind mounts are already the host user's.
-    #
-    # **The registry is mounted into the same root container and was not
-    # covered**, which is the same defect one layer along. `cargo metadata`
-    # runs in the post-job save and reads `~/.cargo/registry`; with the crates
-    # the container downloaded left root-owned it fails
-    # `Permission denied (os error 13)`, the action reports `failed with exit
-    # code 101`, and it then saves a cache without the metadata that tells it
-    # what to keep. Measured on the `linux-x64-musl` leg of run 33961676649.
+    # The container ran as root, so hand `target/container` and the cargo
+    # registry back to the user: root-owned, the cache action's post-job save
+    # fails on both. Skipped without Linux or `sudo`, where mounts are already
+    # the user's.
     if [[ "$(uname)" == Linux ]] && command -v sudo >/dev/null; then
         sudo chown -R "$(id -u):$(id -g)" target/container "$HOME/.cargo/registry"
     fi
@@ -770,39 +413,18 @@ addon-container suffix:
     cp "target/container/{{ suffix }}/release/libmeo_canvas_node.so" "$out"
     echo "built $out in ${tag}"
 
-# Everything a release publishes, packed and installable, for this host only.
-#
-# Two tarballs, because that is what npm resolves at install time: the platform
-# package holding the binary, and the main package that names it in
-# `optionalDependencies`. Packing only the main one produces something that
-# installs and then cannot render, which is the failure this recipe exists to
-# make impossible to reach by accident.
-#
-# Host only, deliberately. Cross-compiling the addon is the release workflow's
-# job on one runner per target; here the question is whether the packaging is
-# right, and one target answers it. `pack-container` is the Linux spelling,
-# where the build base is part of the answer.
-#
-# The suffix is derived from `TARGETS` by matching this host's os, cpu and libc,
-# never written down. It was a two-branch ternary on `os()` that ignored
-# architecture and had no Windows branch, so packing on an arm64 Linux box
-# staged an arm64 binary into a package named `linux-x64-gnu` declaring
-# `cpu: ["x64"]` -- and packed it cleanly, for npm to install on machines that
-# cannot load it. A wrong artefact from a green command.
+# Everything a release publishes, packed for this host only: the platform
+# package holding the binary and the main package pinning it. The suffix is
+# derived from `TARGETS` by this host's os, cpu and libc, never written down.
 [doc("Pack the installable tarballs for this host into release/.")]
 pack: ensure-deps build-js addon-release
     #!/usr/bin/env bash
     set -euo pipefail
     just _pack-tarballs "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)" {{ addon_path }}
 
-# The same pack, from an addon built in its release container.
-#
-# The suffix is named rather than derived, and that is the whole difference:
-# `--host` reports the machine running the command, which on an x64 glibc runner
-# is `linux-x64-gnu` **whichever image built the binary**. Deriving it here would
-# stage a musl artefact into a package declaring `libc: ["glibc"]`, pack it
-# cleanly, and hand npm a binary it installs onto machines that cannot load it
-# -- the arm64 mistake above, in a second dimension.
+# The same pack, from an addon built in its release container, with the suffix
+# named: `--host` reports the runner, so deriving it would stage a musl binary
+# into a glibc package.
 [doc("Build a Linux addon in its release container and pack it.")]
 pack-container suffix: ensure-deps build-js (addon-container suffix)
     just _pack-tarballs "{{ suffix }}" "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
@@ -815,13 +437,9 @@ _pack-tarballs suffix addon:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # **The path a build wrote must be the path this reads.** `pack` derives its
-    # suffix from the host and `pack-container` is handed one, so the two sides
-    # can disagree about how a target is spelled -- the same shape as a
-    # `glibc`/`gnu` mismatch, where the wrong spelling matches no key and every
-    # host is told nothing is published for it. A missing file here means those
-    # two disagreed, and saying so beats `npm pack` failing three lines later
-    # about something else.
+    # The path a build wrote must be the path this reads: `pack-container` is
+    # handed a suffix and can disagree with how a target is spelled, and saying
+    # so beats `npm pack` failing later about something else.
     if [[ ! -s "{{ addon }}" ]]; then
         echo "error: no addon at {{ addon }} for target {{ suffix }}" >&2
         echo "       A build writes that path and this reads it; if they disagree" >&2
@@ -843,54 +461,23 @@ _pack-tarballs suffix addon:
     echo "  npm install $PWD/release/meo-canvas-{{ suffix }}-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
     echo "  npm install $PWD/release/meo-canvas-$(node -p "require('./packages/meo-canvas/package.json').version").tgz"
 
-# Install what `pack` produced into a throwaway project and render with it.
-#
-# Packing is not installing. `npm pack` lists what is in the tarball and says
-# nothing about whether a consumer can reach it -- `exports` can name a path the
-# `files` allowlist dropped, and a platform package's `main` can name a binary
-# that is not there. Both pack cleanly and fail at the first import.
+# Packing is not installing: `exports` can name a path `files` dropped, and a
+# platform package's `main` a binary that is not there. Both pack cleanly and
+# fail at the first import.
 [doc("Pack for this host, then install the tarballs elsewhere and render.")]
 verify-pack: pack verify-packed
 
-# The same check against tarballs that are already in `release/`.
-#
-# Separate because a container build must not be followed by a host rebuild:
-# `verify-pack` would re-run `pack`, which builds the addon here and overwrites
-# the artefact the container produced -- so the thing verified would not be the
-# thing published.
-#
-# **This runs the addon on the machine driving it**, so it answers for a target
-# whose libc is the host's and for no other. A musl artefact cannot be loaded on
-# a glibc runner at all; `acceptance` is what decides for those.
+# The same check against tarballs already in `release/`, without `verify-pack`'s
+# rebuild, which would overwrite a container build. It loads the addon here, so
+# it answers only for a target sharing the host's libc.
 [doc("Install the tarballs already in release/ and render with them.")]
 verify-packed:
     node packages/meo-canvas/tools/verify-package.mjs release
 
-# Render the golden fixtures on `linux-x86_64`, in the container a release is
-# built in.
-#
-# **The goldens are architecture-dependent and this is how the second
-# architecture's are made.** 15 of the 23 are byte-identical to the reference
-# and 8 are not, and the 8 are the ones with a curve, a gradient, a blend or a
-# glyph in them. `tests/fixtures.rs` carries the reasoning and the evidence that
-# it is rasterisation rather than a fault.
-#
-# With no argument this reports which fixtures differ here. With one, it accepts
-# that fixture's Linux render into `expected.linux-x86_64.png` -- one name at a
-# time, deliberately, for the reason `MEO_FIXTURE_ACCEPT` gives: accepting
-# everything at once is how a regression becomes a commit.
-#
-# The container is the release image rather than any Linux box, so the goldens
-# it produces are made by the toolchain that builds the published binary. A
-# render from a different Skia build would pin a picture nothing ships.
-#
-# **`--features vulkan` is not about the GPU here**, which `fixtures.rs` pins
-# off regardless. It is what makes `skia-bindings` find a prebuilt Skia for this
-# feature set: without it there is no match, Skia is compiled from source, and
-# the release image carries no `clang++` to do it with. `just test` runs the
-# fixtures both ways -- once in the bare `--workspace` pass and once with the
-# feature -- so the two builds are already required to agree, and this takes the
-# cheaper of the two.
+# Renders the goldens on `linux-x86_64` in the release container: 8 of 23 differ
+# there, the ones with a curve, gradient, blend or glyph. With a name, accepts
+# that one fixture's render. `vulkan` is what finds a prebuilt Skia, not a GPU
+# request.
 [doc("Render or accept the golden fixtures on linux-x86_64, in the release container.")]
 fixtures-linux name="":
     #!/usr/bin/env bash
@@ -915,64 +502,31 @@ fixtures-linux name="":
         "$tag" \
         cargo test -p meo-canvas-core --features vulkan --test fixtures -- --nocapture
 
-    # The container ran as root, so everything it wrote under `target/container`
-    # is root-owned. On a GitHub runner the cache action's `tar` then cannot
-    # read it and the post-job save fails -- `Failed to save: /usr/bin/tar
-    # failed with exit code 2` on every container-built target -- which is why
-    # a run after it starts cold. Handing the
-    # tree back to the invoking user is what lets the next run start from the
-    # cache. Skipped where there is no `sudo` or no Linux, which is a Mac with
-    # Docker Desktop, where bind mounts are already the host user's.
-    #
-    # **The registry is mounted into the same root container and was not
-    # covered**, which is the same defect one layer along. `cargo metadata`
-    # runs in the post-job save and reads `~/.cargo/registry`; with the crates
-    # the container downloaded left root-owned it fails
-    # `Permission denied (os error 13)`, the action reports `failed with exit
-    # code 101`, and it then saves a cache without the metadata that tells it
-    # what to keep. Measured on the `linux-x64-musl` leg of run 33961676649.
+    # The container ran as root; hand `target/container` and the cargo registry
+    # back to the user, as `addon-container` does, or the cache action's
+    # post-job save fails on both.
     if [[ "$(uname)" == Linux ]] && command -v sudo >/dev/null; then
         sudo chown -R "$(id -u):$(id -g)" target/container "$HOME/.cargo/registry"
     fi
 
-# What the built addon demands of a machine, against what its target promises.
-#
-# A diagnostic and not a gate -- an unversioned symbol has no version to
-# compare, which is how a binary under every ceiling still failed to load on
-# `_M_replace_cold`. `acceptance` is the gate.
+# What the built addon demands of a machine against what its target promises: a
+# diagnostic, since an unversioned symbol has no version to compare.
+# `acceptance` is the gate.
 [doc("Check the built addon demands no more than its target declares.")]
 abi-floor suffix:
     node packages/meo-canvas/tools/check-abi-floor.mjs {{ suffix }} "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
 
-# Load the built addon on the images its target claims, with nothing installed.
-#
-# The gate for the Linux targets, and for the musl pair the only evidence there
-# is: no glibc floor exists to check, so `abi-floor` has nothing to say about
-# them.
+# Loads the built addon on the images its target claims, with nothing installed:
+# the gate for Linux, and for musl, which versions no symbols, the only
+# evidence.
 [doc("Load the built addon on the images its target claims.")]
 acceptance suffix:
     node packages/meo-canvas/tools/acceptance.mjs {{ suffix }} "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
 
-# Bump the npm package's version, and the platform packages it pins with it.
-#
-# `bump` is handed to `npm version`, so anything it accepts works:
-#
-#   just bump-npm prerelease     10.0.0-alpha.3 -> 10.0.0-alpha.4
-#   just bump-npm minor          10.0.0-alpha.3 -> 10.1.0
-#   just bump-npm premajor --preid rc
-#
-# Variadic, because `just` splits on whitespace and a single-parameter recipe
-# takes only the first word -- `--preid` would then be read as another recipe.
-#
-# Separate from publishing on purpose. A bump is a commit and a publish is a
-# workflow; joining them means a publish that fails for any reason leaves a
-# version bumped in the history with nothing on the registry under it, and the
-# next attempt has to decide whether to bump again.
-#
-# `optionalDependencies` is rewritten alongside, because the main package pins
-# each platform package at its exact version and `src/addon.test.ts` asserts
-# that they agree. A bump that moved only one of them fails that test rather
-# than shipping a package whose binaries cannot be resolved.
+# Bumps the npm version and the platform packages pinned at it (`just bump-npm
+# prerelease`, `minor`, `premajor --preid rc`), variadic so `--preid` is not
+# read as a recipe. Separate from publishing, so a failed publish leaves no
+# stranded bump.
 [doc("Bump the npm version and the platform pins with it.")]
 bump-npm *bump="prerelease": ensure-deps
     #!/usr/bin/env bash
@@ -988,26 +542,9 @@ bump-npm *bump="prerelease": ensure-deps
       process.stderr.write(`${d.name}@${d.version}\n`)
     '
 
-# Cut a channel's accumulating note into the version it ships under.
-#
-# Notes are written while the change is being made, when the version is not
-# known, so they accumulate in `docs/releases/<channel>/unreleased.md` and a
-# release renames that file. Renamed rather than copied, so the next cycle
-# starts empty instead of from the last release's text with edits on top -- and
-# a fresh `unreleased.md` is left behind, because otherwise the path stops
-# existing the moment a release is cut and the next contributor is told by
-# `CONTRIBUTING.md` to edit a file that is not there.
-#
-# **Bump first, then cut.** The version is read from the manifest at the moment
-# this runs, so cutting before the bump names the file after the version just
-# published and leaves `unreleased.md` empty. Nothing is lost -- the release
-# refuses on a missing note and renaming back re-cuts it -- but the failure
-# arrives at dispatch rather than at the mistake.
-#
-# The version is read from the same place the release recipe reads it rather
-# than taken as an argument. A typed version would be a second source that can
-# disagree with the manifest, and the disagreement would surface as the release
-# workflow refusing a note that exists under a name nobody expected.
+# Renames a channel's `unreleased.md` to the version it ships under and leaves a
+# fresh one. Bump first: the version is read from the manifest now, the same
+# place the release reads it.
 [doc("Rename a channel's unreleased.md to the version it ships under.")]
 cut-notes channel:
     #!/usr/bin/env bash
@@ -1045,46 +582,23 @@ cut-notes channel:
     echo "==> ${from} -> ${to}, and a fresh ${from} left behind"
     echo "    both are staged; commit them before dispatching the release"
 
-# The repository the release workflow runs in.
-#
-# Named rather than left to `gh`'s default, because a clone with more than one
-# remote has no default repository and `gh` fails on it. meo-skia-canvas learnt
-# that the expensive way: a release failed *after* its tag was pushed, leaving
-# the tag up with no release under it.
+# The repository the release workflow runs in, named because a clone with more
+# than one remote has no default for `gh`.
 release_repo := "l7aromeo/meo-canvas"
 
-# The branch a release is cut from.
-#
-# `main` is this lineage. It named the previous one until the branches were
-# swapped, and the note here used to say `main` was the wrong answer for exactly
-# that reason -- so a reader meeting a stale copy of this comment will believe
-# the value below is a mistake and change it back to a branch that no longer
-# exists. It does not exist: `git ls-remote --heads` returns `gh-pages`, `main`
-# and `v9`.
-#
-# The predecessor is the `v9` branch, frozen and never bumped again. Nothing
-# here can publish it: what separates the two npm lineages now is the version
-# and the dist-tag, and what separates the two release channels is the tag
-# prefix -- `npm-v*` against `rust-v*`, which `release-tags-check` pins.
+# The branch a release is cut from. Nothing here publishes the frozen `v9`
+# branch: npm lineages differ by version and dist-tag, and release channels by
+# tag prefix, `npm-v*` against `rust-v*`, which `release-tags-check` pins.
 release_branch := "main"
 
-# Rehearse a release without publishing anything.
-#
-# Runs the whole workflow -- the target matrix, an addon per platform, the pack,
-# and the install-and-render check -- and stops short of the registry. This is
-# what to run after any change to the workflow, and it is not optional: the
-# first run of `release.yml` failed both builds on a YAML quoting mistake that
-# no local check could see, because the workflow is the only thing that reads
-# it.
+# Rehearse a release without publishing: the whole workflow short of the
+# registry. Run it after any workflow change, since only the workflow reads its
+# own YAML.
 [doc("Rehearse an npm release. Builds and validates; publishes nothing.")]
 release-npm-dry: (_release_npm "true")
 
-# Publish to npm.
-#
-# A version carrying a hyphen goes to the `next` dist-tag and a bare one goes to
-# `latest`; the recipe prints which before it starts, because that is the
-# difference between a prerelease nobody resolves by accident and the version
-# every `npm install` picks up.
+# A version with a hyphen goes to `next` and a bare one to `latest`, and the
+# recipe says which before it starts.
 [doc("Publish to npm. A prerelease goes to `next`, a release to `latest`.")]
 release-npm: (_release_npm "false")
 
@@ -1119,14 +633,8 @@ _release_npm dry:
         *)   tag=latest ;;
     esac
 
-    # The note the workflow will demand, checked before anything is dispatched.
-    #
-    # Notes accumulate in `docs/releases/<channel>/unreleased.md` because the
-    # version is not known while the change is being written, and cutting a
-    # release renames that file to the version. A cut that forgets the rename
-    # fails inside the workflow -- for npm, after the matrix has built seven
-    # addons -- so the same condition is read here, where it costs nothing and
-    # the message can name the file to rename.
+    # The note the workflow demands, checked before dispatch: a forgotten rename
+    # otherwise fails inside the workflow after seven addons build.
     notes="docs/releases/npm/${version}.md"
     if [[ ! -f "${notes}" ]]; then
         echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
@@ -1157,37 +665,20 @@ _release_npm dry:
     echo "==> https://github.com/{{ release_repo }}/actions/runs/${run}"
     gh run watch "${run}" -R "{{ release_repo }}" --exit-status --interval 20
 
-# Rehearse a crates.io release without publishing anything.
-#
-# Runs the whole workflow -- the toolchain, the system libraries the
-# verification build needs, and `cargo publish --workspace --dry-run` -- and
-# stops short of the registry. Worth running after any change to the workflow
-# for the reason the npm rehearsal exists: the workflow is the only thing that
-# reads its own YAML, and the first run of `release.yml` failed on a quoting
-# mistake no local check could see.
+# Rehearse a crates.io release without publishing: toolchain, system libraries
+# and `cargo publish --workspace --dry-run`, short of the registry.
 [doc("Rehearse a crates.io release. Packages and verifies; publishes nothing.")]
 release-crate-dry: (_release_crate "true")
 
-# Publish the four crates to crates.io.
-#
-# `meo-canvas-scene`, `meo-canvas-core`, `meo-canvas` and `meo-canvas-cli`, in
-# the order cargo derives from the dependency graph. `meo-canvas-node` carries
-# `publish = false` and is skipped without being named.
-#
-# **This is the irreversible one.** crates.io has no unpublish: a version can be
-# yanked, but a yank still resolves for any lockfile that already names it, so a
-# version number is spent the moment it is accepted. The recipe prints what it
-# is about to do and the workflow verifies every crate before it uploads any.
+# Publishes `meo-canvas-scene`, `-core`, `meo-canvas` and `-cli` in dependency
+# order; `meo-canvas-node` is `publish = false`. Irreversible: a yank still
+# resolves for any lockfile naming it.
 [doc("Publish every publishable crate to crates.io. Not reversible.")]
 release-crate: (_release_crate "false")
 
-# The body both spellings share.
-#
-# The same four guards as `_release_npm`, deliberately: a release is cut from a
-# commit that the remote has, on the release branch, from a clean tree. The
-# version is read from cargo's own metadata rather than from a manifest by hand,
-# because the four crates inherit `version.workspace` and the workspace root is
-# a virtual manifest with no package of its own to read.
+# The body both spellings share, with `_release_npm`'s four guards. The version
+# comes from cargo's metadata, since the crates inherit `version.workspace` from
+# a virtual root.
 [private]
 _release_crate dry:
     #!/usr/bin/env bash
@@ -1214,14 +705,8 @@ _release_crate dry:
 
     version=$(cargo metadata --format-version 1 --no-deps --manifest-path crates/meo-canvas/Cargo.toml         | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).packages.find(p => p.name === 'meo-canvas').version")
 
-    # The note the workflow will demand, checked before anything is dispatched.
-    #
-    # Notes accumulate in `docs/releases/<channel>/unreleased.md` because the
-    # version is not known while the change is being written, and cutting a
-    # release renames that file to the version. A cut that forgets the rename
-    # fails inside the workflow -- for npm, after the matrix has built seven
-    # addons -- so the same condition is read here, where it costs nothing and
-    # the message can name the file to rename.
+    # The note the workflow demands, checked before dispatch, for the reason the
+    # npm recipe gives.
     notes="docs/releases/rust/${version}.md"
     if [[ ! -f "${notes}" ]]; then
         echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
@@ -1254,49 +739,14 @@ _release_crate dry:
     echo "==> https://github.com/{{ release_repo }}/actions/runs/${run}"
     gh run watch "${run}" -R "{{ release_repo }}" --exit-status --interval 20
 
-# The consumer projects: typecheck them against the built package, run every
-# example in both, and compare every file the two of them wrote.
-#
-# Both of them, deliberately. They draw the same pictures from the two surfaces,
-# so a surface left behind fails this command rather than being noticed later.
-# Each reaches `meo-canvas` the way anyone else would -- the JavaScript one
-# through the package's exports rather than into its source, the Rust one
-# through a dependency rather than from inside the workspace -- so it catches
-# what the test suites cannot: an exports map, a `types` field, an entry point,
-# or a public item that a caller needs and the crate does not export.
-#
-# **The byte comparison is the point, not a flourish.** One input through two
-# surfaces is a check neither surface's own tests can perform, and it has
-# already earned its place: the two pictures differed in 5,872 bytes because the
-# addon named a GPU backend and no Rust caller could, so one rasterised on the
-# GPU and the other on the CPU while both reported `gpu: true` -- `Surface::gpu`
-# reports the request rather than the outcome. Hence `--features` here, and the
-# `metal`/`vulkan` forwarding in `meo-canvas` and `meo-canvas-core`.
-#
-# Neither half names its examples: each runs every source file it has, so an
-# example added to one surface and forgotten on the other is reported by name
-# rather than quietly compared against nothing. `diff -rq` is what compares
-# them, because it names a file that differs *and* a file only one side wrote,
-# and both of those are the same failure -- the surfaces disagreed.
-#
-# The trees are removed first. A stale file from a renamed example would
-# otherwise sit in both trees, match itself, and be counted as agreement.
-#
-# `addon` as well as `build-js`, because the JavaScript half draws through the
-# compiled `.node` and the Rust half compiles from the same sources at run
-# time. Without it a painter change reaches one surface and not the other, and
-# the comparison reports a divergence that exists only between a stale binary
-# and a fresh one -- which it did, over background-image tiling, and reads
-# exactly like a real defect. The rule the two halves rest on is that both are
-# built from the tree as it stands.
+# Typechecks both consumer projects against the built package, runs every
+# example on both surfaces and diffs every file written: one input through two
+# surfaces, which neither suite can check. `addon` as well, or a painter change
+# reaches one side only.
 [doc("Run every example on both surfaces and compare every byte they wrote.")]
 example: build-js addon
-    # The example resolves the package by name, so its own `node_modules` has
-    # to exist before anything typechecks against it. It is gitignored, so a
-    # fresh clone has none -- which is how this recipe passed for weeks on a
-    # machine that happened to have one and would have failed on the first CI
-    # run. `--frozen-lockfile` so the example installs what `bun.lock` names
-    # rather than resolving afresh and reporting on a tree nobody committed.
+    # The example's `node_modules` must exist before it typechecks, and a fresh
+    # clone has none. `--frozen-lockfile`, so it installs what `bun.lock` names.
     cd examples/bun && bun install --frozen-lockfile
     ./node_modules/.bin/tsc --noEmit -p examples/bun/tsconfig.json
     rm -rf examples/bun/out examples/rust/out
@@ -1307,32 +757,13 @@ example: build-js addon
       || { echo "error: the two surfaces did not write the same bytes; each line above names a file they disagree on"; exit 1; }
     @echo "both surfaces wrote the same bytes in $(find examples/bun/out -type f | wc -l | tr -d ' ') files"
 
-# The conformance tools, in the order a full run measures them.
-#
-# Written out rather than derived from the directory: `browser.mjs` and
-# `png.mjs` share it and are not tools, so a glob would run two files that
-# measure nothing and write no table. One list, because a second one -- in a
-# validation arm, say -- is the copy nobody updates.
+# The conformance tools in measuring order, written out: `browser.mjs` and
+# `png.mjs` share the directory and measure nothing.
 conformance_tools := "ellipsis gradients flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain"
 
-# Re-measure Chrome and rewrite the conformance tables.
-#
-# **Deliberately not part of `ci`.** The harness produces tables and the gates
-# walk them: `chrome_tables.rs` reads what is checked in and needs no browser,
-# so a clone that never runs this never downloads one. A re-measurement should
-# arrive as a diff someone reads -- if a future Chrome changes an answer, that
-# belongs in a commit rather than in a suite going red on whichever machine
-# updated first.
-#
-# A bare `just conformance` measures every tool, in the order above. Naming
-# one -- `just conformance aspectratio` -- measures that one and rewrites its
-# table alone, so a one-row change arrives as one row rather than as every
-# table re-measured against whatever Chrome the contributor happens to have.
-#
-# Every number this writes comes from a page that **asserts its font loaded**
-# rather than assuming it, and every sample point is derived from a rectangle
-# the browser reported rather than written down. Both rules exist because the
-# hand-written pages these replace got them wrong.
+# Not in `ci`: a re-measurement is a diff someone reads, not a suite going red
+# on whichever machine updated Chrome first. Named, one tool rewrites one table.
+# Every page asserts its font loaded and derives its sample points.
 [doc("Re-measure Chrome with Playwright and rewrite the conformance tables.")]
 conformance tool="": ensure-deps ensure-browser
     #!/usr/bin/env bash
@@ -1357,21 +788,17 @@ conformance tool="": ensure-deps ensure-browser
       WRITE=1 node "packages/meo-canvas/tools/conformance/$tool.mjs"
     done
 
+# What the npm package publishes as its types, which only this reads: prettier
+# parses without checking. Not `check`, since `-check` here names the reporting
+# variant of a rewriting recipe.
 [doc("Type-check the shipped TypeScript surface.")]
 typecheck: ensure-deps
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.json
     ./node_modules/.bin/tsc --noEmit -p packages/meo-canvas/tsconfig.test.json
 
-# Lifts the fenced examples out of the doc comments into a compiled file.
-#
-# TypeScript compiles nothing inside a comment, so a `.ts` doc example is prose
-# and can name a property that no longer exists while every gate stays green.
-# Renaming a style property leaves every example using the old name compiling,
-# because none of them is compiled at all. The Rust half has no such exposure --
-# `just docs` runs its doctests.
-#
-# The emitted file lands under `src`, which `typecheck` already covers, so this
-# reuses a gate rather than adding one.
+# Lifts the fenced examples out of TypeScript doc comments into a compiled file
+# under `src`, which `typecheck` covers, since TypeScript compiles nothing
+# inside a comment.
 [doc("Emit the TypeScript doc examples as compilable code.")]
 doc-examples:
     node packages/meo-canvas/tools/generate-doc-examples.mjs
@@ -1381,12 +808,8 @@ doc-examples:
 platform-packages:
     node packages/meo-canvas/tools/generate-platform-packages.mjs
 
-# Fails when the checked-in examples no longer match the doc comments.
-#
-# Regenerates to a disposable path and diffs, for the reason
-# `arena-tables-check` does: git reports a file as changed whether it is
-# untracked, written or staged, so a check built on it refuses the workflow it
-# exists to support.
+# Regenerates to a disposable path and diffs, since git reports a file changed
+# whether untracked, written or staged.
 [doc("Fail if the extracted doc examples have drifted from the comments.")]
 doc-examples-check:
     @mkdir -p target
@@ -1406,66 +829,36 @@ platform-packages-check:
     @diff -u packages/meo-canvas/package.json target/platform-packages/package.json \
       || { echo "error: optionalDependencies is stale; run \`just platform-packages\` and commit the result"; exit 1; }
 
-# The JavaScript suite.
-#
-# vitest is invoked from `node_modules` rather than through an npm script, the
-# same way prettier and tsc are here: one place names the command, and it is
-# this file.
+# vitest from `node_modules` rather than an npm script, as prettier and tsc are:
+# this file names every command.
 [doc("Run the JavaScript tests.")]
 test-js: ensure-deps addon
-    # `addon` as well, because these read the compiled `.node`: a stale one
-    # makes the byte comparisons report a colour of zero, which reads as an
-    # encoder defect rather than as a stale binary. `ci` is already safe --
-    # it builds the addon first -- so this covers the recipe a person runs
-    # alone while working. Incremental, so it is free on a warm tree.
+    # `addon` as well: these read the compiled `.node`, and a stale one reads as
+    # an encoder defect.
     ./node_modules/.bin/vitest run
 
-# The JavaScript suite again, with the same 90% floor the Rust half has.
-#
-# A separate recipe rather than a flag on `test-js`, mirroring `test` and
-# `coverage`: what to run while writing a test is not what gates a build, and
-# instrumenting every local run to find out whether one test passes is a cost
-# for no answer.
-#
-# The floor and the exclusions live in `vitest.config.mts`, next to the reason
-# for each. Only generated files are excluded, one path at a time.
+# The JavaScript suite with the Rust half's 90% floor, a separate recipe as
+# `coverage` is. The floor and exclusions live in `vitest.config.mts`.
 [doc("Measure JavaScript coverage and fail below the 90% floor.")]
 coverage-js: ensure-deps addon
     ./node_modules/.bin/vitest run --coverage
 
-# Regenerates the TypeScript arena tables from the Rust that defines them.
-#
-# The property indices live in `arena_group!` invocations in
-# `crates/meo-canvas-node/src/arena.rs` and a writer needs every one. Emitting
-# them rather than transcribing them keeps one table rather than two agreeing
-# by inspection -- the failure already removed twice here, once for the format
-# table that was `pub(crate)` upstream and once for the node tags hand-written
-# in the byte codec.
-#
-# Generated rather than exported at runtime because the encoder runs per
-# property per node and that path has to stay cheap; a static table is
-# single-sourced and free, where a runtime-described one pays per write.
+# Emits the TypeScript arena tables from `arena_group!` in
+# `crates/meo-canvas-node/src/arena.rs`, so there is one table, not two agreeing
+# by inspection. Static rather than exported at runtime, since the encoder reads
+# it per property per node.
 [doc("Emit the TypeScript arena tables from the Rust tables.")]
 arena-tables:
     node packages/meo-canvas/tools/generate-arena-tables.mjs
 
-# Regenerates the round trip's expected bytes.
-#
-# One case per arena property plus one setting every property at once, each a
-# scene with that property set and the bytes the byte format writes for it.
-# Keyed by Rust field name; the TypeScript spelling is the public API and lives
-# in the encoder.
+# Regenerates the round trip's expected bytes: one case per arena property plus
+# one setting all, keyed by Rust field name.
 [doc("Regenerate the arena property cases the encoder is checked against.")]
 arena-cases:
     cargo test -p meo-canvas-node --lib -- --ignored --exact \
       arena::cases::tests::emit_arena_cases
 
-# Fails when the checked-in cases no longer match the Rust.
-#
-# Regenerates to a disposable path and diffs, for the same reason
-# `arena-tables-check` does: `git status` reports a file as changed whether it
-# is untracked, written or staged, so a check built on it refuses the workflow
-# it exists to support.
+# Regenerates to a disposable path and diffs, for `arena-tables-check`'s reason.
 [doc("Fail when the arena property cases are out of date.")]
 arena-cases-check:
     @mkdir -p target
@@ -1475,18 +868,9 @@ arena-cases-check:
     @diff -u fixtures/arena-cases.json target/arena-cases.check.json \
       || { echo "error: the arena cases are stale; run \`just arena-cases\` and commit the result"; exit 1; }
 
-# Fails when the checked-in tables no longer match the Rust.
-#
-# Regenerates to a disposable path and diffs. Drift fails a build rather than a
-# round trip, which is the point of generating them: a writer reading a stale
-# index writes the right number of slots into the wrong field, and no length
-# check catches that.
-#
-# A diff of two files rather than a question to git. `git status` reports a file
-# as changed whether it is untracked, written or staged, so a check built on it
-# refuses the workflow it exists to support -- edit the Rust, regenerate, run
-# the gate -- and passes only after a commit. `diff` also fails when the
-# checked-in file is absent, which is the other case worth catching.
+# Regenerates to a disposable path and diffs: a stale index writes the right
+# number of slots into the wrong field. `diff`, not `git status`, which reports
+# untracked, written and staged alike; it also fails on an absent file.
 [doc("Fail if the checked-in arena tables have drifted from the Rust.")]
 arena-tables-check:
     @mkdir -p target
@@ -1494,26 +878,15 @@ arena-tables-check:
     @diff -u packages/meo-canvas/src/generated/arena-tables.ts target/arena-tables.check.ts \
       || { echo "error: the arena tables are stale; run \`just arena-tables\` and commit the result"; exit 1; }
 
-# Regenerates the TypeScript wire-enum tables from the Rust that declares them.
-#
-# The arena writes an enum as one number: the same discriminant the byte codec
-# writes, because both sides read `from_wire`. Those numbers are declared
-# explicitly in 26 `wire_enum!` blocks in `crates/meo-canvas-scene/src` -- the
-# macro's own comment says why explicitly, and it is the same reason this is
-# generated. Hand-copying them would be a fourth copy of each list, and the
-# drift is silent in the worst available way: a variant inserted upstream does
-# not fail to decode, it decodes as a *different variant*.
+# Emits the wire-enum tables from the 26 `wire_enum!` blocks in
+# `crates/meo-canvas-scene/src`: a hand copy that missed an inserted variant
+# would decode as a different variant, not fail.
 [doc("Emit the TypeScript wire-enum tables from the Rust declarations.")]
 arena-enums:
     node packages/meo-canvas/tools/generate-arena-enums.mjs
 
-# Fails when the checked-in enum tables no longer match the Rust.
-#
-# Regenerates to a disposable path and diffs, for the reason
-# `arena-tables-check` does. `$PWD` rather than a bare relative path: a
-# relative destination resolves against wherever the recipe's shell started,
-# and a temp file written somewhere nothing compares is a check that passes
-# without checking.
+# Regenerates to a disposable path and diffs; `$PWD`, since a relative path
+# resolves wherever the recipe's shell started.
 [doc("Fail if the checked-in wire-enum tables have drifted from the Rust.")]
 arena-enums-check:
     @mkdir -p target
@@ -1521,14 +894,9 @@ arena-enums-check:
     @diff -u packages/meo-canvas/src/generated/arena-enums.ts target/arena-enums.check.ts \
       || { echo "error: the wire-enum tables are stale; run \`just arena-enums\` and commit the result"; exit 1; }
 
-# The TypeScript format table, emitted from the Rust one rather than kept in
-# step by hand. Browsers accept both `image/x-icon` and the renderer's
-# `image/vnd.microsoft.icon` for `ico`, so a transcribed table can disagree with
-# the renderer and still serve, render and pass every test.
-#
-# A Rust test rather than a source parser, for the reason `arena-cases` is one:
-# the values come from upstream's trait table at runtime and are not in any
-# source text this side could read.
+# The TypeScript format table, emitted from the Rust one: browsers accept both
+# `image/x-icon` and `image/vnd.microsoft.icon`, so a transcribed table could be
+# wrong and still serve. A Rust test, since the values exist only at runtime.
 [doc("Emit the TypeScript format table from the Rust one.")]
 media-types:
     @MEO_MEDIA_TYPES="$PWD/packages/meo-canvas/src/generated/media-types.ts" cargo test -q \
@@ -1543,65 +911,30 @@ media-types-check:
     @diff -u packages/meo-canvas/src/generated/media-types.ts target/media-types.check.ts \
       || { echo "error: the format table is stale; run \`just media-types\` and commit the result"; exit 1; }
 
-# Golden fixtures: a scene, and the picture it must produce.
-#
-# The only check here that looks at the image rather than at whether a line
-# ran. Comparison is byte for byte, with no tolerance: five renders of one
-# scene across two processes produced a single hash, and a build with the Metal
-# backend compiled produced the same bytes as one without, so a disagreement is
-# a regression until someone measures otherwise.
-#
-# The harness registers one font, from this repository, and refuses a fixture
-# naming any other family -- the platform's installed faces answer `has_family`
-# too, so a fixture asking for Helvetica would pass here and differ anywhere
-# else.
-#
-# A failure writes `actual.png` and `diff.png` under `target/fixtures/<name>/`
-# and reports the differing pixel count and the box containing them. "Differs"
-# on its own means reproducing locally before you can even look.
-# Not in the `ci` chain, and deliberately: the harness is an ordinary test, so
-# `test` already runs it and `coverage` already counts it. This recipe is the
-# focused runner for someone iterating on one image -- naming it in `ci` as well
-# would run the same comparison twice.
+# Golden fixtures, byte for byte with no tolerance, with one registered font and
+# every other family refused. A failure writes `actual.png` and `diff.png` under
+# `target/fixtures/<name>/`. Not in `ci`: `test` already runs the harness.
 [doc("Render every fixture and compare it against its committed image.")]
 fixtures:
     cargo test -p meo-canvas-core --test fixtures
 
-# Rewrites one fixture's expected image.
-#
-# One name, and there is no bulk form on purpose: accepting every difference at
-# once is how a regression becomes a commit, and a legitimate mass change is
-# still worth looking at one image at a time.
+# Rewrites one fixture's expected image. No bulk form: accepting every
+# difference at once is how a regression becomes a commit.
 [doc("Accept one fixture's current render as its expected image.")]
 fixtures-accept name:
     MEO_FIXTURE_ACCEPT={{ name }} cargo test -p meo-canvas-core --test fixtures
 
-# Rewrites the percentage fixture's scene from the Rust that describes it.
-#
-# The one golden whose scene is authored rather than committed as bytes alone.
-# A `.mcs` is opaque and a codec change makes every one of them unreadable with
-# no source to rebuild from -- which is a cost already paid once, by hand, for
-# the gradient fixture.
-#
-# Its picture is the only check in the project that pins what a percentage
-# *means*. Nothing that compares bytes can: a probe and the bytes it is compared
-# against are written from the same number, so they agree whether or not the
-# arithmetic is right.
+# Rewrites the percentage fixture's scene from its Rust source: the only check
+# on what a percentage means, since compared bytes come from one number and
+# agree regardless.
 [doc("Rewrite the percentage fixture's scene from its source.")]
 percentage-fixture:
     @cargo test -q -p meo-canvas --test percentage_fixture -- --ignored --exact emit_percentage_scene > /dev/null
     @echo "wrote fixtures/percentages/scene.mcs; run \`just fixtures-accept percentages\` if the picture should move"
 
-# Rewrites every golden's scene from the Rust that describes it.
-#
-# The scenes are authored in `crates/meo-canvas/tests/fixture_scenes.rs`, and an
-# ordinary test there asserts that each one encodes to exactly the bytes
-# committed beside its picture -- so the source and the artefact cannot drift,
-# and a codec change is a re-run rather than decoding old bytes with old code.
-#
-# Byte equality rather than picture equality: if the bytes match the picture
-# cannot have moved, where comparing pictures would let a scene change that
-# happens to render the same slip through.
+# Rewrites every golden's scene from
+# `crates/meo-canvas/tests/fixture_scenes.rs`, where a test asserts each encodes
+# to the committed bytes, so a codec change is a re-run.
 [doc("Rewrite every golden fixture's scene from its source.")]
 fixture-scenes:
     @cargo test -q -p meo-canvas --test fixture_scenes -- --ignored --exact emit_fixture_scenes > /dev/null
@@ -1620,19 +953,10 @@ layout-check:
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# The JavaScript reference, built and gated the way `docs` gates rustdoc.
-#
-# TypeDoc reads the declarations `build-js` emits into `dist/`, so a signature
-# that names a type nothing exports, or a `{@link}` to nothing, fails here
-# rather than reaching a reader as a dead end. The number of undocumented
-# members ratchets: it may hold or fall, never rise, and the baseline file is
-# what holds the line. `tools/typedoc/build.mjs` says how the two kinds of
-# finding are told apart.
-#
-# The tool pins its own TypeDoc and TypeScript in `tools/typedoc/package.json`
-# rather than sharing the root's, because TypeDoc is compiled against one
-# TypeScript minor and refuses to load another -- the root can move on its own
-# schedule without breaking the reference.
+# Builds the TypeScript reference and fails on a dead link, a type exported
+# nowhere, or any undocumented member:
+# `packages/meo-canvas/tools/typedoc/build.mjs` fails above its baseline of 0.
+# TypeDoc pins its own TypeScript.
 [doc("Build the JavaScript API reference and fail on a dead link or a new undocumented member.")]
 docs-js: build-js
     #!/usr/bin/env bash
@@ -1642,179 +966,82 @@ docs-js: build-js
     test -f "$tool/node_modules/typedoc/package.json" || bun install --cwd "$tool" --frozen-lockfile
     node "$tool/build.mjs"
 
-# Fail if a comment names an issue without naming its repository.
-#
-# **A bare `#N` resolves, which is what makes it worse than a dead link.** Three
-# in this tree pointed at merged pull requests about other things, and ten more
-# named taffy's numbers in our numbering. A reader lands somewhere real and
-# nothing says it is the wrong place.
+# A bare `#N` resolves, which is worse than a dead link: a reader lands
+# somewhere real and wrong.
 [doc("Fail if a comment names an issue without naming its repository.")]
 issue-refs:
     node packages/meo-canvas/tools/issue-refs.mjs
 
-# Fail if a \`[WORKAROUND]\` has lost the probe behind it.
-#
-# **A probe rots in one direction and nothing reports it.** A renamed test file,
-# an \`#[ignore]\` added to keep a red quiet, or the row pinning the property the
-# compensation *rests* on deleted -- each leaves a green gate and a workaround
-# nobody can retire without re-deriving it. AGENTS.md, "Working around an
-# upstream defect", is the convention this enforces.
+# A probe rots silently -- a renamed file, an `#[ignore]`, a deleted foundation
+# row -- and leaves a workaround nobody can retire. `AGENTS.md`'s convention,
+# enforced.
 [doc("Fail if a [WORKAROUND] site has lost its probe.")]
 workaround-probes:
     node packages/meo-canvas/tools/workaround-probes.mjs
 
-# Fail if a golden fixture carries no note, or a note missing a field.
-#
-# **The image says what was drawn and nothing else says what it was for.**
-# `fixtures.rs` compares bytes and never opens a note, so a fixture added
-# without one is a picture the next reader can only accept or re-derive. This
-# reads that the three fields are there and say something; whether they are true
-# is not a property a program here can test, and the tool says so in its own
-# header.
+# `fixtures.rs` compares bytes and never opens a note, so this reads that the
+# three fields are there and say something; whether they are true is not
+# testable.
 [doc("Fail if a fixture has no notes.json, or one missing a field.")]
 fixture-notes:
     node packages/meo-canvas/tools/fixture-notes.mjs
 
-# Fail if a conformance tool writes a tracked fixture unguarded.
-#
-# **This runs where its subject cannot.** `conformance` is deliberately outside
-# `ci` -- it drives a browser and produces a diff a person reads -- so nothing in
-# the gate executes those tools, and one added later could rewrite a fixture on
-# any invocation with nothing to notice. The check is static, so it has none of
-# that constraint and belongs here even though the tools do not.
+# A static check on the conformance tools, which nothing in the gate executes,
+# so an unguarded one could rewrite a fixture unnoticed.
 [doc("Fail if a conformance tool writes a fixture without a WRITE guard.")]
 conformance-writes:
     node packages/meo-canvas/tools/conformance-writes.mjs
 
-# Fail if `ci-steps` stopped running everything the two lists name.
-#
-# **The composition is exercised nowhere else.** CI runs `portable` and `native`
-# as separate jobs and never runs `ci-steps`, so an edit that drops a recipe from
-# a list, or points `ci-steps` at one half, makes the local gate faster and
-# quieter and leaves it green. This is the only thing that looks.
-#
-# It asks `just` rather than reading the file, so it cannot disagree with the
-# gate about what a dependency is -- and it floors both lists as well as
-# comparing them, because a comparison of two empty lists succeeds.
+# CI runs `portable` and `native` as separate jobs and never `ci-steps`, so this
+# is the only check of the composition. It asks `just`, and floors both lists,
+# since two empty lists compare equal.
 [doc("Fail if ci-steps and the two lists have drifted apart.")]
 gate-lists-check:
     node packages/meo-canvas/tools/gate-lists.mjs
 
-# Fail if the Actions cache is close to the limit, and say which ref holds it.
-#
-# **GitHub emits no signal when it evicts.** The only symptom is a restore
-# taking seconds instead of a minute, and nothing looks at that -- so on
-# 9 September a merged pull request's dead 3.53 GiB pushed the repository over
-# and a different leg cold-built on every run for an unknown period, reading as
-# "Windows is slow".
-#
-# Reads the API, so it needs a token: `GITHUB_TOKEN` in CI, `gh auth token` on
-# a machine. Without one it says so and passes locally, and fails in CI, where
-# an absent token means the job lost `actions: read` rather than that someone
-# has not run `gh auth login`.
+# GitHub evicts silently: a dead 3.53 GiB cache once made another leg cold-build
+# every run. Needs a token -- `GITHUB_TOKEN` in CI, `gh auth token` locally --
+# and fails without one only in CI.
 [doc("Fail if the Actions cache is near the limit; name the refs holding it.")]
 cache-budget-check:
     node packages/meo-canvas/tools/cache-budget.mjs
 
-# What the budget check names, removed.
-#
-# **A dry run unless you pass `--delete`**, and the only place that flag is
-# passed automatically is `.github/workflows/cache-prune.yml`, which is the one
-# job in this repository holding `actions: write`. Deleting a cache is
-# irreversible and a wrong one costs an hour of cold Skia build on Windows.
-#
-# **Not in `ci-steps`**, for the reason `audit` is not: it reaches the network
-# and it acts. The gate asks whether the budget is healthy; this is the remedy,
-# and a remedy inside a gate is a gate that changes the thing it measures.
+# A dry run unless given `--delete`, which only
+# `.github/workflows/cache-prune.yml` passes. Not in `ci-steps`: a remedy inside
+# a gate changes what it measures.
 [doc("Print the superseded cache entries; --delete removes them.")]
 cache-prune *args:
     node packages/meo-canvas/tools/cache-prune.mjs {{ args }}
 
-# What upstream has done about the defects this tree works around.
-#
-# **The gap is a fix that is merged and in no release.** A released fix already
-# goes red: Dependabot bumps the crate, the probe beside the workaround fails,
-# and its message names the `[WORKAROUND]` to delete. A fix merged upstream and
-# sitting in no release is invisible to all of it, because there is no published
-# version to bump. The taffy fix this tree compensates for sat in exactly that
-# state for weeks, having been merged twenty hours after the release that would
-# have carried it.
-#
-# The example is described rather than cited: a reference spelled in prose about
-# the tool is one the tool then watches, and the row would outlive the workaround
-# it names.
-#
-# Its input is the tree: every upstream reference in a comment, in both the
-# `owner/repo#N` and the full-URL spelling, through the same lexer `issue-refs`
-# uses. A pinned list of what to watch is the thing that goes stale exactly when
-# it matters.
-#
-# **Not in `ci-steps`**, for the reason `cache-prune` and `audit` are not: it
-# reaches the network, and it asks about the world rather than about the diff. A
-# gate that fails because GitHub is rate-limiting is a gate that has stopped
-# being about the change.
+# A fix merged upstream and in no release is invisible to the probes, which go
+# red only on a bump. Reads every upstream reference in the tree's comments. Not
+# in `ci-steps`: it asks about the world, not the diff.
 [doc("Report what upstream has done about the defects this tree works around.")]
 upstream-watch:
     node packages/meo-canvas/tools/upstream-watch.mjs
 
-# The two release channels, and the filter that decides which of them gets a
-# JavaScript reference.
-#
-# `docs.yml` matches a release tag against a regular expression and, on a
-# `release` event, publishes nothing for a tag that does not match -- a notice,
-# a green job, no deploy. So a tag prefix changed in `release.yml` and not
-# there costs a release its documentation and reports nothing. This runs a tag
-# of each shape through that exact `grep -Eq`, with the prefixes read out of
-# the workflows that build them rather than written down again here.
+# `docs.yml` publishes no reference for a tag its filter rejects, silently, so
+# this runs a tag of each channel through that exact `grep -Eq`, with the
+# prefixes read from the workflows.
 [doc("Fail if the release tag prefixes and the docs filter disagree.")]
 release-tags-check:
     node packages/meo-canvas/tools/release-tags.mjs
 
-# The half of the reference `docs-js` cannot see.
-#
-# TypeDoc's model is the exported surface, so a doc comment separated from a
-# module-private declaration is not undercounted there -- it is absent. This
-# asserts the **set** of private declarations carrying no doc, not its size,
-# which is what lets it catch a doc *moved* from one to another: the total is
-# unchanged and the set is not.
-#
-# The baseline is a named list rather than a number, so a reader sees which
-# declarations are exceptions -- mostly easing coefficients, where a sentence
-# would be noise -- and a new one is a visible edit rather than a count moving.
+# Asserts the set of module-private declarations with no doc, not its size, so a
+# doc moved to another declaration is caught. The baseline names each exception.
 [doc("Fail if a module-private declaration lost its doc comment.")]
 private-docs:
     node packages/meo-canvas/tools/private-docs.mjs
 
-# Compare v1's prop surface against v2's.
-#
-# Deliberately not in `ci`: it reads `../meo-canvas-old`, which a CI machine has
-# no reason to hold, and a recipe that fails for being run somewhere ordinary
-# gets removed from the gate rather than fixed.
-#
-# It replaces a checked-in Markdown table whose own header told the reader to
-# regenerate it. A document cannot enforce that -- a transcribed list is a copy,
-# and a copy is only correct at the moment it is made.
-[doc("Print v1's prop surface against v2's, naming v1's tag and commit.")]
+# Compare v9's prop surface against this renderer's. Not in `ci`: it reads
+# `../meo-canvas-old`, which a CI machine does not hold.
+[doc("Print v9's prop surface against this renderer's, naming v9's tag and commit.")]
 surface-report:
     node packages/meo-canvas/tools/surface-report.mjs
 
-# Fail if an async runtime has entered the dependency tree.
-#
-# `meo-canvas-core`'s README promises "runtime-free always, and fetch-free by
-# default", and the second half is pinned by `tests/manifest_claims.rs`. This is
-# the first half. A runtime here is a runtime in every consumer -- it is the one
-# constraint the crate's manifest states about itself -- and the `net` feature
-# relaxed *fetching* without relaxing it.
-#
-# `-e normal` excludes dev and build dependencies, which may pull whatever they
-# like: the claim is about what a consumer links, not what we test with.
-# `--all-features` because a feature nobody enables today is still a runtime the
-# moment someone does.
-#
-# The names are the runtimes and their reactors rather than everything
-# async-flavoured: `async-trait` is a macro and `futures-core` is a trait
-# definition, and refusing those would be refusing a vocabulary rather than a
-# runtime.
+# `meo-canvas-core` promises it is runtime-free; `-e normal` checks what a
+# consumer links, and `--all-features` any feature someone might enable.
+# Runtimes and reactors only, not traits or macros.
 [doc("Fail if an async runtime is anywhere in the dependency tree.")]
 runtime-free:
     #!/usr/bin/env bash
@@ -1833,11 +1060,8 @@ runtime-free:
 unused:
     cargo machete
 
-# Measure what a render costs. Not part of `ci`.
-#
-# A bench is an instrument, not a gate: it answers "what is this worth" rather
-# than "is this correct", and a number that varies with the machine cannot fail
-# a build honestly. The golden fixtures are what say a change moved no pixels.
+# An instrument, not a gate: a number that varies with the machine cannot fail a
+# build honestly.
 [doc("Benchmark both surfaces: criterion, then throughput and memory.")]
 bench: bench-rust bench-js
 
@@ -1846,73 +1070,29 @@ bench: bench-rust bench-js
 bench-rust:
     cargo bench -p meo-canvas-core
 
-# What a long-lived Node process holding the addon costs, in time and memory.
-#
-# A different question from `bench-rust` rather than the same one twice:
-# criterion times a function, and this asks whether a process that has rendered
-# a few thousand scenes settles back to where it started. `--expose-gc` is what
-# separates "retained" from "not collected yet" -- without it the idle reading
-# measures when V8 felt like running, and the harness says so in its output
-# rather than reporting the number as if it meant something.
-#
-# Runs the release addon: a debug build's numbers describe a binary nobody
-# ships, and reporting them as performance is worse than not measuring.
+# Whether a long-lived Node process settles back after thousands of renders;
+# `--expose-gc` separates retained from uncollected. On the release addon, since
+# debug numbers describe nothing shipped.
 [doc("Benchmark the Node surface: throughput, rss, heap, peak, idle.")]
 bench-js: ensure-deps build-js addon-release
     node --expose-gc packages/meo-canvas/tools/bench.mjs
 
-# Find a test by name, without running one.
-#
-# **The names in this tree are sentences** -- 8.4 words on average across the
-# integration tests -- so a filtered list of them answers "where is this
-# behaviour pinned" directly, where a grep of the source answers "where does
-# this word appear". `cargo test -- --list` prints every name and surfaces
-# nothing; this is that output with a filter on it.
-#
-# **It runs no test and asserts nothing**, which is what makes it safe to reach
-# for. It does *compile* them: `--list` reads the test binaries, so a cold
-# target directory pays a full build here. That cost buys a question the
-# compiler has already answered and a grep cannot -- a name is a test only if
-# the harness registered it.
-#
-# **No pattern lists everything**, deliberately. "What is there" is a real
-# question and the answer is long rather than wrong; the alternative is a usage
-# message that refuses to answer it.
-#
-# **No match exits 1**, also deliberately. A pattern matching nothing is a
-# result -- most often a name that has been renamed or a suite that does not
-# exist -- and a recipe that reports it as success is the shape this repository
-# spent a night removing from its checks. The message names the pattern,
-# because `grep`'s own silence does not.
-#
-# The pattern is substituted textually by `just`, so a quote inside it will
-# break the assignment rather than searching for a quote.
+# Lists test names matching a pattern -- they are sentences -- by compiling,
+# never running. No pattern lists all; no match exits 1 and names the pattern.
+# Quotes in the pattern break it.
 [doc("List test names matching a pattern, without running any. No pattern lists all.")]
 tests pattern="":
     #!/usr/bin/env bash
     set -euo pipefail
     pattern='{{ pattern }}'
-    # **stderr is kept, and it carries the answer.** cargo writes the test
-    # names to stdout and `Running tests/<file>.rs` to stderr, so discarding
-    # stderr discards the only line saying which file a name lives in -- and
-    # that file is what "where is this tested" is asking for. The first draft
-    # of this recipe sent stderr to /dev/null and answered a narrower question
-    # than the one in its own doc comment.
-    #
-    # Grouping relies on cargo printing each `Running` line before that
-    # binary's names, which it does because it runs them in sequence.
-    #
-    # `|| true` because a filter matching nothing is not a failure of the
-    # filter, and `set -e` would otherwise end the recipe before the message
-    # below -- which is the whole of what this adds over a raw grep.
+    # stderr is kept, since `Running tests/<file>.rs` goes there and names each
+    # test's file. `|| true`, so an empty match reaches the message below rather
+    # than `set -e`.
     found=$(cargo test --workspace -- --list 2>&1 | awk -v pat="$pattern" '
         /^ *(Running|Doc-tests)/ {
             where = $0
-            # A pattern naming the FILE lists everything in it. "Where is the
-            # aspect-ratio behaviour tested" is answered by a file name, and
-            # no test in `chrome_aspect_ratio_percentage.rs` has "aspect" in
-            # its own name -- so matching names alone answers nothing for
-            # exactly the question the doc comment poses.
+            # A pattern naming the file lists everything in it, since test names
+            # rarely repeat their file's subject.
             whole = tolower(where) ~ tolower(pat)
             next
         }
@@ -1926,66 +1106,13 @@ tests pattern="":
     fi
     echo "$found"
 
-# The rung between one test file and the whole gate, and it says what it is not.
-#
-# There was nothing between `cargo test -p meo-canvas-core --test fixtures`,
-# which is seconds and covers one thing, and `just ci`, which takes a lock and
-# about twenty minutes. So people ran the narrow thing and pushed, or ran the
-# gate and waited.
-#
-# **The danger is not that it is incomplete -- it is that a green teaches you it
-# is enough.** `just lint` once exited 0 with a clippy failure left in the tree,
-# which is worse than a no-op: a no-op tells you nothing and that told you
-# something false. A fast rung is the same hazard by construction rather than by
-# defect, because it is *designed* to leave things out. So it prints, on
-# success, exactly what it did not run -- the report-shape rule applied to a
-# recipe instead of to a report.
-#
-# **That list is derived rather than typed.** It is `portable` and `native`
-# minus what ran here, read out of `just --dump` -- the same resolver a recipe
-# runs under, which is why `gate-lists.mjs` reads it too. A hand-written list in
-# an `echo` would be a pinned list with nothing asserting it, one file away from
-# the tool built to stop exactly that, and it would go stale the first time
-# somebody added a recipe to `native`.
-#
-# **The budget is a minute, warm, and here is what it buys.** Each candidate
-# run twice, the second figure given because a rung is reached for repeatedly:
-#
-#     layout-check         0.03s     gate-lists-check     0.07s
-#     issue-refs           0.12s     typecheck            1.75s
-#     fmt-check            1.82s     clippy -D warnings   0.16s
-#     cargo test          31.29s
-#
-# And after touching one core source file, which is what someone actually pays
-# on the run that matters: **clippy 2.22s, `cargo test` 87.15s.** The whole
-# recipe, warm, is **35.85s and 35.72s** on consecutive runs.
-#
-# `cargo test --workspace` is 88% of the warm figure and is the only member here
-# that can catch a behaviour regression; everything else together is under four
-# seconds. `just test` runs cargo four times and each run has a reason -- read
-# it -- but a rung does not need the GPU-feature passes, which is what the other
-# three are.
-#
-# **The conditions, because a duration without them is not a measurement.**
-# Taken with the process list clear -- nothing of ours on the CPU, the busiest
-# process under 8% apart from macOS's own scanner. The load averages read
-# 3.4-5.1 throughout and that is *not* contention: an average decays over a past
-# window, so it reports a gate that ended minutes earlier. **Ask what is running
-# now (`ps -Ao pcpu,comm -r`); `uptime` answers whether anything ran recently,
-# which is a different question.** An earlier set of these numbers was taken
-# while a teammate's gate started on the same machine and was discarded rather
-# than labelled -- a labelled bad number still gets copied, and this one is a
-# budget the next person spends against.
-#
-# Anything added here spends against that minute. If it stops being a minute it
-# stops being the rung and becomes a second gate nobody runs either.
+# The rung between one test and the gate, about a minute warm, printing what it
+# did not run -- `portable` and `native` minus this, read from `just --dump`.
+# `cargo test --workspace` is 88% of the time and the only behavioural check.
 [doc("The fast rung: cheap checks plus one test pass, and a list of what it skipped.")]
 precheck: layout-check gate-lists-check issue-refs typecheck fmt-check
-    # **`-- -D warnings` is the whole of clippy's gate**, and without it this
-    # line exits 0 on every lint in the tree. Written bare first, and the
-    # mutation that was supposed to prove it -- a `&Vec<u8>` parameter, which
-    # `lint-check` refuses -- passed. A member that cannot fail is decoration
-    # with a duration.
+    # `-- -D warnings` is clippy's whole gate: without it this exits 0 on every
+    # lint.
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
     @just --dump --dump-format json | node -e ' \

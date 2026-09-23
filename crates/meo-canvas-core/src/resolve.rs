@@ -10,14 +10,13 @@
 //! This pass reads local files and accepts bytes the caller already holds.
 //! **Whether it also fetches is a build-time decision**: with the `net` feature
 //! off -- the default -- an [`ImageSource::Url`] arriving here is
-//! [`Error::UnresolvedSource`], exactly as it always was, and no HTTP stack is
-//! linked. With it on, the URL is fetched over a blocking client.
+//! [`Error::UnresolvedSource`] and no HTTP stack is linked. With it on, the URL
+//! is fetched over a blocking client.
 //!
-//! The policy that used to keep fetching out of this crate was about
-//! **runtimes**, not about the network: an async client would put a runtime in
-//! every Rust consumer of the public crate, including those already inside one.
-//! A blocking client puts none, so the objection does not reach it. The
-//! dependency is still real, which is why the feature is off unless asked for.
+//! Blocking because an async client would put a runtime in every Rust consumer
+//! of the public crate, including those already inside one, and a blocking one
+//! puts none. The dependency is still real, which is why the feature is off
+//! unless asked for.
 //!
 //! The TypeScript surface fetches before it encodes and sends bytes, so it
 //! never produces a URL source at all. **The two surfaces therefore fail the
@@ -114,11 +113,9 @@ use crate::{Error, FetchFailure, ImageWarning};
 #[derive(Default)]
 pub struct Fonts {
     library: meo_skia_canvas::FontLibrary,
-    /// The families the platform already has, read once.
-    ///
-    /// Enumerating installed families walks the system's font directories, and
-    /// the answer cannot change while the process runs. Reading it per scene
-    /// would repeat that walk for every render.
+    /// The families the platform already has, read once: enumerating them
+    /// walks the system's font directories, and the answer cannot change
+    /// while the process runs.
     installed: OnceLock<Vec<String>>,
 }
 
@@ -267,9 +264,7 @@ pub struct ResolvedText {
     /// `normal`.
     ///
     /// **An `Option` because `1.0` is a value a caller can ask for.** A line
-    /// box exactly one em tall is legal CSS and is not `normal`; carrying the
-    /// two as one `f32` made them the same number, and every
-    /// `line-height: 1` in a document silently became the face's metrics.
+    /// box exactly one em tall is legal CSS and is not `normal`.
     ///
     /// **Never [`LineHeight::Percent`].** A percentage resolves against the
     /// font size of the element that declared it, and [`Self::inherit`] does
@@ -344,20 +339,10 @@ impl ResolvedText {
                 .unwrap_or(self.vertical_align),
             text_stroke: overlay.text_stroke.or(self.text_stroke),
             paint_order: overlay.paint_order.unwrap_or(self.paint_order),
-            // `.or`, not `unwrap_or`: the latter turns an absent value
-            // into the number `1.0`, and from there an explicit `1.0` and an
-            // inherited `normal` are indistinguishable.
-            //
-            // **A percentage resolves here and a number does not**, which is
-            // the whole of CSS's rule and the one asymmetry in this merge. A
-            // percentage is a share of the declaring element's own size, so
-            // the length it becomes is what descends; a number descends as a
-            // number and is recomputed against each inheritor's size.
-            //
-            // Both mistakes pass every test that only declares: resolve a
-            // percentage late and a 32px child reads 48 where Chrome says 24;
-            // resolve a number early and the same child reads 24 where Chrome
-            // says 48.
+            // `.or`, not `unwrap_or`, so an explicit `1.0` stays distinct from
+            // an inherited `normal`. A percentage resolves here, against the
+            // declaring element's size, and a number descends as a number;
+            // `inherited` below pins both.
             line_height: match overlay.line_height {
                 Some(LineHeight::Percent(share)) => {
                     Some(LineHeight::Length(share * size))
@@ -403,13 +388,10 @@ pub struct DecodedImage {
 enum Kind {
     /// Pixels, at the size the file states.
     Raster(meo_skia_canvas::Image),
-    /// A parsed document, shared by every node that names this source.
-    ///
-    /// `Rc` rather than a fresh document per node: `taken` clones one decode
-    /// per node, and a document is expensive to parse and cheap to share.
-    /// `RefCell` because [`meo_skia_canvas::Svg::rasterize`] takes `&mut
-    /// self` -- it sets the container size on the document before drawing --
-    /// and because the raster it produces is memoised beside it.
+    /// A parsed document shared by every node naming this source, being
+    /// expensive to parse and cheap to share. `RefCell` because `rasterize`
+    /// takes `&mut self` to set the container size, and its raster is memoised
+    /// beside it.
     Vector(Rc<RefCell<Vector>>),
 }
 
@@ -417,26 +399,14 @@ enum Kind {
 struct Vector {
     /// The document itself.
     svg: Svg,
-    /// Its own size, which is what an `Auto` box takes.
-    ///
-    /// Read once at parse time rather than asked of the document each time:
-    /// the layout pass asks for it twice per node even when the caller states
-    /// both dimensions, measured on a scene with an explicit width and
-    /// height.
+    /// Its own size, which an `Auto` box takes, read once at parse time:
+    /// layout asks for it twice per node even when both dimensions are
+    /// stated.
     intrinsic: Size,
-    /// The last size and colour this document was rasterised for, and the
-    /// pixels.
-    ///
-    /// One entry rather than a map. A document is normally drawn once, and
-    /// re-rasterising is tens of microseconds against a parse of tens of
-    /// milliseconds -- so a second size or a second tint costs a redraw rather
-    /// than a reparse, and a map would be machinery for a case nobody has.
-    ///
-    /// **Keyed by the tint as well as the size**, because the tint belongs to
-    /// this drawing of the document rather than to the document: one decode is
-    /// shared by every node naming the source, so two nodes drawing the same
-    /// star in two colours would otherwise be one tinted document and the
-    /// second colour would lose.
+    /// The last size and tint this document was rasterised for, and the
+    /// pixels. One entry, since re-rasterising costs microseconds against
+    /// a parse of milliseconds; keyed by the tint because one decode is
+    /// shared by every node.
     raster: Option<((u32, u32), Option<Color>, meo_skia_canvas::Image)>,
 }
 
@@ -459,17 +429,10 @@ impl std::fmt::Debug for Vector {
 }
 
 impl DecodedImage {
-    /// Pixels for the paint pass, at the size they will be drawn.
-    ///
-    /// A raster source ignores the size -- its pixels are what the file
-    /// carried, and scaling them is the drawing call's business. A vector
-    /// source is rasterised at exactly this size, which is the whole reason
-    /// the document is kept rather than turned into pixels at decode time.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::UndecodableImage`] naming the node when a document
-    /// cannot be rasterised at the size asked for.
+    /// Pixels for the paint pass at the size they will be drawn: a raster
+    /// ignores the size, a document is rasterised at exactly it.
+    /// [`Error::UndecodableImage`] names the node when a document cannot be
+    /// rasterised.
     pub(crate) fn raster(
         &self,
         size: (u32, u32),
@@ -477,13 +440,9 @@ impl DecodedImage {
         node: NodeId,
     ) -> Result<meo_skia_canvas::Image, Error> {
         match &self.kind {
-            // **A colour has no reading on a bitmap, so it is refused rather
-            // than ignored.** The check is here and not on either writer
-            // because neither can tell: a writer sees a filename or a URL for
-            // two of the three source forms, and sniffing there as well as
-            // here would be two spellings of one rule. The cost is that a
-            // caller learns at render time, which is when the information
-            // exists.
+            // A colour has no reading on a bitmap, so it is refused rather than
+            // ignored, here because a writer sees only a filename or a URL for
+            // two of the three source forms. The caller learns at render time.
             Kind::Raster(_) if tint.is_some() => Err(Error::TintOnRaster(node)),
             Kind::Raster(image) => Ok(image.clone()),
             Kind::Vector(document) => {
@@ -494,10 +453,8 @@ impl DecodedImage {
                 {
                     return Ok(image.clone());
                 }
-                // **Set before rasterising, and only when asked.** Calling
-                // with a default instead of not calling would make every
-                // future change to that default silently ours rather than the
-                // document's -- and the two are the same picture, so nothing
+                // Set only when asked: calling with a default would make that
+                // default ours rather than the document's, and nothing
                 // downstream could tell them apart.
                 if let Some(color) = tint {
                     document.svg.set_current_color(
@@ -519,30 +476,15 @@ impl DecodedImage {
         }
     }
 
-    /// The frame a node asked for, or this image unchanged.
-    ///
-    /// **An animated source drew its first frame whatever the scene said**:
-    /// `NodeKind::Image::frame` crossed the wire, reached here, and nothing
-    /// ever read it. A one-frame source ignores the index rather than
-    /// refusing it, since asking for frame zero of a still picture is what
-    /// every unanimated node does.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::UndecodableImage`] naming the node when the index is
-    /// past the last frame -- a scene asking for the fourth frame of a
-    /// two-frame source has said something the source cannot answer, and
-    /// drawing the first instead would be the silent wrong picture this whole
-    /// property was.
+    /// The frame a node asked for, or this image unchanged. A one-frame raster
+    /// ignores the index; a document refuses any but zero, and an index past a
+    /// raster's last frame is [`Error::UndecodableImage`] naming the node.
     fn at_frame(self, frame: Option<u32>, node: NodeId) -> Result<Self, Error> {
         let Some(index) = frame.map(|index| index as usize) else {
             return Ok(self);
         };
-        // **A document has one frame, and asking for a later one is the same
-        // mistake as asking for the fourth frame of a two-frame GIF.** SVG
-        // animation is not rasterised here, so saying yes by drawing the only
-        // frame there is would be the silent wrong picture this property
-        // exists to refuse.
+        // A document has one frame and SVG animation is not rasterised here, so
+        // a later frame is refused as the fourth frame of a two-frame GIF is.
         let Kind::Raster(image) = &self.kind else {
             return if index == 0 {
                 Ok(self)
@@ -630,24 +572,18 @@ impl<'scene> Resolved<'scene> {
             // `NodeKind` is `#[non_exhaustive]`, so `if let` says that more
             // honestly than a match with a wildcard that means "and the rest".
             if let NodeKind::Image { source, frame, .. } = &node.kind {
-                // `at_frame` is applied per node and not shared: it is
-                // what a node asked of the source rather than part of
-                // decoding it, so two nodes may hold one decode and
-                // still want different frames of it.
-                // Absent rather than inserted when the source softened, so
-                // `Resolved::image` answers `None` and both the measurer and
-                // the painter take the arm they already have for an image they
-                // were never given. No new branch runs for one that resolved.
+                // `at_frame` per node, since two nodes may share a decode and
+                // want different frames. A softened source is absent rather
+                // than inserted, so the measurer and painter take the arm they
+                // have for an image they were never given.
                 if let Some(decoded) = taken(&once, &softened, id, source)? {
                     resolved.images.insert(id, decoded.at_frame(*frame, id)?);
                 }
             }
             if let Some(background) = node.paint.background_image.as_ref() {
-                // Kept in its own table rather than beside the image nodes: a
-                // background is drawn into a box layout has already sized, so
-                // its extent is not a layout input the way an image node's is,
-                // and the measure pass must not find it by asking for a node's
-                // image.
+                // In its own table: a background is drawn into a box layout has
+                // already sized, so the measure pass must not find it by asking
+                // for a node's image.
                 if let Some(decoded) =
                     taken(&once, &softened, id, &background.source)?
                 {
@@ -716,11 +652,9 @@ impl<'scene> Resolved<'scene> {
         self.text.get(&node)
     }
 
-    /// Walks every page, carrying the inherited style down as it goes.
-    ///
-    /// Iterative with an explicit stack rather than recursive, for the reason
-    /// [`Scene::validate`] is: a scene is caller data, and a tree deeper than
-    /// the thread's stack would abort the process instead of returning.
+    /// Walks every page, carrying the inherited style down, on an explicit
+    /// stack as [`Scene::validate`] does: a tree deeper than the thread's stack
+    /// would abort the process.
     fn resolve_text(&mut self, fonts: &Fonts) -> Result<(), Error> {
         let mut stack: Vec<(NodeId, ResolvedText)> = self
             .scene
@@ -769,30 +703,10 @@ fn check_family(fonts: &Fonts, family: &str) -> Result<(), Error> {
     }
 }
 
-/// Every source in a scene, decoded once each and in parallel.
-///
-/// **The three tables ask for the same thing.** An image node, a background
-/// and a mask each hand `decode` a source and get a bitmap back, and nothing
-/// about the use site changes what comes out -- no scale, no colour type, no
-/// rasterisation size. So the source is the whole key, and a picture wanted
-/// sixty times is decoded once.
-///
-/// The frame index is the one thing that varies, and it is **not** part of the
-/// key: [`DecodedImage::at_frame`] derives a frame from a decode that already
-/// happened, so it is applied per node afterwards. `shared_decode.rs` asserts
-/// that two nodes sharing a source keep their own frames, through the renderer.
-///
-/// # Why the walk happens twice
-///
-/// The first walk finds what is distinct and the second fills the tables. That
-/// costs a pass over the arena and buys the decodes being independent of each
-/// other, which is what lets them run at once.
-///
-/// # The error a scene gets
-///
-/// The **first failing source in node order**, not the first thread to finish.
-/// Decoding concurrently must not make which error a caller sees depend on
-/// scheduling, and the node named is the first that asked for those bytes.
+/// Every source in a scene, decoded once each and in parallel, keyed by the
+/// source alone: the frame is applied per node afterwards. The error a scene
+/// gets is the first failing source in node order, not the first thread to
+/// finish.
 type Decoded<'scene> = (
     HashMap<&'scene ImageSource, DecodedImage>,
     Vec<ImageWarning>,
@@ -854,13 +768,10 @@ fn decode_sources<'scene>(
             Ok(image) => {
                 once.insert(*source, image);
             }
-            // **Only a `Url` may soften, and only when the scene asked.** A
-            // `Path` that cannot be read and `Bytes` that will not decode are
-            // the caller's own input, checkable before rendering, so they stay
-            // errors whatever the policy says -- and softening them would make
-            // this silent path reachable with no network in it, turning any
-            // future defect in our own decoders into a missing picture rather
-            // than a failure.
+            // Only a `Url` may soften, and only when the scene asked: an
+            // unreadable `Path` or undecodable `Bytes` is the caller's own
+            // input, and softening it would turn a defect in our decoders into
+            // a missing picture.
             Err(error) => {
                 let warning = soft(scene, *node, source, error, seen[source])?;
                 // **Recorded as a fact, not inferred later from the source's
@@ -875,17 +786,8 @@ fn decode_sources<'scene>(
     Ok((once, warnings, softened))
 }
 
-/// Turns a failed source into a warning, or gives the error back.
-///
-/// **Two outcomes, and the type says so.** This returned
-/// `Result<Option<_>, _>` once, with a `None` no arm could produce -- and the
-/// caller answered it with a `continue`, which would have dropped a failed
-/// source silently the first time somebody added an arm that returned it. A
-/// type admitting a state its function cannot reach is the caller's problem
-/// tomorrow.
-///
-/// Softening is decided here rather than at the call site so that the rule --
-/// which source, under which policy -- lives in one place.
+/// Turns a failed source into a warning or gives the error back, so which
+/// source softens under which policy is decided in one place.
 fn soft(
     scene: &Scene,
     node: NodeId,
@@ -899,12 +801,9 @@ fn soft(
     let ImageSource::Url { url, .. } = source else {
         return Err(error);
     };
-    // **A `data:` URI in a `Url` wrapper is still the caller's own bytes.**
-    // Nothing was fetched, so there is no 404 to draw a placeholder for, and
-    // the rule the arms below rest on -- that what came from the world may
-    // soften and what came from the caller may not -- puts it with `Bytes`.
-    // Without this the wrapper alone would decide, and the same payload would
-    // soften as `{ url }` and throw as a bare string.
+    // A `data:` URI in a `Url` wrapper is still the caller's own bytes, so it
+    // goes with `Bytes`; otherwise the same payload would soften as `{ url }`
+    // and throw as a bare string.
     if is_data_uri(url) {
         return Err(error);
     }
@@ -933,21 +832,10 @@ fn soft(
                 nodes,
             })
         }
-        // `UnresolvedSource` is the `net` feature being off, which is a build
-        // decision rather than a fact about the world: a caller who did not
-        // compile an HTTP client has not had a fetch fail, they have asked for
-        // something this build cannot do.
-        // **`UnresolvedSource` softens only when somebody else already tried.**
-        // On its own it is the `net` feature being off -- a build decision
-        // rather than a fact about the world, and a caller who did not compile
-        // an HTTP client has not had a fetch fail, they have asked for
-        // something this build cannot do. That must keep naming the flag.
-        //
-        // The npm surface resolves URLs in JavaScript, so a URL it could not
-        // fetch arrives here unresolved and looks identical.
-        // `image_fetch_attempts` is how that surface says otherwise, and it
-        // carries the reason so one real 404 produces the same warning on both
-        // public surfaces rather than a vaguer one here.
+        // `UnresolvedSource` alone is the `net` feature being off, which must
+        // keep naming the flag. It softens only when `image_fetch_attempts`
+        // says the npm surface already tried, carrying the reason, so a 404
+        // warns alike on both.
         Error::UnresolvedSource(_) => {
             let Some(attempt) = scene
                 .image_fetch_attempts
@@ -967,29 +855,17 @@ fn soft(
             })
         }
 
-        // **Everything else stays loud, and the list above is the whole of
-        // what may soften.** A 404, a reset connection, a body past the limit
-        // and bytes a decoder refuses are all "the picture is missing", which
-        // is the case a placeholder is for. An allocation failure, a decoder
-        // that panicked, a font that will not resolve, a broken invariant in
-        // this crate -- those are "we are not working", and drawing a neat
-        // grey rectangle over one is how a defect ships silently. No
-        // catch-all: a new `Error` variant is loud until somebody decides
-        // otherwise here, deliberately.
+        // Everything else stays loud: a missing picture earns a placeholder,
+        // and a panicked decoder or a broken invariant must not. No catch-all,
+        // so a new `Error` variant is loud until somebody decides otherwise
+        // here.
         other => Err(other),
     }
 }
 
-/// Decodes a list of sources across the machine's threads, in order.
-///
-/// One thread per source up to the machine's parallelism, and the results come
-/// back in the order they were asked for so the caller's error is the first in
-/// node order rather than the first to fail.
-///
-/// **No number is claimed for this.** Decode is Skia's, and whether it is
-/// bound by the CPU or by a lock inside the decoder is not something the shape
-/// of this function establishes. The argument for it is that the decodes are
-/// independent and were serial; the measurement is owed and is not here.
+/// Decodes a list of sources across the machine's threads, results in the order
+/// asked. No speed-up is claimed: whether Skia's decode is bound by the CPU or
+/// by a lock inside it is unmeasured.
 fn in_parallel(
     wanted: &[(&ImageSource, NodeId)],
     scene_http: &HttpOptions,
@@ -1021,13 +897,8 @@ fn in_parallel(
             match handle.join() {
                 Ok(part) => out.extend(part),
                 // A decoder that panicked is a bug in the decoder, and the
-                // scene still has to answer. The source is named through the
-                // node that asked for it.
-                //
-                // **Its own variant, so `soft` cannot downgrade it.** This
-                // used to be `UndecodableImage`, which is on the softenable
-                // list -- so once a URL could soften, a panicking decoder
-                // became a placeholder and the crash was a grey rectangle.
+                // scene still answers. Its own variant, so `soft` cannot
+                // downgrade the crash to a placeholder.
                 Err(_) => out.push(Err(Error::DecoderPanicked(NodeId::ROOT))),
             }
         }
@@ -1044,103 +915,18 @@ fn taken(
 ) -> Result<Option<DecodedImage>, Error> {
     match once.get(source) {
         Some(image) => Ok(Some(image.clone())),
-        // Absent for one of two reasons, and they are not the same.
-        //
-        // **Decided from what happened, not from what the source is.** A
-        // source `decode_sources` softened is deliberately missing, which is
-        // how a failed node reaches layout and paint as "no image" through the
-        // `Option` both already match on. Anything else absent is this
-        // function's own invariant broken -- every source in the scene was
-        // asked for -- and stays an error.
-        //
-        // Reading the source's *type* instead would have been the same
-        // silence this feature exists to prevent: a fourth image-bearing site
-        // added later and missed by `want` would be an error for a path and a
-        // blank for a URL, on a card that then looks finished.
+        // Absent for one of two reasons, told apart by what happened rather
+        // than by the source's type: a softened source reaches layout as no
+        // image, and anything else absent is this function's invariant broken.
         None if softened.contains(source) => Ok(None),
         None => Err(Error::UndecodableImage(node)),
     }
 }
 
-/// Reads a URL source over HTTP, blocking until it has the bytes.
-///
-/// **Blocking on purpose, and it is the whole reason this crate may have an
-/// HTTP client at all.** The pipeline is a function from bytes to bytes, called
-/// from whatever thread the consumer has; an async client would put a runtime
-/// in every Rust consumer of the public crate, including those already inside
-/// one. `ureq` is blocking by construction and brings no runtime -- audited by
-/// walking its tree rather than by reading the note beside it, which lists a
-/// smaller set than it pulls.
-///
-/// # The policy, which is this crate's rather than the client's
-///
-/// **Five seconds to connect and thirty seconds for everything.** Until 5
-/// September 2026 no timeout was set at all: `ureq` 3.4 defaults every field of
-/// `Timeouts` to `None` except `await_100`, which needs a request body and so
-/// cannot fire for the bodiless `GET` this makes. A host that accepted a
-/// connection and then said nothing held a render thread until the process
-/// died.
-///
-/// `global` rather than a set of per-phase timeouts, because **only the global
-/// clock bounds the thread**: a host dripping one byte inside every window
-/// keeps `recv_body` alive forever. `Timeout::Global` is checked at every phase
-/// including `RecvBody` and its clock starts when the call is created, so it
-/// spans `read_to_vec` below -- which matters, since a timeout that stopped at
-/// `.call()` would leave the hang exactly where it was and look like a fix.
-///
-/// The numbers are derived rather than chosen. Five seconds is about sixteen
-/// worst-case intercontinental round trips, and a host that cannot complete a
-/// handshake in that will not deliver an image. Thirty seconds against the
-/// ten-mebibyte ceiling below is a claim that a host sustains **about
-/// 2.8 Mbit/s**, which is the honest way to state it: disagree with the number
-/// by disagreeing with the floor. It is also about 1,300 times a whole render,
-/// so it is not competing with a legitimate slow case -- a request whose image
-/// fetch took thirty seconds has already missed its own deadline.
-///
-/// **Thirty-two mebibytes, set here rather than inherited.** `ureq`'s own
-/// `MAX_BODY_SIZE` is ten, and taking it meant this crate's size policy was
-/// whatever a dependency happened to choose and free to move under a version
-/// bump. It is a *functional* limit and not only a safety one: an image larger
-/// than this named by a URL does not render, and the caller gets
-/// [`FetchFailure::TooLarge`], which says so in this crate's own words.
-///
-/// **The number is arithmetic, not a measurement, and that is worth knowing
-/// before trusting it.** There is no photographic corpus in this repository to
-/// weigh -- measuring what *this* library emits gives 0.37 MiB for a 90-frame
-/// 720p WebP, which is a fact about flat vector content and says nothing about
-/// someone else's screen recording. So: GIF is the least efficient animated
-/// format and the one most often linked, a palettised LZW frame runs about one
-/// bit per pixel on photographic content, and 1280x720 at 30 fps is therefore
-/// roughly 115 KB a frame -- **three seconds of 720p GIF is about 10.4 MB**,
-/// which the inherited ten-mebibyte cap refused. Thirty-two buys about nine
-/// seconds of that, or three at 1080p, and animated WebP and AVIF are five to
-/// twenty times denser so anything that fits GIF fits them.
-///
-/// # The size and the timeouts are fixed; the headers are the caller's
-///
-/// **The bound is on what a request may cost, not on what it may say.** A
-/// caller wanting a different size or a different deadline has the escape the
-/// TypeScript surface has -- fetch the bytes and pass `ImageSource::Bytes` --
-/// because **a configurable timeout can be set to infinity, which is this
-/// defect with a supported spelling**, and the same is true of a size limit.
-/// A header cannot make a fetch unbounded, and without one a caller cannot
-/// reach an asset behind any authentication at all, so
-/// [`HttpOptions`](meo_canvas_scene::node::HttpOptions) carries them per
-/// source.
-///
-/// What is still `ureq`'s: ten redirects then an error, and a 64 KiB cap on
-/// response headers.
-///
-/// # A header this request cannot carry
-///
-/// A name or a value outside the grammar -- a newline in a value is the one
-/// that matters, being request splitting -- is refused by `http`'s
-/// `HeaderName`/`HeaderValue` conversions and arrives here as an error from
-/// `call`, classified [`FetchFailure::Other`]. **Not validated again here:**
-/// the grammar has an implementation in the tree already and a second one
-/// would differ from it on the inputs nobody enumerated.
-/// `a_header_a_request_cannot_carry_is_refused_before_it_is_sent` in
-/// `fetch_policy.rs` pins that nothing reaches the socket.
+/// Reads a URL source over HTTP, blocking, within the constants below. They are
+/// fixed, since a configurable timeout can be infinity; other bounds mean
+/// passing `ImageSource::Bytes`. `http` refuses a malformed header before
+/// sending.
 #[cfg(feature = "net")]
 fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
     use std::io::Read as _;
@@ -1163,18 +949,10 @@ fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
     }
     let mut response = request.call().map_err(refuse)?;
 
-    // **The size policy is enforced here rather than by the client**, and that
-    // is not tidiness. `ureq`'s own `limit` reports `BodyExceedsLimit` when no
-    // timeout is configured and a bare `Io(Os { code: 22, InvalidInput })`
-    // when `timeout_global` is -- measured, both ways, against the same 33 MiB
-    // response. So a classification resting on its error variant would have
-    // been correct in a test and wrong in this crate, which configures a
-    // timeout. Counting the bytes ourselves makes the answer ours in every
-    // configuration.
-    //
-    // One byte past the limit is read so that "exactly at the limit" is
-    // accepted and "one more" is not, without a `Content-Length` the server
-    // may not send or may lie about.
+    // The limit is counted here: `ureq`'s own reports `BodyExceedsLimit`
+    // without a timeout and a bare `Io` with one, measured on a 33 MiB
+    // response. One byte past the limit is read, so exactly the limit passes
+    // without `Content-Length`.
     let mut bytes = Vec::new();
     response
         .body_mut()
@@ -1200,44 +978,27 @@ fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-/// How long a connection may take to establish.
-///
-/// About sixteen worst-case intercontinental round trips. See [`fetch`].
+/// How long a connection may take to establish: about sixteen worst-case
+/// intercontinental round trips, and a host that cannot complete a handshake
+/// in that will not deliver an image.
 #[cfg(feature = "net")]
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// How long the whole fetch may take, connection and body together.
-///
-/// Sixty seconds against [`MAX_IMAGE_BYTES`] is a floor of about 4.5 Mbit/s.
-/// The two are one decision; see [`fetch`].
+/// How long the whole fetch may take, body included: only a global clock
+/// bounds a host dripping one byte inside every window. Sixty seconds against
+/// [`MAX_IMAGE_BYTES`] is a floor of about 4.5 Mbit/s; the two are one
+/// decision.
 #[cfg(feature = "net")]
 const GLOBAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// The largest image this crate will fetch over HTTP.
-///
-/// Thirty-two mebibytes, chosen here rather than inherited from `ureq`, so it
-/// does not move when a dependency does. A functional limit, not only a safety
-/// one. See [`fetch`] for the arithmetic and for why it is arithmetic.
+/// The largest image this crate fetches, chosen here rather than inherited
+/// from `ureq`. Arithmetic, not measured: 720p GIF at about a bit per pixel is
+/// 10.4 MB for three seconds, past `ureq`'s ten mebibytes, and thirty-two holds
+/// about nine seconds.
 #[cfg(feature = "net")]
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
-/// What `ureq` reported, as the class a caller branches on.
-///
-/// **Mapped from the variants that are certain, and `Other` for the rest.**
-/// `StatusCode` is the default behaviour for 4xx and 5xx, `HostNotFound` is
-/// resolution, `BadUri` is a URL with no scheme or host. `Io` and
-/// `ConnectionFailed` are both the transport, and `ConnectionFailed` is
-/// `ureq`'s own fallback for a connector that gave no reason -- retrying is
-/// still the right first move for either.
-///
-/// `Timeout` is folded into the transport rather than named, because the
-/// configuration this crate uses cannot produce it: `ureq` 3.4 defaults every
-/// timeout to `None` except `await_100`, which needs a request body. The arm
-/// is here so the mapping stays right if a timeout is ever configured.
-///
-/// Everything else -- TLS, proxy, protocol, redirects, cookies -- is `Other`.
-/// They have nothing in common except that repeating the request does not fix
-/// them, which is what `Other` tells a caller.
+/// `classify` against errors `ureq` really raises.
 #[cfg(all(test, feature = "net"))]
 mod fetch_classification {
     use super::classify;
@@ -1273,6 +1034,10 @@ mod fetch_classification {
     }
 }
 
+/// What `ureq` reported, as the class a caller branches on. `Io`,
+/// `ConnectionFailed` and `Timeout`, which the timeouts [`fetch`] sets raise,
+/// are the transport and worth a retry; TLS, proxy, protocol, redirect and
+/// cookie failures are `Other`, which a retry does not fix.
 #[cfg(feature = "net")]
 const fn classify(error: &ureq::Error) -> FetchFailure {
     use crate::FetchFailure;
@@ -1297,34 +1062,25 @@ const fn classify(error: &ureq::Error) -> FetchFailure {
 /// a place to read them from.
 const DATA_URI: &str = "data:";
 
-/// The base64 a `data:` URI carries.
-///
-/// Padding is **indifferent** rather than required: RFC 2397 does not say, and
-/// a caller pasting from a tool that trims `=` is not making a different
-/// statement about the bytes. Whitespace is stripped before decoding for the
-/// same reason -- a URI wrapped across lines in a source file is the same URI.
+/// The base64 a `data:` URI carries. Padding is optional, since RFC 2397 does
+/// not say, and whitespace is stripped first: a URI wrapped across lines is the
+/// same URI.
 const DATA_URI_BASE64: GeneralPurpose = GeneralPurpose::new(
     &base64::alphabet::STANDARD,
     GeneralPurposeConfig::new()
         .with_decode_padding_mode(DecodePaddingMode::Indifferent),
 );
 
-/// Whether a source string carries its own bytes.
-///
-/// **Asked of `Path` and of `Url` alike.** A bare string is a path on both
-/// public surfaces, so this is where a `data:` URI arrives; and
-/// `{ url: "data:..." }` is the same statement in a different wrapper, which
-/// must not reach the fetch machinery either.
+/// Whether a source string carries its own bytes, asked of `Path` and `Url`
+/// alike: a bare string is a path on both surfaces, and `{ url: "data:..." }`
+/// must not reach the fetch either.
 fn is_data_uri(source: &str) -> bool {
     source.starts_with(DATA_URI)
 }
 
-/// The bytes a `data:` URI carries, or what is wrong with it.
-///
-/// `data:[<media-type>][;base64],<payload>`. **The media type is read and not
-/// trusted**: the decoder that receives these bytes sniffs them, so a caller
-/// who writes `image/png` over JPEG bytes renders a JPEG, as a browser does.
-/// Trusting it would refuse working input on the strength of a label.
+/// The bytes a `data:` URI carries, or what is wrong with it. The media type is
+/// read and not trusted: the decoder sniffs, so `image/png` over JPEG bytes
+/// renders a JPEG, as a browser does.
 fn data_uri_bytes(uri: &str) -> Result<Vec<u8>, Error> {
     let body = uri.strip_prefix(DATA_URI).unwrap_or(uri);
     let Some((meta, payload)) = body.split_once(',') else {
@@ -1354,12 +1110,9 @@ fn data_uri_bytes(uri: &str) -> Result<Vec<u8>, Error> {
     percent_decode(payload)
 }
 
-/// The payload of a `data:` URI that did not declare `;base64`.
-///
-/// **Strict about `%`**, where a browser's own leniency varies: a `%` that is
-/// not followed by two hexadecimal digits is a payload the caller did not mean
-/// to write, and passing it through as a literal renders bytes nobody asked
-/// for rather than saying so.
+/// The payload of a `data:` URI without `;base64`, strict about `%`: one not
+/// followed by two hexadecimal digits is refused rather than passed through as
+/// a literal.
 fn percent_decode(payload: &str) -> Result<Vec<u8>, Error> {
     let bytes = payload.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -1389,12 +1142,9 @@ fn percent_decode(payload: &str) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
-/// What a worker can hand back, which is not always a decoded image.
-///
-/// **A parsed SVG cannot cross a thread** -- `meo_skia_canvas::Svg` wraps
-/// `SkSVGDOM`, which is neither `Send` nor `Sync` -- so the bytes come back
-/// instead and the caller parses them. Bytes are `Send`, and reading the file
-/// stays where the parallelism is.
+/// What a worker hands back: a parsed SVG cannot cross a thread, `SkSVGDOM`
+/// being neither `Send` nor `Sync`, so its bytes come back and the caller
+/// parses them.
 enum Fetched {
     /// Pixels, decoded on the worker.
     Raster(meo_skia_canvas::Image),
@@ -1402,14 +1152,9 @@ enum Fetched {
     Vector(Vec<u8>),
 }
 
-/// Whether these bytes look like an SVG document.
-///
-/// **A gate in front of the parser rather than the thing that decides.** The
-/// raster decoders are asked first, so this only ever sees bytes they refused;
-/// what it does is separate "not an image at all" from "an SVG that will not
-/// parse", which are different sentences for the caller. A file that starts
-/// with an XML declaration or a comment before its root is still an SVG, so
-/// the leading bytes are skipped rather than matched exactly.
+/// Whether these bytes look like an SVG document, asked only of bytes the
+/// raster decoders refused, to tell "not an image" from "an SVG that will not
+/// parse". A leading XML declaration or comment is skipped.
 fn looks_like_svg(bytes: &[u8]) -> bool {
     let head = &bytes[..bytes.len().min(1024)];
     let text = String::from_utf8_lossy(head);
@@ -1428,11 +1173,9 @@ fn decode(
     #[cfg(not(feature = "net"))]
     let _ = scene_http;
 
-    // The `Path` arm owns what it read and the `Bytes` arm borrows what the
-    // caller already holds, so only the one that has to allocate does. Making
-    // both arms `Vec<u8>` reads more evenly and copies the whole file: a 5 MB
-    // PNG already in the scene was copied 5 MB per image node and then dropped
-    // unread, because `Image::from_encoded` takes a slice either way.
+    // The `Path` arm owns what it read and the `Bytes` arm borrows, so only the
+    // one that must allocate does: a `Vec` in both copies a 5 MB PNG per image
+    // node.
     let read;
     let bytes: &[u8] = match source {
         ImageSource::Bytes(bytes) => bytes,
@@ -1515,12 +1258,9 @@ mod softening {
         (scene, ImageSource::url("http://example.invalid/x.png"))
     }
 
-    /// The allowlist, asserted from both sides.
-    ///
-    /// **A catch-all here would be the instrument failure this repository
-    /// keeps naming**: a path that cannot report the thing it exists to
-    /// report. So the softenable set is named, and everything outside it stays
-    /// an error even for a URL under a tolerant policy.
+    /// The allowlist, asserted from both sides: the softenable set is named,
+    /// and everything outside it stays an error even for a URL under a tolerant
+    /// policy.
     #[test]
     fn only_the_named_failures_may_be_downgraded() {
         let (scene, source) = url_scene();
@@ -1639,27 +1379,9 @@ pub(crate) mod tests {
     };
     use crate::Error;
 
-    /// Chrome's four kinds, declared and inherited, measured by MC Main.
-    ///
-    /// A parent at `16px` declares; a child at `32px` inherits and states
-    /// nothing of its own.
-    ///
-    /// ```text
-    ///                  declared at 16   inherited by the 32px child
-    /// number 1.5             24                    48
-    /// length 24px            24                    24
-    /// percent 150%           24                    24
-    /// ```
-    ///
-    /// **The declared column cannot tell the three apart** -- every one of
-    /// them is 24 at 16px. Only the inherited column separates them, and it
-    /// separates them in two directions: a percentage resolved late reads 48
-    /// where Chrome says 24, and a number resolved early reads 24 where
-    /// Chrome says 48. **Two opposite mistakes, each invisible to a test that
-    /// only declares.**
-    ///
-    /// `normal` is not here. It is face-dependent -- Chrome gives 25 and 48
-    /// for Poppins against 24 and 47 for Oswald -- and it is its own task.
+    /// Chrome, parent at 16px declaring and child at 32px inheriting: `1.5`
+    /// gives 24 and 48, `24px` and `150%` 24 and 24. Only inheritance separates
+    /// them, in opposite directions for a late percentage and an early number.
     fn inherited(declared: LineHeight) -> Option<LineHeight> {
         let parent = ResolvedText {
             size: 16.0,
@@ -1816,22 +1538,14 @@ pub(crate) mod tests {
         assert!(fonts.has("FromBytes"));
     }
 
-    /// A URL that fails without leaving the machine.
-    ///
-    /// Port 1 on the loopback: the connection is refused immediately, so the
-    /// `net` build's fetch fails fast with **no DNS lookup and no traffic**. A
-    /// hostname would resolve -- even a reserved one asks the resolver -- and a
-    /// test that touches the network is a test that fails on an aeroplane.
+    /// A URL that fails without leaving the machine: port 1 on the loopback
+    /// refuses at once, with no DNS lookup, where even a reserved hostname asks
+    /// the resolver.
     const UNREACHABLE: &str = "http://127.0.0.1:1/image.png";
 
-    /// Asserts that a scene naming a URL is refused, in whichever way this
-    /// build refuses it.
-    ///
-    /// **The two builds refuse differently and both are correct**, which is the
-    /// point of the feature: with `net` off nothing fetches and the node is
-    /// [`Error::UnresolvedSource`]; with it on the fetch is attempted and fails
-    /// as [`Error::SourceFetch`]. Asserting only one of them would make the
-    /// suite pass on one build and fail on the other for no defect.
+    /// Asserts a scene naming a URL is refused as this build refuses it:
+    /// [`Error::UnresolvedSource`] without `net`, [`Error::SourceFetch`] with
+    /// it.
     fn assert_url_is_refused(scene: &Scene, node: Option<NodeId>) {
         let result = Resolved::new(scene, &Fonts::new());
         #[cfg(not(feature = "net"))]
@@ -1887,12 +1601,9 @@ pub(crate) mod tests {
         assert!(!format!("{image:?}").is_empty());
     }
 
-    /// The same 4x2 red PNG as a `data:` URI, base64 and percent-encoded.
-    ///
-    /// Built from `RED_PNG` rather than pasted, so the two forms cannot drift
-    /// from the bytes they are supposed to carry -- a hand-copied payload that
-    /// decodes to *something* would pass every assertion below while carrying
-    /// a different picture.
+    /// The same 4x2 red PNG as a `data:` URI, base64 or percent-encoded, built
+    /// from `RED_PNG` so the payload cannot drift from the bytes it should
+    /// carry.
     fn red_png_data_uri(base64: bool) -> String {
         if base64 {
             format!("data:image/png;base64,{}", DATA_URI_BASE64.encode(RED_PNG))
@@ -1986,13 +1697,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// A 40x20 document that states its size, and the same drawing with only
-    /// a `viewBox`.
-    ///
-    /// `currentColor` rather than a literal, because it is what the tint in
-    /// #28b will set and what this build must leave alone: with nothing
-    /// setting a colour, SVG's initial `color` is black and that is what these
-    /// assertions see.
+    /// A 40x20 document that states its size, and the same drawing with only a
+    /// `viewBox`, both in `currentColor`: untinted, SVG's initial `color` is
+    /// black, which these assertions see.
     const SIZED_SVG: &str = concat!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20" "#,
         r#"viewBox="0 0 40 20"><rect width="40" height="20" "#,
@@ -2039,11 +1746,9 @@ pub(crate) mod tests {
 
     #[test]
     fn an_svg_is_rasterised_at_the_size_it_is_drawn() {
-        // **The pair a single-size golden cannot make.** A document
-        // rasterised once and stretched would report the small size at both
-        // asks; these are two rasterisations, so the pixels differ in count as
-        // well as in scale. Without this row a renderer that rasterised at 40
-        // and drew at 200 passes.
+        // Two rasterisations rather than one stretched, so the pixels differ in
+        // count as well as scale: a renderer rasterising at 40 and drawing at
+        // 200 fails.
         let image = decoded(svg_source(SIZED_SVG))
             .unwrap_or_else(|error| unreachable!("{error}"));
         let small = image
@@ -2121,11 +1826,9 @@ pub(crate) mod tests {
 
     #[test]
     fn a_path_with_a_comma_in_it_is_still_a_path() {
-        // **The row the over-broad mutation is for.** A predicate written as
-        // "contains a comma" is right for every data URI anybody would type
-        // and wrong for `/tmp/logo,v2.png`, which is a filename people write.
-        // Without this the mutation failed only my own message test, which is
-        // a check on the error text rather than on the classification.
+        // A predicate written as "contains a comma" is right for every data URI
+        // anyone types and wrong for `/tmp/logo,v2.png`, a filename people
+        // write.
         let error =
             decoded_size(ImageSource::Path("/nope,comma.png".to_owned()))
                 .err()

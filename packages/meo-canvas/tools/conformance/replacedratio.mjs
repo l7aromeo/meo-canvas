@@ -1,33 +1,7 @@
-// What a definite width does to a replaced element's `auto` height.
-//
-// Reported as `l7aromeo/meo-canvas#94`: an `<img>` with an intrinsic 60x40 and
-// `width: 200` is 200x133 in a browser and was 200x40 here -- the intrinsic
-// height arriving untouched, because block layout never told the leaf what its
-// width was. A replaced element with one axis definite takes the other from
-// its intrinsic ratio, which is CSS 2.2 §10.3.2 and §10.6.2 and is what
-// `aspect-ratio: auto` means today.
-//
-// **The container's `display` is the axis this table exists for.** The same
-// element in a flex container is a flex item, and a flex item with an `auto`
-// cross size stretches to the line -- so 200x40 there is correct and 200x40 in
-// block flow is the defect. Two sessions measured those two rows against each
-// other and reported a divergence that was not one. **Every flex row here is a
-// control that must not move**, and a repair scored without them can trade one
-// for the other and look like progress.
-//
-// The absolute rows are the same kind of control from the other side: they are
-// correct today, and they are the rows a repair reaching further than block
-// flow would break first.
-//
-// **The `div` and `text` rows are the contrast.** A block-level box with
-// `width: auto` fills its container and must keep filling it; a replaced one
-// takes its intrinsic width. A rule keyed on "this node measures" rather than
-// "this node is replaced" takes the text row with it, which is the mistake the
-// sibling table caught once already.
-//
-// The art is 60x40, stated on the SVG root: neither square, nor the container's
-// shape, nor a multiple of it, so a stretched box, an intrinsic box and a
-// ratio-derived box are three different numbers in both axes.
+// What a definite width does to a replaced element's `auto` height
+// (`l7aromeo/meo-canvas#94`): CSS 2.2 §10.3.2 and §10.6.2 take it from the 60x40
+// ratio. Flex rows stretch to the line and are controls that must not move, as are
+// the absolute rows; `div` and `text` rows fill their container.
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

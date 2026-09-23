@@ -1,23 +1,7 @@
-//! Whether a flex item with a definite base size collapses into its line.
-//!
-//! `l7aromeo/meo-canvas#145`: a row whose height a sibling sets, holding a
-//! column with no cross size of its own, holding an item that says *ignore my
-//! content and take your size from the line*. Chrome collapses the item and the
-//! sibling sets the row; taffy lets the content dictate it.
-//!
-//! **The pair is a definite `flex-basis` with a definite minimum, and neither
-//! has to be zero.** `1px`, `120px` and `min: 0%` all collapse in Chrome; `0%`
-//! does not, because a percentage basis against a container with no definite
-//! main size resolves as `auto`. The rule is definiteness rather than
-//! magnitude, and those rows are what tell the two readings apart.
-//!
-//! **Solved rectangles rather than ink**, for the reason
-//! `chrome_flex_ratio_cross.rs` gives: a collapsed item paints nothing, and an
-//! ink scan would report the absence rather than the size.
-//!
-//! Compensated in `layout.rs` by `collapse_definite_bases`;
-//! `crates/meo-canvas-core/tests/taffy_definite_basis.rs` pins what taffy does
-//! on its own.
+//! Whether a flex item with a definite base size collapses into its line
+//! (`l7aromeo/meo-canvas#145`): a definite `flex-basis` and minimum collapse in
+//! Chrome at any magnitude, but `0%` against an indefinite main size resolves
+//! as `auto`. Compensated by `collapse_definite_bases`.
 
 use meo_canvas_core::{Available, Measure, MeasuredLeaf, layout::solve};
 use meo_canvas_scene::{
@@ -32,13 +16,9 @@ use meo_canvas_scene::{
     },
 };
 
-/// Every box in these scenes states its own size, so only the row that asks
-/// for a measured leaf has anything to measure.
-///
-/// **It answers for one node rather than for every leaf**, because a childless
-/// box is a leaf here too: `content empty`'s item has no children, and a
-/// measurer answering 1024 for anything it is handed would size that row's
-/// item from the mock instead of from the row.
+/// Every box states its own size, so only the row asking for a measured leaf
+/// measures: it answers for one node, since a childless box is a leaf too and
+/// would otherwise take the mock's 1024.
 struct Leaves {
     /// The node standing in for Chrome's block of text, when the row has one.
     measured: Option<NodeId>,
@@ -61,24 +41,10 @@ impl Measure for Leaves {
 
 const TABLE: &str = include_str!("assets/chrome/flex-basis-collapse.tsv");
 
-/// The two rows that say the compensation does not over-reach.
-///
-/// **Not divergences.** `known` elsewhere in this tree marks a row where we
-/// deliberately do not match Chrome; both of these match it, and they are here
-/// to go red if the compensation ever starts firing on them.
-///
-/// **`container grid`**: `flex-basis` does not apply to a grid item, so there
-/// is no §9.2 hypothetical main size to write and a rule that wrote one would
-/// be inventing flex semantics inside grid.
-///
-/// **`row-direction mirror`**: the container's main axis is the inline one and
-/// is sized by max-content, where a flex container's main size is §9.9
-/// Intrinsic Sizes -- a different computation that accounts for flex factors,
-/// unimplemented upstream as `DioxusLabs/taffy#351`. That is a missing step
-/// rather than this one.
-///
-/// **Both sentences are about which specification governs rather than about a
-/// number**, which is what makes them survive a re-measurement.
+/// The two rows that say the compensation does not over-reach, both matching
+/// Chrome: `flex-basis` does not apply to a grid item, and a row container's
+/// main size is §9.9 intrinsic sizing, unimplemented upstream as
+/// `DioxusLabs/taffy#351`.
 const SCOPE_CONTROLS: &[&str] = &["container grid", "row-direction mirror"];
 
 /// One row of the table: the extent and the axis it was measured on.
@@ -198,12 +164,8 @@ impl Case {
     }
 }
 
-/// The column every row shares, with the row's own knobs on it.
-///
-/// **Split from [`solved`] along what a row varies**, which is the container on
-/// one side and the item on the other: the two are set by different columns of
-/// the table and grouping them put three container arguments and three item
-/// ones on one body.
+/// The column every row shares, with the row's own knobs, split from [`solved`]
+/// since container and item are set by different columns of the table.
 fn column_of(case: Case, across: bool) -> Node {
     let mut column = Node::new(NodeKind::Box);
     column.layout.display = if case.column == Column::Grid {
@@ -309,11 +271,8 @@ fn item_of(case: Case, across: bool) -> Node {
     item
 }
 
-/// What the collapsing item holds, and the node the measurer answers for.
-///
-/// **Split from [`solved`] for the reason [`column_of`] and [`item_of`] were**:
-/// a row varies the container, the item, or what is inside it, and the three
-/// are set by different columns of the table.
+/// What the collapsing item holds, and the node the measurer answers for, split
+/// from [`solved`] as [`column_of`] and [`item_of`] are.
 fn fill_item(
     scene: &mut Scene,
     item: NodeId,
@@ -605,14 +564,9 @@ fn every_row_agrees_with_chrome() {
     );
 }
 
-/// **The scope controls, asserted a second time for what they defend.**
-///
-/// The row above already checks them, because they agree with Chrome like
-/// every other row. This one exists so the failure says what actually went
-/// wrong: a move here is the compensation reaching a case it was scoped out
-/// of, which is a different defect from a row drifting, and a message naming
-/// the specification is what stops the next reader repairing the scope instead
-/// of the cause.
+/// The scope controls, asserted a second time so the failure names the
+/// specification: a move here is the compensation reaching a case it was scoped
+/// out of, not a row drifting.
 #[test]
 fn the_scope_controls_hold() {
     for name in SCOPE_CONTROLS {
@@ -635,13 +589,9 @@ fn the_scope_controls_hold() {
     }
 }
 
-/// The rows that combine the pair with what a caller writes beside it.
-///
-/// **The rows above vary one property and callers do not.** Each of these
-/// reaches the same mechanism from a different side: `overflow` deletes §4.5's
-/// automatic minimum, a maximum and a minimum on one axis is where CSS's
-/// resolution order shows, `flex-shrink` is §9.7 from the other direction, and
-/// a gap or a padding changes the free space the item resolves against.
+/// The rows combining the pair with what a caller writes beside it: `overflow`
+/// deleting §4.5's automatic minimum, a minimum and maximum on one axis,
+/// `flex-shrink`, and a gap or padding changing the free space.
 fn combination_rows() -> Vec<(&'static str, Case)> {
     vec![
         (
@@ -736,25 +686,9 @@ fn combination_rows() -> Vec<(&'static str, Case)> {
     ]
 }
 
-/// The rows that vary what a scene puts *around* the pair.
-///
-/// **Every row above changes something the compensation reads.** These change
-/// things it does not: an alignment, a second item on the line, a margin, a
-/// nesting level, where the content's extent comes from. So they are the rows
-/// that say how far it reaches, and a divergence in one would be the rule
-/// keyed on something it should not be keyed on.
-///
-/// Two of them are scoped rather than merely incidental. **`container ratio`**
-/// settles the container's cross size, which is the indefiniteness the whole
-/// mechanism rests on -- it is the one row here whose Chrome number is not 200.
-/// **`grid inside the item`** is the grid exclusion from below rather than
-/// above: a grid under the collapsing item must not stop it collapsing, where
-/// `container grid` says a grid above it must not start one.
-///
-/// **There is no `position: absolute` row, and the table says why**: an
-/// out-of-flow item contributes nothing to the extent this table measures, so
-/// such a row would report the sibling's 200 under every mutation including an
-/// over-reaching one.
+/// The rows varying what surrounds the pair, which the compensation does not
+/// read, so they say how far it reaches. `container ratio` settles the
+/// container's cross size; `grid inside the item` must not stop the collapse.
 fn reach_rows() -> Vec<(&'static str, Case)> {
     vec![
         (

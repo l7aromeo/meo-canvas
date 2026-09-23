@@ -1,49 +1,7 @@
-//! A taffy defect we compensate for, pinned so that fixing it cannot pass
-//! unnoticed.
-//!
-//! # What is wrong
-//!
-//! **A flex container builds its content-based main size from its items'
-//! content contributions where CSS Flexbox builds it from their outer
-//! hypothetical main sizes.** §9.2 Line Length Determination resolves an item's
-//! flex base size from `flex-basis` when that is definite and clamps it by the
-//! min and max on the main axis; with a definite basis and a definite minimum
-//! the result owes nothing to the content. taffy asks the content anyway.
-//!
-//! ```text
-//! a 600-wide row, a 300x200 sibling, and a stretch-sized column whose item
-//! carries flex-basis: 0 and min-height: 0 around 1024 of content
-//!
-//!     taffy   row 1024      Chrome   row 200
-//! ```
-//!
-//! # Why the assertions are of the wrong numbers
-//!
-//! A test asserting Chrome's values would fail, and a failing test cannot be
-//! committed. So this pins what taffy actually does, with the right answer
-//! beside it: **the day taffy builds that size from hypothetical main sizes,
-//! this fails, and the failure is the notification** that
-//! `collapse_definite_bases` in `layout.rs` can be deleted. Grep
-//! `[WORKAROUND]` to find it.
-//!
-//! The same family is measured against Chrome from the other side, through the
-//! renderer rather than through taffy alone, in
-//! `crates/meo-canvas/tests/assets/chrome/flex-basis-collapse.tsv`.
-//!
-//! # Upstream, and what it is not
-//!
-//! **No upstream issue covers this and none is cited.**
-//! `DioxusLabs/taffy#950` is percentages against a stretched item with an
-//! indefinite basis; `DioxusLabs/taffy#733` is node sizing with flex and image
-//! nodes. Neither is this step. A reference that does not cover the defect is
-//! worse than an admitted gap, because a reader follows it and concludes the
-//! thing is tracked.
-//!
-//! **`DioxusLabs/taffy#351`, §9.9 Intrinsic Sizes, is a different missing
-//! step** and is why the inline-axis case is excluded from the compensation
-//! rather than repaired by it.
-//!
-//! Reproduced against taffy 0.14.0.
+//! Pins an inherited taffy defect: a flex container sizes itself from its
+//! items' content, not their hypothetical main sizes (§9.2), so a definite
+//! basis and minimum give a 1024 row where Chrome gives 200. Asserts taffy's
+//! numbers so a fix fails here; no upstream issue covers it.
 
 /// The row's height for a column whose item carries the given pair.
 fn row_height(
@@ -168,21 +126,11 @@ fn neither_half_of_the_pair_is_enough() {
     );
 }
 
-/// The property the compensation rests on, and what a change here would cost.
-///
-/// **§9.7 Resolving Flexible Lengths distributes free space from the base**, so
-/// writing the hypothetical main size onto the item as a definite `size` does
-/// not freeze it: the item grows into its line exactly as it would have. That
-/// is the whole reason `collapse_definite_bases` writes a size rather than a
-/// maximum -- a maximum reaches the same container extent and pins the item at
-/// zero, which no conformance row would catch, because every row in
-/// `flex-basis-collapse.tsv` measures the container rather than the item.
-///
-/// If this stopped holding, the compensation would pin every item it touches at
-/// its basis and the whole table would stay green.
-// [FOUNDATION] taffy still grows a flex item from a written definite size,
-// which is what makes writing the hypothetical main size a repair rather than a
-// clamp.
+/// A written definite size still grows into its line, since §9.7 grows from it.
+// [FOUNDATION] taffy grows an item from a written definite size, so writing the
+// hypothetical main size is a repair; a maximum would pin the item at zero. If
+// it stopped holding, `collapse_definite_bases` would pin items at their basis
+// and `flex-basis-collapse.tsv`, which measures containers, would stay green.
 #[test]
 fn a_written_base_still_grows_into_its_line() {
     let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();

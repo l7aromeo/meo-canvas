@@ -1,38 +1,7 @@
-// Deletes the Actions cache entries nothing will restore.
-//
-// **The budget check says what is dead and stops there**, so every push to
-// `main` that moves `Cargo.lock` mints three new keys at 1.2-2.2 GiB and the
-// superseded ones stay until a person removes them. Three merges on 2026-09-10
-// produced nine entries and 8.11 GiB against a 7.5 GiB floor, and the floor was
-// crossed twice in one evening with a human deleting by hand both times.
-//
-// GitHub evicts at its own limit and never says so. Our floor sits below it on
-// purpose, so the gate goes red before GitHub acts -- which is the right order
-// and is why the remedy has to be ours.
-//
-// # Dry run is the default, and `--delete` is the whole opt-in
-//
-// A wrong deletion costs an hour of cold Skia build on Windows. So this prints
-// what it would remove and exits; nothing is deleted without the flag, and the
-// flag appears in exactly one place, the workflow that carries
-// `actions: write`.
-//
-// # It refuses to run when its own rule fails
-//
-// `verifySelection` replays the night this rule was established -- two
-// platforms whose creation order and access order disagree -- and throws if the
-// selection is not the one that was correct then. **That check runs before the
-// network call, not after**, so a broken rule cannot reach the API at all.
-//
-// # Why the fetch here is not the budget check's fetch
-//
-// `cache-budget.mjs` skips quietly without a token on a developer's machine and
-// fails in CI: right for a report, wrong for this. A pruner that skipped would
-// be a pruner that never prunes and nobody would notice. So this refuses
-// without credentials wherever it runs, and the paging loop is short enough
-// that saying so costs less than sharing a function whose behaviour must
-// differ. The part that must not be duplicated -- which entries are dead -- is
-// imported.
+// Deletes the Actions cache entries nothing will restore, which the budget check
+// only reports. A dry run unless `--delete`, passed only by the workflow holding
+// `actions: write`. `verifySelection` runs before any network call, and a missing
+// token is refused everywhere, unlike the budget check, which skips off CI.
 import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 
@@ -42,11 +11,8 @@ const MIB = 1024 ** 2
 const GIB = 1024 ** 3
 const DEADLINE_MS = 20_000
 
-// **One decision, from strings, in a language whose semantics run here.** The
-// workflow passes `EVENT` and `DELETE_INPUT` through and does not decide; the
-// mode below is what both the flag and every line printed about it come from,
-// so a name that disagrees with the action is not expressible. Twice a workflow
-// expression got this wrong in opposite directions -- see `modeFrom`.
+// One decision, from the strings the workflow passes through; the flag and every
+// line printed about it come from `mode`, so they cannot disagree. See `modeFrom`.
 const mode = modeFrom({ argv: process.argv, env: process.env })
 const remove = mode === 'delete'
 
@@ -117,11 +83,8 @@ process.stdout.write(
     `${(freed / GIB).toFixed(2)} GiB -- same key prefix, ${ORDER_READS}\n`,
 )
 
-// **The floor, asserted here as well as guaranteed there.** `supersededOf`
-// keeps the most recently read entry of every group, so the last entry for a
-// prefix can never be selected. This says so again at the point of deletion,
-// because the cost of the two being out of step is measured in cold builds and
-// the cost of checking is a loop over a handful of rows.
+// The floor, asserted again at the point of deletion: `supersededOf` never selects
+// the last entry for a prefix, and a loop over a handful of rows is cheap.
 const survivors = new Map()
 for (const entry of entries) survivors.set(prefixOf(entry.key), (survivors.get(prefixOf(entry.key)) ?? 0) + 1)
 for (const entry of superseded) {

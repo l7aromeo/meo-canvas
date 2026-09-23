@@ -1,29 +1,7 @@
-# Ground truth for steps(), generated from meo-canvas v1's built module
-# (`dist/esm/animate`) rather than from either v2 implementation.
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean. The tag is here so
-# this file can be regenerated comparably: a vector table whose provenance
-# is "v1" cannot be, and one that names a commit can. The build was newer
-# than its source when this ran, so it is not a stale artifact -- which is
-# a thing that happened to us on this tree the same afternoon.
-#
-# Neither surface may be written from the other: a misreading of v1 that
-# reaches both looks like agreement. Both are written against this, and this
-# came from v1 running, not from anyone reading it.
-#
-# What a table catches that nothing else does: `expo(0)` computed rather
-# than special-cased gives 0.000977, which is not a bug anyone finds by
-# looking -- it is a curve that starts almost at rest, and at eight pixels
-# of travel it is a hundredth of a pixel. No fixture, no eye and no
-# tolerance catches that. An exact zero in a row does.
-#
-# Values are printed at JavaScript default precision, which is the shortest
-# string that round-trips an f64 exactly -- so both surfaces parse the same
-# number rather than a rounded one.
-#
+# `steps` as v9.0.2 (commit 890eed2) computes it, run from its built module.
+# Shortest round-trip decimals, compared exactly on both surfaces.
 # count	t	value
 # rows: 54
-#
 1	0	0
 1	0.999999999	0
 1	1	1

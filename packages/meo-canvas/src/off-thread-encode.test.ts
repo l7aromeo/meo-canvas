@@ -5,34 +5,10 @@ import { describe, expect, it } from 'vitest'
 import { Root, Text } from './index.js'
 
 /**
- * That `toBuffer` frees the event loop, and that `toBufferSync` does not.
- *
- * # Why a timer and not a resolved promise
- *
- * **A promise resolving proves nothing here.** The old `toBuffer` was
- * `return this.toBufferSync(...)` — a promise handed to the caller already
- * settled, having blocked every other request in the process for the whole
- * encode. Every test asserting that it resolved with the right bytes passed
- * against that, and would still pass against it today. So the assertion has to
- * be about the loop rather than about the value: a timer can only fire when
- * the loop is free, so counting its ticks during an encode measures exactly
- * the thing the promise cannot.
- *
- * # Why the synchronous form is asserted too
- *
- * It is the control, and without it this file proves nothing. A tick counter
- * that never reaches zero — because the interval is too fast, the encode too
- * quick, or the timer fires between the two reads — would report success on a
- * renderer that blocks the loop completely. Asserting that `toBufferSync`
- * blocks is what shows the counter can tell the two apart. Run against the
- * implementation this replaced, the synchronous case passes and the
- * asynchronous one fails, which is the difference being pinned.
- *
- * # Why the canvas is large
- *
- * The encode is what scales with area — about 2 ms of record against 97 ms of
- * encode at this size — and a 480×320 canvas encodes in under 2 ms, which is
- * near enough to a timer's resolution that neither assertion would mean much.
+ * That `toBuffer` frees the event loop and `toBufferSync` does not, counted with a
+ * timer, since a promise resolving says nothing about the loop. The synchronous case
+ * is the control that the counter can tell the two apart; the canvas is large
+ * because the encode scales with area (97 ms here, under 2 ms at 480×320).
  */
 
 /** The test font, so nothing here depends on the machine's own faces. */
@@ -47,11 +23,8 @@ const PAGE = { width: 4000, height: 4000 }
 const TICK = 5
 
 /**
- * A painted canvas at {@link PAGE}, with text so the paint is not trivial.
- *
- * **Throws rather than skips when the addon is missing.** A test that quietly
- * does not run reads as coverage, and this is the only check in the suite that
- * can see the event loop at all.
+ * A painted canvas at {@link PAGE}, with text so the paint is not trivial. Throws
+ * rather than skips without the addon: this is the one check that sees the loop.
  */
 async function painted() {
   try {
@@ -68,18 +41,9 @@ async function painted() {
 }
 
 /**
- * Runs `work` with a timer running, and reports how often the loop was free.
- *
- * The counter is read before and after rather than reset, so a tick that lands
- * between arming the interval and starting the work is not counted as one that
- * landed during it.
- *
- * `work` returns `unknown` because both shapes are wanted and neither is read:
- * the asynchronous cases hand back a promise this awaits, and the synchronous
- * control hands back nothing, which `await` passes through unchanged. Writing
- * that as `Promise<unknown> | unknown` says less than it appears to -- a union
- * with `unknown` in it *is* `unknown` -- so the type is spelled the way it
- * resolves and the intent is here instead.
+ * Runs `work` with a timer running and reports how often the loop was free, read
+ * before and after rather than reset. `work` returns `unknown`: a promise or
+ * nothing, which `await` passes through.
  */
 async function ticksDuring(work: () => unknown): Promise<number> {
   let ticks = 0

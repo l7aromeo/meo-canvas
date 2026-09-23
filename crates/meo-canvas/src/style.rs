@@ -3,8 +3,8 @@
 //! The scene keeps layout, paint, text and effects in four structs because the
 //! codec needs them separated. Authoring does not: a caller writing `gap`
 //! beside `background_color` should never have to know which group either lives
-//! in, and v1's `BoxProps` already mixed all four. [`Style::into_parts`] does
-//! the splitting at the moment the tree becomes a scene.
+//! in. [`Style::into_parts`] does the splitting at the moment the tree becomes
+//! a scene.
 //!
 //! ```
 //! use meo_canvas::{Style, all, hex_rgb, px};
@@ -73,11 +73,9 @@ use meo_canvas_scene::{
 ///     ..Style::new().gap(px(8.0))
 /// };
 /// ```
-// Not `#[non_exhaustive]`: the documented way to reach a property with no
-// setter is a literal closed with `..Style::new()`, and that attribute forbids
-// the literal outright. The rest pattern is what keeps such a literal compiling
-// when a field is added, which is the protection `non_exhaustive` would have
-// bought.
+// Not `#[non_exhaustive]`: it forbids the documented literal closed with
+// `..Style::new()`, and that rest pattern already keeps such a literal
+// compiling when a field is added.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Style {
     // -- Layout ---------------------------------------------------------
@@ -191,14 +189,9 @@ pub struct Style {
     /// The colour glyphs are drawn in, CSS's `color`. Inherits.
     ///
     /// **On an image node it is the tint an SVG source resolves
-    /// `currentColor` against**, and it is read from the node itself rather
-    /// than inherited -- a browser passes a page's `color` into inline SVG and
-    /// not into an `<img>`, and this element is the second kind.
-    ///
-    /// So one property has two behaviours, decided by the element: **it
-    /// inherits into text and does not cross into an image's document.** That
-    /// is CSS's own rule rather than an inconsistency here, and it is the kind
-    /// of thing a later reader tidies into consistency and breaks.
+    /// `currentColor` against**, read from the node itself rather than
+    /// inherited: a browser passes a page's `color` into inline SVG and not
+    /// into an `<img>`, and this element is the second kind.
     ///
     /// It recolours a document authored for `currentColor` and **leaves a
     /// hardcoded fill alone**: an icon whose paths say `fill="currentColor"`
@@ -243,19 +236,10 @@ pub struct Style {
     pub backdrop_filter: Option<String>,
 }
 
-/// The property table: every flat setter, written once.
-///
-/// One list produces two things — the setters on [`Style`], and the same
-/// setters on [`Styled`], which every node implements. Writing them twice is
-/// what the seventy-three-methods-per-node objection was actually about, and a
-/// second list is a second place for a property to be forgotten: a node would
-/// simply lack a setter, with nothing failing to compile.
-///
-/// `plain` is a `const fn`, `owned` is not. The line between them is whether
-/// the field needs dropping — assigning over an owning field in a `const fn` is
-/// E0493, which `gradient` and `mask` hit despite carrying no `String` of their
-/// own. An `owned` setter takes `impl Into<_>` as well, since a heap value is
-/// the kind a caller usually has in another form.
+/// The property table: every flat setter written once, generating both
+/// [`Style`]'s and [`Styled`]'s, so no node can silently lack one. `plain` is a
+/// `const fn`; `owned` assigns a field that needs dropping, which a `const fn`
+/// cannot (E0493), and takes `impl Into<_>`.
 macro_rules! properties {
     (
         fields {
@@ -268,12 +252,9 @@ macro_rules! properties {
             $( $via:ident($($arg:ident: $arg_type:ty),*); )*
         }
     ) => {
-        /// How many tracks lie between two grid lines, at least one.
-///
-/// An end at or before its start is an empty area rather than a placement, and
-/// a `const fn` on the authoring surface has nowhere to report that to — so it
-/// becomes the smallest placement that means anything. The JavaScript surface
-/// refuses the same input, where a throw is what a caller expects.
+        /// How many tracks lie between two grid lines, at least one: an end at
+/// or before its start becomes a span of one, since a `const fn` has nowhere to
+/// report the empty area to.
 #[expect(
     clippy::cast_sign_loss,
     reason = "the subtraction is guarded to a positive difference"
@@ -298,11 +279,9 @@ impl Style {
         /// by pointing at the [`Style`] it holds: one line per node type
         /// against seventy-three methods.
         ///
-        /// **The count is the macro's, not a tally anyone keeps.** It is the
+        /// **The count is the macro's, not a tally anyone keeps**: the
         /// `fields` block's fifty-eight entries plus the `via` block's
-        /// fifteen, so a reader who doubts it can recount it in one place --
-        /// which is worth saying, because this number was written down twice
-        /// as two different wrong values before anyone did.
+        /// fifteen, recountable in one place.
         ///
         /// ```
         /// use meo_canvas::{Row, Styled, hex, px};
@@ -753,12 +732,8 @@ impl Style {
 
     // -- Image ----------------------------------------------------------
     //
-    // Three properties that belong to an image rather than to a box. They live
-    // on `Style` because the surface is one flat style and a caller writing
-    // `.style(Style::new().size(..).object_fit(Cover))` should not have to know
-    // that two of those three words are read by different halves of the
-    // scene. A node that is not an image ignores them, which is what CSS
-    // does with a property a element does not define.
+    // Image-only properties, here because the style is flat. A node that is
+    // not an image ignores them, as CSS ignores a property an element lacks.
 
     // -- Text -----------------------------------------------------------
 
@@ -783,7 +758,7 @@ impl Style {
     /// ```
     ///
     /// This is what [`Element::with_style`](crate::Element::with_style) does,
-    /// and what the JavaScript surface's props spread has always done — a
+    /// and what the JavaScript surface's props spread does — a
     /// container factory there is `{ display: 'grid', ...props }`, so a caller
     /// who does not name `display` keeps the one the factory set. A replace
     /// would make the two surfaces disagree about the same call.
@@ -1164,11 +1139,9 @@ impl Style {
 
     /// A shorthand for that many equal columns.
     ///
-    /// v1's `columns`, and pure sugar: this **is**
+    /// Pure sugar: this **is**
     /// [`grid_template_columns`](Self::grid_template_columns) with that many
-    /// `1fr` tracks, so nothing new reaches the wire. A shorthand that needed
-    /// a field of its own would mean the long form could not express it, which
-    /// would be a finding rather than a convenience.
+    /// `1fr` tracks, so nothing new reaches the wire.
     ///
     /// Assigning over a template already set replaces it, as every setter
     /// here does; the JavaScript surface refuses the pair instead, because

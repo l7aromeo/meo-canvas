@@ -134,13 +134,9 @@ impl fmt::Display for BuildError {
 }
 
 impl std::error::Error for BuildError {
-    /// The error underneath, so a chain does not stop here.
-    ///
-    /// **Every variant wraps a real error and this returned `None` until 5
-    /// September 2026.** `Display` forwarded, so a person reading the message
-    /// saw the cause; `anyhow`'s `{:#}`, `eyre`'s chain and any caller walking
-    /// `source()` saw one opaque error and lost the `io::ErrorKind` under
-    /// `Write` -- which is the one thing a caller can act on programmatically.
+    /// The error underneath, so a chain does not stop here: `anyhow`'s `{:#}`,
+    /// `eyre`'s chain and any caller walking `source()` reach the
+    /// `io::ErrorKind` under `Write`, the one thing a caller can act on.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Sequence(error) => Some(error),
@@ -163,8 +159,7 @@ impl From<Error> for BuildError {
 ///
 /// Refused rather than resolved by precedence. A caller who named both a page
 /// count and a duration, or a count with nothing to vary per page, asked for
-/// something that would not happen — and v1 ignoring it quietly is the reason
-/// it is worth refusing here.
+/// something that would not happen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SequenceError {
@@ -294,12 +289,10 @@ impl Root {
             scale: Self::DEFAULT_SCALE,
             on_image_error: OnImageError::Placeholder,
             http: HttpOptions::new(),
-            // **A page lays its children out as flex, and says so.** The
-            // scene's default is `block`, which is what a browser gives a
-            // `<div>`; a page root that inherited it would stack its children
-            // and stop honouring `gap` and the alignments, which is a change
-            // no caller asked for. The JavaScript surface names it the same
-            // way, through `Box`.
+            // A page lays its children out as flex, and says so: the scene's
+            // default is `block`, which would stack them and stop honouring
+            // `gap` and the alignments. The JavaScript surface's `Box` does
+            // the same.
             style: Style::new()
                 .display(meo_canvas_scene::style::layout::Display::Flex),
             name: None,
@@ -382,8 +375,8 @@ impl Root {
     /// check it before rendering, where a fetch's outcome does not exist until
     /// the render runs.
     ///
-    /// [`OnImageError::Throw`] is the behaviour of every version before this
-    /// one, for a caller whose URLs come from a manifest they control.
+    /// [`OnImageError::Throw`] fails the render instead, for a caller whose
+    /// URLs come from a manifest they control.
     ///
     /// **Every setting records the warning.** This chooses what is drawn, not
     /// what is known.
@@ -395,9 +388,9 @@ impl Root {
 
     /// What every URL in this scene is fetched with.
     ///
-    /// The mirror of npm's `RootProps.httpOptions`, and the reason it exists:
-    /// a page pulling twenty images from one origin says its credential once
-    /// rather than twenty times. A source's own options merge **over** these,
+    /// The same option as npm's `RootProps.httpOptions`: a page pulling twenty
+    /// images from one origin says its credential once rather than twenty
+    /// times. A source's own options merge **over** these,
     /// one header name at a time, so
     /// [`Image::url_with`](crate::Image::url_with) at one source does not drop
     /// what the scene set for the rest.
@@ -604,13 +597,10 @@ impl Root {
     /// Paints every page and returns the canvas to encode from.
     ///
     /// The GPU request and the registered families live on the [`Renderer`]
-    /// rather than here, which is the one place these two surfaces are shaped
-    /// differently. JavaScript puts them on `Root` because it exposes no
-    /// renderer to put them on; Rust does, and a renderer outlives any one
-    /// scene — a server registering its fonts once is the reason that type
-    /// exists. Carrying them in both places would be two settings that can
-    /// disagree, so `Renderer::set_gpu` and `Renderer::register_font` are where
-    /// they are said. Nothing a JavaScript caller can express is missing.
+    /// rather than here: a renderer outlives any one scene, which is why a
+    /// server registers its fonts once, and carrying them in both places would
+    /// be two settings that can disagree. The JavaScript surface, which
+    /// exposes no renderer, puts them on `Root`.
     ///
     /// # Errors
     ///
@@ -647,12 +637,9 @@ impl Styled for Root {
 pub struct Canvas {
     /// The painted pages.
     painted: RenderedCanvas,
-    /// What the caller's markup said that could not be used.
-    ///
-    /// Raised while the scene was built, which is before this canvas existed,
-    /// and carried here because this is the first place a caller who used
-    /// [`Root::render`] can be handed them. A caller who builds the scene
-    /// themselves takes them from [`Root::into_scene`] instead.
+    /// What the caller's markup said that could not be used, raised while the
+    /// scene was built and carried here for a caller of [`Root::render`]; one
+    /// who builds the scene takes them from [`Root::into_scene`].
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -700,11 +687,8 @@ impl Canvas {
     /// while this canvas stays on the thread that owns it. At 4000x4000 that
     /// is 97 ms of the 100 a `to_buffer` costs.
     ///
-    /// **Here because the JavaScript surface has it.** `toBuffer` there
-    /// returns a promise that settles off the event loop, and a Rust caller
-    /// serving requests from a thread pool wants the same thing for the same
-    /// reason. A capability on one of these two surfaces and not the other is
-    /// a defect rather than a difference.
+    /// The JavaScript surface's `toBuffer` settles off the event loop for the
+    /// same reason a caller serving requests from a thread pool wants this.
     ///
     /// One handle is one format: encoding a second format is a second call,
     /// made here rather than on the worker.
@@ -748,8 +732,7 @@ impl Canvas {
     ///
     /// Resolved through [`ImageFormat::from_named`] rather than
     /// `from_extension`, which refuses `raw` — correctly, for a filename found
-    /// on disk, and wrongly for one the caller has just typed. This once
-    /// accepted a narrower set than `toFile` did on the JavaScript surface.
+    /// on disk, and wrongly for one the caller has just typed.
     ///
     /// # Errors
     ///
@@ -785,53 +768,28 @@ impl Canvas {
 
     /// Encodes the canvas with options and writes it to `path`.
     ///
-    /// **The bytes are written where they are encoded.** This used to encode
-    /// to a `Vec<u8>` and hand it to `std::fs::write`, so a page-spanning
-    /// format existed whole in memory before any of it reached the disk. A
-    /// format that gathers every page now streams into the file instead.
-    ///
-    /// The JavaScript surface's `toFile` was given this first, which left the
-    /// two differing in a capability rather than in a spelling —
-    /// `AGENTS.md`'s parity rule, and the interesting part is that **the
-    /// parity gate could not see it**: `just example` compares the bytes the
-    /// two surfaces write, and the bytes were never in question. What differed
-    /// was how much memory it took to produce them.
+    /// **The bytes are written where they are encoded**: a format that gathers
+    /// every page streams into the file rather than existing whole in memory
+    /// first.
     ///
     /// # Why the path is opened before the encode
     ///
     /// So a path that cannot be written is still [`BuildError::Write`] with
     /// its [`std::io::ErrorKind`] intact — a missing directory, a permission
     /// refusal, a read-only filesystem. The renderer folds a write failure
-    /// into its own encode error, and that error carries a message rather than
-    /// a kind, so delegating without this would have quietly undone the
-    /// `source()` fix of 5 September 2026: the kind under `Write` is the one
-    /// thing a caller can act on programmatically.
+    /// into an encode error carrying a message rather than a kind, and the
+    /// kind is what a caller can act on. It also fails sooner. A failure
+    /// *during* the write — a full disk — still arrives as
+    /// [`BuildError::Render`].
     ///
-    /// It also fails sooner, which matters more the longer the export. What it
-    /// does not cover is a failure *during* the write — a full disk — which
-    /// arrives as [`BuildError::Render`] carrying the renderer's message.
+    /// # Why the probe neither truncates nor leaves a file behind
     ///
-    /// # Why the probe does not truncate, and does not leave a file behind
-    ///
-    /// **A failed encode must not destroy the file that was already there.**
-    /// `File::create` truncates, so probing with it would empty the caller's
-    /// previous render before attempting one that may be refused — and an
-    /// encode is refused for ordinary reasons this method documents. Losing
-    /// yesterday's output to a bad `EncodeOptions` is worse than losing the
-    /// error kind this probe exists to keep.
-    ///
-    /// So an existing path is opened for writing without truncating, which
-    /// asks the same question and answers it the same way. Truncation happens
-    /// where it is correct: in the renderer, on the success path.
-    ///
-    /// A path that does *not* exist is created and removed again, because the
-    /// only thing wanted from it was the filesystem's answer. Left in place it
-    /// would put a zero-byte file where a failed encode used to leave nothing.
-    /// That removal is the one error here that is swallowed, and it is safe to
-    /// swallow: it can only fail by leaving behind the empty file the
-    /// alternative design would have left anyway, and it can only ever touch a
-    /// file this call has just created — `create_new` is what makes that
-    /// atomic rather than a check and a hope.
+    /// **A failed encode must not destroy the file already there.** An
+    /// existing path is opened for writing without truncating; truncation
+    /// happens in the renderer, on the success path. A path that does not
+    /// exist is created with `create_new` and removed again, so a failed encode
+    /// leaves nothing. That removal's error is the one swallowed here: it can
+    /// only leave behind the empty file this call has just created.
     ///
     /// # Errors
     ///
@@ -892,7 +850,7 @@ impl Canvas {
     /// The `HTMLCanvasElement` spelling of [`to_url`](Self::to_url).
     ///
     /// Taking a quality rather than an options object, because the DOM method
-    /// it is named after does. v1 has it for the same reason.
+    /// it is named after does.
     ///
     /// # Errors
     ///
@@ -956,19 +914,9 @@ impl Canvas {
     /// The outcome rather than the request, and they disagree: a build with no
     /// GPU backend compiled, a machine with no device, a driver that declines,
     /// and a float `color_type` all rasterise on the CPU whatever `gpu` says.
-    ///
-    /// **Without it a caller who asks for the GPU and gets the CPU has no way
-    /// to find out**, and neither has a test. This crate's own
-    /// `the_two_rasterisers_do_not_draw_the_same_pixels` branched on whether a
-    /// backend was *compiled in*, which is a different question: a headless
-    /// Linux runner compiles Vulkan, finds no device, falls back correctly, and
-    /// the test called the correct fallback a failure. It also meant the GPU
-    /// path was asserted nowhere on that platform, because it had never run
-    /// there.
-    ///
-    /// The JavaScript surface has carried this since it was written
-    /// (`packages/meo-canvas/src/canvas.ts`); this is the Rust half of the same
-    /// pair.
+    /// **Without this a caller who asks for the GPU and gets the CPU has no way
+    /// to find out**, and neither has a test. The JavaScript surface's canvas
+    /// reports the same.
     #[must_use]
     pub fn engine(&self) -> &'static str {
         self.painted.engine()
@@ -1017,11 +965,8 @@ mod tests {
 
     #[test]
     fn a_build_error_hands_back_what_went_wrong_underneath_it() {
-        // `impl std::error::Error for BuildError {}` was empty until 5
-        // September 2026, so `source()` was `None` while every variant wrapped
-        // a real error. `Display` forwarded, so the message looked complete
-        // and the chain was not: the `io::ErrorKind` under `Write` is the one
-        // thing a caller can branch on, and it was unreachable.
+        // `source()` must reach the `io::ErrorKind` under `Write`: `Display`
+        // forwards, so the message looks complete whether or not the chain is.
         use std::error::Error as _;
 
         let refused = Root::new(f32::NAN)
@@ -1056,12 +1001,9 @@ mod tests {
     fn a_written_file_is_the_buffer_and_a_bad_path_keeps_its_error_kind() {
         use std::error::Error as _;
 
-        // Two claims about `to_file_with`, and the second is the reason it is
-        // not simply `prepare_encode(..).write(..)`.
-        //
-        // The first: streaming the bytes into the file writes the same file
-        // buffering them did. Byte for byte, because "it wrote a PNG" would
-        // pass on either.
+        // Two claims about `to_file_with`, and the second is why it is not
+        // simply `prepare_encode(..).write(..)`. The first: streaming writes
+        // the same file buffering does, byte for byte.
         let renderer = Renderer::new();
         let mut canvas = Root::new(16.0)
             .height(8.0)
@@ -1082,12 +1024,9 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
 
         // The second: a path that cannot be opened is still a `Write` with a
-        // real `io::ErrorKind` under it. The renderer folds a write failure
-        // into its own encode error, which carries a sentence rather than a
-        // kind -- so without the file being created before the encode, this
-        // would arrive as `Render` and the kind would be gone. That is the
-        // property the `source()` fix of 5 September 2026 exists to give, and
-        // this is what stops the streaming change from quietly taking it back.
+        // real `io::ErrorKind` under it. Without the file created before the
+        // encode, the renderer's sentence-carrying error would arrive as
+        // `Render` and the kind would be gone.
         let missing = std::env::temp_dir()
             .join("meo-canvas-no-such-directory")
             .join("out.png");
@@ -1108,13 +1047,10 @@ mod tests {
 
     #[test]
     fn a_refused_encode_leaves_the_previous_file_alone() {
-        // The failure this method's probe must not cause. `File::create`
-        // truncates, so probing with it emptied whatever was at the path
-        // before attempting an encode that may be refused -- and an encode is
-        // refused for ordinary reasons: `fps` on a still format is one, and
-        // that is a caller error, not a machine failure. Yesterday's render
-        // would be a zero-byte file and the only thing returned would be a
-        // message about frame timing.
+        // The failure the probe must not cause: `File::create` truncates, so
+        // probing with it would empty the path before an encode refused for an
+        // ordinary reason -- `fps` on a still format -- and leave yesterday's
+        // render a zero-byte file.
         let renderer = Renderer::new();
         let mut canvas = Root::new(16.0)
             .height(8.0)
@@ -1217,11 +1153,9 @@ mod tests {
 
     #[test]
     fn to_file_accepts_the_extensions_the_javascript_surface_does() {
-        // `.raw` among them. `ImageFormat::from_extension` refuses it, and
-        // rightly for a filename found on disk — upstream calls that container
-        // `.bin` and a `.bin` of pixel bytes implies no format. A path the
-        // caller has just typed is the other question, and this once answered
-        // it more narrowly than `toFile` did.
+        // `.raw` among them. `ImageFormat::from_extension` refuses it, rightly
+        // for a filename found on disk -- a `.bin` of pixel bytes implies no
+        // format -- but a path the caller has just typed is the other question.
         let dir = std::env::temp_dir()
             .join(format!("meo-to-file-{}", std::process::id()));
         std::fs::create_dir_all(&dir)
@@ -1408,17 +1342,10 @@ mod tests {
 
     #[test]
     fn the_two_rasterisers_do_not_draw_the_same_pixels() {
-        // The check a fake cannot satisfy. An assertion that a flag was copied
-        // from one object to another stays true when nothing on the far side
-        // reads it; two real renders that must differ do not. If this build has
-        // no GPU compiled in, both are the CPU and the test says so rather than
-        // passing vacuously.
-        //
-        // The content is load-bearing: the two rasterisers differ on
-        // anti-aliased edges and agree exactly on a picture without any, so
-        // text is what makes them disagree. A plain filled box here would fail
-        // this rather than pass it quietly, which is the right way round, but
-        // worth knowing before changing the scene.
+        // Two real renders that must differ, which a copied flag cannot fake.
+        // Text is load-bearing: the rasterisers differ only on anti-aliased
+        // edges, so a plain filled box would fail this. With no GPU compiled
+        // in, both are the CPU and the test says so.
         let renderer = Renderer::new();
         let rounded = || {
             Box::new()
@@ -1447,26 +1374,10 @@ mod tests {
             .to_buffer(Format::Png)
             .unwrap_or_else(|error| unreachable!("{error}"));
 
-        // **What actually happened, not what was compiled in.**
-        //
-        // This branched on `cfg!(any(feature = "metal", feature = "vulkan"))`,
-        // and that is a different question. A feature says a backend was built;
-        // it says nothing about a *device*. A headless Linux runner compiles
-        // Vulkan, finds no device, correctly falls back to the CPU -- and the
-        // two renders then agree to the byte, which the old assertion called a
-        // failure. It passed on macOS only because a Metal device is always
-        // there.
-        //
-        // The other direction is worse and quieter: **on Linux this test had
-        // never once verified that the GPU path differs**, because the GPU path
-        // had never run there. It is still not verified there, and now it says
-        // so rather than pretending otherwise -- the `else` arm below is
-        // reached on any machine without a device, and asserts the fallback was
-        // clean rather than asserting anything about the GPU.
-        // The one thing a feature flag *can* say, kept as an assertion rather
-        // than a comment: with no backend compiled there is nothing to fall
-        // back from, so the outcome is not in doubt. It is the direction the
-        // old test had right, and it costs nothing to keep.
+        // Branch on the engine that drew, not the backend compiled in: a
+        // headless runner compiles Vulkan, finds no device and falls back, so
+        // both renders are the CPU's. There the GPU path is not verified, and
+        // the `else` arm asserts only a clean fallback.
         if !cfg!(any(feature = "metal", feature = "vulkan")) {
             assert_eq!(
                 on.engine(),
@@ -1499,8 +1410,8 @@ mod tests {
 
     #[test]
     fn a_duration_becomes_a_page_count_at_the_rate_given() {
-        // `ceil(duration * fps)`, as v1 derives it: a fraction of a page is
-        // still a page that has to be drawn.
+        // `ceil(duration * fps)`: a fraction of a page is still a page that
+        // has to be drawn.
         let scene = scene_of(
             Root::new(10.0)
                 .height(10.0)

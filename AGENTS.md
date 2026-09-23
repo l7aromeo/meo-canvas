@@ -276,8 +276,8 @@ slower and never faster, so a **green** under load is stronger than a quiet
 green, a **red** under load is uninformative, and a **timing** is worthless in
 both directions.
 
-**Targeted checks are the signal while another lane is live**; the full gate runs
-when the tree is yours.
+**Targeted checks are the signal while another build is running**; the full
+gate runs when the machine is quiet.
 
 ### Say what you checked and what you did not
 
@@ -672,6 +672,9 @@ a tree that mixes them reads as two conventions.
 1. **A comment states what the code is, today.** Never what it was, what it will
    be, or what changed. Git records history; comments record the present. No
    "used to", "changed from", "now", "no longer" -- and no TODO, FIXME or XXX.
+   **Nor a comparison with v9**: a comment says what this code does, not how it
+   differs from the predecessor. v9 is named only where the code itself reads
+   it -- vectors recorded from it, a tool that diffs its surface.
 2. **A comment earns its place by answering "why this and not the obvious
    alternative".** If the code already says what it does, the comment says why it
    does it that way. Restating the code is worse than silence.
@@ -685,6 +688,14 @@ a tree that mixes them reads as two conventions.
    a doc comment.
 6. **Present tense, indicative.** "Rejects a radius below zero, as a browser
    does." Not "will reject".
+7. **Four lines of text at most, and one where one will do.** A `/**` or `*/`
+   line on its own is not text. This binds every comment no caller reads:
+   `//`, a private item's doc, a private module's `//!`, tests, tools,
+   workflows, the `justfile` and configuration files. A doc that rustdoc or
+   TypeDoc renders for a caller may run longer and carry an example, and so
+   may a wire-format specification beside the decoder that reads it, since
+   another implementation is written from that text. What does not fit goes
+   in the commit message, which is where history belongs anyway.
 
 **A reason written in two places gets corrected in one.** Write it once, at the
 place a reader lands, and point at it from the other.

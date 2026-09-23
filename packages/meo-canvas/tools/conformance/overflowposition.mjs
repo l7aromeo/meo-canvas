@@ -1,17 +1,7 @@
 // Where a clipped child ends up, and what covers it, across overflow x clipper
-// position x child position x transform.
-//
-// **This table was measured by hand and committed.** `just conformance` runs
-// eleven tools and none of them wrote it, so its 120 rows could not be
-// re-measured against a browser bump the way every other table can -- which is
-// what `just ci` proved of the others when the backend moved and they came back
-// byte-identical.
-//
-// The first thing this has to do is reproduce those 120 rows exactly. A row
-// that differs is a disagreement between this tool and the header's prose, and
-// the prose is what the hand measurement was taken from; either the tool is
-// wrong or the description was, and both have to be settled before a single new
-// row is added.
+// position x child position x transform. The 120 rows without offsets were
+// measured by hand; this reproduces them exactly, so a differing row is a
+// disagreement with the header's scene description to settle first.
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,15 +30,9 @@ const POSITION = { S: 'static', R: 'relative', A: 'absolute', K: 'sticky', F: 'f
 const CHILD_POSITION = { S: 'static', R: 'relative', A: 'absolute', F: 'fixed' }
 
 /**
- * The child's offsets, the fifth letter.
- *
- * `-` is the 120 rows measured by hand; `i` and `n` are new. Unequal numbers so
- * an implementation that swapped the axes fails, small enough that the child
- * stays partly inside a 60x40 clipper -- a row that reads "nothing visible" is
- * a row that has stopped discriminating -- and several times the walker's 1px
- * tolerance. The negative pair is here because it can only fail for a defect
- * somebody could actually write: a renderer that clamped an inset at zero
- * passes every positive row.
+ * The child's offsets, the fifth letter. Unequal, so swapped axes fail; small, so
+ * the child stays partly inside the 60x40 clipper; and a negative pair, which a
+ * renderer clamping an inset at zero fails.
  */
 const OFFSET = { '-': null, i: { left: 8, top: 6 }, n: { left: -8, top: -6 } }
 
@@ -63,11 +47,9 @@ function scene(code) {
   const clipperPlacement = outOfFlow(clipperKind)
     ? `left:${CLIPPER.outOfFlow.left}px;top:${CLIPPER.outOfFlow.top}px`
     : `margin:${CLIPPER.inFlow.top}px 0 0 ${CLIPPER.inFlow.left}px`
-  // The offsets are *added to* the margin placement rather than replacing it,
-  // so an `i` row is its `-` row plus two declarations and nothing else. They
-  // are written on a `static` child as readily as on a `relative` one: that a
-  // static box ignores them is the property the fifth letter exists to measure,
-  // and withholding them there would assume the answer.
+  // The offsets are added to the margin placement, so an `i` row is its `-` row
+  // plus two declarations. They are set on a `static` child too, since whether a
+  // static box ignores them is what the fifth letter measures.
   const offset = OFFSET[i]
   const childPlacement = outOfFlow(childKind)
     ? `left:${CHILD.outOfFlow.left}px;top:${CHILD.outOfFlow.top}px`
@@ -75,12 +57,9 @@ function scene(code) {
 
   return `<!doctype html><meta charset="utf-8"><style>
     html,body{margin:0;padding:0}
-    /* The outer box's own place on the page is part of the scene, and the
-       committed header does not record it: chrome_tables.rs:699 places it at
-       40,40, and every fixed row resolves against the viewport -- so a page
-       that puts it anywhere else moves the 36 rows with a fixed child. A
-       backtick here
-       would end this template literal, which is why the citation is bare. */
+    /* The outer box's place is part of the scene: OUTER_AT in chrome_tables.rs
+       puts it at 40,40, and the 36 rows with a fixed child resolve against the
+       viewport. No backticks here: one would end this template literal. */
     #page{padding:${OUTER_AT.top}px 0 0 ${OUTER_AT.left}px}
     #outer{position:relative;width:${OUTER.width}px;height:${OUTER.height}px}
     #clipper{width:${CLIPPER.width}px;height:${CLIPPER.height}px;overflow:${OVERFLOW[o]};position:${clipperKind};${clipperPlacement}${
@@ -130,7 +109,7 @@ try {
     '# Chrome 151.0.7922.34, 2026-09-06: overflow x clipper position x child',
     '# position x transform x the child offsets. The 120 rows without offsets',
     '# were measured by hand on 2026-08-23 and are reproduced here unchanged.',
-    '# Scene exactly as MC Agent Zero specified: outer 200x120 position:relative;',
+    '# Scene: outer 200x120 position:relative;',
     '# clipper 60x40 overflow:<O> position:<P>, placed by margin 20,20 when in flow',
     '# and by left/top 20,20 when out of it; child 50x40 position:<C>, placed by',
     '# margin 20,30 when in flow and by left/top 20,30 when out of it. `scroll` rows',

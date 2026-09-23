@@ -1,39 +1,6 @@
-# Ground truth for track(), generated from meo-canvas v1's built module
-# (`dist/esm/animate/track.js`).
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
-# the four original tables name, and verified rather than assumed: the
-# generator was first run against those tables and reproduced all 612 of their
-# rows exactly.
-#
-# Neither surface may be written from the other: a misreading of v1 that
-# reaches both looks like agreement. Both are written against this, and this
-# came from v1 running.
-#
-# Values are shortest-round-trip decimals, compared exactly. `-` is a column
-# the row does not use; it is not a value.
-#
-# # Why delay and stagger vary separately as well as together
-#
-# The divergence this table exists to prevent hid behind zeros:
-# `Track::duration` excluded the delay where JavaScript included it, and
-# every row anyone had compared used `delay: 0`, where the two rules agree.
-# So there are rows with delay alone, stagger alone, both, and neither.
-#
-# `totalDuration` is swept over counts 0, 1, 2, 3 and 10. Count 0 behaves
-# as count 1 rather than collapsing, which only a zero row can show.
-#
-# The `surface` column marks the fractional count `js-only`: Rust's
-# `total_duration` takes a `usize` and cannot express 2.5. That is a
-# recorded shape difference rather than a defect -- a count of items is an
-# integer, and JavaScript accepting 2.5 is what a JavaScript number does.
-#
-# `motion` is an easing name, or `spring:stiffness:damping:mass:velocity`.
-# A spring track carries `-` for duration: it takes its length from the
-# physics.
-#
+# `track`, v9.0.2 (890eed2). `motion` is an easing or `spring:k:c:m:v` with `-`
+# for duration; `js-only` rows hold a fractional count. `-` is an unused column.
 # rows: 132
-#
 # from	to	duration	delay	stagger	motion	surface	kind	t	index	count	value
 0	100	1	0	0	outCubic	both	at	0	0	-	0
 0	100	1	0	0	outCubic	both	at	0	1	-	0

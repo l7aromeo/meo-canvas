@@ -1,52 +1,13 @@
-// The comments of this tree's source, and the references inside them.
-//
-// **One lexer, because the failure mode of two is that they differ.** This was
-// `issue-refs.mjs`'s alone until a scheduled watcher needed the same
-// references for a different question -- what upstream has done about them --
-// and a second extractor written to answer it returned the fixture literals
-// below as if they were references to follow, because a regex over the same
-// globs is not the same instrument as a lexer that knows a string from a
-// comment. The two disagree exactly where it matters, and the fixtures are
-// where that disagreement is visible.
-//
-// **It reads comments, not files.** Short hex colours in `color.rs`'s tables,
-// the arena's byte-string inputs, and the malformed colours `unit.rs` requires
-// a parser to reject all look like references and are none of them: every one
-// sits in a string literal. Excluding them by their spelling would be a rule
-// about how a colour looks, which is the fault this exists to avoid -- the
-// property is *a reader could follow this*, and only comment text poses it.
-//
-// **The literals are named in the fixtures and not in this header.** The scan
-// these feed reads this file like any other, so an example written in prose
-// here is a violation of the rule it illustrates.
-//
-// **What it does not do.** It lexes rather than parses: line comments, block
-// comments, ordinary strings and raw strings, which is every form this tree
-// uses. It does not see a reference built at runtime, or one inside a
-// generated file -- `target/`, `dist/` and `node_modules/` are never listed,
-// because a generated reference is the generator's to fix.
+// The comments of this tree's source, and the references inside them -- one lexer
+// shared by every caller, since a regex over the same globs reads string literals
+// as references. It lexes line, block, ordinary and raw strings; it does not see a
+// reference built at runtime or in a generated file. Examples live in the fixtures.
 import { execFileSync } from 'node:child_process'
 
 /**
- * One entry per glob below, and each must match at least one file.
- *
- * **A total was the wrong shape and the magnitude is what gave it away.** The
- * first attempt floored the file count at 200 against 226, which catches every
- * glob collapsing at once and catches nothing else: dropping `*.toml` alone
- * takes 226 to about 221, the tree passes, the reference list still looks long
- * and healthy, and the manifest gap this tool was widened to close is silently
- * back. The same objection retired the count it replaced -- twenty-three
- * notches of slack, then twenty-six.
- *
- * Per glob, the number justifies itself: **one, because zero means that kind is
- * not being read.** No slack to drift, nothing to re-tune as the tree grows,
- * and a category disappearing is caught by the guard for that category rather
- * than by a total having to fall past a threshold.
- *
- * The predicates mirror the globs one for one rather than by convenience --
- * `*.ts` and `*.mts` are two globs and two entries, because a pathspec of
- * `*.ts` does not match a `.mts` file and grouping them would let either
- * vanish behind the other.
+ * One entry per glob below, and each must match at least one file: zero means that
+ * kind is not being read, where a total hides one glob collapsing. `*.ts` and
+ * `*.mts` are separate entries, since a `*.ts` pathspec does not match `.mts`.
  */
 export const SCOPE = [
   ['*.rs', file => file.endsWith('.rs')],
@@ -59,19 +20,9 @@ export const SCOPE = [
 ]
 
 /**
- * The scan reading no comments at all, caught without reference to the tree.
- *
- * **A file count cannot see this and a reference count sees it too late.** If
- * `commentsOf` returns nothing -- a lexer edit, a state machine that never
- * leaves a string -- the file list is still long and the tree still passes with
- * nothing examined. So both lexers are run over a source written here, whose
- * answer cannot change when the tree does, and which contains exactly what the
- * scan is looking for.
- *
- * The fixtures use `n/n` as the repository, so the qualified example is a
- * reference to nothing rather than a reference this file would then have to
- * live up to -- this tool reads itself, which is why the header carries no
- * examples either.
+ * The scan reading no comments at all, caught by running both lexers over sources
+ * written here, whose answers cannot change with the tree. They use `n/n` as the
+ * repository, so the qualified example refers to nothing.
  */
 export function verifyLexers() {
   const rust = 'fn a() {\n    // see n/n#1 and #2\n    let s = "n/n#3";\n}\n'
@@ -104,29 +55,15 @@ export function verifyLexers() {
 export const REFERENCE = /(?<!\w)(?<qualified>[\w.-]+\/[\w.-]+)?#(?<number>\d{1,5})(?!\w)/gu
 
 /**
- * The same reference written as a link, which the pattern above cannot see.
- *
- * A tracker with no `owner/repo#n` form takes a full URL, and GitHub's own
- * issues are written that way here where a sentence wanted a link rather than
- * a token. `taffy`'s 1151 and 1163 appear in this tree **only** in this form,
- * so a consumer reading the qualified pattern alone watches neither and
- * reports a clean week for two it never asked about.
- *
- * Kept separate from {@link REFERENCE} rather than merged into one pattern:
- * they fail in different ways, and a merged regex is hard to show correct.
- *
- * `issue-refs` does not enforce anything about this form -- that is
- * l7aromeo/meo-canvas#119. It is carried here because the watcher needs it as
- * input.
+ * The same reference written as a link, which {@link REFERENCE} cannot see --
+ * taffy's 1151 and 1163 appear here only in this form. Kept separate: the two fail
+ * differently. `issue-refs` enforces nothing about it (l7aromeo/meo-canvas#119).
  */
 export const REFERENCE_URL = /https:\/\/github\.com\/(?<qualified>[\w.-]+\/[\w.-]+)\/(?:issues|pull)\/(?<number>\d{1,5})\b/gu
 
 /**
- * The comments of one file, through whichever lexer its kind takes.
- *
- * **The choice lives here and not in each caller.** Which lexer a `.toml`
- * takes is exactly the kind of decision two callers make differently, and two
- * callers disagreeing about it is a category silently unread on one side.
+ * The comments of one file, through whichever lexer its kind takes -- decided here
+ * once, so two callers cannot choose differently.
  */
 export function commentsIn(path, source) {
   const hash = path.endsWith('justfile') || path.endsWith('.toml') || path.endsWith('.yml')
@@ -134,17 +71,8 @@ export function commentsIn(path, source) {
 }
 
 /**
- * Every file in {@link SCOPE}, tracked or not yet committed.
- *
- * `--others --exclude-standard` as well as the tracked set: a file added and
- * not yet committed is exactly the file most likely to carry a new reference,
- * and listing only what git already knows about is how the check that reads
- * this first passed on a tree containing its own violations.
- *
- * **The pathspecs come from `SCOPE` rather than beside it.** They were a second
- * copy of the same seven globs, which is the arrangement where one list gains a
- * kind and the other does not -- and the half that drifts is whichever one the
- * next person does not have open.
+ * Every file in {@link SCOPE}, tracked or not yet committed, since a new file is
+ * the one most likely to carry a new reference. The pathspecs come from `SCOPE`.
  */
 export function trackedFiles() {
   return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', ...SCOPE.map(([glob]) => glob)], {
@@ -213,28 +141,10 @@ export function commentsOf(source) {
 }
 
 /**
- * `#` comments, for a file whose whole comment syntax is one character.
- *
- * **The marker and the reference are the same character**, so what is returned
- * is the text *after* the first `#` rather than the line. Otherwise a comment
- * whose words begin with a number matches as a bare reference, and the tool
- * reports a violation in prose that names no issue at all. The cost is stated
- * rather than hidden: a reference cannot be the marker itself, so a line whose
- * entire content is the marker followed immediately by digits is invisible
- * here. Nothing writes one -- a comment
- * with no words is not a comment -- and the alternative is a false positive on
- * every numbered remark in the tree.
- *
- * **Quote-aware, and that is what a trailing comment needs.** A qualified
- * reference in a trailing `#` comment is found and `name = "a#1"` is not, and
- * the difference is whether the `#` is inside a string. The example is
- * described rather than spelled: a followable reference written in prose here
- * is one a consumer of this module will go and query, and a fixture repository
- * answers 404 -- which is the shape of a renamed repository and has to stay
- * loud. TOML, YAML and `just` all agree on that
- * rule and on both quote characters, which is why one function serves the
- * three. A quote opened and never closed on a line ends at the newline, which
- * is what those languages do with an unterminated string anyway.
+ * `#` comments, returning the text after the first `#` so a comment opening with a
+ * number is not a bare reference; a comment that is only `#` and digits is unseen.
+ * Quote-aware, so a `#` inside a string is not a comment. TOML, YAML and `just`
+ * share that rule; an unclosed quote ends at the newline.
  */
 export function hashCommentsOf(source) {
   const found = []

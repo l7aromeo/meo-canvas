@@ -1,20 +1,7 @@
 /**
- * The v1 9.0.1 layout sweep: what this renderer does, measured.
- *
- * v1 shipped thirteen layout fixes on 2026-08-22 and each names a behaviour
- * rather than a defect, so a commit's existence is not evidence that we lack
- * it. Every entry here is a **measurement of ours**, and v1's source is read
- * only where a measurement says the two differ.
- *
- * A verdict of "we match" is kept rather than deleted. It is what stops the
- * same behaviour being re-checked next month, and it is the half of a sweep
- * that usually goes unrecorded.
- *
- * Measured in **rendered pixels** through the real addon. That is the only
- * currency here that is not downstream of this project's own arithmetic — a
- * comparison against the case fixture shares the encoder's assumptions, and a
- * comparison against a scene shares the layout's.
- *
+ * The v9.0.1 layout sweep: v9 shipped thirteen layout fixes, and each entry here
+ * measures what this renderer does for one, in rendered pixels through the addon.
+ * A verdict of "we match" is kept, so the behaviour is not re-checked next month.
  * @packageDocumentation
  */
 
@@ -129,13 +116,8 @@ describe('we match', () => {
   })
 
   it('6f87c5e sizes a bordered box by its box-sizing', async () => {
-    // Content-box: the width is the content's and the border grows the box
-    // around it, so 40 with a 4 border occupies 48. Border-box: the width
-    // includes it, so the same box occupies 40.
-    //
-    // Measured with a corner radius, because a square-cornered border does not
-    // paint correctly at all — see the pinned defect below. The sizing question
-    // and the painting question are separate and only one of them is ours.
+    // Content-box: the width is the content's, so 40 with a 4 border occupies 48;
+    // border-box includes it, so the same box occupies 40.
     const sized = (boxSizing: 'content-box' | 'border-box'): ContainerProps => ({
       width: 80,
       height: 60,
@@ -162,16 +144,10 @@ describe('we match', () => {
   })
 
   it('paints a square-cornered border as a border', async () => {
-    // Not one of the ten. Found by probing `6f87c5e` and fixed in the painter:
-    // `box_path` built a square box with Skia's `add_rect` and a rounded one by
-    // extending a path, while `ring_path`'s inner contour always took the
-    // second. Mixed, the two contours joined into one self-intersecting path
-    // and the even-odd fill left a diagonal wedge across half the box.
-    //
-    // A square box is now a rounded one with every radius at zero, so both
-    // contours are built the same way. All three radii are kept here because
-    // the failure was one branch of a two-branch function: a check on the
-    // square case alone would pass if the rounded branch broke instead.
+    // A square box is built as a rounded one with every radius zero, so its outer
+    // and inner contours match; mixed, they joined into one self-intersecting path
+    // and the even-odd fill cut a wedge. All three radii are kept, since a check on
+    // the square case alone would pass if the rounded branch broke.
     const box = (radius: number): ContainerProps => ({
       width: 60,
       height: 60,
@@ -208,14 +184,9 @@ describe('we match', () => {
   })
 
   it('9e4f173 does not make a grid item a containing block it never asked to be', async () => {
-    // The grid item names no `positionType`, so it is static and is not a
-    // containing block: the absolute grandchild resolves against the relative
-    // outer box at x=0 rather than against the item at x=40.
-    //
-    // One defect with `d6bfe23` rather than two, which is why it is measured
-    // here rather than fixed separately -- both are an absolute node
-    // resolving against its nearest positioned ancestor, and the grid item is
-    // only the parent that happens to be in front of it.
+    // The grid item names no `positionType`, so it is static and not a containing
+    // block: the absolute grandchild resolves against the relative outer box at x=0,
+    // not the item at x=40, by the same rule as the static-middle case below.
     const scene: ContainerProps = {
       width: 100,
       height: 20,
@@ -245,13 +216,10 @@ describe('we match', () => {
   })
 
   it('d6bfe23 resolves an absolute node against its containing block, not its parent', async () => {
-    // The middle box names no `positionType`, so it is static and is not a
-    // containing block: the absolute child's `left: 0` resolves against the
-    // relative grandparent, putting it at x=0.
-    //
-    // The middle is offset by a margin rather than an inset, because a static
-    // box ignores its inset and the two answers would otherwise coincide at
-    // x=0 — a probe that cannot tell them apart.
+    // The middle box is static and not a containing block, so the absolute child's
+    // `left: 0` resolves against the relative grandparent at x=0. The middle is
+    // offset by a margin, since a static box ignores its inset and both answers
+    // would coincide at x=0.
     const scene: ContainerProps = {
       width: 100,
       height: 20,
@@ -279,18 +247,10 @@ describe('we match', () => {
 
 describe('we differ', () => {
   it('923594e composes a transform in the wrong order', async () => {
-    // **PINNED DEFECT.** `translateX(20px) rotate(90deg)` about the top-left
-    // corner. A CSS list applies right to left — rotate first, then translate —
-    // so a box at the origin swings to x=-20..0 and comes back to 0..20. We
-    // translate first and then rotate, which sends it to x=-20..0 and off the
-    // canvas.
-    //
-    // The discriminator is chosen so the two answers are "at the origin" and
-    // "not on the canvas at all", rather than two positions a rounding argument
-    // could separate. Measured alongside it, so the probe is known to be
-    // sound: with only the translate the box is at 20..39, and with only the
-    // rotation it is off-canvas — which also says the origin is honoured,
-    // since a rotation about the default centre would leave it in place.
+    // PINNED DEFECT: `translateX(20px) rotate(90deg)` about the top-left. CSS
+    // applies a list right to left, landing the box at 0..20; this translates then
+    // rotates, sending it off the canvas. Controls: the translate alone lands at
+    // 20..39 and the rotation alone off-canvas, so the origin is honoured.
     const scene: ContainerProps = {
       width: 60,
       height: 60,

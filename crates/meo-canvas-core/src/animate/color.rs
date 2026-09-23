@@ -1,50 +1,22 @@
-//! Colour as an animatable value: `f64` channels, and a mix that may leave
-//! the gamut.
+//! Colour as an animatable value.
 //!
-//! # Why not [`meo_canvas_scene::style::paint::Color`]
-//!
-//! That type is four bytes, which is what a scene carries and what a painter
-//! draws. **An interpolation needs somewhere to be between two of them**, and
-//! an overshooting curve needs somewhere to be outside both. So this is `f64`
-//! per channel and **unclamped** -- the narrowing to bytes happens once, where
-//! the value becomes a scene colour.
-//!
-//! # The units are v1's, deliberately
-//!
-//! `r`, `g` and `b` run 0 to 255 and `a` runs 0 to 1. That is v1's shape and
-//! the TypeScript surface's, and **the same type on two surfaces must carry
-//! the same numbers**: a factor of 255 between them would make every
-//! cross-surface comparison need a conversion neither implementation
-//! performs, and a mistake in that conversion would read as a defect in one
-//! of them.
-//!
-//! It is also the scale the out-of-gamut path is written in. A 0..1 colour
-//! would be inside `0..=255` always, so `in_gamut` would never be false and
-//! **the extended `color(srgb ...)` branch would silently never run** --
-//! every colour coming back as hex, with nothing failing to say so.
-//!
-//! # Why the mix does not clamp its time
-//!
-//! v1's `mixColor` clamps `t` to 0..1, on the reasoning that a track which
-//! overshoots cannot produce an impossible colour. **This diverges from v1
-//! deliberately**: CSS interpolates colour through an overshooting timing
-//! function and clamps at paint, not during interpolation, and v1's own `lerp`
-//! does not clamp for exactly the reason its `mixColor` does -- the two rules
-//! disagree inside one module. The browser is the baseline for behaviour, so
-//! the overshoot survives here and dies at the byte boundary.
-//!
-//! Do not restore the clamp as a bug fix. It would flatten precisely the
-//! overshoot `outBack` and `outElastic` exist to produce.
+//! `f64` channels, unclamped, so an interpolation can sit between two colours
+//! and an overshoot outside both; narrowing to bytes happens once, where the
+//! value becomes a scene colour. `r`, `g` and `b` run 0 to 255 and `a` 0 to 1,
+//! the scale both surfaces use and the one `in_gamut` needs to send an
+//! out-of-range colour to `color(srgb ...)`. [`mix`] does not clamp `t`: CSS
+//! interpolates through an overshooting timing function and clamps at paint,
+//! which `outBack` and `outElastic` rely on.
 
 #![expect(
     clippy::suboptimal_flops,
-    reason = "compared bit-for-bit against v1's own numbers; see \
+    reason = "compared bit-for-bit against v9's own numbers; see \
               `animate::easing` for the rule and where it does not apply."
 )]
 
 use meo_canvas_scene::style::paint::Color;
 
-/// The top of a colour channel, which is v1's scale and the surface's.
+/// The top of a colour channel: 255, the scale both surfaces use.
 pub const CHANNEL_MAX: f64 = 255.0;
 
 /// A colour with room to be between two others, and outside both.
@@ -72,11 +44,8 @@ impl Rgba {
             .all(|channel| (0.0..=CHANNEL_MAX).contains(channel))
     }
 
-    /// The scene colour this becomes when it is drawn.
-    ///
-    /// **This is the clamp**, and it is the only one. A channel outside the
-    /// gamut has nowhere to go in a byte, which is the same place a browser
-    /// resolves it: at paint rather than during interpolation.
+    /// The scene colour this becomes when drawn: the only clamp, since a
+    /// channel outside the gamut has nowhere to go in a byte.
     #[must_use]
     pub fn to_color(self) -> Color {
         let byte =
@@ -85,11 +54,8 @@ impl Rgba {
     }
 }
 
-/// Blends two colours, straight alpha, in sRGB.
-///
-/// **`t` is not clamped**, so an overshooting curve carries the colour past
-/// its endpoint and out of the gamut, where CSS leaves it until paint. See
-/// the module doc for why this differs from v1.
+/// Blends two colours, straight alpha, in sRGB. `t` is not clamped, so an
+/// overshooting curve carries the colour out of the gamut until paint.
 #[must_use]
 pub fn mix(from: Rgba, to: Rgba, t: f64) -> Rgba {
     let between = |a: f64, b: f64| a + (b - a) * t;
@@ -115,9 +81,8 @@ mod tests {
 
     #[test]
     fn a_mix_past_the_end_leaves_the_gamut_rather_than_stopping() {
-        // The whole reason this type is not four bytes. An overshooting curve
-        // hands `t` past 1, and v1 clamps it here -- see the module doc for
-        // why we do not.
+        // The whole reason this type is not four bytes: an overshooting curve
+        // hands `t` past 1, and `mix` carries it out of the gamut.
         let white = Rgba {
             r: 255.0,
             g: 255.0,

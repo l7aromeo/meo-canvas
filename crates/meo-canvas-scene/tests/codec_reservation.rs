@@ -1,15 +1,7 @@
-//! What `decode` reserves for a count it has not read yet.
-//!
-//! **The ratio is the assertion.** A `Vec::with_capacity(count)` in
-//! `Reader::list` turned one megabyte of input into 1.02 GB of reservation --
-//! `Node` is 1048 bytes in memory against 184 on the wire, and the count is
-//! bounded by the bytes remaining rather than by the memory they can justify.
-//! The bound above that line is correct about the count and says so accurately,
-//! which is the worst place for the defect to be: the comment reads as though
-//! the problem is handled.
-//!
-//! A counting allocator measures it rather than arguing about it, so a future
-//! `with_capacity` cannot reintroduce it quietly.
+//! What `decode` reserves for a count it has not read yet, measured with a
+//! counting allocator. A `Node` is 1048 bytes in memory against 184 on the
+//! wire, so a reservation bounded only by the bytes remaining could ask a
+//! thousand times the input.
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     sync::atomic::{AtomicUsize, Ordering},
@@ -22,17 +14,14 @@ static LIVE: AtomicUsize = AtomicUsize::new(0);
 
 struct Counting;
 
-// **`realloc` and `alloc_zeroed` are deliberately left to their defaults**,
-// because those defaults call `self.alloc` and `self.dealloc` -- so a growing
-// `Vec` is counted without either being written here. Forwarding either to
-// `System` directly is faster and stops the counting silently, and
-// `a_declared_count_cannot_reserve_much_more_than_the_input_is_long` cannot
-// catch that: its bound is an upper one, so an allocator that sees less
-// passes it more easily.
-//
-// SAFETY: every method forwards to `System`, which is a correct allocator, and
-// adds only two relaxed atomic counters around it. The pointer handed to
-// `dealloc` is one `System` returned, because `alloc` is the only source.
+// `realloc` and `alloc_zeroed` keep their defaults, which call `self.alloc`
+// and `self.dealloc`, so a growing `Vec` is counted. Forwarding them to
+// `System` stops the counting silently, and the upper bound in
+// `a_declared_count_cannot_reserve_much_more_than_the_input_is_long` passes it.
+
+// SAFETY: every method forwards to `System`, a correct allocator, adding only
+// two relaxed atomic counters. The pointer `dealloc` receives is one `System`
+// returned, because `alloc` is the only source.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let live =
@@ -89,13 +78,10 @@ fn a_declared_count_cannot_reserve_much_more_than_the_input_is_long() {
         outcome.is_err(),
         "a header with no nodes behind it is refused"
     );
-    // **1047 before the reservation was bounded, 17 after**, both measured
-    // here. Six of the seventeen are the reservation itself --
-    // `size_of::<Node>() / Node::MIN_ENCODED`, which cannot be less than one
-    // and should not be much more -- and the rest is the decode running until
-    // it discovers there are no nodes behind the count, which allocates as it
-    // goes and is not the defect. Twenty-four leaves room for `Node` growing a
-    // field without leaving room for the reservation coming back.
+    // Measured: 17 allocations bounded, 1047 unbounded. Six of the 17 are the
+    // reservation, `size_of::<Node>() / Node::MIN_ENCODED`; the rest is the
+    // decode running out of bytes. Twenty-four leaves room for `Node` growing
+    // a field, not for the reservation coming back.
     assert!(
         ratio <= 24,
         "decoding {} bytes reserved {peak} ({ratio}x); the reservation is not \

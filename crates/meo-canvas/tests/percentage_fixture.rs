@@ -1,49 +1,16 @@
-//! Writes `fixtures/percentages/scene.mcs`.
-//!
-//! A golden fixture whose every measurement is a percentage, and the only check
-//! in the project that pins what a percentage **means** rather than what it
-//! encodes to.
-//!
-//! # Why a picture and not a comparison of bytes
-//!
-//! A percentage is stored as a fraction, where `1.0` is 100%. Nothing in the
-//! type says so — `Length::Percent` is an `f32` — so the unit lives in prose,
-//! and a surface that multiplied by a hundred where it should divide would
-//! encode `'50%'` as five thousand per cent.
-//!
-//! **No comparison against the case artefact can catch that.** Every case
-//! probes with a value drawn from one fill, and a probe and the bytes it is
-//! compared against are written from the same number: they agree whether or not
-//! the arithmetic is right. A fixture that shares the units error compares
-//! equal too.
-//!
-//! Rendered pixels are the only currency here that is not downstream of this
-//! project's own arithmetic. A quarter of two hundred is fifty, and Skia is the
-//! one deciding it.
-//!
-//! # Why a quarter
-//!
-//! `0.25` is exact in an `f32`, and it is neither of the two values that hide a
-//! hundredfold error: `1` is `Percent(1.0)` whether or not the division
-//! happens, and `0` is a fixed point of it. Any other fraction would do; a
-//! quarter avoids a rounding argument as well.
-//!
-//! # Why the scene is authored here rather than committed as bytes alone
-//!
-//! A `.mcs` is opaque, and a codec change makes every one of them unreadable
-//! with no source to rebuild from. This is the source; the bytes are output.
-//! Run through `just percentage-fixture`.
+//! Writes `fixtures/percentages/scene.mcs`, a golden whose every measurement is
+//! a percentage: the one check on what a percentage means, since a probe and
+//! its expected bytes come from one number and agree even with a hundredfold
+//! units error. A quarter, exact in an `f32` and neither `1` nor `0`.
 
 use meo_canvas::{
     Box, Root, Styled, hex_rgb, left, px,
     scene::{Length, codec},
 };
 
-/// The three shapes a percentage takes in the property tables.
-///
-/// A size, an offset from an edge, and a point inside a paint. Each is read by
-/// a different pass — layout, layout again, and the painter — so one of the
-/// three being wrong is a different defect from the other two.
+/// The three shapes a percentage takes -- a size, an edge offset, a point
+/// inside a paint -- each read by a different pass, so each is a different
+/// defect.
 const QUARTER: Length = Length::Percent(0.25);
 
 /// Where the fixture lives, relative to this crate.
@@ -69,11 +36,9 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
                 .width(QUARTER)
                 .height(px(40.0))
                 .background_color(hex_rgb(0xff_ff_ff)),
-            // Offset a quarter of the canvas from the left, and only from the
-            // left: a scalar would set all four edges, which moves the box
-            // down as well and makes the horizontal reading harder
-            // to check. The box is forty wide, so the white runs
-            // from fifty to ninety.
+            // Offset a quarter of the canvas from the left only, since a
+            // scalar sets all four edges. The box is forty wide,
+            // so the white runs from fifty to ninety.
             Box::new()
                 .position_type(meo_canvas::PositionType::Relative)
                 .position(left(Some(QUARTER)))

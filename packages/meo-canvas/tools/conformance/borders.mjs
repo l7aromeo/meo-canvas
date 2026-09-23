@@ -1,17 +1,7 @@
-// The rhythm Chrome draws a dashed or a dotted border in.
-//
-// CSS does not specify one — it says a dashed border is dashes and leaves the
-// lengths to the implementation — so this is a **behaviour** measurement
-// rather than a conformance one, and the browser is the baseline for
-// behaviour. Our current rhythm is v1's: `max(2, w * 1.5)` on and `max(1, w)`
-// off for dashed, and a zero-length dash with round caps and a gap of twice
-// the width for dotted. Whether Chrome scales either with the border width is
-// the question, and it is not derivable from anything: it has to be read off a
-// painted edge.
-//
-// Read along the TOP edge, away from both corners, because CSS Backgrounds 3
-// §4.4 divides a corner between its two edges and a run that includes one is
-// measuring the join rather than the rhythm.
+// The rhythm Chrome draws a dashed or a dotted border in, read off a painted
+// edge: CSS leaves dash lengths to the implementation, so this measures behaviour
+// rather than conformance. Runs are read along the top edge, clear of both
+// corners, since CSS Backgrounds 3 §4.4 splits a corner between its two edges.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -27,12 +17,8 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const BOX = { width: 240, height: 48 }
 
 /**
- * The widths to ask about.
- *
- * Two doublings, so a rhythm that scales shows -- plus **3**, because the
- * measured ratios differ between 2 and 4 (`3w` on, `2w` off at and below one;
- * `2w` on, `w` off at and above the other) and the step has to sit somewhere in
- * between. Without this row the step is a guess.
+ * Two doublings, so a rhythm that scales shows, plus 3: the measured ratios
+ * differ between 2 and 4, and without this row the step between them is a guess.
  */
 const WIDTHS = [1, 2, 3, 4, 8]
 
@@ -40,11 +26,8 @@ const WIDTHS = [1, 2, 3, 4, 8]
 const STYLES = ['dashed', 'dotted']
 
 /**
- * How far from each corner the run is read.
- *
- * Forty pixels, which is five times the widest border here: §4.4 gives each
- * corner a wedge of its two edges, and a run that starts inside one measures
- * the join rather than the rhythm.
+ * How far from each corner the run is read: five times the widest border, so no
+ * run starts inside the wedge §4.4 gives a corner.
  */
 const MARGIN = 40
 
@@ -96,13 +79,9 @@ try {
     }
   }
 
-  // A run that INCLUDES a corner, which every row above is deliberately clear
-  // of. CSS Backgrounds 3 §4.4 divides a corner between its two edges along the
-  // diagonal, so for a uniform border the top edge's straight portion begins at
-  // `left + width`. Where the first dash sits relative to that line -- flush,
-  // centred, or mid-gap -- is what a rhythm needs in order to fit a whole
-  // number of periods to the side, and it is exactly what the clearance
-  // removes.
+  // A run that includes a corner. §4.4 starts the straight portion of a uniform
+  // top edge at `left + width`; where the first dash sits against that line --
+  // flush, centred or mid-gap -- decides how a rhythm fits whole periods.
   for (const width of [2, 4]) {
     const geometry = await browser.page.evaluate(
       ({ box, width }) => {
@@ -137,12 +116,9 @@ try {
 
     rows.push(['dashed-corner-left', width, y, `${from}-${to}`, THRESHOLD, `division@${division - from} ${runs.join(' ')}`].join('\t'))
 
-    // The **other** corner of the same edge, read inward from the right. Our
-    // renderer strokes the whole rounded-rect path and clips to each edge's
-    // wedge, so the phase at a later corner is whatever arrived along the
-    // path; Chrome may instead anchor each side. If both ends of one edge
-    // start ink flush at their own corner, the phase is per side and a dash
-    // array alone cannot reproduce it.
+    // The other corner of the same edge, read inward from the right. If both ends
+    // of one edge start ink flush at their own corner, the phase is per side and
+    // a dash array alone cannot reproduce it.
     const rightEdge = Math.round(geometry.left + geometry.width) - 1
     const back = rightEdge - 60
     const backRuns = []
@@ -161,16 +137,10 @@ try {
     rows.push(['dashed-corner-right', width, y, `${back}-${rightEdge}`, THRESHOLD, `division@${width} ${backRuns.join(' ')}`].join('\t'))
   }
 
-  // **The discriminator.** Every reading above is along the TOP edge, and at
-  // its far corner a continuous phase and a per-side fit predict the same
-  // picture whenever the side nearly divides by the period -- which 240 does at
-  // both widths. A VERTICAL edge is the far end of the top edge's whole travel
-  // plus two corner arcs: a fresh `on` at offset 0 means each side restarts at
-  // its own corner, and anything mid-period means the phase carried round.
-  //
-  // The second box is 137 wide, which does not divide evenly by any of these
-  // periods. That removes the coincidence rather than assuming it away, and it
-  // also shows how a lot of slack is spread.
+  // A vertical edge separates a continuous phase from a per-side fit, which the
+  // top edge's far corner cannot when the side nearly divides by the period: a
+  // fresh `on` at offset 0 means each side restarts. The 137-wide box divides by
+  // none of these periods, so the coincidence is removed rather than assumed.
   for (const box of [BOX, { width: 137, height: 48 }]) {
     const width = 4
     const geometry = await browser.page.evaluate(
@@ -226,11 +196,9 @@ try {
   }
   await browser.page.setViewportSize(BOX)
 
-  // A **radiused** box, which is the last unknown in the rhythm: a side of a
-  // rounded box is not a line, and whether the corner arc's length enters the
-  // side's fit or the arc is dashed on its own has never been measured. Read
-  // along the top band from the box's outer left edge, with the offset at
-  // which the STRAIGHT portion begins -- `left + radius` -- named in the row.
+  // A radiused box: whether the arc's length enters the side's fit or the arc is
+  // dashed on its own. Read along the top band from the outer left edge; the
+  // straight portion begins at `left + radius`, named in the row.
   for (const radius of [1, 2, 3, 4, 5, 6, 8, 12, 24]) {
     const width = 4
     const geometry = await browser.page.evaluate(
@@ -274,15 +242,9 @@ try {
       ].join('\t'),
     )
 
-    // **The span, which needs no run arithmetic at all.** Summing runs
-    // accumulates a rounding error at every dash end -- eighteen dashes have
-    // thirty-six of them -- so a sum three pixels short of the straight length
-    // is equally well explained by a different fitted length and by
-    // anti-aliased ends falling under the threshold. The offset of the first
-    // ink pixel and of the last one measure the fitted length directly.
-    //
-    // Reported at two thresholds for the same reason: the strict one was
-    // chosen for square corners, where every dash end is a hard edge.
+    // The span, from the first and last ink pixel: a sum of runs rounds at every
+    // dash end, so a short sum cannot tell a different fitted length from faint
+    // ends. Two thresholds, since the strict one was chosen for square corners.
     for (const level of [THRESHOLD, 200]) {
       const straightFrom = from + radius
       const straightTo = from + BOX.width - 1 - radius
@@ -307,21 +269,10 @@ try {
       )
     }
 
-    // **Along the arc rather than across it, at BOTH corners of this edge.**
-    // A band row crosses the curve obliquely and can only ever show one short
-    // mark; walked along the centreline the runs are arc lengths, and the two
-    // corners can be compared to each other. If a single run were fitted to
-    // the whole side the two ends would be mirror images, and at radius 12
-    // they are not -- 5 to 12 at the left against 217 to 229 at the right.
-    // **Floored at zero, because the centre path has no arc below `w/2`.**
-    // Unfloored this goes negative -- radius 1 at width 4 is `-1` -- and a
-    // quarter walked at a negative radius traces the arc BACKWARDS, so the
-    // samples land on the far side of the corner. The reading is not a small
-    // number, it is a reading of somewhere else. This is the same precondition
-    // as `height - 2 * radius > 0` on the straight, which was written for the
-    // shape and never turned on the arc: **every length the path model
-    // produces must be positive before the walk, not only the ones the shape
-    // suggested.**
+    // Along the arc's centreline, at both corners of the edge: the runs are then
+    // arc lengths, and a single run fitted to the whole side would make the two
+    // ends mirror images. Floored at zero -- below `w/2` the centre path has no
+    // arc, and a negative radius walks it backwards onto the far side.
     const along = Math.max(0, radius - width / 2)
     const quarter = (Math.PI / 2) * along
     const steps = 600
@@ -384,13 +335,9 @@ try {
     )
   }
 
-  // **Where Chrome stops fitting per side and starts running the path.** At
-  // width 4 the change sits in `5 < r <= 6`: the ink spans the straight
-  // portion exactly up to radius 5 and falls short from 6. Two rules pass
-  // through that point and disagree everywhere else -- `r >= w + 2` and
-  // `r >= 1.5w` -- so the sweep runs at three widths rather than one. A
-  // constant taken from a single width would be wrong at every other width,
-  // which is the same failure as branching at zero, one level up.
+  // Where Chrome stops fitting per side and runs the path. At width 4 the change
+  // is in `5 < r <= 6`, which both `r >= w + 2` and `r >= 1.5w` pass through, so
+  // three widths are swept to tell them apart.
   for (const width of [2, 4, 8]) {
     for (const radius of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
       if (radius * 2 > BOX.height - 2 * width) continue
@@ -436,13 +383,9 @@ try {
     }
   }
 
-  // **The whole perimeter, walked as one path.** Everything above reads an edge
-  // or a corner; a closed run can only be checked for a SEAM by going round.
-  // No seam means the loop was fitted as a loop, the slack spread all the way
-  // round, and where the run starts is unobservable rather than unknown. A
-  // seam -- one gap unlike its neighbours, two dashes butting, a short mark --
-  // means the run is fitted from an anchor, and the seam is where the anchor
-  // is.
+  // The whole perimeter as one path, since only a loop can show a seam. No seam:
+  // the loop was fitted as a loop. A seam -- an odd gap, two dashes butting, a
+  // short mark -- marks the anchor the run is fitted from.
   for (const [width, radius] of [
     [4, 0],
     [4, 4],
@@ -462,15 +405,9 @@ try {
     [8, 10],
     [8, 12],
   ]) {
-    // **A taller box than the rest of this file uses.** At radius 24 in a box
-    // 48 tall the corners consume the whole height -- the vertical sides have
-    // no straight portion at all, the arcs meet, and a walk of that shape
-    // measures a path the box does not have. 120 leaves 72 of straight side.
-    // 137 rather than 240, so the perimeter is NOT a whole number of periods:
-    // a square box 240 wide has a perimeter of 576 and a period of 12, which
-    // divides exactly, and a continuous loop would then start every side flush
-    // by arithmetic rather than by policy. 137x120 divides no better than any
-    // other number.
+    // 120 tall, so radius 24 leaves 72 of straight side rather than arcs that meet.
+    // 137 wide, so the perimeter is not a whole number of periods and a continuous
+    // loop cannot start every side flush by arithmetic alone.
     const tall = { width: 137, height: 120 }
     const geometry = await browser.page.evaluate(
       ({ box, width, radius }) => {
@@ -486,17 +423,9 @@ try {
     await browser.page.setViewportSize(tall)
     const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...tall } }))
 
-    // The centreline of the border band: a rounded rect inset by half the
-    // width, so its own radius is `radius - width / 2`.
-    // **Floored at zero, because the centre path has no arc below `w/2`.**
-    // Unfloored this goes negative -- radius 1 at width 4 is `-1` -- and a
-    // quarter walked at a negative radius traces the arc BACKWARDS, so the
-    // samples land on the far side of the corner. The reading is not a small
-    // number, it is a reading of somewhere else. This is the same precondition
-    // as `height - 2 * radius > 0` on the straight, which was written for the
-    // shape and never turned on the arc: **every length the path model
-    // produces must be positive before the walk, not only the ones the shape
-    // suggested.**
+    // The centreline of the border band: a rounded rect inset by half the width,
+    // radius `radius - width / 2`, floored at zero for the same reason as the arc
+    // walk above -- every length the path model produces must be positive.
     const inset = width / 2
     const r = Math.max(0, radius - inset)
     const left = Math.round(geometry.left) + inset
@@ -527,18 +456,13 @@ try {
       straight(left, bottom - r, left, top + r),
       arc(left + r, top + r, Math.PI),
     ]
-    // **`walk-length`, not `perimeter`.** The extents are pixel indices, so
-    // this runs one short per axis and four short round a loop against the
-    // geometric centreline -- 494.0 here where the centreline is 498.0. The
-    // `- 1` is right for sampling pixel centres and wrong as a name: two
-    // readers did arithmetic against this field believing it was the geometry.
+    // `walk-length`, not `perimeter`: the extents are pixel indices, so this runs
+    // one short per axis -- 494.0 here against a 498.0 centreline. Right for
+    // sampling pixel centres, wrong as geometry.
     const perimeter = path.reduce((sum, part) => sum + part.length, 0)
 
-    // Sixteen samples per pixel of path. Four was enough along a straight edge
-    // and not along an arc: the walk rounds each sample to a pixel, and on a
-    // curve several consecutive samples land on the same pixel, which reads as
-    // ink continuing. The corner is exactly where the signal lives here, so
-    // the sampling has to be finer than the feature being distinguished.
+    // Sixteen samples per pixel of path: on an arc several samples round to one
+    // pixel and read as ink continuing, and the corner is where the signal is.
     const total = Math.round(perimeter * 16)
     const runs = []
     let ink = null
@@ -581,19 +505,10 @@ try {
   }
   await browser.page.setViewportSize(BOX)
 
-  // **A corner where the two edges have different widths.** The branch is
-  // `radius > width`, and where the widths differ the corner is degenerate
-  // when the inner radius fails in EITHER direction (`max`) or only when it
-  // fails in both (`min`). Radius 6 with a 4-wide top and an 8-wide left is
-  // above one and below the other, so the two rules disagree there and
-  // nowhere else.
-  //
-  // Read as the longest ink run spanning the corner, one pixel inside the
-  // outer boundary so both widths are covered. Per-side fitting fills the
-  // corner and butts a dash from each edge against it, which is a long run;
-  // a continuous fit puts an ordinary dash there. The two uniform boxes are
-  // the references: at radius 6 a 4-wide border is above its threshold and an
-  // 8-wide one is below it.
+  // A corner whose edges differ in width. The branch is `radius > width`; radius 6
+  // with a 4-wide top and an 8-wide left separates `max` from `min`. Read as the
+  // longest ink run spanning the corner: per-side fitting leaves a long run, a
+  // continuous fit an ordinary dash. The uniform boxes are the references.
   for (const [top, left, radius] of [
     [4, 4, 6],
     [8, 8, 6],
@@ -607,18 +522,10 @@ try {
     // rather than a number, and the first mixed row was only legible because
     // its controls sat beside it.
     [12, 12, 6],
-    // A width-1 row is labelled WEAK in its own output. Its dash is 2, so ink
-    // of 3.0 at a tangent is 1.5x a dash where the classifier wants 1.3x, and
-    // at that width antialiasing moves every quantity: it is a reading at the
-    // edge of what this instrument can resolve. Left in and labelled rather
-    // than dropped -- a weak row labelled weak documents where the instrument
-    // runs out, which is the thing nobody records.
-    //
-    // The extreme of the `min` rule rather than another point along it: a
-    // ratio of twenty, where the thick side's own geometry is nowhere near its
-    // threshold. A rule fitted at ratios of two and three and failing at
-    // twenty is the near-even-240 shape again -- right in the regime measured,
-    // silently wrong outside it.
+    // Width-1 rows are labelled WEAK in their output: antialiasing moves every
+    // quantity at that width, and a labelled row records where the instrument
+    // runs out. Ratio twenty tests the `min` rule far outside the ratios of two
+    // and three it was fitted at.
     [1, 1, 2],
     [20, 20, 2],
     [1, 20, 2],
@@ -638,14 +545,9 @@ try {
     const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...BOX } }))
     const x0 = Math.round(geometry.left)
     const y0 = Math.round(geometry.top)
-    // Half the thinner border rather than a fixed pixel: at width 1 the band
-    // IS the outer pixel, so an inset of one samples past it and finds no ink
-    // at all -- an instrument that cannot see the case it was pointed at.
-    //
-    // And the samples are FLOORED to a pixel rather than rounded, because
-    // `Math.round(0.5)` is 1: with a half-pixel inset a rounded sample lands
-    // one row inside the band and a 1-wide border reads as blank. The first
-    // run of this row reported zero ink for exactly that reason.
+    // Half the thinner border, since at width 1 an inset of one samples past the
+    // band. Floored rather than rounded: `Math.round(0.5)` is 1, which lands a
+    // half-pixel inset one row inside the band and reads a 1-wide border blank.
     const inset = Math.min(1, Math.min(top, left) / 2)
     // Floored for the reason the other two sites are: a negative radius walks
     // the far side of the corner rather than a short arc.

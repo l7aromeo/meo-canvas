@@ -51,7 +51,7 @@ describe('the node shape', () => {
 describe('styles', () => {
   it('are written flat, in the props', () => {
     // The property a caller writes is the property, not a key inside a `style`
-    // object. v1 spells it this way and a ported tree should not have to move.
+    // object.
     expect(Box({ gap: 16 }).style).toEqual({ display: 'flex', gap: 16 })
     expect(Text('x', { fontSize: 24 }).style).toEqual({ fontSize: 24 })
   })
@@ -69,18 +69,10 @@ describe('styles', () => {
     expect(Image(image).style).toBe(image)
     expect(Path(path).style).toBe(path)
 
-    // **`Box` copies now, and the reason the old comment gave for not copying
-    // was never measured.** It said a spread "costs per node on a path that
-    // has to stay cheap" -- while `Row` and `Column` had always spread, on
-    // every call, in every example. Measured: 0.03 to 0.08 microseconds per
-    // container, 3.1 ms across a hundred thousand of them, against a build of
-    // 90 ms and a render of 8 to 22 ms for a tree of six thousand. It is not
-    // visible next to the work it precedes.
-    //
-    // What it buys is that a `Box` is a flex container whatever the scene's
-    // default becomes, which is the defect the default move would otherwise
-    // have introduced: `gap`, `align_items` and `justify_content` silently
-    // stopping.
+    // `Box` names `display: flex`, so it copies the props: 0.03 to 0.08
+    // microseconds per container, invisible next to a build or a render. It keeps a
+    // `Box` a flex container whatever the scene's default, so `gap` and
+    // `justifyContent` never silently stop.
     expect(Box(props).style).not.toBe(props)
     expect(Box(props).style).toEqual({ display: 'flex', gap: 16 })
   })
@@ -147,8 +139,8 @@ describe('containers', () => {
   })
 
   it('drop a conditional that did not render', () => {
-    // `condition && Text('…')` is how a v1 caller writes a conditional, and the
-    // `false` it leaves behind has to disappear rather than become a node.
+    // `condition && Text('…')` leaves a `false` behind, which has to disappear
+    // rather than become a node.
     const shown = Text('a')
     const hidden = false
 
@@ -176,14 +168,9 @@ describe('containers', () => {
 
 describe('text', () => {
   it('takes its content as the first argument, as markup', () => {
-    // A `Text` with no text is not a thing worth being able to write, so the
-    // content is a parameter rather than a key that could be forgotten.
-    //
-    // It lands in `markup` rather than in a segment, and that is the whole
-    // distinction from `RichText`: the renderer parses this string, so
-    // `Text('a <b>b</b>')` is two runs by the time it is drawn. Building a
-    // segment here would make the two indistinguishable on the wire and cost
-    // every caller the rich text v1 gave them.
+    // The content is a parameter, not a key that could be forgotten, and lands in
+    // `markup`, which the renderer parses: that is the distinction from `RichText`,
+    // and building a segment here would lose it on the wire.
     expect(Text('Ukasyah').markup).toBe('Ukasyah')
     expect(Text('Ukasyah').segments).toBeUndefined()
   })
@@ -206,23 +193,13 @@ describe('text', () => {
   })
 
   it('resolves every spelling of `ellipsis` to the marker or to nothing', () => {
-    // v1 types this `boolean | string` (`canvas.type.ts:1543`) and a ported
-    // script writes `true`. Both booleans used to cross TypeScript unchecked
-    // and be refused by the arena at the far end, which is a throw naming a
-    // slot index rather than the property.
-    //
-    // `false` matters as much as `true`: it is v1's own applied default
-    // (`text.canvas.ts:207`), so the caller most likely to have written it is
-    // exactly the caller migrating.
-    //
-    // The node carries the resolved marker, never the boolean -- the scene
-    // holds what will be drawn, and no measurer, line-breaker or painter reads
-    // which spelling asked for it.
+    // `ellipsis` takes `true` and `false` as well as a string, and the node carries
+    // the resolved marker, never the boolean: the scene holds what will be drawn,
+    // and no measurer, line-breaker or painter reads which spelling asked for it.
     expect(Text('x', { maxLines: 1, ellipsis: true }).paragraph).toEqual({ maxLines: 1, ellipsis: DEFAULT_ELLIPSIS })
     expect(Text('x', { maxLines: 1, ellipsis: false }).paragraph).toEqual({ maxLines: 1 })
     expect(Text('x', { maxLines: 1, ellipsis: '—' }).paragraph).toEqual({ maxLines: 1, ellipsis: '—' })
-    // An empty marker and no marker draw the same picture, which is where v1's
-    // truthiness guard landed and where a caller who wrote `''` still lands.
+    // An empty marker and no marker draw the same picture, so `''` is no marker.
     expect(Text('x', { maxLines: 1, ellipsis: '' }).paragraph).toEqual({ maxLines: 1 })
   })
 
@@ -238,8 +215,7 @@ describe('text', () => {
   it('spells the default marker as the character CSS uses', () => {
     // Measured in Chrome rather than picked: `text-overflow: ellipsis` in
     // Helvetica at 40px draws three dots 10px apart across 31px, which is a
-    // literal U+2026; three full stops sit 7px apart across 26px. v1 draws the
-    // same character for `ellipsis: true` (`text.canvas.ts:1244`).
+    // literal U+2026; three full stops sit 7px apart across 26px.
     expect(DEFAULT_ELLIPSIS).toBe('\u2026')
     expect(DEFAULT_ELLIPSIS).not.toBe('...')
   })
@@ -280,13 +256,9 @@ describe('paths', () => {
 })
 
 describe('the values a list ignores', () => {
-  // **The assertion is that the two lists agree, not that either skips four
-  // values.** A fix to segments alone satisfies "segments skip four" and lets
-  // children drift again later; only comparing the two columns catches that.
-  //
-  // Measured against React 19.2.8 before the repair: `null` and `''` render
-  // nothing there, `false` and `undefined` already did here, and `0` renders
-  // as the text `0` — which is why `0` is an error rather than a skip.
+  // The assertion is that the two lists agree, not that either skips four values:
+  // a fix to one alone would pass and let the other drift. React 19.2.8 renders
+  // nothing for `null` and `''`, and renders `0` as the text `0`, so `0` is kept.
   const ignorable = [false, true, undefined, null] as const
 
   it.each(ignorable)('a container drops %p from its children', value => {
@@ -308,14 +280,9 @@ describe('the values a list ignores', () => {
     expect(children).toHaveLength(ignorable.length)
   })
 
-  // **`0` is the row that keeps this honest.** React renders it as text, so
-  // skipping it would be a different decision from the one
-  // `l7aromeo/meo-canvas#44` measured, and a
-  // caller writing `items.length && …` would silently lose a visible zero.
-  // **The rows that keep the set honest.** React renders these as text, so
-  // skipping them would be a different decision from the one measured — and a
-  // caller writing `items.length && …` meaning "when there are items" would
-  // lose a visible zero rather than seeing nothing.
+  // The rows that keep the set honest: React renders these as text, so skipping
+  // them would differ from what `l7aromeo/meo-canvas#44` measured, and a caller
+  // writing `items.length && …` would lose a visible zero.
   it.each([0, NaN, 42, -1, 3.5, Infinity, 'hi', ' ', ''])('neither list drops %p', value => {
     // No cast: these are legal children now, which is the change.
     expect(Box({ children: [Box(), value] }).children).toHaveLength(2)
@@ -333,11 +300,8 @@ describe('the values a list ignores', () => {
   })
 
   it('a text child is literal, not markup', () => {
-    // **`Text`'s content is parsed as markup; a text child is not.** Measured:
-    // `Text('<b>bold</b> rest')` draws bolded text at ink 565 where the literal
-    // path draws the tags at 820. Building this on `Text` would silently
-    // reinterpret a caller's angle brackets, and nothing would fail until
-    // somebody's data contained one.
+    // `Text`'s content is parsed as markup and a text child's is not: built on
+    // `Text`, a caller's `<b>` would draw bold (ink 565) rather than as tags (820).
     const child = Box({ children: '<b>x</b>' }).children?.[0]
     expect(child?.markup).toBeUndefined()
     expect(child?.segments?.[0]?.text).toBe('<b>x</b>')
@@ -373,12 +337,9 @@ describe('the values a list ignores', () => {
 })
 
 describe('a segment carrying a key it has no room for', () => {
-  // **Refused at the writer because the type system refuses it almost
-  // nowhere.** Excess property checking fires on a fresh object literal and on
-  // nothing else. Measured across nine spellings, two were caught at compile
-  // time and seven were not — including `rows.map(r => ({ text, fontSize }))`,
-  // which is the case `RichText` exists for. All nine discarded the styling
-  // silently at runtime.
+  // Refused at the writer because excess-property checking fires only on a fresh
+  // literal: of nine spellings two were caught at compile time, and `rows.map(r =>
+  // ({ text, fontSize }))`, the case `RichText` exists for, was not.
   it('refuses a flat style key and names the segment', () => {
     expect(() => RichText([{ text: 'hi', fontSize: 30 } as never])).toThrow('segments[0] has no property "fontSize"')
   })
@@ -421,15 +382,9 @@ describe('a segment carrying a key it has no room for', () => {
 })
 
 describe('a first argument that is not a props object', () => {
-  // **The same defect as an unknown key, one level out, in the file its repair
-  // was written in.** `checkProps` reads `Object.keys(props)`, and what that
-  // returns for a value which is not a props object decided the outcome
-  // entirely: `'hello'` has `"0"` through `"4"`, so the loop reported index zero
-  // as an unknown property and named the factory in a sentence that meant
-  // nothing; `42`, `true`, `[]`, `''` and a function have no own keys at all, so
-  // nothing objected and the node was built with default props and rendered.
-  // Measured at `851eb11`: `Box('')`, `Box(42)` and `Box({})` were
-  // indistinguishable in the output.
+  // `checkProps` checks the value before its keys: `Object.keys('hello')` is `"0"`
+  // to `"4"`, and `42`, `true`, `[]`, `''` and a function have none, so without it
+  // `Box(42)` would build a default box.
 
   const notProps = {
     'an empty string': '',
@@ -501,27 +456,18 @@ describe('a first argument that is not a props object', () => {
 })
 
 describe('a container props key it does not have', () => {
-  // **The same defect as a segment key, at a second of five sites.** An unknown
-  // key was silently ignored on `Box`, `Text`, `Path` and the paragraph options
-  // as well as on a `TextSegment` — one defect filed twice from two lanes,
-  // because each of us met the instance in our own area.
-  //
-  // The allowlist is `STYLE_KEYS` plus this factory's two structural keys, and
-  // both halves carry an exhaustiveness proof: `STYLE_KEYS` against
-  // `keyof Style` in `style.ts`, and the whole list against
-  // `keyof ContainerProps` here. A key added to either and not listed is a
-  // compile error naming the key.
+  // An unknown key is refused on every factory. The allowlist is `STYLE_KEYS` plus
+  // the factory's two structural keys, each with an exhaustiveness proof, so a key
+  // added to `Style` or `ContainerProps` and not listed is a compile error.
 
   it.each(['Box', 'Row', 'Column', 'Grid'] as const)('%s refuses a key it has no room for', name => {
     const factory = { Box, Row, Column, Grid }[name]
     expect(() => factory({ nonsenseKey: 1 } as never)).toThrow(`${name} has no property "nonsenseKey"`)
   })
 
-  it('refuses the v1 spelling that was silently ignored', () => {
-    // The case A filed: `templateColumns` is v1's name and the current one is
-    // `gridTemplateColumns`. It was dropped without a word and the grid fell
-    // back to auto-placement, so a caller got a laid-out tree that was quietly
-    // not the one they described.
+  it('refuses the v9 spelling that was silently ignored', () => {
+    // `templateColumns` is v9's name for `gridTemplateColumns`; ignored, the grid
+    // would fall back to auto-placement and lay out a tree the caller did not describe.
     expect(() => Grid({ display: 'grid', templateColumns: [40, 60] } as never)).toThrow('Grid has no property "templateColumns"')
   })
 
@@ -553,11 +499,8 @@ describe('a container props key it does not have', () => {
 })
 
 describe('a wider props object narrowed to a container', () => {
-  // **The first caller this check caught was us.** `Root` holds the surface
-  // options — `fonts`, `gpu`, `pages`, `scale` and the rest — beside the page's
-  // own style, and it built each page by handing that whole object to `Box`.
-  // Ten keys went into a node's style and the writer ignored them, which is
-  // precisely the defect the container check refuses from a caller.
+  // `Root` holds surface options (`fonts`, `gpu`, `pages`, `scale`) beside the
+  // page's own style, and builds each page from the container half of that object.
 
   it('keeps the container keys and drops the rest', () => {
     const wide = {
@@ -589,11 +532,8 @@ describe('a wider props object narrowed to a container', () => {
 })
 
 describe('a text props key it does not have', () => {
-  // `TextProps` is `Style & ParagraphProps & { name }` — **three sources**, and
-  // the paragraph options are listed separately with a proof of their own. A
-  // list built from one spread of everything cannot say which source a missing
-  // key came from; with the split, dropping `ellipsis` fails twice, once at
-  // `PARAGRAPH_KEYS` and once at `TEXT_KEYS`.
+  // `TextProps` is three sources and the paragraph options have a proof of their
+  // own, so dropping `ellipsis` fails twice: at `PARAGRAPH_KEYS` and at `TEXT_KEYS`.
   it.each([
     ['Text', () => Text('hi', { nonsense: 1 } as never)],
     ['RichText', () => RichText([{ text: 'a' }], { nonsense: 1 } as never)],

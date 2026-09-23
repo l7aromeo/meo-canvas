@@ -120,45 +120,23 @@
 //! [`ImageSource::Url`](scene::ImageSource) is [`Error::UnresolvedSource`] by
 //! default, and the `net` feature makes it a request instead -- the client
 //! beneath is blocking by construction, so enabling it puts no runtime in any
-//! consumer.
+//! consumer. [`HttpOptions`](scene::HttpOptions) sets headers per source, so a
+//! page pulling from two origins sends each one only what belongs to it.
 //!
-//! **Off by default is not a smaller surface than the JavaScript one has.**
-//! `RootProps.httpOptions` fetches there, and this fetches here; the difference
-//! is who pays and when. On npm the addon is a prebuilt binary with the client
-//! already inside it, so having the capability costs its caller nothing. Here
-//! the consumer compiles it, so the same capability costs dependencies, build
-//! time and audit surface -- **the same reach, a different price**, and the
-//! flag is what lets the one who pays decide. Most callers never do: a scene
-//! built from bytes or paths names no URL.
-//!
-//! **"Identical capability" is what this used to say, and it was not true.**
-//! `RootProps.httpOptions` could send an `Authorization` header; nothing here
-//! could send a header at all, so an asset behind any authentication was
-//! reachable from one surface and not from the other while the paragraph
-//! claiming parity sat above the gap.
-//! [`HttpOptions`](scene::HttpOptions) closes it, and closes it per source
-//! rather than per scene: a page pulling from two origins sends each one only
-//! what belongs to it.
-//!
-//! It is the shape `metal` and `vulkan` already have, for the same reason.
-//! Neither surface ships a capability the other lacks; a capability behind a
-//! flag is one the consumer can have.
+//! **Off by default is the same reach at a different price.** The JavaScript
+//! surface fetches without a flag because its addon ships the client prebuilt;
+//! here the consumer compiles it, and the flag lets whoever pays for the
+//! dependency decide. Most never do: a scene built from bytes or paths names no
+//! URL.
 //!
 //! No mutable drawing context. There is no `move_to`/`line_to` state machine
 //! here -- that API already exists, in `meo-skia-canvas`, and reproducing it
 //! would give the workspace two answers to the same question.
 
-// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
-// way.** Measured before it was declared: zero occurrences of the token across
-// every `crates/*/src`. A renderer reaching a C++ library through two binding
-// layers is exactly the crate where an `unsafe` would look reasonable and go
-// unquestioned, and the declaration turns adding one into a decision someone
-// has to make deliberately rather than a line that passes review.
-//
-// The integration tests are separate crates and are not covered: the
-// allocator that measures `codec::decode`'s reservation has to be an
-// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
-// it exists to measure a defect.
+// No source in this workspace writes `unsafe`, and this makes adding one a
+// deliberate decision rather than a line that passes review. Integration tests
+// are separate crates and not covered; their one `unsafe` is the
+// `GlobalAlloc` that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 pub mod chart;
 pub mod element;
@@ -172,26 +150,11 @@ pub use element::{
 };
 /// The animation helpers, as a module rather than a curated list.
 ///
-/// **A list would be a second surface that can drift from the first.**
-/// Naming the items here means a caller's reach is whatever someone
-/// remembered to add, and **the failure mode of that is silence**: a
-/// helper exists in the core, is absent from the facade, and nothing says
-/// so. Re-exporting the module cannot omit.
-///
-/// This paragraph used to carry an illustrative list -- "five submodules"
-/// and a dozen named items -- and **that list drifted, which is the
-/// argument above happening to the paragraph that makes it.** There are
-/// eight submodules, and `Sampled`, `Parallel`, `Member` and `Plan` had
-/// all arrived without it noticing. It is removed rather than corrected: a
-/// completed list is the same claim with a later date on it, and this one
-/// had already shown what that is worth.
-///
-/// The cost is the other direction: **the module publishes whatever it
-/// later grows.** That is acceptable here because `animate` is already a
-/// curated module rather than a dumping ground -- anything added to it is
-/// added for callers, since nothing inside the renderer uses it. If that
-/// stops being true, this should become a list and the reason will have
-/// changed.
+/// **A list would be a second surface free to drift from the first**: a
+/// helper in the core and absent here, with nothing to say so.
+/// Re-exporting the module cannot omit one. The cost is that it publishes
+/// whatever the module grows, which holds because nothing inside the
+/// renderer uses `animate` -- anything added to it is added for callers.
 ///
 /// # Examples
 ///
@@ -201,10 +164,6 @@ pub use element::{
 /// assert!((Easing::OutCubic.at(0.5) - 0.875).abs() < f64::EPSILON);
 /// assert!(Spring::default().at(0.2).unwrap_or(0.0) > 0.0);
 /// ```
-///
-/// That example is the point rather than decoration: **it compiles from
-/// outside this crate**, which is the thing a `pub use` either achieves or
-/// does not, and which building this crate cannot tell you.
 pub use meo_canvas_core::animate;
 pub use meo_canvas_core::{
     EncodeOptions, Error, FetchFailure, ImageFormat as Format, ImageWarning,
@@ -246,14 +205,10 @@ pub use unit::{
 /// The scene vocabulary, re-exported so callers need one dependency rather than
 /// two.
 pub mod scene {
-    /// Reading and writing a scene as bytes.
-    ///
-    /// [`Root::into_scene`](crate::Root::into_scene) is documented as
-    /// being for a caller who wants the scene itself — to write to
-    /// disk, to send over the wire, or to render more than once — and
-    /// this is what turns one into bytes and back. Without it that
-    /// sentence names something a caller cannot do without a second
-    /// dependency.
+    /// Reading and writing a scene as bytes: what turns the scene
+    /// [`Root::into_scene`](crate::Root::into_scene) returns into
+    /// something to write to disk, send over the wire or render more
+    /// than once.
     pub use meo_canvas_scene::codec;
     pub use meo_canvas_scene::{
         Corners, Dimension, Length, Node, NodeId, NodeKind, Point, Rect, Scene,
@@ -284,17 +239,10 @@ pub mod scene {
     };
 }
 
-/// The repository README's Rust examples, compiled and run as doctests.
-///
-/// **A README fence is checked by nothing otherwise**, and the repository page
-/// is where a reader meets this crate before they have added it to anything.
-/// `#[cfg(doctest)]` keeps it out of the rendered documentation: it exists to
-/// make `cargo test --doc` read the file, and nothing else.
-///
-/// The TypeScript surface has the mirror of this -- `generate-doc-examples.mjs`
-/// lifts the same file's ```ts fences into a typechecked module. Neither
-/// mechanism trips on the other's blocks: rustdoc runs only unlabelled and
-/// `rust` fences, and the lifter keys on ```ts.
+/// The repository README's Rust examples, run as doctests since nothing else
+/// checks them; `#[cfg(doctest)]` keeps this out of the rendered docs.
+/// rustdoc runs only unlabelled and `rust` fences, so the `ts` fences that
+/// `generate-doc-examples.mjs` typechecks are left alone.
 #[cfg(doctest)]
 #[doc = include_str!("../../../README.md")]
 pub struct RepositoryReadme;

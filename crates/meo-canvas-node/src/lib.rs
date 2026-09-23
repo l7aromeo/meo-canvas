@@ -1,65 +1,12 @@
-//! The Node.js addon: one `.node` binary, one module entry point.
-//!
-//! JavaScript builds a scene into an `f64` arena and passes it across with a
-//! side array holding the strings and buffers a `Float64Array` cannot carry.
-//! This crate decodes that arena, runs [`meo_canvas_core`], and hands back the
-//! encoded image. One typed array per render rather than a property read per
-//! field: walking a `JsObject` tree costs a V8 lookup for every field of every
-//! node, and a scene has thousands.
-//!
-//! **The arena is not the byte format.** [`meo_canvas_scene::codec`] is the
-//! persistence format -- self-contained, with its strings inside it, which is
-//! what a file on disk needs. The arena is the boundary format, shaped for a
-//! side that stores into a `Float64Array` in one operation and would write
-//! varint bytes in several. Both decode to the same `Scene`, so a scene
-//! captured here and written to disk round-trips without loss, and neither is
-//! a version of the other. [`arena`] carries the specification.
-//!
-//! # Why this crate holds the entry point
-//!
-//! A `.node` addon exposes exactly one module-init symbol. `meo-skia-canvas`
-//! defines its own behind its `node-addon` feature, so the workspace pins that
-//! feature off (`default-features = false`, stated in the root manifest) and
-//! declares the only [`neon::main`] here. Two crates in one binary both
-//! registering a module is a link error at best and the wrong module at worst.
-//!
-//! # Renders do not run on the event loop
-//!
-//! The `render` export returns a Promise and the work runs on Node's worker
-//! pool. A
-//! scene is CPU-bound from resolve through encode, so running it inline
-//! would stall every other request in the process for the whole render.
-//!
-//! Every V8 read happens once, up front, before the task starts: the arena is
-//! copied out of its typed array and the side array is walked before the
-//! task is spawned. Nothing touches V8 on the worker, which is what makes the
-//! pool safe to use at all.
-//!
-//! # What this crate deliberately excludes
-//!
-//! No rendering logic. Every function here converts, calls into
-//! `meo-canvas-core`, and converts back. Logic that lived here would be logic
-//! the CLI and the Rust surface could not reach and the test suite could not
-//! run without building a `.node` file.
-//!
-//! No panics across the boundary. A panic unwinding into Node takes the
-//! process down. A failure before the task starts -- an argument of the wrong
-//! type -- throws synchronously; a failure inside the render **rejects the
-//! Promise** instead, because by then there is no call left to throw from.
-//! Those are different things to a JavaScript caller, and only a test in that
-//! language can tell them apart.
+//! The Node.js addon: the one `.node` binary and its only [`neon::main`],
+//! which is why `meo-skia-canvas` is built with its own entry point off. It
+//! decodes the `f64` arena ([`arena`] carries the specification), calls
+//! `meo-canvas-core` and converts back; no rendering logic lives here.
 
-// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
-// way.** Measured before it was declared: zero occurrences of the token across
-// every `crates/*/src`. A renderer reaching a C++ library through two binding
-// layers is exactly the crate where an `unsafe` would look reasonable and go
-// unquestioned, and the declaration turns adding one into a decision someone
-// has to make deliberately rather than a line that passes review.
-//
-// The integration tests are separate crates and are not covered: the
-// allocator that measures `codec::decode`'s reservation has to be an
-// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
-// it exists to measure a defect.
+// No source in this workspace writes `unsafe`, and this makes adding one a
+// deliberate decision rather than a line that passes review. Integration tests
+// are separate crates and not covered; their one `unsafe` is the
+// `GlobalAlloc` that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is
 // its opposite: one asks for `pub(crate)` on an item a private module exports,
@@ -81,11 +28,8 @@ use meo_canvas_core::{
 };
 use neon::{prelude::*, types::buffer::TypedArray};
 
-/// Reads the arena and its side array out of the call's arguments.
-///
-/// Every V8 read happens here, once, before the render starts: the point of
-/// the arena is that the scene crosses as one typed array rather than as a
-/// property lookup per field.
+/// Reads the arena and its side array out of the call's arguments: every V8
+/// read happens here, once, before the render starts.
 fn arguments(cx: &mut FunctionContext<'_>) -> NeonResult<(Vec<f64>, Values)> {
     let arena = cx.argument::<JsFloat64Array>(0)?;
     let slots = arena.as_slice(cx).to_vec();
@@ -108,16 +52,10 @@ fn arguments(cx: &mut FunctionContext<'_>) -> NeonResult<(Vec<f64>, Values)> {
     Ok((slots, Values::new(side)))
 }
 
-/// Renders a scene given as an `f64` arena and returns the image bytes.
-///
-/// Takes the arena, the side values array, the format name and an options
-/// object, and resolves to a Buffer.
-///
-/// Returns a Promise, and the render runs on Node's worker pool rather than on
-/// the event loop. A scene of any size is CPU-bound from resolve through
-/// encode, so running it inline would stall every other request in the process
-/// for the whole render. `cx.task(..).promise(..)` is neon's own mechanism for
-/// that; a `Channel` would also work but would leave us owning the thread.
+/// Renders a scene given as an `f64` arena, side values, a format name and an
+/// options object, resolving to a Buffer. The work runs on Node's worker pool
+/// through `cx.task`, since a render is CPU-bound from resolve through encode
+/// and would stall the event loop.
 fn render(mut cx: FunctionContext<'_>) -> JsResult<'_, JsPromise> {
     let (slots, values) = arguments(&mut cx)?;
     let format = cx.argument::<JsString>(2)?.value(&mut cx);
@@ -131,11 +69,8 @@ fn render(mut cx: FunctionContext<'_>) -> JsResult<'_, JsPromise> {
     Ok(promise)
 }
 
-/// The render itself, with no V8 in reach.
-///
-/// Separated so the whole pipeline is callable from a test without a Node
-/// process, which is the only way the decoder's behaviour is covered by
-/// anything other than the JavaScript suite.
+/// The render itself, with no V8 in reach, so the whole pipeline is callable
+/// from a test without a Node process.
 fn render_off_thread(
     slots: &[f64],
     values: &Values,
@@ -153,28 +88,10 @@ fn render_off_thread(
         .map_err(|error| chained(&error))
 }
 
-/// The encode itself, on a rayon worker, with no V8 and no canvas in reach.
-///
-/// # Why a panic is caught here
-///
-/// **rayon aborts the process when a panic escapes a `spawn`**, printing
-/// "Rayon: detected unexpected panic; aborting" -- a `SIGABRT` that no
-/// JavaScript `catch` can reach. That is a different outcome from the same
-/// panic on the event loop, where Neon turns it into a catchable error. Without
-/// this, one defect would be a rejected promise through `encode` and a dead
-/// process through `encodeAsync`, and the asynchronous one is the form a server
-/// calls.
-///
-/// This does not make panicking acceptable. Every panic reachable from an
-/// export is still a defect and the message a caller gets is still opaque. What
-/// it buys is that a process serving requests survives one, and that the two
-/// entry points agree about what a failure is -- which is the module's standing
-/// promise that no panic crosses the boundary, kept on a thread Neon does not
-/// own.
-///
-/// `AssertUnwindSafe` is the honest annotation rather than a way past the
-/// checker: the handle is moved in and dropped here, so nothing observes it
-/// after an unwind.
+/// The encode itself, on a rayon worker. A panic is caught because rayon aborts
+/// the process when one escapes a `spawn` -- a `SIGABRT` no `catch` reaches --
+/// where the same panic on the event loop is a catchable error.
+/// `AssertUnwindSafe` holds: the handle is moved in and dropped here.
 fn encode_off_thread(prepared: PreparedEncode) -> Result<Vec<u8>, String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         prepared
@@ -195,16 +112,10 @@ fn encode_off_thread(prepared: PreparedEncode) -> Result<Vec<u8>, String> {
     })
 }
 
-/// The write itself, on a rayon worker, with no V8 and no canvas in reach.
-///
-/// The counterpart to [`encode_off_thread`], and it catches a panic for the
-/// same reason: rayon aborts the process when one escapes a `spawn`.
-///
-/// **Why this is not `encode_off_thread` followed by a write.** A format that
-/// gathers every page streams into the file here, where encoding first has to
-/// hold the whole document in memory to hand it back. That is the difference
-/// between a hundred-frame animation bounded by disk and one bounded by RAM,
-/// and it is the only reason this path exists.
+/// The write itself, on a rayon worker, catching a panic as
+/// [`encode_off_thread`] does. Not an encode followed by a write: a format that
+/// gathers every page streams into the file here, so a long animation is
+/// bounded by disk rather than by RAM.
 fn write_off_thread(
     prepared: PreparedEncode,
     path: std::path::PathBuf,
@@ -222,22 +133,10 @@ fn write_off_thread(
     })
 }
 
-/// Reports which rasteriser a render would use, and which one it asks for.
-///
-/// Two questions, not one, and they can disagree: `requested` is what the
-/// renderer asks for and `active` is what asking got. A build with no GPU
-/// backend compiled rasterises on the CPU whatever is requested, which is the
-/// distinction `Canvas::gpu`'s own documentation draws — "the request, not the
-/// outcome".
-///
-/// Answered by making a one-pixel canvas and asking it, rather than by
-/// reasoning about which features were compiled: the compiled feature set is
-/// what a caller would have to reason from, and this reports what actually
-/// happens instead.
-///
-/// Returns an object rather than a JSON string. A string would make every
-/// caller parse what this already knows, and a field added later reaches a
-/// JavaScript caller as a property rather than as a schema change.
+/// Reports which rasteriser a render asks for (`requested`) and which one
+/// asking got (`active`), by making a one-pixel canvas rather than reasoning
+/// from compiled features. An object rather than a JSON string, so a field
+/// added later reaches JavaScript as a property.
 fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     let requested = Renderer::new().gpu();
     let probe = Surface::new(
@@ -258,26 +157,10 @@ fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     Ok(object)
 }
 
-/// A CSS colour string as four channels, or `null`.
-///
-/// # Why the addon and not the surface
-///
-/// **The renderer already parses colour, and a second implementation would
-/// drift from it.** The first thing it would disagree about is
-/// `color(srgb ...)`, which `csscolorparser` does not implement at all and
-/// which this crate handles in a pre-pass -- so a JavaScript parser written to
-/// the same specification would refuse a string the renderer accepts, and the
-/// disagreement would surface as a colour that draws but cannot be animated.
-///
-/// So the string boundary is here: one parser, both surfaces.
-///
-/// # The shape
-///
-/// `{ r, g, b, a }` with `r`, `g` and `b` in 0 to 255 and `a` in 0 to 1, which
-/// is v1's convention and what `animate.ts` carries. **Unclamped**: a
-/// `color(srgb 1.25 ...)` comes back above 255 rather than flattened, because
-/// an animation needs somewhere to be outside the gamut and the clamp belongs
-/// where a colour becomes paint.
+/// A CSS colour string as `{ r, g, b, a }` -- channels 0 to 255 and alpha 0 to
+/// 1, unclamped so an animation can pass outside the gamut -- or `null`. Parsed
+/// here so both surfaces share the renderer's parser, including the
+/// `color(srgb ...)` pre-pass `csscolorparser` lacks.
 fn parse_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
     let css = cx.argument::<JsString>(0)?.value(&mut cx);
     let Some([red, green, blue, alpha]) =
@@ -294,12 +177,8 @@ fn parse_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
     Ok(object.upcast())
 }
 
-/// Whether a string is a colour this renderer understands.
-///
-/// **Defined as [`parse_color`] returning something**, rather than as its own
-/// check: two functions that can disagree about one string are a defect
-/// waiting for the first caller who uses both, and a caller who asks this
-/// before parsing is entitled to the same answer.
+/// Whether a string is a colour this renderer understands, defined as
+/// [`parse_color`] returning something so the two cannot disagree.
 fn is_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBoolean> {
     let css = cx.argument::<JsString>(0)?.value(&mut cx);
     Ok(cx.boolean(meo_canvas_core::color::parse_channels(&css).is_some()))
@@ -314,24 +193,10 @@ const PROBE_SIZE: meo_canvas_scene::Size = meo_canvas_scene::Size {
 /// The scale [`backend`]'s probe surface uses. One, so its pixel is its pixel.
 const PROBE_SCALE: f32 = 1.0;
 
-/// Re-encodes an arena through the byte format.
-///
-/// Takes the arena and its side values, decodes the scene, and returns what
-/// [`meo_canvas_scene::codec`] writes for it. The two representations
-/// producing one `Scene` is the property the TypeScript round trip asserts,
-/// and this is what makes the assertion literally that claim: comparing
-/// rendered images instead would let two different scenes pass as one, and a
-/// property the encoder forgot that happens to change nothing visible would go
-/// unnoticed.
-///
-/// **Throws on a malformed arena rather than returning short bytes.** A
-/// half-written encoder should fail at the boundary naming the slot, not
-/// produce a buffer that compares unequal for a reason the test cannot
-/// attribute.
-///
-/// Synchronous, unlike [`render`]: decoding an arena and writing bytes is
-/// microseconds of work with no rasteriser in it, so a Promise would cost a
-/// tick to save nothing.
+/// Re-encodes an arena through the byte format, so the TypeScript round trip
+/// compares scenes rather than pictures. Throws on a malformed arena, naming
+/// the slot. Synchronous, unlike [`render`]: microseconds of work with no
+/// rasteriser in it.
 fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
     let (slots, values) = arguments(&mut cx)?;
     // Dropped: this returns the encoded scene, not a canvas, so there is
@@ -344,31 +209,15 @@ fn scene_bytes(mut cx: FunctionContext<'_>) -> JsResult<'_, JsBuffer> {
     JsBuffer::from_slice(&mut cx, &bytes)
 }
 
-/// The painted surface, shared by the two methods that reach it.
-///
-/// `Rc` rather than `JsBox`: [`RenderedCanvas`] is `!Send` -- Skia's
-/// `SkPictureRecorder` is, and a `CanvasGradient` holds an `Rc<RefCell<_>>` --
-/// and a `JsBox` would need `this` to be bound at every call site, which a
-/// destructured `const { encode } = canvas` would silently break. Two closures
-/// each holding a clone give the JavaScript side the plain object its
-/// `NativeCanvas` interface declares, and napi frees the captured data when
-/// both are collected.
-///
-/// `RefCell` because [`RenderedCanvas::to_buffer`] takes `&mut self`, and
-/// `Option` so [`paint`]'s `release` can drop the surface early and leave a
-/// later `encode` something to refuse rather than a surface that is gone.
+/// The painted surface, shared by the methods that reach it. `Rc` rather than
+/// `JsBox`, which needs `this` bound at every call and breaks a destructured
+/// `const { encode } = canvas`; `RefCell` for `to_buffer`'s `&mut self`, and
+/// `Option` so `release` can drop the surface early.
 type Painted = Rc<RefCell<Option<RenderedCanvas>>>;
 
-/// Reads the `{ fonts }` object `paint` is given.
-///
-/// Every V8 read happens here, before anything is drawn, for the reason
-/// [`arguments`] gives.
-///
-/// **`gpu` is not read here, and that is the change rather than an omission.**
-/// It rides in the arena's header beside `scale`, because a caller writes it on
-/// `Root` next to the size and the scale and there is no reason two of the four
-/// should reach the renderer by a different road. A `gpu` on this object would
-/// be a second place to say it, and the two could disagree.
+/// Reads the `{ fonts }` object `paint` is given, before anything is drawn.
+/// `gpu` is not read here: it rides in the arena header beside `scale`, and a
+/// second place to say it could disagree with the first.
 fn paint_options(
     cx: &mut FunctionContext<'_>,
     index: usize,
@@ -401,23 +250,16 @@ fn paint_options(
     Ok(renderer)
 }
 
-/// The [`ImageFormat`] a JavaScript format tag names.
-///
-/// A tag is a name the caller wrote, not a filename to infer from, which is
-/// [`ImageFormat::from_named`]'s question rather than `from_extension`'s. This
-/// held its own copy of that distinction until the Rust surface's `to_file`
-/// turned out to need the same one and answer differently.
+/// The [`ImageFormat`] a JavaScript format tag names: a name the caller wrote,
+/// which is [`ImageFormat::from_named`]'s question rather than
+/// `from_extension`'s.
 fn format_from_tag(tag: &str) -> Option<ImageFormat> {
     ImageFormat::from_named(tag)
 }
 
-/// Reads the `(path, format, options)` the two writing exports take.
-///
-/// Shared so the two cannot disagree about what their arguments mean. The
-/// format is a tag the caller wrote rather than one inferred from the path:
-/// the TypeScript surface resolves the extension itself, because the message
-/// it throws for an unrecognised one names the file, and inferring here as
-/// well would be the same question asked twice with two answers available.
+/// Reads the `(path, format, options)` the two writing exports take, so they
+/// cannot disagree. The format is a tag rather than inferred from the path: the
+/// TypeScript surface resolves the extension, and its error names the file.
 fn write_arguments(
     cx: &mut FunctionContext<'_>,
 ) -> NeonResult<(std::path::PathBuf, ImageFormat, EncodeOptions)> {
@@ -489,11 +331,8 @@ fn encode_options(
     Ok(options)
 }
 
-/// Hangs `write` and `writeAsync` on the painted surface.
-///
-/// Split out of [`paint`] because that function was over the line length the
-/// workspace lints for, and this is the half of it that is one subject: two
-/// exports that differ only in which thread the encode runs on.
+/// Hangs `write` and `writeAsync` on the painted surface: two exports that
+/// differ only in which thread the encode runs on, split out of [`paint`].
 fn attach_writers<'a>(
     cx: &mut FunctionContext<'a>,
     surface: Handle<'a, JsObject>,
@@ -522,9 +361,9 @@ fn attach_writers<'a>(
     let write_async = JsFunction::new(cx, move |mut cx| {
         let (path, format, options) = write_arguments(&mut cx)?;
 
-        // Prepared on the thread that owns the canvas, for the reason
-        // `encodeAsync` gives: the worker receives recorded pages and consults
-        // no font.
+        // The half that needs the canvas, on the thread that owns it. A family
+        // is registered per thread and painting is lazy, so the worker gets
+        // pages with text already shaped and never consults a font.
         let prepared = {
             let mut held = held.borrow_mut();
             let Some(canvas) = held.as_mut() else {
@@ -553,12 +392,6 @@ fn attach_writers<'a>(
     Ok(())
 }
 
-/// Every unresolved image source, as an array of plain objects.
-///
-/// **Always an array, empty in the ordinary case**, so a caller writes
-/// `warnings.length === 0` once and never guards it. The classification
-/// crosses as a keyword with the HTTP code beside it when there is one, so a
-/// caller branches on a value rather than reading a number out of a sentence.
 /// The diagnostics as an array of `{ path, detail }`.
 fn diagnostics_array<'cx>(
     cx: &mut FunctionContext<'cx>,
@@ -584,6 +417,9 @@ fn diagnostics_array<'cx>(
     Ok(out)
 }
 
+/// Every unresolved image source, as an array of plain objects -- always an
+/// array, so `warnings.length === 0` needs no guard -- with the classification
+/// as a keyword and any HTTP code beside it.
 fn warnings_array<'cx>(
     cx: &mut FunctionContext<'cx>,
     canvas: &RenderedCanvas,
@@ -616,52 +452,10 @@ fn warnings_array<'cx>(
     Ok(warnings)
 }
 
-/// Paints a scene and hands back a surface that can be encoded more than once.
-///
-/// Takes the arena, the side values array and a `{ fonts }` object, and returns
-/// an object with `encode(format, options)`, `release()`, and four readings of
-/// the paint that already happened: `gpu`, `engine`, `pageCount` and `scale`.
-///
-/// # Why the readings are properties and not methods
-///
-/// None of them can change, none can fail, and all four describe a paint that
-/// is already over. A caller reading `engine` after `release` should still
-/// learn which rasteriser drew the bytes it is holding, and a method would
-/// have to answer from a surface that is gone.
-///
-/// `gpu` and `engine` are both reported because **they disagree**: `gpu` is
-/// what was asked for and `engine` is what asking got. A build with no GPU
-/// backend compiled, a driver that declines, and a float `colorType` all
-/// rasterise on the CPU whatever the request said. v1's canvas reports the pair
-/// for that reason (`canvas.type.ts:1190`), and until now v2 reported neither
-/// per canvas -- `backend()` answers for the build, which is a different
-/// question. `gpu` is not among
-/// them: it rides in the arena's header, beside the size and the scale a caller
-/// writes it next to.
-///
-/// # Why this is not [`render`], and does not replace it
-///
-/// `render` folds the encode in and returns bytes, so two formats of one
-/// picture cost two of everything. This is the retained form: one resolve, one
-/// measure, one layout, one paint, and an encode per format asked for. It is
-/// also the only shape in which `gpu` and `fonts` mean anything -- `render`
-/// builds a default [`Renderer`], because it has no object to read them from --
-/// and the only one that can offer a synchronous encode, which is what
-/// `toBufferSync` and its siblings are. `render` still builds a default
-/// [`Renderer`], but a scene reaching it now carries its own `gpu`, so the one
-/// that mattered is no longer dropped.
-///
-/// # Why the paint runs on the event loop, unlike [`render`]
-///
-/// Because it cannot run anywhere else. `cx.task` requires its result to be
-/// `Send`, and [`RenderedCanvas`] is not: it holds a Skia `PageRecorder` around
-/// an `SkPictureRecorder`, and a `CanvasGradient` behind an `Rc<RefCell<_>>`.
-/// Neither is a type this workspace defines, so the paint stays here and
-/// `render` remains the export that keeps a paint off the loop.
-///
-/// The encodes are synchronous on purpose rather than by that constraint:
-/// encoding is CPU work with no I/O in it, so a Promise per format would cost a
-/// tick and defer nothing.
+/// Paints a scene and returns a surface that encodes more than once: `encode`,
+/// `release`, and properties for `gpu`, `engine`, `pageCount` and `scale`. The
+/// paint runs on the event loop because [`RenderedCanvas`] is not `Send`, which
+/// `cx.task` requires; [`render`] is the export that keeps a paint off it.
 fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     let (slots, values) = arguments(&mut cx)?;
     let renderer = paint_options(&mut cx, 2)?;
@@ -677,11 +471,9 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
 
     let surface = cx.empty_object();
 
-    // Read off the canvas before it is boxed, and set as plain properties
-    // rather than as methods. All four are facts about a paint that has already
-    // happened: none can change, none can fail, and a caller reading `engine`
-    // after `release` should still learn which rasteriser drew the bytes it is
-    // holding. A method would go stale the moment the surface was freed.
+    // Read off the canvas before it is boxed, as plain properties: all four are
+    // facts about a paint already over, and a method would go stale once
+    // `release` freed the surface.
     let gpu = cx.boolean(canvas.gpu());
     surface.set(&mut cx, "gpu", gpu)?;
     // `gpu` is the request and `engine` is the outcome, and they disagree
@@ -695,11 +487,8 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     let scale = cx.number(f64::from(canvas.scale()));
     surface.set(&mut cx, "scale", scale)?;
 
-    // A fifth fact about a paint that already happened, and always an array so
-    // `warnings.length === 0` is a check a caller writes once and never
-    // guards. Built here rather than lazily for the same reason as the four
-    // above: after `release` the canvas is gone and a method would go stale,
-    // where what went wrong during the render cannot change afterwards.
+    // A fifth such fact, built now for the same reason, and always an array so
+    // `warnings.length === 0` needs no guard.
     let warnings = warnings_array(&mut cx, &canvas)?;
     surface.set(&mut cx, "warnings", warnings)?;
     // Beside the warnings and not merged with them: a warning says the world
@@ -743,17 +532,10 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
         };
         let options = encode_options(&mut cx, 1)?;
 
-        // The half that needs the canvas, on the thread that owns it. The
-        // borrow ends here: nothing below touches the canvas, which is what
-        // lets the caller keep drawing while this encode runs.
-        //
-        // **This is also what keeps the fonts right.** A registered family is
-        // visible only to the thread that registered it, and painting is lazy
-        // -- so a design that moved the paint to the worker would find no
-        // registered face there and draw a fallback, producing bytes that are
-        // plausible, testable and wrong. Preparing here means the worker
-        // receives recorded pages with their text already shaped and never
-        // consults a font at all.
+        // The half that needs the canvas, on the thread that owns it, so the
+        // caller keeps drawing while this encode runs. A family is registered
+        // per thread and painting is lazy, so the worker gets pages with text
+        // already shaped and never consults a font.
         let prepared = {
             let mut held = held.borrow_mut();
             let Some(canvas) = held.as_mut() else {
@@ -795,12 +577,8 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     Ok(surface)
 }
 
-/// The module's single registration point.
-///
-/// # Errors
-///
-/// Returns a Neon error if a name cannot be exported, which Node reports as a
-/// failure to load the addon.
+/// The module's single registration point. A name that cannot be exported is
+/// a Neon error, which Node reports as a failure to load the addon.
 #[neon::main]
 fn main(mut cx: ModuleContext<'_>) -> NeonResult<()> {
     cx.export_function("paint", paint)?;

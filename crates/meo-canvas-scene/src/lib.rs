@@ -53,11 +53,9 @@
 //! No taffy. [`style::layout::LayoutStyle`] is this crate's own vocabulary. Two
 //! reasons, and the second is load-bearing: `taffy::Style` is `!Send` and
 //! `!Sync` on every supported target, because `CompactLengthInner` stores every
-//! length as a tagged `*const ()`
-//! (`taffy-0.13.0/src/style/compact_length.rs:62`). A scene built from
-//! `taffy::Style` could not cross a thread, which is exactly what a scene is
-//! for. Translation happens once, inside `meo-canvas-core`, on the thread that
-//! lays out.
+//! length as a tagged `*const ()`. A scene built from `taffy::Style` could not
+//! cross a thread, which is exactly what a scene is for. Translation happens
+//! once, inside `meo-canvas-core`, on the thread that lays out.
 //!
 //! No neon. The scene crosses the JavaScript boundary as data, not as a tree of
 //! `JsObject` handles walked field by field.
@@ -67,17 +65,10 @@
 //! its byte layout is a compatibility promise. A derive would make that promise
 //! a side effect of field declaration order.
 
-// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
-// way.** Measured before it was declared: zero occurrences of the token across
-// every `crates/*/src`. A renderer reaching a C++ library through two binding
-// layers is exactly the crate where an `unsafe` would look reasonable and go
-// unquestioned, and the declaration turns adding one into a decision someone
-// has to make deliberately rather than a line that passes review.
-//
-// The integration tests are separate crates and are not covered: the
-// allocator that measures `codec::decode`'s reservation has to be an
-// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
-// it exists to measure a defect.
+// No source in this workspace writes `unsafe`, and this makes adding one a
+// deliberate decision rather than a line that passes review. Integration tests
+// are separate crates and not covered; their one `unsafe` is the
+// `GlobalAlloc` that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is
 // its opposite: one asks for `pub(crate)` on an item a private module exports,
@@ -400,11 +391,9 @@ impl Scene {
         self.check_reachable()
     }
 
-    /// Walks every page and reports the first node no page reaches.
-    ///
-    /// Iterative with an explicit stack rather than recursive: a scene is
-    /// caller data, and a chain of nodes deeper than the thread's stack would
-    /// otherwise abort the process instead of returning an error.
+    /// Walks every page and reports the first node no page reaches, with an
+    /// explicit stack: a chain of caller nodes deeper than the thread's stack
+    /// would otherwise abort the process instead of returning an error.
     fn check_reachable(&self) -> Result<(), SceneError> {
         let mut seen = vec![false; self.nodes.len()];
         let mut stack = self.pages.clone();
@@ -710,15 +699,10 @@ mod tests {
     }
 }
 
-/// This crate's own README, compiled.
-///
-/// The fences in it are a public promise that a snippet works, and a fence
-/// checked by nothing is the way that promise goes stale -- the reader finds
-/// out, not the gate. Anchoring the file here puts its `rust` blocks in front
-/// of rustdoc, so an example naming an item that moved is a failed build.
-///
-/// `../README.md`, one level up from `src/`: this is the crate's own front
-/// page rather than the repository's, which `meo-canvas` anchors separately.
+/// This crate's own README, compiled: its `rust` fences run as doctests, so an
+/// example naming an item that moved fails the build rather than the reader.
+/// `../README.md` is the crate's front page, not the repository's, which
+/// `meo-canvas` anchors separately.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 pub struct CrateReadme;

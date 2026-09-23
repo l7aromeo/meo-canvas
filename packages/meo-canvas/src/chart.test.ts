@@ -4,11 +4,8 @@ import { BAR_GROUP_SPACING, barLayout, Chart, GRID_DIVISIONS, gridLines, linePat
 import type { SceneNode } from './node.js'
 
 /**
- * The first node with this name, anywhere in the tree.
- *
- * By name rather than by position: the tree gained a `body` level when the
- * legend arrived, and every test that walked `children[0]` broke at once
- * without any of them being wrong about what they asserted.
+ * The first node with this name, anywhere in the tree: by name rather than by
+ * position, so a test survives a level being added around what it asserts.
  */
 function find(node: SceneNode, name: string): SceneNode | undefined {
   if (node.name === name) return node
@@ -27,13 +24,11 @@ function findAll(node: SceneNode, test: (name: string) => boolean): SceneNode[] 
 }
 
 describe('the bar geometry, which is the only reference there is', () => {
-  // Chrome has no charts, so nothing external adjudicates these. The numbers
-  // are v1's arithmetic expressed as fractions of the plot area, and this
-  // block is where they are checked against the formula rather than against a
-  // picture.
-  it('divides the width the way v1 divides it', () => {
-    // v1: groupWidth = chartWidth / labels.length; barSpacing = groupWidth * 0.2
-    //     barWidth = (groupWidth - barSpacing) / datasets.length
+  // Chrome has no charts, so nothing external adjudicates these: this block checks
+  // the numbers against the formula rather than against a picture.
+  it('divides the width the way v9 divides it', () => {
+    // groupWidth = 1 / labels; spacing = groupWidth * 0.2;
+    // barWidth = (groupWidth - spacing) / series.
     // Two labels, two series: groupWidth 0.5, spacing 0.1, barWidth 0.2.
     const placed = barLayout(
       2,
@@ -68,9 +63,8 @@ describe('the bar geometry, which is the only reference there is', () => {
     expect(placed[1]?.[1]?.height).toBeCloseTo(1, 12)
   })
 
-  // A chart of all zeroes divides by zero in v1's `(value / maxValue)`. NaN
-  // reaches layout as an absent height and draws nothing, which reads as a
-  // chart that failed rather than one with no data to show.
+  // A chart of all zeroes divides by zero in `value / maxValue`, and a NaN height
+  // draws nothing, which reads as a chart that failed rather than one with no data.
   it('survives a maximum of zero without producing NaN', () => {
     const placed = barLayout(2, 1, [[0, 0]], 0)
     expect(placed[0]?.[0]?.height).toBe(0)
@@ -117,9 +111,8 @@ describe('the tree a bar chart expands to', () => {
     expect(findAll(chart, name => name.startsWith('gridline'))).toHaveLength(GRID_DIVISIONS + 1)
   })
 
-  // The hatch's node is PLACED, not measured and drawn — so it must appear in
-  // the tree. A hatch whose node never reached the scene would be v1's
-  // contract silently surviving behind an unchanged signature.
+  // The hatch's node is placed, not measured and drawn, so it must appear in the
+  // tree.
   it('places a value hatch node in the tree rather than measuring it away', () => {
     const marker = { kind: 'box' as const, name: 'mine' }
     const chart = Chart({
@@ -161,25 +154,23 @@ describe('a chart with no size given', () => {
   })
 })
 
-describe('data v1 mis-draws', () => {
-  // v1 has no zero baseline, so a negative value produces a negative height
-  // drawn below the plot, and an all-negative series makes the MOST negative
-  // value five times the plot tall while the least negative fills it. Three
-  // silent wrong pictures; refusing is the honest answer.
+describe('data v9 mis-draws', () => {
+  // There is no zero baseline, so a negative value would draw below the plot and an
+  // all-negative series would overflow it; refusing is the honest answer.
   it('refuses a negative value rather than reproducing the mis-draw', () => {
     expect(() => barLayout(2, 1, [[-5, 10]], 10)).toThrow(/cannot draw a negative value/)
     expect(() => barLayout(2, 1, [[-5, -1]], -1)).toThrow(/cannot draw a negative value/)
   })
 
   it('draws an empty chart rather than nothing at all', () => {
-    // v1 divides zero by zero here and lays out a NaN height.
+    // A zero maximum would divide zero by zero and lay out a NaN height.
     const placed = barLayout(1, 1, [[0]], 0)
     expect(placed[0]?.[0]?.height).toBe(0)
   })
 })
 
 describe('the pie geometry', () => {
-  it('starts at twelve o clock and sweeps clockwise, as v1 does', () => {
+  it('starts at twelve o clock and sweeps clockwise, as v9 does', () => {
     const [first] = sliceAngles([1, 1])
     expect(first?.start).toBeCloseTo(-Math.PI / 2, 12)
     expect(first?.end).toBeCloseTo(-Math.PI / 2 + Math.PI, 12)
@@ -193,8 +184,8 @@ describe('the pie geometry', () => {
     expect(angles[1]!.end - angles[0]!.start).toBeCloseTo(Math.PI * 2, 12)
   })
 
-  // The same divergence as the bar chart's zero maximum, for the same reason:
-  // v1 divides by a zero total and produces NaN angles.
+  // As with the bar chart's zero maximum: a zero total would divide by zero and give
+  // NaN angles.
   it('gives empty slices for a zero total rather than NaN', () => {
     const angles = sliceAngles([0, 0])
     expect(angles.every(angle => angle.start === angle.end)).toBe(true)
@@ -244,10 +235,9 @@ describe('the tree a pie expands to', () => {
 })
 
 describe('the line geometry', () => {
-  // v1 divides by `labels - 1` here and by `labels` for bars, so a line's
-  // first and last points sit ON the plot's edges where a bar is inset in its
-  // slot. Getting this wrong insets the whole series by half a slot and looks
-  // plausible.
+  // Points divide by `labels - 1` where bars divide by `labels`, so a line's first
+  // and last points sit on the plot's edges where a bar is inset in its slot.
+  // Getting it wrong insets the whole series by half a slot and looks plausible.
   it('spans edge to edge, unlike the bars', () => {
     const points = linePoints(3, [0, 2, 1], 2)
     expect(points[0]?.x).toBeCloseTo(0, 12)
@@ -263,8 +253,8 @@ describe('the line geometry', () => {
     expect(points[2]?.y).toBeCloseTo(0.5, 12)
   })
 
-  // v1's `labels.length > 1 ? labels.length - 1 : 1` — a single label has no
-  // span to divide, and dividing by zero would put the point at infinity.
+  // A single label has no span to divide, and dividing by zero would put the point
+  // at infinity.
   it('survives a single label rather than dividing by zero', () => {
     const points = linePoints(1, [5], 5)
     expect(points[0]?.x).toBe(0)
@@ -312,11 +302,9 @@ describe('the y-axis gutter', () => {
     expect(find(chart, 'y axis')).toBeUndefined()
   })
 
-  // **Three properties at once, and each arrangement gives only two.**
-  // Absolute labels do not size their parent (measured: 9px against 30 for the
-  // same labels in flow); in-flow labels drift from the gridlines (measured:
-  // 8.5, 5.5, 1.5, -1.5, -5.5 across five rows). So the gutter holds a
-  // zero-height in-flow sizer AND absolute labels.
+  // Three properties at once, and each arrangement gives only two: absolute labels
+  // do not size their parent (9px against 30 in flow) and in-flow labels drift off
+  // the gridlines, so the gutter holds a zero-height in-flow sizer and absolute labels.
   it('holds a zero-height sizer so it can measure without drawing', () => {
     const chart = Chart({ type: 'bar', data, options: { showYAxis: true } })
     const axis = find(chart, 'y axis')
@@ -330,12 +318,12 @@ describe('the y-axis gutter', () => {
     const chart = Chart({ type: 'bar', data, options: { showYAxis: true } })
     const labels = findAll(chart, name => name.startsWith('axis label'))
     expect(labels).toHaveLength(GRID_DIVISIONS + 1)
-    // v1: `maxValue - (maxValue / 5) * i`, so the top row is the maximum.
+    // The top row is the maximum and the bottom one zero.
     expect(labels[0]?.children?.[0]?.markup ?? '').toBe('2')
     expect(labels[labels.length - 1]?.children?.[0]?.markup ?? '').toBe('0')
   })
 
-  it('takes a formatter, as v1 does', () => {
+  it('takes a formatter, as v9 does', () => {
     const chart = Chart({
       type: 'bar',
       data,
@@ -373,8 +361,7 @@ describe('the legend', () => {
     expect(findAll(chart, name => name === 'swatch')).toHaveLength(2)
   })
 
-  // v1 falls back to a positional name when a dataset has none, so a legend
-  // never shows a blank row.
+  // An unnamed dataset takes a positional name, so a legend never shows a blank row.
   it('names an unnamed series by its position', () => {
     const chart = Chart({ type: 'bar', data: cartesian, options: { showLegend: true } })
     const items = findAll(chart, name => name.startsWith('legend item'))
@@ -382,8 +369,8 @@ describe('the legend', () => {
     expect(items[1]?.children?.[1]?.markup).toBe('Series 2')
   })
 
-  // v1's pie legend reads `label (value)` where a cartesian one is the series
-  // name alone — a difference in the data rather than in the drawing.
+  // A pie legend reads `label (value)` where a cartesian one is the series name
+  // alone: a difference in the data rather than in the drawing.
   it('reads label and value for a pie', () => {
     const chart = Chart({ type: 'pie', data: pie, options: { showLegend: true } })
     const items = findAll(chart, name => name.startsWith('legend item'))
@@ -391,8 +378,7 @@ describe('the legend', () => {
   })
 
   // The legend is a sibling of the body rather than an overlay, so the plot's
-  // `flexGrow` takes what the legend leaves — v1's `chartHeight -
-  // legendHeight` arrived at by layout instead of by subtraction.
+  // `flexGrow` takes what the legend leaves.
   it.each([
     ['top', ['legend', 'body']],
     ['bottom', ['body', 'legend']],
@@ -477,10 +463,9 @@ describe('a line chart s point markers', () => {
 })
 
 describe('the three options a surface report said were missing', () => {
-  // Two were real gaps. I had claimed nothing was absent after checking one
-  // interface; v1 spreads its chart options across several, and checking the
-  // whole set found these. The claim was too strong and this is the correction.
-  it('takes a doughnut hole from the caller, defaulting to v1 s', () => {
+  // Options v9 declares across several interfaces: two are real and implemented,
+  // and the third is refused below.
+  it('takes a doughnut hole from the caller, defaulting to v9 s', () => {
     const data = [
       { label: 'a', value: 1 },
       { label: 'b', value: 3 },
@@ -490,11 +475,11 @@ describe('the three options a surface report said were missing', () => {
     const arc = (chart: SceneNode) => (find(chart, 'slice 0')?.style as { d?: string })?.d ?? ''
     // A bigger hole means a bigger inner arc radius in the path data.
     expect(arc(wide)).not.toBe(arc(narrow))
-    // v1's default is 0.6 of the outer radius.
+    // The default is 0.6 of the outer radius.
     expect(arc(Chart({ type: 'doughnut', data, options: { innerRadius: 0.6 } }))).toBe(arc(narrow))
   })
 
-  it('formats a category label, and passes the index as v1 does', () => {
+  it('formats a category label, and passes the index as v9 does', () => {
     const seen: [string, number][] = []
     const chart = Chart({
       type: 'bar',
@@ -514,11 +499,11 @@ describe('the three options a surface report said were missing', () => {
     expect(find(chart, 'labels')?.children?.[0]?.children?.[0]?.markup).toBe('A')
   })
 
-  // `sliceBorderRadius` is declared in v1's types and read nowhere in v1's
+  // `sliceBorderRadius` is declared in v9's types and read nowhere in v9's
   // source — an option it advertises and does not implement. Porting it would
   // mean building a behaviour that has never existed, so it is absent here on
   // purpose rather than by omission.
-  it('does not carry an option v1 declares and never reads', () => {
+  it('does not carry an option v9 declares and never reads', () => {
     const options: Record<string, unknown> = {}
     expect('sliceBorderRadius' in options).toBe(false)
   })

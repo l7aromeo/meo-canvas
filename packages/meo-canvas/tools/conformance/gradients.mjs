@@ -1,14 +1,6 @@
-// Where a gradient's ramp has got to, at points named in pixels.
-//
-// This table exists twice. The first version recorded a fraction per corner
-// and neither the box it was measured in nor the coordinate it was read at,
-// which cost a round chasing a 0.02 that turned out to be a one-pixel inset.
-// **Every row here carries its box, its point and its raw channels**, so a
-// disagreement can be re-derived rather than argued about.
-//
-// Read from a screenshot rather than from `getComputedStyle`, because the
-// question is what Chrome *painted*: a gradient's declared angle is not in
-// dispute, where its ramp lands is.
+// Where a gradient's ramp has got to, at points named in pixels, read from a
+// screenshot since the question is what Chrome painted. Every row carries its box,
+// its point and its raw channels, so a disagreement can be re-derived.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -24,22 +16,14 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const BOX = { width: 88, height: 56 }
 
 /**
- * How far a sample is inset from the edge it belongs to.
- *
- * One pixel, and **recorded**, because a corner read at the very corner is
- * half-covered by antialiasing and a corner read three pixels in is a
- * different question. The first version of this table left it out and the
- * difference it makes read as a defect.
+ * How far a sample is inset from its edge, and recorded: one pixel, since a corner
+ * read at the corner is half-covered by antialiasing.
  */
 const INSET = 1
 
 /**
- * The ramp every case uses: black to white, so the channel **is** the
- * position along it.
- *
- * Two stops rather than three, and greyscale rather than colour: a `t` derived
- * from one channel of a two-stop greyscale ramp needs no inverse of an
- * interpolation, which is the arithmetic this table must not depend on.
+ * The ramp every case uses: two greyscale stops, black to white, so one channel is
+ * the position along it and no inverse of an interpolation is needed.
  */
 const RAMP = '#000000, #ffffff'
 
@@ -62,12 +46,9 @@ const CASES = [
 ]
 
 /**
- * The points each case is read at, derived from the box rather than written.
- *
- * Corners **and** mid-edges. The corners alone cannot tell a circle from an
- * ellipse — the four corners of a rectangle are equidistant from its centre,
- * so both answer the same thing at all four — and that is the distinction half
- * these cases exist for.
+ * The points each case is read at, derived from the box: corners and mid-edges,
+ * since a rectangle's corners are equidistant from its centre and cannot tell a
+ * circle from an ellipse.
  */
 function points({ width, height }) {
   const left = INSET

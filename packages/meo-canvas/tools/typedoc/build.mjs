@@ -1,54 +1,7 @@
-// Builds the JavaScript API reference and gates on what it found.
-//
-// # A link that is absent rather than forgotten
-//
-// `typedoc.json`'s `navigationLinks` used to carry `Rust API` pointing at
-// docs.rs/meo-canvas. It is gone, and the note lives here because JSON takes
-// no comments and TypeDoc rejects an unknown key outright -- `Unknown option
-// '_navigationLinks'`, which is how this note was first attempted.
-//
-// **The crate has never been published.** `index.crates.io` answers
-// `NoSuchKey` for `meo-canvas`, which is the decisive check: crates.io and
-// npmjs both answer 403 to curl and prove nothing either way. docs.rs is 404
-// in consequence, and will be until the crate exists -- which is blocked
-// behind the branch swap, which is blocked behind a taffy release.
-//
-// That block puts a link on **every page of the reference**, so it was the
-// wider half of a defect the landing page had once in its footer. A dead
-// "Rust API" on a library whose Rust surface is the primary one is worse than
-// no link at all, because a reader cannot tell a "not yet" from a "broken".
-//
-// Put it back, here and in `site-index.mjs`'s footer, the day the crate is
-// published. Neither is conditional on anything these scripts can see: a
-// reference that needs the network to build is one that fails to build.
-//
-// TypeDoc reports one severity for every validation, and the two kinds of
-// finding here do not deserve the same treatment. A broken link, or a type
-// that escapes into a signature without being exported, is a defect in the
-// declarations and the build stops. A member with no doc comment is a gap,
-// and failing on every gap the day this arrives would teach everyone to pass
-// the flag that turns the whole check off -- which is how a gate dies.
-//
-// So: structural findings fail immediately, and the undocumented count
-// ratchets. It may fall and it may hold. It may not rise.
-//
-// **The count is now zero, so the ratchet is a gate.** Every exported member
-// has a doc comment, and any new one without fails the build. The ratchet was
-// how it got here -- there were ninety-two on the day this arrived, and
-// failing on all of them at once is how a gate teaches people to turn it off --
-// but the mechanism needs no change to become the stricter thing: a floor of
-// zero cannot be lowered, so `undocumented-baseline.txt` stays at zero and any
-// rise is a failure.
-//
-// It also detects a defect nothing else does. A doc block sitting immediately
-// above another doc block attaches to nothing: TypeScript takes the nearest,
-// and the text remains in the file, absent from the reference, reading
-// correctly in both. A member reported undocumented that visibly has a comment
-// above it means the comment attached to something else.
-//
-// Adapted from `meo-skia-canvas/scripts/typedoc/build.mjs`, with the input
-// changed: that project checks its declarations in, this one builds them, so
-// `just docs-js` runs `build-js` first and this reads what it emitted.
+// Builds the JavaScript API reference from what `build-js` emitted, and gates on it:
+// a broken link or an unexported type in a signature fails at once, and the
+// undocumented count may not rise above `undocumented-baseline.txt`, which is zero.
+// A member reported undocumented under a visible comment means the comment attached elsewhere.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -63,13 +16,9 @@ const ENTRY = resolve(HERE, '../../dist/index.d.ts')
 // thing distinguishing a coverage warning from a structural one.
 const UNDOCUMENTED = 'does not have any documentation'
 
-// TypeDoc's own entry script, found through the package's `bin` field and run
-// under the current Node -- not the `.bin/typedoc` shim. The shim is `typedoc`
-// on POSIX and `typedoc.exe` or `typedoc.cmd` on Windows, and looking for it by
-// the POSIX name reported the tool as "not installed" on a runner where bun had
-// just installed it. `require.resolve('typedoc/bin/typedoc')` is not the answer
-// either: the package's `exports` map does not expose that path and the
-// resolver throws. The manifest says where the script is; read it.
+// TypeDoc's own entry script, found through the package's `bin` field and run under
+// the current Node: the `.bin` shim is named differently on Windows, and `exports`
+// does not expose `typedoc/bin/typedoc` to `require.resolve`.
 const PACKAGE = join(HERE, 'node_modules', 'typedoc')
 if (!existsSync(join(PACKAGE, 'package.json'))) {
   process.stderr.write(

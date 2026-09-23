@@ -1,34 +1,7 @@
-//! This renderer's text numbers against Chrome's, on the same face.
-//!
-//! # Why a browser is the oracle
-//!
-//! The standard for this project is that an expectation matches **Chrome**,
-//! not v1 and not our own last render. A golden accepted from what we drew
-//! records what we did; `fixtures/borders-square` was accepted around a
-//! diagonal bottom edge and passed for exactly that reason. Where a browser
-//! can be asked, its answer is the expectation.
-//!
-//! # Where these numbers came from
-//!
-//! Measured in Chrome with the same Oswald face the fixtures register, at
-//! 16px, and recorded in `scratchpad/chrome/text-truth.tsv`. They are pasted
-//! here as constants rather than read from that file: a test that reads its
-//! own expectations from a file someone can regenerate is a test that agrees
-//! with whatever it is given.
-//!
-//! # What each one settles
-//!
-//! **The strut is the face, not the string.** Four strings -- including one
-//! that is all descenders and one that is a single `x` -- report the same
-//! ascent and descent in Chrome. That is the property a line box is built on:
-//! a line does not move when it gains a descender.
-//!
-//! **Chrome applies letter spacing once per character; this backend applies it
-//! between them.** Sixteen characters at 2px are 32px wider in Chrome and 30px
-//! wider here, so a run measured through the backend is short by exactly one
-//! unit however long it is. v1 carries that same correction with a comment
-//! saying an earlier version added `n - 1` and made a line a third too wide;
-//! this test is the reason the correction is one unit and not a guess.
+//! This renderer's text numbers against Chrome's, on the same face at 16px. The
+//! expectations are constants, not read from a file a regeneration could
+//! rewrite. They pin that the strut is the face rather than the string, and
+//! that letter spacing is one unit per character, as Chrome applies it.
 
 use meo_canvas_core::{
     lines::{METRICS_STRING, Metrics, RunStyle, TextMeasurer, layout},
@@ -45,25 +18,18 @@ const FONT: (&str, &str) =
 /// The em size every number here was measured at.
 const SIZE: f32 = 16.0;
 
-/// Chrome's `fontBoundingBoxAscent` at [`SIZE`].
-///
-/// **A whole number because Chrome rounds it, not because it was rounded on
-/// the way here.** The same call returns a fractional
-/// `actualBoundingBoxAscent` of 12.96, so the integer is a decision. This face
-/// reports 19.088, and taking that unrounded would make every line box 23.712
-/// against Chrome's 24 -- 0.288px short per line, accumulating to nearly three
-/// pixels of baseline by the tenth.
+/// Chrome's `fontBoundingBoxAscent` at [`SIZE`], whole because Chrome rounds
+/// it. This face reports 19.088, and using that would make each line box 23.712
+/// against Chrome's 24, drifting nearly 3px of baseline by the tenth line.
 const CHROME_ASCENT: f32 = 19.0;
 
 /// Chrome's `fontBoundingBoxDescent` at [`SIZE`], rounded by Chrome as the
 /// ascent is.
 const CHROME_DESCENT: f32 = 5.0;
 
-/// Chrome's `line-height: normal` box at [`SIZE`], which is exactly the sum of
-/// the two above.
-///
-/// The identity is the part worth pinning: a renderer can agree on both
-/// metrics to a tenth and still build a line box that drifts.
+/// Chrome's `line-height: normal` box at [`SIZE`], exactly the sum of the two
+/// above. The identity is what matters: two metrics can each agree to a tenth
+/// and still build a line box that drifts.
 const CHROME_LINE_BOX: f32 = 24.0;
 
 /// Chrome's width for [`SIXTEEN`] with no letter spacing.
@@ -84,11 +50,9 @@ const SPACING: f32 = 2.0;
 /// an answer that cannot be confused with a per-run one.
 const SIXTEEN: &str = "abcdefghijklmnop";
 
-/// How far from Chrome a width may fall.
-///
-/// A tenth of a pixel. Chrome and this backend shape the same face with the
-/// same advances and round differently at the end; the measured gap on a
-/// hundred-pixel run is under seven hundredths.
+/// How far from Chrome a width may fall: a tenth of a pixel. Both shape the
+/// same advances and round differently at the end, by under 0.07 on a 100px
+/// run.
 const WIDTH_SLACK: f32 = 0.1;
 
 /// A resolved style in the fixture face, with the fonts registered.
@@ -152,11 +116,9 @@ fn a_run_carries_one_letter_spacing_per_character_as_chrome_does() {
         "unspaced {plain} is not Chrome's {CHROME_PLAIN}"
     );
 
-    // **The backend's own answer, and it is the whole answer since 0.16.**
-    // Through 0.15 it added `n - 1` -- fifteen gaps between sixteen characters
-    // -- and `run_width` made up the missing unit. 0.16 adds one per character
-    // instead, citing the Canvas standard, so the number to pin here is
-    // sixteen and the correction is gone.
+    // The backend adds one spacing per character, as the Canvas standard does,
+    // so sixteen characters gain sixteen units and nothing here corrects
+    // it.
     let backend = measurer.measure(&style, SPACING, SIXTEEN).width;
     let backend_delta = backend - plain;
     assert!(
@@ -202,47 +164,10 @@ fn a_space_is_as_wide_as_chrome_makes_it() {
     );
 }
 
-/// Chrome's line box and baseline at three line heights, in pixels.
-///
-/// `(line-height multiple, box height, baseline from the box top)`. A multiple
-/// of `1.0` is the face's own -- CSS's `normal`.
-///
-/// # How they were read
-///
-/// With a zero-height inline-block on the line, whose bottom margin edge **is**
-/// the alphabetic baseline. So the baseline column is the baseline's position
-/// rather than an inference from where ink begins.
-///
-/// # The one number in that table that is not portable
-///
-/// At `line-height: 8px` Chrome reports a **block** height of 11, and 8 is
-/// what a bare line gives: the zero-height ruler contributes no descent, so it
-/// holds the box open against a negative one. The instrument changed the
-/// thing it measured, in one column while the other stayed clean. The box
-/// height here is 8; the baseline is 11, and the baseline is what was in
-/// question.
-/// **The first row was labelled `1.0` and is Chrome's `normal`.** At a 16px
-/// font `line-height: 1` is a 16px box; this row pins 24.0, which is the
-/// face's own metrics. The label was the sentinel leaking into the measured
-/// data -- while `1.0` meant "the face's own" everywhere in this crate,
-/// recording `normal` under that spelling was invisible. It is `None` now,
-/// which is what was actually measured.
-///
-/// **`Some(1.0)` is a real `line-height: 1` and it is measured, not derived.**
-/// It became expressible only when the sentinel went, so nothing could have
-/// pinned it before.
-///
-/// It is also what the leading model predicts -- `19 + (16 - 24) / 2 = 15` --
-/// so **this row confirms the model rather than constraining it.** Said
-/// plainly because 16.0 and 15.0 are exactly the numbers the arithmetic makes
-/// obvious, and a reader who assumes they were derived would be right about
-/// the value and wrong about where it came from.
-///
-/// The measurement reproduced the three rows above it before it was trusted
-/// with the fourth, and its first attempt did not: a zero-height marker at the
-/// baseline **grew a tight line box to contain itself**, reading 11.0 for the
-/// `0.5` row's 8.0. **An instrument that cannot reproduce known values cannot
-/// be trusted on unknown ones**, and the known rows are what caught it.
+/// Chrome's `(line-height, box, baseline from box top)` at 16px; `None` is
+/// `normal`. Read with a zero-height inline-block whose bottom edge is the
+/// baseline. At `0.5` that ruler holds the block open to 11, so the box is the
+/// bare line's 8; `Some(1.0)` is measured and agrees with the leading model.
 const CHROME_LINE_BOXES: [(Option<f32>, f32, f32); 4] = [
     (None, 24.0, 19.0),
     (Some(1.0), 16.0, 15.0),
@@ -250,22 +175,10 @@ const CHROME_LINE_BOXES: [(Option<f32>, f32, f32); 4] = [
     (Some(0.5), 8.0, 11.0),
 ];
 
-/// A line box is the face's metrics with the leading split above and below.
-///
-/// # What this rejects
-///
-/// Skia's paragraph **scales** the ascent and descent to fill the line box
-/// instead: at `line-height: 2` it puts the baseline at 25.76, which is
-/// exactly `32 × 19.088 / 23.712`, and at `0.5` it puts it at 6.44 -- inside
-/// the box. CSS adds leading around the metrics rather than stretching them,
-/// so the baseline is `(box − content) / 2 + ascent`, and Chrome agrees to the
-/// pixel at both ends: 23 and 11.
-///
-/// **The tight case is the one worth having.** `19 + (8 − 24) / 2 = 11` puts
-/// the baseline *below* a box eight pixels tall, because the leading is
-/// negative and CSS lets the glyphs escape the box rather than moving the
-/// baseline inside it. Skia's 6.44 is inside. Those are different models, not
-/// different roundings, and only one of them is a browser's.
+/// A line box is the face's metrics with the leading split above and below: the
+/// baseline is `(box - content) / 2 + ascent`, Chrome's 23 at `2` and 11 at
+/// `0.5` -- below an 8px box. Skia's paragraph scales the metrics instead, to
+/// 25.76 and 6.44: a different model, not a different rounding.
 #[test]
 fn a_line_box_places_its_baseline_where_chrome_does() {
     let (_fonts, mut base) = fixture_style();
@@ -301,17 +214,9 @@ fn a_line_box_places_its_baseline_where_chrome_does() {
     }
 }
 
-/// The unitless form and the length form are one model.
-///
-/// Chrome lands `line-height: 2`, `line-height: 32px`, `line-height: 0.5` and
-/// `line-height: 8px` on identical boxes and baselines at 16px. A unitless
-/// value resolves against the font size **first**; from there there is one
-/// arithmetic, which is why the scene can carry either spelling without the
-/// painter learning a second rule.
-///
-/// Asserted here through the size rather than through two fields, because the
-/// scene has only the multiple today: doubling the font size and halving the
-/// multiple is the same length, and it must be the same line box.
+/// A unitless line height and a length are one model: Chrome gives identical
+/// boxes for `2` and `32px` at 16px. The scene carries only the multiple, so
+/// this doubles the size and halves the multiple, which must match.
 #[test]
 fn a_multiple_and_a_length_are_the_same_line_box() {
     let (_fonts, mut base) = fixture_style();
@@ -351,14 +256,10 @@ fn a_multiple_and_a_length_are_the_same_line_box() {
     assert!((natural.lines[0].height - CHROME_LINE_BOXES[0].1).abs() < 0.01);
 }
 
-/// Chrome's width for a string, and what this renderer measures for it.
-///
-/// `(string, Chrome's width)`. Multi-word entries are Chrome's `measureText`
-/// of the whole string; this crate builds the same number by summing its words
-/// and a measured space, which Chrome itself confirms is equivalent -- **it
-/// does not shape across a gap.** Measured directly rather than assumed: the
-/// whole string and the sum of its parts agree to the third decimal on every
-/// string tried, `103.248` against `103.248` for the longest.
+/// `(string, Chrome's width)`. Multi-word strings are Chrome's whole-string
+/// `measureText`; this crate sums words and a measured space, which Chrome
+/// confirms is equal because it does not shape across a gap (103.248 both
+/// ways).
 const CHROME_WIDTHS: [(&str, f32); 7] = [
     ("a", 6.828),
     ("Hxgp quick", 64.203),
@@ -375,28 +276,10 @@ const CHROME_WIDTHS: [(&str, f32); 7] = [
 /// of the bound is that it cannot grow quietly.
 const DEFICIT_CEILING: f32 = 0.1;
 
-/// Every width this renderer reports is a shade under Chrome's, and by how
-/// much.
-///
-/// # Why this is recorded rather than fixed
-///
-/// It is six hundredths of one per cent on a hundred-pixel line, it has the
-/// **same sign everywhere** so it cannot accumulate into a wrong break, and it
-/// moves no wrap point in any of the four scenes Chrome was asked about. What
-/// it is not is a mystery, and the shape of it says where to look:
-///
-/// - it **scales with characters, not with words** -- sixteen characters run
-///   0.060 short here and 0.066 short in the letter-spacing scene, about 0.004
-///   per glyph, and a space measures 3.660 against Chrome's 3.664, the same
-///   0.004;
-/// - a single-character `"a"` is 0.018 short, which is far more than one
-///   glyph's worth, so there is a per-string component on top of the per-glyph
-///   one.
-///
-/// So the question belongs to the backend -- what advance does it report for
-/// one glyph at 16px -- and not to how a line is assembled. Chasing it through
-/// a measurer that is being rewritten is how a real defect gets blamed on a
-/// rounding.
+/// Every width here is a shade under Chrome's: about 0.004 per glyph (a space
+/// is 3.660 against 3.664) plus a per-string part (`"a"` is 0.018 short).
+/// Recorded, not fixed: it has one sign, moves no wrap point, and belongs to
+/// the backend's glyph advance rather than to line assembly.
 #[test]
 fn our_widths_run_a_known_shade_under_chromes() {
     let (_fonts, base) = fixture_style();

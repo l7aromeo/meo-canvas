@@ -16,34 +16,17 @@ on:
         type: boolean
         default: true
 
-# Read at the top, and widened only where the widening is used. `id-token:
-# write` is what lets npm mint a provenance attestation from the workflow's own
-# identity, so no long-lived token is stored anywhere -- but only the publish
-# job publishes, and a token seven build jobs can mint is seven machines that
-# can speak as this repository while compiling third-party code. `contents:
-# write` is what lets that same job tag the commit it published and open a
-# release under the tag; without it nothing on GitHub records which commit a
-# version on the registry was built from. Both live on `publish` below.
+# Read by default; `publish` alone widens it, with `id-token: write` for npm
+# provenance from the workflow's identity and `contents: write` to tag and
+# release. A token the build jobs could mint would let seven machines compiling
+# third-party code speak as this repository.
 permissions:
   contents: read
 
-# One release at a time, and never cancelled.
-#
-# **The group deliberately omits the ref.** `ci.yml` keys on
-# `${{ github.workflow }}-${{ github.ref }}` because two branches are two
-# independent questions; here they are not. A dispatch at `main` and a dispatch
-# at a tag publish the same version to the same registry and push the same
-# `npm-v<version>` tag, so keying on the ref would let exactly the pair that
-# collides run side by side.
-#
-# **And `cancel-in-progress` is false, which is the opposite of `ci.yml`'s
-# choice, for the reason that makes this workflow different: it is not
-# idempotent in the middle.** The publish job pushes seven platform packages,
-# waits for them to resolve, publishes the main package, pushes a git tag and
-# opens a release. Cancelling between any two of those leaves the registry and
-# the repository disagreeing, and nothing re-runs to fix it. A second dispatch
-# waits instead -- and if the first has already published, its own `npm view`
-# guards make it a no-op rather than a conflict.
+# One release at a time, never cancelled. The group omits the ref, since
+# dispatches at `main` and at a tag publish the same version and push the same
+# `npm-v<version>` tag. The publish job is not idempotent midway; a queued
+# second dispatch walks past what the first published.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -51,22 +34,18 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
-# Every `run:` block here is bash -- `set -euo pipefail`, `test -f`, `$(...)`,
-# `grep | cut`. On `windows-latest` the default shell is PowerShell, so the
-# first such step failed with the toolchain unread and the Windows target has
-# never built once. Declared for the whole workflow rather than on that step,
-# because the next Windows-only failure would be the next step someone wrote in
-# bash without thinking about it -- which is every step in this file.
+# Every `run:` here is bash, and Windows defaults to PowerShell. Set for the
+# whole workflow, since the next Windows failure would be the next bash step
+# anyone writes.
 defaults:
   run:
     shell: bash
 
 jobs:
-  # The target list lives in `tools/stage-platform-package.mjs` and is read here
-  # rather than restated, so a target added there builds without touching this
-  # file. `src/addon.test.ts` asserts that list against the two other places a
-  # target is named; this is the third consumer and the only one that cannot be
-  # checked by a unit test.
+  # Read from `TARGETS` in `tools/stage-platform-package.mjs`, so a target added
+  # there builds without editing this file. `src/addon.test.ts` asserts that
+  # list against the other two places a target is named; this consumer is
+  # outside any unit test.
   targets:
     name: targets
     runs-on: ubuntu-latest
@@ -95,12 +74,10 @@ jobs:
           version=$(node -p "require('./packages/meo-canvas/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-          # The package name, and the prefix `npm pack` builds a filename from:
-          # it drops a leading `@` and turns `/` into `-`, so `@scope/thing`
-          # packs as `scope-thing-1.0.0.tgz` and `thing` as `thing-1.0.0.tgz`.
-          # Derived rather than written down, because it WAS written down, in
-          # seven places, and a rename then made every glob below match nothing
-          # while every local check stayed green.
+          # The package name, and the prefix `npm pack` names its file with:
+          # `@scope/thing` packs as `scope-thing-1.0.0.tgz`. Derived, since
+          # written copies go stale on a rename and every glob below would match
+          # nothing.
           name=$(node -p "require('./packages/meo-canvas/package.json').name")
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "prefix=$(node -p "require('./packages/meo-canvas/package.json').name.replace(/^@/, '').replace('/', '-')")" >> "$GITHUB_OUTPUT"
@@ -122,29 +99,10 @@ jobs:
     name: build ${{ matrix.suffix }}
     needs: targets
     runs-on: ${{ matrix.runner }}
-    # **One bound over legs that differ by forty-fold.** Today's release run:
-    # 54s, 2m20s, 2m57s, 5m59s, 8m03s, 22m56s, 36m48s. The two slow ones compile
-    # Skia from source in a container; `darwin-arm64` finishes in under a
-    # minute. `timeout-minutes` applies per matrix leg, so the number has to fit
-    # the slowest or it kills builds that are working.
-    #
-    # Ninety, which is what `ci.yml` uses for the same compile and for the same
-    # reason -- its own note records 16 to 23 minutes normally and a 52-minute
-    # run when the Skia cache missed. That outlier is the case this has to
-    # clear.
-    #
-    # **This comment used to say 36m48s was a warm-cache number. It was not.**
-    # That leg logged `... Restoring cache ... / No cache found.` -- the
-    # repository holds 10.25 GB of Actions caches against GitHub's 10 GB limit,
-    # so LRU had already evicted it. So 36m48s is the cold figure, and 90 is
-    # generous against it rather than tight. Worth knowing that a warm musl
-    # number has never been observed here: the seven-day retention is shorter
-    # than the gap between releases, so the cache is gone by the next one
-    # whatever the headroom.
-    #
-    # It is a hang-breaker rather than a prediction, and the difference matters
-    # if a build ever approaches it: that is a reason to find out what changed,
-    # not to raise the number.
+    # Legs run from 54s to 36m48s, the slow ones compiling Skia in a container,
+    # and the bound is per leg. 36m48s was a cold cache; caches expire between
+    # releases, so no warm musl leg is ever seen. Ninety, as `ci.yml`: a
+    # hang-breaker, so nearing it is a reason to look, not to raise it.
     timeout-minutes: 90
     strategy:
       # Every target reports. Cancelling the set on one failure hides whether
@@ -159,11 +117,9 @@ jobs:
         with:
           just-version: '1.58.0'
 
-      # A block scalar, and the quoting is the reason. Written on one line this
-      # needed `cut -d'\"'`, where YAML keeps the backslash literal and hands
-      # `cut` a two-character delimiter -- so the step succeeded, wrote nothing,
-      # and the toolchain action failed three steps later with `'toolchain' is
-      # a required input`. The failure named the consumer and not the producer.
+      # A block scalar for the quoting: on one line `cut -d'\"'` keeps YAML's
+      # backslash and hands `cut` a two-character delimiter, which wrote nothing
+      # and failed three steps later.
       - name: Read the pinned toolchain
         id: toolchain
         run: |
@@ -176,86 +132,20 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
-      # **Saved on a branch, never on a tag, because a tag-dispatched run cannot
-      # read back what it writes.** A run restores from its own ref's scope and
-      # from the default branch. Releases are dispatched at the tag by intent --
-      # the tag is the release's identity, and dispatching at it is what
-      # guarantees the built commit is the tagged one -- and every release gets
-      # a new tag, so a publish run misses by construction and then saves a set
-      # no later run can address. Measured on the alpha.5 publish run
-      # (33970267410, dispatched at `refs/tags/v10.0.0-alpha.5`): seven of seven
-      # `No cache found.`, and 2029 MiB written afterwards -- 372 + 366 + 342 +
-      # 419 + 418 + 56 + 56 MiB, from each job's own tar byte count.
-      #
-      # **A rehearsal dispatched at a branch does hit, which is why this gates
-      # rather than deletes.** Run 33961676649, dispatched at `v10`: five of
-      # seven `Cache hit for:`, win32-x64 restoring 391,274,614 bytes. Only the
-      # musl pair missed.
-      #
-      # **Do not rewrite this as `github.ref == 'refs/heads/main'`.** `ci.yml`
-      # carries that form and it is right there and wrong here: releases are not
-      # dispatched from `main` today, so it would mean *never save* and would
-      # delete the five hits above. It would also appear to work to anyone
-      # checking now, because the `v10` branch those hits came from has since
-      # been deleted -- the branch-keyed form is correct today only by accident
-      # of a deletion, and would have been wrong a week ago. The rule is about
-      # the publish run being unable to read its own cache, so it is written
-      # about tags.
-      #
-      # Verified on both arms rather than from the shape of the expression: the
-      # tag run's checkout fetches `+refs/tags/v10.0.0-alpha.5:refs/tags/...`,
-      # the branch run's fetches into `refs/remotes/origin/v10`.
-      # **It restores and never saves, and what that gives up is measured
-      # rather than assumed.** Two dispatches on 10 September, `34420580931`
-      # then `34423647380`, forty-three minutes apart at the identical
-      # `head_sha` `5f8e8f5b`, so nothing about the tree differed between them:
-      #
-      #     target              first    second    delta
-      #     darwin-arm64         251s      73s     -178s
-      #     linux-x64-gnu        757s     325s     -432s
-      #     win32-arm64          430s     165s     -265s
-      #     linux-arm64-gnu      619s     362s     -257s
-      #     linux-x64-musl      2361s    2093s     -268s
-      #     linux-arm64-musl    1422s    1293s     -129s
-      #     win32-x64            445s     466s      +21s   no gain
-      #                         -----    -----    ------
-      #                         6285s    4777s    -1508s
-      #
-      # Six of seven improved and one did not, which is why the six are
-      # credible. **So this cache is not useless and the reason for stopping it
-      # is not that it was.** It is that a per-push budget is the wrong place to
-      # store warmth for a workflow dispatched a few times a week: these seven
-      # entries plus `crates-io`'s were 5.09 GiB of the repository's cache,
-      # larger than the whole CI working set they were evicting, and an eviction
-      # costs a cold leg on every push until someone notices. Twenty-five
-      # runner-minutes on a same-session re-dispatch is the price, paid by a
-      # releaser who is already waiting on a thirty-five-minute matrix.
-      #
-      # **`save-if: false` and not a narrower predicate.** The condition it
-      # replaces guarded tag runs, and both these workflows are
-      # `workflow_dispatch` on a branch — so `github.ref` is `refs/heads/main`,
-      # the condition was always true, and they saved every single time.
-      # `fixtures.yml` already reads `save-if: false` on the same argument:
-      # these keys can never restore a CI cache, so sharing would need
-      # `add-job-id-key: false` in both files and one CI invalidation, and that
-      # is a trade for `ci.yml` to make.
+      # Restores and never saves. Two dispatches at one commit on 10 September
+      # gained on six of seven legs (6285s to 4777s), but these entries were
+      # 5.09 GiB, more than the CI working set they evicted. Sharing CI's cache
+      # needs `add-job-id-key: false` in both files.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ matrix.suffix }}
           cache-bin: true
           save-if: false
 
-      # **No system libraries are installed for the Linux builds, and that is the
-      # change rather than an omission.** cmake, nasm and the font development
-      # packages used to be installed here, because the addon was built on the
-      # runner. It is now built in `containers/Dockerfile.{glibc,musl}`, which
-      # carries all of them and links freetype and fontconfig statically -- so
-      # the runner needs none of it either to build or to load the result.
-      #
-      # The Rust toolchain below is likewise not what compiles the Linux addon;
-      # the container pins its own. It stays because `rust-cache` populates
-      # `~/.cargo/registry`, which `addon-container` mounts into the build, and
-      # because macOS and Windows do build on the runner.
+      # No system libraries for Linux: `containers/Dockerfile.{glibc,musl}`
+      # carry them and link freetype and fontconfig statically. The Rust
+      # toolchain stays for macOS and Windows, and because `rust-cache` fills
+      # `~/.cargo/registry`, which `addon-container` mounts.
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -277,27 +167,18 @@ jobs:
         if: runner.os != 'Linux'
         run: just pack
 
-      # Linux builds in a container, and the reason is measured rather than
-      # cautious: the same source built on `ubuntu-latest` demanded glibc 2.35
-      # and failed to load on five of the six images this package claims, and
-      # built in `containers/Dockerfile.glibc` demands 2.28 and loads on all
-      # six. **A Linux artefact is a property of its build base.**
-      #
-      # `pack-container` is passed the suffix rather than deriving it, because
-      # the runner cannot tell you which image built the binary: on this x64
-      # glibc runner `--host` answers `linux-x64-gnu` for a musl build too.
+      # Linux builds in a container: on `ubuntu-latest` the addon needs glibc
+      # 2.35 and loads on one of six claimed images, in
+      # `containers/Dockerfile.glibc` 2.28 and all six. The suffix is passed,
+      # since this runner's `--host` answers `linux-x64-gnu` for musl too.
       - name: Build in the release image and pack
         if: runner.os == 'Linux'
         run: just pack-container ${{ matrix.suffix }}
 
-      # What the binary must find at load, printed for a reader. The floors it
-      # demands are no longer printed here: they are asserted by the next step,
-      # and a number printed in one place and checked in another is a number
-      # that can disagree with itself.
-      #
-      # A missing read is not a pass. If the binary cannot be parsed at all the
-      # step says so loudly, because "nothing needed" and "nothing read" print
-      # the same way and only one of them is good news.
+      # What the binary must find at load, printed for a reader; the next step
+      # asserts the floors, so they are not printed twice. A binary that cannot
+      # be parsed says so loudly, since "nothing needed" and "nothing read"
+      # print alike.
       - name: Say what the Linux binary must find
         if: runner.os == 'Linux'
         run: |
@@ -332,53 +213,26 @@ jobs:
             echo 'Neither fontconfig nor freetype should appear above: the container links them statically.'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # **This one decides.** It compares what the artefact demands against the
-      # `floors` its target declares in `TARGETS`, and fails when the artefact
-      # asks for more -- a build base that moved, or a dependency that started
-      # using a newer symbol.
-      #
-      # It is a script rather than an inline block so it runs locally, and so a
-      # second Linux family is not a second copy of the logic.
-      #
-      # **What it cannot catch is a floor declared too high**, which fails
-      # nothing and quietly tells consumers to expect a newer machine than they
-      # need -- exactly the drift that sat unnoticed for three commits after the
-      # container lowered the real numbers. So it prints the measured value
-      # beside the declared one whether or not it exceeds. Reading them is part
-      # of reading a release.
+      # This one decides: it fails when the artefact demands more than its
+      # `floors` in `TARGETS`. A floor declared too high fails nothing, so it
+      # prints measured beside declared either way. A script, so it runs locally
+      # too.
       - name: Check the ABI floors have not drifted
         if: runner.os == 'Linux'
         run: just abi-floor ${{ matrix.suffix }}
 
-      # And this is the gate. A ceiling compares version tags, and **an
-      # unversioned symbol has none**: a binary reporting `GLIBCXX_3.4.21`,
-      # under every ceiling above, still failed to load on `_M_replace_cold`, a
-      # GCC 12 symbol carrying no version at all. Only loading it settles that.
-      #
-      # Nothing is installed into any image, because the point is what a
-      # consumer gets and a consumer running `node:22-slim` has no fontconfig.
-      #
-      # For the musl pair this is the whole of the evidence -- musl does not
-      # version its symbols, so the step above has nothing to compare and says
-      # so rather than passing silently.
+      # The gate: an unversioned symbol has no tag to compare, and
+      # `_M_replace_cold` failed a binary under every ceiling. Nothing is
+      # installed, as a `node:22-slim` consumer has no fontconfig. For musl,
+      # which versions no symbols, this is the whole of the evidence.
       - name: Load it on the images this target claims
         if: runner.os == 'Linux'
         run: just acceptance ${{ matrix.suffix }}
 
-      # The addon has to load from the packed platform package before that
-      # package is worth publishing. Rendering is the check — a `require` that
-      # resolves proves the file is present, not that it runs.
-      #
-      # `verify-packed` and not `verify-pack`: the latter re-runs `pack`, which
-      # builds the addon on the runner and would overwrite the one the container
-      # produced. The artefact verified has to be the artefact published.
-      #
-      # **Skipped for musl, because it runs on the runner and the runner is
-      # glibc.** A musl `.so` cannot be loaded there at all, so the step would
-      # report a packaging fault about a packaging arrangement that is fine. The
-      # acceptance step above is what answers for those targets, on Alpine; what
-      # is lost is the check that `exports` and `files` line up, and that is the
-      # same arrangement the four non-musl targets exercise on the same commit.
+      # The packed platform package must render before it is published.
+      # `verify-packed`, not `verify-pack`, which would rebuild on the runner
+      # over the container's binary. Skipped for musl, which cannot load on this
+      # glibc runner; acceptance covers it on Alpine.
       - name: Install the tarballs somewhere else and render
         if: ${{ !contains(matrix.suffix, 'musl') }}
         run: just verify-packed
@@ -394,27 +248,10 @@ jobs:
     name: publish
     needs: [targets, build]
     runs-on: ubuntu-latest
-    # **Thirty of these belong to the propagation gate below**, which carries
-    # its own 1800-second ceiling and fails naming the packages that never
-    # resolved. A bound at or under that would kill the wait instead of the
-    # hang, and report a timeout where the gate had a better answer ready.
-    #
-    # The other thirty are the work around it -- eight `npm publish` calls, an
-    # artefact download, a tag and a release -- and a bound on the thing the
-    # gate cannot see: a publish or a `gh` call that has stopped rather than
-    # slowed.
-    #
-    # **This job has been timed, but never doing the half the bound is for.**
-    # Two dry runs: 27 seconds (run 33961676649) and 31 seconds (run
-    # 33852331873). Those cover the checkout, the artefact download, the
-    # tarball validation and eight `--dry-run` publishes -- with the gate
-    # skipped, no version written to the registry, and no tag or release
-    # created. So half a minute is what everything *except* the eight registry
-    # writes, the wait and the two GitHub calls costs, and the rest of the sixty
-    # is headroom for work that has never run. Unlike the build's number, this
-    # one is sized from what is inside the job rather than from what it has
-    # taken; when a real release gives a figure, that is the moment to revisit
-    # it downward rather than leaving a number nobody can account for.
+    # Thirty minutes for the propagation gate below, whose own 1800-second
+    # ceiling names the packages that never resolved; thirty for the publishes,
+    # download, tag and release. Dry runs take about 30 seconds, but skip every
+    # registry write, the wait and both GitHub calls.
     timeout-minutes: 60
     # The only job that needs either: `id-token` to mint provenance, `contents`
     # to push the tag and open the release. See the note at the top.
@@ -426,18 +263,8 @@ jobs:
       actions: write
 
     steps:
-      # **Full history and tags, because the tag step asks whether its own tag
-      # already exists** and answers from the local refs rather than the
-      # network. That check is what makes a re-run walk past the half that
-      # succeeded instead of failing on a tag it created itself.
-      #
-      # It used to be needed for the notes as well, which were a `git log`
-      # range: on a default one-commit checkout `git describe --tags` found
-      # nothing, the notes step took its "no previous tag" branch, and the
-      # release page carried a single subject line while printing that it
-      # covered the whole history. The notes are read from a file in the tree
-      # now, so that failure is gone -- but the depth is not surplus, because
-      # the existence check still needs it.
+      # Full history and tags: the tag step checks for its tag in local refs,
+      # which is what lets a re-run walk past a tag it already created.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -476,12 +303,9 @@ jobs:
             process.stdin.on('end', () => process.stdout.write(JSON.parse(raw).include.map(entry => entry.suffix).join(' ')))
           " <<< "$MATRIX")
 
-          # **Counted before it is walked.** A `for` over an empty word list
-          # runs its body zero times and leaves `missing` at zero, so a node
-          # invocation that failed -- a matrix that did not parse, a schema that
-          # moved -- reported every target present having looked at none. The
-          # command substitution's own failure does not reach `set -e` from a
-          # `for` list either, so nothing else here would have said so.
+          # Counted before it is walked: a `for` over an empty list runs zero
+          # times, and a failed substitution in its word list does not reach
+          # `set -e`, so a broken matrix would report every target present.
           count=$(printf '%s\n' $suffixes | grep -c . || true)
           expected=$(node -e "
             let raw = ''
@@ -521,45 +345,26 @@ jobs:
               artifacts/${{ needs.targets.outputs.prefix }}-${{ needs.targets.outputs.version }}.tgz) continue ;;
             esac
             echo "==> $file"
-            # **Skip a version the registry already has, and say so.** npm
-            # refuses to publish over an existing version (E403), and this loop
-            # runs before the main package on purpose -- so one platform
-            # package already on the registry would stop every package behind
-            # it. That is exactly the state a bootstrap leaves: the first
-            # release of a new platform package cannot use OIDC, because a
-            # trusted publisher is configured on a package's settings page and
-            # a package that has never been published has none. So the seven
-            # were published once by hand, from the same tarballs this run
-            # built, and this run has to walk past them to reach the main
-            # package. Read from the tarball rather than the filename, so a
-            # renamed file cannot make the check ask about a different package.
+            # Skip a version the registry already has: npm refuses to publish
+            # over one (E403), and a hand-bootstrapped platform package would
+            # otherwise stop every package behind it. Read from the tarball, not
+            # its filename.
             name=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).name")
             version=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
-            # Recorded whether it is published here or was already present:
-            # the next step waits for what the main package will depend on,
-            # and a package published by hand an hour ago is as much a
-            # dependency as one published a second ago. Written from the same
-            # `name` and `version` this loop read out of the tarball, so the
-            # wait cannot be asking about a different package than the publish.
+            # Recorded whether published now or already present, since the main
+            # package depends on both. From the same `name` and `version` read
+            # above, so the wait asks about the package published.
             echo "${name}@${version}" >> "$RUNNER_TEMP/platform-packages.txt"
-            # **`$DRY != true` first, so a rehearsal rehearses.** The skip is
-            # load-bearing for the publish path -- npm refuses to publish over
-            # an existing version, and the bootstrap above leaves packages this
-            # loop has to walk past -- but on a dry run it skipped every package
-            # whose version was already on the registry and reported green
-            # having packed and validated nothing. That is the default path
-            # (`dry_run: true`) and the one a releaser rehearses with. The main
-            # package's step already reads this way; the two disagreed, and this
-            # is the half that was wrong.
+            # `$DRY != true` first, so a rehearsal packs and validates every
+            # package instead of skipping those already on the registry. The
+            # main package's step reads the same way.
             if [ "$DRY" != "true" ] && npm view "${name}@${version}" version >/dev/null 2>&1; then
               echo "    ${name}@${version} is already on the registry; not publishing it again"
               continue
             fi
-            # `./` is not decoration. npm reads a bare relative path as a git
-            # shorthand, so `artifacts/x.tgz` becomes `github:artifacts/x.tgz`
-            # and fails with `EALLOWGIT: Refusing to fetch`. Only a rehearsal
-            # that got past the build could find this, which is why the build
-            # being red for two rounds hid it.
+            # `./` because npm reads a bare relative path as git shorthand:
+            # `artifacts/x.tgz` becomes `github:artifacts/x.tgz` and fails with
+            # `EALLOWGIT`.
             if [ "$DRY" = "true" ]; then
               npm publish --dry-run --access public --tag "$TAG" "./$file"
             else
@@ -567,24 +372,10 @@ jobs:
             fi
           done
 
-      # **Published and installable are not the same moment.** The main package
-      # pins all seven platform packages at an exact version, so publishing it
-      # while one of them is still propagating puts a package on the registry
-      # that cannot be installed -- and npm and pnpm would hide it, because they
-      # skip an optional dependency whose `os`/`cpu`/`libc` excludes the host
-      # and never ask the registry about it. **yarn resolves all seven before
-      # installing any**, and a 404 on one fails the whole install; AGENTS.md
-      # carries the `YN0035` transcript.
-      #
-      # `docs.yml` has waited for exactly this since it was written -- its
-      # comment says "published and installable are separated by propagation" --
-      # and the reasoning was applied to the docs deploy and never to the
-      # publish the docs deploy is downstream of.
-      #
-      # The names come from `platform-packages.txt`, which the loop above wrote
-      # out of each tarball's own `package.json`. Not a list written here: a
-      # target is already named in three places with a test asserting they
-      # agree, and a fourth list is the drift that rule exists to prevent.
+      # Published is not installable. The main package pins all seven at exact
+      # versions and yarn resolves all seven before installing any, so one still
+      # propagating fails every yarn install. Names come from
+      # `platform-packages.txt`, written from each tarball, not a fourth list.
       - name: Wait for the platform packages to resolve
         if: ${{ !inputs.dry_run }}
         env:
@@ -593,13 +384,9 @@ jobs:
           set -euo pipefail
           list="$RUNNER_TEMP/platform-packages.txt"
 
-          # **A wait over nothing is not a wait.** An empty or short list would
-          # sail through every loop below and report success, which is the
-          # failure this file must not have: it would mean the main package is
-          # published against unresolved dependencies with a green step above
-          # saying otherwise. Checked against the matrix, which is the
-          # authoritative target list, rather than against a number written
-          # here.
+          # A wait over nothing is not a wait: an empty or short list would pass
+          # every loop below. Checked against the matrix, the authoritative
+          # target list.
           expected=$(node -e "
             let raw = ''
             process.stdin.on('data', chunk => { raw += chunk })
@@ -617,47 +404,14 @@ jobs:
           fi
           echo "waiting for ${actual} platform packages to resolve from the registry"
 
-          # **The loop waits on the fact, not on a clock.** Its exit condition
-          # is that every recorded name resolves at the exact version being
-          # published; if that happens in twenty seconds it takes twenty
-          # seconds. A fixed sleep long enough to be safe would make every
-          # release pay the worst case, and one short enough to be tolerable
-          # would be a guess that is wrong on the day the registry is slow.
-          #
-          # **Why the loop exists at all is measured, and the spread is the
-          # point.** Publish-to-resolvable across 5 September 2026, on our own
-          # packages: about 10 seconds, about 90, about 122, no more than 171,
-          # about 200 -- and one `E404` from `npm view` persisting over 100
-          # seconds after a publish that returned exit 0. **A twenty-fold
-          # spread, same registry, same session, same machine.** Method: `npm
-          # view <name>@<version> version` polled every 10 seconds, against the
-          # registry's own `time` field rather than a local clock.
-          #
-          # That spread is the argument for a heartbeat over any fixed wait. A
-          # sleep long enough to cover the slow end is mostly waste on the fast
-          # end, and one chosen to feel reasonable would eventually publish the
-          # main package into a window where its own pinned dependencies 404.
-          #
-          # **The readings say propagation is real; they do not say how long to
-          # wait.** The ceiling below is deliberately not derived from them --
-          # a handful of samples from one machine is a floor on the delay, not
-          # a distribution, and turning them into a bound would dress a guess as
-          # a measurement.
-          #
-          # **Every name is polled independently, and that is measured too.**
-          # Two packages published six seconds apart did not become resolvable
-          # together -- one at about 122 seconds while the other still was not
-          # -- so a gate that polled one and inferred the rest would pass on
-          # whichever landed first. Each round asks only about what is still
-          # missing, so the slowest name sets the wait rather than the sum of
-          # them.
+          # Waits on the fact, not a clock: each name is polled until it
+          # resolves at this version. On 5 September 2026 that took from about
+          # 10 to about 200 seconds, and two packages published six seconds
+          # apart resolved apart. The ceiling below is not derived from those.
           remaining=$(cat "$list")
-          # **A hang-breaker, not a prediction.** Nothing here expects to wait
-          # half an hour; this exists so a publish that is genuinely broken
-          # fails with a message naming the packages that never appeared,
-          # instead of spinning until the job hits GitHub's own six-hour limit
-          # and leaves an error pointing at nothing. Generously past any
-          # propagation we have seen or have reason to expect.
+          # A hang-breaker: a broken publish fails naming the packages that
+          # never appeared, rather than at GitHub's six-hour limit. Well past
+          # any propagation seen.
           ceiling=1800
           deadline=$(( SECONDS + ceiling ))
           while :; do
@@ -703,15 +457,9 @@ jobs:
           file="artifacts/${PREFIX}-${VERSION}.tgz"
           test -f "$file"
 
-          # **The same skip the platform loop has, and for the same reason one
-          # step further on.** npm refuses to publish over an existing version,
-          # so a re-run of a release that succeeded died here -- and it died
-          # *before* the tag step, which is the half that had not run if the
-          # first attempt failed after publishing. That made the one state a
-          # re-run exists to repair the one state a re-run could not reach.
-          #
-          # Read from inside the tarball rather than from `VERSION`, so this
-          # asks about the package that is actually about to be published.
+          # The platform loop's skip, for the main package: without it a re-run
+          # after a successful publish dies here, before the tag step it came to
+          # finish. Read from the tarball, not `VERSION`.
           name=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).name")
           version=$(tar -xzOf "$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
           if [ "$DRY" != "true" ] && npm view "${name}@${version}" version >/dev/null 2>&1; then
@@ -727,12 +475,10 @@ jobs:
             npm publish --provenance --access public --tag "$TAG" "./$file"
           fi
 
-      # Tag and release AFTER the registry has accepted everything, never before.
-      # A tag pushed first and a publish that then fails leaves a tag with no
-      # release under it and a version number that can never be reissued --
-      # `meo-skia-canvas` has that scar, from a `gh` call that failed for an
-      # unrelated reason once the tag was already up. Tagging last means a
-      # failed publish leaves the tree exactly as it was.
+      # Tag and release after the registry accepts everything: a tag pushed
+      # before a failed publish marks a version that can never be reissued,
+      # which `meo-skia-canvas` carries. Tagging last leaves a failed publish
+      # with the tree as it was.
       - name: Tag the commit and open a release
         if: ${{ !inputs.dry_run }}
         env:
@@ -744,27 +490,10 @@ jobs:
           set -euo pipefail
           git_tag="npm-v${VERSION}"
 
-          # **The notes are written by hand, one file per version, and a
-          # missing one stops the release.**
-          #
-          # They used to be the commit subjects since the last tag, verbatim.
-          # That was right while one lineage of tags covered one thing, and it
-          # is wrong now: 92 non-merge commits stand between the last release
-          # and this one, of which about twenty mean anything to somebody
-          # installing the package, and the generated page put "Check that
-          # `ci-steps` still runs both halves" beside "markup no longer clears
-          # a bad colour" with nothing to separate them. The reasoning against
-          # a conventional-commit parser still holds and is the reason the log
-          # was used at all -- 26 of the last 40 subjects carry no
-          # `feat:`/`fix:` prefix, so a parser would drop two thirds of the
-          # history including the changes someone took the trouble to name in
-          # a sentence -- but a parser is not what replaces it. A person is.
-          #
-          # **Missing means stop, and it must not fall back to the log.** A
-          # release that ships a noisy generated page because someone forgot
-          # is worse than one that refuses, and a fallback would make this
-          # check unable to fail: every release would pass it, whether or not
-          # anyone had written anything.
+          # Notes are hand-written, one file per version, and a missing one
+          # stops the release. The log is no substitute: most commits mean
+          # nothing to an installer, and most subjects carry no `feat:` or
+          # `fix:`. No fallback, which would make this unable to fail.
           notes_source="docs/releases/npm/${VERSION}.md"
           if [ ! -s "${notes_source}" ]; then
             echo "::error::${notes_source} is missing or empty. Release notes are written by hand, per channel and per version, against the previous release of that channel. Write it, commit it, and run this again."
@@ -781,35 +510,19 @@ jobs:
             fi
             cat "${notes_source}"
             echo ""
-            # Where the reference for *this* version lives. A release is when
-            # someone goes looking for it, and `latest/` is not the answer while
-            # 10.x is in prerelease -- it follows the newest stable release, so
-            # it is absent until one exists. Naming the version's own directory
-            # is the link that works either way.
-            #
-            # **The version, not the tag.** `docs.yml` strips the channel
-            # prefix before it names the directory, because the site index
-            # parses directory names as `vX.Y.Z`; a link built from
-            # `${git_tag}` would 404 on every release after the rename.
+            # The reference for this version, which exists whether or not it is
+            # the newest stable. The version, not the tag: `docs.yml` strips the
+            # channel prefix from the directory name, so a link from
+            # `${git_tag}` would 404.
             echo "---"
             echo ""
             echo "[API reference for v${VERSION}](https://l7aromeo.github.io/meo-canvas/v${VERSION}/)"
           } > notes.md
 
-          # **Both halves ask whether they have already happened.** The tag is
-          # pushed and the release is opened by two commands with a window
-          # between them, and a failure in that window used to leave a tag with
-          # no release under it and no way to finish -- which is the scar
-          # `meo-skia-canvas` wears and the reason everything above it is
-          # ordered the way it is. The window is still there; what changed is
-          # that it is no longer terminal, because a re-run walks past the half
-          # that succeeded and completes the half that did not.
-          #
-          # **Not silently, when the tag names a different commit.** A tag that
-          # exists at another revision is a real conflict -- someone released
-          # this version from elsewhere -- and skipping past it would attach a
-          # release to a commit this run did not build. Tags are local here
-          # because the checkout fetches them.
+          # Both halves ask whether they already happened: the tag push and the
+          # release are two commands, so a re-run walks past the half that
+          # succeeded. A tag at another revision is a conflict and stops the
+          # run. Tags are local because the checkout fetches them.
           head=$(git rev-parse HEAD)
           if existing=$(git rev-parse -q --verify "refs/tags/${git_tag}^{commit}"); then
             if [ "$existing" != "$head" ]; then
@@ -818,19 +531,10 @@ jobs:
             fi
             echo "${git_tag} already exists at this commit; not creating it again"
           else
-            # **An annotated tag records who made it, so the runner needs an
-            # identity.** Without one `git tag -a` exits 128 with "empty ident
-            # name" -- which is what happened on the first real release,
-            # 5 September 2026, run 33966045288: every package reached npm and
-            # the job then died here, leaving the version published with no tag
-            # and no release. A lightweight tag would not have needed this, and
-            # is exactly what was given up to keep the annotation; this is the
-            # cost of that trade, paid once.
-            #
-            # `github-actions[bot]` with its numeric noreply address is the
-            # identity GitHub attributes to the Actions bot, so the tag is
-            # attributed to the automation rather than to a person who did not
-            # make it.
+            # An annotated tag records its author, so the runner needs an
+            # identity: without one `git tag -a` exits 128, as on run
+            # 33966045288 after every package reached npm. The Actions bot's
+            # noreply address attributes it to the automation.
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git tag -a "${git_tag}" -m "${NAME} ${VERSION}"
@@ -857,28 +561,10 @@ jobs:
               artifacts/*.tgz
           fi
 
-      # **A release created with `GITHUB_TOKEN` does not start `docs.yml`, and
-      # never has.** GitHub does not raise events for workflows from actions
-      # taken with that token -- "events triggered by the `GITHUB_TOKEN` will
-      # not create a new workflow run" -- and `release` is not among the three
-      # exceptions (`workflow_dispatch`, `repository_dispatch`,
-      # `pull_request`). So `docs.yml`'s `release: types: [published]` trigger
-      # is correct and simply never fires from here: no error, no red job, no
-      # deploy. Its own comment says this workflow "opens it as the last step
-      # ... so this fires after the publish", which is true about the ordering
-      # and wrong about whether it fires.
-      #
-      # `workflow_dispatch` is one of the documented exceptions, so this uses
-      # GitHub's own carve-out rather than a stored PAT.
-      #
-      # **Chaining, not reimplementing.** `docs.yml` waits for all eight
-      # packages to resolve before it deploys, so "released and propagated" is
-      # already answered there; this only has to start it.
-      #
-      # **Dispatched at the tag**, which is what was published. That depends on
-      # `docs.yml` existing on the default branch -- `workflow_dispatch` is only
-      # offered for workflows that do -- which is the same constraint that
-      # currently makes `crates-io.yml` undispatchable, one file over.
+      # A release created with `GITHUB_TOKEN` raises no `release` event for
+      # other workflows, so `docs.yml` would never deploy; `workflow_dispatch`
+      # is a documented exception. Dispatched at the tag, the published commit.
+      # `docs.yml` waits for all eight packages itself, so this only starts it.
       - name: Ask the reference workflow to deploy this version
         if: ${{ !inputs.dry_run }}
         env:
@@ -888,19 +574,15 @@ jobs:
           set -euo pipefail
           git_tag="npm-v${VERSION}"
 
-          # **Failing loudly rather than warning.** A deploy that did not start
-          # is a smaller failure than a red release job -- the packages are on
-          # npm and the tag is pushed by now -- but a *silent* one is the defect
-          # being fixed here, and this job is safe to re-run: the publish, the
-          # tag and the release all walk past what already succeeded.
+          # Fails rather than warns: the packages and tag are out by now, but a
+          # silent missing deploy is the defect, and the job re-runs safely past
+          # what succeeded.
           before=$(gh run list --workflow docs.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
           gh workflow run docs.yml --ref "${git_tag}" -f tag="${git_tag}"
 
-          # **A dispatch that returns success and starts nothing is exactly the
-          # failure this step exists to fix**, so the request is not taken as
-          # the outcome. Runs appear within seconds; the two minutes is a
-          # hang-breaker rather than an expected wait, and the message below
-          # reads the same variable so the number cannot drift from the wait.
+          # A dispatch returning success need not start a run, so the run is
+          # looked for. The two minutes is a hang-breaker; runs appear within
+          # seconds, and the message reads the same variable.
           appear=120
           deadline=$(( SECONDS + appear ))
           run_id=0
@@ -923,22 +605,10 @@ jobs:
             sleep 5
           done
 
-          # **Started is not deployed, and the difference has been invisible.**
-          # This used to stop at the line above, so a run that began and then
-          # failed left this job green -- and every way that run can fail is
-          # quiet from here: the tag can miss the filter and publish nothing
-          # with a notice, the environment can refuse the ref before any step
-          # runs, the registry wait can spend its deadline on a version that
-          # will never resolve. All three have happened. The release page, the
-          # packages and the tag are all correct in each case and the reference
-          # is simply absent, which is what nobody notices until someone
-          # follows the link in the notes.
-          #
-          # Twenty minutes because the run's own registry wait is ten and its
-          # build is under one; the rest is headroom. A timeout here is
-          # reported rather than swallowed, and says the run may still be going
-          # -- an unfinished deploy and a failed one are different facts and
-          # this step does not have to guess which it saw.
+          # Started is not deployed: the run can publish nothing on a filtered
+          # tag, be refused by the environment, or time out on the registry,
+          # each leaving no reference. Twenty minutes over a ten-minute wait and
+          # a quick build; a timeout says the run may still be going.
           finish=1200
           deadline=$(( SECONDS + finish ))
           while :; do

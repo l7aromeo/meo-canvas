@@ -1,8 +1,7 @@
-# Chart geometry, generated from packages/meo-canvas/src/chart.ts.
-# **One derivation, two callers.** The TypeScript side derived this from v1
-# and verified it by rendering; the Rust port answers to these numbers
-# rather than deriving them from v1 a third time, because a third
-# derivation would drift and Chrome has no charts to referee it.
+# Chart geometry, generated from packages/meo-canvas/src/chart.ts and verified
+# there by rendering. The Rust port answers to these numbers rather than
+# deriving them again: a second derivation would drift, and Chrome has no
+# charts to referee it.
 #
 # kind	args	result
 constants	GRID_DIVISIONS	5

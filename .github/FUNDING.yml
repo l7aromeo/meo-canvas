@@ -1,9 +1,6 @@
-# The sponsor button, which GitHub renders at the top of the repository and on
-# every release page.
-#
-# `github` requires the account to be enrolled at github.com/sponsors; until
-# then the entry is inert rather than broken, so it is safe to carry ahead of
-# the enrolment rather than after it.
+# The sponsor button GitHub renders on the repository and every release page.
+# `github` needs the account enrolled at github.com/sponsors, and until then the
+# entry is inert rather than broken.
 github: l7aromeo
 
 # One-off tipping, and it renders immediately -- unlike `github` above, which

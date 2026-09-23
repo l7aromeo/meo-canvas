@@ -1,15 +1,7 @@
-//! How one value of one type occupies `f64` slots.
-//!
-//! Every property in the arena is written through [`ArenaValue`], so the
-//! encoder and the decoder agree about slot counts by sharing one definition
-//! rather than by two lists matching. A type whose slot layout changes changes
-//! in one place.
-//!
-//! Slot counts are not constant across types and not always constant within
-//! one: a `Vec` writes its length and then its items, and an `Option` writes a
-//! presence flag and then perhaps a value. So the reader is a cursor rather
-//! than an index calculation, and a truncated arena is an error at the slot it
-//! ran out on.
+//! How one value of one type occupies `f64` slots. Every property goes through
+//! [`ArenaValue`], so slot counts have one definition. They vary -- a `Vec`
+//! writes its length first, an `Option` a presence flag -- so the reader is a
+//! cursor, and a truncated arena is an error at the slot it ran out on.
 
 use meo_canvas_core::color::parse_color;
 use meo_canvas_scene::{
@@ -147,39 +139,10 @@ impl<T: ArenaValue> ArenaValue for Corners<T> {
 }
 
 impl ArenaValue for Color {
-    /// A colour crosses as the **string the caller wrote**, in one slot.
-    ///
-    /// # Why not the packed channels it used to be
-    ///
-    /// It was `r<<24 | g<<16 | b<<8 | a`, packed on the JavaScript side, and
-    /// that side could only pack what it could parse: `#rgb`, `#rgba`,
-    /// `#rrggbb`, `#rrggbbaa` and `transparent`. Everything else CSS spells --
-    /// `rgba(255,255,255,0.15)`, `red`, `hsl(210 80% 50%)` -- was a
-    /// `TypeError` from a package that had no colour parser and could not
-    /// grow one without carrying a hundred-and-fifty-entry name table beside
-    /// the one Skia already has. v1 forwarded the string and took all of them,
-    /// so this was a regression against v1 on the surface most of its callers
-    /// use.
-    ///
-    /// # What it costs, measured
-    ///
-    /// **Nothing in slots.** A string crosses as an index into the side array
-    /// and the writer deduplicates, so this is one slot as it always was and
-    /// one side entry per *distinct* colour in a scene. `font_family`, image
-    /// paths and URLs have crossed that way since the format existed.
-    ///
-    /// **Nothing in the codec.** The scene holds channels once parsed, so no
-    /// colour string ever reaches `scene.mcs` -- no version, no migration of
-    /// the format that has to stay readable.
-    ///
-    /// **21 to 111 nanoseconds** of [`parse_color`] per distinct string per
-    /// render, release build: 21 for `#28509c`, 32 for `red`, 111 for
-    /// `rgba(255,255,255,0.15)`. Fifty distinct colours is about three
-    /// microseconds.
-    ///
-    /// Keeping the packed path for hex alone would have saved that and kept a
-    /// second colour implementation with its own shorthand rounding -- which
-    /// is the split that refused `rgba(...)` in the first place.
+    /// A colour crosses as the string the caller wrote, parsed here by the
+    /// renderer's own parser, so every CSS spelling reaches it. It costs one
+    /// side entry per distinct colour and 21 to 111 ns of [`parse_color`] each,
+    /// release build.
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let slot = input.offset();
         let index = input.index()?;

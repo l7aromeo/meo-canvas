@@ -1,11 +1,8 @@
 //! The legend, and the frame that puts it on one of four sides.
 //!
-//! **v1 measures every label and wraps by hand** -- `currentX + itemWidth >
-//! totalWidth` and a running row count -- so that it can subtract the
-//! legend's height from the plot's. A builder needs none of that: wrapping is
-//! `flex-wrap`, the row's height is whatever it wraps to, and the plot takes
-//! the rest through `flex-grow`. **The measuring v1 does in order to size the
-//! plot is the thing layout was going to do anyway.**
+//! The legend wraps with `flex-wrap`, its height is whatever it wraps to, and
+//! the plot takes the rest through `flex-grow` -- so nothing is measured to
+//! size the plot.
 
 use meo_canvas_scene::style::{Dimension, paint::Color};
 
@@ -17,23 +14,23 @@ use crate::{
     unit::sides,
 };
 
-/// v1's swatch: a fifteen-pixel square of the series colour.
+/// A swatch's side in pixels: a square of the series colour.
 const SWATCH: f32 = 15.0;
-/// v1's gap between a swatch and its label, and between stacked items.
+/// The gap between a swatch and its label, and between stacked items.
 const GAP: f32 = 5.0;
-/// v1's padding between one legend item and the next along a row.
+/// The padding between one legend item and the next along a row.
 const PADDING: f32 = 20.0;
 /// The default for every piece of chart text.
 const TEXT_COLOR: Color = hex_rgb(0x00_00_00);
-/// v1's default point size for chart text.
+/// Chart text's point size when none is given.
 const TEXT_SIZE: f32 = 12.0;
 
-/// Which side of the chart the legend sits on, as v1 spells it.
+/// Which side of the chart the legend sits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LegendPosition {
     /// Above the plot.
     Top,
-    /// Below the plot, which is v1's default.
+    /// Below the plot, and the default.
     #[default]
     Bottom,
     /// Left of the plot, stacked.
@@ -43,12 +40,8 @@ pub enum LegendPosition {
 }
 
 impl LegendPosition {
-    /// Whether the legend stacks rather than runs along.
-    ///
-    /// **The side decides the legend's own direction, not just where it
-    /// goes.** A legend beside the plot has a column's width to fill and a
-    /// row's would push the plot out; one above or below has the width and
-    /// wraps within it.
+    /// Whether the legend stacks rather than runs along: beside the plot it
+    /// has a column's width to fill, where a row would push the plot out.
     const fn upright(self) -> bool {
         matches!(self, Self::Left | Self::Right)
     }
@@ -56,9 +49,8 @@ impl LegendPosition {
 
 /// One swatch-and-label pair per series, or nothing.
 ///
-/// `None` rather than an empty row when there is nothing to show, so
-/// [`framed`] puts the chart in a plain column instead of one holding an
-/// invisible sibling that still takes a gap.
+/// `None` rather than an empty row, so [`framed`] does not hold an invisible
+/// sibling that still takes a gap.
 pub(crate) fn legend(
     options: &Options,
     entries: &[(String, String, LegendEntry<'_>)],
@@ -141,18 +133,14 @@ pub(crate) fn legend(
 
 /// The chart's own frame: the legend on whichever side, and everything else.
 ///
-/// **The legend is a sibling rather than an overlay**, so the plot's
-/// `flex-grow` takes what the legend leaves -- which is v1's
-/// `chartHeight - legendHeight` arrived at by layout instead of by
-/// subtraction.
+/// The legend is a sibling rather than an overlay, so the plot's `flex-grow`
+/// takes what the legend leaves.
 pub(crate) fn framed(
     options: &Options,
     body: Element,
     legend: Option<Element>,
     name: &'static str,
 ) -> Element {
-    // Flat setters after the constructor. `with_style` merges now, so this
-    // is a style choice rather than the workaround it was written as.
     let Some(legend) = legend else {
         return Column::new()
             .name(name)

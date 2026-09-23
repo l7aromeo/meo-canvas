@@ -1,21 +1,7 @@
-//! That writing a file and encoding a buffer answer the same questions.
-//!
-//! `PreparedEncode::write` exists so a page-spanning format streams into the
-//! file rather than being held whole in memory. The risk it brings is not
-//! performance: it is that a second path through the encoder can resolve
-//! *which pages* differently from the first, and disagree silently. One file
-//! with every frame in it is a plausible GIF, and so is one file with one
-//! frame; nothing about either says which was asked for.
-//!
-//! So these compare the two paths rather than checking each alone, and they do
-//! it on the case where the two rules collide — an [`EncodeOptions::page`]
-//! naming one frame of a format that otherwise gathers them all.
-//!
-//! **The pages are given different colours on purpose.** Blank pages encode to
-//! identical bytes, so a test over them cannot tell "wrote page 1" from "wrote
-//! page 2" — it would pass on a path that always wrote the first page, and on
-//! one that always wrote the last. The colours are what make the assertion
-//! about the named page rather than about the count.
+//! Writing a file and encoding a buffer answer the same questions: the
+//! streaming path must resolve which pages as the buffer path does. Compared on
+//! an [`EncodeOptions::page`] naming one frame of a gathering format, pages in
+//! different colours so the named page is checked and not only the count.
 
 use std::fs;
 

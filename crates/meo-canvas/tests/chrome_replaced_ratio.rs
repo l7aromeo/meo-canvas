@@ -1,24 +1,7 @@
-//! What a definite width does to a replaced element's `auto` height.
-//!
-//! `l7aromeo/meo-canvas#94`: an `Image` with an intrinsic 60x40 and
-//! `width: 200` was 200x40 in a block container, the intrinsic height arriving
-//! untouched. Chrome derives the other axis from the intrinsic ratio, which is
-//! CSS 2.2 §10.3.2 and §10.6.2 and is what `aspect-ratio: auto` means.
-//!
-//! **Ink, not `LayoutResult`.** The report is about a picture, and a test
-//! reading the solved box would pass on a renderer that laid the image out
-//! correctly and painted it somewhere else. The node carries a background
-//! colour, so what is measured is the rectangle the painter actually filled.
-//!
-//! **The flex rows are controls and they are the point of the table.** A flex
-//! item with an `auto` cross size stretches to the line, so `200x40` is
-//! correct in a flex container and the defect in a block one. Two measurements
-//! of those two rows were read against each other as a divergence before
-//! Chrome was asked, and Chrome says both. A repair scored without them can
-//! trade one for the other and look like progress.
-//!
-//! The `div` rows are the other contrast: a non-replaced block box fills its
-//! container and must keep filling it.
+//! What a definite width does to a replaced element's `auto` height
+//! (`l7aromeo/meo-canvas#94`): Chrome derives it from the intrinsic ratio. Read
+//! from ink. The flex rows are the controls: a stretched flex item is 200x40,
+//! correct there and the defect in a block.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -42,20 +25,11 @@ const BLOCK: (f32, f32) = (200.0, 40.0);
 
 const INK: (u8, u8, u8) = (204, 0, 0);
 
-/// The recorded Chrome rows, so the assertions compare against a measurement
-/// rather than against numbers retyped into this file.
-///
-/// `chrome_tables_are_read` requires it: a table nobody reads is a table nobody
-/// checks, and the pairing is by `include_str!` of the path.
+/// The recorded Chrome rows, which `chrome_tables_are_read` requires be read.
 const TABLE: &str = include_str!("assets/chrome/replaced-ratio.tsv");
 
-/// Chrome's `(width, height)` for one case of the table.
-///
-/// **Rounded rather than truncated, and the two differ here.** A 3:2 ratio
-/// against 100 gives Chrome `66.66`, and a box 66.66 tall covers 67 rows of
-/// pixels — so truncation would compare 66 against an ink extent of 67 and
-/// fail on the arithmetic rather than on the renderer. Floor a sample point;
-/// round a reported value.
+/// Chrome's `(width, height)` for one case, rounded rather than truncated: a
+/// 3:2 ratio against 100 gives 66.66, which covers 67 rows of pixels.
 fn chrome(case: &str) -> (u32, u32) {
     for line in TABLE.lines() {
         if line.starts_with('#') || line.trim().is_empty() {
@@ -86,11 +60,8 @@ fn chrome(case: &str) -> (u32, u32) {
     unreachable!("{case} is not in replaced-ratio.tsv")
 }
 
-/// A 60x40 image, rendered rather than embedded.
-///
-/// The bytes come from this renderer encoding a scene of one filled box, so the
-/// intrinsic size under test is one the suite can restate rather than a number
-/// in a file nobody re-derives.
+/// A 60x40 image, rendered by this renderer from one filled box rather than
+/// embedded, so the intrinsic size is one the suite can restate.
 fn art() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(ART.0, ART.1));
     scene.nodes[0].paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
@@ -120,12 +91,8 @@ struct Case {
     kind: Kind,
 }
 
-/// The painted extent of the element, in pixels.
-///
-/// The element carries a background colour and the page carries none, so
-/// "anything that is not the page" is the element's own rectangle — including
-/// the antialiased edge columns, which an exact-colour match drops and
-/// under-reports the box by two pixels for.
+/// The painted extent of the element: anything that is not the page,
+/// antialiased edges included, which an exact-colour match would drop.
 fn painted(case: &Case) -> (u32, u32) {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].layout.align_items = Some(Align::FlexStart);

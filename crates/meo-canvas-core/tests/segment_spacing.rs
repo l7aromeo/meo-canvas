@@ -1,21 +1,7 @@
-//! A segment's own `letterSpacing`, asserted on advances rather than on pixels.
-//!
-//! # Why not a pixel comparison
-//!
-//! Because letter spacing feeds the **line breaker** as well as the drawing. A
-//! repair that set it only in `draw_run` would change the picture — and so
-//! would pass any test that only asks whether two renders differ — while every
-//! glyph sat at an advance the measurer never agreed to. The runs' widths are
-//! what both halves have to agree on, so they are what is asserted.
-//!
-//! # The `em` case is the point of the field's design
-//!
-//! An `em` resolves against the size of the element that **declares** it. A
-//! segment that sets a font size and an `em` spacing must resolve against its
-//! own size, not the paragraph's. Threading the paragraph's already-resolved
-//! pixels into the run would be correct for a segment that keeps the
-//! paragraph's size and silently wrong for one that does not — which is
-//! precisely the segment somebody reaches for per-run spacing to write.
+//! A segment's own `letterSpacing`, asserted on advances rather than pixels:
+//! spacing feeds the line breaker as well as the drawing, so run widths are
+//! what both must agree on. An `em` resolves against the segment's own size,
+//! not the paragraph's.
 
 use meo_canvas_core::{
     lines::{Metrics, TextMeasurer, wrap},
@@ -84,11 +70,10 @@ fn a_segment_spacing_widens_that_run() {
 
 #[test]
 fn an_em_spacing_resolves_against_the_segments_own_size() {
-    // **The two scenes differ only in the paragraph's size**, and the segment
-    // fixes its own size in both. If the spacing is resolved against the run,
-    // the run is identical in the two; if it is resolved against the
-    // paragraph, the two differ. Neither number is written down, so the test
-    // cannot pass by matching a constant that happens to be right.
+    // The scenes differ only in the paragraph's size and the segment fixes its
+    // own in both: spacing resolved against the run gives equal runs,
+    // against the paragraph different ones. No number is written down to
+    // match.
     let overlay = TextStyle {
         font_size: Some(20.0),
         letter_spacing: Some(Spacing::Em(1.0)),
@@ -107,12 +92,9 @@ fn an_em_spacing_resolves_against_the_segments_own_size() {
          its own size at 20 in both"
     );
 
-    // **The control, and it is not "do the two paragraphs differ".** They
-    // would differ from the glyph sizes alone if the segment did not fix its
-    // own, so a control shaped that way can never fail. What has to be shown
-    // is that the *spacing* is doing something at all — otherwise the equality
-    // asserted above would also hold if every run had zero spacing, which is
-    // exactly what the unrepaired code produces.
+    // The control shows the spacing does something, since the equality above
+    // would also hold with zero spacing everywhere. Differing paragraphs
+    // would not do: glyph sizes alone make them differ.
     let no_spacing = first_run_width(
         &base(10.0),
         &one(TextStyle {

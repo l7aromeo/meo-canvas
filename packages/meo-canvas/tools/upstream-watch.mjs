@@ -1,45 +1,7 @@
-// What upstream has done about the defects this tree works around.
-//
-// **The gap this closes is a fix that is merged and not released.** A released
-// fix already goes red here: Dependabot bumps the crate, the probe beside the
-// workaround fails, and its message names the `[WORKAROUND]` to delete. A fix
-// that is merged upstream and sits in no release is invisible to all of that,
-// because Dependabot sees published versions and there is nothing to bump. That
-// window has been open for weeks at a time and was noticed only because someone
-// looked by hand.
-//
-// **The one thing it must never do is emit a shorter list quietly.** A rate
-// limit, a network failure and a renamed repository all return no findings, and
-// no findings is what a quiet week looks like. So every reference produces a
-// row -- a state or an error, never an absence -- and the summary leads with
-// `N references, N answered`. The next person's instinct will be to filter the
-// error rows out to make the output tidy; that instinct turns this into a
-// scheduled no-op.
-//
-// **Two conditions take it non-zero, and a green tick means neither.** A
-// reference it could not query, because a watcher that goes quiet when it
-// cannot see is the failure this exists to avoid. And a fix merged into no
-// release, because the ask was that *an error or a gate should appear for our
-// workaround so we know* -- and a finding buried in the log of a green
-// scheduled run is not an error appearing. Nobody opens a log that has no
-// reason to be opened.
-//
-// **It stays red for exactly as long as there is something to do**, and clears
-// itself when the workaround and its reference are deleted. That is the same
-// argument as having no memory: the tree is the state. A permanently red
-// scheduled job would be a real objection if the red were not actionable; this
-// one names a site and a deletion.
-//
-// **The tree is the state, so there is nothing to remember.** This reports what
-// is actionable now rather than what changed since last week. A change detector
-// would say `taffy#1184 is merged and unreleased` once and then go quiet, and
-// quiet is indistinguishable from nothing to report. Saying it every week until
-// someone deletes the workaround is the point: the row disappears when the
-// reference does, and the reference disappears when the workaround is removed.
-// No store to go stale, no first run to get wrong.
-//
-// **It reads. It writes nothing to any repository it names.** Anything it finds
-// becomes an issue on this tracker, raised by a person.
+// What upstream has done about the defects this tree works around, to catch a fix
+// merged and not released, which Dependabot cannot see. Every reference yields a
+// row, a state or an error; it exits non-zero on a query it could not make or a
+// fix merged into no release. It reads the tree each run and writes nowhere.
 
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -67,11 +29,8 @@ function token() {
 
 /** This repository, so its own issues are not watched as if they were upstream. */
 function self() {
-  // **Both ways it can fail arrive at the same refusal.** A checkout with no
-  // `origin` makes `git` exit non-zero and a remote that is not GitHub parses
-  // to nothing; either leaves the filter unable to say what is ours, and an
-  // uncaught `git` error would report that as a stack trace rather than as the
-  // refusal it is.
+  // No `origin`, or a remote that is not GitHub, both leave the filter unable to
+  // say what is ours, and arrive at the same refusal rather than a stack trace.
   let url
   try {
     url = execFileSync('git', ['remote', 'get-url', 'origin'], {
@@ -86,17 +45,9 @@ function self() {
 }
 
 /**
- * Every reference in a comment, in both spellings, deduplicated.
- *
- * **Both spellings, because one of them is invisible to the other.** `taffy`'s
- * 1151 and 1163 appear in this tree only as full URLs and nowhere as
- * `owner/repo#N`, so a watcher reading the qualified form alone watches neither
- * and reports a clean week for two issues it never asked about.
- *
- * Deduplicated by reference rather than by site, which is what makes the
- * tag-versus-prose question irrelevant here: a doc paragraph mentioning an
- * upstream issue cites the same reference as the comment marking the code, and
- * the two collapse to one row.
+ * Every reference in a comment, in both spellings -- taffy's 1151 and 1163 appear
+ * here only as full URLs -- deduplicated by reference, so a doc paragraph and the
+ * comment marking the code collapse to one row.
  */
 function referenced() {
   const found = new Map()
@@ -134,13 +85,9 @@ function ask(path, auth) {
 }
 
 /**
- * What a reference's state means for the workaround citing it.
- *
- * **Merged after the latest release is a certainty; merged before it is not.**
- * If the merge is newer than the newest published release, it is in no release
- * -- there is nowhere for it to be. The other direction needs the merge commit
- * compared against the tag, which this does not do, so it says `merged` and
- * leaves the stronger claim unmade rather than guessing at it.
+ * What a reference's state means for the workaround citing it. Merged after the
+ * newest release is in no release; merged before it is reported as `merged`,
+ * since that needs the merge commit compared against the tag, which this does not do.
  */
 function verdict(item, release) {
   if (item.merged_at != null) {
@@ -166,12 +113,8 @@ function verdict(item, release) {
 }
 
 /**
- * The self-test, shown failing rather than assumed.
- *
- * **A passing run cannot demonstrate the property this tool is for.** "Never
- * emits a shorter list quietly" is about what happens when a query fails, and a
- * run where none fails says nothing about it. So the rows are built here from a
- * fixed set of answers, one of them an error, and the counts are checked.
+ * The self-test: rows built from fixed answers, one of them an error, with the
+ * counts checked -- a run where no query fails cannot show that none is dropped.
  */
 export function verifySummary() {
   const answers = [
@@ -193,12 +136,8 @@ verifySummary()
 
 const mine = self()
 if (mine === undefined) {
-  // **Not watching everything instead.** With no name for this repository the
-  // filter that drops our own references matches nothing, so the run would
-  // quietly widen from the upstream set to every reference in the tree --
-  // fifteen of our own issues reported weekly as if they were upstream, which
-  // is the report nobody reads. A filter that cannot identify what it excludes
-  // has not excluded anything.
+  // Refuse rather than watch everything: with no name for this repository the
+  // filter drops nothing, and our own issues would be reported as upstream.
   process.stderr.write(
     'upstream watch: `git remote get-url origin` named no owner/repo, so there is no way to tell this ' +
       "repository's own references from an upstream one. Refusing rather than watching every reference in the tree.\n",
@@ -239,13 +178,9 @@ for (const [key, site] of watched) {
   rows.push({ key, site, ...verdict(detail, releases.get(repo)) })
 }
 
-// **Only one state is the finding, and the rest is context.** A closed issue or
-// a merged-and-released fix is already covered: Dependabot bumps the crate and
-// the probe beside the workaround fails with a message naming what to delete.
-// Most citations here are history -- a test's doc explaining why a compensation
-// exists -- and calling all of them a finding every week is how a report teaches
-// its reader to skip it. What nothing else can see is a fix merged into no
-// release, which is the window this exists for.
+// Only a fix merged into no release is a finding. A closed issue or a released
+// fix is covered by Dependabot and the probe beside the workaround; the rest of
+// the citations are context.
 const gaps = rows.filter(row => row.gap)
 const unanswered = watched.length - answered
 

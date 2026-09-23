@@ -47,13 +47,8 @@ use crate::{Style, Styled};
 /// takes markup and the markup is parsed during the walk, so between the
 /// constructor and `into_scene` a text node holds a string rather than the
 /// runs the scene stores. Everything else is already a scene node and passes
-/// through untouched.
-///
-/// The alternative was a second field on [`Element`] holding the unparsed
-/// markup beside a `kind` that claimed to be a scene node -- two
-/// representations of one paragraph, which is the thing
-/// [`NodeKind::Text`]'s own documentation exists to prevent, moved one layer
-/// up rather than removed.
+/// through untouched. A second field holding the markup beside a scene
+/// `kind` would be two representations of one paragraph.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ElementKind {
     /// A node the scene already describes.
@@ -141,34 +136,10 @@ impl Element {
     ///     .with_style(Style::new().flex_direction(FlexDirection::Row));
     /// ```
     ///
-    /// [`Style::merge`] is what this calls.
-    ///
-    /// # Answering the reason replace was chosen
-    ///
-    /// This replaced rather than merged until the merge landed, and the reason
-    /// recorded for it was real: merging makes the order of two `with_style`
-    /// calls significant, and a chain does not announce that it does. Three
-    /// things answer it.
-    ///
-    /// Order was already significant, and more sharply. A replace made
-    /// `with_style` destroy every property set before it — the constructor's
-    /// direction, any flat setter earlier in the chain — none of which the
-    /// caller had said a word about. Under a merge the order matters only
-    /// between two callers who both named the same property, where the later
-    /// wins, as the flat setters and CSS's cascade already do.
-    ///
-    /// Every flat setter is already a one-field merge. `.gap(..).opacity(..)`
-    /// sets two properties and keeps the rest. Merging is that same rule over
-    /// many properties at once; replace was the one operation on this surface
-    /// whose semantics differed from the setters sitting beside it.
-    ///
-    /// And the JavaScript surface has always merged. `Row` and `Column` there
-    /// are `{ flexDirection, ...props }` and `Grid` is `{ display: 'grid',
-    /// ...props }` — spread after the default, so a caller who names the
-    /// property keeps their value and a caller who does not keeps the
-    /// factory's. Its own doc says so deliberately. Replace made the two
-    /// surfaces disagree about the same call, which this repository counts as
-    /// a defect rather than a difference.
+    /// [`Style::merge`] is what this calls. Order matters only between two
+    /// styles naming the same property, where the later wins -- the flat
+    /// setters' own rule, applied to many properties at once, and what the
+    /// JavaScript surface's `{ flexDirection, ...props }` spread does.
     #[must_use]
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = core::mem::take(&mut self.style).merge(style);
@@ -256,12 +227,9 @@ impl Element {
 }
 
 impl Element {
-    /// The paragraph style of a text node, whichever form it is in.
-    ///
-    /// **Both arms carry one**, because `max_lines` and `ellipsis` are set by
-    /// chaining onto a constructor and the markup arm is what `Text::new`
-    /// returns. Reaching only [`ElementKind::Node`] would make those two
-    /// builders silently do nothing on the commonest way to make text.
+    /// The paragraph style of a text node, from either arm: `Text::new`
+    /// returns the markup arm, so reaching only [`ElementKind::Node`] would
+    /// make `max_lines` and `ellipsis` silently do nothing on it.
     const fn paragraph_mut(&mut self) -> Option<&mut ParagraphStyle> {
         match &mut self.kind {
             ElementKind::Node(NodeKind::Text { paragraph, .. })
@@ -279,12 +247,10 @@ impl Styled for Element {
 
 /// What a `children` call accepts: one element, many, or none.
 ///
-/// v1's props type is `Children | Children[]` where `Children` includes
-/// `false`, so a conditional that does not render writes nothing rather than an
-/// empty node. Rust reaches the same place through a trait: a single element,
-/// an array, a `Vec`, and an `Option<Element>` that is `None` and contributes
-/// nothing. The syntax differs because the languages do; what a caller can
-/// express does not.
+/// A single element, an array, a `Vec`, or an `Option<Element>` that is `None`
+/// and contributes nothing -- so a conditional that does not render writes
+/// nothing rather than an empty node, as a falsy child does on the JavaScript
+/// surface.
 ///
 /// ```
 /// use meo_canvas::{Row, Styled, Text, px};
@@ -372,21 +338,9 @@ where
     }
 }
 
-/// Writes `element` onto an existing page root and adds its subtree.
-///
-/// The page root already exists, so the element styles it rather than becoming
-/// a child of it -- otherwise every tree would gain an unstyled wrapper nobody
-/// asked for, and a caller's `background_color` would paint a box inside the
-/// canvas instead of the canvas.
-///
-/// Shared by [`Element::into_scene`] and [`crate::Canvas`], so a page means the
-/// same thing whether one was built or several.
-/// Turns an element's kind into the scene's, parsing markup on the way.
-///
-/// **The facade's only parse site.** A constructor cannot report -- it returns
-/// an `Element` and has nowhere to put a diagnostic -- so the parse waits for
-/// the walk, which is the first point that has both the markup and somewhere
-/// for what it could not use to go.
+/// Turns an element's kind into the scene's, parsing markup on the way: the
+/// facade's only parse site, since a constructor has nowhere to put a
+/// diagnostic.
 fn resolve(kind: ElementKind, found: &mut Vec<Diagnostic>) -> NodeKind {
     match kind {
         ElementKind::Node(node) => node,
@@ -402,6 +356,10 @@ fn resolve(kind: ElementKind, found: &mut Vec<Diagnostic>) -> NodeKind {
     }
 }
 
+/// Writes `element` onto the existing page root and adds its subtree. The
+/// element styles the root rather than becoming its child, so its
+/// `background_color` paints the canvas. Shared by [`Element::into_scene`] and
+/// [`crate::Canvas`], so a page means the same thing in both.
 pub(crate) fn write_page(
     scene: &mut Scene,
     root: NodeId,
@@ -426,13 +384,9 @@ pub(crate) fn write_page(
     Ok(())
 }
 
-/// Writes the image properties a flat style carries onto an image node.
-///
-/// `object_fit`, `object_position` and `frame` live on [`Style`] because the
-/// authoring surface is one flat style, and they live in [`NodeKind::Image`]
-/// because that is where the scene keeps them. This is where the two meet. A
-/// node that is not an image ignores them, as CSS ignores a property an element
-/// does not define.
+/// Writes the image properties a flat style carries -- `object_fit`,
+/// `object_position` and `frame` -- into [`NodeKind::Image`], where the scene
+/// keeps them. A node that is not an image ignores them.
 const fn apply_image_style(kind: &mut NodeKind, style: &Style) {
     if let NodeKind::Image {
         fit,
@@ -453,11 +407,8 @@ const fn apply_image_style(kind: &mut NodeKind, style: &Style) {
     }
 }
 
-/// Adds `element` and its subtree under `parent`.
-///
-/// Depth-first and iterative in shape only where it matters: the recursion
-/// mirrors the tree a caller wrote, and a tree deep enough to overflow the
-/// stack here is one deep enough to overflow it in the codec too.
+/// Adds `element` and its subtree under `parent`, recursively: a tree deep
+/// enough to overflow the stack here would overflow it in the codec too.
 fn push(
     scene: &mut Scene,
     parent: NodeId,
@@ -500,10 +451,9 @@ fn push(
 /// **The fix is to spell the heap allocation in full, not to rename the
 /// node.** `std::boxed::Box<dyn Error>` is unambiguous, it is one occurrence
 /// in a file that mostly draws, and it leaves the component called what it is
-/// called everywhere else -- in the JavaScript surface, in v9, and in every
-/// example. Aliasing our own name to make room for the standard library's is
-/// backwards: the qualification belongs on the thing that is not the subject
-/// of the file.
+/// called everywhere else -- in the JavaScript surface and in every example.
+/// Aliasing our own name to make room for the standard library's is backwards:
+/// the qualification belongs on the thing that is not the subject of the file.
 ///
 /// Both names in one file, compiled here rather than asserted:
 ///
@@ -526,9 +476,7 @@ impl Box {
     /// **Named rather than inherited.** The scene's default display is
     /// `block`, which is what a browser gives a `<div>`; a `Box` that laid its
     /// children out as a block would stop honouring `gap`, `align_items` and
-    /// `justify_content` without saying so. Relying on the default for it was
-    /// what made the two sides of every conformance table agree by coincidence
-    /// rather than because both were told the same thing.
+    /// `justify_content` without saying so.
     #[must_use]
     #[expect(
         clippy::new_ret_no_self,
@@ -620,11 +568,9 @@ impl Text {
     /// write.
     ///
     /// The string is markup, not a literal: escape sequences and the five
-    /// styling tags are resolved by [`meo_canvas_core::markup::parse`], which
-    /// is the same parser the JavaScript surface's `Text()` has always run.
-    /// A Rust caller gets rich text for the same string that gives a
-    /// JavaScript caller rich text, which is the whole reason that parser
-    /// is in Rust.
+    /// styling tags are resolved by [`meo_canvas_core::markup::parse`], the
+    /// parser the JavaScript surface's `Text()` runs, so one string gives rich
+    /// text on both.
     ///
     /// ```
     /// use meo_canvas::{Style, Text};
@@ -871,8 +817,7 @@ impl Element {
     /// `viewBox`: `(min_x, min_y, width, height)`.
     ///
     /// **The node must have a size**, since the drawing is scaled into it and
-    /// a path node has no intrinsic one. Without a box the `d` is absolute, as
-    /// it has always been.
+    /// a path node has no intrinsic one. Without a box the `d` is absolute.
     ///
     /// ```
     /// use meo_canvas::Path;
@@ -1119,12 +1064,9 @@ mod tests {
         assert_eq!(paragraph, ParagraphStyle::default());
     }
 
-    /// The runs a text element produces, read from the scene it builds.
-    ///
-    /// **Through `into_scene` rather than off `.kind`**, because the markup is
-    /// parsed during the walk now. A test reading the constructor would be
-    /// asserting that the string was stored, which is not the claim any of
-    /// these make.
+    /// The runs a text element produces, read from the scene it builds rather
+    /// than off `.kind`: the markup is parsed during the walk, so the
+    /// constructor holds only the string.
     fn runs_of(
         element: Element,
     ) -> Vec<meo_canvas_scene::style::text::TextSegment> {
@@ -1191,12 +1133,9 @@ mod tests {
 
     #[test]
     fn a_canvas_size_that_is_not_a_length_is_refused() {
-        // Until 5 September 2026 every one of these returned `Ok` with a scene
-        // sized `NaN`, `-1` or `inf`, which passed `validate` and reached the
-        // renderer -- so the picture was the first thing that reported the
-        // caller's arithmetic. The signature already refuses `pct(50.0)` here,
-        // with a `compile_fail` doctest saying a percentage of nothing has no
-        // meaning; these are the same claim in numbers the type cannot see.
+        // A `NaN`, negative or infinite size is refused rather than passing
+        // `validate` to the renderer. The signature refuses `pct(50.0)` (a
+        // `compile_fail` doctest); these are the numbers a type cannot see.
         for (width, height) in [
             (f32::NAN, 10.0),
             (10.0, f32::NAN),
@@ -1291,33 +1230,10 @@ mod tests {
 
     #[test]
     fn merge_carries_every_property_it_is_given() {
-        // The destructure in `merge` is exhaustive, so a new field cannot be
-        // *missing* from it. It can still be dismissed: rustc's own suggested
-        // fix for the resulting E0027 is `new_field: _`, which compiles and
-        // silently drops that property from every merge. Nothing above catches
-        // that, because the field is named and the code is wrong.
-        //
-        // This does. Every property is `Some`; merging over an empty style has
-        // to return all of them. A field dismissed with `_` comes back `None`
-        // and fails the equality, and the literal below has no `..`, so a
-        // sixty-ninth property fails to compile here rather than going
-        // unmerged and untested.
-        //
-        // The literal **is** the mechanism, and it has no `..` deliberately:
-        // a sixty-ninth property fails to compile here, and one dismissed with
-        // `_` in `merge` fails the equality below. Replacing it with
-        // `..Default::default()` would compile and assert nothing new.
-        //
-        // `<_>::default()` for a value wherever the type offers one: what each
-        // property *means* is not the question, only whether it carried.
-        //
-        // **This does not test that `merge` merges.** A pure replace returns
-        // the full style here too, since it is merged over an empty one — the
-        // measurement: with `merge` reduced to `self = other`, this passes and
-        // the three direction tests above fail. The two sets are orthogonal
-        // and both load-bearing. They ask *carried or dropped* and *merged or
-        // replaced*; neither answers the other, and the name of this one reads
-        // broader than it is.
+        // No `..` in this literal: a new field fails to compile here, and one
+        // dismissed in `merge` with `_` (rustc's suggested fix) comes back
+        // `None` and fails the equality. Carried-or-dropped only: a pure
+        // replace passes this too, and the direction tests above catch that.
         let full = Style {
             display: Some(Display::Flex),
             position_type: Some(PositionType::Absolute),

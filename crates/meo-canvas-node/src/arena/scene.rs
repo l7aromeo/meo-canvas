@@ -29,11 +29,9 @@ use meo_canvas_scene::{
 
 use super::{ArenaError, Reader, value::ArenaValue};
 
-/// Implements [`ArenaValue`] for a `wire_enum!` type.
-///
-/// One slot holding the same number the byte codec writes as its discriminant,
-/// because both read `from_wire`. A keyword's number is therefore identical in
-/// the two representations rather than similar.
+/// Implements [`ArenaValue`] for a `wire_enum!` type: one slot holding the
+/// number the byte codec writes as its discriminant, since both read
+/// `from_wire`, so a keyword's number is identical in the two representations.
 macro_rules! arena_enum {
     ($($name:ident),+ $(,)?) => {
         $(
@@ -234,11 +232,8 @@ impl ArenaValue for BackgroundSize {
 
 impl ArenaValue for ImageSource {
     /// A tag, one side-array index, and -- for a URL -- its options after it.
-    ///
-    /// The index is read inside each arm rather than once above the match,
-    /// because the `Url` arm no longer ends there: a header count follows it,
-    /// then a name and a value per header. Reading it above would put the
-    /// count's slot inside the arm that does not have one.
+    /// The index is read inside each arm, since the `Url` arm's header count
+    /// follows it and the other arms have none.
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let slot = input.offset();
         let tag = input.tag()?;
@@ -269,14 +264,9 @@ impl ArenaValue for ImageSource {
 }
 
 impl ArenaValue for HttpOptions {
-    /// A header count, then a name and a value per header.
-    ///
-    /// **Nothing is reserved from the count.** [`Reader::count`] bounds it by
-    /// the slots that remain, which is right about whether the slot is corrupt
-    /// and says nothing about memory: a pair costs two slots on the arena and
-    /// two `String`s in memory, so a count the arena can back still asks for
-    /// far more than the arena holds. The loop grows instead and a short arena
-    /// fails on the read that runs out.
+    /// A header count, then a name and a value per header. Nothing is reserved
+    /// from the count: two slots per pair back two `String`s in memory, so the
+    /// loop grows instead, and a short arena fails on the read that runs out.
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let count = input.count()?;
         let mut headers = Vec::new();

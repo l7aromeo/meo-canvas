@@ -1,8 +1,5 @@
-//! Renders a scene and decodes the bytes back.
-//!
-//! The only assertion that means anything about an encoder: a byte length
-//! proves nothing, because a one-frame GIF and a three-frame GIF are both some
-//! bytes. These decode the output and count what is in it.
+//! Renders a scene and decodes the bytes back: a byte length proves nothing,
+//! since a one-frame and a three-frame GIF are both some bytes.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{Scene, Size};

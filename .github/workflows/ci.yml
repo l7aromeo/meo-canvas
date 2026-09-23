@@ -1,40 +1,22 @@
 name: ci
 
-# **`main` is this lineage now, and the `v10` branch it was developed on is
-# gone.** `git ls-remote --heads` returns `gh-pages`, `main` and `v9`, so a
-# trigger naming `v10` matches nothing that can ever be pushed.
-#
-# The history is why this file is careful about that. v10 lived on its own
-# branch while `main` still held v1, and for the life of that branch this gate
-# **could not run at all** -- not "had not", could not, because the trigger
-# named only `main`. Every host-dependent defect was structurally invisible and
-# one shipped: `target()` returned `linux-x64-glibc` where every key spells
-# `gnu`, which no test on a darwin machine can reach and which broke the primary
-# Linux target outright. **A trigger that names the wrong branch is not a
-# cosmetic error**, which is the reason to remove one that has stopped naming
-# anything rather than leave it as harmless.
-#
-# `v9` is deliberately absent. It is frozen and rarely touched, so it is
-# ungated on purpose rather than by omission -- do not "fix" it.
-#
-# `workflow_dispatch` so it can be asked for without a push, which is what you
-# want when the question is "does this pass on Linux" rather than "did my commit
-# break something".
+# The trigger names `main` alone: `v9` is frozen and ungated on purpose, and a
+# trigger naming a branch nothing is pushed to is a gate that cannot run.
+# `workflow_dispatch` asks "does this pass on Linux" without a push.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
-# A push onto a branch with a run already going cancels that run: the older
-# result describes code nobody has any more.
-# Read, said out loud. The repository default is `read` today, so this changes
-# nothing now and keeps changing nothing if that setting is ever widened --
-# which is a settings page, not a diff, and would otherwise hand every gate on
-# every pull request a writable token.
+# Read, stated rather than inherited: the repository default is `read`, and
+# widening it is a settings page rather than a diff, which would hand every pull
+# request's gate a writable token.
 permissions:
   contents: read
 
+# A push to a branch with a run going cancels that run: the older result
+# describes code nobody has any more.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -51,34 +33,18 @@ defaults:
     shell: bash
 
 jobs:
-  # The half of the gate that reads the repository and never compiles it, run
-  # once instead of three times. The split is `just portable` / `just native`,
-  # and the justfile beside those two lists holds the test that decides which a
-  # recipe belongs to, so a new recipe is placed there rather than here.
-  #
-  # **What it removes from the slowest runner.** Measured on run 34291240847:
-  # `typecheck` alone was 221s of Windows' 959s -- 176s of that the examples
-  # project -- against 60s for the whole portable group on ubuntu. `tsc
-  # --noEmit` emits nothing and reads a great many small files, so it is a
-  # Windows filesystem cost rather than a compilation one, and no amount of
-  # caching addresses it.
-  #
-  # No Rust toolchain, no cargo tools, no nasm: every recipe in the list is
-  # `cargo`-free through its dependencies, which is the test, and a step
-  # installed here that none of them needs would go unnoticed until someone
-  # timed the job.
+  # The half of the gate that reads the repository and never compiles it, once
+  # rather than per host; the justfile's `portable` list decides membership. It
+  # saves the slowest runner most: `typecheck` was 221s of a 959s Windows run
+  # (34291240847). No Rust toolchain, since every recipe listed is `cargo`-free.
   portable:
     name: portable
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # **Job-level, and it restates `contents: read` because it has to.** A job's
-    # `permissions:` replaces the workflow's rather than adding to it, so
-    # writing `actions: read` alone here would take the checkout's read away and
-    # the job would fail before it reached anything interesting.
-    #
-    # `actions: read` is for `cache-budget-check`, which lists the repository's
-    # caches. It is granted here and nowhere else: the matrix legs are where
-    # third-party build tooling runs, and none of them reads the cache list.
+    # A job's `permissions:` replaces the workflow's, so `contents: read` is
+    # restated. `actions: read` is for `cache-budget-check`, which lists the
+    # caches, and is granted only here, away from the legs that run third-party
+    # build tooling.
     permissions:
       contents: read
       actions: read
@@ -112,45 +78,33 @@ jobs:
   ci:
     name: ci (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Measured rather than picked: the last eight runs took 16 to 23 minutes,
-    # and the 52-minute one was the `meo-skia-canvas` 0.14.0 bump, which missed
-    # the Skia cache. So this is not a budget for the work -- it is the point
-    # past which a run has stopped rather than slowed, and without it the
-    # default is six hours of a runner.
+    # A hang-breaker, not a budget: runs take 16 to 23 minutes, and 52 when a
+    # `meo-skia-canvas` bump missed the Skia cache. Without it the default is
+    # six hours.
     timeout-minutes: 90
     strategy:
       # Every platform reports. Cancelling the set on one failure hides whether
       # the fault is the code or the backend, which is the first thing to know.
       fail-fast: false
       matrix:
-        # **Windows is here because `win32-x64` is a published platform package
-        # and nothing had ever compiled this on Windows.** The release workflow
-        # built it -- badly, and never successfully -- and no test ran there at
-        # all, so the target was a binary shipped from a job that had never
-        # gone green, from code no gate had executed. Either it is tested here
-        # or it should not be in `TARGETS`.
+        # Windows because `win32-x64` is a published platform package: tested
+        # here, or it does not belong in `TARGETS`.
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Ahead of the toolchain steps because the step below reads a justfile
-      # variable through `just` itself. Pinned to the minor version the recipes
-      # are written against: the action that installs it is pinned by commit,
-      # and the tool it installs is pinned here, or a `just` release retunes
-      # every recipe without a commit.
+      # Before the toolchain steps, which read a justfile variable through
+      # `just`. The tool's version is pinned as well as the action's commit, or
+      # a `just` release could change every recipe without a commit.
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: '1.58.0'
 
-      # Both toolchains are named by the files that define them rather than
-      # restated here, so no version lives in two places and CI cannot install
-      # one toolchain while the recipes ask for another.
-      #
-      # The nightly is read with `just --evaluate` rather than grepped: the
-      # justfile owns that variable, and asking the tool that resolves it cannot
-      # drift from how a recipe resolves it. rust-toolchain.toml has no such
-      # tool on the runner yet, so its channel is read with grep.
+      # Both toolchains are read from the files that define them, so no version
+      # lives in two places. The nightly comes from `just --evaluate`, which
+      # resolves it as a recipe does; `rust-toolchain.toml`'s channel is read
+      # with grep.
       - name: Read the pinned toolchains
         id: toolchain
         run: |
@@ -163,87 +117,19 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
           components: clippy, llvm-tools-preview
 
-      # Two recipes ask for this toolchain by name and each needs a component of
-      # its own: `fmt-check` needs rustfmt, because rustfmt.toml turns on options
-      # only nightly reads, and `coverage` needs llvm-tools-preview, because
-      # `--branch` rests on `-Z coverage-options=branch` and stable rustc refuses
-      # a `-Z` flag. Installed beside the pinned stable rather than replacing it:
-      # everything else builds on stable.
-      #
-      # The date lives in the justfile, as `fmt_toolchain`, and is read above.
-      # One pin in one file: moving it moves CI with it.
+      # The nightly two recipes name: rustfmt for `fmt-check`, since
+      # `rustfmt.toml` uses nightly-only options, and llvm-tools-preview for
+      # `coverage`, since `--branch` needs `-Z coverage-options=branch`. Beside
+      # the pinned stable; its date is `fmt_toolchain`, read above.
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.nightly }}
           components: rustfmt, llvm-tools-preview
 
-      # Caches ~/.cargo and target/. `cache-bin` covers ~/.cargo/bin, which is
-      # where the cargo tools below land, so compiling them is a cache-miss cost
-      # rather than a per-run one. Stated rather than left to the default: the
-      # coverage step depends on it, and a default that changes upstream would
-      # turn that into a silent several-minute regression on every run.
-      #
-      # **`save-if` restricts writing to the default branch, so the repository
-      # stops going over GitHub's cache limit as pull requests accumulate.**
-      # Over the limit, eviction takes a leg at random. Measured 2026-09-09,
-      # with PR l7aromeo/meo-canvas#59 merged and its caches still held:
-      #
-      #     total                11.73 GiB
-      #       refs/heads/main      8.20 GiB
-      #       refs/pull/59/merge   3.53 GiB   dead -- that pull request is merged
-      #
-      # Figures here are binary: the API reports bytes, and these are those
-      # bytes over 2^20 and 2^30. The total is 12,595,466,915 of them. GitHub
-      # documents the limit as "10 GB" and does not say which unit that is, so
-      # the divisor is stated here rather than the limit's convention guessed --
-      # 11.73 against 10 GiB and 12.60 against 10 GB are both over, and nothing
-      # below turns on which it means.
-      #
-      # One full set is ubuntu 2215 + windows 1398 + macos 1242 MiB = 4855 MiB,
-      # and every pull request saved a second set that dies with the branch and
-      # can never be read again.
-      #
-      # What the eviction costs, per leg, on three consecutive runs. **A
-      # different leg loses each time, which is the shape of the problem -- it
-      # is not a slow platform:**
-      #
-      #     run           leg      restore  install   just native
-      #     34337356783   windows      58s       1s         883s
-      #                   macos        33s       1s         531s
-      #                   ubuntu       34s       0s         519s
-      #     34339254035   ubuntu        1s      90s        2090s
-      #                   windows      47s       2s         834s
-      #                   macos        40s       2s         460s
-      #     34343357328   windows       6s     185s        2784s (cancelled)
-      #                   ubuntu       48s       0s         513s
-      #                   macos        39s       1s         563s
-      #
-      # **A 1s or 6s restore is a restore of nothing**, and `cargo install`
-      # taking 90s or 185s where a warm leg takes 0s is ~/.cargo/bin arriving
-      # empty. The gate itself then runs 4x and 3.3x its warm time.
-      #
-      # Pull requests still *restore* -- a run reads its base branch's caches --
-      # and this action passes a prefix restore-key, so a pull request that
-      # moves Cargo.lock gets a partial hit rather than none. It stops writing a
-      # copy nobody will read.
-      #
-      # **The key contains no workflow text**, so editing this file does not
-      # cost a cold run. `CacheConfig.new()` in `dist/cleanup-BWEbZ6YT.js` builds
-      # it from `$GITHUB_JOB` (the job id, the `ci` you can read in the key), the
-      # runner OS and arch, a hash of each installed `rustc -vV` plus every env
-      # var starting with CARGO, CC, CFLAGS, CXX, CMAKE or RUST, and a hash of
-      # `.cargo/config.toml`, `rust-toolchain*` and the workspace manifests. It
-      # follows that setting `CARGO_HOME` would invalidate every key that reads
-      # it -- by name, not by being a workflow edit.
-      #
-      # **This action already exports `CARGO_INCREMENTAL=0` itself**, before any
-      # cargo command in the job: `dist/restore.js` line 56 at the pin above,
-      # unconditional, with no input to turn it off. Setting it in `env:` here
-      # would change nothing.
-      #
-      # `v10` is still in `on:` above and would also stop saving. That is
-      # intended: it reads the default branch's caches like any other branch,
-      # and it is not where this is developed any more.
+      # Caches ~/.cargo, with the tools below, and target/. Saves only on
+      # `main`: pull request copies died unread and pushed past GitHub's 10 GB
+      # limit, where eviction cold-starts a random leg at 3-4x its warm time.
+      # The action exports `CARGO_INCREMENTAL=0` itself.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.os }}
@@ -256,44 +142,16 @@ jobs:
         with:
           node-version: lts/*
 
-      # `libaom-sys` configures libaom with cmake, and libaom assembles its hot
-      # paths on x86 rather than compiling them, so it fails outright when it
-      # can find neither nasm nor yasm.
-      #
-      # This replaces a guess. The line here installed `ninja-build clang`
-      # against a Skia source build that never happens -- `skia-bindings`
-      # downloads a prebuilt, and the macOS log says so -- while the thing that
-      # actually failed on Linux was libaom, with `C Compiler test pie_check
-      # failed` out of `aom_configure.cmake`. Installing clang may even have
-      # been the cause rather than the cure, by handing cmake a compiler it then
-      # failed to test.
-      # **The vendor repositories the runner image pre-registers are removed
-      # before the update, because `apt-get update` fails wholesale when any one
-      # of them serves a bad index and none of them has anything we install.**
-      # On 2026-09-09 `dl.google.com` served a `Packages.gz` whose hash did not
-      # match its own `Release` file -- the release file was six hours newer than
-      # the package list it described -- and **all five open pull requests failed
-      # their ubuntu leg at once**, on five unrelated diffs. Five of five is an
-      # outage rather than five defects, and nothing in this repository needed
-      # the repository that broke.
-      #
-      # Everything below comes from Ubuntu's own archive: cmake and nasm for
-      # libaom, pkg-config and the fontconfig and freetype headers for
-      # `rust-skia`, which probes for them and falls back to bare library names
-      # in silence when the probe fails.
-      #
-      # The gate launches no browser -- `conformance` is in neither `portable`
-      # nor `native`, and the browser it would use is Playwright's own Chromium
-      # from `just setup`, never the apt package -- so removing Google's list
-      # costs this workflow nothing.
+      # Ubuntu's archive only: cmake and nasm for libaom's x86 assembly, and
+      # pkg-config with the fontconfig and freetype headers `rust-skia` probes
+      # for. The runner's vendor lists go first, since one bad index fails
+      # `apt-get update` wholesale (`dl.google.com`, 2026-09-09).
       - name: Install what libaom needs
         if: runner.os == 'Linux'
         run: |
-          # Matched on CONTENT rather than on filename. The first version of
-          # this named `google-chrome.list` and failed on the runner exactly as
-          # it failed without the fix -- reproduced in a container: the same
-          # repository registered as `google-chrome.sources.list` survives a
-          # name-based `rm` and `apt-get update` still exits 100.
+          # Matched on content, not filename: the same repository registered as
+          # `google-chrome.sources.list` survives a name-based `rm`, and
+          # `apt-get update` still exits 100.
           sudo grep -rlE 'dl\.google\.com|packages\.microsoft\.com' \
             /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -r rm -f
           sudo apt-get update
@@ -301,12 +159,9 @@ jobs:
             cmake nasm \
             pkg-config libfontconfig1-dev libfreetype-dev
 
-      # The same libaom requirement, and only that one. No font packages:
-      # Skia uses DirectWrite on Windows rather than fontconfig and freetype,
-      # which is also why `win32-x64` carries no `floors` in `TARGETS` -- a PE
-      # binary has no ELF symbol versions to declare.
-      #
-      # cmake is already on the image; nasm is not.
+      # libaom's requirement only; cmake is on the image, nasm is not. No font
+      # packages: Skia uses DirectWrite on Windows, which is also why
+      # `win32-x64` has no `floors` in `TARGETS`.
       - name: Install what libaom needs
         if: runner.os == 'Windows'
         run: |
@@ -347,29 +202,18 @@ jobs:
           cargo install --locked cargo-audit
           just audit
 
-      # The `net` feature, on the same reasoning as the advisory step above and
-      # placed beside it for that reason: whether the HTTP path compiles and
-      # passes is a fact about the code and not about the host, so three runners
-      # would buy three copies of one answer.
-      #
-      # **`just ci` does not build this and never has.** Every `--features` in
-      # the justfile names `metal` or `vulkan`, so `fetch_policy.rs` -- which
-      # carries `#![cfg(feature = "net")]` at file scope -- compiled to nothing
-      # on every runner, and the second arm of `net_feature.rs` never existed.
-      # It happens to pass today, which is why nothing noticed; that is a
-      # statement about today and this is what makes it a statement about every
-      # commit. See `just net-check` for the cost and the trade it accepts.
+      # The `net` feature, once on Linux like the advisory step: whether it
+      # compiles is a fact about the code, not the host. Every `--features` in
+      # the justfile names a GPU backend, so `just ci` never compiles
+      # `fetch_policy.rs`. See `just net-check`.
       - name: Does the feature nothing else compiles still compile?
         if: runner.os == 'Linux'
         run: just net-check
 
-      # An ordinary addon under vitest's threads pool, on the platform where the
-      # *instrumented* one segfaults. It ran once without gating to answer which
-      # of the two was at fault; it passed on 4 September 2026, so the crash is
-      # the profiling runtime and not the addon, and `worker_threads` -- how a
-      # server keeps a render off its event loop -- works on Windows. It gates
-      # from here, because that is a property we now claim. See
-      # `just threads-probe`.
+      # An ordinary addon under vitest's threads pool, where the instrumented
+      # one segfaults. It passes, so that crash is the profiling runtime's and
+      # `worker_threads` works on Windows; this keeps it so. See `just
+      # threads-probe`.
       - name: Does an ordinary addon survive worker threads?
         if: runner.os == 'Windows'
         run: just threads-probe

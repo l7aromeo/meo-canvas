@@ -1,51 +1,7 @@
-//! Where an outer box-shadow's ink may fall, and where it may not.
-//!
-//! # The two halves, and why they are measured differently
-//!
-//! **Where it may not go is an invariant.** CSS Backgrounds and Borders 3
-//! §7.1.1 draws an outer shadow outside the border edge only, so the same
-//! scene rendered with and without the shadow has to read the same at every
-//! point inside the box. That is true whatever the background's colour or
-//! alpha, needs no agreement with anything, and is asserted directly.
-//!
-//! **Where it does go is a number**, and a browser is the authority on it.
-//! Offset, blur and spread each move the edge of the ink, and a rounded corner
-//! moves it again; `shadow-extent.tsv` holds Chrome's answers and this file
-//! reproduces the scenes that produced them.
-//!
-//! # Why the invariant needs a translucent background
-//!
-//! Painting the shadow beneath the box and letting the background cover it
-//! looks identical wherever that background is opaque, which is every fixture
-//! this project had. Under a translucent one the two coats show: half-alpha
-//! black over half-alpha black is `1 - (1-0.5)^2 = 0.75`, and the box takes a
-//! second dose of the shadow's colour. The opaque pair beside it is the
-//! control that says the instrument is pointed at something -- it was
-//! unchanged before the fix too, which is exactly why it pins nothing on its
-//! own.
-//!
-//! # The controls, and what each one caught
-//!
-//! [`the_shadow_is_still_drawn_outside_the_box`] guards the direction nobody
-//! watches: a renderer that satisfied every interior probe by **drawing no
-//! shadow at all** would pass them. It earned its keep -- a clip built on the
-//! `Context2D` rather than as two subpaths came out empty, the shadow vanished
-//! outright, and every interior probe stayed green.
-//!
-//! [`nothing_falls_where_the_shadow_does_not_point`] is the one that a clip
-//! cannot satisfy. Clipping the border box out of a shadow drawn as a property
-//! of a fill removes most of the fill's silhouette and not its antialiased
-//! rim, which straddles the contour; measured, that left 14 units of 255 on
-//! the top-left of a card whose shadow pointed down-right. Drawing the shadow
-//! as its own blurred shape leaves nothing there to remove.
-//!
-//! # Why the extents are spans and not bytes
-//!
-//! Two rasterisers do not agree on a Gaussian's bytes and do agree closely on
-//! where it has faded out. Each row of `shadow-extent.tsv` is the furthest
-//! whole step outside the border edge that still carries ink at a stated
-//! threshold, and the comparison carries a stated tolerance. Inside the box no
-//! blur reaches, so `box-shadow.tsv`'s colours are compared exactly.
+//! Where an outer box-shadow's ink may fall. None may fall inside the box (CSS
+//! Backgrounds 3 §7.1.1), checked over a translucent ground where a shadow
+//! drawn beneath shows through; outside, `shadow-extent.tsv` holds Chrome's
+//! reach, as spans, since two blurs never match to the byte.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -74,12 +30,8 @@ struct Cell {
     overflow: Overflow,
 }
 
-/// Renders a cell and returns its raw RGBA bytes.
-///
-/// Built as a [`Scene`] rather than through the builder crate: this is the
-/// renderer's own input, and both of the library's public surfaces reach the
-/// painter through it. A test written on one surface would leave the other
-/// asserting nothing.
+/// Renders a cell and returns its raw RGBA bytes. Built as a [`Scene`] because
+/// both public surfaces reach the painter through it.
 fn render(cell: &Cell) -> Vec<u8> {
     let mut scene = Scene::new(Size::new(cell.size.0, cell.size.1));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
@@ -227,11 +179,8 @@ struct Row {
     ink: (u8, u8, u8),
 }
 
-/// Chrome's colour table, parsed rather than transcribed.
-///
-/// A transcription reads identically and is not the same thing: it can drift
-/// from the file in silence once the table is re-measured, which is a failure
-/// this suite has already had once.
+/// Chrome's colour table, parsed rather than transcribed so a re-measure cannot
+/// leave a stale copy here.
 fn chrome() -> Vec<Row> {
     const TABLE: &str =
         include_str!("../../meo-canvas/tests/assets/chrome/box-shadow.tsv");
@@ -322,13 +271,10 @@ fn an_outer_shadow_does_not_reach_inside_the_box() {
         let plain = render(&clip_cell(background, Vec::new()));
         let cast = render(&clip_cell(background, vec![clip_shadow(false)]));
 
-        // **The shadow has to exist before its absence inside means
-        // anything.** Every point below compares the two renders and passes
-        // when they agree -- which two blank pages do, so with `draw`
-        // returning before it read the scene this test passed unchanged. One
-        // point just outside the border edge, where a shadow offset one down
-        // and blurred by two must land, is what separates "the shadow stays
-        // out of the box" from "there is no shadow".
+        // The shadow must exist before its absence inside means anything: two
+        // blank renders agree everywhere. A shadow offset one down and
+        // blurred by two must land on this point just outside the
+        // border edge.
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -364,12 +310,9 @@ fn an_outer_shadow_does_not_reach_inside_the_box() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
-/// The same interiors, against Chrome's own bytes.
-///
-/// Inside the box no blur reaches, so this is a compositing result two engines
-/// agree on exactly. The invariant above would be satisfied by a renderer that
-/// composited the background wrongly and did so consistently; this is what
-/// says the colour is also the right one.
+/// The same interiors against Chrome's bytes. No blur reaches inside, so the
+/// two engines agree exactly; the invariant alone would pass a background that
+/// was composited wrongly but consistently.
 #[test]
 fn the_interior_is_the_colour_chrome_paints() {
     let rows = chrome();
@@ -398,12 +341,9 @@ fn the_interior_is_the_colour_chrome_paints() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
-/// The control the interior probes need: the shadow is still drawn.
-///
-/// A renderer that satisfied every claim above by drawing no shadow at all
-/// would pass them. Outside the box, with the shadow, the ink has to be
-/// **darker** than without it, by roughly what Chrome darkens by -- roughly,
-/// because this is a blur kernel rather than a formula.
+/// The control: the shadow is still drawn. Outside the box the ink must be
+/// darker with it than without, by roughly Chrome's amount -- roughly, since
+/// this is a blur kernel.
 #[test]
 fn the_shadow_is_still_drawn_outside_the_box() {
     let rows = chrome();
@@ -436,11 +376,8 @@ fn the_shadow_is_still_drawn_outside_the_box() {
     );
 }
 
-/// The other arm: inset shadows are drawn after the background, deliberately.
-///
-/// Chrome darkens the point just inside the top edge and leaves the centre
-/// alone; so must we. This is the rule the rewrite must not drag the outer arm
-/// into, and the row that says it did not.
+/// Inset shadows are drawn after the background: Chrome darkens just inside the
+/// top edge and leaves the centre alone.
 #[test]
 fn an_inset_shadow_still_lands_inside_the_box() {
     let rows = chrome();
@@ -463,13 +400,9 @@ fn an_inset_shadow_still_lands_inside_the_box() {
     );
 }
 
-/// CSS Backgrounds and Borders 3 §7.1: a shadow list is painted front to back.
-///
-/// The **first** shadow written is the one on top, which is the opposite of
-/// what a loop drawing them in sequence produces. Two hard shadows in the same
-/// place, written in both orders, on both arms: `beside` reads the outer pair
-/// and `inside left` reads the inset pair, whose ink lands along the edge
-/// opposite the one it is offset towards.
+/// CSS Backgrounds 3 §7.1: the first shadow written is on top, the opposite of
+/// drawing them in sequence. `beside` reads the outer pair and `inside left`
+/// the inset pair, whose ink lands on the edge opposite its offset.
 #[test]
 fn the_first_shadow_written_is_the_one_on_top() {
     let rows = chrome();
@@ -519,23 +452,10 @@ const WHITE: Color = Color::rgb(0xff, 0xff, 0xff);
 /// Ink is anything at least this far off white, matching the walker's own.
 const THRESHOLD: u8 = 6;
 
-/// How far our span may differ from Chrome's before it is a defect.
-///
-/// Two Gaussians that agree on sigma still disagree on where their tails cross
-/// a threshold, and a step is one pixel. Two is the smallest number that all
-/// the agreeing rows fit inside.
-///
-/// **What that costs is stated rather than implied: a defect of two steps or
-/// fewer is invisible here.** The comparison is `> TOLERANCE`, so a miss of
-/// exactly two passes. Measured, not reasoned: a renderer given a spurious
-/// **2px** spread fails no row in this table, and the same renderer at 3px
-/// fails eight of the nine cases. This comment used to say that a wrong
-/// offset, a wrong spread or a corner that failed to grow all miss by more
-/// than the tolerance, which is the claim the 2px run refutes.
-///
-/// Narrowing it is a decision about how much rasteriser disagreement to allow
-/// and moves every row, so a spread defect of exactly two steps wants a case
-/// built to show it rather than a tighter number here.
+/// Two steps, the smallest all agreeing rows fit inside: Gaussians with one
+/// sigma still cross a threshold at different pixels. The cost is that a 2px
+/// spread defect fails no row (3px fails eight of nine), so one that small
+/// wants a case built for it rather than a tighter number.
 const TOLERANCE: i32 = 2;
 
 /// One row of `shadow-extent.tsv`.
@@ -587,11 +507,9 @@ const fn ink(offset: (f32, f32), blur: f32, spread: f32) -> BoxShadow {
 fn extent_cases() -> Vec<(&'static str, f32, Vec<BoxShadow>)> {
     vec![
         ("none", 0.0, Vec::new()),
-        // Offset, not 0,0: with no offset the shadow sits entirely behind the
-        // box that casts it and reads what `none` reads, so the row could not
-        // fail for anything `none` did not already cover. The axes are equal
-        // here and unequal in `offset`, which is the row that catches a
-        // renderer swapping them.
+        // Offset, not 0,0: unoffset, the shadow sits behind its box and reads
+        // what `none` reads. Equal axes here and unequal in `offset`,
+        // the row that catches swapped axes.
         ("hard", 0.0, vec![ink((4.0, 4.0), 0.0, 0.0)]),
         ("offset", 0.0, vec![ink((8.0, 4.0), 0.0, 0.0)]),
         ("blur", 0.0, vec![ink((0.0, 0.0), 12.0, 0.0)]),
@@ -599,11 +517,9 @@ fn extent_cases() -> Vec<(&'static str, f32, Vec<BoxShadow>)> {
         ("blur-spread", 0.0, vec![ink((0.0, 0.0), 8.0, 4.0)]),
         ("radius-spread", 16.0, vec![ink((0.0, 0.0), 0.0, 6.0)]),
         ("radius-blur", 16.0, vec![ink((0.0, 0.0), 10.0, 0.0)]),
-        // Half-alpha, offset clear of the box so the band below it is flat.
-        // Half-alpha black over white is 128, which is arithmetic rather than
-        // a kernel: the previous implementation read 191, because riding on
-        // Skia's `shadow_blur` applied the shadow's alpha twice -- once as the
-        // fill it derived the shadow from, and again as the shadow's colour.
+        // Half-alpha, offset clear of the box so the band below is flat. Black
+        // at half alpha over white is 128 by arithmetic; an alpha
+        // applied twice reads 191.
         (
             "alpha",
             0.0,
@@ -629,19 +545,10 @@ const RAYS: [(&str, i32, i32); 6] = [
     ("corner down-right", 1, 1),
 ];
 
-/// Scans one ray and returns the furthest step that still carried ink.
-///
-/// The same walk the browser-side walker makes, including where it starts: on
-/// the border edge, at the midpoint of a side or at the corner point.
-///
-/// `from` is which step to begin at, and the two callers want different ones.
-/// The extent rows begin at **1**, one whole pixel outside the box, because
-/// that is where the walker begins and a span has to be compared against the
-/// same walk. The rim probe begins at **0** -- the boundary pixel itself,
-/// which the box only partly covers. That pixel is where a silhouette's
-/// antialiased rim lives, so a scan starting past it cannot see the very thing
-/// it exists to catch: measured, the shipped clip-only fix left 14 units of
-/// 255 there and read clean from step 1 outward.
+/// Scans one ray from the border edge and returns the furthest step still
+/// inked. Extent rows start at 1, where the browser's walker starts; the rim
+/// probe starts at 0, the partly covered boundary pixel where an antialiased
+/// rim lives and which a scan from 1 cannot see.
 fn span(bytes: &[u8], threshold: u8, from: i32, (dx, dy): (i32, i32)) -> i32 {
     #[expect(
         clippy::cast_possible_truncation,
@@ -708,12 +615,9 @@ const fn extent_cell(radius: f32, shadows: Vec<BoxShadow>) -> Cell {
     }
 }
 
-/// The ink reaches where Chrome puts it, on every ray of every case.
-///
-/// This is where offset, blur, spread and a grown corner radius are pinned.
-/// The `none` row is the instrument's own control: if it is not `-1`
-/// everywhere then the scan is finding something that is not a shadow, and
-/// every other row is worthless.
+/// The ink reaches where Chrome puts it on every ray: offset, blur, spread and
+/// grown corners. `none` must read `-1` everywhere, or the scan is finding
+/// something that is not a shadow.
 #[test]
 fn the_ink_reaches_where_chrome_puts_it() {
     let table = chrome_extents();
@@ -751,29 +655,10 @@ fn the_ink_reaches_where_chrome_puts_it() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
-/// Nothing at all falls where the shadow does not point.
-///
-/// The probe a clip cannot satisfy, and the one that decided this rewrite.
-///
-/// The shadow is **hard** -- no blur, no spread -- and offset 8 right and 4
-/// down, so its shape is exactly the border box moved by that offset and every
-/// inked pixel in the whole cell has to lie inside it. Anything outside is ink
-/// CSS does not put anywhere.
-///
-/// # Why the whole cell, and not a ray
-///
-/// Because the residue does not sit where a ray from a side midpoint or a
-/// corner point passes. A silhouette drawn as a property of a fill and then
-/// clipped away leaves its antialiased rim **along the box's own rounded
-/// contour**, which on a 16px radius runs diagonally across the corner and
-/// misses every straight ray. Measured against the shipped clip-only fix, the
-/// residue sat at `(62, 57)` reading 219 of 255 and at `(58, 60)` reading 237,
-/// both of them inside the box's bounding rectangle and outside the shadow's;
-/// a scan of the four sides and two diagonals read perfectly clean.
-///
-/// The box is rounded for the same reason: a square one puts the rim on the
-/// straight edges, where the shadow's own shape covers most of it and the
-/// evidence is weakest.
+/// Nothing falls where the shadow does not point. It is hard and offset (8, 4),
+/// so every inked pixel must lie in the moved border box. The whole cell is
+/// scanned because a clipped silhouette's rim follows the rounded contour
+/// diagonally and misses every straight ray.
 #[test]
 fn nothing_falls_where_the_shadow_does_not_point() {
     const OFFSET: (f32, f32) = (8.0, 4.0);
@@ -827,31 +712,17 @@ fn nothing_falls_where_the_shadow_does_not_point() {
     );
 }
 
-/// The blur's falloff, not only its reach.
-///
-/// An extent says where a Gaussian has faded out and nothing about its shape
-/// on the way there: a blur with the right reach and the wrong falloff passes
-/// every span row. This reads the ramp itself, straight down from the bottom
-/// edge where no corner and no offset reaches.
-///
-/// It exists because the blur changed hands. Drawing the shadow as its own
-/// shape means blurring it ourselves -- a Gaussian mask blur at sigma
-/// `blur / 2` -- where before it rode on Skia's `shadow_blur`, which halves
-/// the radius the same way and then blurs the rendered pixels rather than the
-/// coverage. Both are the same Gaussian on one flat colour, and this is what
-/// says so rather than assuming it.
+/// The blur's falloff, not only its reach: a span says where a Gaussian fades
+/// out, not its shape on the way. Reads the ramp straight down from the bottom
+/// edge, where no corner or offset reaches, against a mask blur at sigma `blur
+/// / 2`.
 #[test]
 fn the_blur_falls_off_the_way_chromes_does() {
     const TABLE: &str =
         include_str!("../../meo-canvas/tests/assets/chrome/shadow-profile.tsv");
-    // Headroom, not slack. **Every one of these 48 samples agrees with Chrome
-    // to the byte** as this is written, which is not something to pin at zero
-    // -- a rasteriser is allowed a unit or two and a gate that forbids it
-    // fails for the wrong reason. Four is small enough to catch the thing it
-    // is for: the previous implementation, which rode on Skia's `shadow_blur`
-    // rather than blurring the shape, missed by up to 7 through the middle of
-    // the `blur` ramp and by 115 at the top of `blur-spread`, where its solid
-    // silhouette covered the ramp entirely.
+    // Headroom, not slack: all 48 samples match Chrome to the byte, and a
+    // rasteriser may drift a unit or two. Four still catches blurring the
+    // rendered pixels rather than the shape, which misses by up to 115.
     const TOLERANCE: i32 = 4;
 
     let mut wanted: Vec<(String, i32, u8)> = Vec::new();
@@ -914,17 +785,10 @@ fn the_blur_falls_off_the_way_chromes_does() {
 // shadow.
 // ---------------------------------------------------------------------------
 
-/// An outer shadow survives the node's own `overflow`, at every clipping value.
-///
-/// `overflow` clips an element's content and its descendants. An outer shadow
-/// is painted outside the border edge and is neither, so the element's own
-/// `overflow` does not reach it -- CSS Backgrounds and Borders 3 §7.1.1, and
-/// Chrome, whose rows are in the table.
-///
-/// **The probe reads ink outside the box**, because the report was that nothing
-/// is drawn: a scene or style assertion sees the shadow it was given and
-/// passes. `scroll` and `auto` are here because nothing had asked whether they
-/// behave like `hidden`; Chrome says all three draw the shadow, and so must we.
+/// An outer shadow survives the node's own `overflow`: it is painted outside
+/// the border edge and is neither content nor a descendant (CSS Backgrounds 3
+/// §7.1.1). The probe reads ink outside the box, since a style assertion sees
+/// the shadow it was given; Chrome draws it under all three clipping values.
 #[test]
 fn an_outer_shadow_survives_the_nodes_own_overflow() {
     let rows = chrome();
@@ -941,12 +805,8 @@ fn an_outer_shadow_survives_the_nodes_own_overflow() {
         point,
     );
 
-    // `Auto` is not a variant of this scene's `Overflow` -- it has `Visible`,
-    // `Hidden` and `Scroll` and nothing else -- so Chrome's `auto` row has no
-    // input on this surface to compare against. It is measured in the table
-    // anyway, where it reads exactly as `hidden` and `scroll` do, so the row
-    // records that the three agree in the browser and that two of them are all
-    // we can express.
+    // This scene's `Overflow` has no `Auto`, so Chrome's `auto` row, which
+    // reads as `hidden` and `scroll` do, has no input here to compare.
     for overflow in [Overflow::Hidden, Overflow::Scroll] {
         let clipped = at(
             &render(&clipping_cell(
@@ -968,13 +828,9 @@ fn an_outer_shadow_survives_the_nodes_own_overflow() {
     }
 }
 
-/// And the control: an INSET shadow is still clipped by the same `overflow`.
-///
-/// This is the row a careless repair breaks. Lifting the outer shadows above
-/// the clip is one line; lifting both is the same line written slightly wider,
-/// and it would leak an inset shadow outside the box where CSS puts none.
-/// Chrome's `inset, overflow hidden` row reads its ink inside the top edge and
-/// unshadowed ground below the box, which is what these two assertions are.
+/// The control: an inset shadow is still clipped by the same `overflow`.
+/// Lifting both kinds above the clip is the one-line mistake, and it leaks an
+/// inset shadow outside the box.
 #[test]
 fn an_inset_shadow_is_still_clipped_by_the_nodes_own_overflow() {
     let rows = chrome();

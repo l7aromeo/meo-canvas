@@ -1,19 +1,7 @@
 /**
- * The style object a node carries.
- *
- * The same CSS names as the Rust surface, with the values each language writes
- * naturally: `'row'` where Rust has `FlexDirection::Row`, `16` where Rust has
- * `px(16.0)`. A number is logical pixels; a `` `${number}%` `` string is a
- * percentage, which is how CSS spells both.
- *
- * These properties sit directly in a factory's props rather than under a `style`
- * key, as v1 spells them — `Row({ gap: 16 })`, not `Row({ style: { gap: 16 } })`.
- * The type exists so one list of properties serves every factory.
- *
- * Every property is optional and nothing is defaulted here. The defaults live in
- * Rust, and a style is **read, never copied** — no spread, no per-node merge —
- * because both would cost per node on a path that has to stay cheap.
- *
+ * The style object a node carries: the Rust surface's CSS names, with a number for
+ * logical pixels and a `` `${number}%` `` string for a percentage. Nothing is
+ * defaulted here, and a style is read, never copied, since a copy costs per node.
  * @packageDocumentation
  */
 
@@ -43,10 +31,10 @@ export type Dimension = Length | 'auto'
 /**
  * Space added between characters or words.
  *
- * v1's spelling exactly: a bare number and `'…px'` are logical pixels, `'…em'`
- * is a multiple of the em size, and `'normal'` is the font's own. Not
- * {@link Length}, because a percentage means nothing here and an em does — the
- * scene's `Spacing` has the same three forms for the same reason.
+ * A bare number and `'…px'` are logical pixels, `'…em'` is a multiple of the em
+ * size, and `'normal'` is the font's own. Not {@link Length}, because a percentage
+ * means nothing here and an em does — the scene's `Spacing` has the same three
+ * forms for the same reason.
  */
 export type Spacing = number | `${number}px` | `${number}em` | 'normal'
 
@@ -127,9 +115,8 @@ export type FontWeight = number | 'normal' | 'bold'
 /**
  * Upright or slanted glyphs.
  *
- * No `'oblique'`. v1 offers `'normal' | 'italic'` and the scene's `FontStyle`
- * has the same two variants, so a third would be a keyword this package accepts
- * and cannot carry.
+ * No `'oblique'`: the scene's `FontStyle` has these two variants, and a third
+ * would be a keyword this package accepts and cannot carry.
  */
 export type FontStyle = 'normal' | 'italic'
 
@@ -139,8 +126,8 @@ export type TextDecoration = 'none' | 'underline' | 'overline' | 'line-through'
 /**
  * Where a line sits within its box.
  *
- * No `'baseline'`, for the reason {@link FontStyle} has no `'oblique'`: v1's
- * `VerticalAlign` is these three and so is the scene's.
+ * No `'baseline'`, for the reason {@link FontStyle} has no `'oblique'`: the
+ * scene's `VerticalAlign` is these three.
  */
 export type VerticalAlign = 'top' | 'middle' | 'bottom'
 
@@ -221,40 +208,22 @@ export type BlendMode =
 /**
  * How a border's line is drawn, or that it is not drawn.
  *
- * `'none'` is the initial value, as in CSS, and it zeroes the *used* width
- * rather than skipping the paint: a node with `border: 4` and no style set
- * neither draws a border nor reserves room for one, so its content is not
- * inset. Write `'solid'` to get a line.
+ * `'none'` is the initial value, as in CSS, and it zeroes the *used* width rather
+ * than skipping the paint: a node with `border: 4` and no style neither draws a
+ * border nor reserves room for one, so its content is not inset. Write `'solid'`
+ * to get a line.
  *
- * **This default follows CSS and {@link Style.display}'s does not, and both are
- * chosen.** A container defaults to `'flex'` where CSS's initial `display` is
- * `inline`, because these defaults belong to a scene-building API rather than
- * to a document language. `BorderStyle` was decided the other way, against that
- * argument, on the grounds that a border is a thing a caller asks for rather
- * than a thing they switch off.
- *
- * The pair is recorded here so that neither is "corrected" into agreement with
- * the other: they answer the same question differently on purpose, and changing
- * either is a change of intent rather than a tidy-up.
+ * **This default follows CSS where {@link Style.display}'s does not, on purpose.**
+ * A container defaults to `'flex'` because these defaults serve a scene-building
+ * API, and a border is something a caller asks for rather than switches off.
+ * Neither is to be "corrected" into agreement with the other.
  */
 export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'none'
 
 /**
- * Every key {@link Style} declares, as values a runtime check can use.
- *
- * **Written by hand and unable to drift, which is the point.** The generated
- * arena property tables are the obvious source and they are the wrong one:
- * measured, they carry **66 keys against `Style`'s 69**, because `objectFit`,
- * `objectPosition` and `frame` travel in a node's payload rather than in a
- * style group. A check built on those tables would refuse three valid
- * properties — and nothing in this repository asserted the relationship, so no
- * gate would have said so. They are generated against the encoder's slots, not
- * against this surface's key set.
- *
- * {@link styleKeysAreExhaustive} is what makes a hand-written list safe. A key
- * added to `Style` and not added here is a **compile error naming the key**; a
- * key here that `Style` does not declare is refused by the `satisfies`. Both
- * directions, both by name.
+ * Every key {@link Style} declares, as values a runtime check can use. Written by
+ * hand because the arena tables lack three (`objectFit`, `objectPosition` and
+ * `frame` travel in the payload); the proof below refuses drift both ways by name.
  */
 export const STYLE_KEYS = [
   'display',
@@ -329,12 +298,8 @@ export const STYLE_KEYS = [
 ] as const satisfies readonly (keyof Style)[]
 
 /**
- * Compiles only when `T` is `never`, and names what is left over when it is not.
- *
- * The `extends never` constraint is doing the work. An assertion written as
- * `const _: Leftover = undefined as never` **cannot fail**, because `never` is
- * assignable to everything — the first draft of this proof was written that way
- * and passed a deliberately incomplete list without complaint.
+ * Compiles only when `T` is `never`. The `extends never` constraint does the work:
+ * `const _: Leftover = undefined as never` cannot fail, since `never` fits anything.
  */
 function noStyleKeyLeftOver<T extends never>(_leftOver?: T): void {}
 
@@ -342,15 +307,9 @@ function noStyleKeyLeftOver<T extends never>(_leftOver?: T): void {}
 type StyleKeysNotListed = Exclude<keyof Style, (typeof STYLE_KEYS)[number]>
 
 /*
- * The proof itself. Neither a test nor a lint: it fails `tsc`, so it fails
- * every gate that typechecks, cannot be skipped, and fails where the key is
- * added rather than where the list is later read.
- *
- * **A call rather than an exported function**, because an exported
- * `styleKeysAreExhaustive` would be a public symbol nobody should call — and
- * with a `declare`d helper it would have thrown `ReferenceError` if anyone
- * did. The helper has a real, empty body and the call is what makes the
- * constraint load-bearing.
+ * The proof: it fails `tsc`, so every gate that typechecks fails where a key is
+ * added. A call rather than an exported function, which would be a public symbol
+ * nobody should call.
  */
 noStyleKeyLeftOver<StyleKeysNotListed>()
 
@@ -366,7 +325,7 @@ export type Overflow = 'visible' | 'hidden' | 'scroll'
  * different property on a different kind of node.
  *
  * A bare value sizes the width and leaves the height to the picture's own
- * proportions, which is v1's reading of `size: 12`.
+ * proportions, as CSS's one-value form does.
  */
 export type BackgroundSize =
   | 'cover'
@@ -402,14 +361,10 @@ export interface BackgroundImage {
 /**
  * Where a linear gradient runs.
  *
- * Either an edge-to-edge direction, an angle in degrees clockwise from twelve
- * o'clock, or explicit endpoints. The tuple is `[x0, y0, x1, y1]` in the node's
- * own coordinates from its top-left corner, which is what a keyword resolves to
- * once the node's size is known — v1's wording and v1's shape.
- *
- * The bare angle is CSS's `linear-gradient(45deg, …)`, which v1 has no spelling
- * for. The names are CSS's, so where v1 offers less than CSS the reference
- * wins.
+ * An edge-to-edge direction, an angle in degrees clockwise from twelve o'clock as
+ * in CSS's `linear-gradient(45deg, …)`, or explicit endpoints. The tuple is
+ * `[x0, y0, x1, y1]` in the node's own coordinates from its top-left corner, which
+ * is what a keyword resolves to once the node's size is known.
  */
 export type GradientDirection =
   | 'to-top'
@@ -442,10 +397,9 @@ export interface GradientCenter {
 /**
  * The colours a gradient runs through.
  *
- * Two spellings, and exactly one of them: `colors` is v1's, a list spread
- * evenly from the first to the last, and `stops` places each colour itself. The
- * even spread is arithmetic rather than a second wire shape — the scene holds
- * offsets either way.
+ * Two spellings, and exactly one of them: `colors`, spread evenly from the first
+ * to the last, or `stops`, placing each colour itself. The even spread is
+ * arithmetic rather than a second wire shape — the scene holds offsets either way.
  */
 export type GradientRamp =
   | {
@@ -500,9 +454,9 @@ export type Gradient =
 /**
  * Moving, turning and scaling a node after layout.
  *
- * v1's field names, which are CSS's split apart: `translateX` rather than a
- * `translate(…)` string, because a caller composing one from data should not
- * have to build a string for a renderer to parse back.
+ * CSS's transform split into fields — `translateX` rather than a `translate(…)`
+ * string — so a caller composing one from data need not build a string for a
+ * renderer to parse back.
  */
 export interface Transform {
   /** Horizontal movement. */
@@ -511,11 +465,7 @@ export interface Transform {
   readonly translateY?: Length
   /** Rotation in degrees, clockwise. */
   readonly rotate?: number
-  /**
-   * Both scale factors at once.
-   *
-   * A convenience v1 has: `scaleX` or `scaleY` beside it wins on that axis.
-   */
+  /** Both scale factors at once; `scaleX` or `scaleY` beside it wins on that axis. */
   readonly scale?: number
   /** Horizontal scale factor. */
   readonly scaleX?: number
@@ -578,7 +528,7 @@ export type FillRule = 'nonzero' | 'evenodd'
  * size of its box and multiplied by the gradient's alpha: soft edges, at the
  * cost of that canvas.
  *
- * A bare string is path data, which is v1's shorthand for `{ path }`.
+ * A bare string is path data, shorthand for `{ path }`.
  */
 export type Mask =
   | string
@@ -621,11 +571,8 @@ export interface Style {
   /** How this node's children are arranged. */
   readonly display?: Display
   /**
-   * Whether the node is placed by the flow or by its own offsets.
-   *
-   * `positionType`, not `position`: v1 spells the offsets `position`, so the
-   * two would collide. A caller porting a v1 tree writes both and neither means
-   * the other.
+   * Whether the node is placed by the flow or by its own offsets. Named
+   * `positionType` because `position` is the offsets.
    */
   readonly positionType?: PositionType
   /** Offsets from the container's edges. */
@@ -669,12 +616,6 @@ export interface Style {
   /** Cross-axis distribution of wrapped lines. */
   readonly alignContent?: Align
   /**
-   * Space between children.
-   *
-   * A single value applies to both axes; `{ row, column }` names them apart.
-   * v1 takes the same pair of forms and has no separate `rowGap`.
-   */
-  /**
    * Space between children. One value for both axes, or each named.
    *
    * `row` is the gap *between rows*, so it separates children stacked
@@ -695,33 +636,19 @@ export interface Style {
   /** Inline direction, which decides which edge is the start. */
   readonly direction?: Direction
   /**
-   * The grid's column tracks.
-   *
-   * The CSS spelling rather than v1's `templateColumns`, and the rule already
-   * decides it: the names are CSS's, because someone porting a design should
-   * not have to translate. v1's shorter name was unambiguous only because its
-   * grid properties lived on a separate `GridProps` type; in one flat style it
-   * would sit beside `padding` with nothing saying which box model it belongs
-   * to. Where v1 itself diverges from the reference, the reference wins — the
-   * same clause that settled the bare container's defaults.
+   * The grid's column tracks, under CSS's name so a design ports without
+   * translation. In one flat style a shorter name would sit beside `padding` with
+   * nothing saying which box model it belongs to.
    */
   readonly gridTemplateColumns?: readonly TrackSize[]
   /**
-   * A shorthand for that many equal columns.
+   * A shorthand for that many equal columns: `columns: 3` is
+   * `gridTemplateColumns: ['1fr', '1fr', '1fr']` and reaches the renderer as
+   * exactly those tracks, so a failure reading them names `gridTemplateColumns`.
    *
-   * v1's `columns`, and pure sugar: `columns: 3` is
-   * `gridTemplateColumns: [fr(1), fr(1), fr(1)]` and reaches the renderer as
-   * exactly those tracks. Nothing new crosses the wire, which is the test of
-   * whether a shorthand is a shorthand — if it needed a slot of its own, the
-   * long form could not express it and that would be a different finding.
-   *
-   * Naming both this and {@link Style.gridTemplateColumns} is refused rather
-   * than resolved by precedence: a caller who wrote both meant one of them,
-   * and nothing here can tell which.
-   *
-   * Being sugar, it has no separate identity once it reaches the renderer, so
-   * a failure reading these tracks names `gridTemplateColumns` however they
-   * were written.
+   * Naming both this and {@link Style.gridTemplateColumns} is refused rather than
+   * resolved by precedence: a caller who wrote both meant one of them, and nothing
+   * here can tell which.
    */
   readonly columns?: number
   /** The grid's row tracks. */
@@ -756,23 +683,14 @@ export interface Style {
 
   // -- Paint ----------------------------------------------------------
   /**
-   * The box's fill.
-   *
-   * `backgroundColor`, as v1 spells it and as CSS names the property, and
-   * distinct from {@link Style.color}, which is
-   * the text colour. The two sit adjacent and mean different things; that is
-   * CSS's trap and keeping its names is what lets a design be ported without
-   * translation.
+   * The box's fill, distinct from {@link Style.color}, which is the text colour.
+   * The two sit adjacent and mean different things; that is CSS's trap, and
+   * keeping its names is what lets a design be ported without translation.
    */
   readonly backgroundColor?: Color
   /**
-   * Border colour, on every edge or per edge.
-   *
-   * One property, as v1 has one. The scene splits it — a fallback colour beside
-   * per-edge overrides — but that split exists for the wire format's
-   * convenience rather than the caller's, so the encoder routes the scalar form
-   * to one field and the edge form to the other and no v2-only name reaches
-   * this surface.
+   * Border colour, on every edge or per edge. One property here; the encoder routes
+   * the scalar form and the edge form to the scene's two fields.
    */
   readonly borderColor?: Sides<Color>
   /**
@@ -836,7 +754,6 @@ export interface Style {
    * ```
    */
   readonly color?: Color
-  /** Horizontal alignment within the box. Inherits. */
   /**
    * OpenType features applied to the run.
    *
@@ -890,10 +807,8 @@ export interface Style {
    */
   readonly transform?: Transform
   /**
-   * Shadows cast by the box, nearest first.
-   *
-   * One or many, as v1 takes them. Later shadows are drawn behind earlier ones,
-   * which is CSS's order.
+   * Shadows cast by the box, nearest first: one or many, with later shadows drawn
+   * behind earlier ones, as CSS orders them.
    */
   readonly boxShadow?: BoxShadow | readonly BoxShadow[]
   /**

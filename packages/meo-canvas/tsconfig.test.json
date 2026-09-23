@@ -1,22 +1,12 @@
 {
-  // The tests, which the shipped surface's config deliberately cannot cover.
-  //
-  // `tsconfig.json` sets `types: []` and `lib: ["ES2023"]` so a library with no
-  // DOM does not get `window` in scope by accident. Vitest's own declarations
-  // name `AbortSignal`, `EventTarget` and the timer functions, which live in
-  // `DOM` -- so the tests get that lib and the shipped code still does not.
+  // The tests, which the shipped config excludes. They add `DOM`, where the
+  // `AbortSignal`, `EventTarget` and timers Vitest's declarations name live, and
+  // `rootDir` moves up so `../../fixtures/arena-cases.json` can be imported.
   "extends": "./tsconfig.json",
-  //
-  // The case fixture is imported rather than read: reading it would need
-  // `node:fs`, which needs `@types/node`, which is a dependency the shipped
-  // surface has no use for. `rootDir` moves up so a file outside `src` is
-  // allowed at all -- nothing is emitted from this config, so it only decides
-  // what may be named.
   "compilerOptions": {
     "lib": ["ES2023", "DOM"],
-    // The boundary suite loads `meo-canvas.node`, which needs `createRequire`
-    // from `node:module`. The shipped config keeps `types: []`, so the package
-    // still cannot name a Node built-in.
+    // As in the base config: the boundary suite loads `meo-canvas.node` through
+    // `createRequire` from `node:module`.
     "types": ["node"],
     "resolveJsonModule": true,
     "rootDir": "../.."

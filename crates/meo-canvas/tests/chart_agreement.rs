@@ -1,28 +1,7 @@
-//! The same chart, built on both surfaces, compared as bytes.
-//!
-//! # Why two implementations rather than one and a reference
-//!
-//! **`Chart` has no external adjudicator.** Chrome has no charts, v1 is both
-//! baselines, and the arithmetic is the specification. So the strongest check
-//! available is that two independent implementations produce the same scene —
-//! and where they differ, one is wrong and the comparison says so **without
-//! either being trusted.**
-//!
-//! # What this closes, and what it does not
-//!
-//! **It closes the port and not the geometry.** Both surfaces agreeing on a
-//! wrong bar edge passes every byte here. The numbers are guarded by rendering
-//! — `chart.render.test.ts` on the TypeScript side and its equivalent here —
-//! which check the arithmetic against pixels rather than against itself.
-//! Three checks, three questions, and none substitutes for another.
-//!
-//! # Why the bytes are committed rather than generated
-//!
-//! `ci` runs these tests **before** the JavaScript ones, so a suite that wrote
-//! the asset would leave this comparing against the previous run's output —
-//! the stale-artifact trap with the staleness manufactured by the suite. The
-//! bytes are committed; both sides assert against them; a deliberate change is
-//! `UPDATE_CHART_BYTES=1 npx vitest run chart.agreement`.
+//! The same chart, built on both surfaces, compared as bytes. A chart has no
+//! external referee, so two independent implementations agreeing is the
+//! strongest check; rendering guards the geometry itself. The bytes are
+//! committed, since this runs before the TypeScript suite would write them.
 
 use std::rc::Rc;
 
@@ -41,11 +20,8 @@ use meo_canvas::{
 /// The bytes the TypeScript surface writes for the same chart.
 const THEIRS: &str = include_str!("assets/chart/bar-bytes.txt");
 
-/// The chart both surfaces build.
-///
-/// **Every option switched on**, because an option left at its default is one
-/// the comparison never sees: two implementations agree trivially about a
-/// branch neither takes.
+/// The chart both surfaces build, with every option on: two implementations
+/// agree trivially about a branch neither takes.
 fn ours() -> Vec<u8> {
     let labels = ["a".to_owned(), "b".to_owned()];
     let datasets = [
@@ -92,13 +68,9 @@ fn ours() -> Vec<u8> {
     codec::encode(&scene)
 }
 
-/// Where the chart's own node begins, by its name in the byte stream.
-///
-/// **The page frame is not part of the comparison.** `Root::new` here and a
-/// page root handed to `encodeScene` there are different framings with
-/// different default styles, and their disagreement is about the harness
-/// rather than about either chart. Everything from the `bar chart` node
-/// onward is the chart.
+/// Where the chart's own node begins, by its name in the byte stream: the page
+/// frames differ between `Root::new` and `encodeScene`, and that is the harness
+/// rather than the chart.
 fn from_the_chart<'a>(bytes: &'a [u8], name: &str) -> &'a [u8] {
     let needle = name.as_bytes();
     let at = bytes
@@ -138,14 +110,8 @@ fn both_surfaces_encode_the_same_chart_to_the_same_bytes() {
     );
 }
 
-/// Hex, because it has no tail cases to get right.
-///
-/// This was base64 first, and the pad arithmetic was correct **by a
-/// coincidence between `<=` and the tail length** rather than by saying so —
-/// and which tail a chart ever exercises depends on `codec::encode`'s output
-/// length modulo three, so today's chart might only ever reach one of them.
-/// A case that cannot discriminate is not a case that agreed. Hex has one
-/// rule and no remainder.
+/// Hex, because it has no tail cases: base64's padding depends on the output
+/// length modulo three, so a chart might only ever reach one tail.
 fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -171,13 +137,8 @@ const THEIR_HATCHES: &str = include_str!("assets/chart/hatches-bytes.txt");
 const THEIR_LINE_RIGHT: &str =
     include_str!("assets/chart/line-legend-right-bytes.txt");
 
-/// Every option switched on, and a legend on a stated side.
-///
-/// **A default is a branch neither surface takes**, so a case that leaves one
-/// alone has the two agreeing about nothing. The legend position differs per
-/// case because it is the one option that changes the chart's *root* node from
-/// a column to a row — a branch the bar case cannot reach, since it can only
-/// take one side at a time.
+/// Every option switched on, and a legend on a stated side: the position is the
+/// one option that turns the chart's root from a column into a row.
 fn everything(position: LegendPosition) -> Options {
     Options {
         show_labels: true,
@@ -199,14 +160,9 @@ fn everything(position: LegendPosition) -> Options {
     }
 }
 
-/// The three slices the pie and the doughnut both draw.
-///
-/// **Colours on the first and third only**, so the palette fallback is inside
-/// the comparison rather than beside it. Whole numbers throughout: the pie's
-/// legend spells a slice `label (value)` with the value unrounded, and
-/// `Display` and JavaScript's number-to-string part company at both ends of
-/// the range -- at or above `1e21` and below `1e-6`. Keeping the values whole
-/// keeps that out of what is being asked.
+/// The three slices the pie and doughnut draw, coloured on the first and third
+/// so the palette fallback is compared. Whole values, since `Display` and
+/// JavaScript spell numbers differently at `1e21` and below `1e-6`.
 fn three_slices() -> Vec<Slice> {
     vec![
         Slice {
@@ -240,13 +196,8 @@ fn encoded(chart: Element) -> Vec<u8> {
     codec::encode(&scene)
 }
 
-/// Compares one kind, and fails first if there is nothing to compare.
-///
-/// **An agreement between two nothings is an agreement.** A byte comparison
-/// that passes says the ports match; it does not say the case had a subject.
-/// So the asset is checked for content and the scene for the chart's own node
-/// -- `from_the_chart` cannot find a name that was never encoded -- before
-/// either is compared.
+/// Compares one kind, and fails first if there is nothing to compare: the asset
+/// must have content and the scene the chart's node, since two nothings agree.
 fn agrees(name: &str, ours: &[u8], theirs: &str) {
     let theirs = theirs.trim();
     assert!(
@@ -279,12 +230,8 @@ fn agrees(name: &str, ours: &[u8], theirs: &str) {
     );
 }
 
-/// The three labels and two series both cartesian cases draw.
-///
-/// Shared rather than written twice, because the legend-position case exists to
-/// isolate **one property**: if the data could differ, a disagreement there
-/// would have two possible causes and the case would stop being about the
-/// branch.
+/// The labels and series both cartesian cases draw, shared so the
+/// legend-position case isolates one property.
 fn cartesian() -> ([String; 3], [Dataset; 2]) {
     (
         ["a".to_owned(), "b".to_owned(), "c".to_owned()],
@@ -313,18 +260,9 @@ fn both_surfaces_encode_the_same_line_chart() {
     agrees("line chart", &encoded(chart), THEIR_LINE);
 }
 
-/// The fourth frame branch, which nothing compared until this case.
-///
-/// `framed` sends `Left` and `Right` down its `Row` arm and `Top` and `Bottom`
-/// down its `Column` arm, and picks the child order from the same match. Three
-/// of the four positions ride on a kind above; **`Right` rode on nothing**, and
-/// the bar case carries no legend at all.
-///
-/// **Checked to render before it was pinned.** On the TypeScript surface a
-/// 240-wide bar chart's plot spans 216px with no legend and 176px with the
-/// legend at either `left` or `right` -- the same width both ways, with the
-/// legend taking its own side. So the branch was uncovered rather than broken,
-/// and this is a test rather than a fix wearing one.
+/// The fourth frame branch: `framed` sends `Left` and `Right` down its `Row`
+/// arm, and `Right` rode on no other case. Checked to render first -- the plot
+/// is 176px wide with the legend on either side.
 #[test]
 fn both_surfaces_encode_the_same_line_chart_with_the_legend_on_the_right() {
     let (labels, datasets) = cartesian();
@@ -346,12 +284,8 @@ fn both_surfaces_encode_the_same_pie() {
 
 #[test]
 fn both_surfaces_encode_the_same_doughnut() {
-    // v1's `chartOptions?.innerRadius ?? 0.6`, which is what the TypeScript
-    // surface passes and what my own builder has no default for.
-    // **No `0.6` here any more, and that is the point.** The suites used to
-    // pass it explicitly on this side, which meant they agreed about a number
-    // they were both being told rather than about a default only one surface
-    // had. `doughnut` now carries v1's default itself.
+    // No `0.6` passed here: `doughnut` carries the default itself, so this
+    // compares the default rather than a number both sides were told.
     let chart = doughnut(&three_slices(), &everything(LegendPosition::Bottom))
         .unwrap_or_else(|error| {
             unreachable!("the chart did not build: {error}")
@@ -359,18 +293,10 @@ fn both_surfaces_encode_the_same_doughnut() {
     agrees("doughnut chart", &encoded(chart), THEIR_DOUGHNUT);
 }
 
-/// The five hooks, compared by what they build rather than by what they are.
-///
-/// **A function cannot be encoded**, so this pins their *effect*: the same
-/// formatter and the same hatch on both surfaces must produce the same tree.
-/// Each hatch takes its index into the node it returns, so calling them in the
-/// wrong order, or calling one of them once, encodes differently.
-///
-/// The formatters round before they stringify. A y-axis division arrives as
-/// something like `2.4000000000000004`, and `Display` and JavaScript's
-/// number-to-string part company on exactly that kind of value -- rounding
-/// first keeps the languages' spelling rules out of a comparison that is about
-/// the hook.
+/// The five hooks, compared by what they build, since a function cannot be
+/// encoded. Each hatch puts its index in its node, so a wrong order or a missed
+/// call encodes differently; the formatters round first, keeping the languages'
+/// number spellings out.
 #[test]
 fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
     let (labels, datasets) = cartesian();
@@ -439,23 +365,10 @@ const THEIR_AXIS_FALLBACK: &str =
 const THEIR_DOUGHNUT_INNER: &str =
     include_str!("assets/chart/doughnut-inner-bytes.txt");
 
-/// Every option of [`everything`], with the y-axis colour taken away and
-/// `axis_color` put in its place.
-///
-/// **Written out rather than spread from [`everything`]**, and the reason is
-/// the one this file already warns about: the first disagreement of a new case
-/// is usually two option bags that differ. The TypeScript bag cannot be
-/// spread-and-dropped under `exactOptionalPropertyTypes`, so it is a literal
-/// there; making this one a literal too means the two are read side by side
-/// rather than one derived and one written.
-///
-/// **`y_axis_color: None` is stated even though it is the default**, because
-/// its absence is the whole of the case. A reader who deletes the line as
-/// redundant deletes the branch.
-///
-/// The colour is neither `y_axis_color`'s `#778899` nor the `TEXT_COLOR` the
-/// chain ends at, so a surface taking the wrong arm of
-/// `y_axis_color.or(axis_color)` encodes differently from one taking this one.
+/// Every option of [`everything`] with `axis_color` in place of the y-axis
+/// colour, written out as the TypeScript bag must be. `y_axis_color: None` is
+/// the whole case, and the colour is neither arm's, so a wrong arm of
+/// `y_axis_color.or(axis_color)` shows.
 fn axis_fallback() -> Options {
     Options {
         show_labels: true,
@@ -478,19 +391,12 @@ fn axis_fallback() -> Options {
     }
 }
 
-/// The hole this side is **told**, rather than the one it defaults to.
-///
-/// `doughnut` carries v1's `0.6` itself and the TypeScript surface falls back
-/// to the same number, so the doughnut case above has the two agreeing about a
-/// value neither was given. `0.35` is given to both.
+/// The hole this side is told, rather than the `0.6` both surfaces default to:
+/// `0.35` is given to both.
 const CHOSEN_INNER_FRACTION: f64 = 0.35;
 
-/// `axis_color` is the fallback under an absent `y_axis_color`, and nothing
-/// reached it.
-///
-/// `everything` always sets `y_axis_color`, so every case above takes the
-/// first arm of `y_axis_color.or(axis_color)` and the second is a branch this
-/// suite had never executed on either surface.
+/// `axis_color` as the fallback under an absent `y_axis_color`, a branch no
+/// other case reaches, since `everything` always sets `y_axis_color`.
 #[test]
 fn both_surfaces_encode_the_same_chart_through_the_axis_colour_fallback() {
     let (labels, datasets) = cartesian();
@@ -515,14 +421,8 @@ fn both_surfaces_encode_the_same_doughnut_at_a_chosen_inner_fraction() {
     agrees("doughnut chart", &encoded(chart), THEIR_DOUGHNUT_INNER);
 }
 
-/// **The two new cases can fail, which is not what a byte match shows.**
-///
-/// A comparison against a committed asset says the two surfaces agree; it does
-/// not say the option under test reached the output. Both of these agree with
-/// the option removed too — the fallback colour would silently be `TEXT_COLOR`
-/// on both sides, and the hole would silently be `0.6` on both — so what makes
-/// the cases above evidence is that taking the option away moves the bytes
-/// here.
+/// The two option cases above can fail: both agree with the option removed too,
+/// so what makes them evidence is that taking it away moves the bytes here.
 #[test]
 fn the_two_new_options_reach_the_encoded_scene() {
     let (labels, datasets) = cartesian();
@@ -570,29 +470,17 @@ fn the_two_new_options_reach_the_encoded_scene() {
     );
 }
 
-/// Whether a run of bytes holds a piece of text the scene should carry.
-///
-/// The codec writes strings literally, so a label's spelling is greppable in
-/// the encoded page. Cruder than decoding, and it is the right crudeness here:
-/// what these two tests ask is whether a particular spelling reached the scene
-/// at all.
+/// Whether a run of bytes holds a piece of text: the codec writes strings
+/// literally, so a label's spelling is greppable in the encoded page.
 fn contains(bytes: &[u8], needle: &str) -> bool {
     bytes
         .windows(needle.len())
         .any(|window| window == needle.as_bytes())
 }
 
-/// A value label is the number the caller gave, not a rounded one.
-///
-/// **The committed assets cannot see this**, and that is why the test is
-/// written this way rather than as another agreement case: every case above
-/// uses whole numbers, and rounding a whole number changes nothing. A bar of
-/// `2.345` is the smallest case where the two spellings differ.
-///
-/// The y-axis is off because its own default formatter *does* round to two
-/// decimals -- correctly, since the other surface rounds there too -- and its
-/// labels would otherwise put `2.35` in the scene and make the second
-/// assertion pass for the wrong reason.
+/// A value label is the number the caller gave, not a rounded one. The
+/// committed assets use whole numbers, so `2.345` is the case; the y axis is
+/// off, since its default rounds and would put `2.35` in the scene.
 #[test]
 fn a_value_label_is_written_as_given_rather_than_rounded() {
     let labels = ["a".to_owned()];
@@ -621,13 +509,9 @@ fn a_value_label_is_written_as_given_rather_than_rounded() {
     );
 }
 
-/// A slice label is drawn in the chart's own font family.
-///
-/// **The committed assets cannot see this either**: no pie or doughnut case
-/// above sets a family, so the family being dropped and the family being
-/// absent encode identically. The legend is off so that the only text in the
-/// scene is the slice labels themselves -- with it on, the legend sets the
-/// family and the assertion would hold whatever the slice did.
+/// A slice label is drawn in the chart's own font family. The legend is off,
+/// since it sets the family and would satisfy the assertion whatever the slice
+/// did.
 #[test]
 fn a_slice_label_takes_the_chart_font_family() {
     let options = Options {
@@ -646,17 +530,9 @@ fn a_slice_label_takes_the_chart_font_family() {
     );
 }
 
-/// A colour the caller wrote and this crate cannot read is refused.
-///
-/// **The other surface already refuses it**: a colour string crosses the
-/// boundary unparsed and the addon rejects it. A crate caller used to get a
-/// black swatch for the same input, so the same scene was a failed render
-/// through one door and a wrong picture through the other.
-///
-/// Each row names a different one of the sites that resolves a written colour.
-/// A dataset's colour reaches the series stroke, the point markers and the
-/// legend swatch from one string, so the first of those to run is the one that
-/// reports -- which is why there is no separate row for the other two.
+/// A colour this crate cannot read is refused, as the other surface refuses it,
+/// rather than drawn black. Each row names a different site; a dataset's colour
+/// reaches three from one string, so the first to run reports.
 #[test]
 fn an_unreadable_colour_is_refused_rather_than_drawn_in_black() {
     let labels = ["a".to_owned()];
@@ -734,16 +610,9 @@ fn an_unreadable_colour_is_refused_rather_than_drawn_in_black() {
     );
 }
 
-/// A doughnut is named for what the caller asked for, not for its hole.
-///
-/// **`inner_fraction: Some(0.0)` is the only way in**, which is why no
-/// committed asset can see it: the doughnut cases above pass `0.35` and the
-/// default `0.6`, and every caller who says nothing lands above zero. A hole
-/// of zero draws the same circle a pie does, and the two are still different
-/// charts -- the other surface names the node from the type it was given.
-///
-/// The name is encoded, so this is not cosmetic: anything reading the scene by
-/// name saw `pie chart` for a chart the caller had asked to be a doughnut.
+/// A doughnut is named for what the caller asked for, not for its hole:
+/// `inner_fraction: Some(0.0)` draws a pie's circle, and the encoded name must
+/// still say doughnut.
 #[test]
 fn a_doughnut_with_no_hole_is_still_a_doughnut() {
     let flat = Options {

@@ -1,12 +1,7 @@
 /**
- * Images: every fit, both source kinds, position, borders and radius.
- *
- * One picture eight pixels wide and four tall, drawn into square boxes — so
- * every fit resolves to a visibly different rectangle rather than to a
- * difference a reader has to measure.
- *
- * The last two cells currently draw the same bytes as a plain one: a border and
- * a corner radius on an image node paint nothing. Left in rather than removed.
+ * Images: every fit, both source kinds, position, borders and radius. One picture
+ * eight pixels wide and four tall in square boxes, so every fit is a visibly
+ * different rectangle.
  */
 
 import { readFile } from 'node:fs/promises'
@@ -50,7 +45,7 @@ const canvas = await Root({
         // visible where the fit leaves room.
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'none', objectPosition: ['0%', '0%'] })),
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'none', objectPosition: ['100%', '100%'] })),
-        // An image is a box: it should take a border and a radius like one.
+        // An image is a box, and takes a border and a radius like one.
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'cover', border: 4, borderStyle: 'solid', borderColor: '#2850dc' })),
         cell(Image({ src: STRIP, width: 64, height: 64, objectFit: 'cover', borderRadius: 20 })),
       ],

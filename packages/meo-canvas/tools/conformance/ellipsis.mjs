@@ -1,15 +1,6 @@
-// What Chrome keeps when a line does not fit, as a **string**.
-//
-// The question is which characters survive, not how many pixels they occupy.
-// A word-boundary rule keeps `Flower of…` where a character rule keeps
-// `Flower of Par…`, and those differ in content: a fixture pinning the string
-// fails a wrong rule outright, where a fixture pinning a width fails it by a
-// pixel or two and can be argued with.
-//
-// Measured with `measureText` rather than `text-overflow: ellipsis`, because
-// Chrome does not expose the string that property drew. `measureText` is also
-// what v1's `fillLineToWidth` uses, so this asks the browser the same question
-// v1 asks it.
+// What Chrome keeps when a line does not fit, as a string: a word rule keeps
+// `Flower of…` where a character rule keeps `Flower of Par…`. Measured with
+// `measureText`, since Chrome does not expose the string `text-overflow` drew.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -24,13 +15,9 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const MARKER = '…'
 
 /**
- * The strings and widths to ask about.
- *
- * The first four are one string at four widths, so the answer moves through a
- * word boundary rather than sitting on one side of it: 90 is the width v1's
- * own example uses, and 60 and 120 bracket it. The fifth is a single word
- * longer than its box, where a word-boundary rule has nothing to fall back on
- * and has to cut mid-word or draw nothing.
+ * The strings and widths: one string at 60 to 150, so the answer crosses a word
+ * boundary; a single word longer than its box, where a word rule must cut mid-word
+ * or draw nothing; and the string again at 22px.
  */
 const CASES = [
   { text: 'Flower of Paradise', size: 16, width: 60 },

@@ -8,21 +8,10 @@ import { describe, expect, it } from 'vitest'
 import { Root, Text } from './index.js'
 
 /**
- * That registering a font changes the process rather than the render.
- *
- * A family registered by one render stays registered for every render after it,
- * nothing unregisters anything, and a render naming a family it never
- * registered uses whatever an earlier one left behind instead of failing. The
- * registry is `meo-skia-canvas`'s and neither surface can scope it;
- * `crates/meo-canvas-core/tests/font_scope.rs` pins the same behaviour from the
- * Rust side, and {@link FontRegistration} is where a caller is told about it.
- *
- * **Deliberately one test rather than four.** Every assertion here is about the
- * order things happened in *this process*, and vitest is free to run separate
- * tests in an order it chooses — split up, the control that has to come first
- * might not, and the file would report on whichever order it happened to pick.
- * A single file also keeps the registration out of every other suite: the pool
- * gives each file its own process, and this one deliberately dirties its own.
+ * That registering a font changes the process rather than the render, as
+ * {@link FontRegistration} tells a caller and `font_scope.rs` pins from Rust. One
+ * test rather than four, since the assertions are about order in this process and
+ * vitest may reorder tests; its own file keeps the registration out of other suites.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url))

@@ -98,20 +98,12 @@ wire_enum! {
         Stretch = 3,
         /// Aligned so the children's first baselines coincide.
         ///
-        /// A measurer reports a baseline -- `meo-canvas-core`'s
-        /// `MeasuredLeaf::first_baseline` carries one -- but taffy's
-        /// high-level tree has nowhere to receive it: `compute_leaf_layout`
-        /// returns `first_baselines: Point::NONE`
-        /// (`taffy-0.13.0/src/compute/leaf.rs:102`) for every node sized by a
-        /// measure function, and only the low-level `LayoutPartialTree` API
-        /// lets a caller build the `LayoutOutput` that would carry it.
-        ///
-        /// What a measured leaf therefore aligns on is its bottom edge, not its
-        /// text baseline: taffy reads a missing baseline as
-        /// `baseline.unwrap_or(height)`
-        /// (`taffy-0.13.0/src/compute/flexbox.rs:1524`). In a column direction
-        /// it is treated as [`Align::FlexStart`] instead, because taffy
-        /// supports baseline alignment only across a row.
+        /// A measured leaf reports its text's first baseline, offset by its
+        /// own top padding and border, since CSS measures a flex item's
+        /// baseline from its border box. A node reporting none aligns on its
+        /// bottom edge, which is how taffy reads a missing baseline. In a
+        /// column direction this is treated as [`Align::FlexStart`], because
+        /// taffy supports baseline alignment only across a row.
         Baseline = 4,
         /// Free space divided between the lines.
         ///
@@ -419,16 +411,10 @@ mod tests {
     #[test]
     fn every_track_size_is_named_here_so_a_new_one_cannot_be_ignored_elsewhere()
     {
-        // **The compile error `#[non_exhaustive]` moved out of the other
-        // crates.** `meo-canvas-core` now has a wildcard arm for this enum, so
-        // a variant added here would take that arm and draw nothing rather
-        // than fail to build. This match has no wildcard and lives in the
-        // crate that owns the type, which is where the attribute leaves
-        // exhaustiveness intact: adding a variant fails to compile here, and
-        // whoever adds it goes and looks at the arms that need it.
-        //
-        // `cargo test` rather than `cargo build`, which is the cost of putting
-        // it in a test; the gate runs both.
+        // No wildcard, in the crate that owns the type: `meo-canvas-core`'s
+        // wildcard arm would take a new variant and draw nothing, so it fails
+        // to compile here instead -- under `cargo test` rather than `cargo
+        // build`, and the gate runs both.
         use super::TrackSize;
         let witness = |value: &TrackSize| match value {
             TrackSize::Auto => "auto",
@@ -448,11 +434,9 @@ mod tests {
     #[test]
     fn defaults_follow_css_not_yoga() {
         let style = LayoutStyle::default();
-        // **`block`, which is what a browser gives a `<div>`.** taffy's own
-        // default is `Flex`, so this was the one field whose value agreed with
-        // taffy while the test's name claimed CSS. Both public surfaces name
-        // `flex` on every container they build, so nothing a caller writes
-        // depends on this.
+        // `block`, which is what a browser gives a `<div>`, where taffy's own
+        // default is `Flex`. Both public surfaces name `flex` on every
+        // container, so nothing a caller writes depends on this.
         assert_eq!(style.display, Display::Block);
         assert_eq!(style.flex_direction, FlexDirection::Row);
         assert!((style.flex_shrink - 1.0).abs() < f32::EPSILON);

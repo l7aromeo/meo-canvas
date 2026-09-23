@@ -1,28 +1,7 @@
-//! Emits `packages/meo-canvas/src/generated/media-types.ts`.
-//!
-//! The formats a canvas encodes to, and the media type each is served as in a
-//! `data:` URL. The TypeScript surface needs both — twelve tags in a union and
-//! twelve entries in a record — and a transcribed copy can disagree with the
-//! renderer silently: browsers accept both `image/x-icon` and the renderer's
-//! `image/vnd.microsoft.icon` for `ico`, so a wrong entry there renders and
-//! serves exactly like a right one.
-//!
-//! So the list is emitted from the Rust that already delegates to the renderer,
-//! rather than transcribed. It is a test rather than a build script because the
-//! values come from upstream's trait table at runtime and cannot be read out of
-//! source text the way the arena tables and the wire enums can — the same
-//! reason `arena-cases` is a test.
-//!
-//! Run by `just media-types`; `just media-types-check` regenerates to a
-//! disposable path and diffs.
-//!
-//! # The tag is not the extension
-//!
-//! A format crosses the addon boundary as a **tag**, which is its extension
-//! except for `Raw`: `ImageFormat::extension` answers `bin` there, because a
-//! file of pixel bytes conventionally carries that name, while the tag a caller
-//! writes is `raw`. That is the same rule `format_from_tag` applies in
-//! `meo-canvas-node`, and it is stated once here rather than inferred twice.
+//! Emits `packages/meo-canvas/src/generated/media-types.ts`: each encode
+//! format's tag and `data:` media type, read from the renderer's table at
+//! runtime, hence a test. The tag is the extension except `raw`, whose
+//! extension is `bin`.
 
 use std::{fmt::Write as _, fs, io, path::PathBuf};
 

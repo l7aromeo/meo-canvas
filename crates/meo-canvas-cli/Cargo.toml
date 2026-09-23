@@ -33,11 +33,9 @@ net = ["dep:ureq"]
 meo-canvas-core = { workspace = true }
 meo-canvas-scene = { workspace = true }
 clap = { workspace = true }
-# Blocking by construction: ureq 3.4's required dependencies are `base64`,
-# `log`, `percent-encoding`, `ureq-proto` and `utf8-zero` -- no tokio, no
-# futures. reqwest lists `tokio`, `hyper`, `hyper-util` and `tower` as
-# non-optional even before its `blocking` feature is requested, which would put
-# an async runtime inside a synchronous program.
+# Blocking by construction: ureq 3.4 requires no tokio and no futures, where
+# reqwest makes `tokio`, `hyper` and `tower` non-optional even for `blocking`,
+# which would put an async runtime in a synchronous program.
 ureq = { workspace = true, optional = true }
 
 [lints]

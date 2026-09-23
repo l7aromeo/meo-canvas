@@ -1,45 +1,7 @@
-// Does the built addon load on a machine that is not the one that built it?
-//
-// This is the acceptance test for a release artefact, and for the Linux targets
-// it is the only check that can pass it. The ABI ceilings the release workflow
-// asserts compare version tags, and **an unversioned symbol has no tag to
-// compare** -- a binary reporting `GLIBCXX_3.4.21`, under every ceiling, still
-// failed to load on `undefined symbol: _M_replace_cold`, a GCC 12 symbol
-// carrying no version. That is outside what a ceiling can measure rather than a
-// gap in how carefully one is written. **The ceilings diagnose; this decides.**
-//
-// Adapted from the harness that produced the first real load table, which is
-// where the two mistakes recorded in the comments below were made and found.
-//
-// # No font packages are installed anywhere here, on purpose
-//
-// The point is what a consumer gets, and a consumer running `node:22-slim` has
-// no fontconfig. Installing one to make the test pass would be measuring our
-// own setup script.
-//
-// # Three kinds of answer, and only one of them is about the binary
-//
-// A harness that reports "does not load" when it could not pull an image, or
-// could not find the file, is worse than no harness: it fails in the same shape
-// as the defect it exists to catch. So every precondition is established before
-// the probe runs -- the binary is checked before any container starts, the
-// image is pulled as its own step before anything is mounted -- and a failure
-// before the probe cannot be a load failure, because the probe has not
-// happened. Each row says which of the three it is:
-//
-//   answered    the probe ran and the binary either loaded or did not
-//   softened    the probe ran on a host that is not the host we meant to test
-//   unasked     the question could not be put at all
-//   ambiguous   it was asked, and the answer could not be read
-//
-// A `softened` row is not a pass. `ambiguous` fails the run without claiming
-// which side is at fault, and it exists because the alternatives are both
-// wrong: output that cannot be parsed was read as a binary that does not load,
-// which is the miscategorisation this whole file guards against -- the escaping
-// fault that produced six unreadable rows would have printed "6 images cannot
-// load this binary" about a binary with nothing wrong with it. Reading it as
-// machinery instead would be the opposite error, since a segfault inside
-// `dlopen` also prints nothing. It is genuinely both, so it says so.
+// Does the built addon load on a machine that did not build it? The release's ABI
+// ceilings compare version tags and an unversioned symbol such as `_M_replace_cold`
+// has none, so the ceilings diagnose and this decides. No font package is
+// installed anywhere: a consumer on `node:22-slim` has no fontconfig.
 
 import { execFile } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
@@ -60,50 +22,16 @@ let mount
 let extra
 
 /**
- * The libraries whose absence is the point, checked before the load is read.
- *
- * **Installing node can undo the test.** Most of these images ship no node, and
- * a distribution's `nodejs` package may pull `fontconfig` in transitively --
- * which would install exactly what this exists to prove is absent, and report a
- * clean load on an image where a real consumer fails. Measured, that does not
- * happen on any of these images today, but "it does not happen today" is a fact
- * about package metadata nobody here controls.
- *
- * So the row is not trusted, it is checked. A row where either library is
- * present is `softened`: it says nothing about a machine without them, whether
- * they arrived with the image or with the install.
+ * The libraries whose absence is the point. A row where either is present --
+ * shipped by the image or pulled in by an install -- is `softened`, since it says
+ * nothing about a machine without them.
  */
 const MUST_BE_ABSENT = ['libfontconfig.so.1', 'libfreetype.so.6']
 
 /**
- * How a `node` gets onto an image that has none: **mounted, never installed.**
- *
- * An official Node build is unpacked once into the staging directory and
- * mounted read-only beside the addon, so no package manager runs inside any
- * image under test. Two false failures came from the other ways.
- *
- * `dnf install nodejs` on AlmaLinux 8 installs **Node 10**, which predates the
- * N-API level this addon is built against, so the load failed with `undefined
- * symbol: napi_check_object_type_tag`. That reads exactly like an ABI failure
- * of our binary and is nothing of the kind -- the same binary loads on the same
- * image under Node 22. **A harness that reports the age of a distribution's
- * package as a defect in the artefact is worse than none.**
- *
- * Downloading node inside each image failed differently again: `debian:12-slim`
- * has no `curl` and `amazonlinux:2023` has no `tar`, and installing those puts
- * a package manager back in the loop -- which is how `fontconfig` arrives
- * without being asked for, installing exactly what this exists to prove is
- * absent.
- *
- * Mounting removes the whole class. Nothing is added to any image, so what the
- * addon finds is what a consumer's image actually contains. It also makes
- * {@link MUST_BE_ABSENT} a question about the image alone rather than about the
- * image plus our setup -- the check is still made, because an image that ships
- * the libraries is still a row that proves nothing about one that does not.
- *
- * The official build rather than the one in `node:22-slim`: that one is linked
- * against Debian 12's glibc and would not run on `almalinux:8`, which is the
- * oldest tier and the whole point of testing there.
+ * The official Node build, mounted read-only rather than installed, so no package
+ * manager runs in an image under test: `dnf install nodejs` gives Node 10 on
+ * AlmaLinux 8, and one built against a newer glibc will not run on `almalinux:8`.
  */
 const NODE_BIN = '/probe/node/bin'
 
@@ -114,14 +42,9 @@ const NODE_VERSION = process.env['MEO_CANVAS_ACCEPTANCE_NODE'] ?? '22.12.0'
 const NODE_ARCH = { x64: 'x64', arm64: 'arm64' }
 
 /**
- * The images each Linux target is answerable for.
- *
- * The `node:*` rows are the shapes people deploy into; the bare distributions
- * are the ABI floors the package name promises. Every list carries one
- * **control** — an image that ships the font libraries, so it can never be part
- * of the pass criterion, and is here only to show the binary is not inert. A
- * run where every row fails is usually a broken harness, and the control is
- * what tells that apart from a binary that works nowhere.
+ * The images each Linux target is answerable for: the `node:*` shapes people
+ * deploy into and the bare ABI floors. Each list carries one control that ships
+ * the font libraries, so a run where everything fails can be told from a broken harness.
  */
 const LINUX_IMAGES = {
   gnu: [
@@ -132,31 +55,10 @@ const LINUX_IMAGES = {
     { image: 'amazonlinux:2023', why: 'glibc 2.34 — the AWS Lambda runtime' },
     { image: 'almalinux:8', why: 'glibc 2.28 — the oldest tier worth claiming' },
   ],
-  // **The musl rows make a narrower claim than the glibc ones, and it is not
-  // the claim a reader assumes.** They say the addon loads on the Alpine image
-  // people deploy into -- not that it needs nothing but musl.
-  //
-  // Bare `alpine:3.20` cannot be used, and the reason is worth stating because
-  // it is the very thing the narrowing gives up. There is no mountable musl
-  // node: nodejs.org publishes glibc builds only, and the node copied out of
-  // `node:22-alpine` will not run on a bare image --
-  // `Error relocating: _ZNSt7__cxx117collateIcE2idE: symbol not found`, because
-  // `node:22-alpine` installs `libstdc++` and the bare image does not carry it.
-  // Installing it would put a package manager back on the one image that exists
-  // to show what a bare musl host has, which is the Node 10 failure again.
-  //
-  // What the narrowing loses -- seeing the addon need something a bare Alpine
-  // lacks -- is recovered by `requirements`, which reads the artefact's own
-  // `NEEDED` list instead of loading it. A property of the binary needs no
-  // container to run it.
-  //
-  // **There is no control row here, and that is a real gap rather than an
-  // oversight.** A control has to ship the font libraries, and `node:22-alpine`
-  // ships neither -- measured, not assumed -- which is what makes it a genuine
-  // row instead. The only way to build one would be to `apk add` them into an
-  // image, and an installed control is a row about our setup. So a musl run
-  // that comes back failing cannot distinguish a binary that loads nowhere from
-  // a harness that is broken, where a glibc run can.
+  // Musl rows show the addon loads on the Alpine image people deploy into, not on
+  // bare musl: nodejs.org has no musl build and `node:22-alpine`'s needs a
+  // `libstdc++` bare `alpine:3.20` lacks. `requirements` covers that; no control
+  // row exists, since `node:22-alpine` ships neither font library.
   musl: [{ image: 'node:22-alpine', why: 'the Alpine image people deploy into, and it ships neither font library' }],
 }
 
@@ -179,13 +81,8 @@ async function docker(args, timeout = 600_000) {
 }
 
 /**
- * One image, pulled and probed.
- *
- * **The library check does not short-circuit the load.** An earlier shape
- * returned `SOFTENED` and exited before running the probe, which made the
- * control row unable to do the one job it exists for: an image that ships the
- * libraries never actually loaded the binary, so it could not show the binary
- * was not inert. Both facts are gathered every time and combined afterwards.
+ * One image, pulled and probed. The library check never short-circuits the load,
+ * so the control row still shows the binary is not inert.
  */
 async function probe(addonName, { image }, platform) {
   // The pull is its own step so a registry failure is reported as one. Rolled
@@ -198,11 +95,8 @@ async function probe(addonName, { image }, platform) {
   const script = [
     `export PATH=${NODE_BIN}:$PATH; `,
     'command -v node >/dev/null || { echo NO_NODE; exit 0; }; ',
-    // Braces around the group with the pipe outside them. Written as
-    // `$(ls ...; ls ... | tr)` the pipe binds to the LAST command only, so one
-    // path was collapsed and the other was not — two lines out, and a reader
-    // taking the last got a bare path with the word that gave it meaning on the
-    // line above. It reported as unreadable rather than as softened.
+    // Braces around the group with the pipe outside: in `$(ls ...; ls ... | tr)`
+    // the pipe binds to the last command only and the output splits across lines.
     `found=$({ ${present}; } | tr '\\n' ' '); `,
     'echo "PRESENT $found"; ',
     `node /probe/load.js /probe/${addonName}`,
@@ -213,11 +107,9 @@ async function probe(addonName, { image }, platform) {
 }
 
 /**
- * What one container's output means, as a pure function of that output.
- *
- * Separated from the container so it can be tested without one: the branches
- * here are where a harness misreports, and they are the part worth exercising
- * against fabricated output rather than against six real images.
+ * What one container's output means: `answered` (the probe ran), `softened` (a
+ * font library was present; never a pass), `unasked` (no probe ran) or `ambiguous`
+ * (unreadable, failing the run -- a segfault in `dlopen` prints nothing either).
  */
 export function classify(out) {
   const lines = out.split('\n').filter(Boolean)
@@ -250,12 +142,8 @@ export function classify(out) {
 }
 
 /**
- * Whether a set of rows passes, and why not when it does not.
- *
- * Pure, and separate from printing, because the exit code is the whole product
- * of this harness and the rules behind it are the thing most worth pinning: a
- * run with nothing answered must not pass, and a softened row must never count
- * as one that did.
+ * Whether a set of rows passes, and why not. The exit code is this harness's whole
+ * product: nothing answered must not pass, and a softened row never counts.
  */
 export function decide(rows) {
   const answered = rows.filter(row => row.kind === 'answered')
@@ -275,12 +163,8 @@ export function decide(rows) {
 }
 
 /**
- * What a bare image of each libc carries, and so what an artefact may ask for.
- *
- * Not a policy: these are the sonames present in `alpine:3.20` and in the
- * oldest glibc tier the package name claims. Anything else in an artefact's
- * `NEEDED` list is a library the consumer has to install, which the package
- * name does not tell them to.
+ * The sonames a bare `alpine:3.20` and the oldest glibc tier carry. Anything else
+ * an artefact needs, the consumer has to install.
  */
 const CARRIED = {
   musl: ['libc.musl-x86_64.so.1', 'libc.musl-aarch64.so.1', 'ld-musl-x86_64.so.1', 'ld-musl-aarch64.so.1'],
@@ -299,20 +183,9 @@ const CARRIED = {
 }
 
 /**
- * The shared libraries an artefact demands, read from the artefact itself.
- *
- * **This is what recovers the claim the musl rows give up.** Those rows load in
- * `node:22-alpine` rather than a bare image, so they cannot see the addon
- * needing something a bare Alpine lacks -- and `libstdc++` is exactly that
- * something. A `NEEDED` list is a property of the binary, so reading it needs
- * no container at all and no node inside one: the load test asks the realistic
- * image, this asks the artefact, and neither stands in for the other.
- *
- * The same split as the release's ABI floors against this file. The floor is a
- * diagnostic that names a symbol; the load is the gate. Here the requirement
- * list is the diagnostic and the load is still the gate -- a library named here
- * and present everywhere is fine, and one absent from the load's image is
- * caught by the load whether or not this notices it.
+ * The shared libraries an artefact demands, read from its `NEEDED` list with no
+ * container: what the musl rows cannot see, `libstdc++` included. A diagnostic,
+ * as the ABI floors are; the load is still the gate.
  */
 async function requirements(addon, libc) {
   // `objdump -p` over `ldd`: `ldd` reports what resolves on the machine running
@@ -337,16 +210,9 @@ async function requirements(addon, libc) {
 }
 
 /**
- * The official Node build for `arch`, unpacked and ready to mount.
- *
- * Cached between runs under the system temp directory: it is tens of megabytes
- * and every image in a run mounts the same one.
- *
- * **The checksum is verified before anything is unpacked.** This downloads an
- * executable and then runs it inside six containers, and taking it on trust
- * because the URL looks right is the kind of shortcut that is invisible until
- * it is not. `SHASUMS256.txt` comes from the same release directory and the
- * archive's digest is checked against the line naming it.
+ * The official Node build for `arch`, unpacked and ready to mount, cached under
+ * the system temp directory. Its digest is checked against `SHASUMS256.txt` from
+ * the same release before anything is unpacked.
  */
 async function stageNode(arch, into) {
   const { createHash } = await import('node:crypto')
@@ -391,13 +257,9 @@ async function stageNode(arch, into) {
 }
 
 /**
- * A target with no container to load it in: macOS and Windows.
- *
- * There is one runner and one OS version per target, so "load in place" is the
- * whole test and no image matrix exists to invent. **The OS version is recorded
- * rather than asserted**, because it is the thing that moves silently when
- * GitHub updates a runner image, and a table that does not say which version it
- * was verified on cannot show that it moved.
+ * A target with no container to load it in: macOS and Windows, one runner each.
+ * The OS version is recorded rather than asserted, so a table shows when GitHub
+ * moves the runner image.
  */
 async function inPlace(addon) {
   const { release, version } = await import('node:os')

@@ -1,44 +1,7 @@
-# Ground truth for springDuration(), generated from meo-canvas v1's built module
-# (`dist/esm/animate/spring.js`) rather than from either v2 implementation.
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
-# `spring.tsv` names, and verified rather than assumed: this generator was first
-# run against the four existing tables and reproduced all 612 of their rows
-# exactly, which is what establishes it is the same v1 they came from.
-#
-# Neither surface may be written from the other: a misreading of v1 that reaches
-# both looks like agreement. Both are written against this, and this came from
-# v1 running, not from anyone reading it.
-#
-# # Why this table exists
-#
-# `springDuration` had no shared table and no direct Rust test at all -- Rust's
-# `Spring::settles_after` was reached only through `Track::duration` and
-# `Sequence::plan`, so it could have drifted with the suite staying green. The
-# two surfaces were measured bit-identical on four configurations before this
-# was written; this is what keeps them so.
-#
-# # Why these inputs
-#
-# **A table whose inputs all zero a parameter cannot see the rule about that
-# parameter.** Three defects in one audit hid that way -- a spring floored at
-# `from` where every row had `from: 0`, a spring evaluated past its ceiling
-# where every row sampled inside `0..1`, and a track duration that disagreed
-# between the surfaces where every row had `delay: 0`. So every parameter here
-# varies away from its default somewhere: a non-zero `from`, a range crossing
-# zero, velocity in both directions, and all three damping regimes.
-#
-# `restDelta` is swept per configuration because it is the only option the
-# function takes and it selects the rest window -- and because `0.005` is its
-# default, which is exactly the value a table would otherwise never state.
-#
-# Columns mirror `spring.tsv` with `restDelta` where `t` was, so the two read as
-# siblings. Values are shortest-round-trip decimals, compared exactly: there is
-# no tolerance here.
-#
+# `springDuration` as v9.0.2 (commit 890eed2) computes it, `restDelta` swept
+# per configuration. Shortest round-trip decimals, compared exactly.
 # from	to	stiffness	damping	mass	velocity	restDelta	value
 # rows: 40
-#
 0	1	170	26	1	0	0.005	0.5666666666666659
 0	1	170	26	1	0	0.05	0.36249999999999993
 0	1	170	26	1	0	0.001	0.7041666666666654

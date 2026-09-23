@@ -1,14 +1,5 @@
-//! The example the crate's README carries, compiled so it cannot rot.
-//!
-//! **A README example is the "docs that quote output" trap with nothing
-//! gating it.** The version this replaced came from `AGENTS.md` and had four
-//! faults: `Root::new` takes one argument, `Styled` has to be imported for the
-//! setters, `to_file` takes only a path, and there was no renderer. It read
-//! correctly and compiled nowhere.
-//!
-//! `cargo clippy --workspace --all-targets` builds this, so the README's
-//! example is gated by the same run that gates everything else. Keep the two
-//! identical: a divergence of one line is how it starts rotting again.
+//! The example the crate's README carries, compiled by `cargo clippy
+//! --workspace --all-targets` so it cannot rot. Keep the two identical.
 use meo_canvas::{Renderer, Root, Row, Styled, Text, hex, px};
 
 fn main() -> Result<(), meo_canvas::BuildError> {

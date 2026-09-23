@@ -1,11 +1,7 @@
 /**
- * Paint: fills, gradients, borders, shadows, compositing, transforms, masks.
- *
- * Every cell is the same box with one property changed, so a cell that looks
- * like its neighbour is a property that did nothing.
- *
- * The last row is `backgroundImage`, which was spellable here and nowhere on
- * the Rust half until `Style` grew a setter for it.
+ * Paint: fills, gradients, borders, shadows, compositing, transforms, masks. Every
+ * cell is the same box with one property changed, so a cell that looks like its
+ * neighbour is a property that did nothing.
  */
 
 import { Box, Root, type Gradient, type GradientStop, type SceneNode } from 'meo-canvas'
@@ -166,14 +162,8 @@ const canvas = await Root({
       }),
       filled({ border: 6, borderStyle: 'solid', borderColor: TO, mask: { shape: 'circle' } }),
     ]),
-    // A background image, and the three things that travel with it. The picture
-    // is eight by four, so a tile is small enough that the repeat is a pattern
-    // rather than one stretched copy.
-    //
-    // All five cells draw the same thing today: the picture is stretched to the
-    // box and the repeat, the size and the offset are ignored. Left in rather
-    // than reduced to one cell — five cells that should differ and do not is the
-    // showcase saying which parts work.
+    // A background image with its repeat, size and offset. The picture is eight by
+    // four, so a repeated tile reads as a pattern rather than one stretched copy.
     row([
       tiled('repeat', undefined, { x: 0, y: 0 }),
       tiled('no-repeat', undefined, { x: 0, y: 0 }),

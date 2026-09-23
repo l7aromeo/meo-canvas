@@ -1,30 +1,7 @@
-//! What a truncation does to an intrinsic width, against Chrome.
-//!
-//! # The rule, and why a browser was asked
-//!
-//! CSS Sizing 3 §5.1 derives min-content from the content, and Flexbox 1 §4.5
-//! floors a flex item there. `text-overflow: ellipsis` and `-webkit-line-clamp`
-//! are used-value behaviour -- what is *drawn* once the width is settled -- so
-//! neither should lower the number the floor is taken from. That reading is
-//! what the table checks, rather than being assumed by it.
-//!
-//! # The control is the row that makes the others mean something
-//!
-//! `text-overflow: ellipsis` needs `white-space: nowrap` to do anything, and
-//! `nowrap` raises min-content to the whole run **on its own** by removing
-//! every break opportunity. A table holding only `plain` and `ellipsis` would
-//! show a difference and credit it to the marker. So the harness measures
-//! `nowrap` without `text-overflow` as well, and the reading is that
-//! `ellipsis` matches **`nowrap`**, not `plain`: 106.50 against 106.50, where
-//! `plain` is 49.91. The marker changed nothing; the `nowrap` did.
-//!
-//! `-webkit-line-clamp` is the one that truncates while still wrapping, and so
-//! is the analogue of this renderer's `max_lines`. Chrome leaves it at the
-//! plain min-content -- 49.91 -- which is the row this crate's behaviour is
-//! actually pinned against.
-//!
-//! Measured through `just conformance`;
-//! `crates/meo-canvas/tests/assets/chrome/min-content.tsv`.
+//! What a truncation does to an intrinsic width, against Chrome: `nowrap` alone
+//! raises min-content to the whole run (106.50 against a plain 49.91), and
+//! `ellipsis` matches `nowrap`, not `plain`. `-webkit-line-clamp`, this crate's
+//! `max_lines`, leaves it at 49.91, and that row is the one pinned.
 
 use meo_canvas_core::{
     measure::{Available, Measure, SceneMeasurer},
@@ -46,12 +23,8 @@ const MARKER: &str = "\u{2026}";
 const TABLE: &str =
     include_str!("../../meo-canvas/tests/assets/chrome/min-content.tsv");
 
-/// How far our number may sit from Chrome's.
-///
-/// Tight on purpose. The agreeing rows come in within 0.03 -- `171.81` is
-/// exact -- and the defect this file exists for moves a width by 4 to 40
-/// pixels, so a tolerance loose enough to be safe would be loose enough to
-/// pass the bug.
+/// How far our number may sit from Chrome's: tight, since agreeing rows land
+/// within 0.03 and the defect moves a width by 4 to 40 pixels.
 const TOLERANCE: f32 = 0.25;
 
 /// One row of the table.
@@ -135,13 +108,10 @@ fn ours(
         .width
 }
 
-/// The paragraph this crate spells each measured variant with.
-///
-/// `nowrap` and `ellipsis` have **no spelling here**: this renderer has no
-/// `white-space` property, so those two rows are read as Chrome-internal
-/// evidence rather than compared against us. `clamp` is the one that maps,
-/// because `-webkit-line-clamp` truncates a run that still wraps, which is
-/// exactly what `max_lines` with an ellipsis does.
+/// The paragraph this crate spells each variant with. `nowrap` and `ellipsis`
+/// have none, having no `white-space` here, and are Chrome-only evidence;
+/// `clamp` maps to `max_lines` with an ellipsis, which truncates a run that
+/// still wraps.
 fn spelling(variant: &str) -> Option<ParagraphStyle> {
     match variant {
         "plain" => Some(ParagraphStyle::default()),

@@ -1,21 +1,7 @@
-// What `box-sizing` moves, across the three display types a child can sit in.
-//
-// A complete cross-product: three parents, two sizings, three widths, two
-// borders, two paddings. 72 rows and no ad-hoc selection, so the case set is
-// recoverable from the table rather than remembered -- a row missing from a
-// hand-picked list looks exactly like a row that was measured and agreed.
-//
-// **A third of the rows cannot tell the two sizings apart, and that is worth
-// keeping rather than trimming.** `width: auto` is sized by the parent under
-// either sizing, and a zero border with zero padding leaves the property
-// nothing to move. They are the control: a table where every row discriminates
-// would agree with a renderer that ignored `box-sizing` on exactly the cases
-// nobody measured.
-//
-// Rectangles rather than pixels, as everywhere here: `getBoundingClientRect`
-// is what Chrome laid out. The outer width is the child's own border box; the
-// content width is a grandchild filling it, which is the only way to ask
-// Chrome for a content box through a rectangle rather than a computed style.
+// What `box-sizing` moves, across three parent display types: a complete 72-row
+// cross-product. A third of the rows cannot tell the sizings apart and are the
+// control. The content width is a grandchild filling the child, since a sample
+// comes from a reported rectangle, never a computed style.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -59,11 +45,8 @@ try {
                   `border:${border}px solid #141414;padding:${padding}px;` +
                   (width === 'auto' ? '' : `width:${width};`)
 
-                // A grandchild filling the content box, so its rectangle **is**
-                // the content width. Chrome will report a computed `width`, but
-                // that is a resolved style rather than a laid-out box, and the
-                // rule here is that a sample point comes from a rectangle the
-                // browser reported.
+                // A grandchild filling the content box, so its rectangle is the
+                // content width -- a laid-out box rather than a computed `width`.
                 const inner = document.createElement('div')
                 inner.style.cssText = 'width:100%;height:100%;'
                 child.append(inner)

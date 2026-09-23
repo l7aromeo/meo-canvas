@@ -1,28 +1,7 @@
-//! What a percentage height resolves against when the box is out of flow.
-//!
-//! `l7aromeo/meo-canvas#84`: a percentage height on an absolutely positioned
-//! box came out zero and painted nothing, while the same third written as
-//! `top`/`bottom` came out right. The renderer decides definiteness itself and
-//! hands taffy the answer, so the rule is ours and taffy never sees the
-//! question.
-//!
-//! # Why this reads ink
-//!
-//! The report is that nothing is drawn. A `LayoutResult` can carry a height
-//! that no pixel ever receives -- a clip, a zero-size ancestor, a paint order
-//! -- so an assertion on the solved rectangle would pass for a page that came
-//! out blank. Every row here renders the scene and measures the painted band,
-//! which is the same instrument the reporter used.
-//!
-//! # The controls are most of the value
-//!
-//! This is a fix to a fix. `flex_settles_it` already refuses out-of-flow boxes
-//! on the `Auto` arm, with a measured Chrome number behind it, and the arm
-//! that is wrong is next to it. Six of the fourteen rows must not move, and
-//! they are the ones that make the other eight mean something: a repair that
-//! made every out-of-flow box definite everywhere would turn
-//! `abs-minheight-200` from 20 into 40 and `abs-top-only-child` from nothing
-//! into a full-height band, and a table without them would call that a success.
+//! What a percentage height resolves against when the box is out of flow
+//! (`l7aromeo/meo-canvas#84`), read from painted ink since a solved height can
+//! reach no pixel. Six of the fourteen rows must not move: they are what a
+//! repair making every out-of-flow box definite would break.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -59,12 +38,9 @@ fn measured(layout: LayoutStyle) -> Node {
     node
 }
 
-/// A column that lays its children out at their own width.
-///
-/// `align-items: flex-start` on the Chrome side too, and for the same reason
-/// the existing definiteness test gives: a stretched flex item has a definite
-/// cross size, so without it a row would be measuring the page rather than the
-/// ancestor it names.
+/// A column laying its children out at their own width, `flex-start` on the
+/// Chrome side too: a stretched item's definite cross size would make a row
+/// measure the page rather than the ancestor it names.
 fn column() -> LayoutStyle {
     LayoutStyle {
         display: Display::Flex,
@@ -155,11 +131,8 @@ fn out_of_flow(position: PositionType, top: Length) -> LayoutStyle {
     layout
 }
 
-/// One scene per row, written out rather than assembled by a helper.
-///
-/// The question every row asks is *which box is the containing block*, so a
-/// builder that composed the ancestor chain would hide the only thing being
-/// varied.
+/// One scene per row, written out: every row asks which box is the containing
+/// block, and a helper composing the ancestors would hide it.
 fn scene_for(case: &str) -> Scene {
     let mut scene = page();
     if case.starts_with("fixed-") {
@@ -179,12 +152,8 @@ fn absolute_case(scene: &mut Scene, case: &str) {
     }
 }
 
-/// The four rows where the percentage is on the out-of-flow box itself.
-///
-/// They vary only in what establishes the containing block, which is the
-/// whole question: a content-sized relative ancestor, one that states its
-/// height, one that is itself an auto-height absolute box, and one that is a
-/// grandparent with a static box in between.
+/// The four rows with the percentage on the out-of-flow box itself, varying
+/// only what establishes the containing block.
 fn percent_height_case(scene: &mut Scene, case: &str) {
     match case {
         "abs-percent-content-cb" => {
@@ -221,12 +190,9 @@ fn percent_height_case(scene: &mut Scene, case: &str) {
                 }),
             );
             push(scene, cb, boxed(sized(50.0, 120.0)));
-            // **Sixty, which makes the parent definite as well as visible.**
-            // That is why this cannot be the row above: with a definite parent
-            // the percentage survives whatever the containing-block rule says,
-            // so this row is blind to *whether* and sharp about *which* --
-            // 59.98 against the grandparent's 180 of content, 20 against this
-            // box, and the two are forty pixels apart.
+            // Sixty, making the parent definite as well as visible, so this row
+            // is sharp about which box resolves the percentage: 59.98 against
+            // the grandparent's 180 of content, 20 against this box.
             let between = push(
                 scene,
                 cb,
@@ -264,11 +230,9 @@ fn percent_height_case(scene: &mut Scene, case: &str) {
                 }),
             );
             push(scene, cb, boxed(sized(50.0, 120.0)));
-            // Left to its content, so the only thing that can paint a band
-            // here is a percentage resolved against the grandparent. This row
-            // asks *whether* it resolved; `abs-percent-grandparent-sized`
-            // asks *which* box it resolved against, and needs a different
-            // scene to do it.
+            // Left to its content, so only a percentage resolved against the
+            // grandparent can paint a band: this row asks whether it resolved,
+            // `abs-percent-grandparent-sized` against which box.
             let mut between = LayoutStyle {
                 size: (Dimension::Points(70.0), Dimension::Auto),
                 ..LayoutStyle::default()
@@ -284,13 +248,10 @@ fn percent_height_case(scene: &mut Scene, case: &str) {
     }
 }
 
-/// The rows sized by insets, and the controls that bound them.
-///
-/// `abs-top-only-child` and `abs-minheight-200` are the two that must not
-/// move: the first is an absolute box with one inset, which states a
-/// position and leaves the height to the content, and the second is the
-/// in-flow child of a content-sized absolute box, whose percentage has a
-/// genuinely circular containing block.
+/// The rows sized by insets, and the two controls that must not move: an
+/// absolute box with one inset, leaving the height to its content, and the
+/// in-flow child of a content-sized absolute box, a genuinely circular
+/// percentage.
 fn inset_and_control_case(scene: &mut Scene, case: &str) {
     match case {
         "abs-insets-box" => {
@@ -359,11 +320,8 @@ fn inset_and_control_case(scene: &mut Scene, case: &str) {
     }
 }
 
-/// The rows whose box is `position: fixed`.
-///
-/// Separate because the containing block is a different one: the page, or a
-/// transformed ancestor where there is one, and never the nearest merely
-/// positioned ancestor -- which the first row here is the control for.
+/// The rows whose box is `position: fixed`, whose containing block is the page
+/// or a transformed ancestor, never merely the nearest positioned one.
 fn fixed_case(scene: &mut Scene, case: &str) {
     match case {
         "fixed-percent-positioned-ancestor" => {
@@ -462,21 +420,16 @@ fn every_row_paints_the_band_chrome_measured() {
         "the table changed shape; the scenes here are per row"
     );
 
-    // **Every row is measured before anything is asserted.** A loop that
-    // asserted per row stops at the first disagreement, and a truncated list
-    // of failures is not a count of them -- which matters most here, where the
-    // question is whether a repair traded one wrong answer for another and the
-    // evidence for that is a row that moved somewhere else in the table.
+    // Every row is measured before anything is asserted, since a truncated list
+    // of failures is not a count and a repair may move a row elsewhere in the
+    // table.
     let mut failing = Vec::new();
     let mut stale = Vec::new();
     for (key, chrome) in &rows {
         let painted = painted_height(&scene_for(key));
-        // **Within one pixel, and stated rather than assumed.** Chrome reports
-        // a fractional used height and this counts whole rows of pixels, so
-        // 39.98 and 40 are the same answer. The rows this test exists for are
-        // separated by forty pixels, not by one, so the allowance cannot
-        // absorb the defect: `abs-percent-content-cb` is 0 against 39.98 on
-        // the code this was written against.
+        // Within one pixel, since Chrome reports fractional heights and this
+        // counts whole rows: the rows this exists for are forty pixels apart,
+        // `abs-percent-content-cb` 0 against 39.98 before the fix.
         let agrees = (f32::from(u16::try_from(painted).unwrap_or(u16::MAX))
             - chrome)
             .abs()
@@ -499,14 +452,10 @@ fn every_row_paints_the_band_chrome_measured() {
     );
 }
 
-/// The reproduction from `l7aromeo/meo-canvas#84`, as the reporter wrote it.
-///
-/// **The same third, said two ways.** A box positioned a third down a 120-tall
-/// containing block and a third tall, against one positioned a third down and a
-/// third up from the bottom. The report is that the first painted nothing and
-/// the second painted 40, and the ticket is the instance rather than the
-/// defect -- but an issue's own case is the thing a reader checks first, so it
-/// is here in its own right and not folded into the table.
+/// The reproduction from `l7aromeo/meo-canvas#84` as reported: a box a third
+/// down and a third tall against one a third from each edge, which painted
+/// nothing and 40. Kept on its own, since an issue's case is what a reader
+/// checks first.
 #[test]
 fn the_issue_s_two_spellings_of_a_third_agree() {
     fn painted(by_height: bool) -> u32 {

@@ -1,57 +1,14 @@
 /**
- * What a rendered canvas exposes: the ways to get the picture out.
- *
- * v1's output surface, because v1 is the reference and a ported script should
- * not have to change how it writes a file.
- *
- * A canvas comes back from `Root`, and every method here reads it: `toBuffer`
- * and `toBufferSync` for the bytes, `toFile` and `toFileSync` to write them,
- * `toURL`/`toURLSync` and `toDataURL` for a `data:` URL. The worked example
- * arrives with `Root` — an example naming a function that does not exist yet
- * would be one this package's own gate refuses to compile, which is the point
- * of having it.
- *
- * **Two formats cost one paint.** Resolving, measuring, laying out and painting
- * happen once inside `Root`; each of these methods is only an encode.
- *
- * The sync variants are ordinary functions. v1 needed `Atomics.wait` on a
- * `SharedArrayBuffer` for them because its canvas lived in a worker; this one
- * does not, because the canvas stays on the calling thread and only the encode
- * leaves it.
- *
- * **The pairs are a real choice, and were not always.** `toBuffer` and
- * `toBufferSync` once ran the same code, the asynchronous one wrapping a
- * finished value in a promise after blocking the event loop for the whole
- * encode. They now differ in the thing the names claim they differ in: the
- * asynchronous form hands the encode to a worker and the synchronous form does
- * it here. Nothing about the bytes changes between them.
- *
+ * What a rendered canvas exposes: the ways to get the picture out. Painting
+ * happens once in `Root`, so each method is only an encode; the asynchronous
+ * forms hand it to a worker and the synchronous ones run it on the calling thread.
  * @packageDocumentation
  */
 
-// **`Buffer` is a global, and a consumer's compiler does not have it.** Every
-// method below answers a Node `Buffer`, which is the value the addon actually
-// returns. TypeScript 6 does not auto-include `node_modules/@types`, so a
-// consumer who has not written `"types": ["node"]` cannot resolve the name --
-// it becomes `any`, and `skipLibCheck`, which `tsc --init` writes as `true`,
-// swallows the error that would have said so. The declarations compiled here
-// and degraded there, and nothing in this repository could see it: every
-// in-tree typecheck sets `types`.
-//
-// **Two obvious fixes were measured and neither works.**
-// `import type { Buffer } from 'node:buffer'` survives into the emitted `.d.ts`
-// and still does not resolve: a bare `node:` specifier needs `@types/node`
-// already loaded, which is the thing the consumer has not done. And a
-// `/// <reference types="node" />` here, which does resolve, is elided from
-// declaration emit -- it reaches `dist/canvas.js` and never `dist/canvas.d.ts`,
-// with or without `types` in the build config.
-//
-// So the reference is added to the emitted declaration after `tsc` runs, by
-// `tools/reference-node-types.mjs`, and `verify-package.mjs` proves it landed
-// by compiling a consumer whose control has to fail. That is also what the
-// `@types/node` entry in `dependencies` is for: a reference is followed
-// transitively, and the package sits beside this one under both a hoisted and
-// an isolated layout only because it is a real dependency.
+// `Buffer` is a Node global a consumer's compiler may lack: without `"types":
+// ["node"]` it becomes `any` and `skipLibCheck` hides the error. Neither `import
+// type` from `node:buffer` nor a `/// <reference>` here survives into the `.d.ts`,
+// so `tools/reference-node-types.mjs` adds it, and `verify-package.mjs` proves it.
 import { MEDIA_TYPES, type Format } from './generated/media-types.js'
 import type { Diagnostic, ImageWarning } from './index.js'
 
@@ -112,7 +69,7 @@ export interface NativeCanvas {
    * Encodes the painted pages and returns the bytes.
    *
    * A Node `Buffer`, which is what the addon hands back: it builds the result
-   * with Neon's `JsBuffer::from_slice` (`crates/meo-canvas-node/src/lib.rs:485`).
+   * with Neon's `JsBuffer::from_slice` in `crates/meo-canvas-node/src/lib.rs`.
    * A caller supplying their own native surface for a test may return any
    * `Buffer`; a plain `Uint8Array` would be a different value from the one this
    * package ships.
@@ -170,12 +127,9 @@ export interface NativeCanvas {
 }
 
 /**
- * The format a filename's extension names.
- *
- * `toFile` takes a path rather than a format, as v1 does, so the extension has
- * to say which container to write. An extension naming none is an error rather
- * than a default: writing a PNG because nothing said otherwise turns a typo
- * into a file whose name lies about its contents.
+ * The format a filename's extension names. An extension naming none is an error
+ * rather than a default, since writing a PNG unasked turns a typo into a file
+ * whose name lies about its contents.
  */
 function formatForPath(path: string): Format {
   const dot = path.lastIndexOf('.')
@@ -200,18 +154,8 @@ export class Canvas {
   #released = false
 
   /**
-   * Wraps a native surface.
-   *
-   * **One argument, where there were three.** The other two were a filesystem,
-   * injected so this class could be tested without a disk. They cannot survive
-   * the encode moving into the file: `toFile` no longer produces a buffer for
-   * anyone to write, so a caller supplying a writer would have been passing
-   * something nothing could call — a documented capability that silently did
-   * nothing.
-   *
-   * The seam did not go, it moved. A test substitutes a {@link NativeCanvas},
-   * which is where `encode` was always mocked anyway, and a host without
-   * `node:fs` supplies one too. One injection point instead of two.
+   * Wraps a native surface. This is the one injection point: a test, or a host
+   * without `node:fs`, substitutes a {@link NativeCanvas}.
    */
   constructor(native: NativeCanvas) {
     this.#native = native
@@ -226,15 +170,10 @@ export class Canvas {
    * 4000×4000 on one machine — and this is what throws when the area is more
    * than the host can allocate, however long ago the size was chosen.
    *
-   * **That time is not spent on the event loop.** It used to be: this method
-   * returned a promise that was already settled, having blocked every other
-   * request in the process for the whole encode, so `await` bought a tick and
-   * nothing else. What crosses to the worker is the recorded pages, not the
-   * scene — the drawing is already shaped, so the worker consults no font and
-   * cannot substitute one.
-   *
-   * The remaining loop time is the half of an export that needs the canvas,
-   * which is small and does not grow with area the way the encode does.
+   * **That time is not spent on the event loop.** What crosses to the worker is
+   * the recorded pages, not the scene — the drawing is already shaped, so the
+   * worker consults no font and cannot substitute one. The loop keeps only the
+   * half of an export that needs the canvas, which does not grow with area.
    *
    * See {@link Canvas.toBufferSync} for why the type is `Buffer`.
    */
@@ -247,23 +186,11 @@ export class Canvas {
    * Encodes the canvas and returns the bytes.
    *
    * The same bytes {@link Canvas.toBuffer} resolves with, produced on the
-   * calling thread instead of a worker. **A genuine choice rather than the
-   * same call twice**: this one blocks the event loop for the whole encode,
-   * which is what a script wants and what a server does not.
+   * calling thread instead of a worker: this one blocks the event loop for the
+   * whole encode, which is what a script wants and what a server does not.
    *
-   * # Why `Buffer` and not `Uint8Array`
-   *
-   * **Because a `Buffer` is what already came back.** The addon returns a
-   * Neon `JsBuffer` and always has; the declaration said `Uint8Array`, which
-   * was a false statement about the value. `Buffer` extends `Uint8Array`, so
-   * this narrows the type without changing a byte, and every caller that
-   * wanted either is satisfied.
-   *
-   * **It is not a fix for sharp.** sharp accepts a plain `Uint8Array` — its
-   * `SharpInput` names the type, and 0.34.5, 0.35.3 and 0.35.4 each read one
-   * back to `png 410x140` when measured. Whatever a caller hit handing this to
-   * sharp, this was not it, and the type being honest is worth having on its
-   * own.
+   * A `Buffer`, because that is the value the addon returns; `Buffer` extends
+   * `Uint8Array`, so a caller wanting either is satisfied.
    */
   toBufferSync(format: Format = 'png', options: EncodeOptions = {}): Buffer {
     this.#assertLive()
@@ -273,15 +200,9 @@ export class Canvas {
   /**
    * Encodes the canvas on a worker and writes it to `path`.
    *
-   * **The bytes never come back through JavaScript.** They used to: this
-   * encoded to a `Buffer`, resolved it here, and handed it to a write — so a
-   * three-hundred-frame animation had to exist whole in memory before any of
-   * it reached the disk. The file is now written where it is encoded, and a
-   * spanning format streams into it page by page.
-   *
-   * That is also why the filesystem injected into the constructor is not on
-   * this path any more. It cannot be: the point is that no buffer crosses back
-   * for anyone to write.
+   * **The bytes never come back through JavaScript.** The file is written where
+   * it is encoded, and a spanning format streams into it page by page, so a long
+   * animation is bounded by disk rather than by memory.
    */
   async toFile(path: string, options: EncodeOptions = {}): Promise<void> {
     this.#assertLive()
@@ -323,22 +244,16 @@ export class Canvas {
    * The `HTMLCanvasElement` spelling of {@link Canvas.toURLSync}.
    *
    * Synchronous and taking a quality rather than an options object, because the
-   * DOM method it is named after is both. v1 has it for the same reason.
+   * DOM method it is named after is both.
    */
   toDataURL(format: Format = 'png', quality?: number): string {
     return this.toURLSync(format, quality === undefined ? {} : { quality })
   }
 
-  // -- Async convenience getters --------------------------------------
-  //
-  // One per format, each `toBuffer(format)` with the name said once instead of
-  // twice. v1 has all twelve and none of them is deprecated, so they are live
-  // API a ported script may be written against.
-  //
-  // Getters rather than methods because that is v1's spelling. The cost is not
-  // what it looks like: a getter on the prototype is not invoked by a spread,
-  // and Node's inspector prints `[Getter]` rather than calling it, so `console
-  // .log(canvas)` does not start twelve encodes.
+  // -- Async convenience getters: one per format, each `toBuffer(format)` ------
+  // Getters, and a getter on the prototype is neither invoked by a spread nor
+  // called by Node's inspector, which prints `[Getter]` — so `console.log(canvas)`
+  // does not start twelve encodes.
 
   /** `toBuffer('png')`. Lossless, and the format to reach for without a reason not to. */
   get png(): Promise<Uint8Array> {
@@ -421,10 +336,8 @@ export class Canvas {
 
   // -- What the paint settled on --------------------------------------
   //
-  // Four readings rather than four methods, and readable after
-  // {@link Canvas.release}: each is a fact about a paint that has already
-  // happened, so none can change and none can fail. A caller holding bytes it
-  // has released should still be able to say which rasteriser drew them.
+  // Readings rather than methods, and readable after {@link Canvas.release}: each
+  // is a fact about a paint already done, so none can change and none can fail.
 
   /**
    * Whether the GPU was asked for.
@@ -442,10 +355,8 @@ export class Canvas {
    *
    * The outcome rather than the request, and they disagree: a build with no GPU
    * backend compiled, a driver that declines, and a float `colorType` all
-   * rasterise on the CPU whatever `gpu` says. v1 reports both for this reason,
-   * and without it a caller who asks for the GPU and gets the CPU has no way to
-   * find out — the same shape of invisibility that hid a missing build feature
-   * from this project for a session.
+   * rasterise on the CPU whatever `gpu` says. Without this, a caller who asks
+   * for the GPU and gets the CPU has no way to find out.
    */
   get engine(): string {
     return this.#native.engine
@@ -518,11 +429,8 @@ export class Canvas {
 }
 
 /**
- * Base64 without depending on `Buffer`.
- *
- * `Buffer.toString('base64')` would be shorter and ties this file to Node. The
- * package targets Node today and a data URL is not on any hot path, so the
- * portable form costs nothing worth naming.
+ * Base64 without depending on `Buffer`, which would tie this file to Node; a data
+ * URL is not on any hot path, so the portable form costs nothing worth naming.
  */
 function toBase64(bytes: Uint8Array): string {
   const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'

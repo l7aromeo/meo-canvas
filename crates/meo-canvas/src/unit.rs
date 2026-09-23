@@ -39,16 +39,8 @@ pub const fn px(points: f32) -> Length {
 ///
 /// Written as the number a stylesheet writes: `pct(50.0)` is `50%`, not `0.5`.
 /// The scene stores the fraction, and converting here rather than at the call
-/// site is what keeps `50` from meaning `5000%` on the way in.
-///
-/// **For a caller who already holds a fraction, [`fraction`] rather than
-/// `pct(f * 100.0)`** — the round trip out of and back into a fraction rounds
-/// twice and moves the last bit: `1 - 1/3` arrives as `0.666_666_75` that way
-/// and `0.666_666_69` every other. **No render can see it** — it is a sixth
-/// of a hundred-millionth of a box — so the only thing that ever will is a
-/// comparison against another implementation of the same drawing. The two
-/// functions are kept separate rather than unified for that reason: widening
-/// `pct` to `f64` would shorten the round trip without removing it.
+/// site is what keeps `50` from meaning `5000%` on the way in. A caller who
+/// already holds a fraction wants [`fraction`], which says why.
 ///
 /// ```
 /// use meo_canvas::{Style, pct};
@@ -68,18 +60,11 @@ pub const fn pct(percent: f32) -> Length {
 ///
 /// # Why a caller holding a fraction must not reach for `pct`
 ///
-/// `pct` takes an `f32` and divides by a hundred. A caller with an `f64`
-/// fraction therefore multiplies by a hundred in `f64`, narrows at the
-/// argument, and divides again in `f32` — **two roundings of one number**, and
-/// the second moves the last bit. `1 - 1/3` arrives as `0.666_666_75` by that
-/// route and `0.666_666_69` by every other, including the same computation on
-/// the JavaScript surface.
-///
-/// **Nothing renders differently for it.** A sixth of a hundred-millionth of a
-/// box is not a pixel anywhere. It was found by comparing encoded bytes
-/// against the other surface, and that is the only kind of check that can see
-/// it — which is also why it is worth having: any Rust caller scaling a
-/// fraction into `pct` loses the same bit silently.
+/// `pct(f * 100.0)` multiplies in `f64`, narrows at the argument and divides
+/// again in `f32` — **two roundings of one number**, and the second moves the
+/// last bit: `1 - 1/3` arrives as `0.666_666_75` by that route and
+/// `0.666_666_69` by every other, the JavaScript surface's included. No render
+/// can see a sixth of a hundred-millionth of a box; a byte comparison can.
 ///
 /// ```
 /// use meo_canvas::{Style, Styled, fraction};
@@ -352,12 +337,8 @@ pub const fn rgb(red: u8, green: u8, blue: u8) -> Color {
     Color::rgb(red, green, blue)
 }
 
-/// A width or height that may also be `auto`.
-///
-/// The scene distinguishes a [`Length`], which is always a measure, from a
-/// [`Dimension`], which admits `auto`. A setter taking a width accepts either
-/// through this conversion rather than making the caller name which one they
-/// meant.
+/// `auto` for a width or height: the [`Dimension`] no [`Length`] can spell,
+/// since a length is always a measure.
 #[must_use]
 pub const fn size_auto() -> Dimension {
     Dimension::Auto

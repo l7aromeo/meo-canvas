@@ -1,22 +1,7 @@
-//! What `prepare_encode` promises: the same bytes, from another thread, with
-//! the fonts the calling thread registered.
-//!
-//! Three claims, and each is asserted in a form that could have failed.
-//!
-//! **Identical bytes, not equivalent ones.** A comparison of decoded images
-//! would pass on two files that differ in every byte for a reason nobody
-//! chose. These compare the files.
-//!
-//! **The registered face survives.** Fonts are per-thread and painting is
-//! lazy, so a design that let any part of the paint reach the worker would
-//! find no registered family there and draw a fallback -- bytes that render,
-//! that decode, and that are wrong. The control renders the same scene with
-//! nothing registered and asserts the two differ, so "the face survived" is a
-//! claim with the power to fail rather than a comparison of a picture with
-//! itself.
-//!
-//! **The canvas is still usable afterwards.** The handle holds snapshots, so
-//! taking one must not spend the canvas.
+//! What `prepare_encode` promises, each claim able to fail: identical bytes
+//! rather than equivalent ones; the calling thread's registered face survives,
+//! since fonts are per thread and paint is lazy; and the canvas stays usable
+//! afterwards.
 
 use std::{path::PathBuf, thread};
 
@@ -31,23 +16,10 @@ use meo_canvas_scene::{
 /// would measure whichever fonts this machine happens to have.
 const FAMILY: &str = "OffThread";
 
-// **Two things a failing control taught, both worth keeping.**
-//
-// Registration is per *thread*, not per [`Renderer`]: once anything on this
-// thread has registered `FAMILY`, a second renderer built without it still
-// finds the face. So a control cannot be "the same scene through a bare
-// renderer" -- that compares a picture with itself and passes for the wrong
-// reason.
-//
-// And naming a family nothing registered is an *error* here, not a silent
-// substitution: `Resolved::new` refuses it. That is worth knowing on its own,
-// because the hazard this whole design avoids was described as a fallback
-// drawn in place of a missing face -- on this pipeline it would be a refused
-// render instead, which is the louder of the two failures.
-//
-// What is left as a control is text with no family named at all, which the
-// platform's own face draws. If the registered face and the platform's agree
-// pixel for pixel, the assertion below has nothing to say and fails.
+// The control is text with no family, drawn by the platform's face:
+// registration is per thread, so a bare renderer here still finds `FAMILY`, and
+// an unregistered family is refused by `Resolved::new`. If the two faces agree
+// pixel for pixel, the assertion fails.
 
 fn font_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

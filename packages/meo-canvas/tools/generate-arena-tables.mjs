@@ -1,24 +1,7 @@
-// Emits the arena property tables as TypeScript, read out of the Rust that
-// defines them.
-//
-// The tables live in `arena_group!` invocations in
-// `crates/meo-canvas-node/src/arena.rs` and carry their indices literally. A
-// writer needs every index, name and type; transcribing them by hand would be a
-// second table agreeing with the first by inspection, which is the failure this
-// repository has removed twice already -- the format table that was
-// `pub(crate)` upstream, and the node tags that were hand-written in the byte
-// codec.
-//
-// Parsing the macro rather than exporting from the addon at runtime: the
-// encoder runs per property per node and the standing constraint is that the
-// path stays cheap, so the table has to be static. Parsing also needs no
-// compiled addon, which means the generator runs on a checkout that has never
-// built Skia.
-//
-// The parse is strict on purpose. A macro shape this does not recognise is an
-// error naming the line, never a partial table -- a table missing entries would
-// produce a writer that silently omits properties, which is exactly the failure
-// generating it is meant to prevent.
+// Emits the arena property tables as TypeScript, parsed from the `arena_group!`
+// invocations in `crates/meo-canvas-node/src/arena.rs` rather than transcribed or
+// exported at runtime: the tables stay static, and no addon build is needed. An
+// unrecognised macro shape is an error naming the line, never a partial table.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -28,12 +11,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const SOURCE = resolve(HERE, '../../../crates/meo-canvas-node/src/arena.rs')
 const CHECKED_IN = resolve(HERE, '../src/generated/arena-tables.ts')
 
-// An explicit destination lets the drift check emit somewhere disposable and
-// `diff` the result, rather than asking git what changed. git's answer depends
-// on whether a file is staged, committed or merely written, so a check built on
-// it refuses the very workflow it exists to support: edit the Rust, regenerate,
-// run the gate. A diff of two files is indifferent to all of that, which is
-// what a check wants when CI's tree is clean and a developer's is not.
+// An explicit destination lets the drift check emit somewhere disposable and diff
+// two files, which does not care whether a change is staged, committed or written.
 const TARGET = process.argv[2] ? resolve(process.argv[2]) : CHECKED_IN
 
 /** Bits a mask slot holds. A double is exact on integers only to 2^53. */
@@ -45,11 +24,8 @@ function fail(message) {
 }
 
 /**
- * Every `arena_group!` invocation, as `{ name, sceneType, properties }`.
- *
- * Brace-counted rather than matched with one regular expression: the property
- * types nest angle brackets and parentheses, and a lazy match would stop at the
- * first `}` inside `Sides<Option<Length>>`.
+ * Every `arena_group!` invocation, as `{ name, sceneType, properties }`. Brace-counted,
+ * since a lazy match would stop at the first `}` inside `Sides<Option<Length>>`.
  */
 function parseGroups(source) {
   const groups = []
@@ -66,7 +42,11 @@ function parseGroups(source) {
   return groups
 }
 
-/** The span between a `{` at `open` and its matching `}`. */
+/**
+ * The span between a `{` at `open` and its matching `}`, counting every brace in
+ * the text: a brace inside a Rust comment or string counts too, so an unbalanced
+ * one in a doc comment inside an `arena_group!` misplaces the group's end.
+ */
 function braced(source, open) {
   let depth = 0
   for (let index = open; index < source.length; index += 1) {
@@ -90,13 +70,9 @@ function parseGroup(source, body) {
   const inner = braced(body.text, header.index + header[0].length - 1)
 
   const properties = []
-  // One entry per `N => field as "caller": Type,`. The type runs to the comma
-  // that closes the entry at depth zero, so a `Vec<(A, B)>` is not cut in half.
-  //
-  // The caller name is required rather than optional. An entry without one
-  // does not match, so it is not collected, and the contiguity check below
-  // then names the gap -- which is the strictness the module doc asks for: a
-  // shape this does not recognise is an error, never a partial table.
+  // One entry per `N => field as "caller": Type,`, matched over the raw body, comments
+  // included; the type runs to the comma closing the entry at depth zero. An entry
+  // with no caller name does not match, and the contiguity check names the gap.
   let cursor = 0
   const entry = /(\d+)\s*=>\s*(\w+)\s+as\s+"([^"]+)"\s*:/g
   entry.lastIndex = 0
@@ -135,12 +111,8 @@ function readType(text, start) {
 }
 
 /**
- * Indices must be `0..n` in ascending order.
- *
- * The Rust asserts the same thing at compile time, and for the reason the
- * module doc gives: a table out of order reads the right number of slots into
- * the wrong fields, which no length check catches. Asserting it here too means
- * a generator that mis-parses fails rather than emitting a plausible table.
+ * Indices must be `0..n` in ascending order, as the Rust asserts at compile time,
+ * so a generator that mis-parses fails rather than emitting a plausible table.
  */
 function assertContiguous(name, properties) {
   properties.forEach((property, position) => {
@@ -186,12 +158,9 @@ function emit(groups, magic, version) {
     "  /** The field's name in the scene type. */",
     '  readonly name: string',
     '  /**',
-    '   * The style properties that feed it, as a caller spells them.',
-    '   *',
-    "   * Not the field's name: `border_color_all` is written `borderColor`, and",
-    '   * a slot several properties may feed names all of them -- `gridColumn or',
-    '   * gridArea`. This is what a failure reading the slot reports, so it has',
-    '   * to be the surface spelling rather than the scene one.',
+    '   * The style properties that feed it, as a caller spells them -- `borderColor`,',
+    '   * not `border_color_all`; a slot several feed names all of them. A failure',
+    '   * reading the slot reports this.',
     '   */',
     '  readonly caller: string',
     '  /** The Rust type, as the table spells it. */',

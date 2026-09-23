@@ -1,27 +1,7 @@
-// Puts `/// <reference types="node" />` into the declarations that need it.
-//
-// **`Buffer` is the only Node global this package names in a type position, and
-// a consumer's compiler cannot resolve it.** TypeScript 6 does not auto-include
-// `node_modules/@types`, so `Buffer` is an unresolved name for anyone who has
-// not written `"types": ["node"]` -- it becomes `any`, and `skipLibCheck`,
-// which `tsc --init` writes as `true`, hides the error that would have said so.
-// A `Promise<Buffer>` that arrives as `Promise<any>` is worse than a wrong type
-// because it is a type the consumer's own compiler will not argue with.
-//
-// A reference is followed transitively and fixes it. It cannot be written in
-// the source: `tsc` elides a triple-slash type reference from declaration emit
-// -- it reaches `dist/canvas.js` and never `dist/canvas.d.ts` -- and
-// `import type { Buffer } from 'node:buffer'`, which does survive emit, does
-// not resolve either, because a bare `node:` specifier needs `@types/node`
-// already loaded. So it is added here, after `tsc` and before anything is
-// packed. `src/canvas.ts` carries the same argument next to the type it is
-// about.
-//
-// Run by `just build-js`. `verify-package.mjs` is what proves it worked: it
-// compiles a consumer with a default tsconfig, and its control -- assigning
-// `await canvas.toBuffer('png')` to a `string` -- has to fail. If this file
-// stops running, or runs and changes nothing, that control compiles clean and
-// the gate says so.
+// Puts `/// <reference types="node" />` into the declarations that name `Buffer`,
+// which a consumer without `"types": ["node"]` would otherwise see as `any`, hidden
+// by `skipLibCheck`. `tsc` drops the reference from declaration emit, so it is added
+// after `tsc`; `verify-package.mjs`'s control fails to compile if this stops working.
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -34,14 +14,9 @@ const DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../dist')
 const REFERENCE = '/// <reference types="node" />'
 
 /**
- * Whether a declaration names a type that only `@types/node` supplies.
- *
- * **Type positions only.** `Buffer` appears in prose in several files -- the
- * paragraph explaining why `toBuffer` answers one is in `canvas.ts` and travels
- * into `canvas.d.ts` -- and prepending a reference to a file because of a
- * comment would put it where nothing needs it. `RequestInit` is deliberately
- * absent from this list: it looks like the same problem and is not, because it
- * comes from the DOM library a consumer's `target` already pulls in.
+ * Whether a declaration names a type only `@types/node` supplies, in a type position
+ * -- `Buffer` also appears in prose. `RequestInit` is absent: the DOM library a
+ * consumer's `target` pulls in supplies it.
  */
 function needsNodeTypes(source) {
   return /(?:^|[^\w$.])Buffer\s*(?:[|)>,;\]]|$)/m.test(source.replaceAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ''))

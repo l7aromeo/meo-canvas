@@ -5,12 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { Box, Root } from './index.js'
 
 /**
- * The colour half of the addon.
- *
- * **The point of this file is that there is only one parser.** Every colour
- * this package accepts is read by `meo-canvas-core`, and `parseColor` exports
- * that same reading rather than a second one — so a caller who asks what a
- * string means gets the answer the renderer will act on.
+ * The colour half of the addon: `parseColor` exports `meo-canvas-core`'s own reading,
+ * so a caller asking what a string means gets the answer the renderer acts on.
  */
 interface ColorAddon {
   parseColor(css: string): { r: number; g: number; b: number; a: number } | null
@@ -38,11 +34,9 @@ async function painted(css: string): Promise<[number, number, number]> {
 }
 
 describe('one parser serves both surfaces', () => {
-  // **This is the measurement the design rests on.** The alternative was a
-  // colour parser in TypeScript; the argument against it was that a second
-  // implementation drifts. That argument is only worth anything if the one
-  // implementation is demonstrably the one the renderer uses — so this asks
-  // `parseColor` what a string means and then asks the renderer to draw it.
+  // The measurement the design rests on: `parseColor` is asked what a string means
+  // and the renderer is asked to draw it, so the one parser is shown to be the
+  // renderer's.
   it.each([
     ['#3366cc', [51, 102, 204]],
     ['rgb(1 2 3)', [1, 2, 3]],
@@ -79,11 +73,9 @@ describe('one parser serves both surfaces', () => {
     expect(g).toBe(0)
   })
 
-  // **Alpha is the channel that does not scale.** `r`, `g` and `b` come back
-  // in 0-255 and alpha in 0-1, as v1 spells them. A parse scaling all four
-  // alike would report an opaque colour as `a: 255`, and every caller
-  // comparing against `1` would read that as transparent — a wrong value that
-  // looks legitimate rather than one that fails.
+  // Alpha is the channel that does not scale: `r`, `g` and `b` are 0-255 and alpha
+  // 0-1. Scaling all four alike would report an opaque colour as `a: 255`, which a
+  // caller comparing against `1` would read as transparent.
   it('keeps alpha in 0-1 while the other three are in 0-255', () => {
     expect(addon().parseColor('#000000')!.a).toBe(1)
     expect(addon().parseColor('rgba(0, 0, 0, 0.5)')!.a).toBeCloseTo(0.5, 6)

@@ -5,13 +5,9 @@ import { Root } from './root.js'
 import type { Style } from './style.js'
 
 /**
- * `borderStyle: 'none'` is the initial value, and it zeroes the used width.
- *
- * Through a real render rather than against `used_border` directly. A unit
- * test would supply the style itself and so could not show that the layout
- * pass receives it — and the layout half is the half no comparison of ink can
- * see, because a border that paints nothing while still reserving its width
- * moves the content and draws no evidence of having done so.
+ * `borderStyle: 'none'` is the initial value, and it zeroes the used width. Through
+ * a real render, since a border that paints nothing while reserving its width moves
+ * the content and leaves no ink to compare.
  */
 describe('a border with no style', () => {
   const SIZE = 40
@@ -58,12 +54,9 @@ describe('a border with no style', () => {
   })
 
   it('agrees with a zero width at the corners too, not only on a flat edge', async () => {
-    // B's caveat, tested rather than argued. The equivalence above is
-    // structural — the gate is in `used_border`, so a `none` border reaches
-    // the painter as four zero widths and every later stage sees the same
-    // inputs a zero width produces. "By construction" is still a claim about
-    // code, and a radius with uneven edges is where a join stops being the sum
-    // of its parts, so it is the case that would break it if anything did.
+    // The equivalence above is structural: a `none` border reaches the painter as
+    // four zero widths. A radius with uneven edges is where a join stops being the
+    // sum of its parts, so it is the case that would break it.
     const corner: Style = { borderRadius: 12, border: { top: 6, right: 2, bottom: 6, left: 2 } }
     const bare = await render(corner)
     const zero = await render({ ...corner, border: 0 })

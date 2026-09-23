@@ -2,7 +2,7 @@
 
 #![expect(
     clippy::suboptimal_flops,
-    reason = "compared bit-for-bit against v1's own numbers; see \
+    reason = "compared bit-for-bit against v9's own numbers; see \
               `animate::easing` for the rule and where it does not apply."
 )]
 
@@ -29,13 +29,11 @@ pub struct Step<T> {
 ///
 /// # Adding a field here must not break a caller
 ///
-/// Every field is public and the documented way to build one is a struct
-/// literal, so a field added later is a breaking change unless callers wrote
-/// the rest pattern. **They should: `..Default::default()` closes the literal
-/// and absorbs whatever arrives next.** This is [`crate::animate`]'s version of
-/// the reasoning written on the facade's `Style`, which is not
-/// `#[non_exhaustive]` for exactly this reason -- that attribute forbids the
-/// literal outright, and the literal is how these are written.
+/// Every field is public and a struct literal is the documented way to build
+/// one, so close the literal with `..Default::default()` and a field added
+/// later arrives without breaking it. `#[non_exhaustive]` would forbid the
+/// literal outright, which is why neither this nor the facade's `Style` carries
+/// it.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Sequence<T> {
     /// Where the whole run starts.
@@ -60,10 +58,9 @@ struct Leg<T> {
 
 /// A sequence whose timing has been resolved and checked.
 ///
-/// **Planned once rather than per sample.** v1 validates while building and
-/// throws there, then samples cheaply; the same split here means
-/// [`Plan::at`] cannot fail, so a caller sampling a hundred pages checks the
-/// arithmetic once rather than a hundred times.
+/// Planned once rather than per sample: [`Sequence::plan`] refuses what does
+/// not describe a motion, so [`Plan::at`] cannot fail and a caller sampling a
+/// hundred pages checks the arithmetic once.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan<T> {
     from: T,
@@ -229,34 +226,13 @@ impl<T: Animatable> crate::animate::sampled::Sampled for Plan<T> {
     }
 }
 
-/// How long a group of motions started together lasts.
+/// How long a group of motions started together lasts: as long as its longest
+/// member.
 ///
-/// The group is over when its longest member is. Returns `None` for an empty
-/// group, which v1 refuses outright -- **a group of nothing has no duration
-/// rather than a duration of zero**, and zero would read as "finished" to
-/// every caller that checks.
-///
-/// # This was once the whole of v1's `parallel`
-///
-/// The argument, until 4 September 2026, was that Rust needed no group type:
-/// v1's group is a record of named members whose `at` returns a record of
-/// their values, that record is a *type* assembled by TypeScript's mapped
-/// types, and a Rust caller with three tracks writes a struct with three
-/// fields and calls each -- which is what the mapped type was reconstructing.
-/// Only the timing did not fall out for free, so only the timing was written,
-/// and this function is it.
-///
-/// **The user overruled that in the animation audit**, and
-/// [`Parallel`](crate::animate::group::Parallel) is the group. The argument
-/// was right that Rust cannot build the record type and wrong that the record
-/// was the point: the JavaScript surface offers `at`, `duration` and
-/// `totalDuration` on a group, and a Rust caller writing the struct by hand
-/// gets none of the three -- not the index reaching every member, not the
-/// count reaching every member, only a shape they already had. Two surfaces,
-/// one of which cannot answer a question the other can, is a defect here
-/// rather than a difference in the languages.
-///
-/// This stays: it is `Parallel::duration`'s rule, and `Parallel` calls it.
+/// Returns `None` for an empty group, since a group of nothing has no duration
+/// and zero would read as finished to every caller that checks. It is
+/// [`Parallel`](crate::animate::group::Parallel)'s rule, and `Parallel` calls
+/// it.
 #[must_use]
 pub fn longest(durations: &[f64]) -> Option<f64> {
     durations.iter().copied().reduce(f64::max)

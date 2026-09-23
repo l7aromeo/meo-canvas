@@ -1,66 +1,7 @@
-// Every `[WORKAROUND]` marks code that still has a live probe behind it.
-//
-// A compensation for an upstream defect is two halves: the tag, which makes it
-// greppable, and a probe pinning what the dependency does today, so the release
-// that fixes it turns the probe red and the red is the notification. AGENTS.md's
-// "Working around an upstream defect" is the convention; this is the check it
-// was written for.
-//
-// **A probe rots in exactly one direction and nothing reports it.** Rename the
-// test file and the tag points at a path that is not there. Mark a test
-// `#[ignore]` and it is still a target, still compiles, and asserts nothing.
-// Delete the row that pins the property the compensation *depends* on and the
-// file still fails the day the dependency is fixed, so it still looks like a
-// probe -- while the thing that would break the compensation quietly went
-// unpinned. Each of those leaves a green gate and a workaround nobody can retire
-// without re-deriving it.
-//
-// So, for each marked site: it names a probe, the probe is a real test target,
-// the target has a test that actually runs, and the target carries at least one
-// test marked `[FOUNDATION]`.
-//
-// **`[FOUNDATION]` is a marker, and this sees the marker.** It cannot read
-// whether the test beneath it pins a property the compensation depends on, or
-// whether it pins anything at all -- a `[FOUNDATION]` above an assertion that
-// two plus two is four passes here exactly as the real one does. What the check
-// buys is that the question was answered once, deliberately, in a place a
-// reader lands: a probe with no marked test is one where nobody has said which
-// row is the foundation, and that is the half of the convention that is easy to
-// leave out. `taffy_negative_margin.rs` carries no marker and is not required
-// to: it compensates nothing, so nothing rests on it.
-//
-// **And it sees marks rather than compensations: a site that stops being one
-// is invisible here.** Measured by deleting the tag from a site that named a
-// probe, leaving the code and the other sites alone -- four marked sites became
-// three, three naming a probe became two, and the run exited 0. `SITES_FLOOR`
-// is 1, so the count can fall that far before anything speaks, and the only
-// witness is a summary line nobody diffs. The compensation is still there and
-// is no longer greppable, no longer examined here, and free to rot afterwards
-// through any of the three failures above with this green throughout. The same
-// three breaks, measured on the same tree, each exit 1: a probe naming no
-// `[FOUNDATION]` row, a path that does not exist, and a test marked
-// `#[ignore]`. A reader who has watched those go red would reasonably expect
-// the fourth to, and it does not.
-//
-// **Marks and mentions are told apart by position, not presence.** The tag
-// appears nine times in this tree and marks code three times; the others are
-// the convention being described in prose, in a `//!` header and inside an
-// assertion string. A mark is a comment whose *first* words are the tag.
-//
-// **Every kind `comments.mjs` reads is read here, not only Rust.** A
-// compensation is not a Rust-only thing -- a tool working around a formatter's
-// defect or a workflow working around a runner's is the same object with the
-// same retirement problem -- and scanning `*.rs` alone would report a clean
-// tree while the tag sat unread in a `justfile`. `trackedFiles` and
-// `commentsIn` come from `comments.mjs` so the file list and the choice of
-// lexer are one decision rather than two, which is the arrangement where one
-// side quietly stops reading a kind.
-//
-// **It reads itself, and that is why the tag is spelled in one place.**
-// `WORKAROUND` below is a string, so no comment here opens with the tag and
-// this file marks nothing. Writing an example of a marked comment in this
-// header would make this tool report itself, which is a fault `issue-refs`
-// found in its own first version.
+// Checks every workaround tag marks code with a live probe: the probe exists, is a
+// test target with a test that runs, and has a test tagged as its foundation. It
+// sees marks, not compensations -- a site whose tag is deleted is invisible. The
+// tag is spelled only in `WORKAROUND` below, since this file is scanned too.
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { commentsIn, trackedFiles } from './comments.mjs'
@@ -72,40 +13,16 @@ const WORKAROUND = '[WORKAROUND]'
 const FOUNDATION = '[FOUNDATION]'
 
 /**
- * How few marked sites may be found before this asks whether it was meant.
- *
- * **One, and the magnitude is the argument.** Three sites carry the tag today,
- * and a floor near three would be a pinned list wearing a threshold: a
- * compensation reaching one site fewer after a refactor is ordinary, and having
- * to edit a constant for it trains the next person to edit the constant. Zero
- * is the number that means something else -- either the scan reads nothing, or
- * this repository has no workarounds at all, and the second is a fact worth one
- * sentence in a commit message.
- *
- * That second state is a claim about a future rather than an imminent one:
- * `DioxusLabs/taffy#804`, which both of today's compensations name, is open.
- *
- * The blindness this number guards against is guarded better above it:
- * [`probeScan`] runs the mark-finder over sources written here, so a lexer that
- * stopped seeing comments fails against fixtures whose answers cannot change
- * when the tree does. The floor is what is left after that -- the case where
- * the lexer works and the tree is empty.
+ * How few marked sites may be found before this asks whether it was meant. One:
+ * zero means the scan reads nothing or there are no workarounds left, while a
+ * higher floor would make an ordinary refactor edit this constant.
  */
 const SITES_FLOOR = 1
 
 /**
- * The mark-finder, over sources whose answers cannot change with the tree.
- *
- * **Two fixtures, because two lexers reach this.** The Rust one holds three
- * occurrences of the tag and one mark -- a `//!` header describing the
- * convention, the mark, and one inside a string literal -- which is this tree's
- * own ratio in miniature. The `#`-comment one holds two and one mark, since a
- * `justfile` or a manifest can carry a compensation and takes the other lexer
- * entirely.
- *
- * A finder that returns every occurrence has stopped telling marks from
- * mentions; one that returns none has stopped reading comments and would report
- * every site sound by finding no sites at all.
+ * The mark-finder over fixtures, one per lexer, each holding mentions and one
+ * mark. A finder returning every occurrence no longer tells marks from mentions;
+ * one returning none has stopped reading comments.
  */
 function probeScan() {
   const cases = [
@@ -153,12 +70,9 @@ function probeScan() {
 }
 
 /**
- * The marked comment blocks of one source, as `{ line, text }`.
- *
- * **Blocks, because a mark is one comment and its site is several.** Both
- * lexers return a line at a time, and the reference naming the probe is three
- * or four lines below the tag every time it is written. So consecutive comments
- * are joined, and a block is marked when the block's first words are the tag.
+ * The marked comment blocks of one source, as `{ line, text }`. Consecutive comment
+ * lines are joined, since the reference naming the probe sits lines below the tag;
+ * a block is marked when its first words are the tag.
  */
 function marksIn(path, source) {
   const blocks = []
@@ -176,13 +90,8 @@ function marksIn(path, source) {
 }
 
 /**
- * The words of a comment, with its marker and any doc marker removed.
- *
- * **This is what tells a mark from a mention**, and it lives here rather than
- * in `comments.mjs` because it is the tag convention's predicate and not
- * lexing: that module answers *what is a comment*, and this answers *does this
- * comment open with the tag*. `hashCommentsOf` has already dropped the `#`, so
- * what is left to strip is Rust's markers and the leading space both leave.
+ * The words of a comment, with its marker and any doc marker removed: the tag
+ * convention's predicate, kept here rather than in `comments.mjs`, which only lexes.
  */
 function commentBody(text) {
   return text
@@ -196,13 +105,8 @@ function commentBody(text) {
 const PROBE_PATH = /crates\/[A-Za-z0-9_./-]+\.rs/gu
 
 /**
- * Whether a test file has a test that will actually run.
- *
- * **The attribute, never the word.** `#[ignore]` is what makes a test compile
- * and assert nothing; the word appears in this tree's prose constantly --
- * `.gitignore`, "ignores", a comment about what a stage ignores -- and matching
- * it would refuse a sound probe for its documentation. `cfg_attr` reaches the
- * same place by a longer road and is matched too.
+ * Whether a test file has a test that will run. Matches the `#[ignore]` attribute,
+ * directly or through `cfg_attr`, never the word, which prose uses constantly.
  */
 function runnableTests(source) {
   const lines = source.split('\n').map(one => one.trim())

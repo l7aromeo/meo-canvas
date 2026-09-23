@@ -1,112 +1,7 @@
-// `ci-steps` runs exactly the two lists, and neither list is empty.
-//
-// **The thing this defends is a check that cannot fail, one level up from the
-// code.** `ci-steps` used to name all twenty-three recipes; it now names
-// `portable` and `native`, and CI runs those two halves in separate jobs rather
-// than running `ci-steps` at all. So the composition is exercised nowhere but a
-// developer's machine, and an edit that drops a recipe from one of the lists --
-// or rewrites `ci-steps` to run one half -- makes the local gate faster, quieter
-// and still green. **A gate that stops running ten recipes looks exactly like a
-// fast gate.**
-//
-// **It reads the justfile through `just` rather than parsing it.** `just
-// --dump --dump-format json` is the same resolver a recipe runs under, so this
-// cannot disagree with what the gate actually does about what a dependency is,
-// how a name resolves, or which attributes hide a recipe. A regular expression
-// over the file would be a second implementation of `just`, and the interesting
-// failures are the ones where the two implementations differ.
-//
-// **Three assertions, and each catches a different edit. Written down because
-// the first one is weaker than it looks and would otherwise be read as cover:**
-//
-// - *Identity* fires when `ci-steps` stops running one of the halves, or is
-//   spelled out as recipe names again and has lost one. It does **not** fire
-//   when a recipe is deleted from `portable` or `native` while `ci-steps` still
-//   reads `portable native`: the union and the expansion move together, so the
-//   comparison is true before and after. Measured, not reasoned -- removing
-//   `layout-check` from `portable` passes this check.
-// - *Disjointness* fires when a recipe is added to the second list rather than
-//   moved, which is what a hurried recategorisation looks like.
-// - *The floors* are what actually catch a deletion, and only after three of
-//   them. They also catch the case identity is blind to for the opposite reason:
-//   all three lists empty satisfies identity exactly as a correct tree does.
-//
-// So the deletion of a single recipe from a list is **not** guarded here, and
-// the honest reason is that guarding it needs an inventory -- every recipe in
-// the justfile is in a list or deliberately outside the gate, and `audit`,
-// `net-check`, `conformance` and the generators are all deliberately outside.
-// That is a maintained exclusion list, which is a different check with a
-// different cost, and it is not this one.
-//
-// **A fourth assertion, about the workflow rather than the justfile.** The three
-// above stay true if the `portable` job is deleted from
-// `.github/workflows/ci.yml` and the matrix left on `just native`: eleven
-// recipes stop running in CI, this check among them, and nothing goes red. That
-// is a two-line edit a reviewer reads as tidying. So: **both `just portable` and
-// `just native` must be invoked somewhere in that workflow.**
-//
-// `ci.yml` is in the tree and the gate checks the tree, which is the same
-// argument that put a check on prose and a check on a directory's shape in it.
-//
-// **It reads `run:` lines and ignores comments, and that is not fussiness.** The
-// workflow's own prose names `just portable` and `just native` while explaining
-// the split, so a substring search over the file would pass with both `run:`
-// lines deleted -- a check that cannot fail, in the file added to stop one.
-// Measured: deleting the `- run: just portable` line and keeping the paragraph
-// above it fails this, and passed the version that searched the whole text.
-//
-// **What it does not catch, and these are real:** a job that invokes both and
-// then skips itself with an `if:`; `on:` narrowed so the workflow stops
-// triggering. Both leave the invocation in place, which is all that assertion
-// looks at. Deleting the workflow outright is caught, but by the read failing
-// rather than by an assertion.
-//
-// **A fifth assertion, for the one of those that turned out to be reachable in
-// two lines.** Three recipes run on exactly one platform each, each guarded by
-// an `if: runner.os` in `ci.yml`:
-//
-//     just audit           Linux     the only thing that reads the advisory database
-//     just net-check       Linux     the only thing that compiles the `net` feature
-//     just threads-probe   Windows   the only thing that loads the addon under workers
-//
-// **Drop a platform from the matrix and its guarded step stops running with
-// nothing red** -- the step is still in the file, the job is still green, and the
-// run is faster, which reads as an improvement. That is the same defect the
-// fourth assertion exists for, one level down: there the job was deleted, here
-// the platform it needed is.
-//
-// **So this asserts the coupling rather than either side.** Checking only that
-// the recipes are invoked passes the matrix edit, because the `run:` line is
-// untouched; checking only that the matrix holds three platforms passes the
-// deletion of a step. What has to hold is that **each guarded recipe's platform
-// is in the matrix** -- and the guards are read out of the workflow rather than
-// written down here, so a fourth guarded step is covered by existing.
-//
-// **The three are named rather than counted.** `FLOORS` is right for the lists,
-// where the recipes are interchangeable in kind and the harm is attrition; it is
-// wrong here, where each of the three is the only thing that covers what it
-// covers. A floor of three would pass a tree that had swapped `net-check` for a
-// second Linux step.
-//
-// **And the list has to be complete, which is a second assertion rather than a
-// property of the first.** Reading each guard's platform out of the workflow is
-// not the same as noticing a guard the map has never heard of: the loop is over
-// the map, so a fourth guarded step added tomorrow would be exactly as droppable
-// as these three and this would stay green. **That is the defect being fixed,
-// wearing the check's own clothes.** So every `if: runner.os` step in the
-// workflow that runs a `just` recipe must have an entry here, and a new one
-// fails until someone adds it.
-//
-// **A guarded step that runs no `just` recipe is exempt by construction**, which
-// is the two libaom installs: they are setup for the platform they run on rather
-// than coverage that platform is the only source of, so dropping the platform
-// drops the need for them at the same time. Written as a property rather than a
-// list of exempt names, because a list would have to be maintained by the same
-// person who forgot to add the entry.
-//
-// **Past this it is a YAML validator, which is a different tool and should be
-// one.** The line is that this reads what a step says about itself -- its `run:`
-// and its `if:` -- and never what GitHub would do with the file.
+// `ci-steps` runs exactly the two lists, neither list is empty, and CI runs both.
+// CI runs `portable` and `native` as separate jobs and never `ci-steps`, so a recipe
+// leaving a list makes the gate faster and still green. The justfile is read
+// through `just --dump`, the resolver the gate itself runs under.
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -115,32 +10,9 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 /**
- * How short each list may get before this asks whether it was meant.
- *
- * **The rule is two below each list's length**, and the lengths are
- * deliberately not written here. Removing a recipe should not require editing a
- * number, and a list emptied by an edit must not pass; this is the only
- * assertion that sees a deletion at all, which is why it is close rather than
- * generous.
- *
- * **A count restated in prose goes stale in step with the constant beside it,
- * and that is how `portable: 9` survived.** The sentence and the number were
- * consistent with each other and wrong about the `justfile`, so every reading
- * of this block was internally coherent and externally false -- and the reader
- * best placed to notice is the one the agreeing pair sends past. Rewriting the
- * sentence at each bump is the same mechanism asking to be trusted once more.
- *
- * **Today's numbers come from the failure, not from here.** When a floor fires
- * it names both -- the length it measured and the floor it measured against --
- * so a reader who needs them reads what the tree is rather than what a comment
- * once said it was. The two constants below still move with the lists: a recipe
- * added without its floor raised leaves three notches of slack rather than two,
- * which is slack the next addition inherits, and the arithmetic is one line in
- * the commit that adds the recipe.
- *
- * **Deriving them from the lists is refused rather than overlooked.** A floor
- * computed from the thing it guards cannot notice a deletion, which is the
- * whole of what these two numbers are for.
+ * How short each list may get: two below each length, and the only assertion that
+ * sees a deletion. Not derived from the lists, which could not notice one; a firing
+ * floor prints the length it measured, so the lengths are not restated here.
  */
 const FLOORS = { portable: 13, native: 11 }
 
@@ -163,11 +35,8 @@ for (const list of ['ci-steps', 'portable', 'native']) {
   lists[list] = names
 }
 
-// **One level of expansion, so both spellings are checked.** Today `ci-steps`
-// names the two groups, and substituting their contents is the identity. The
-// check exists for the day it names recipes directly again: an explicit list
-// that has quietly lost one is the failure, and it is invisible to a comparison
-// that only asks whether `ci-steps` still says `portable native`.
+// One level of expansion, so `ci-steps` is checked whether it names the two groups
+// or spells recipes out, where a lost recipe would pass a `portable native` check.
 const runs = lists['ci-steps'].flatMap(name => (name === 'portable' || name === 'native' ? lists[name] : [name]))
 const union = [...lists['portable'], ...lists['native']]
 
@@ -186,18 +55,9 @@ for (const [list, floor] of Object.entries(FLOORS)) {
   if (lists[list].length < floor) problems.push(`\`${list}\` has ${lists[list].length} recipes and the floor is ${floor}`)
 }
 
-// **Order, for the two places in `native` where it carries meaning.**
-// Everything else in these lists is independent and the order is taste; these
-// two are not, and until now nothing would have noticed either being undone.
-//
-// `test-js` before `test`: `just` stops at the first failure, so with `test`
-// first a red Rust suite means the JavaScript suite never runs and a reader
-// sees one surface and no information about the other. `addon` before
-// `test-js`: `test-js` loads the compiled `.node`.
-//
-// Asserted as a pair because they pull opposite ways — satisfy the first by
-// moving `test-js` to the front and the second breaks — so a future edit is
-// told both constraints rather than discovering the second by failing it.
+// Order where it carries meaning in `native`: `addon` before `test-js`, which loads
+// the `.node`, and `test-js` before `test`, since `just` stops at the first failure.
+// Asserted as a pair: moving `test-js` first satisfies one and breaks the other.
 const ORDERED = [
   ['addon', 'test-js', '`test-js` loads the compiled addon'],
   ['test-js', 'test', 'a red Rust suite must not stop the JavaScript suite from reporting'],
@@ -227,16 +87,17 @@ const invocations = readFileSync(WORKFLOW, 'utf8')
       .replace(/^run:\s*/, ''),
   )
 
+// Both halves must be invoked from a `run:` line: the workflow's prose names them
+// too, so a search of the whole text could not fail. A job skipped by `if:`, or an
+// `on:` narrowed so the workflow never runs, still passes.
 for (const list of ['portable', 'native']) {
   const invoked = invocations.some(line => new RegExp(`(?:^|[\\s;&|])just\\s+${list}(?:[\\s;&|]|$)`).test(line))
   if (!invoked) problems.push(`\`.github/workflows/ci.yml\` never runs \`just ${list}\``)
 }
 
-// The platform-guarded recipes, and the platform each one needs in the matrix.
-//
-// `runner.os` is what a step's `if:` spells; the matrix spells runner labels. The
-// two vocabularies are joined here rather than in either file, which is the only
-// place that knows both.
+// The platform-guarded recipes, named rather than counted since each is the only
+// coverage of what it covers, and the platform each needs in the matrix. `LABEL`
+// joins `runner.os`, which an `if:` spells, to the matrix's runner labels.
 const GUARDED = { audit: 'Linux', 'net-check': 'Linux', 'threads-probe': 'Windows' }
 const LABEL = { Linux: 'ubuntu', Windows: 'windows', macOS: 'macos' }
 
@@ -250,9 +111,9 @@ const workflowLines = readFileSync(WORKFLOW, 'utf8')
 const matrixLine = workflowLines.find(line => /^\s*os:\s*\[/.test(line)) ?? ''
 const platforms = [...matrixLine.matchAll(/[a-z]+(?=-latest|-[0-9])/g)].map(found => found[0])
 
-// **Every guarded step that runs a recipe is in the map.** Without this the loop
-// below only knows the three recipes written above, and a fourth guarded step
-// would be unprotected while the check reported success.
+// Every guarded step that runs a recipe must be in the map, or the loop below
+// would leave a new one unchecked. A guarded step running no recipe -- the libaom
+// installs -- is exempt: dropping its platform drops the need for it too.
 for (const [index, line] of workflowLines.entries()) {
   if (!/if:\s*runner\.os\s*==/.test(line)) continue
   // The step's own `run:` lines: from the guard to the start of the next step.

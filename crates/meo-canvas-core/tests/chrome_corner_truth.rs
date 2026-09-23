@@ -1,32 +1,7 @@
-//! Where a border's colours meet at a rounded corner, against Chrome.
-//!
-//! # Why this exists beside the golden fixtures
-//!
-//! `fixtures/borders-per-edge` draws these same two boxes and could not see
-//! either of the defects they carried: it was accepted from our own render, so
-//! it certified a ring with a hole in it, twice. A fixture says "this is the
-//! picture"; only a browser can say "this is the *right* picture".
-//!
-//! # Why a hue and not a byte
-//!
-//! Chrome and Skia do not rasterise an arc to the same bytes, and the question
-//! here is not the bytes. It is **which edge owns which part of the arc** --
-//! the handover row, which is where CSS Backgrounds 3 §4.4's line from the
-//! outer corner point to the inner one crosses the outer contour. So each row
-//! is reduced to a hue: red, yellow, blue, the box's own fill, or too faint to
-//! call.
-//!
-//! Where the ring pinches to nothing the outermost pixel is almost white, and
-//! that is not a defect -- it is what a sub-pixel-thin ring looks like. Those
-//! rows are skipped rather than classified, which is why every assertion here
-//! is about the rows that *are* legible.
-//!
-//! # The numbers
-//!
-//! Measured in Chrome by MC Main, rasterising the identical CSS through an SVG
-//! `foreignObject` into a canvas and reading it back with `getImageData` --
-//! Chrome's own painted bytes rather than a screenshot. Recorded in
-//! `scratchpad/chrome/corner-truth.tsv`.
+//! Where a border's colours meet at a rounded corner, against Chrome's painted
+//! bytes. Each row reduces to a hue, since Chrome and Skia rasterise an arc to
+//! different bytes; the question is which edge owns which part of the arc (CSS
+//! Backgrounds 3 §4.4). Rows where the ring pinches to nothing are skipped.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -66,11 +41,8 @@ enum Ink {
     Faint,
 }
 
-/// Reduces a pixel to which edge painted it.
-///
-/// By hue rather than by distance to a colour, because every one of these
-/// pixels is a blend: the ring is one or two pixels thick at the pinch and
-/// antialiasing takes the rest.
+/// Reduces a pixel to which edge painted it, by hue rather than distance to a
+/// colour: at the pinch the ring is a pixel or two and every pixel is a blend.
 fn ink(pixel: (u8, u8, u8)) -> Ink {
     if pixel == FILL {
         return Ink::Fill;
@@ -80,12 +52,10 @@ fn ink(pixel: (u8, u8, u8)) -> Ink {
     if blue > red + 10 {
         return Ink::Blue;
     }
-    // Both remaining colours are warm; what separates them is how much green
-    // survives above the blue. Red is (200,40,40) -- green and blue together;
-    // yellow is (230,170,30) -- green far above blue.
-    // Below this the tint is a hair off the page and the hue is noise: at the
-    // pinch the ring covers a fraction of a pixel, and (253, 240, 231) is a
-    // ring, not a colour anyone could name.
+    // Both remaining colours are warm; green above blue separates them: red is
+    // (200,40,40), yellow (230,170,30). Below this the tint is noise -- at the
+    // pinch (253, 240, 231) is a ring covering a fraction of a pixel, not a
+    // colour.
     if red - blue < 25 {
         return Ink::Faint;
     }
@@ -152,16 +122,10 @@ fn corner(
     (info.width as usize, pixels)
 }
 
-/// How far inward the search for a nameable colour may go.
-///
-/// Four. The outermost inked pixel is the *least* covered one -- an
-/// antialiased edge spans a pixel or two -- so where the ring pinches to
-/// nothing, reading only it reports the page's white with a trace of border in
-/// it and calls the arc faint. Reading a fixed depth instead is the opposite
-/// mistake, and cost this file a wrong answer: where the ring is twenty pixels
-/// thick, three pixels in is deep inside one edge's own colour and reports it
-/// for a row the *other* edge owns at the boundary. So: outermost first, step
-/// inward only while the pixel is too faint to name, and stop after four.
+/// How far inward to search for a nameable colour. The outermost pixel is the
+/// least covered and reads near-white at a pinch; a fixed depth instead lands
+/// inside one edge's colour where the ring is thick. So step in only while too
+/// faint to name, at most four.
 const BOUNDARY_DEPTH: usize = 4;
 
 /// The colour of each row's outer boundary.
@@ -201,16 +165,10 @@ fn boundary(
     .collect()
 }
 
-/// A zero-width edge takes none of the arc, and the arc is still covered.
-///
-/// Chrome, `border-width: 2px 8px 5px 0` with `border-radius: 20px 0 10px 4px`:
-/// red at the outer boundary for every row of the arc, the fill from y=19
-/// where the radius ends and a zero-width left edge means there is no ring to
-/// paint, and **blue at no row at all**.
-///
-/// The fill from y=19 is the part that makes this a conformance test rather
-/// than a gap detector: a rule forbidding fill at the boundary everywhere
-/// would pass the arc and overdraw the flank.
+/// A zero-width edge takes none of the arc. Chrome, `border-width: 2px 8px 5px
+/// 0` and `border-radius: 20px 0 10px 4px`: red on every arc row, blue on none,
+/// and the fill from y=19, which a rule forbidding fill at the boundary would
+/// overdraw.
 #[test]
 fn a_zero_width_edge_gives_up_the_whole_arc() {
     let (stride, pixels) = corner(
@@ -251,12 +209,9 @@ fn a_zero_width_edge_gives_up_the_whole_arc() {
     );
 }
 
-/// Two unequal widths hand the arc over where CSS's division line crosses it.
-///
-/// Chrome, `border-width: 10px 2px` with `border-radius: 24px`: red to y=12,
-/// a red-and-yellow blend at y=13, yellow from y=14. The handover row is the
-/// discriminator -- closing a gap does not put the join in the right place,
-/// and an angular split would hand over four rows late.
+/// Unequal widths hand over where CSS's division line crosses the arc. Chrome,
+/// `border-width: 10px 2px`, `border-radius: 24px`: red to y=12, blended at 13,
+/// yellow from 14; an angular split would hand over four rows late.
 #[test]
 fn unequal_widths_hand_the_arc_over_where_chrome_does() {
     let (stride, pixels) = corner(
@@ -310,35 +265,10 @@ struct Pair {
     handover: Option<usize>,
 }
 
-/// Chrome's answer for five width pairs on one geometry.
-///
-/// 60x60, `border-radius: 20px`, top `#c82828` and left `#e6aa1e`, the other
-/// two 6px. Read from Chrome's own painted bytes;
-/// `scratchpad/chrome/pair-truth.tsv`.
-///
-/// # Why these five
-///
-/// **`1/20` and `20/1` are not mirror images** -- one hands over at y=1 and
-/// the other at y=15 on a twenty-row arc, and a rule that split the corner by
-/// angle would put both at y=10. That pair alone rejects the two wrong answers
-/// this code has already had: an angular split, and a split that leans towards
-/// the thicker edge.
-///
-/// **`0/2` fails at the first row rather than in the middle of an arc.** It is
-/// the only case where the edge that gets nothing is the *thicker* one, so a
-/// division leaning the wrong way is yellow-less at y=0 where every other case
-/// would still look plausible for a dozen rows.
-///
-/// `6/6` is the control: equal widths, the 45-degree mitre, which every
-/// bordered fixture in the suite already draws.
-///
-/// # The arithmetic, solved independently
-///
-/// CSS Backgrounds 3 §4.4's line runs from the outer corner `(0, 0)` to the
-/// inner one `(left, top)`; the outer contour is the circle of radius 20
-/// centred at `(20, 20)`. Solving the two gives 14.6 for `20/1`, 0.73 for
-/// `1/20` and 5.86 for `6/6` -- against Chrome's 15, 1 and 6. A measurement
-/// and an arithmetic that agree are worth more than either alone.
+/// Chrome's handover row for five width pairs: 60x60, radius 20, top `#c82828`,
+/// left `#e6aa1e`. `1/20` and `20/1` hand over at 1 and 15, not both at 10 as
+/// an angular split would; `0/2` fails at row 0; `6/6` is the mitre control.
+/// §4.4's line solved directly gives 0.73, 14.6 and 5.86.
 const CHROME_PAIRS: [Pair; 5] = [
     Pair {
         top: 2.0,
@@ -367,12 +297,9 @@ const CHROME_PAIRS: [Pair; 5] = [
     },
 ];
 
-/// Every width pair hands the arc over on the row Chrome hands it over on.
-///
-/// The five pairs were already checked against the ring drawn as a single
-/// fill, which proves the arc is *covered*. It cannot prove the join is in the
-/// right place: with one colour on every edge there is no join to see. This is
-/// the other half, and it is the half with the handover row in it.
+/// Every width pair hands over on Chrome's row. The single-fill checks prove
+/// the arc is covered; with one colour there is no join to see, so this is the
+/// half that places it.
 #[test]
 fn every_width_pair_divides_its_corner_where_chrome_does() {
     for pair in CHROME_PAIRS {

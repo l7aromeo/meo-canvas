@@ -5,25 +5,17 @@ use crate::Error;
 /// A motion that can be asked for its value at a time, and for how long it
 /// runs.
 ///
-/// **One shape for a track, a sequence and a group**, so a caller holding any
-/// of them can ask the same three questions. The JavaScript surface has had
-/// this as its `Sampled<T>` interface since it was written -- `track`,
-/// `sequence` and `parallel` all return it -- while Rust had three types with
-/// method sets that resembled each other by coincidence: `Track` had `at` and
-/// `duration`, `Plan` had those and `total_duration`, and there was no group
-/// type at all. That asymmetry was found by the animation audit of 4 September
-/// 2026 and closed by this trait.
+/// One shape for a track, a sequence and a group, so a caller holding any of
+/// them can ask the same three questions. It is the JavaScript surface's
+/// `Sampled<T>`, which `track`, `sequence` and `parallel` all return.
 ///
-/// The inherent methods stay, and are what a caller reaches first. This exists
-/// for code that is generic over what it is animating, and to make the
-/// omission of a method from one of the three a compile error rather than
-/// something to notice.
+/// The inherent methods are what a caller reaches first. The trait is for code
+/// generic over what it animates, and it makes a method missing from one of
+/// the three a compile error.
 ///
-/// **It is open, so a caller's own motion can implement it**, and that decides
-/// how it may grow: a method added here arrives with a provided body, or it
-/// breaks every implementor outside this crate. `total_duration` already has
-/// one. If a future method genuinely cannot have a sensible default, the
-/// honest move is to seal the trait then rather than to add it and hope.
+/// It is open, so a caller's own motion can implement it. A method added here
+/// therefore needs a provided body, as `total_duration` has, or it breaks
+/// every implementor outside this crate.
 ///
 /// ```
 /// use meo_canvas_core::animate::{
@@ -78,30 +70,18 @@ pub trait Sampled {
     /// means one**, and a length of zero would read as finished to every
     /// caller that checks.
     ///
-    /// **`usize` rather than a float, deliberately** (4 September 2026). The
-    /// JavaScript surface's `totalDuration(2.5)` answers unfloored, because a
-    /// JavaScript number is what it is rather than because half an item was
-    /// designed for. A count of things is an integer here, in the same way
-    /// that a refusal is a `Result` here and a throw there: a difference in
-    /// the shape, chosen, and not a capability one surface has and the other
-    /// lacks.
+    /// The count is a `usize`, where the JavaScript surface's
+    /// `totalDuration(2.5)` answers unfloored: a count of things is an integer
+    /// here, as a refusal is a `Result` here and a throw there. The shape
+    /// differs; the capability does not.
+    ///
+    /// The provided body is the answer for a motion that does not stagger: a
+    /// set of them is as long as one of them. A type that staggers overrides
+    /// it.
     ///
     /// # Errors
     ///
     /// As [`Sampled::at`].
-    ///
-    /// **Provided, and that is deliberate rather than a convenience.** A trait
-    /// whose every method is required breaks every implementor outside this
-    /// crate the day a fourth is added, and this one is meant to be
-    /// implemented outside it: the reason it exists is that a caller can be
-    /// generic over what they are animating, which is only worth having if
-    /// their own motion can join in.
-    /// [`crate::animate::interpolate::Animatable`] is the neighbour with
-    /// the same shape, and `Styled` on the facade is the one that gets it
-    /// most right -- one required method and sixty-eight provided.
-    ///
-    /// The default is the answer for a motion that does not stagger: a set of
-    /// them is as long as one of them. A type that staggers overrides it.
     fn total_duration(&self, count: usize) -> Result<f64, Error> {
         let _ = count;
         self.duration()
@@ -124,8 +104,8 @@ mod tests {
         },
     };
 
-    /// A motion of a caller's own, which is the case the trait exists for and
-    /// the case a required fourth method would break.
+    /// A motion of a caller's own, the implementor a required fourth method
+    /// would break.
     struct Blink {
         seconds: f64,
     }
@@ -148,10 +128,8 @@ mod tests {
 
     #[test]
     fn an_outside_motion_needs_two_methods_and_gets_the_third() {
-        // **`Blink` implements `at` and `duration` and not `total_duration`.**
-        // That it compiles is the assertion: a trait whose every method is
-        // required breaks a type like this the day a fourth arrives, and the
-        // provided body is what stops that.
+        // `Blink` implements `at` and `duration` and not `total_duration`, so
+        // that it compiles is the assertion that the third is provided.
         let blink = Blink { seconds: 0.5 };
         assert_eq!(
             blink
@@ -171,8 +149,8 @@ mod tests {
 
     #[test]
     fn a_motion_that_staggers_overrides_it() {
-        // The control for the test above: the default is a default rather than
-        // the only answer, and `Track` still lengthens with the count.
+        // The control for the test above: `Track` overrides the default and
+        // still lengthens with the count.
         let staggered = Track {
             from: 0.0,
             to: 1.0,

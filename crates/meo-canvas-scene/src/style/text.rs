@@ -52,8 +52,8 @@ wire_enum! {
     /// Where the text sits within the node's box.
     ///
     /// CSS's `vertical-align` places one inline box on its line; this places
-    /// the **whole paragraph** in the box that holds it, which is what v1
-    /// does and what a scene with one paragraph per node can express. A node
+    /// the **whole paragraph** in the box that holds it, which is what a scene
+    /// with one paragraph per node can express. A node
     /// sized to its own text has nothing left over, so the three agree there.
     pub enum VerticalAlign {
         /// Against the top of the box.
@@ -224,9 +224,8 @@ pub enum Spacing {
 /// # Three variants for four kinds
 ///
 /// `normal` is the **absence** of a stated value and is spelled `None` where
-/// this appears, which is what `Option` has meant here since the line-height
-/// sentinel: an explicit `1.0` and an inherited `normal` are different things
-/// and were once indistinguishable.
+/// this appears: an explicit `1.0` and an inherited `normal` are different
+/// things.
 ///
 /// # Why a percentage is here and not in the resolved form
 ///
@@ -338,10 +337,6 @@ pub struct TextSegment {
 /// three dots 10px apart across a 31px span, which is exactly a literal `…`;
 /// three full stops sit 7px apart across 26px. Advances 40.00 against 33.34.
 ///
-/// v1 draws the same character for `ellipsis: true`
-/// (`src/canvas/text.canvas.ts:1244`), so the API reference and the
-/// behavioural one agree and there was nothing to choose between.
-///
 /// It is a constant rather than a variant of an enum because **nothing
 /// downstream reads the difference**: a marker named by default and the same
 /// marker written out reach the measurer, the line-breaker and the painter as
@@ -357,8 +352,7 @@ pub struct ParagraphStyle {
     pub max_lines: Option<u32>,
     /// String appended to a truncated last line. `None` truncates without a
     /// marker, and so does `Some("")` -- an empty marker and no marker are the
-    /// same picture, which is what v1's truthiness guard produced and what a
-    /// caller writing `ellipsis: ''` still gets.
+    /// same picture, which is what a caller writing `ellipsis: ''` gets.
     ///
     /// [`DEFAULT_ELLIPSIS`] is what to write for the marker CSS uses.
     pub ellipsis: Option<String>,
@@ -369,16 +363,10 @@ mod tests {
 
     #[test]
     fn every_spacing_is_named_here_so_a_new_one_cannot_be_ignored_elsewhere() {
-        // **The compile error `#[non_exhaustive]` moved out of the other
-        // crates.** `meo-canvas-core` now has a wildcard arm for this enum, so
-        // a variant added here would take that arm and draw nothing rather
-        // than fail to build. This match has no wildcard and lives in the
-        // crate that owns the type, which is where the attribute leaves
-        // exhaustiveness intact: adding a variant fails to compile here, and
-        // whoever adds it goes and looks at the arms that need it.
-        //
-        // `cargo test` rather than `cargo build`, which is the cost of putting
-        // it in a test; the gate runs both.
+        // No wildcard, in the crate that owns the type: `meo-canvas-core`'s
+        // wildcard arm would take a new variant and draw nothing, so it fails
+        // to compile here instead -- under `cargo test` rather than `cargo
+        // build`, and the gate runs both.
         use super::Spacing;
         let witness = |value: &Spacing| match value {
             Spacing::Normal => "normal",
@@ -392,12 +380,9 @@ mod tests {
         Spacing, TextAlign, TextDecoration, TextStyle, VerticalAlign,
     };
 
-    /// The default marker is the one character CSS names, not three stops.
-    ///
-    /// Measured in Chrome rather than picked -- see [`DEFAULT_ELLIPSIS`]. The
-    /// second assertion is the one worth having: the two look alike in prose
-    /// and in several faces, and the whole reason this constant exists is that
-    /// they are different characters with different advances.
+    /// The default marker is the one character CSS names, not three stops --
+    /// measured in Chrome, see [`DEFAULT_ELLIPSIS`]. The second assertion is
+    /// the one worth having: the two look alike but differ in advance.
     #[test]
     fn the_default_marker_is_one_horizontal_ellipsis() {
         assert_eq!(DEFAULT_ELLIPSIS, "\u{2026}");
@@ -405,12 +390,9 @@ mod tests {
         assert_ne!(DEFAULT_ELLIPSIS, "...");
     }
 
-    /// The marker is a value the paragraph carries, not a mode it is put in.
-    ///
-    /// The JavaScript surface spells the same thing `ellipsis: true` and
-    /// resolves it before the scene is built, so both surfaces reach the
-    /// painter with an identical [`ParagraphStyle`]. This is the Rust half of
-    /// that sentence.
+    /// The marker is a value the paragraph carries, not a mode: the JavaScript
+    /// surface resolves `ellipsis: true` before the scene is built, so both
+    /// reach the painter with an identical [`ParagraphStyle`].
     #[test]
     fn the_default_marker_is_what_a_paragraph_carries() {
         let paragraph = ParagraphStyle {

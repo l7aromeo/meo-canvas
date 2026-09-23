@@ -1,13 +1,7 @@
-//! Pages: a twelve-frame sequence, and the formats only a sequence exercises.
-//!
-//! Every page is built from the same function, so what moves between them is
-//! what [`PageInfo`] reports and nothing else. The three derived numbers each
-//! drive one thing: `progress` a bar that ends full, `cycle` a rotation that
-//! meets itself, `index` the counter that names the page.
-//!
-//! It writes the still formats as well as the paged ones. What a still format
-//! does with twelve pages -- write the first, refuse, or write something else
-//! -- is a thing worth knowing rather than a thing to avoid asking.
+//! Pages: a twelve-frame sequence built from one function, so only [`PageInfo`]
+//! moves -- `progress` fills a bar, `cycle` turns a rotation that meets itself,
+//! `index` names the page. It writes the still formats too, to show what each
+//! does with twelve pages.
 
 use meo_canvas::{
     Box, Element, Format, PageInfo, Root, Styled, hex_rgb, pct, px,

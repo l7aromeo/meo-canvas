@@ -128,12 +128,9 @@ pub enum Available {
     MaxContent,
 }
 
-/// Whether a layout applies the paragraph's `max_lines` and ellipsis.
-///
-/// A `bool` at the call site reads as `laid(node, width, false)`, which says
-/// nothing about which half is which. The two questions this distinguishes --
-/// what the text *is* and what is *drawn* of it -- are far enough apart to be
-/// worth naming.
+/// Whether a layout applies the paragraph's `max_lines` and ellipsis. Named
+/// because `laid(node, width, false)` does not say whether it asks what the
+/// text is or what is drawn of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Truncate {
     /// Apply them. The used value: what the paint pass draws.
@@ -206,33 +203,16 @@ pub struct SceneMeasurer<'resolved> {
     resolved: &'resolved Resolved<'resolved>,
     /// The shaping cache every line box is built through.
     text: TextMeasurer,
-    /// Answers already given, keyed by the question.
-    ///
-    /// A solve asks about one leaf at several widths and repeats questions
-    /// between passes; a laid-out paragraph is not free to interrogate, and
-    /// the key is 24 bytes.
-    /// **Never cleared, and the two-pass solve is why that has to be said.**
-    /// `compensate_ratio_direction` runs the whole page twice with one
-    /// measurer, so every answer the first pass produced is still here for the
-    /// second. That is correct because a measurement is a pure function of its
-    /// key: this reads `resolved`, which does not change, and `text`, which
-    /// caches by the same question. Nothing else.
-    ///
-    /// **The day one depends on the tree, a sibling, or what a previous pass
-    /// decided, this serves a stale answer** -- and only in a two-pass render,
-    /// so the single-pass path stays correct and the symptom is a wrong size
-    /// that cannot be reproduced by rendering the same scene without a ratio
-    /// box in it.
+    /// Answers keyed by the question, kept across the two solves of
+    /// `compensate_ratio_direction`. Right while a measurement is a pure
+    /// function of its key; one reading the tree or a previous pass would go
+    /// stale, and only in two-pass renders.
     answers: HashMap<Question, MeasuredLeaf>,
 }
 
-/// One measurement request, in a form that can be a map key.
-///
-/// `f32` is not `Eq` or `Hash`, so the widths are keyed by their bit patterns.
-/// That is exact rather than approximate: two calls that pass the same `f32`
-/// have the same bits, and two that pass different ones must not share an
-/// answer. The only value that would misbehave is `NaN`, which never reaches
-/// here -- taffy offers a definite space or an intrinsic one, never a `NaN`.
+/// One measurement request as a map key. Widths are keyed by their bit
+/// patterns, which is exact, since the same `f32` has the same bits; only `NaN`
+/// would misbehave, and taffy never offers one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Question {
     node: NodeId,
@@ -311,35 +291,17 @@ impl<'resolved> SceneMeasurer<'resolved> {
         })
     }
 
-    /// Lays a text node's content out at `width`, for the paint pass.
-    ///
-    /// Crate-internal, and re-done rather than remembered: the width layout
-    /// settles on is not always the width it last asked about, and a block
-    /// carried over from the wrong question is the defect that made the old
-    /// painter lay every paragraph out a second time.
+    /// Lays a text node's content out at `width`, for the paint pass. Re-done
+    /// rather than remembered: the width layout settles on is not always the
+    /// last one it asked about.
     pub(crate) fn block(&mut self, node: NodeId, width: f32) -> Option<Block> {
         self.laid(node, width, Truncate::Yes)
     }
 
-    /// Lays a text node out at `width`, with or without its truncation.
-    ///
-    /// # Why the caller chooses
-    ///
-    /// Because `max_lines` and the ellipsis are **used-value** behaviour: they
-    /// say what is drawn once the width is already settled, and CSS Sizing 3
-    /// §5.1 derives an intrinsic size from the content alone. Applying them
-    /// while answering `MinContent` makes the answer circular -- the marker is
-    /// laid out at a width of zero, the run comes back as `…`, and the
-    /// paragraph reports the marker's width as the narrowest it can be.
-    ///
-    /// That is not a flexbox defect downstream of here. Flexbox 1 §4.5 floors
-    /// a flex item at exactly what this function reports, so the item shrank
-    /// precisely to the minimum it was handed. Measured in Chrome
-    /// (`crates/meo-canvas/tests/assets/chrome/min-content.tsv`):
-    /// `-webkit-line-clamp: 1` leaves `Flower of Paradise` at its plain
-    /// min-content of 49.91, and `text-overflow: ellipsis` matches its own
-    /// `nowrap` control at 106.50 rather than dropping below it. **Neither
-    /// truncation lowers an intrinsic width.**
+    /// Lays a text node out at `width`, with or without its truncation, which
+    /// is used-value behaviour: an intrinsic size comes from the content alone
+    /// (CSS Sizing 3 §5.1), and in Chrome's `chrome/min-content.tsv` neither
+    /// truncation lowers a min-content width.
     fn laid(
         &mut self,
         node: NodeId,
@@ -373,51 +335,10 @@ impl<'resolved> SceneMeasurer<'resolved> {
             Metrics::of(style),
         );
 
-        // **A box sized from this text's own measurement must not break it.**
-        //
-        // taffy rounds a rect to whole pixels, deliberately -- `rounding_drift`
-        // has why, and turning it off makes adjacent boxes antialias against
-        // each other at every shared edge. But the paint pass then re-flows the
-        // paragraph at that rounded width, and a natural width of `43.43`
-        // arrives as `43`: the break falls at the space and the second line
-        // spills out of a box that is one line tall.
-        //
-        // Measured, Poppins 12 at weight 500: `Max HP` is `43.43` and wraps,
-        // `Elemental Mastery` is exactly `112.0` and does not, `ATK` is `22.73`
-        // and rounds **up** to `23` and does not. **Rounding down wraps and
-        // rounding up fits**, and because taffy rounds cumulative coordinates
-        // the same string wraps or not depending on what sits above it.
-        //
-        // So: when one more pixel would have been enough, the box was rounded
-        // down from this paragraph's own width and the break is an artefact.
-        // When it would not, the box is genuinely narrower than the text and
-        // the break is real -- `Elemental Mastery` in a 43-pixel box still
-        // wraps, because 112 is nowhere near 44.
-        //
-        // The cost is one extra wrap, only for paragraphs that broke, and the
-        // shaping underneath is cached. What it trades away: a box deliberately
-        // a fraction narrower than its text now overflows by that fraction
-        // instead of breaking, which is invisible where a spurious line break
-        // is not.
-        // **`wrapped_lines`, not `lines.len()`, and that distinction is the
-        // whole of the defect this once had.**
-        //
-        // The test is "did the wrap break this paragraph". With `max_lines`,
-        // `lines.len()` cannot answer it: a paragraph that broke into two comes
-        // back as one line carrying a marker, identical by this test to one
-        // that never broke -- so the rescue below was skipped for
-        // exactly the case it was needed most, and a label that fitted
-        // rendered as its own ellipsis.
-        //
-        // Measured in the report that found it: `HP` in Oswald 12 is `12.49`
-        // wide, its box rounds to `12` at any offset whose fraction is at or
-        // above `.5`, the wrap breaks, and `maxLines: 1` truncates the break to
-        // `…` in a box with room for the whole word.
-        // Both ways a rounded-down box shows: the wrap breaking a paragraph
-        // that fitted, and a single line judged too wide to keep. A word with
-        // no space in it cannot break, so `HP` at `12.49` in a box of `12`
-        // never raises `wrapped_lines` and reaches the marker by the second
-        // route -- which is the case the report was actually about.
+        // A box rounded down from this paragraph's own width must not break it:
+        // taffy rounds to whole pixels, so `Max HP` at `43.43` gets `43`. Where
+        // one more pixel fits, lay it out loose. `truncated` counts too, since
+        // `HP` at `12.49` cannot break and reaches the marker directly.
         if (laid.wrapped_lines > 1 || laid.truncated) && width.is_finite() {
             let loose = lines::layout(
                 &mut self.text,
@@ -434,12 +355,9 @@ impl<'resolved> SceneMeasurer<'resolved> {
         Some(laid)
     }
 
-    /// The width of one inter-word space in a node's own face.
-    ///
-    /// The painter needs it for the same reason the wrap does: a space is a
-    /// run of no width, and the gap it stands for is arithmetic. Answered
-    /// through the same cache, so asking here costs nothing the wrap has not
-    /// already paid.
+    /// The width of one inter-word space in a node's own face, which the
+    /// painter needs for the gap a space stands for. Answered through the
+    /// wrap's cache.
     pub(crate) fn space(
         &mut self,
         base: &lines::RunStyle,
@@ -454,21 +372,10 @@ impl<'resolved> SceneMeasurer<'resolved> {
         self.resolved
     }
 
-    /// Measures a text node by wrapping it at the width on offer.
-    ///
-    /// # Which width
-    ///
-    /// The space offered, never the content's own measure of itself. Laying
-    /// out at exactly what the content occupies loses the last word to a float
-    /// comparison, and that boundary is not a corner case: flexbox settles an
-    /// auto-sized item at precisely its max-content width and asks again with
-    /// that as a known dimension, so every text node that fits is asked this
-    /// question.
-    ///
-    /// So an open axis wraps at infinity -- the one width with no boundary to
-    /// land on -- and narrows only when the budget is genuinely less than what
-    /// the content occupies. `MinContent` is the exception that is not one:
-    /// wrapping at every space *is* what min-content means.
+    /// Measures a text node by wrapping at the width on offer: an open axis at
+    /// infinity, since at exactly the max-content width, which flexbox re-asks
+    /// with, a float comparison loses the last word. `MinContent` wraps at
+    /// every space.
     fn measure_text(
         &mut self,
         node: NodeId,
@@ -482,12 +389,9 @@ impl<'resolved> SceneMeasurer<'resolved> {
             (None, Available::MaxContent) => f32::INFINITY,
         };
 
-        // **An intrinsic question is answered from the content alone.**
-        // `MinContent` and `MaxContent` ask what this text *can* do, and a
-        // clamp describes what is drawn once that is already decided -- so
-        // answering them through the truncation reports the marker's width as
-        // the narrowest a paragraph can be, and flexbox then floors the item
-        // there. See `laid`, and the Chrome table it names.
+        // An intrinsic question is answered from the content alone: a clamp
+        // describes what is drawn, and through it the marker's width would
+        // become the narrowest the paragraph can be. See `laid`.
         let truncate = if known.0.is_none()
             && matches!(
                 available.0,
@@ -556,17 +460,10 @@ impl Measure for SceneMeasurer<'_> {
     }
 }
 
-/// Fits a leaf with an intrinsic size into what layout has **fixed**.
-///
-/// The rule CSS gives a replaced element: a fixed axis wins, an open axis takes
-/// the intrinsic extent scaled to preserve the ratio when the other axis is
-/// fixed, and neither being fixed leaves the intrinsic size **as it is**.
-///
-/// **What layout merely offered is not a parameter here and used to be.** That
-/// last arm clamped each axis to a definite budget, which made a replaced
-/// element `min(intrinsic, container)` -- and Chrome never narrows one, so a
-/// 60x40 image is 60x40 in a 200x30 block, in a 200x100 block, and in a
-/// 30-*wide* block, overflowing each time.
+/// Fits a leaf with an intrinsic size into what layout has fixed, by CSS's rule
+/// for a replaced element: a fixed axis wins, an open axis scales to keep the
+/// ratio when the other is fixed, and with neither fixed the intrinsic size
+/// stands however little space is offered, as in Chrome.
 fn fit_intrinsic(intrinsic: Size, known: (Option<f32>, Option<f32>)) -> Size {
     let ratio = if intrinsic.height > 0.0 {
         Some(intrinsic.width / intrinsic.height)
@@ -582,30 +479,16 @@ fn fit_intrinsic(intrinsic: Size, known: (Option<f32>, Option<f32>)) -> Size {
         (None, Some(height), Some(ratio)) => Size::new(height * ratio, height),
         (Some(width), None, _) => Size::new(width, intrinsic.height),
         (None, Some(height), None) => Size::new(intrinsic.width, height),
-        // **Neither axis fixed: the intrinsic size, and nothing narrows it.**
-        // This used to clamp each axis to a definite budget, which made a
-        // replaced element `min(intrinsic, container)` -- so a 60x40 image in a
-        // 30-tall box measured 60x30 and the picture was squashed rather than
-        // overflowing. Chrome never does that: measured on a real `<img>` with
-        // no width or height of its own, it is 60x40 in a 200x30 block, 60x40
-        // in a 200x100 block, and 60x40 in a 30-WIDE block, overflowing each
-        // time. The cases where a container does change the answer are handled
-        // where they belong -- a flex line stretching the cross axis gives
-        // 45x30 under `align-items: stretch` and 60x40 under `flex-start`, and
-        // that is `align_self`, not a clamp here.
+        // Neither axis fixed: the intrinsic size. Chrome overflows a 60x40
+        // `<img>` in a 200x30, a 200x100 and a 30-wide block alike; a flex
+        // line's stretch is `align_self`, not a clamp here.
         (None, None, _) => intrinsic,
     }
 }
 
-/// Shapes one text node into a paragraph, ready to be laid out at any width.
-///
-/// **Nothing in the renderer uses this any more.** Text is measured and drawn
-/// through [`crate::lines`], which computes its own line boxes the way v1 and
-/// a browser do. What keeps this alive is the comparison report in that
-/// module's tests: two independent statements of one layout, with their
-/// disagreements enumerated rather than accepted. It is the evidence the port
-/// was equivalent where it meant to be and deliberate where it was not, and it
-/// goes when that stops being worth re-running.
+/// Shapes one text node into a Skia paragraph. Test-only: text is measured and
+/// drawn through [`crate::lines`], and this is the independent layout that
+/// module's comparison report checks it against.
 #[cfg(test)]
 pub(crate) fn build_paragraph(
     engine: &TextEngine,
@@ -662,11 +545,9 @@ fn skia_style(
             TextAlign::Right => SkiaTextAlign::Right,
             TextAlign::Justify => SkiaTextAlign::Justify,
         },
-        // The decoration was resolved and then dropped: `ResolvedText` has
-        // carried it since the resolve pass and nothing passed it on, so
-        // `underline` and `line-through` painted a paragraph identical to the
-        // pixel with `none`. The property crossed both wire formats correctly
-        // and was lost here, which is why a byte comparison could not see it.
+        // Passed on from `ResolvedText`: dropped here, `underline` would paint
+        // exactly as `none` does, and no comparison of the wire formats could
+        // see it.
         decoration: match style.decoration {
             TextDecoration::None => SkiaTextDecoration::default(),
             TextDecoration::Underline => SkiaTextDecoration::underline(),
@@ -693,18 +574,8 @@ fn skia_style(
                 blur_sigma: shadow.blur / 2.0,
             })
             .collect(),
-        // **The sentinel is correct here and wrong upstream of it.** Skia
-        // takes a multiplier and spells "use the face's metrics" as `1.0`, so
-        // `None` converts to exactly that. The bug was carrying Skia's
-        // spelling further in than Skia.
-        // **Skia takes a multiplier, so a length divides here and nowhere
-        // else.** That is the whole cost of storing what the author wrote: a
-        // caller's `24px` used to be divided by the font size at every call
-        // site that wanted to write one, and now it is divided once, at the
-        // boundary that actually needs a ratio.
-        //
-        // `None` is CSS's `normal` and Skia spells that `1.0` -- the sentinel
-        // is correct here and was wrong upstream of it.
+        // Skia takes a multiplier, so a length divides by the font size here
+        // and nowhere else, and `None`, CSS's `normal`, is Skia's `1.0`.
         line_height_multiplier: match style.line_height {
             Some(LineHeight::Number(multiple)) => multiple,
             Some(LineHeight::Length(pixels)) if style.size > 0.0 => {
@@ -776,18 +647,10 @@ mod tests {
         (scene, leaf)
     }
 
-    /// The rescue takes a break that one more pixel would have prevented, and
-    /// leaves a break that is real.
-    ///
-    /// taffy rounds a rect as `round(x + w) - round(x)`, so a paragraph can be
-    /// handed a box a fraction narrower than the width it was measured at. The
-    /// break that follows is an artefact of the rounding rather than a decision
-    /// about the text, and the paint pass re-lays the paragraph loose when one
-    /// pixel would have covered the difference.
-    ///
-    /// **Both halves are asserted because the guard is what stops the rescue
-    /// running away.** Without the second row a rescue that reached for every
-    /// paragraph -- and so stopped truncating anything -- would pass.
+    /// The rescue undoes a break one more pixel would have prevented, since
+    /// taffy rounds a rect as `round(x + w) - round(x)`, and leaves a real one.
+    /// Both rows, because a rescue that reached every paragraph would pass the
+    /// first alone.
     #[test]
     fn a_break_within_a_pixel_of_fitting_is_undone_and_a_real_one_is_not() {
         let (scene, leaf) = text_scene("ab cd");
@@ -973,27 +836,10 @@ mod tests {
         );
     }
 
-    /// The four cases Chrome produces for a broken `<img>`, measured.
-    ///
-    /// Playwright, chromium, `route.abort()` on the image so the load really
-    /// fails, and the box read back with `getBoundingClientRect`:
-    ///
-    /// ```text
-    /// auto x auto, no alt              0 x 0
-    /// width:100px, height auto       100 x 0
-    /// height:60px, width auto          0 x 60
-    /// width+height attrs 80x40        80 x 40
-    /// ```
-    ///
-    /// A loaded image of the same size measured 64x32 in the same harness,
-    /// which is what makes the zeros a measurement rather than a failure to
-    /// measure.
-    ///
-    /// **The rule is per-axis, not per-box.** An unresolved image contributes
-    /// zero on each `auto` axis and honours every explicit extent -- so a box
-    /// with a stated size keeps it, which is the case the report that prompted
-    /// this actually has, and their 1x1-transparent-pixel workaround is
-    /// unnecessary.
+    /// Chrome's broken `<img>`, with Playwright aborting the load: auto 0x0,
+    /// `width:100px` 100x0, `height:60px` 0x60, attributes 80x40, where a
+    /// loaded one measured 64x32. Per axis: zero on an `auto` axis, every
+    /// explicit extent kept.
     #[test]
     fn a_source_that_never_decoded_measures_as_chrome_measures_it() {
         // No bitmap arrived, so there is no intrinsic size to fit.
@@ -1020,12 +866,9 @@ mod tests {
             "both stated should be honoured untouched"
         );
 
-        // **A zero intrinsic height must not reach the ratio arm.** That arm
-        // divides by the ratio, and 0/0 is NaN -- which would put a NaN into
-        // layout, where every comparison is false and the wrong branch is
-        // silently taken. The guard is `intrinsic.height > 0.0`, false for
-        // zero and for NaN alike; this asserts the consequence rather than
-        // trusting the guard.
+        // A zero intrinsic height must not reach the ratio arm, where 0/0 is
+        // NaN and every later comparison is silently false. The guard is
+        // `intrinsic.height > 0.0`; this asserts its consequence.
         for size in [
             fit_intrinsic(none, (Some(100.0), None)),
             fit_intrinsic(none, (None, Some(60.0))),
@@ -1056,12 +899,9 @@ mod tests {
             fit_intrinsic(intrinsic, (None, Some(5.0))),
             Size::new(10.0, 5.0)
         );
-        // **Neither fixed: the intrinsic size, and the space offered no longer
-        // enters into it.** These two rows asserted the opposite -- a 3x1
-        // budget shrinking the image to 3x1 -- which is what made a replaced
-        // element `min(intrinsic, container)`. Chrome overflows instead, on
-        // every one of the three containers in `an_intrinsic_size_is_not_
-        // narrowed_by_the_space_offered`'s comment.
+        // Neither fixed: the intrinsic size, whatever space is offered, as
+        // `an_intrinsic_size_is_not_narrowed_by_the_space_offered` measures in
+        // Chrome.
         assert_eq!(fit_intrinsic(intrinsic, (None, None)), intrinsic);
     }
 
@@ -1097,14 +937,9 @@ mod tests {
         );
     }
 
-    /// **The clamp is gone, and this is the row that says so.**
-    ///
-    /// `fit_intrinsic` used to narrow each axis to the available budget when
-    /// neither was known, which made a replaced element `min(intrinsic,
-    /// container)`. Chrome never does that: a 60x40 `<img>` with no width or
-    /// height is 60x40 in a 200x30 block, in a 200x100 block, and in a 30-WIDE
-    /// block, overflowing each time. The budget is no longer a parameter, so
-    /// the only way to reintroduce the clamp is to add one back.
+    /// A 60x40 image is 60x40 whatever space is offered: Chrome overflows it in
+    /// a 200x30, a 200x100 and a 30-wide block alike, so the offered space is
+    /// not a parameter of `fit_intrinsic`.
     #[test]
     fn an_intrinsic_size_is_not_narrowed_by_the_space_offered() {
         let intrinsic = Size::new(60.0, 40.0);
@@ -1182,15 +1017,9 @@ mod tests {
                 .is_empty()
         );
     }
-    /// A `MaxContent` question means "unconstrained", and the answer must be
-    /// one line for a run that fits on one.
-    ///
-    /// Pins the fix for laying out at `max_intrinsic_width()`: that value is
-    /// the width the content needs, and a budget of exactly it loses the last
-    /// word to a float comparison. "Body text" at 16px reported an intrinsic
-    /// 55.010 and wrapped to two lines when laid out at 55.010, so every
-    /// unconstrained measurement came back a whole line too tall. Anyone
-    /// replacing the unconstrained layout with the intrinsic width fails here.
+    /// A `MaxContent` question is unconstrained, so a run that fits on one line
+    /// answers one line. At the content's own width a float comparison loses
+    /// the last word: `Body text` at 16px measures 55.010 and wraps at 55.010.
     #[test]
     fn a_max_content_measurement_does_not_wrap() {
         let (scene, leaf) = text_scene("Body text");
@@ -1263,12 +1092,9 @@ mod tests {
             unconstrained.size.height
         );
 
-        // The budget that actually breaks: exactly the content's own width.
-        // Flexbox settles an auto-sized item at precisely its max-content
-        // width and then re-asks with that as a known dimension, so this is
-        // the question every fitting text node gets rather than a corner case.
-        // A budget merely "roomy" never reaches the boundary, which is why the
-        // assertion above passed while the bug was live.
+        // The budget that breaks: exactly the content's own width, which
+        // flexbox re-asks with for every fitting text node. A merely roomy
+        // budget never reaches the boundary.
         let exact = measurer.measure(
             leaf,
             (Some(unconstrained.size.width), None),

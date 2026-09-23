@@ -16,12 +16,9 @@
 //! parent-relative and re-adding during paint would reintroduce exactly the
 //! seam that rounding avoids.
 //!
-//! One divergence from Yoga is unavoidable and visible: taffy rounds to whole
-//! pixels with no configurable scale factor, where Yoga's
-//! `YGConfigSetPointScaleFactor` can snap to halves or thirds. Layout here
-//! always solves at scale 1 and the device scale is applied at paint time, so
-//! the two agree; a caller that wants layout itself to snap at a device scale
-//! does not get it.
+//! taffy rounds to whole pixels with no configurable scale factor, so layout
+//! always solves at scale 1 and the device scale is applied at paint time. A
+//! caller that wants layout itself to snap at a device scale does not get it.
 //!
 //! # The style mapping
 //!
@@ -60,23 +57,15 @@ use crate::{
     measure::{Available, Measure},
 };
 
-/// The scale layout solves at.
-///
-/// One, always. taffy rounds to whole pixels on the coordinates it is given, so
-/// solving at a device scale would round to whole *device* pixels and put a
-/// box's logical position on a fraction the paint pass then rounds a second
-/// time. Paint applies [`Scene::scale`] to the context instead, which scales
-/// the whole drawing including its rounding.
+/// The scale layout solves at: one, always. taffy rounds to whole pixels on the
+/// coordinates it is given, so a device scale would round twice; paint applies
+/// [`Scene::scale`] to the whole drawing instead, rounding included.
 const LAYOUT_SCALE: f32 = 1.0;
 
 /// Where every node ended up.
 ///
-/// **`#[non_exhaustive]` because a field was just added to it.** `insets`
-/// arrived after `rects` and `baselines`, which is this struct demonstrating
-/// that it grows -- and the window to say so without breaking anyone is now:
-/// `meo-canvas-core` is public API of a crate `just release-crate` publishes,
-/// and nothing of it is on crates.io yet. The day after the first publish this
-/// costs a major version.
+/// **`#[non_exhaustive]` because it grows**, and a caller reads it rather than
+/// building one, so a field can be added without a breaking change.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct LayoutResult {
@@ -85,12 +74,10 @@ pub struct LayoutResult {
     /// How far a node's own content sits inside that rectangle: its border
     /// plus its padding, per edge.
     ///
-    /// **Kept rather than re-derived, and that is the whole reason it is
-    /// here.** Percentage padding resolves against the containing block's
-    /// width, so working it out at paint time reimplements a rule layout has
-    /// already applied -- and two implementations of one rule are two answers
-    /// waiting to disagree. taffy computes both and hands them back with the
-    /// rectangle; this stops throwing them away.
+    /// **Kept rather than re-derived.** Percentage padding resolves against
+    /// the containing block's width, so working it out at paint time would be
+    /// a second implementation of a rule layout has already applied. taffy
+    /// computes both and hands them back with the rectangle.
     pub insets: HashMap<NodeId, Sides<f32>>,
     /// Distance from a measured leaf's top edge to its first baseline.
     ///
@@ -116,9 +103,7 @@ impl LayoutResult {
     ///
     /// **This is where replaced content goes**, which is what CSS says and
     /// what Chrome does — an `<img>` with an 8px border or 8px of padding puts
-    /// its picture 8px in on every edge, and with both, 16. Text and child
-    /// boxes already land here; the image path was the one drawing into the
-    /// box itself.
+    /// its picture 8px in on every edge, and with both, 16.
     ///
     /// Never larger than the box and never inverted: an inset wider than the
     /// box it insets leaves an empty rectangle at the box's centre rather than
@@ -200,13 +185,9 @@ where
         &mut to_scene,
         &mut orphans,
         &mut viewport,
-        // **The page's own height is definite unless the caller asked for a
-        // content height**, in which case the page is as tall as what is in it
-        // and a percentage against it has nothing to resolve against -- the
-        // same condition as any other content-sized box, one level up.
-        //
-        // The page has no parent, so both answers are the same one: nothing
-        // above it is content-sized.
+        // The page's own height is definite unless the caller asked for a
+        // content height, when a percentage against it has nothing to resolve
+        // against. The page has no parent, so both answers are this one.
         FromAbove {
             heights: Definite {
                 parent: !scene.content_height,
@@ -222,12 +203,9 @@ where
     }
     pin_page_root(scene, page, root, &mut tree)?;
 
-    // A content height is solved rather than stated, so the height axis is
-    // offered `MaxContent` instead of a number. The circularity that stops a
-    // *width* being derived this way does not reach the height: text breaks
-    // into lines against the width, so the width has to be known before
-    // anything can be measured, while the height is only ever a consequence of
-    // that measuring.
+    // A content height is solved, so the height axis is offered `MaxContent`:
+    // text breaks against the width, which must be known first, and the height
+    // is only a consequence of that measuring.
     let available = taffy::Size {
         width: taffy::AvailableSpace::Definite(scene.size.width * LAYOUT_SCALE),
         height: if scene.content_height {
@@ -243,35 +221,15 @@ where
     // result, which is what places glyphs at paint time.
     let mut baselines: HashMap<NodeId, f32> = HashMap::new();
 
-    // [WORKAROUND] `compensate_ratio_direction` explains this pair; the ratios
-    // come off before the solve so it reports a fit-content inline size, and go
-    // back on after it.
-    // [WORKAROUND] every compensation below decides by comparing two solved
-    // sizes, and taffy rounds each edge, so a size is the difference of two
-    // rounded numbers and a decision could read a rounding artefact as a
-    // divergence. Measured: a percentage minimum resolving to `339.20` against
-    // a width taffy rounded to `340` missed its clause, and which percentages
-    // missed alternated with the fractional part -- `79` bound, `80` missed,
-    // `85` bound, `90` missed. `l7aromeo/meo-canvas#140`.
-    //
-    // Retires when the comparisons no longer read solved sizes, which is the
-    // same day the three compensations below retire; there is no upstream fix
-    // to wait for, because the rounding is taffy doing what it is asked.
-    //
-    // **No solve precedes this line**, which is what makes every read below
-    // unrounded by construction rather than by inspection. A mixed comparison
-    // -- one operand from a rounded pass, one from an unrounded one -- would
-    // be wrong by up to half a pixel in the pass whose point is exactness, and
-    // the way to be sure of that is not to enumerate the reads. Six sites read
-    // solved geometry in this file and a seventh added next month would not
-    // appear in any list written today; what holds is that the first
-    // `compute_layout` in this function is the one below, so anything a
-    // compensation reads was produced with rounding off.
-    //
-    // The one read outside the region is [`collect`], after the rounded pass,
-    // and it is the geometry a caller gets rather than an input to a decision.
+    // [WORKAROUND] the compensations compare solved sizes and taffy rounds each
+    // edge, so these passes run unrounded: rounded, a `339.20` minimum missed a
+    // `340` width. `l7aromeo/meo-canvas#140`; retires with them, rounding being
+    // taffy doing what it is asked. No solve precedes this line.
     tree.disable_rounding();
     collapse_definite_bases(&mut tree, root)?;
+    // [WORKAROUND] the ratios come off before the first solve, so it reports a
+    // fit-content inline size, and go back on in `compensate_ratio_direction`,
+    // which names the defect and its probe.
     let candidates = ratio_direction_candidates(scene, &tree, &to_scene);
     clear_ratios(&mut tree, &candidates)?;
     solve_once(&mut tree, root, available, measure, &mut baselines)?;
@@ -284,10 +242,9 @@ where
         &mut baselines,
     )?;
 
-    // [WORKAROUND] `compensate_dropped_margins` explains this pair; a column
-    // container's automatic main size drops negative margins it should apply.
-    // `DioxusLabs/taffy#1162` and `DioxusLabs/taffy#1163`, reported as
-    // `l7aromeo/meo-canvas#107`, probed by
+    // [WORKAROUND] a column container's automatic main size drops negative
+    // margins. `DioxusLabs/taffy#1162` and `DioxusLabs/taffy#1163`, tracked as
+    // `l7aromeo/meo-canvas#107`; see `compensate_dropped_margins`, probed by
     // `crates/meo-canvas-core/tests/taffy_negative_margin.rs`.
     compensate_dropped_margins(
         scene,
@@ -299,13 +256,8 @@ where
         &mut baselines,
     )?;
 
-    // **One extra pass, and the cheaper alternative is refused on purpose.**
-    // Re-enabling rounding before whichever solve happens to be last inside
-    // the compensations would save this one -- and would make *which
-    // compensation runs last* load-bearing. Two were added tonight and a third
-    // refused; the next one would have to know it inherited that duty, and
-    // nothing would say so. The pass is the price of the compensations being
-    // independent of each other.
+    // One extra rounded pass rather than re-enabling rounding before whichever
+    // compensation solves last, which would make their order load-bearing.
     tree.enable_rounding();
     baselines.clear();
     solve_once(&mut tree, root, available, measure, &mut baselines)?;
@@ -322,36 +274,10 @@ where
     })
 }
 
-/// Moves an overflowing `wrap-reverse` line stack to the bottom of its box.
-///
-/// # The one row of the wrap table we answer differently
-///
-/// `flex-wrap: wrap-reverse` reverses the cross axis, so its lines are packed
-/// from the **bottom**. taffy reverses the line order and then packs the stack
-/// from the top whenever it overflows, which is visible only when it does:
-/// six 28x44 children in an 88x56 box give lines at `y = 0` and `44` here and
-/// `y = -32` and `12` in Chrome. Both reverse the stack; only Chrome puts the
-/// last line's bottom on the box's bottom edge and lets the first hang off the
-/// top.
-///
-/// **It is a defensible reading of the specification rather than a taffy
-/// bug.** css-align-3 says a distributed alignment that overflows falls back
-/// to a positional one with *safe* semantics, and safe alignment falls back to
-/// `start` — and taffy takes `start` as the physical start, so the reversal
-/// stops applying at exactly the moment it would push content out of the box.
-/// Chrome keeps the reversal. The browser is the baseline for behaviour, so
-/// Chrome wins and this shifts the stack after the solve.
-///
-/// # Why after, and why only in-flow children
-///
-/// taffy has no style that asks for this: `FlexStart` would lose the stretch
-/// when the lines *do* fit, and the safe fallback is applied inside the
-/// algorithm rather than chosen by a keyword. So the correction is a shift of
-/// the solved rectangles.
-///
-/// Out-of-flow children are left where they are. An absolute box resolves
-/// against its containing block's padding box, which this does not move; only
-/// the flow the wrap arranged is out of place.
+/// Moves an overflowing `wrap-reverse` line stack to the bottom of its box, as
+/// Chrome does: taffy packs it from the top once it overflows, css-align-3's
+/// safe fallback, so six 28x44 children in 88x56 sit at 0 and 44, not -32 and
+/// 12. Only in-flow children move.
 fn bottom_align_reversed_wraps(
     scene: &Scene,
     page: NodeId,
@@ -393,23 +319,10 @@ fn bottom_align_reversed_wraps(
             .map(Rect::bottom)
             .fold(f32::NEG_INFINITY, f32::max);
 
-        // The content box's own bottom: the border box less the edges taffy
-        // took off before it placed anything.
-        //
-        // **Read from [`collect`] rather than derived again**, which is the
-        // whole of the repair. Re-deriving it here resolved a percentage
-        // against this node's own border box, where CSS resolves it against
-        // the containing block's content box -- two errors that cancel on a
-        // stretched child with no padding of its own, which is the default
-        // shape and is why nothing caught it. `collect` takes both edges from
-        // the `Layout` taffy solved, so the number here is the room taffy
-        // actually reserved rather than a second implementation of the rule
-        // that decides it.
-        //
-        // A node with no entry is one `collect` did not reach, which is a node
-        // with no rectangle either; the `rects` lookup above has already
-        // returned for that case, so this cannot be the first place a missing
-        // node is noticed.
+        // The content box's own bottom, read from [`collect`]'s insets: the
+        // edges taffy reserved, where a re-derivation resolved a percentage
+        // against the wrong box. A node with no entry has no rectangle either,
+        // and returned above.
         let Some(inset) = insets.get(&id).map(|sides| sides.bottom) else {
             continue;
         };
@@ -433,40 +346,14 @@ fn bottom_align_reversed_wraps(
     }
 }
 
-/// Gives the page root the scene's extent on any axis it leaves to content.
-///
-/// A page is the canvas, so a root that sized to its content would put the
-/// layout in a box smaller than the surface it is drawn on: a percentage width
-/// beneath it would resolve against the content rather than against the canvas,
-/// and a `justify-content: center` would centre within the content it is
-/// centring. Every other node keeps `Auto` as written, because for them content
-/// sizing is the CSS behaviour a caller asked for.
-///
-/// An explicit size on the page root is honoured, so a caller who wants a page
-/// smaller than the surface can still say so.
-/// **Two answers, one level apart.**
-///
-/// `parent` is what this node's own percentages resolve against; `own` is what
-/// its children's do. Threading a single value for both was wrong by exactly
-/// one level -- a percentage on a child of a content-sized box survived,
-/// because the *child* had a declared height, which is not the question being
-/// asked.
-/// What a node needs from the walk above it.
-///
-/// **Three things that all travel together and are all about the level above,
-/// so they arrive as one argument rather than three.** `build` recurses, and
-/// nine parameters is past what `clippy::too_many_arguments` allows and past
-/// what a reader can hold: the two that describe the parent belong beside the
-/// two heights that already did, and the measurer is threaded rather than
-/// stored because a `&mut` cannot be copied into every level.
+/// What a node needs from the walk above it, as one argument: `build` recurses,
+/// and the parent, the two heights and the measurer travel together.
 struct FromAbove<'above, M: ?Sized> {
     /// Which heights are definite, one level apart. See [`Definite`].
     heights: Definite,
-    /// The node this one hangs under, or `None` for the page root.
-    ///
-    /// Read for its `display`: a block parent stretches an `auto` width and a
-    /// flex one does not, which is the difference [`intrinsic_sizes_it`] is
-    /// scoped on.
+    /// The node this one hangs under, or `None` for the page root, read for
+    /// its `display`: a block parent stretches an `auto` width and a flex
+    /// one does not.
     parent: Option<&'above meo_canvas_scene::node::Node>,
     /// The measurer this solve is running with.
     ///
@@ -475,6 +362,8 @@ struct FromAbove<'above, M: ?Sized> {
     measure: &'above mut M,
 }
 
+/// Two answers, one level apart: `parent` is what this node's own percentages
+/// resolve against, and `own` is what its children's do.
 #[derive(Debug, Clone, Copy)]
 struct Definite {
     /// Whether the containing block's height is definite.
@@ -483,34 +372,10 @@ struct Definite {
     own: bool,
 }
 
-/// Whether a child's height is one a percentage inside it can resolve against.
-///
-/// Definite means the number is known before the child's own contents are laid
-/// out. A declared length is definite; a percentage is definite exactly when
-/// the box it resolves against is, which is why this is threaded down the tree
-/// rather than read off a single node.
-///
-/// **`auto` counts as definite in the two cases flex layout settles it**, and
-/// Chrome agrees on both. An item stretched across a row takes the line's
-/// cross size; an item that `flex-grow`s in a column takes the line's
-/// remaining space. Measured, a `min-height: 200%` child of a `flex-grow: 1`
-/// box inside a 120-tall column is **240 in Chrome and 240 here**.
-///
-/// **An out-of-flow box is where that stops**, which is what `flex_settles_it`
-/// checks first: `flex-grow` on an absolutely positioned box does nothing,
-/// because it is not a flex item, so its `auto` height is its content's and a
-/// percentage inside it has nothing to resolve against. The same scene with
-/// the middle box absolutely positioned is **20 in Chrome and 20 here**.
-///
-/// Those two rows were once reported as a divergence -- 20 against 240 -- by a
-/// probe that gave Chrome an absolutely positioned box and this renderer a
-/// relative one. **Two scenes, one table.** The numbers are kept here because
-/// they are the pair that separates the cases, not because they ever
-/// disagreed.
-///
-/// A `min-height` is deliberately not enough on its own: it bounds the height
-/// from below and leaves it content-sized above the bound, so the number is
-/// still not known until the children are laid out.
+/// Whether a percentage inside a child can resolve against its height. `auto`
+/// counts where flex settles it, stretched or grown, and not out of flow:
+/// Chrome gives a `min-height: 200%` grandchild 240 and 20 in the two cases. A
+/// `min-height` alone is not enough.
 fn child_height_is_definite(
     parent: &meo_canvas_scene::node::Node,
     child: &meo_canvas_scene::node::Node,
@@ -518,12 +383,9 @@ fn child_height_is_definite(
 ) -> bool {
     match child.layout.size.1 {
         Dimension::Points(_) => true,
-        // **An out-of-flow box does not contribute to its containing block's
-        // height**, so that height is settled before this box is laid out and
-        // there is nothing circular to refuse. `parent_is_definite` answers
-        // about the flex parent, which for an out-of-flow box is not the
-        // containing block at all -- it is the nearest positioned ancestor,
-        // and for a fixed box the page.
+        // An out-of-flow box does not contribute to its containing block's
+        // height, so nothing is circular. `parent_is_definite` answers about
+        // the flex parent, which for such a box is not its containing block.
         Dimension::Percent(_) => out_of_flow(child) || parent_is_definite,
         Dimension::Auto => {
             insets_settle_it(child)
@@ -533,67 +395,19 @@ fn child_height_is_definite(
     }
 }
 
-/// Whether this node is a **replaced** element in CSS's sense.
-///
-/// A replaced element's `auto` width and height are its own intrinsic
-/// dimensions, and CSS resolves an over-constrained pair of insets by dropping
-/// one rather than by stretching the element -- CSS 2.2 §10.3.8 and §10.6.5.
-/// Measured on a real `<img>`, containing block 200x30, art 60x40: `inset: 0`
-/// gives **60x40**, and so do one inset, opposing insets on either axis, and
-/// every `object-fit`. A `div` in the same scene gives 200x30. Both are rows in
-/// `replaced-insets.tsv`.
-///
-/// **Only `Image`, and only childless.** Text is not replaced -- its size comes
-/// from its content, which is what a measured leaf already expresses -- and a
-/// path is drawn into whatever box it is given.
-///
-/// **The arity is not a detail.** This module already decides replaced-ness by
-/// arity thirty lines below, where a childless node is given the measurer's
-/// context and a node with children is not: an `Image` with a subtree is never
-/// measured, has no intrinsic size to prefer, and is a container whatever it
-/// draws. Keying on the kind alone contradicted a rule the file states in its
-/// own words, and it cost a real answer -- an absolutely positioned `Image`
-/// with `top`/`bottom` and a `height: 100%` child painted **30** before this
-/// predicate existed and **0** after, because `unstretch_replaced` removed the
-/// inset that was its only height and left it sized by the child that was
-/// waiting on it.
-///
-/// **Chrome cannot arbitrate the scene**, because an `<img>` cannot have
-/// children in HTML — so this rule comes from the engine's own leaf-container
-/// split rather than from conformance, and saying so is what stops the next
-/// reader looking for a row in `replaced-insets.tsv` that cannot exist.
+/// Whether this node is replaced in CSS's sense: a childless `Image`, whose
+/// `auto` size is intrinsic and whose over-constrained insets drop rather than
+/// stretch it (`replaced-insets.tsv`). Childless, matching the measurer; Chrome
+/// cannot arbitrate, an `<img>` having no children.
 const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
     node.children.is_empty()
         && matches!(node.kind, meo_canvas_scene::node::NodeKind::Image { .. })
 }
 
-/// Drops the end inset on any axis where a replaced element would be stretched.
-///
-/// **taffy cannot be told about this and it is not taffy's bug.** Its `Style`
-/// carries no way to say "this box is replaced", so an absolutely positioned
-/// leaf with opposing insets is sized from them -- which is correct CSS for a
-/// non-replaced box and wrong for this one. The knowledge is ours, in
-/// `NodeKind`, so the rule has to be expressed here.
-///
-/// Dropping the **end** inset rather than the start one is what Chrome does
-/// **on an over-constrained axis**: every row of `replaced-insets.tsv` naming
-/// both insets on an axis sits at `x=0, y=0`, so `left` and `top` are honoured
-/// and `right` and `bottom` are discarded. With one inset gone the axis is no
-/// longer over-constrained, taffy asks the measurer, and the intrinsic extent
-/// comes back.
-///
-/// **A lone end inset is a different case and still positions**, which is why
-/// the condition above tests for both insets rather than for a replaced node:
-/// `img right 0 only` sits at `x=140` and `img bottom 0 only` at `y=-10` in
-/// the same table. `a_lone_end_inset_still_positions` in
-/// `crates/meo-canvas/tests/chrome_replaced_insets.rs` pins both, because
-/// "drop the end inset for a replaced node" reads like a tidy-up of this
-/// paragraph and is the wrong generalisation of it. A lone *start* inset does
-/// sit at the start corner, which is what makes the wrong reading look safe.
-///
-/// Only where the size is `auto`: a declared width or height wins over the
-/// intrinsic one in Chrome too -- `inset: 0` with `width/height: 100%` is
-/// 200x30 there and here.
+/// Drops the end inset on an over-constrained axis of a replaced element, as
+/// Chrome does (`replaced-insets.tsv`); taffy has no notion of replaced. A lone
+/// end inset still positions, as `a_lone_end_inset_still_positions` pins, and a
+/// declared size wins.
 const fn unstretch_replaced(
     style: &mut taffy::Style,
     source: &meo_canvas_scene::node::Node,
@@ -628,69 +442,23 @@ const fn out_of_flow(node: &meo_canvas_scene::node::Node) -> bool {
     )
 }
 
-/// Whether an out-of-flow box's height comes from its insets rather than its
-/// content.
-///
-/// **Opposing insets, both of them.** `top` and `bottom` are the pair that
-/// states a height the same way `height` does, because the distance between
-/// them is one; either alone states a position and leaves the height to the
-/// content, and `left` and `right` say nothing about this axis at all.
-/// Measured: a box at `top: 33.33%; bottom: 33.34%` in a 120-tall block paints
-/// 40 and its `height: 100%` child paints 40 with it; the same box with only
-/// `top` set leaves that child painting **nothing**, in Chrome and here. Both
-/// rows are in `absolute-percentage.tsv`, and the second is what a repair
-/// reading one inset would break.
-///
-/// A declared height needs no help from this: it is the `Points` arm, and
-/// `abs-declared-over-insets-child` is the row that says so.
+/// Whether an out-of-flow box's height comes from its insets: `top` and
+/// `bottom` both, which state a height as `height` does, where either alone
+/// states a position. Both cases are rows in `absolute-percentage.tsv`.
 const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
-    // **Not for a replaced element.** Insets do not settle its height --
-    // `replaced-insets.tsv` gives a 60x40 image 40 under `top: 0; bottom: 0`
-    // in a 30-tall block. The guard is one term and the predicate already
-    // exists for the sizing rule above.
-    //
-    // **Unmeasured, and deliberately so.** After that rule the box IS its
-    // intrinsic height, which is a height a percentage child should resolve
-    // against, so this may have been returning the right answer by a route
-    // other than the one it names. The guard makes the reasoning honest; the
-    // number is measured separately, and if it was already right this comment
-    // is the change.
+    // Not for a replaced element: insets do not settle its height
+    // (`replaced-insets.tsv`). Its intrinsic height may serve a percentage
+    // child all the same; that is unmeasured.
     !is_replaced(node)
         && out_of_flow(node)
         && node.layout.inset.top.is_some()
         && node.layout.inset.bottom.is_some()
 }
 
-/// Gives taffy the two things that make a replaced element replaced: its
-/// intrinsic ratio, and -- where block flow would otherwise stretch it -- its
-/// intrinsic width.
-///
-/// **The ratio is the repair for `l7aromeo/meo-canvas#94`, and it is a repair
-/// to what taffy is *told* rather than to how it is asked.** taffy calls the
-/// measurer with `known = (None, None)` in block layout even where the node's
-/// style width is a definite 200, so [`crate::measure::fit_intrinsic`]'s ratio
-/// arm never fires and the intrinsic height comes back untouched; in flex it
-/// asks with `known = (Some(200.0), None)` and the same arm answers correctly.
-/// Handing taffy the ratio lets its own block algorithm derive the height,
-/// which is the resolver that already exists rather than a second copy of one.
-///
-/// A ratio the author declared wins: this fills in `aspect-ratio: auto`, which
-/// is what a replaced element has, and `aspect-ratio: 2` is not that.
-///
-/// **The width arm is narrower than the ratio arm and deliberately so.** A
-/// block-level box with `width: auto` fills its container, which is right for
-/// a box and wrong for a replaced element -- CSS gives that one its intrinsic
-/// width. Left alone, the ratio would faithfully derive a height from a width
-/// that should never have been the container's: measured, a 60x40 image in a
-/// 200-wide block reads 200x133 where Chrome reads 60x40. It applies only with
-/// **both** axes `auto`, because one definite axis makes the ratio the answer
-/// on the other -- `block w auto h80` is 120x80 in Chrome and comes out of the
-/// ratio alone.
-///
-/// Scoped to a block parent because that is where the stretch happens and
-/// where it is measured. A flex item shrink-to-fits its main axis and an
-/// out-of-flow box is not stretched by anything, and both are already right --
-/// `replaced-ratio.tsv` carries them as controls that must not move.
+/// Gives taffy a replaced element's intrinsic ratio, so its block algorithm
+/// derives the height (`l7aromeo/meo-canvas#94`), and with both axes `auto`
+/// under a block parent its intrinsic width, which block flow would stretch:
+/// 60x40, not 200x133. An author's ratio wins.
 fn intrinsic_sizes_it<M>(
     style: &mut taffy::Style,
     node: NodeId,
@@ -703,11 +471,9 @@ fn intrinsic_sizes_it<M>(
     if !is_replaced(source) {
         return;
     }
-    // **Asked of the measurer rather than of the image.** It is the one thing
-    // in the pipeline that already answers "how big is this leaf", and with
-    // neither axis known it answers with the intrinsic size by definition --
-    // see `fit_intrinsic`'s last arm. Reaching for the decoded image here
-    // would be a second route to one number.
+    // Asked of the measurer, which with neither axis known answers with the
+    // intrinsic size (`fit_intrinsic`'s last arm), rather than of the image by
+    // a second route.
     let intrinsic = measure
         .measure(
             node,
@@ -735,135 +501,23 @@ fn intrinsic_sizes_it<M>(
     }
 }
 
-/// Whether a ratio derives this box's height from its width.
-///
-/// **The inline axis is already definite and that is what makes this work.** A
-/// shrink-to-fit box still has a used width -- the note in [`build`] about
-/// dropping only block-axis percentages says so -- and a ratio turns that width
-/// into a height before the contents are laid out. Nothing here asks whether
-/// the width was *declared*, because Chrome does not: measured, a box whose
-/// only width is 30 pixels of shrink-to-fit content is 35.28 tall under
-/// `aspect-ratio: .85` and its `height: 100%` child paints all of it, and the
-/// same holds where the width is itself a percentage. Both rows are in
-/// `aspect-ratio-percentage.tsv`, and a repair demanding a declared width
-/// leaves them painting nothing.
-///
-/// A declared height needs none of this: it is the `Points` arm, and
-/// `ratio-and-declared-height` is 60 rather than 141 because a stated height
-/// wins outright and the ratio does not fight it.
-///
-/// **[`usable_ratio`] decides what counts as one**, here and in
-/// [`to_taffy_style`], because the two must not drift: a value taffy discards
-/// and this rule calls definite is a box whose height is indefinite in the
-/// layout engine and definite in the predicate at once, and a percentage child
-/// then resolves against a height nothing produced.
+/// Whether a ratio derives this box's height from its width, which need not be
+/// declared: a shrink-to-fit width serves in Chrome
+/// (`aspect-ratio-percentage.tsv`). [`usable_ratio`] decides what counts, as in
+/// [`to_taffy_style`].
 fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
     node.layout.aspect_ratio.is_some_and(usable_ratio)
 }
 
-/// How far a correctly derived cross size may sit from `main x ratio`.
-///
-/// **Float representation, not rounding.** Both operands reach this comparison
-/// unrounded -- `l7aromeo/meo-canvas#140` takes the decision passes off taffy's
-/// rounding -- so the pixel this used to allow has no reason left. What remains
-/// is that `cross` and `main x ratio` are two `f32`s arrived at by different
-/// routes and are not bit-equal when they should be: measured, a candidate
-/// whose real difference is `0.6` reports `-0.6000003815`, which is `3.8e-7`
-/// of residue on a quantity of 30. `==` would refuse to fire on a shape no
-/// table contains.
-///
-/// **Chosen for the regime it guards, and the regime is named.** Four facts,
-/// each measured:
-///
-/// - it is below `0.6`, the smallest real difference **on the two conformance
-///   tables**, so it absorbs no divergence those tables contain
-/// - it is above the accumulated error **at the sizes those tables cover**,
-///   where `k` -- the expression is a multiply and a subtract over operands
-///   with their own history, so the error is `k` ULPs rather than one -- never
-///   exceeds `0.235`, measured by evaluating the same expression in `f64` from
-///   the widened `f32` operands and differencing
-/// - at 16384 it is **two percent** above that error rather than a multiple of
-///   it: a node just under its derivation at ratio `0.85` reports `delta
-///   0.009766` against `one ULP 0.001660`, so `k` is `5.882` there --
-///   twenty-five times the figure the tables give, because `k` is a property of
-///   the regime rather than of the expression
-/// - and beyond roughly 16400 it is **under** one accumulation, so the arm
-///   below fires where it need not
-///
-/// **No absolute value does better.** `FINITE_CEILING` is `3.3554432e7`, where
-/// one ULP is `4.0`, so a tolerance that covered the ceiling would have to
-/// exceed `0.94` -- and stay under `0.6` to absorb nothing on the tables. That
-/// is empty. A quantity whose ULP spans seven orders of magnitude has no
-/// absolute tolerance that is right at both ends, and a different constant is
-/// not the fix.
-///
-/// **Being too generous is the safe direction at both ends.** Declining a
-/// candidate leaves a cross size already within `0.01` of its derivation, and
-/// taffy quantises to whole pixels, so the value declined is correct beyond
-/// anything observable. Firing where it need not writes `main x ratio` onto a
-/// node whose cross is already within a hair of it -- the number that was
-/// already there. Measured at 440, 16384, 1e6, 1e7 and 3.3e7, every result is
-/// exactly `side x 0.85` and none moves under nudges of `0`, `0.005` or `0.5`.
-///
-/// **A node exactly at its derivation reaches this arm only through an `f32`
-/// tie.** In exact arithmetic it cannot: `cross == want` makes
-/// `width / ratio == height`, the pin's `>=` is true, and the node takes the
-/// pin and leaves the loop -- so the tolerance arbitrates a cross *below* its
-/// derivation and nothing else. In `f32` the pin's operands do not round-trip,
-/// `(L * r) / r` is not `L`, and at the boundary the comparison misses by a
-/// unit in the last place and the node arrives here after all. The bite is
-/// bounded by one ULP of the operands either way, so the equality case is
-/// still not the one at risk -- but it is reachable rather than excluded, and
-/// the arm below carries the measurement.
-///
-/// **A relative tolerance would close both ends and is not worth adding.** It
-/// would stop a fire that produces the correct answer, so the constant would
-/// exist to avoid redundant work at sizes nobody asks for -- and it would need
-/// its own justification, its own row and its own review.
-/// `l7aromeo/meo-canvas#142` records that argument so the next person meets it
-/// rather than re-deriving it.
-///
-/// **`0.6` is the smallest real difference *in these two tables*, not a
-/// property of the renderer.** A small box at a ratio near one can produce a
-/// genuine difference under `0.01`, and by the paragraph above that case is
-/// benign: the derivation declines and the node keeps a value already correct
-/// to the pixel. The sixty-times figure describes what has been measured
-/// rather than a floor anything guarantees.
-///
-/// **No row pins it, and that is stated rather than implied.** Tightening both
-/// readers to an exact comparison and running all 26 rows at `1.0`, `0.01` and
-/// `0.0` paints identical output every time: taffy's rounding absorbs a
-/// sub-pixel write, so a magnitude anywhere in this gap is invisible to the
-/// tables. The bounds above are what justify it; nothing currently fails if it
-/// moves. Finding a shape whose painted output separates them would be
-/// searching for a row to justify a constant rather than measuring something
-/// the renderer needs.
+/// How far a derived cross size may sit from `main x ratio`: float residue, the
+/// operands being unrounded. Below `0.6`, the tables' smallest real difference,
+/// and above their accumulated error; no absolute value serves up to
+/// `FINITE_CEILING`, as `l7aromeo/meo-canvas#142` records.
 const DERIVED_TOLERANCE: f32 = 0.01;
 
-/// Whether a declared aspect ratio is one at all.
-///
-/// A ratio is a positive finite number or it is not a ratio, and Chrome lays
-/// the others out as though none were declared -- measured, a 120-wide box
-/// with a 50-tall child is 120x50 under `aspect-ratio: 0`, under
-/// `calc(infinity)`, under `-2` and with no ratio at all, against 120x141.17
-/// under `.85`.
-///
-/// **It reaches that by two routes and only the outcome is shared.** `-2` is
-/// rejected at parse and computes to `auto`; `0` and `calc(infinity)` compute
-/// to `0 / 1` and `infinity / 1` -- kept as values -- and are then not applied.
-/// The distinction is worth stating because a probe with an *empty* parent
-/// reads `0` tall for all three and looks like the ratio being applied to
-/// nothing; it is the content-carrying probe that shows the height is the
-/// content's.
-///
-/// **One function rather than the same expression at two call sites.**
-/// [`to_taffy_style`] uses it to decide what taffy is given and
-/// [`ratio_settles_it`] to decide whether a percentage beneath the box can
-/// resolve, and those two answers have to be the same answer. Written twice
-/// they would agree until somebody widened one -- and the disagreement would
-/// not be a compile error or a wrong number in a test, but a box taffy treats
-/// as ratio-less while the predicate calls its height settled. That is the
-/// same shape as the defect this predicate exists to fix.
+/// Whether a declared ratio is one: positive and finite, or Chrome lays the box
+/// out as though none were declared (120x50 under `0`, `-2` or
+/// `calc(infinity)`). Shared by [`to_taffy_style`] and [`ratio_settles_it`].
 const fn usable_ratio(ratio: f32) -> bool {
     ratio.is_finite() && ratio > 0.0
 }
@@ -873,11 +527,9 @@ fn flex_settles_it(
     parent: &meo_canvas_scene::node::Node,
     child: &meo_canvas_scene::node::Node,
 ) -> bool {
-    // **An out-of-flow box is not a flex item.** Neither `align-items` nor a
-    // grow factor reaches it, so an `auto` height is its content's height and
-    // a percentage inside it has nothing to resolve against. Measured: a
-    // `min-height: 200%` child of an absolutely positioned, content-sized box
-    // is 20 in Chrome, not 40.
+    // An out-of-flow box is not a flex item, so an `auto` height is its
+    // content's: a `min-height: 200%` child of an absolutely positioned box is
+    // 20 in Chrome, not 40.
     if matches!(
         child.layout.position_type,
         PositionType::Absolute | PositionType::Fixed
@@ -899,6 +551,9 @@ fn flex_settles_it(
     }
 }
 
+/// Gives the page root the scene's extent on any axis it leaves to content: a
+/// page is the canvas, so percentages and centring beneath it resolve against
+/// the surface. An explicit size on the root is honoured.
 fn pin_page_root(
     scene: &Scene,
     page: NodeId,
@@ -934,69 +589,10 @@ fn pin_page_root(
         .map_err(|error| Error::Layout(error.to_string()))
 }
 
-/// Creates the taffy node for `node` and, depth-first, for its children.
-///
-/// A `Display::None` subtree is not built at all rather than built and hidden.
-/// The scene defines the node and its descendants as neither laid out nor
-/// drawn, and a node taffy never sees cannot contribute a rectangle that paint
-/// would then have to know to skip.
-/// Builds the taffy tree for a subtree, hoisting its `Fixed` nodes.
-///
-/// # Why a `Fixed` node is not a child of its parent here
-///
-/// CSS resolves `fixed` against the viewport, and a still render's viewport is
-/// its page — there is nothing to scroll relative to, so the page is the whole
-/// of it. taffy resolves an absolute child against **its parent** and has no
-/// notion of a nearest positioned ancestor, so the containing block is decided
-/// by where a node is attached rather than by anything in its style.
-///
-/// So a `Fixed` node is built, left out of its parent's children, and handed up
-/// to be attached to the page root. It keeps its place in the *scene* tree,
-/// which is what the painter walks: out of flow for layout, in place for paint
-/// order and for style inheritance.
-///
-/// # And why an `Absolute` node is not one either
-///
-/// The same mechanism, stopping one rung lower. CSS resolves an absolute node
-/// against its **nearest positioned ancestor**, skipping every static box in
-/// between; taffy resolves it against its parent whatever that parent is. So an
-/// absolute node is handed up too, and claimed by the first ancestor that is
-/// positioned — the page root claiming whatever reaches the top, as the initial
-/// containing block.
-///
-/// Measured before the change: a relative grandparent at `(20, 20)`, a static
-/// parent at `(50, 50)`, and an absolute grandchild at inset zero landed at
-/// `(50, 50)` where CSS puts it at `(20, 20)`.
-///
-/// v1 fixed the same defect in `d6bfe23` by giving a node that names no
-/// position type Yoga's real `Static`, which stops it being a containing block.
-/// taffy has no such value — its `Relative` is the in-flow default and every
-/// node is a containing block for its absolute children — so the distinction
-/// has to be made by where a node is attached rather than by what its style
-/// says.
-///
-/// No sibling moves as a result. An out-of-flow child contributes nothing to
-/// its parent's flow, so removing it from that parent's children changes
-/// nothing the solver would have done with it.
-/// Whether a node is a containing block for the **absolute** boxes beneath it.
-///
-/// Crate-internal rather than private because the painter needs the same
-/// answer: a box is clipped by its containing block's `overflow`, so capture
-/// and clip have to be one rule. Measured in Chrome as ten rows where they were
-/// two -- a transformed clipper placed an out-of-flow child exactly right and
-/// then drew it whole, because layout knew the transform captured it and paint
-/// did not.
-///
-/// Positioned, or transformed. CSS Transforms 1 §3 makes any element with a
-/// transform the containing block for its absolute and fixed descendants,
-/// positioned or not -- measured in Chrome, where a static clipper carrying
-/// `translateZ(0)` captures an absolute child at 50,20 that the same clipper
-/// without it lets through to the outer box at 30,20.
-///
-/// **A fixed box is not decided by this**, and that is deliberate: it passes
-/// every positioned ancestor and stops only at a transformed one, which is
-/// what makes it fixed rather than absolute. The caller tests the transform on
-/// its own for that list.
+/// Whether a node is a containing block for the absolute boxes beneath it:
+/// positioned, or transformed (CSS Transforms 1 §3). Shared with the painter,
+/// whose clip follows the same rule. A fixed box passes positioned ancestors,
+/// so its caller tests the transform alone.
 pub(crate) const fn is_containing_block(
     node: &meo_canvas_scene::node::Node,
 ) -> bool {
@@ -1004,11 +600,8 @@ pub(crate) const fn is_containing_block(
         || node.effects.transform.is_some()
 }
 
-/// The measure closure's body, as a function both passes can call.
-///
-/// **Extracted because the workaround below lays out twice.** A closure written
-/// inline at one call site cannot be handed to a second, and two copies of the
-/// baseline arithmetic would be two things to keep in step.
+/// The measure closure's body, as a function both passes of the workaround
+/// below can call.
 fn measure_leaf<M>(
     inputs: taffy::LayoutInput,
     context: Option<&mut NodeId>,
@@ -1024,17 +617,9 @@ where
     // reach the measurer.
     let node = context.map(|context| *context);
 
-    // `compute_leaf_layout` turns a measured extent into the leaf's
-    // full result: it applies the node's own padding, border, box
-    // sizing, aspect ratio and min-max clamps, and reports the
-    // scrollable overflow. taffy hands the whole `LayoutOutput` to
-    // this closure and builds none of it, so calling the helper is
-    // what keeps a measured leaf sized the way every other leaf in
-    // the tree is.
-    //
-    // The calc resolver answers zero because `calc` is off: with no
-    // way to build a `calc` length, nothing can reach the resolver
-    // and any value it returned would be unobservable.
+    // `compute_leaf_layout` gives the leaf its padding, border, box sizing,
+    // ratio and clamps, as every other leaf gets. Its `calc` resolver answers
+    // zero: `calc` is off, so nothing reaches it.
     let mut first_baseline = None;
     let mut output = taffy::compute_leaf_layout(
         inputs,
@@ -1066,14 +651,9 @@ where
         },
     );
 
-    // A measurer works in the content box, and CSS measures a flex
-    // item's baseline from its **border box**, so the leaf's own top
-    // padding and border are part of the answer. Text with padding
-    // aligns a hair low without this, which is the kind of wrong that
-    // reads as a font metric.
-    //
-    // Percentages resolve against the containing block's inline size
-    // in both edges, which is CSS's rule rather than a simplification.
+    // A measurer works in the content box and CSS measures a flex item's
+    // baseline from its border box, so the leaf's top padding and border are
+    // added, percentages resolving against the containing block's inline size.
     output.baselines =
         taffy::Baselines::from_first(first_baseline.map(|baseline| {
             let top = style
@@ -1131,19 +711,10 @@ fn ratio_direction_candidates(
         })
         .collect();
 
-    // **A ratio box nested inside another is left alone, and that follows from
-    // the same rule rather than patching around it.** The clearing pass answers
-    // "what is this box's fit-content width" correctly only where no other
-    // ratio box is entangled with the answer. Inside a nesting it is wrong in
-    // both directions: the inner's final width is an outcome of the outer's
-    // derivation rather than of its own content, and the outer's content height
-    // is the inner's *derived* height, which the clearing pass has removed --
-    // measured, the outer sees 10 where the real layout gives it 35.28.
-    //
-    // So the decision would rest on numbers that do not survive the second
-    // pass. Chrome resolves such a pair in one ordered sweep and this renderer
-    // already agrees with it there: `nested-ratio-outer` at 35.28 and
-    // `nested-ratio-inner` at 83.00 both pass without any of this.
+    // A ratio box nested in another is left alone: the ratio-free solve
+    // misreads both (the outer sees 10, not 35.28), and taffy already agrees
+    // with Chrome on the pair, `nested-ratio-outer` 35.28 and
+    // `nested-ratio-inner` 83.00.
     let entangled: Vec<taffy::NodeId> = found
         .iter()
         .filter_map(|(id, _)| {
@@ -1182,47 +753,14 @@ fn clear_ratios(
     Ok(())
 }
 
-// [WORKAROUND] taffy resolves a ratio box's axes in the wrong order when its
-// inline size is an outcome of layout: it derives the width from the block size
-// rather than deriving the block size from a fit-content width. Every ratio box
-// in a solved tree satisfies `width = round(height x ratio)`, which is Chrome's
-// rule only where the height was settled by something else.
-// `DioxusLabs/taffy#804`, tracked as `l7aromeo/meo-canvas#97`.
-//
-// Retires when a taffy release derives the block size for a shrink-to-fit ratio
-// parent -- `ratio-shrink-issue-97` and the rows beside it in
-// `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fail in
-// both directions and will say so, and
-// `a_ratio_box_derives_its_width_from_its_height` in
-// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs` asserts taffy still
-// needs this, with `the_same_holds_for_a_ratio_above_one` beside it. Named as
-// rows rather than as a file on purpose: that file holds six tests covering
-// two defects, a reader given only its name has no way to ask which of them
-// sees this condition, and `workaround-probes` is satisfied by a file too --
-// which is how the second workaround below came to have a condition no
-// assertion could see. Deleting it is deleting this function,
-// [`ratio_direction_candidates`], [`clear_ratios`] and the two calls in
-// [`solve_page`] that bracket the first solve.
-//
-// **The first pass clears the ratio rather than working around its result.**
-// With no ratio on the node taffy returns the fit-content inline size, which is
-// the number it gets right and the one it corrupts when the ratio is present:
-// measured, a 30-wide child under `aspect-ratio: .85` gives 9 with the ratio
-// and 30 without. So nothing here computes a fit-content size; it asks taffy
-// the question in the one state where the answer is usable.
-//
-// **The width is pinned only where the derivation wins.** Chrome takes the
-// largest of the derived block size, the content's own height and any author
-// `min-height`, and the solved height already carries the other two -- so on
-// that axis `derived` winning is the whole of the test. Where another term
-// wins, taffy's block-to-inline transfer already lands on Chrome's answer and
-// the node is left as it is: pinning there would stop that transfer and break
-// `ratio-shrink-taller-content`, which Chrome gives 300 x 255.
-//
-// **A `min-width` is on the other axis and the inequality cannot see it**, so
-// it takes a clause of its own beside the pin below.
-/// Restores the ratios, pins the width where the derivation wins, and solves
-/// again.
+// [WORKAROUND] taffy derives a ratio box's width from its height where Chrome
+// derives the height from a fit-content width. `DioxusLabs/taffy#804`, tracked
+// as `l7aromeo/meo-canvas#97`, probed by
+// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs`.
+/// Restores the ratios, pins the ratio-free solve's fit-content width where
+/// the derived height wins, and solves again; where content or a `min-height`
+/// wins, taffy is already right. Retires when
+/// `a_ratio_box_derives_its_width_from_its_height` fails.
 fn compensate_ratio_direction<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
     candidates: &[(taffy::NodeId, f32)],
@@ -1243,222 +781,35 @@ where
     // candidate list is the iteration order in both places.
     let mut cleared: Vec<(taffy::NodeId, f32, f32)> = Vec::new();
     let mut pins: Vec<(taffy::NodeId, f32)> = Vec::new();
-    // [WORKAROUND] taffy applies a ratio's transferred size only where the item
-    // already has a cross contribution of its own, so a grown flex item with
-    // nothing in it keeps a cross size of zero where the ratio should turn its
-    // main size into one. Chrome derives it regardless -- a 248-tall item at
-    // ratio 1 is 248 wide there and 0 here. `DioxusLabs/taffy#804`, reported as
-    // `l7aromeo/meo-canvas#123`.
-    //
-    // Retires when `a_grown_main_size_never_reaches_the_ratio` in
-    // `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins what
-    // taffy does today, so the day a release derives the cross size that test
-    // fails and names this block. `DioxusLabs/taffy#1182` is the likely
-    // carrier and is not the trigger -- whichever release carries it is.
-    //
-    // **The condition is the outcome, not the construction.** Four causes give
-    // one symptom -- an empty item, padding alone, a border alone, and a flex
-    // item whose content is narrower than the derivation -- and a predicate
-    // written from any of them is wrong about the other three. Measured, all
-    // five `align-items` values behave alike, a grow of 2 and two competing
-    // siblings behave alike, and the ratio's value does not matter, so none of
-    // those is a clause here.
-    //
-    // **The item's own `display` is not a clause either, deliberately.** It
-    // changes the answer in taffy -- a block item with content gets the
-    // derivation and a flex item with the same content does not -- and changes
-    // nothing in Chrome, where all four combinations are 248x248. A predicate
-    // reading it would write a taffy artefact into this renderer's source.
-    //
-    // **Where that rule stops, so the clause beside the pin does not read as
-    // an exception nobody accounted for.** It holds because those four causes
-    // are interchangeable in the answer: one outcome, and Chrome gives it
-    // whichever cause produced it. A binding `min-width` and a binding
-    // `max-width` are not interchangeable -- they reach the same two numbers
-    // on the ratio-free solve and Chrome answers them oppositely -- so there
-    // is no outcome to separate them by and one of the two has to be named.
-    // The clause still compares against the solved width rather than asking
-    // whether a minimum exists, and `ratio-shrink-min-width-slack` in
-    // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` is
-    // the row that keeps it doing so -- but it names the minimum, and the
-    // experiment for why is where the clause is rather than repeated here.
-    //
-    // [WORKAROUND] taffy does not give a stretched flex item the automatic
-    // minimum its ratio owes it, so an item whose cross size comes from
-    // `stretch` takes its main size from the line instead of from the ratio:
-    // a ratio-1 item in a 424x248 content box is 424x248 here where WebKit,
-    // Chromium and Gecko all give 424x424. `DioxusLabs/taffy#351` is the
-    // unimplemented section and `DioxusLabs/taffy#1182` proposes to close it;
-    // reported as `l7aromeo/meo-canvas#147`.
-    //
-    // Retires when the `align-items: stretch` row of
-    // `a_grown_main_size_never_reaches_the_ratio` in
-    // `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins taffy's
-    // 424x248 beside the browser's 424x424, so the day a release gives the
-    // item its minimum that row fails and names this block. Named as a row
-    // rather than as a file because that file pins two defects and a reader
-    // given only its name cannot tell which of them sees this condition.
-    // Deleting it is deleting [`stretched_ratio_minimum`],
-    // [`content_main_size`], the `stretched` arm of this loop and the write in
-    // the loop below.
-    //
-    // **Derived from the text rather than from the three engines.** CSS
-    // Flexbox 1 §9.8 makes a stretched item's outer cross size *definite*
-    // when a single-line flex container has a definite cross size, clamped to
-    // the item's own min and max cross size. §4.5 turns a definite cross size
-    // on a ratio'd item into the **transferred size suggestion**, converted
-    // through the ratio; the content-based minimum of a non-replaced item is
-    // the larger of that and the content size suggestion, clamped by the
-    // maximum main size where that is definite; and the automatic minimum is
-    // that, except on a main-axis scroll container where it is zero. The
-    // three engines agreeing is the corroboration, not the derivation -- and
-    // every exclusion below is a sentence of that text rather than a cell
-    // that did not fit.
-    //
-    // **The minimum is read off the ratio-free solve rather than computed.**
-    // That solve has no ratio on the node, so the item's cross size there is
-    // exactly what §9.8 describes -- the container's inner cross size already
-    // clamped to the item's own bounds -- and its main size there is already
-    // the larger of the grown size and taffy's own content-based minimum,
-    // which is the content size suggestion's term. So the two suggestions
-    // §4.5 asks for are both in that solve and neither is re-derived here.
+    // [WORKAROUND] taffy transfers a ratio only to an item with its own cross
+    // size, so a grown empty item is 0 wide where Chrome gives 248.
+    // `DioxusLabs/taffy#804`, `l7aromeo/meo-canvas#123`; retires when its
+    // `a_grown_main_size_never_reaches_the_ratio` probe fails.
     let mut derive: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
+    // [WORKAROUND] taffy gives a stretched ratio item no automatic minimum
+    // (Flexbox 1 §4.5): 424x248 where three engines give 424x424.
+    // `DioxusLabs/taffy#351`, `l7aromeo/meo-canvas#147`; retires with the
+    // `align-items: stretch` row of that same probe.
     let mut stretched: Vec<(taffy::NodeId, f32)> = Vec::new();
     for (id, ratio) in candidates {
         let solved = tree
             .layout(*id)
             .map_err(|error| Error::Layout(error.to_string()))?;
         cleared.push((*id, solved.size.width, solved.size.height));
-        // **Which compensation owns the cross size, since two of them want
-        // it.** A reader arrives at the `l7aromeo/meo-canvas#123` block above
-        // first and has to be told why it does not apply here. That one owns
-        // the cross size of an item that has none of its own: it multiplies
-        // the grown main size by the ratio, because nothing else was going to
-        // produce one. A
-        // stretched item is the opposite case -- the stretch already produced
-        // its cross size, and §9.8 calls that number *definite*, which is
-        // precisely what makes it the input the ratio transfers **from**.
-        // Deriving it from the main size would overwrite the one number this
-        // whole compensation reads.
-        //
-        // So the two do not overlap and the order between them is not a
-        // tie-break: the stretch settles the cross axis and the ratio settles
-        // the main one, where the block above has the ratio settle the cross
-        // axis because the main one was already settled by growth. Each owns
-        // the axis the other's input came from.
-        //
-        // **Measured, because the interaction is the part that bites.**
-        // `ratio 2` in
-        // `crates/meo-canvas/tests/assets/chrome/ratio-stretch-main.tsv` is
-        // `424x248` in all three engines; with that derivation left to fire
-        // on a stretched item it is `496x248` -- the cross size derived
-        // from the main one, over the top of the stretch. `item content
-        // taller` and `two items` move the same way, so a repair that added
-        // the minimum and left the derivation alone would have fixed the
-        // reported row and broken three others.
+        // The stretch owns this item's cross size, which §9.8 makes definite
+        // and the ratio transfers from; the `l7aromeo/meo-canvas#123`
+        // derivation is for an item with none. Firing it here takes `ratio 2`
+        // in `ratio-stretch-main.tsv` to 496x248, not 424x248.
         if let Some(minimum) =
             stretched_ratio_minimum(tree, *id, *ratio, solved)
         {
             stretched.push((*id, minimum));
             continue;
         }
-        // **The pin is for a width the derivation produced, and an author's
-        // minimum is not one.** Chrome takes the largest of the derived
-        // block size, the content's own height and any author minimum; a
-        // cross size equal to a definite `min-width` is the minimum
-        // winning, and the transferred minimum it owes the other axis is
-        // exactly what a pin would freeze out. taffy makes that transfer
-        // correctly, so the whole of the repair is staying out of its way.
-        //
-        // Measured, `l7aromeo/meo-canvas#126`: a ratio-1 item under
-        // `min-width: 300px` is `300 x 300` in Chrome and in taffy alone,
-        // and `300 x 248` with the width pinned. Three rows in
-        // `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv` fail
-        // without this clause -- `pin-fires-min-width`, the same shape at a
-        // ratio whose transfer is not the identity
-        // (`pin-min-width ratio 0.5`, Chrome's `300 x 600`), and the same
-        // with no growth at all (`pin-min-width no grow`), which is why the
-        // clause is about the minimum rather than about flex.
-        //
-        // **`min-width slack` is the control and must not move.** A
-        // minimum under the derivation leaves the cross size where the
-        // ratio put it, so the comparison is against the solved width
-        // rather than against the minimum's presence: a node that merely
-        // *has* a `min-width` still reaches the pin.
-        //
-        // **A maximum reaches this width by the same route and wants the
-        // opposite**, which is why the clause names the minimum rather than
-        // author bounds in general. Measured on the shrink-to-fit shape
-        // above: `min-width: 100px` gives Chrome's `100 x 117.64` and taffy
-        // reaches it alone, where `max-width: 20px` gives Chrome's
-        // `19.98 x 23.52` and taffy alone gives `9 x 10` -- so the pin is
-        // required there. Read `max_size.width` here instead and
-        // `ratio-shrink-max-width-binds` in
-        // `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv`
-        // reports that `9 x 10`. There is no provenance test that separates
-        // the two, because provenance is not what decides it.
-        //
-        // **The comparison asks whether the minimum reaches the solved
-        // width, not whether it is near it.** taffy has already applied the
-        // minimum by this point, so `solved.width >= value` holds by
-        // construction and this is an **identity test**: true exactly when
-        // the minimum is the width. That is why it cannot have a band, where
-        // a threshold always can. Written as `|solved - value| <=
-        // DERIVED_TOLERANCE` it reports `29 x 34` for a `min-width:
-        // 29px` under a fit-content 30 while `29.98` and `20` either
-        // side are both right -- a band one pixel wide where a slack
-        // minimum reads as binding, which
-        // `ratio-shrink-min-width-just-under` sits inside. That constant is
-        // for two solved sizes, where taffy rounds each edge and a size is
-        // the difference of two rounded ones; an author's length is neither.
-        //
-        // **The comparison is against the solved width, not against the
-        // minimum's presence**, which is the difference the file asks for
-        // two hundred lines up: the condition is the outcome, not the
-        // construction. `ratio-shrink-min-width-slack` is the row that can
-        // tell them apart -- a `min-width: 20px` under a fit-content 30,
-        // present and deciding nothing. Read `.is_some()` here instead and
-        // it reports `20 x 24` against Chrome's `29.98 x 35.28`, while
-        // every row of `flex-ratio-cross.tsv` stays green: in all three of
-        // those a minimum both exists and binds, so presence and outcome
-        // agree there and only this row separates them.
-        //
-        // **`ratio-shrink-min-width-binds` beside it separates no repair at
-        // all**, and saying so is worth more than the row: pinning a bound
-        // width and leaving it alone both reach Chrome on a shrink-to-fit
-        // box, and four mutations of this clause leave it green -- as
-        // written, removed, reading `.is_some()`, and inverted. It records
-        // Chrome for that corner and nothing here rests on it. The two rows
-        // beside it are the evidence.
-        //
-        // **What the clause reaches is taffy's own answer, not one derived
-        // here.** With `ratio_direction_candidates` returning nothing, 16 of
-        // the 30 rows in `flex-ratio-cross.tsv` disagree with Chrome and the
-        // binding-minimum rows are not among them -- so the repair is to
-        // stop overriding a transfer taffy already makes, and the day
-        // `DioxusLabs/taffy#1182` lands nothing here has to be unwound.
-        //
-        // **It removes the pin rather than the candidate**, and the
-        // difference is measured: skipping both arms takes `min-width slack`
-        // to taffy's `100 x 248` against Chrome's `248 x 248`. In the
-        // ratio-free solve an empty flex item is zero wide, so every
-        // definite minimum binds there -- including one far under the
-        // derivation -- and that node still needs the derivation arm.
-        // **A percentage resolves against the containing block's content
-        // width**, which is the same quantity a percentage margin resolves
-        // against one function down and is not the border box: measured,
-        // `min-width: 70%` of a 440-wide container with 8px of padding is
-        // Chrome's `296.80`, where the border box gives `308` -- which is
-        // exactly what the *unpadded* container gives, so a row without
-        // padding cannot tell the two apart. `l7aromeo/meo-canvas#136`.
-        //
-        // **The identity test needs both sides unrounded and that is why
-        // `l7aromeo/meo-canvas#140` exists.** Against a rounded width this
-        // missed on roughly half of all percentages, alternating with
-        // the fractional part: `339.20` against a width taffy rounded
-        // to `340` is not `>=`, so `80%` and `90%` kept the pin while
-        // `79%` and `85%` did not. With the decision passes unrounded
-        // all nine measured percentages bind.
+        // A `min-width` equal to the solved width is the minimum winning, which
+        // taffy already transfers (`l7aromeo/meo-canvas#126`), so no pin. An
+        // identity test, so no band; the solved width, not the minimum's
+        // presence, decides.
         let min_binds = tree
             .style(*id)
             .ok()
@@ -1471,17 +822,9 @@ where
             .is_some_and(|value| value >= solved.size.width);
         if solved.size.width / ratio >= solved.size.height && !min_binds {
             pins.push((*id, solved.size.width));
-            // **Disjoint because the pin leaves here, not because a scope
-            // keeps the two apart.** A node that takes the pin cannot also
-            // derive.
-            //
-            // **They do not partition the candidates**, and reading them as
-            // if they did is the mistake to avoid: the pin wants the
-            // inequality *and* a width no minimum settled, so a node the
-            // inequality alone would pin can still fall through to the
-            // derivation -- and one whose cross size is already the ratio's
-            // answer takes neither, which is `derived_cross` returning
-            // `None`.
+            // The pin leaves here, so no node takes both arms. They do not
+            // partition the candidates: one whose cross size is already the
+            // ratio's takes neither.
             continue;
         }
         if let Some(size) = derived_cross(tree, *id, *ratio, solved.size) {
@@ -1509,79 +852,17 @@ where
                     taffy::LengthPercentageAuto::length(*minimum);
             }
         }
-        // The derivation taffy did not make, written as a length so the
-        // re-solve below carries it. A node that took the pin left the loop
-        // above before reaching the derivation, so the two arms cannot both
-        // apply to one node -- which is not the same as their covering every
-        // candidate, and the loop above says why.
-        //
-        // **Both axes, and writing only the cross one changes nothing.**
-        // Measured: restricting this to the axis that carries the information
-        // moves no row in `flex-ratio-cross.tsv`. The main size written here
-        // is the one the solve already produced, so it says nothing new and
-        // costs nothing.
-        //
-        // **A definite cross does not drag the main down with it.** Isolated
-        // in raw taffy, one variable at a time: a written `100 x 248` under
-        // `aspect-ratio: 1` solves to `100 x 248` with no maximum present, to
-        // `100 x 100` with `max-width: 100px`, and to `100 x 248` again with
-        // that maximum and no ratio. **The main collapses only where the
-        // ratio and the maximum are both there**, because `max-width`
-        // transfers through the ratio into a `max-height` which clamps the
-        // hypothetical main size -- `compute/flexbox.rs:1068` in taffy 0.14,
-        // over the transfer built in `geometry.rs:604`.
-        //
-        // That is why `l7aromeo/meo-canvas#129` is not repaired by clamping
-        // what this writes: the clamp reads the author's `max_size`, not the
-        // size written here, so pre-clamping the derived cross moves no row.
+        // The derivation taffy did not make, on both axes, for the re-solve. A
+        // written cross drags the main down only where a `max-width` transfers
+        // through the ratio, which is why clamping here does not fix
+        // `l7aromeo/meo-canvas#129`.
         let cross_is_height = parent_is_row(tree, *id);
         if let Some((_, size)) = derive.iter().find(|(node, _)| node == id) {
             let mut size = *size;
-            // **The height branch runs, and away from one boundary its clamp
-            // does nothing.** `cross_is_height` is a row parent, so the cross
-            // is the block axis and the maximum is a `max-height`. For the
-            // clamp to matter the derived cross has to exceed the limit -- and
-            // a limit that low also caps the *cleared* width through the same
-            // transferred maximum, which makes the pin's
-            // `width / ratio >= height` true and takes the node out of this
-            // arm a branch earlier. In exact arithmetic that is a partition:
-            // either the pin has it or the `min` is a no-op.
-            //
-            // **In `f32` it is not, and this change is what exposed that.**
-            // `(L * r) / r` does not round-trip to `L`, so at the boundary the
-            // pin's comparison can miss by a unit in the last place, the node
-            // falls into this arm, and the clamp bites. **The worst bite is
-            // exactly one ULP of the limit**: `0.001953` throughout
-            // `[2^14, 2^15)` and `2.0` throughout `[2^24, 2^25)`, which is
-            // where `FINITE_CEILING` sits. That is arithmetic rather than a
-            // sample, and it is relative -- a pixel figure here would be true
-            // at today's scene sizes and quietly false at `1e7`.
-            //
-            // **No rate, deliberately.** How often the boundary is hit is a
-            // property of how `(width, ratio, limit)` are drawn rather than of
-            // this code: two sweeps over 200,000 triples gave `0.55%` and
-            // `1.05%` from different ranges for the ratio. A figure like that
-            // in a comment cannot be reproduced from what the comment says,
-            // and a later measurement landing elsewhere would read as the code
-            // having changed. The bound is the half that carries an argument.
-            //
-            // Reachable because `l7aromeo/meo-canvas#140` took the decision
-            // pass off taffy's rounding. `round_layout_inner` computes a size
-            // as `round(cumulative + w) - round(cumulative)`, so the pin used
-            // to compare integers and the raw product never reached it.
-            //
-            // Away from the boundary the measurements hold: across three
-            // ratios, four limits, grown and not, the branch fires with
-            // `limit` above the value it is clamping -- `limit=900
-            // before=424`, `limit=500 before=424`, `limit=300 before=212` --
-            // and every limit tight enough to bite sends the node to the pin,
-            // where `row max-height` in `flex-ratio-cross.tsv` covers it.
-            //
-            // Kept rather than deleted because the two branches are one
-            // statement about the cross axis, and because it is the branch
-            // that catches the boundary case: an error of one ULP is below
-            // what the rounded pass can express, and the alternative is
-            // reasoning about which sub-pixel errors survive rounding.
+            // Away from the pin's boundary this clamp is a no-op. At it, `(L *
+            // r) / r` misses `L` by a ULP in `f32`, the node lands here, and it
+            // bites by at most one ULP of the limit; kept as one statement
+            // about the cross axis.
             if let Some(limit) = take_cross_maximum(&mut style, cross_is_height)
             {
                 if cross_is_height {
@@ -1611,38 +892,19 @@ where
                     style.size.width = taffy::Dimension::length(clamped);
                 }
             }
-            // **The pinned width stays on the style after the solve,
-            // deliberately.** Nothing removes it, and nothing needs to:
-            // `collect` reads `tree.layout`, so what a `LayoutResult` reports
-            // is the geometry rather than the style it came from. A pass added
-            // later that reads `tree.style()` after `solve_once` sees an inline
-            // size the author never wrote.
+            // The pinned width stays on the style: `collect` reads the layout,
+            // but a later pass reading `tree.style()` would see a width the
+            // author never wrote.
             style.size.width = taffy::Dimension::length(*width);
         }
         tree.set_style(*id, style)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
 
-    // **Cleared, because the second pass re-measures.** Entries from the first
-    // pass would otherwise survive for any node the second sizes differently,
-    // and a stale baseline is text drawn at the wrong `y`, which no row of any
-    // table here shows.
-    //
-    // **What makes the clear safe is not that every call writes one.**
-    // `measure_leaf` inserts inside `if let Some(baseline) =
-    // measured.first_baseline`, so a leaf whose answer carries no baseline
-    // writes nothing. It is safe because a leaf that produced one before
-    // produces it again: the measurement is a pure function of its key, which
-    // is the same property `SceneMeasurer.answers` relies on to survive both
-    // passes.
-    //
-    // **A leaf the second pass does not measure keeps nothing**, which is worse
-    // than the stale entry this removes. Today taffy measures every leaf it
-    // measured before, because the pin sets the inline axis alone and a block
-    // size still has to come from somewhere -- so this is safe by a property of
-    // what the pin touches rather than by anything asserted. A compensation
-    // pinning both axes of a leaf leaves it with no baseline and draws its text
-    // at the wrong `y`.
+    // Cleared because the second pass re-measures, and a stale baseline draws
+    // text at the wrong `y`. Safe while it measures every leaf the first did:
+    // the pin sets the inline axis alone, so a block size still comes from
+    // measuring.
     baselines.clear();
     solve_once(tree, root, available, measure, baselines)?;
 
@@ -1652,20 +914,8 @@ where
 }
 
 /// Every container whose own main size dropped a child's negative margin, and
-/// by how much.
-///
-/// **Two defects, one repair, and they are kept apart deliberately.** Both end
-/// with a container resolving a main size that is short by a margin taffy did
-/// not apply, and both are repaired by writing the size taffy should have
-/// reached. They are separate clauses because they rest on different facts --
-/// see each `[WORKAROUND]` below -- and because the survivor has to stay
-/// readable when only one of them can be deleted.
-///
-/// **Chrome has no condition here at all.** Across 33 measured cells it applies
-/// every margin, whatever the overflow, the container kind, the wrapping or the
-/// direction. So every clause below describes taffy's bug surface and none of
-/// them encodes a CSS rule: when the fix ships, the whole of this goes, and
-/// nothing in it is knowledge about layout that would have to survive.
+/// by how much. Chrome applies every margin in all 33 measured cells, so each
+/// clause below describes taffy's defect and none a CSS rule.
 fn dropped_margin_candidates(
     scene: &Scene,
     tree: &taffy::TaffyTree<NodeId>,
@@ -1687,21 +937,10 @@ fn dropped_margin_candidates(
             {
                 return None;
             }
-            // The containing block's inline size, which is what a percentage
-            // margin resolves against on every edge. The width is correct in
-            // every measured cell -- the defect is confined to the main axis --
-            // so reading it before the repair is sound.
-            //
-            // **The content box rather than the border box.** `Layout::size` is
-            // the border box, and a container with padding resolves a child's
-            // percentage against the smaller number: measured, `-10%` in a
-            // 903-wide border-box container with 20px of padding is Chrome's
-            // `-86.30` against the border box's `-90.30`, and our container
-            // came out 450.00 against Chrome's 453.70 before this read the
-            // right quantity. An unpadded container cannot tell the two apart,
-            // which is why
-            // `a_percentage_margin_resolves_against_the_content_box`
-            // carries padding and the row beside it does not.
+            // The containing block's content-box width, which a percentage
+            // margin resolves against: `-10%` with 20px of padding is Chrome's
+            // `-86.30`, pinned by
+            // `a_percentage_margin_resolves_against_the_content_box`.
             let basis = content_inline_size(tree, *taffy_id);
             let dropped = children_of(tree, *taffy_id)
                 .into_iter()
@@ -1721,47 +960,10 @@ fn dropped_margin_candidates(
         .collect()
 }
 
-/// A node's own main-axis margin in a column, resolved to points.
-///
-/// **Percentages are resolved rather than skipped, because skipping them would
-/// have shipped the defect.** A percentage margin resolves against the
-/// containing block's *inline* size on every edge, including the block ones, so
-/// `basis` is the container's solved width. Measured: taffy drops a percentage
-/// margin on a growing child exactly as it drops a length one -- container 500
-/// against Chrome's 409.70 at `-10%`, and the child grown to 590.30 against
-/// Chrome's 500 -- and gets both right at `flex_grow: 0` and on positive
-/// values, which is the same conjunction the length case obeys.
-///
-/// The carve-out that was nearly written here is the one
-/// `l7aromeo/meo-canvas#136` exists for: a conservative exclusion, honestly
-/// recorded as unmeasured, whose excluded half turned out to be a live
-/// divergence. Measuring it cost one sweep.
-///
-/// **`auto` contributes nothing, and the skip is on the edge rather than on the
-/// child.** The first version returned `None` for a child with any `auto` main
-/// edge, which dropped the whole child -- so `margin-top: auto` beside
-/// `margin-bottom: -24px` kept the defect inside the change that exists to
-/// repair it. Measured in a column with an automatic main size, where these
-/// clauses live: an `auto` edge contributes zero in Chrome, the length edge is
-/// applied whichever side carries it, and taffy drops that length identically
-/// whether or not the other edge is `auto`.
-///
-/// Fenced rather than indented: four spaces is layout in a commit body and a
-/// code block in a `///` comment, so an indented table here becomes a doctest
-/// on a private item and `just docs` refuses it. `lint-check` does not read doc
-/// comments and says nothing about it.
-///
-/// ```text
-/// top 0     bottom -24    taffy 200.00   chrome 176.00
-/// top auto  bottom -24    taffy 200.00   chrome 176.00
-/// top -24   bottom auto   taffy 200.00   chrome 176.00
-/// top auto  bottom 0      taffy 200.00   chrome 200.00
-/// top auto  bottom auto   taffy 200.00   chrome 200.00
-/// ```
-///
-/// Zero is right **in this scope** and not in general: an `auto` margin absorbs
-/// free space, and a container with an automatic main size has none to absorb.
-/// A definite main size does, and is not a candidate here.
+/// A node's own main-axis margin in a column, in points. A percentage resolves
+/// against `basis`, the container's inline size, since taffy drops it as it
+/// drops a length. An `auto` edge counts zero and the other edge still counts:
+/// Chrome gives 176 for `auto` beside `-24` in a 200 column.
 fn main_axis_margin(layout: &LayoutStyle, basis: f32) -> f32 {
     let resolved = |dimension: Dimension| match dimension {
         Dimension::Points(points) => points,
@@ -1775,26 +977,9 @@ fn main_axis_margin(layout: &LayoutStyle, basis: f32) -> f32 {
     resolved(layout.margin.top) + resolved(layout.margin.bottom)
 }
 
-/// Whether a subtree holds a grid container with a clipping direct item.
-///
-/// **The grouping is by automatic minimum size, not by whether the box clips**,
-/// and the two are not the same partition. taffy gives `Hidden` and `Scroll` an
-/// automatic minimum of zero and takes it from content for `Clip` and
-/// `Visible`; the names suggest the opposite pairing, since three of the four
-/// clip. Measured across every value: `hidden` and `scroll` diverge, `visible`
-/// and `clip` do not, and Chrome answers the same for all four.
-///
-/// [`clips`] one screen below asks a different question -- whether a box
-/// establishes a scroll container -- and returns the same answers for every
-/// input a scene can express. They part on `Clip`, which `Overflow` here has no
-/// variant for, so the two predicates coincide by an absence rather than by
-/// agreement and must not be merged.
-///
-/// **A concept three independent artefacts get subtly wrong is a shape of the
-/// domain rather than three mistakes**: the report that prompted this sampled
-/// `hidden` against `visible` and missed `scroll`, taffy's own names suggest a
-/// grouping its doc comments contradict, and the helper below encodes the other
-/// question a screen away. The fourth reader will be tempted the same way.
+/// Whether a subtree holds a grid container with a `Hidden` or `Scroll` direct
+/// item, the values taffy gives an automatic minimum of zero. [`clips`] asks
+/// about scroll containers; the two part on `Clip`, which `Overflow` lacks.
 fn holds_clipping_grid_item(
     scene: &Scene,
     tree: &taffy::TaffyTree<NodeId>,
@@ -1831,29 +1016,13 @@ fn holds_clipping_grid_item(
         .any(|child| holds_clipping_grid_item(scene, tree, to_scene, child))
 }
 
-/// Writes the main size taffy should have reached, and solves again.
-///
-/// [WORKAROUND] taffy resolves a column container's automatic main size
-/// without the negative margins it should have applied, so the container comes
-/// out long and the flex algorithm then distributes that error into its
-/// children. `DioxusLabs/taffy#1162` and `DioxusLabs/taffy#1163`, reported
-/// together as `l7aromeo/meo-canvas#107`. Both are fixed by `adef6dd`, which is
-/// two commits past the `v0.14.0` tag this workspace requires and in no release
-/// -- checked by ancestry rather than by dates, since a backport would satisfy
-/// the dates and not the tree.
-///
-/// Retires when `a_correct_main_size_lays_the_subtree_out_correctly` or
-/// `a_clipping_grid_item_leaves_only_the_aggregate_wrong` in
-/// `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fires. They pin what
-/// taffy does today, so the release that repairs either one turns a probe red
-/// and names this block.
-///
-/// **One handle, two clauses, and a shared mechanism does not make a shared
-/// predicate.** Both defects are repaired by writing one number, which is why
-/// this function serves both; they are collected separately because they rest
-/// on opposite facts about the rest of the tree, and a condition reading
-/// *growing children with negative margins **or** a clipping grid item* is
-/// unreadable once half of it is dead.
+// [WORKAROUND] taffy resolves a column's automatic main size without the
+// negative margins it should apply. `DioxusLabs/taffy#1162` and
+// `DioxusLabs/taffy#1163`, tracked as `l7aromeo/meo-canvas#107`; retires when
+// `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fails.
+/// Writes the main size taffy should have reached, and solves again. One handle
+/// serves both defects, which share the repair; they are collected apart
+/// because they rest on opposite facts about the tree.
 fn compensate_dropped_margins<M>(
     scene: &Scene,
     tree: &mut taffy::TaffyTree<NodeId>,
@@ -1896,18 +1065,8 @@ fn children_of(
 }
 
 /// The inline size a percentage on this node resolves against: the parent's
-/// **content** box, not its border box.
-///
-/// **Measured rather than assumed, and the two differ by the padding.** Chrome
-/// resolves `min-width: 70%` in a `440`-wide border-box container with `8px` of
-/// padding against the `424` content width and gives `296.80`; against the
-/// border box it would give `308`, which is what the same container with no
-/// padding gives -- so an unpadded container cannot tell the two apart and a
-/// row that pins this has to carry padding.
-///
-/// Zero when there is no parent, which makes a percentage resolve to zero and
-/// bind nothing. That is the conservative direction: the clause then leaves the
-/// pin alone, which is where the node was before any of this.
+/// content box, as Chrome gives `min-width: 70%` of a 440 box with 8px padding
+/// `296.80`, not `308`. Zero without a parent, which binds nothing.
 fn containing_inline_size(
     tree: &taffy::TaffyTree<NodeId>,
     id: taffy::NodeId,
@@ -1916,86 +1075,13 @@ fn containing_inline_size(
         .map_or(0.0, |parent| content_inline_size(tree, parent))
 }
 
-// [WORKAROUND] taffy builds a flex container's content-based main size from
-// its items' **content contributions** where CSS Flexbox builds it from their
-// outer **hypothetical main sizes**, so an item that says "ignore my content"
-// is not believed. Measured: a 600-wide row holding a 300x200 sibling and a
-// stretch-sized column whose item carries `flex-basis: 0` and `min-height: 0`
-// around 1024 of content comes out 1024 tall where Chrome gives 200.
-// `l7aromeo/meo-canvas#145`.
-//
-// **No upstream issue covers it and I did not find one to cite.**
-// `DioxusLabs/taffy#950` is percentages against a stretched item with an
-// indefinite basis and `DioxusLabs/taffy#733` is node sizing with flex and
-// images; neither is this step. Saying so is better than attaching a number
-// that does not cover it, which is a reference a reader follows and then has to
-// unpick.
-//
-// Retires when `a_definite_base_is_not_the_content` in
-// `crates/meo-canvas-core/tests/taffy_definite_basis.rs` fires: it pins what
-// taffy does today, so the day a release builds the container's content size
-// from hypothetical main sizes that test fails and names this block.
-//
-// # Where each term lives in the specification
-//
-// **§9.2 Line Length Determination.** An item's flex base size comes from
-// `flex-basis` when it is definite, from the main size property next, and from
-// content last; its **hypothetical main size** is that base clamped by the min
-// and max on the main axis. With a definite basis and a definite minimum, that
-// number owes nothing to the content -- which is the whole of what a caller is
-// asking for when they write the pair.
-//
-// **§4.5 Automatic Minimum Size** is why neither property works alone.
-// `min-height: auto` floors a flex item at its content-based minimum, so
-// zeroing the base alone leaves the floor and zeroing the floor alone leaves
-// the base. Both cells are rows in
-// `crates/meo-canvas/tests/assets/chrome/flex-basis-collapse.tsv`.
-//
-// **§9.4 Cross Size Determination** settles an indefinite cross size by
-// stretch *after* the base sizes are decided, which is the ordering that makes
-// this reachable at all: the container has to ask its own content how big it
-// is before the stretch it is waiting for exists.
-//
-// **§9.7 Resolving Flexible Lengths** is what makes the repair safe. Free
-// space is distributed from the base, so writing the hypothetical main size as
-// a definite `size` does not freeze the item -- measured, the item ends at the
-// line's 200 rather than at the 0 it was given.
-//
-// # Why the condition is not a list of the cells that failed
-//
-// Every row of the table follows from the one substitution above rather than
-// from a rule fitted to it. `flex-basis: auto` and `flex-basis: 0%` agree with
-// Chrome because the hypothetical main size **is** the content in both -- a
-// percentage against a container with no definite main size resolves as
-// `auto`, so `0%` is not `0`. `min-height: auto` agrees because §4.5 floors
-// the hypothetical at the content. A container with a stated length or a
-// definite ancestor agrees because it never asks its content at all. None of
-// those is a clause here; they are cases the rule already covers.
-//
-// **Two exclusions, and both are about which specification governs rather than
-// about a cell that disagreed.**
-//
-// A **grid item has no `flex-basis`**, so there is no §9.2 and no hypothetical
-// main size to write; a rule that wrote one would be inventing flex semantics
-// inside grid. Measured, applying this to a grid container takes a row Chrome
-// puts at 1024 to 200.
-//
-// An **inline-axis container is sized by max-content**, where a flex
-// container's main size is **§9.9 Intrinsic Sizes** -- a different computation
-// that accounts for flex factors, which `DioxusLabs/taffy#351` says is
-// unimplemented and `DioxusLabs/taffy#1182` exists to close. That is a missing
-// step rather than this one, and compensating it here would ship §9.9 by
-// accident in one corner. Measured the same way: the width-direction mirror is
-// 1024 in Chrome and this takes it to 200.
-//
-// Both are rows in the table, named and annotated as controls rather than as
-// divergences -- **no row there records a divergence at all**: every one of
-// the thirty matches Chrome, and these two pass because the compensation is
-// scoped away from them. Each goes red the moment it reaches them, which is
-// what keeps a cell left alone deliberately distinguishable from one nobody
-// looked at. `known` in this tree means the opposite -- a divergence we accept
-// -- and using it here would say we are knowingly wrong where we are
-// knowingly right.
+// [WORKAROUND] taffy sizes a flex container from its items' content where
+// Flexbox §9.2 uses their hypothetical main sizes, so `flex-basis: 0` with
+// `min-height: 0` is ignored. `l7aromeo/meo-canvas#145`, no upstream issue;
+// probed by `crates/meo-canvas-core/tests/taffy_definite_basis.rs`.
+/// Writes §9.2's hypothetical main size as a definite size where it owes
+/// nothing to the content; §9.7 still grows it from there. Not for a grid item,
+/// which has no `flex-basis`, nor on an inline main axis, which §9.9 governs.
 fn collapse_definite_bases(
     tree: &mut taffy::TaffyTree<NodeId>,
     root: taffy::NodeId,
@@ -2016,15 +1102,10 @@ fn collapse_definite_bases(
         if style.display != taffy::Display::Flex {
             continue;
         }
-        // **The inline-axis exclusion, encoded rather than only argued.** A
-        // container whose main axis is the inline one is sized by max-content,
-        // where §9.9 Intrinsic Sizes governs and accounts for flex factors --
-        // `DioxusLabs/taffy#351`, unimplemented, with `DioxusLabs/taffy#1182`
-        // open to close it. Writing a hypothetical main size there
-        // compensates a step that is missing rather than a step that is
-        // wrong, and `row-direction mirror` in `flex-basis-collapse.tsv` is the
-        // row that says so: Chrome and taffy agree at 1024 and this
-        // took it to 200 until the clause existed.
+        // The inline-axis exclusion: that main axis is sized by max-content,
+        // which §9.9 governs (`DioxusLabs/taffy#351`, `DioxusLabs/taffy#1182`).
+        // `row-direction mirror` in `flex-basis-collapse.tsv` pins it at 1024
+        // in Chrome and taffy.
         if !matches!(
             style.flex_direction,
             taffy::FlexDirection::Column | taffy::FlexDirection::ColumnReverse
@@ -2069,25 +1150,17 @@ fn collapse_definite_bases(
     Ok(())
 }
 
-/// §9.2's hypothetical main size, where it owes nothing to the content.
-///
-/// `None` where the content decides it, which is every case this compensation
-/// leaves alone: an `auto` basis, a percentage basis against a container whose
-/// main size is not definite -- taffy hands both of those back as `Percent` or
-/// `Auto` rather than a length -- and an `auto` minimum, which is §4.5's
-/// automatic minimum and floors the item at its content.
+/// §9.2's hypothetical main size where it owes nothing to the content: `None`
+/// for an `auto` basis, a percentage basis against an indefinite container, and
+/// an `auto` minimum, §4.5's floor at the content.
 fn hypothetical_main_size(style: &taffy::Style, row: bool) -> Option<f32> {
     let taffy::ExpandedDimension::Length(basis) = style.flex_basis.expand()
     else {
         return None;
     };
-    // **A percentage minimum is a floor of zero here, not a reason to stop.**
-    // This runs only where the container's main size is indefinite, and a
-    // percentage that cannot resolve against one gives zero for a minimum --
-    // where the same percentage gives `auto` for a *basis*, which is why `0%`
-    // on the basis leaves the content deciding and `0%` on the minimum does
-    // not. `min 0%` and `basis 0%` in `flex-basis-collapse.tsv` are the pair
-    // that separates them, and Chrome collapses one and not the other.
+    // A percentage minimum against an indefinite main size is a floor of zero,
+    // where on a basis it is `auto`: `min 0%` and `basis 0%` in
+    // `flex-basis-collapse.tsv` separate them, Chrome collapsing one only.
     let main_min = if row {
         style.min_size.width
     } else {
@@ -2122,11 +1195,8 @@ fn hypothetical_main_size(style: &taffy::Style, row: bool) -> Option<f32> {
     Some(size)
 }
 
-/// A solved node's own content-box width.
-///
-/// **The border box less what the box reserves**, which is what a percentage
-/// on a child resolves against. `Layout::size` is the border box, so padding,
-/// border and any scrollbar come off it.
+/// A solved node's own content-box width, which a child's percentage resolves
+/// against: the border box less padding, border and any scrollbar.
 fn content_inline_size(
     tree: &taffy::TaffyTree<NodeId>,
     id: taffy::NodeId,
@@ -2141,19 +1211,10 @@ fn content_inline_size(
     })
 }
 
-/// The main-axis minimum a stretched flex item's ratio owes it, by CSS
-/// Flexbox 1 §4.5, or `None` where that text gives it none.
-///
-/// **Every `None` here is a sentence of the specification** and names the row
-/// in `crates/meo-canvas/tests/assets/chrome/ratio-stretch-main.tsv` that
-/// holds it, so a reader can check the exclusion rather than take it.
-///
-/// Returns the minimum even where it does not bind, because the caller uses
-/// `Some` to mean *this item is stretched* -- and a stretched item must not
-/// reach the `l7aromeo/meo-canvas#123` derivation whatever its ratio works
-/// out to. `ratio 2` is
-/// the row: its minimum is under the line's own answer and its cross size is
-/// still the stretch's.
+/// The main-axis minimum a stretched item's ratio owes it by Flexbox §4.5, each
+/// `None` a sentence of the text with its row in `ratio-stretch-main.tsv`.
+/// Returned where it does not bind too: `Some` means stretched, which must not
+/// reach the `l7aromeo/meo-canvas#123` derivation.
 fn stretched_ratio_minimum(
     tree: &taffy::TaffyTree<NodeId>,
     id: taffy::NodeId,
@@ -2214,15 +1275,10 @@ fn stretched_ratio_minimum(
     if !transferred.is_finite() {
         return None;
     }
-    // The larger of the transferred and content suggestions -- `main` is the
-    // ratio-free solve's own answer and already carries the second -- and then
-    // §4.5's clamp by a definite maximum main size. `item content taller`
-    // takes the content term and `escape max-height 248px` takes the clamp,
-    // which `every_row_matches_the_reference` in
-    // `crates/meo-canvas/tests/chrome_ratio_stretch_main.rs` pins: delete the
-    // ceiling and those two rows come out `424x424` against Chromium's and
-    // Firefox's `424x248`. WebKit alone sends the clamped size back through
-    // the ratio, so the row is compared rather than exempted.
+    // The larger of the transferred and content suggestions, `main` carrying
+    // the second, then §4.5's clamp by a definite maximum. `item content
+    // taller` and `escape max-height 248px` pin the two; WebKit alone differs
+    // on the clamp.
     let mut minimum = transferred.max(main);
     let ceiling = match max_main.expand() {
         taffy::ExpandedLengthPercentageAuto::Length(value) => Some(value),
@@ -2271,36 +1327,13 @@ fn parent_is_row(tree: &taffy::TaffyTree<NodeId>, id: taffy::NodeId) -> bool {
         })
 }
 
-// [WORKAROUND] taffy transfers a cross-axis maximum through the ratio into the
-// main axis and clamps the main size with the result, where Chrome clamps only
-// the axis the maximum was written on -- `max-width: 100px` on a grown item at
-// ratio 1 gives `100 x 100` against Chrome's `100 x 248`, and the error is
-// `line - max`, so it is 247 at `max-width: 1px`. Reported as
-// `l7aromeo/meo-canvas#129`; the upstream defect is not filed, because taffy is
-// another team's repository and that is the maintainer's call to make.
-//
-// Retires when `a_cross_maximum_transfers_into_the_main_size` in
-// `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` fires: it pins the
-// transfer as taffy performs it today, so the release that stops performing it
-// turns that test red and names this block. Deleting it is deleting this
-// function and the two calls to it in [`compensate_ratio_direction`].
-//
-// **The clamp reads the author's `max_size` rather than the size written, so
-// pre-clamping what the compensation writes does nothing** -- measured, it
-// moved no row. Removing the maximum is what works, and applying it here first
-// is what makes removing it safe.
-//
-/// Removes the cross-axis maximum from `style` and returns it.
-///
-/// **Taking rather than reading, because the caller applies it itself.**
-/// Applying the maximum to the cross size and removing it from the style
-/// leaves nothing for taffy to transfer into the main axis.
-///
-/// **Lengths only, and unlike the minimum side this one is not resolved.**
-/// [`containing_inline_size`] would give a percentage maximum the same basis
-/// the minimum clause uses, and nothing here has measured what Chrome does
-/// with one -- so it stays on the style and the node behaves as it did before
-/// this clause. Unmeasured rather than refused.
+// [WORKAROUND] taffy clamps the main size with a cross maximum transferred
+// through the ratio, where Chrome clamps only its own axis: `max-width: 100px`
+// at ratio 1 is 100x100, not 100x248. `l7aromeo/meo-canvas#129`, probed by
+// `crates/meo-canvas-core/tests/taffy_flex_ratio.rs`.
+/// Removes the cross-axis maximum from `style` and returns it for the caller to
+/// apply, leaving taffy nothing to transfer; the clamp reads `max_size`, so
+/// pre-clamping does nothing. Lengths only: a percentage maximum is unmeasured.
 fn take_cross_maximum(
     style: &mut taffy::Style,
     cross_is_height: bool,
@@ -2318,26 +1351,9 @@ fn take_cross_maximum(
     Some(limit)
 }
 
-/// The size a ratio'd item should have taken, or `None` if it already has it.
-///
-/// **Reads the solved tree rather than the style**, which is what makes one
-/// condition cover four causes: whatever produced the cross size -- content,
-/// padding, a border, or nothing at all -- the question is only whether it is
-/// the ratio's answer.
-///
-/// The main axis is the parent's, so a row container derives a height from a
-/// width and a column one a width from a height. A candidate whose parent is
-/// not a flex container is left alone: the defect is the flex algorithm's
-/// transferred size, and block layout reaches the ratio by another path.
-///
-/// The two arms fail in different files. The column arm moves every row of
-/// `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv`, which is
-/// built on a column container. The row arm moves nothing there and is
-/// asserted by `crates/meo-canvas-core/tests/ratio_row_cross.rs` instead --
-/// **off `ratio: 1` on purpose**, because the height it writes is
-/// `width / ratio` and at ratio one that is a number several unrelated rules
-/// also produce, so a row-container case at ratio one agrees with this
-/// function whether or not it ran.
+/// The size a ratio'd item should have taken, or `None` if it has it, read from
+/// the solved tree so one condition covers every cause. Flex parents only, on
+/// their main axis; `ratio_row_cross.rs` pins the row arm off ratio 1.
 fn derived_cross(
     tree: &taffy::TaffyTree<NodeId>,
     id: taffy::NodeId,
@@ -2375,60 +1391,23 @@ fn derived_cross(
     })
 }
 
-/// Whether this box clips, which is what removes CSS's automatic minimum.
-///
-/// **A scroll container rather than a non-`visible` overflow**, and the two are
-/// not the same set. Measured in Chrome on a 100-wide ratio box holding 300 of
-/// content, all five values: `visible` 300, `clip` 300, and `hidden`, `scroll`
-/// and `auto` 117.64. `clip` is the one non-visible value that establishes no
-/// scroll container, so a predicate written from the specification's wording
-/// would be right on three spellings and silently wrong on the fourth.
-///
-/// **`visible` is in that list because it is the arm this function takes**, not
-/// as context for the other four: 300 is the number [`floor_ratio_heights`]
-/// restores, so that row is the measurement behind the `false` return.
-///
-/// `Overflow` here has no `Clip`, so no scene reaches that case today. Adding
-/// one is **not** a synonym for `Hidden` on this axis.
-/// A second predicate nearby shares this one's answers for a different reason:
-/// [`holds_clipping_grid_item`] asks whether an item's automatic minimum size
-/// is zero, which is `Hidden` and `Scroll` rather than every non-visible value.
-/// The two part on `Clip`, and the argument is written there rather than twice.
+/// Whether this box is a scroll container, which removes the automatic minimum:
+/// Chrome gives 300 under `visible` and `clip` and 117.64 under `hidden`,
+/// `scroll` and `auto`. `Overflow` has no `Clip`; see
+/// [`holds_clipping_grid_item`].
 const fn clips(overflow: taffy::Point<taffy::Overflow>) -> bool {
     !matches!(overflow.x, taffy::Overflow::Visible)
         || !matches!(overflow.y, taffy::Overflow::Visible)
 }
 
-// [WORKAROUND] taffy has one minimum where CSS has two that behave
-// differently. CSS gives a ratio box an automatic minimum block size from its
-// content, which does **not** transfer back into the inline axis, and an
-// author's `min-height`, which does. taffy's `min_size.height` is the second
-// kind, so a content-derived floor written there is transferred and a 100-wide
-// box comes back 255 wide -- measured, against Chrome's 100.
-// `l7aromeo/meo-canvas#104`.
-//
-// Retires when taffy distinguishes the two, or applies the automatic minimum
-// itself -- `ratio-with-taller-content` in
-// `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` fails in
-// both directions and will say so. Both conditions are pinned by name in
-// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs`, because a file that
-// asserts something says nothing about which of the two it sees:
-// `a_content_derived_floor_is_transferred_into_the_width` is the first, and
-// `a_ratio_caps_a_definite_width_box_with_no_author_minimum` is the second.
-//
-// **It shares the ratio-free solve above rather than running its own.** One
-// clearing pass serves both compensations and the decision splits afterwards,
-// so a reader looking for a second machine will not find one.
-//
-// **Only where the inline size is not an outcome of the ratio**, which is read
-// rather than reasoned: removing the ratio moves the width exactly where the
-// ratio produced it. Measured, a 100-wide block box reports 100 with and
-// without, and its shrink-to-fit sibling reports 255 with and 30 without --
-// where the width moves, taffy's block-to-inline transfer is already Chrome's
-// answer and the node is left alone.
-//
-// **And only where the box does not clip**, because clipping removes the
-// automatic minimum this restores -- see [`clips`].
+// [WORKAROUND] taffy has one minimum where CSS has two: a content floor written
+// to `min_size.height` transfers into the width like an author's `min-height`,
+// 255 wide for a 100-wide box. `l7aromeo/meo-canvas#104`, probed by
+// `crates/meo-canvas-core/tests/taffy_ratio_direction.rs`.
+/// Restores the automatic minimum block size taffy omits, from the shared
+/// ratio-free solve, where the inline size is not the ratio's outcome and the
+/// box does not clip. Retires when
+/// `a_content_derived_floor_is_transferred_into_the_width` fails.
 #[expect(
     clippy::too_many_arguments,
     reason = "the second half of one workaround, sharing the first half's \
@@ -2493,6 +1472,10 @@ where
     solve_once(tree, root, available, measure, baselines)
 }
 
+/// Builds the taffy tree for a subtree, leaving out `Display::None`. taffy
+/// resolves an out-of-flow child against its parent, so `Fixed` goes to the
+/// page root and `Absolute` to its nearest positioned ancestor; paint walks the
+/// scene.
 fn build<M>(
     scene: &Scene,
     node: NodeId,
@@ -2517,30 +1500,10 @@ where
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
     unstretch_replaced(&mut style, source);
     intrinsic_sizes_it(&mut style, node, source, parent, measure);
-    // **A percentage against an indefinite containing block resolves to
-    // `auto`**, which for a size is no size and for a minimum or maximum is no
-    // constraint. taffy resolves it against the parent's height whether or not
-    // layout had definitely established one, so a child of a content-sized box
-    // got a number where the browser gets nothing.
-    //
-    // Only the block axis: a shrink-to-fit box still has a definite inline
-    // size to resolve against, and the six inline-axis percentages measured
-    // against the same container agree with Chrome already.
-    //
-    // Asked of the scene's own values rather than of the converted ones,
-    // because taffy's types do not answer "were you a percentage" and a
-    // round-trip through them would be a second place to keep in step.
-    //
-    // **`heights.parent` is the flex parent's answer, and for an out-of-flow
-    // box the flex parent is not the containing block.** That is the nearest
-    // positioned ancestor, or the page for a fixed box, and its height is
-    // settled before this box is laid out precisely because this box is out of
-    // flow and contributes nothing to it. So there is no indefiniteness to
-    // propagate and the percentage stands. Measured in Chrome across
-    // `absolute-percentage.tsv`, including the case most likely to be
-    // circular -- a containing block that is itself an auto-height absolutely
-    // positioned box, which resolves at a third of its content height rather
-    // than refusing.
+    // A block-axis percentage against an indefinite containing block resolves
+    // to `auto`, which taffy does not do. Out of flow the containing block is
+    // not the flex parent and is settled first, so it stands
+    // (`absolute-percentage.tsv`).
     if !heights.parent && !out_of_flow(source) {
         if matches!(source.layout.size.1, Dimension::Percent(_)) {
             style.size.height = taffy::Dimension::auto();
@@ -2621,14 +1584,9 @@ where
         }
     }
 
-    // A positioned box is a containing block, and **so is a transformed one**:
-    // CSS Transforms 1 §3 makes any element with a transform the containing
-    // block for its absolute *and* fixed descendants, positioned or not.
-    // Measured in Chrome, where a static clipper carrying `translateZ(0)`
-    // captures an absolute child that the same clipper without it lets through
-    // to the outer box -- 50,20 against 30,20.
-    //
-    // Anything this node does not claim goes to whichever ancestor does.
+    // A positioned or transformed box is a containing block (CSS Transforms 1
+    // §3): Chrome places an absolute child at 50,20 under a `translateZ(0)`
+    // clipper and 30,20 without. Anything unclaimed goes further up.
     if is_containing_block(source) {
         children.append(&mut unclaimed);
     } else {
@@ -2643,24 +1601,10 @@ where
         captive.append(&mut captured);
     }
 
-    // A childless node is given the measurer's context whatever it draws.
-    // Layout does not know **what** any kind's intrinsic size is -- that is
-    // what `measure` is for -- and the trait's own contract says a node the
-    // measurer was never prepared for answers `MeasuredLeaf::EMPTY`. Deciding
-    // a size here would put a second, disagreeing copy of that knowledge in
-    // the module that deliberately holds none of it.
-    //
-    // **`is_replaced` is the one thing about kind this module does read, and
-    // the line is between an extent and a classification.** It answers whether
-    // CSS calls a node replaced, which decides whether opposing insets may
-    // size it -- and then it removes an inset and lets the measurer answer.
-    // No dimension is derived here and none is compared against one; if this
-    // module ever reads an image's width, that is the copy this paragraph
-    // refuses. Measured, because the two are easy to conflate: a `Text` node
-    // measures and is **not** replaced, and an absolutely positioned one with
-    // opposing insets stretches to them -- 200x30 under `inset: 0` in Chrome
-    // and 200x30 here. A rule keyed on "the measurer answered" would have
-    // taken that row with it.
+    // A childless node gets the measurer's context whatever it draws, since
+    // layout holds no intrinsic sizes. `is_replaced` classifies rather than
+    // sizes: a measured `Text` still stretches to opposing insets, 200x30 in
+    // Chrome too.
     let created = if children.is_empty() {
         tree.new_leaf_with_context(style, node)
     } else {
@@ -2672,13 +1616,8 @@ where
     Ok(created)
 }
 
-/// Walks the solved tree, converting taffy's parent-relative locations into
-/// absolute rectangles.
-///
-/// `parent_x` and `parent_y` are the accumulated origin. taffy reports a
-/// location relative to the parent's content box, so the sum down the path is
-/// the absolute position -- which is the form paint wants and the form taffy's
-/// rounding was computed against.
+/// Walks the solved tree, summing taffy's parent-relative locations into
+/// absolute rectangles, the form paint wants and taffy's rounding assumed.
 fn collect(
     tree: &taffy::TaffyTree<NodeId>,
     node: taffy::NodeId,
@@ -2800,11 +1739,9 @@ pub fn to_taffy_style(
         align_content: layout.align_content.map(to_align_content),
         justify_content: layout.justify_content.map(to_justify),
 
-        // The scene spells this `(row, column)`, following CSS's `gap`
-        // shorthand; taffy spells it `(width, height)`, which is `(column,
-        // row)`. The pair is swapped here rather than at either end, because
-        // the two orders are each right in their own vocabulary and only the
-        // crossing has to know.
+        // The scene spells `gap` `(row, column)`, as CSS does, and taffy
+        // `(width, height)`: swapped at the crossing, the one place that has to
+        // know.
         gap: taffy::Size {
             width: to_length(spacing(layout.gap.1)),
             height: to_length(spacing(layout.gap.0)),
@@ -2812,11 +1749,8 @@ pub fn to_taffy_style(
 
         flex_direction: to_flex_direction(layout.flex_direction),
         flex_wrap: to_flex_wrap(layout.flex_wrap),
-        // A negative or non-finite factor is not a factor. Dropped, each to
-        // its own initial value rather than to a shared one -- CSS's initial
-        // `flex-grow` is 0 and its initial `flex-shrink` is 1, and a factor
-        // that fell back to the wrong one would be a second defect wearing the
-        // first one's repair.
+        // A negative or non-finite factor is dropped to its own initial value,
+        // 0 for grow and 1 for shrink.
         flex_grow: factor(layout.flex_grow, 0.0),
         flex_shrink: factor(layout.flex_shrink, 1.0),
         flex_basis: to_dimension(sized(layout.flex_basis)),
@@ -2892,18 +1826,9 @@ const fn to_overflow(overflow: Overflow) -> taffy::Overflow {
     }
 }
 
-/// The `inset` taffy is given, which is not always the one the node carries.
-///
-/// CSS's offset properties do not apply to a `position: static` element, and
-/// taffy has no `Static`: its `Relative` honours an inset. So a static node's
-/// inset is dropped here, and dropping it here rather than at the surface is
-/// what makes it dropped for every surface at once.
-///
-/// Measured in Chrome rather than read off the specification, because the
-/// specification's wording is about used values and the question is what a
-/// browser draws: a static child given `top: 30px; left: 30px` sits at its flow
-/// position in a block, a flex and a grid container alike -- the container's
-/// layout mode does not enter into it, which is why this reads only the child.
+/// The `inset` taffy is given: dropped for a static node, taffy having no
+/// `Static`. Chrome keeps a static child with `top: 30px` at its flow position
+/// in block, flex and grid alike.
 fn to_taffy_inset(
     layout: &LayoutStyle,
 ) -> taffy::Rect<taffy::LengthPercentageAuto> {
@@ -2918,13 +1843,9 @@ fn to_taffy_inset(
     }
 }
 
-/// taffy has two positions where CSS has three.
-///
-/// `Static` and `Relative` both become taffy's `Relative`: both are placed by
-/// the flow, and the two ways they differ -- whether `inset` moves the node and
-/// whether `z_index` places it in its parent's stack -- are both settled on
-/// this side. See [`to_taffy_inset`] and `stacks_by_z_index` in
-/// [`crate::paint`].
+/// taffy has two positions where CSS has three: `Static` and `Relative` both
+/// become `Relative`, and inset and z-order, where they differ, are settled in
+/// [`to_taffy_inset`] and `stacks_by_z_index` in [`crate::paint`].
 const fn to_position(position: PositionType) -> taffy::Position {
     match position {
         // `Sticky` is `Relative` here and not by approximation: CSS defines it
@@ -2968,14 +1889,9 @@ const fn to_grid_auto_flow(flow: GridAutoFlow) -> taffy::GridAutoFlow {
     }
 }
 
-/// Cross-axis placement of an item.
-///
-/// `SpaceBetween` and `SpaceAround` reach here because the scene carries one
-/// [`Align`] for `align-items`, `align-self` and `align-content` together, and
-/// those two belong only to the last of the three. CSS discards a value a
-/// property does not define and the property keeps its initial value, which for
-/// `align-items` is `stretch`; that is what taffy's own default resolves to, so
-/// discarding here and discarding in a browser produce the same layout.
+/// Cross-axis placement of an item. `SpaceBetween` and `SpaceAround` belong to
+/// `align-content`, so they fall to `stretch`, the initial value, as a browser
+/// discards an undefined value.
 const fn to_align_items(align: Align) -> taffy::AlignItems {
     match align {
         Align::FlexStart => taffy::AlignItems::FLEX_START,
@@ -2989,12 +1905,8 @@ const fn to_align_items(align: Align) -> taffy::AlignItems {
     }
 }
 
-/// Cross-axis distribution of wrapped lines.
-///
-/// `Baseline` reaches here for the mirror-image reason [`to_align_items`]
-/// receives the `Space*` pair: one enum serves three properties and
-/// `align-content: baseline` is not one of them. It is discarded to `stretch`,
-/// the property's initial value.
+/// Cross-axis distribution of wrapped lines. `Baseline` is not an
+/// `align-content` value and falls to `stretch`, as in [`to_align_items`].
 const fn to_align_content(align: Align) -> taffy::AlignContent {
     match align {
         Align::FlexStart => taffy::AlignContent::FLEX_START,
@@ -3018,44 +1930,14 @@ const fn to_justify(justify: Justify) -> taffy::JustifyContent {
     }
 }
 
-/// Chrome's layout grid: a length is held in sixty-fourths of a pixel.
-///
-/// # Why the snap happens here rather than at the end
-///
-/// **Chrome snaps a used length into this grid once and then accumulates the
-/// snapped values exactly.** We accumulated the exact values and rounded the
-/// total, and the two part company only when an accumulated coordinate lands
-/// on a half: five boxes of `10.3` sum to exactly `51.5` and a tie rounds up,
-/// where Chrome snaps to `10.296875` first, reaches `51.484375`, and rounds
-/// down. **Chrome never sees the tie, because the snap has already nudged the
-/// value below it.**
-///
-/// So the fix is not to round differently at the end -- that only moves which
-/// inputs are wrong -- but to **snap before accumulating, so the tie never
-/// forms.**
-///
-/// # Floor rather than round
-///
-/// `10.3 x 64` is `659.2`, and Chrome's `10.296875` is `659 / 64`. Floor and
-/// round agree there and part on a value whose sixty-fourths land at or past a
-/// half; the browser's own conversion is `LayoutUnit`, which truncates toward
-/// negative infinity. **Every case measured against Chrome so far agrees with
-/// the floor**, and a value that would tell them apart is named in
-/// `rounding_drift.rs` as the thing to measure if this is ever in doubt.
+/// Chrome's layout grid, sixty-fourths of a pixel: snapped once, then summed
+/// exactly, so five `10.3` boxes reach `51.484375` where exact sums tie at
+/// `51.5`. Floored, as `LayoutUnit` truncates; see `rounding_drift.rs`.
 const LAYOUT_GRID: f32 = 64.0;
 
-/// One length, snapped into [`LAYOUT_GRID`].
-///
-/// Percentages are not snapped: they resolve against a containing block this
-/// stage has not computed yet, and Chrome snaps the **resolved** value.
-/// Snapping the fraction would quantise a ratio rather than a length.
-/// A measured content size, snapped **outward** onto [`LAYOUT_GRID`].
-///
-/// **A styled length is a request and a measured size is a claim.** Flooring a
-/// request is right -- Chrome's `LayoutUnit` truncates and every case measured
-/// against it agrees. Flooring a *measurement* says the content fits in a box
-/// it does not fit in, by up to a sixty-fourth of a pixel, and the next pass
-/// re-measures at that width and wraps the last word out of the line.
+/// A measured content size, snapped outward onto [`LAYOUT_GRID`]: a floored
+/// measurement would claim the content fits a box it does not, and the next
+/// pass would wrap the last word.
 fn contains(points: f32) -> f32 {
     if points.is_finite() {
         (points * LAYOUT_GRID).ceil() / LAYOUT_GRID
@@ -3064,6 +1946,8 @@ fn contains(points: f32) -> f32 {
     }
 }
 
+/// One length, snapped into [`LAYOUT_GRID`]. Percentages are not: Chrome snaps
+/// the resolved value, and snapping a fraction would quantise a ratio.
 fn snapped(points: f32) -> f32 {
     if points.is_finite() {
         (points * LAYOUT_GRID).floor() / LAYOUT_GRID
@@ -3089,38 +1973,15 @@ fn to_dimension(dimension: Dimension) -> taffy::Dimension {
     }
 }
 
-/// A border width as CSS *uses* it, which is not what the author wrote.
-///
-/// **Chrome resolves a border width to an integer at used-value time**, and
-/// layout sees the resolved value rather than the declared one:
-/// `getComputedStyle` reports the integer and the border box grows by the
-/// integer, so `border: 3.5px` and `border: 3px` render identically. Measured
-/// across `0.1`, `0.4`, `0.5`, `0.9`, `1.4`, `1.5`, `1.6`, `2.5`, `3.4`,
-/// `3.5`, `3.6` and `3.9`, at **both** device scales with the same answers --
-/// so it is a CSS-pixel rule and not a device-pixel one.
-///
-/// **It floors rather than rounds.** `1.6` gives `1` and `3.9` gives `3`,
-/// which no rounding mode produces; `2.5` gives `2` and `3.5` gives `3`, where
-/// half-to-even would give `2` and `4`.
-///
-/// **The minimum is the part that would bite.** Chrome draws a `0.1px` border
-/// as `1px`, so a bare `floor` makes every hairline vanish -- a visible
-/// regression rather than a subtle one, which is why the `0.1` row is pinned
-/// beside the `3.5` one.
-///
-/// **Derived rather than stored.** The scene keeps what the author wrote, as
-/// it does for a percentage line height. This is the one place the used value
-/// is computed, and both readers -- layout here and the painter -- go through
-/// it, so the two cannot drift apart.
+/// A border width as CSS uses it: Chrome floors it to an integer at both device
+/// scales, `3.5` to 3, but never below 1, so a `0.1px` hairline draws. Layout
+/// and the painter both read it here.
 pub(crate) fn used_border(
     border: Sides<f32>,
     style: BorderStyle,
 ) -> Sides<f32> {
-    // `none` is a used width of zero, not a paint that is skipped. Gating here
-    // rather than at the painter is what keeps layout and paint agreeing: both
-    // reach the used width through this function, so a border that draws
-    // nothing also reserves nothing, which is the half of CSS's rule that no
-    // comparison of ink can see.
+    // `none` is a used width of zero, so a border that draws nothing reserves
+    // nothing, the half no ink comparison can see.
     if style == BorderStyle::None {
         return Sides::all(0.0);
     }
@@ -3146,11 +2007,8 @@ fn used_border_width(width: f32) -> f32 {
     }
 }
 
-/// A length for the three fields taffy spells `LengthPercentageAuto`, where
-/// `auto` means something different in each: a margin that absorbs free space,
-/// the automatic minimum size a flex item takes from its content, and the
-/// absence of a maximum. All three are the scene's `Dimension::Auto`, and the
-/// field decides which one it is.
+/// A length for taffy's `LengthPercentageAuto` fields, where `Auto` is a
+/// free-space margin, a flex item's automatic minimum, or no maximum, by field.
 fn to_auto_length(dimension: Dimension) -> taffy::LengthPercentageAuto {
     match dimension {
         Dimension::Auto => taffy::LengthPercentageAuto::auto(),
@@ -3163,59 +2021,10 @@ fn to_auto_length(dimension: Dimension) -> taffy::LengthPercentageAuto {
     }
 }
 
-/// A size, min-size, max-size or flex basis with an unusable value dropped.
-///
-/// # Why the layout pass rather than the boundary a value arrives at
-///
-/// **The two public surfaces reach here by different doors.** A JavaScript
-/// caller's number crosses the wire and is decoded by
-/// `meo_canvas_scene::codec`; a Rust caller writes `Length::Points(f32)` and
-/// never touches the codec at all. A check placed at either door repairs one
-/// surface and leaves the other exactly as it was -- measured, not assumed:
-/// the same 64 bad-value cells fail identically through both.
-///
-/// So the check is here, where the two doors meet, which is also where the
-/// browser puts it: an invalid declaration is dropped when the property is
-/// used, not when the stylesheet is parsed.
-///
-/// # Why a refusal is not what happens here
-///
-/// **A refusal needs somewhere to report it.** The TypeScript writer has one
-/// and names the property; this is `const` and has none, so a value that cannot
-/// mean anything is neutralised here instead. Anything reaching this point has
-/// already passed the surface that could have refused it -- and a Rust caller
-/// who writes `f32::NAN` did so in a typed language, having passed no surface
-/// that could have named it.
-///
-/// Making these functions fallible would buy a message at a door only that
-/// caller reaches, at the cost of an error channel through the whole layout
-/// pass. The ability to report is a property of the site, not of the value.
-///
-/// # What "unusable" means, per property
-///
-/// **The two halves have different answers and the difference is whether the
-/// value means anything.** A `NaN` means nothing at any door and is dropped:
-/// the property takes its unset value. An infinity means *as large as
-/// possible*, which is a thing that can be done, so it is bounded rather than
-/// dropped -- see `bounded` below for the measurement behind the bound.
-///
-/// **This used to say Chrome's rule is one rule, that an invalid value is
-/// dropped, and it cited Chrome 151 for it. That was wrong twice over.** Chrome
-/// answers a non-finite value two ways depending on how it arose -- a `NaN`
-/// keyword is a parse error and the declaration is dropped, while a NaN out of
-/// `calc` is clamped to zero -- and it has no `infinity` literal at all, so
-/// `calc(infinity)`, which clamps, is the only expressible form. There is no
-/// reading under which Chrome drops an infinite value. Dropping it was ours,
-/// and it deleted elements: a `flex-shrink` of infinity took the box out of the
-/// layout entirely.
-///
-/// So the attribution is gone rather than narrowed. What is taken from the
-/// browser is the shape of the question, not an answer to it.
-///
-/// **A negative `margin` and a negative inset are valid CSS and are kept.**
-/// Everything else measured against Chrome 151 refuses a negative, which is why
-/// `-Infinity` is dropped on a size and bounded on a margin: it fails the sign
-/// test on one and passes it on the other.
+/// A size, min-size, max-size or flex basis with an unusable value neutralised
+/// where both surfaces meet, `const` having no error to report. `NaN` is
+/// dropped, infinity bounded as `calc(infinity)` clamps, and a negative
+/// dropped.
 const fn sized(dimension: Dimension) -> Dimension {
     match dimension {
         Dimension::Points(points) => {
@@ -3238,19 +2047,9 @@ const fn sized(dimension: Dimension) -> Dimension {
     }
 }
 
-/// An infinite value replaced by the largest one this engine can carry.
-///
-/// **Applied before each guard below rather than folded into it, because the
-/// two halves of "unusable" now have different answers.** An infinity means
-/// *as large as possible* and something can be done with that; a `NaN` means
-/// nothing at any door. So this turns the first into a number and leaves the
-/// second alone for the `is_finite` test that follows to drop.
-///
-/// **Infinity is clamped rather than dropped because no measured behaviour
-/// drops it.** CSS has no `infinity` literal -- `calc(infinity)` is the only
-/// spelling -- and `calc` clamps, so there is no reading under which dropping
-/// it is Chrome's rule. Dropping it was ours, and it deleted elements: a
-/// `flex-shrink` of infinity took the box out of the layout entirely.
+/// An infinite value replaced by the largest this engine carries, before each
+/// guard below drops a `NaN`. Clamped as `calc(infinity)` clamps; dropped, a
+/// `flex-shrink: Infinity` box left the layout.
 const fn bounded(value: f32) -> f32 {
     if value.is_infinite() {
         return FINITE_CEILING.copysign(value);
@@ -3258,13 +2057,9 @@ const fn bounded(value: f32) -> f32 {
     value
 }
 
-/// A margin edge with an unusable value dropped.
-///
-/// **A negative margin is valid CSS and survives**: it pulls the box outside
-/// its parent, which is what it is for. Only a non-finite value is dropped,
-/// and it falls back to zero rather than to `auto` -- `auto` on a margin
-/// absorbs free space, so dropping to it would centre a box that asked for
-/// nothing of the kind.
+/// A margin edge with an unusable value dropped. A negative margin is valid and
+/// survives; a non-finite one falls to zero, not `auto`, which would absorb
+/// free space and centre the box.
 const fn margin(dimension: Dimension) -> Dimension {
     match dimension {
         Dimension::Points(points) if bounded(points).is_nan() => {
@@ -3295,11 +2090,8 @@ const fn spacing(length: Length) -> Length {
         {
             Length::ZERO
         }
-        // No `kept` arm: `Length` has exactly these two variants, and both
-        // are now written out because both carry a number that has to be
-        // bounded. A third variant added upstream fails to compile here, which
-        // is the right side of that trade for a value this file has to reason
-        // about numerically.
+        // No `kept` arm: both `Length` variants carry a number to bound, and a
+        // third added upstream fails to compile here.
         Length::Points(points) => Length::Points(bounded(points)),
         Length::Percent(fraction) => Length::Percent(bounded(fraction)),
     }
@@ -3318,11 +2110,8 @@ fn factor(value: f32, initial: f32) -> f32 {
     }
 }
 
-/// An inset edge with an unusable value dropped.
-///
-/// **A negative inset is valid CSS**, the same as a negative margin: it moves
-/// the box the other way. A non-finite one becomes absence, which for an inset
-/// is `auto` -- the edge taffy places rather than an edge pinned anywhere.
+/// An inset edge with an unusable value dropped: a negative inset is valid, and
+/// a non-finite one becomes `auto`, the edge taffy places.
 const fn inset(edge: Option<Length>) -> Option<Length> {
     match edge {
         Some(Length::Points(points)) if bounded(points).is_nan() => None,
@@ -3349,20 +2138,9 @@ fn to_inset(edge: Option<Length>) -> taffy::LengthPercentageAuto {
     }
 }
 
-/// A track's sizing function, as the `minmax()` pair CSS defines it to be.
-///
-/// The template entries wrap this in `GridTemplateComponent::Single` at the
-/// call site rather than through a helper of their own, because that type is
-/// generic over taffy's name type and the alias supplying its default is
-/// `pub(crate)` -- a helper would have to name a type this crate cannot see, so
-/// inference names it instead. The scene has no `repeat()` either way: a
-/// template is a list of tracks, and a surface offering the shorthand expands
-/// it before encoding.
-///
-/// `auto` is `minmax(auto, auto)`, a fixed length or percentage is that value
-/// on both bounds, and `<n>fr` is `minmax(auto, <n>fr)` -- a flexible track has
-/// no fixed minimum, which is what lets it shrink below its share when the
-/// fixed tracks take the room.
+/// A track's sizing function as CSS's `minmax()` pair: `auto` is `minmax(auto,
+/// auto)`, a length fills both bounds, and `<n>fr` is `minmax(auto, <n>fr)`.
+/// Wrapped at the call site, taffy's alias being private.
 #[expect(
     clippy::match_same_arms,
     reason = "the `auto` arm and the `#[non_exhaustive]` arm agree today and \
@@ -3398,11 +2176,8 @@ const fn to_track_sizing(size: TrackSize) -> taffy::TrackSizingFunction {
     }
 }
 
-/// A grid item's placement on one axis.
-///
-/// The scene carries a start line and a span, both optional, which is the
-/// `<line> / span <n>` form. An absent start is auto-placement, and an absent
-/// span is CSS's default of one track.
+/// A grid item's placement on one axis, `<line> / span <n>`: no start is
+/// auto-placement, and no span is one track.
 fn to_placement(placement: GridPlacement) -> taffy::Line<taffy::GridPlacement> {
     let start = placement.start.map_or(taffy::GridPlacement::Auto, |line| {
         taffy::GridPlacement::Line(line.into())
@@ -3424,30 +2199,10 @@ mod tests {
 
     #[test]
     fn a_length_is_truncated_into_sixty_fourths_rather_than_rounded() {
-        // **Here rather than in `tests/rounding_drift.rs` because the snap is
-        // the only place the fractional grid is observable, and it is not
-        // public.** taffy rounds the solved tree to whole pixels, so nothing
-        // outside this crate can read a sixty-fourth back: a box of
-        // `10.0234375` is `10` in a `LayoutResult` and `10.015625` in
-        // `getBoundingClientRect`, and **those are not the same measurement**
-        // -- a painted edge against a layout rect. Asserting one against the
-        // other reads exactly like a defect and is a category error.
-        //
-        // Chrome measured by MC Main through Playwright,
-        // `getBoundingClientRect().height` on a single box, `box-sizing:
-        // border-box`, margins and padding zeroed.
-        //
-        // **`10.0234375` is the row that settles the rule**: exactly `641.5`
-        // sixty-fourths, an exact tie, and Chrome takes `641`. Not half-up,
-        // not half-even -- **truncation, which no rounding mode reproduces.**
-        // One row excluding every mode at once.
-        //
-        // `7.999` floors to `7.984375` where any rounding gives a clean `8`,
-        // so a reader who suspects the snap is cosmetic can see that it is
-        // not. The last three agree under either rule and are here as the
-        // control: they are what the accumulation tests in `rounding_drift`
-        // rest on, and **they cannot tell floor from round**, which is why
-        // the three above them exist.
+        // Here because the snap is private and a `LayoutResult` is rounded.
+        // Chrome's `getBoundingClientRect().height`: `10.0234375`, an exact tie
+        // at `641.5`, takes `641`, which no rounding mode gives; the last three
+        // rows are controls.
         for (length, chrome) in [
             (10.008_f32, 10.0_f32),
             (10.023_437_5, 10.015_625),
@@ -3485,16 +2240,8 @@ mod tests {
     use super::{LayoutResult, solve};
     use crate::measure::{Available, Measure, MeasuredLeaf};
 
-    /// A measurer that answers one size for every leaf, and no baseline.
-    ///
-    /// Shared by the layout tests and by any other unit test in this crate that
-    /// needs a solve without fonts. `pub(crate)` and `#[cfg(test)]` rather than
-    /// part of `measure`'s public surface: a helper exported from the library
-    /// is API to keep working, and every test that wants this one lives in this
-    /// crate.
-    ///
-    /// Honours [`Measure`]'s contract the cheap way -- the answer depends on no
-    /// argument at all, so it is trivially a function of them.
+    /// A measurer that answers one size for every leaf and no baseline, for a
+    /// solve without fonts; test-only, since every caller is in this crate.
     #[derive(Debug, Clone, Copy)]
     pub(crate) struct Fixed {
         /// What every leaf measures.
@@ -3521,26 +2268,9 @@ mod tests {
         }
     }
 
-    /// A measurer shaped like a text run: it has a natural width and never
-    /// exceeds what it is offered.
-    ///
-    /// Answers the two intrinsic questions the way a paragraph does --
-    /// `MaxContent` is the run on one line, `MinContent` its longest
-    /// unbreakable piece -- so a test exercises the same path a real measurer
-    /// takes. Deterministic per [`Measure`]'s contract: the answer is a pure
-    /// function of `available` and nothing is carried between calls.
-    ///
-    /// # Why `min` is a field rather than a zero
-    ///
-    /// It returned `0.0` for `MinContent` while this doc comment said
-    /// "longest unbreakable piece", and the two disagreed for as long as
-    /// nothing asked. That is worse than a wrong line: flexbox floors an item
-    /// at exactly this answer (CSS Flexbox 1 §4.5), so a mock that reports
-    /// zero says an item may always be squeezed to nothing -- and a reader
-    /// who came here to learn the rule would have found the wrong one written
-    /// down, and read a real paragraph collapsing to its ellipsis as
-    /// correct-by-design. `crates/meo-canvas-core/tests/chrome_min_content.rs`
-    /// is the measured version of the rule.
+    /// A measurer shaped like a text run: `MaxContent` is the run on one line
+    /// and `MinContent` its longest unbreakable piece, a field because flexbox
+    /// floors an item there (§4.5). `chrome_min_content.rs` measures the rule.
     #[derive(Debug, Clone, Copy)]
     struct Wrapping {
         /// The width the content takes with nothing constraining it.
@@ -3573,14 +2303,8 @@ mod tests {
         }
     }
 
-    /// A scene with one page whose root is a plain box, laid out as flex.
-    ///
-    /// **The display is named because the scene's default is `block`**, which
-    /// is what a browser gives a `<div>`. Both public surfaces name `flex` on
-    /// every container they build, so a page a caller made is a flex
-    /// container; a scene assembled node by node, as these tests do, gets the
-    /// default and would otherwise stack its children. Naming it here keeps
-    /// these tests measuring what they were written to measure.
+    /// A scene with one page whose root is a plain box laid out as flex, named
+    /// because the scene's default is `block` and both surfaces build flex.
     fn scene_with_page(width: f32, height: f32) -> (Scene, NodeId) {
         let mut scene = Scene::new(Size::new(width, height));
         let page = scene
@@ -3597,12 +2321,9 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"))
     }
 
-    /// A growing child's negative margin reaches the container's own height.
-    ///
-    /// **The row that says the compensation fires.** Without
-    /// `compensate_dropped_margins` the container comes out at the child's own
-    /// height with the margin discarded, and the child is grown into that wrong
-    /// height as well. Deleting the call reddens this.
+    /// A growing child's negative margin reaches the container's own height;
+    /// without `compensate_dropped_margins` both come out at the child's
+    /// height.
     #[test]
     fn a_growing_child_s_negative_margin_reaches_the_container() {
         let (mut scene, page) = scene_with_page(903.0, 2000.0);
@@ -3632,12 +2353,8 @@ mod tests {
             node.layout.margin.top = Dimension::Points(-24.0);
         }
 
-        // **A second child with a different margin, because one child cannot
-        // tell the sum from the largest.** With `-24` alone the two rules give
-        // the same number, and a compensation folding with `f32::min` instead
-        // of summing passes every other row in this tree. Two children at `-24`
-        // and `-10` separate them by 10: Chrome gives 366 and the rival gives
-        // 376.
+        // A second child at `-10` beside `-24` tells a sum from a `min`: Chrome
+        // gives 366 and a fold with `f32::min` 376.
         let second = scene
             .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
@@ -3671,14 +2388,8 @@ mod tests {
         );
     }
 
-    /// A percentage margin reaches the container's height too.
-    ///
-    /// **The row that stopped a carve-out shipping.** `main_axis_margin` nearly
-    /// excluded percentages as unmeasured; the sweep found taffy drops one on a
-    /// growing child exactly as it drops a length -- container 500 against
-    /// Chrome's 409.70, the child grown to 590.30 against Chrome's 500 -- so
-    /// the exclusion would have been a live divergence recorded as a scope
-    /// note.
+    /// A percentage margin reaches the container too: taffy drops it on a
+    /// growing child as it drops a length, 500 against Chrome's 409.70.
     #[test]
     fn a_percentage_margin_reaches_the_container() {
         let (mut scene, page) = scene_with_page(903.0, 2000.0);
@@ -3704,11 +2415,8 @@ mod tests {
             node.layout.margin.top = Dimension::Percent(-0.10);
         }
 
-        // **Half a pixel, because this path rounds and Chrome's answer is not
-        // integral.** `solve` leaves taffy's rounding on, so a container Chrome
-        // puts at 409.70 lands on 410 here; the length rows above assert
-        // exactly because their answers are whole numbers. The discrimination
-        // is unaffected -- uncompensated this is 500.
+        // Half a pixel: this path rounds and Chrome's 409.70 is not integral.
+        // Uncompensated this is 500.
         let result = solved(&scene, page);
         let height = result.rects[&container].size.height;
         assert!(
@@ -3717,19 +2425,9 @@ mod tests {
         );
     }
 
-    /// A percentage margin resolves against the container's content box.
-    ///
-    /// **The row above cannot pin the basis and this one can.** Its container
-    /// is 903 wide with no padding, where the content width and the border box
-    /// are the same number, so reading either gives `-90.30` and the row is
-    /// green whichever is read. With 20px of padding they are 863 and 903, and
-    /// Chrome resolves against the smaller: `-86.30`, container 453.70 against
-    /// the 450.00 the border box produces.
-    ///
-    /// Measured in Chrome on both box-sizing values, because the pair is what
-    /// shows the quantity is the content box rather than the stated width: at
-    /// `box-sizing: content-box` the same 903 and 20px give a content width of
-    /// 903 again and Chrome returns to `-90.30`.
+    /// A percentage margin resolves against the container's content box: 20px
+    /// of padding gives Chrome's `-86.30` and 453.70 where the border box gives
+    /// 450.00, and at `content-box` it returns to `-90.30`.
     #[test]
     fn a_percentage_margin_resolves_against_the_content_box() {
         let (mut scene, page) = scene_with_page(1200.0, 2000.0);
@@ -3774,13 +2472,9 @@ mod tests {
         );
     }
 
-    /// A clipping grid item stops an ancestor ignoring a negative margin.
-    ///
-    /// **The row that says the grid clause fires**, and it is a different
-    /// defect from the one above: here taffy's geometry is already right -- the
-    /// strip sits at its margin with its own height -- and only the ancestor's
-    /// own size ignores it. Deleting the call, or dropping `Overflow::Scroll`
-    /// from the clause and running the `scroll` spelling, reddens this.
+    /// A clipping grid item stops an ancestor ignoring a negative margin, where
+    /// only the ancestor's size is wrong. Deleting the call, or dropping
+    /// `Overflow::Scroll`, reddens this.
     #[test]
     fn a_clipping_grid_item_reaches_an_ancestor_s_height() {
         for overflow in [Overflow::Hidden, Overflow::Scroll] {
@@ -3836,41 +2530,10 @@ mod tests {
         }
     }
 
-    /// A box as wide as the ceiling still fills the space it is given.
-    ///
-    /// **The row that was missing when `FINITE_CEILING` was chosen, and the
-    /// only one that tells its value from the one it replaced.** The two
-    /// `const` assertions beside the constant bound it from above -- they
-    /// refuse `f32::MAX` -- and nothing bounded it from below, so a mutation
-    /// putting it back to `1.0e9` failed no test at all.
-    ///
-    /// **The mechanism is not the one that looked obvious, and this is the
-    /// experiment that killed it.** The tempting story was `snapped`, which
-    /// multiplies by a grid of 64: `2^25 * 64` is exactly `2^31`, which
-    /// explains Chrome's ceiling and would have explained ours. It predicts
-    /// trouble at `2^18`, where `x * 64` leaves `f32`'s exact-integer range,
-    /// and at `2^25`. **Both are clean.** Swept by named boundary rather than
-    /// by magnitude: `2^17` through `2^27` all fill their container, and the
-    /// snap is not what degrades.
-    ///
-    /// What degrades is a band starting just above `2^27`: `134_217_912` is the
-    /// first width measured short, where the box lays out eight pixels inside a
-    /// two-hundred pixel container while the siblings stay squeezed to nothing,
-    /// so the eight are blank rather than theirs. Above `2^32` it vanishes
-    /// entirely -- the last working value and the first failing one round to
-    /// `2^32` and to the next representable `f32` above it.
-    ///
-    /// **Those numbers are the rendered surface's, counted in painted pixels,
-    /// and this assertion is one layer down at the solved rectangle**, so their
-    /// thresholds are not required to agree and are not claimed to: `2^31`
-    /// paints a full container and fails here. The property is the same
-    /// property -- does a box of this width fill the space it is given -- and
-    /// each layer answers it about itself.
-    ///
-    /// So the ceiling has to sit where the behaviour is uniform, **and `1.0e9`
-    /// is `2^29.9`, inside the band.** Reverting the constant to it fails this
-    /// row with `a box of 1000000000 laid out 192 wide in a 200 container`,
-    /// which is the discrimination that was missing.
+    /// A box as wide as the ceiling fills its container, which tells
+    /// `FINITE_CEILING` from `1.0e9`, inside the band above `2^27` where a
+    /// solved box falls short. The `snapped` grid is not the cause: `2^17` to
+    /// `2^27` fill.
     #[test]
     fn a_box_as_wide_as_the_ceiling_still_fills_its_container() {
         let (mut scene, page) = scene_with_page(200.0, 100.0);
@@ -3906,15 +2569,9 @@ mod tests {
         assert_eq!(root.origin, Point { x: 0.0, y: 0.0 });
     }
 
-    /// Whether a page root's own definite size already survives layout.
-    ///
-    /// **The compatibility question under the ICO change**, and it has to be
-    /// answered before a page is begun at the root's size rather than the
-    /// scene's: if a definite root size were currently discarded, giving it
-    /// meaning would move existing scenes rather than leave them alone.
-    /// `pin_page_root` substitutes `scene.size` only where the root's own
-    /// dimension is `auto`, so a stated one is already honoured -- and this
-    /// says so in a test rather than in a reading of that function.
+    /// A page root's own definite size survives layout, so beginning a page at
+    /// it moves no scene: `pin_page_root` substitutes `scene.size` only for
+    /// `auto`.
     #[test]
     fn a_definite_root_size_is_kept_where_the_scene_says_otherwise() {
         let (mut scene, page) = scene_with_page(100.0, 60.0);
@@ -3968,13 +2625,9 @@ mod tests {
 
     #[test]
     fn a_fractional_border_is_used_as_the_integer_chrome_uses() {
-        // Chrome resolves a border width to an integer at used-value time and
-        // LAYOUT sees it: `getComputedStyle` reports the integer and the
-        // border box grows by the integer, so `3.5px` and `3px` render
-        // identically. Measured at dpr 1 and dpr 2 with the same answer, so it
-        // is a CSS-pixel rule rather than a device-pixel one.
-        //
-        // A 20-tall content box inside a 3.5 border is 27 in Chrome, not 27.5.
+        // Chrome floors a border width at used-value time and layout sees it: a
+        // 20-tall content box in a `3.5` border is 27, not 27.5, at either
+        // scale.
         let (mut scene, page) = scene_with_page(100.0, 60.0);
         let root = scene
             .get_mut(page)
@@ -4123,17 +2776,10 @@ mod tests {
 
     #[test]
     fn a_leaf_does_not_shrink_below_its_min_content_width() {
-        // The half `a_leaf_wider_than_its_container_shrinks_to_it` cannot
-        // see. That test shrinks 50 into 30 and passes just as well if the
-        // floor is zero, because 30 is above it either way. Here the
-        // container is narrower than the leaf's longest unbreakable piece, so
-        // the automatic minimum size (CSS Flexbox 1 §4.5) is the only thing
-        // deciding the answer: the item keeps its 12 and overflows the 8 it
-        // was offered.
-        //
-        // This is the arrangement that made a real paragraph collapse to its
-        // ellipsis -- the item shrank correctly to a minimum that was itself
-        // wrong. A mock reporting zero here would call that behaviour right.
+        // What `a_leaf_wider_than_its_container_shrinks_to_it` cannot see:
+        // narrower than the longest piece, only the automatic minimum (§4.5)
+        // decides, so the item keeps 12 in 8. A mock minimum of zero would pass
+        // a collapsing paragraph.
         let (mut scene, page) = scene_with_page(8.0, 60.0);
         let leaf = scene
             .push(page, Node::container())
@@ -4185,13 +2831,8 @@ mod tests {
         assert!(result.get(under).is_none());
     }
 
-    /// Maps every variant of an enum and asserts no two collapse onto one
-    /// taffy value.
-    ///
-    /// A mapping that is total and injective is one that lost nothing. Written
-    /// once and applied to each enum the scene and taffy agree on, because the
-    /// failure it catches -- a new variant falling into an existing arm, or two
-    /// arms naming the same taffy value -- is the same failure every time.
+    /// Maps every variant of an enum and asserts no two collapse onto one taffy
+    /// value, so a new variant falling into an existing arm fails.
     fn maps_injectively<S: Copy, T: PartialEq + core::fmt::Debug>(
         all: &[S],
         map: impl Fn(S) -> T,
@@ -4279,10 +2920,8 @@ mod tests {
             outer.layout.size =
                 (Dimension::Points(88.0), Dimension::Points(height));
             // A wrap is a flex concept and the scene's default is `block`, so
-            // the container that wraps says which it is. Without this the
-            // children stack and `bottom_align_reversed_wraps` is never
-            // reached -- the guard at the top of it excludes anything that is
-            // not `Display::Flex`.
+            // the container says flex; otherwise `bottom_align_reversed_wraps`
+            // is never reached.
             outer.layout.display = Display::Flex;
             outer.layout.flex_wrap = wrap;
             let outer = scene
@@ -4326,16 +2965,9 @@ mod tests {
     }
 
     /// A percentage padding resolves against the containing block, not the
-    /// node.
-    ///
-    /// **The node's own width is held fixed and the parent's is varied**, which
-    /// is the only way to separate the two bases here: varying the node's width
-    /// changes how many children fit on a line, so the two scenes would differ
-    /// for a second reason and the row would measure that instead.
-    ///
-    /// Both errors in the site this pins vanish together when the node's
-    /// border box equals its parent's content box -- the default stretched
-    /// shape -- so a row that varies only the percentage passes either way.
+    /// node: the node's width is held and the parent's varied, since varying
+    /// the node changes how many children fit. The default shape agrees either
+    /// way.
     #[test]
     fn a_percentage_padding_resolves_against_the_containing_block() {
         use meo_canvas_scene::style::{Length, layout::FlexWrap};
@@ -4406,11 +3038,8 @@ mod tests {
     #[test]
     fn a_fixed_node_resolves_against_the_page_and_an_absolute_one_against_its_parent()
      {
-        // The whole difference between the two in a still render. CSS resolves
-        // `fixed` against the viewport, which here is the page; `absolute`
-        // resolves against its containing block, which taffy takes to be the
-        // parent. A padded, offset parent is what separates them: an absolute
-        // child lands inside it and a fixed one ignores it.
+        // `fixed` resolves against the page and `absolute` against its
+        // containing block; a padded, offset parent separates them.
         let placed = |position| {
             let (mut scene, page) = scene_with_page(200.0, 200.0);
             let mut parent = Node::container();
@@ -4456,13 +3085,9 @@ mod tests {
 
     #[test]
     fn an_absolute_node_skips_a_static_parent_for_the_nearest_positioned_one() {
-        // CSS resolves an absolute node against its nearest *positioned*
-        // ancestor, skipping every static box between. taffy resolves it
-        // against its parent whatever that is, so this is settled by where the
-        // node is attached rather than by its style.
-        //
-        // Measured before the fix: the grandchild landed at (50, 50), the
-        // static parent's own origin.
+        // An absolute node resolves against its nearest positioned ancestor,
+        // skipping static boxes, so this is settled by where it is attached;
+        // misplaced, it lands at the static parent's (50, 50).
         let (mut scene, page) = scene_with_page(200.0, 200.0);
 
         let mut grandparent = Node::container();
@@ -4779,41 +3404,10 @@ mod tests {
         );
     }
 
-    /// Every cell of the bad-value grid that layout owns, in one place.
-    ///
-    /// **Each row fails if the normalisation is removed**, which is the point:
-    /// measured against Chrome 151, an invalid declaration is dropped and the
-    /// property takes its unset value, and before this the values reached
-    /// taffy untouched -- 23 of 48 sampled cells drew nothing at all.
-    /// A percentage against a content-sized parent is no constraint at all.
-    ///
-    /// **Both halves are here on purpose.** Dropping every percentage passes
-    /// the indefinite row and breaks the definite ones -- measured against
-    /// that repair, a `min-height: 200%` child of a 60, 120 and 200 tall box
-    /// gave 20 where Chrome gives 120, 240 and 400 -- so the definite rows are
-    /// what makes this test constrain the fix rather than restate it.
-    /// A ratio the renderer will not use does not settle a height either.
-    ///
-    /// **The surface the shared filter had no test on.** Mutating
-    /// [`usable_ratio`] to accept everything reddens
-    /// `an_unusable_value_is_dropped_where_it_becomes_layout_input` and nothing
-    /// else -- that pins [`to_taffy_style`], where a bad ratio is dropped
-    /// before taffy sees it, and left [`ratio_settles_it`] free to call the
-    /// height settled anyway. That is the pair this predicate's own doc warns
-    /// about: indefinite in taffy and definite in this rule at once, with a
-    /// percentage child resolving against a height nothing derived.
-    ///
-    /// **Asserted on the predicate rather than as a rendered row**, because a
-    /// row would pass whatever this predicate did. Chrome lays an unusable
-    /// ratio out as though none were declared -- a 120-wide box with a 50-tall
-    /// child is 120x50 under `0`, `calc(infinity)`, `-2` and no ratio alike --
-    /// and so do we, by discarding it. **Agreement, but the row cannot show
-    /// which of us discarded what**, and with an empty parent both sides read
-    /// zero for reasons that have nothing in common.
-    ///
-    /// A negative is the one a caller reaches by arithmetic and it crosses both
-    /// surfaces: the npm writer's `decimal` refuses `NaN` and passes `-2` and
-    /// `Infinity`, so those two arrive from either door.
+    /// A ratio the renderer will not use settles no height, asserted on
+    /// [`ratio_settles_it`] since a rendered row cannot tell who discarded it.
+    /// `-2` and `Infinity` pass the npm writer, so they arrive from either
+    /// door.
     #[test]
     fn a_ratio_this_renderer_will_not_use_settles_nothing() {
         let parent = Node::new(meo_canvas_scene::node::NodeKind::Box);
@@ -4834,6 +3428,9 @@ mod tests {
         assert!(super::child_height_is_definite(&parent, &child, false));
     }
 
+    /// A percentage against a content-sized parent is no constraint, and
+    /// against a definite one it resolves: dropping every percentage gives 20
+    /// where Chrome gives 120, 240 and 400.
     #[test]
     fn a_percentage_height_resolves_only_against_a_definite_one() {
         fn probe(parent_height: Dimension) -> f32 {
@@ -4844,12 +3441,9 @@ mod tests {
             if let Some(node) = scene.get_mut(parent) {
                 node.layout.size = (Dimension::Points(200.0), parent_height);
                 node.layout.align_items = Some(Align::FlexStart);
-                // **Without this the page stretches it and `auto` stops being
-                // indefinite**: a stretched flex item has a definite cross
-                // size, so the percentage would resolve against the page's 400
-                // and this row would be measuring the page rather than the
-                // parent. Chrome does the same, which is why the browser probe
-                // for this row sets `align-items: flex-start` as well.
+                // Unstretched, so `auto` stays indefinite; stretched, the row
+                // would measure the page. The browser probe sets `align-items:
+                // flex-start` too.
                 node.layout.align_self = Some(Align::FlexStart);
             }
             let child = scene
@@ -4883,13 +3477,10 @@ mod tests {
         );
     }
 
-    /// **`f32::INFINITY` was on this list and has been taken off it.** It is
-    /// no longer dropped: an infinity means *as large as possible*, which is a
-    /// thing that can be done, and CSS has no way to write one except
-    /// `calc(infinity)`, which clamps. Dropping it was ours, not Chrome's, and
-    /// it deleted elements. The clamped rows are in
-    /// `an_infinite_value_is_clamped_rather_than_dropped` below; what stays
-    /// here is what has no meaning at any door.
+    /// Every cell of the bad-value grid that layout owns: a `NaN` is dropped
+    /// and the property takes its unset value, where 23 of 48 sampled cells
+    /// drew nothing. Infinity is clamped, in
+    /// `an_infinite_value_is_clamped_rather_than_dropped`.
     #[test]
     fn an_unusable_value_is_dropped_where_it_becomes_layout_input() {
         let bad = [f32::NAN, -20.0];
@@ -4907,12 +3498,9 @@ mod tests {
                 border: Sides::all(value),
                 ..LayoutStyle::default()
             };
-            // **`Solid` is load-bearing here.** A `None` border is zeroed
-            // inside `used_border` whatever its width was, so the
-            // `taffy.border.top` assertion below would pass without the
-            // non-finite guard it exists to pin -- a change that removed
-            // that guard would still be green. Simplifying this to the
-            // default deletes a test without touching one.
+            // `Solid`, because `used_border` zeroes a `None` border whatever
+            // its width, and this would pass without the non-finite guard it
+            // pins.
             let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
 
             assert_eq!(taffy.size.width, taffy::Dimension::auto(), "{value}");
@@ -4926,11 +3514,8 @@ mod tests {
             );
             assert_eq!(taffy.flex_basis, taffy::Dimension::auto());
             assert_eq!(taffy.aspect_ratio, None, "{value}");
-            // The two factors fall back to *their own* initial values, which
-            // differ: a shrink that fell back to 0 would stop overflowing
-            // items shrinking at all. Compared by bits rather than by value,
-            // because the claim is that the fallback is passed through
-            // untouched -- identity, not nearness.
+            // The factors fall back to their own initial values, which differ;
+            // compared by bits, the claim being identity.
             assert_eq!(taffy.flex_grow.to_bits(), 0.0_f32.to_bits(), "{value}");
             assert_eq!(
                 taffy.flex_shrink.to_bits(),
@@ -4946,20 +3531,9 @@ mod tests {
         }
     }
 
-    /// An infinity becomes the largest value this engine can carry.
-    ///
-    /// **The half of "unusable" that turned out to have a defensible meaning.**
-    /// A `NaN` means nothing at any door and is dropped by the test above; an
-    /// infinity means *as large as possible*, and the only way CSS can express
-    /// one is `calc(infinity)`, which clamps. So there is no measured behaviour
-    /// under which dropping it is right, and dropping it deleted elements --
-    /// `flex-shrink: Infinity` took the box out of the layout.
-    ///
-    /// **The negative rows are not exceptions to that.** A negative size and a
-    /// negative flex factor are invalid whatever their magnitude, so
-    /// `-Infinity` is dropped for being negative rather than for being
-    /// infinite, and the two properties that accept negatives -- margin and
-    /// inset -- keep it as a bounded negative.
+    /// An infinity becomes the largest value this engine carries, as `calc`
+    /// clamps. `-Infinity` is dropped for being negative on a size or factor,
+    /// and kept, bounded, on a margin or inset.
     #[test]
     fn an_infinite_value_is_clamped_rather_than_dropped() {
         let style = LayoutStyle {
@@ -4996,12 +3570,8 @@ mod tests {
         assert!(FINITE_CEILING.is_finite());
     }
 
-    /// The other half, and the half a blanket repair breaks.
-    ///
-    /// **A negative margin and a negative inset are valid CSS**, measured
-    /// against Chrome and kept. A repair that rejected every negative would
-    /// pass the test above and fail this one -- which is the whole reason it
-    /// is written as its own test rather than as more rows in that one.
+    /// The other half: a negative margin and inset are valid CSS and kept,
+    /// which a repair rejecting every negative would fail.
     #[test]
     fn a_negative_margin_and_a_negative_inset_survive() {
         let style = LayoutStyle {
@@ -5020,15 +3590,9 @@ mod tests {
         );
         assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::length(-20.0));
 
-        // And a `NaN` is still dropped -- a margin to zero rather than to
-        // `auto`, which would absorb free space and centre a box that asked
-        // for nothing of the kind; an inset to `auto`, which is absence.
-        //
-        // **The inset row used to use `f32::INFINITY` and now uses `NAN`.**
-        // That was not a stylistic choice either way: an infinite inset is
-        // clamped now, so the old row would have been asserting the new
-        // behaviour by accident and this test would have said nothing about
-        // dropping at all.
+        // A `NaN` is still dropped, a margin to zero rather than `auto` and an
+        // inset to `auto`. `NAN`, since an infinity is clamped and would test
+        // nothing here.
         let broken = LayoutStyle {
             position_type: PositionType::Relative,
             margin: Sides::all(Dimension::Points(f32::NAN)),
@@ -5043,16 +3607,9 @@ mod tests {
 
     #[test]
     fn the_scenes_defaults_are_csss_not_taffys() {
-        // The scene's `LayoutStyle::default()` is CSS's: a **block** display,
-        // a row direction and a shrink of 1. This is the test that fails if
-        // the mapping ever leans on `taffy::Style::default()` for a field the
-        // scene carries.
-        //
-        // **The display was `Flex` here and the name of this test was wrong
-        // about it**: CSS gives a `<div>` `block`, and taffy's own default is
-        // `Flex`, so the one field that disagreed with the name was the one
-        // that agreed with taffy. Both surfaces name `flex` on the containers
-        // they build, so nothing a caller writes changed when this did.
+        // The scene's `LayoutStyle::default()` is CSS's: block, a row direction
+        // and a shrink of 1. This fails if the mapping leans on
+        // `taffy::Style::default()`, whose display is `Flex`.
         let style =
             super::to_taffy_style(&LayoutStyle::default(), BorderStyle::Solid);
 

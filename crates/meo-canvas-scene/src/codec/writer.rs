@@ -1,8 +1,6 @@
-//! Appending primitives to a byte buffer.
-//!
-//! Every method is infallible: a `Vec<u8>` grows, so writing has no error case
-//! and the encoder needs no `Result` threaded through it. That asymmetry with
-//! [`super::reader`] is the point -- reading is where a buffer can lie.
+//! Appending primitives to a byte buffer. Every method is infallible: a
+//! `Vec<u8>` grows, so the encoder threads no `Result`. Reading, in
+//! [`super::reader`], is where a buffer can lie.
 
 use super::Wire;
 
@@ -61,11 +59,9 @@ impl<'buffer> Writer<'buffer> {
         self.raw(&value.to_le_bytes());
     }
 
-    /// Appends a length-prefixed byte slice.
-    ///
-    /// The cast cannot lose data for any buffer this crate produces: a slice
-    /// longer than `u32::MAX` is four gigabytes, and [`super::MAX_NODES`]
-    /// bounds a scene far below that.
+    /// Appends a length-prefixed byte slice. The `u32` cast cannot lose data:
+    /// a longer slice is four gigabytes, and [`super::MAX_NODES`] bounds a
+    /// scene far below that.
     pub(crate) fn bytes(&mut self, value: &[u8]) {
         self.u32(value.len() as u32);
         self.raw(value);

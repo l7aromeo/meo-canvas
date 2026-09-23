@@ -1,50 +1,17 @@
-# The image the musl Linux addons are built in.
-#
-# The sibling of `Dockerfile.glibc`, and **the reason it is a separate file is
-# not the font libraries** -- those are built by the same script, with one
-# variable changed. It is that almost everything around them differs: a
-# different package manager, a different libc, and an ABI story that does not
-# apply at all.
-#
-# # What does not carry over from the glibc image
-#
-# **There is no glibc floor here and there cannot be.** musl does not version
-# its symbols, so the ceiling apparatus in `check-abi-floor.mjs` has nothing to
-# compare and the musl targets carry no `floors` key in `TARGETS` -- absent
-# rather than null, because "no ELF floor exists for this libc" is a different
-# statement from "unchecked". The acceptance test is the whole of the evidence
-# for these targets, which makes it more load-bearing here than on glibc, not
-# less.
-#
-# **The base is Alpine, so `lib` rather than `lib64`.** `install-fontlibs.sh`
-# takes that as `LIBDIR` and is otherwise identical between the two families.
-#
-# **The container does far more work here than on glibc.** rust-skia publishes
-# no prebuilt Skia for `*-unknown-linux-musl`, so the download 404s and it
-# falls back to compiling Skia from source -- the whole of it, with this
-# image's toolchain and `RUSTFLAGS` in play throughout. The glibc container
-# gets the prebuilt and never compiles Skia at all: measured in CI, that build
-# finished in 7m56s including the docker build, where this one should be
-# expected to take 30-45 minutes.
-#
-# So the two files are less alike than the shared `install-fontlibs.sh`
-# suggests. On glibc the image contributes the link and the static font
-# libraries; here it additionally contributes every compiler decision Skia is
-# built under, which is why the toolchain block below has no glibc counterpart.
-#
-# `musllinux_1_2_x86_64` is PyPA's, the same reasoning as the glibc image:
-# Alpine 3.22 with gcc, g++ and a current cmake already present, maintained by
-# people shipping portable native binaries for a living.
-# Same reasoning as the glibc image: one file, both architectures.
+# The image the musl Linux addons are built in. musl versions no symbols, so
+# these targets carry no `floors` in `TARGETS` and loading the binary is the
+# whole evidence. rust-skia has no prebuilt Skia for musl, so this image
+# compiles all of it, and the toolchain blocks below have no glibc counterpart.
+
+# `musllinux_1_2_*` is PyPA's Alpine 3.22 with gcc, g++ and cmake, an `ARG` so
+# one file serves both architectures. Alpine uses `lib`, not `lib64`, which
+# `install-fontlibs.sh` takes as `LIBDIR`.
 ARG BASE=quay.io/pypa/musllinux_1_2_x86_64
 FROM ${BASE}
 
-# apk rather than dnf, and the package names differ from EL's.
-#
-# `nasm` is x86-only for the same reason as in the glibc image, and the claim
-# was measured there: `libaom-sys` builds on aarch64 with no assembler present,
-# because libaom compiles NEON intrinsics rather than assembling them. Same
-# `ARG`, same reason -- adding a target should not fork this file.
+# apk rather than dnf, with Alpine's package names. `nasm` is x86-only as in the
+# glibc image, and the same `ARG` keeps an aarch64 target from forking this
+# file.
 ARG ASSEMBLER=nasm
 RUN apk add --no-cache \
       ${ASSEMBLER} gperf ninja-build meson bash curl tar xz \
@@ -52,74 +19,28 @@ RUN apk add --no-cache \
       gn clang clang-dev llvm llvm-dev \
       git
 
-# **Skia's own build tools have to come from Alpine, not from skia-bindings.**
-#
-# `skia-bindings` downloads a prebuilt `gn` and falls back to a bundled one when
-# the download fails. Both are glibc x86_64 binaries, so on musl the download
-# 404s and the fallback cannot run at all:
-#
-#   DOWNLOAD AND INSTALL FAILED: curl error code: "22" ... 404
-#   rosetta error: failed to open elf at /lib64/ld-linux-x86-64.so.2
-#
-# The build then panics inside `config.rs:350` with an empty message, because
-# the assert prints gn's stdout and gn never started. **The failure names
-# neither gn nor musl** -- the only readable line is a missing glibc loader,
-# reached through a tool nobody asked to download.
-#
-# Alpine packages both, so they are installed above and skia-bindings is pointed
-# at them. `meo-skia-canvas` does the same, for the same reason.
+# Skia's `gn` comes from Alpine: skia-bindings downloads, or falls back to, a
+# glibc x86_64 `gn` that cannot run on musl. The build then panics in
+# `config.rs` with an empty message and a missing glibc loader, naming neither
+# gn nor musl. `meo-skia-canvas` does the same.
 ENV GN_EXE=gn \
     SKIA_GN_COMMAND=/usr/bin/gn \
     SKIA_NINJA_COMMAND=/usr/bin/ninja
 
-# bindgen needs `libclang.so`, and it is a **different package from clang**.
-#
-# Alpine ships the compiler in `clang` and the library bindgen loads in
-# `clang-dev`, under a versioned directory rather than a default search path.
-# Without both, Skia compiles all the way through and then:
-#
-#   panicked at bindgen-0.72.1: Unable to find libclang: "couldn't find any
-#   valid shared libraries matching: ['libclang.so', ...]"
-#
-# `git` is on the list above for the same reason: building Skia from source
-# runs `skia/tools/git-sync-deps` to fetch its third-party dependencies, and
-# without git that fails as `skia/tools/git-sync-deps failed` with no mention
-# of git at all.
-#
-# **None of this has a glibc counterpart.** The glibc image takes rust-skia's
-# prebuilt Skia, which ships prebuilt bindings, so neither bindgen nor
-# git-sync-deps ever runs there. Every consequence of building Skia from source
-# arrives on this side only, and they arrive one at a time.
+# bindgen needs `libclang.so`, which Alpine ships in `clang-dev`, not `clang`;
+# without it Skia compiles and then panics "Unable to find libclang". `git` is
+# above because Skia's `git-sync-deps` needs it. Neither arises on glibc, which
+# takes rust-skia's prebuilt Skia and bindings.
 ENV LIBCLANG_PATH=/usr/lib/llvm20/lib
 
-# **clang finds no GCC under the Rust triple, and both languages fail
-# differently.** Skia's GN build drives `clang++` by name, and `libaom-sys`
-# passes `--target=<arch>-unknown-linux-musl` -- the Rust triple. clang locates
-# a GCC installation by matching that triple, and Alpine installs its GCC under
-# `<arch>-alpine-linux-musl`. Nothing matches, so:
-#
-#   C:    /usr/bin/ld: cannot find crtbeginS.o
-#         /usr/bin/ld: cannot find -lgcc
-#   C++:  fatal error: 'cstdint' file not found
-#
-# Both measured in this image. Without an explicit `--target` the same clang
-# compiles and links fine, which is what makes this so easy to miss locally.
-#
-# Naming the directory answers it, because a directory needs no triple to
-# match. It is chosen by **what it contains** rather than by version: the
-# complete installation is the one with both `crtbeginS.o` and its C++ headers,
-# and "newest" is the wrong test -- `meo-skia-canvas` hit an image carrying a
-# second GCC with no headers at all, which clang preferred for being higher.
-# This base has exactly one and it is complete, so the loop selects it either
-# way and keeps doing so if the base ever gains another.
-#
-# The config file goes beside the clang binary. `/etc/clang` is not read by
-# this one.
-#
-# The two compiles at the end are the point of the block rather than a
-# flourish: they fail the image build here, where the cause is one line above,
-# instead of thirty minutes into a Skia compile where the error names a missing
-# header.
+# clang finds GCC by the target triple, and `libaom-sys` passes the Rust one,
+# `<arch>-unknown-linux-musl`; Alpine's GCC is under `<arch>-alpine-linux-musl`,
+# so C fails on `crtbeginS.o` and C++ on `cstdint`. The config names the GCC
+# directory holding both, chosen by contents, not version.
+
+# The config goes beside the clang binary, since this clang does not read
+# `/etc/clang`. The two compiles at the end fail the image build here, rather
+# than thirty minutes into Skia on a missing header.
 RUN ARCH="$(uname -m)" && TRIPLE="${ARCH}-alpine-linux-musl" && \
     GCC_DIR="" && \
     for dir in /usr/lib/gcc/"$TRIPLE"/*/; do \
@@ -139,39 +60,21 @@ RUN ARCH="$(uname -m)" && TRIPLE="${ARCH}-alpine-linux-musl" && \
     rm -f /tmp/t.c /tmp/t.cc /tmp/t /tmp/txx && \
     echo "clang compiles and links C and C++ under the rust triple: ok"
 
-# Identical to the glibc image apart from where Alpine puts libraries.
-#
-# The static font libraries matter more here rather than less: an Alpine image
-# is chosen for being small, so it is even less likely to carry fontconfig than
-# the slim Debian images that already did not.
+# Identical to the glibc image apart from `LIBDIR=lib`. The static font
+# libraries matter more here: an Alpine image is even less likely than slim
+# Debian to carry fontconfig.
 COPY install-fontlibs.sh /opt/install-fontlibs.sh
 RUN LIBDIR=lib bash /opt/install-fontlibs.sh && rm -f /opt/install-fontlibs.sh
 
 ENV PKG_CONFIG_ALL_STATIC=1
 
-# The same flag and the same trap as the glibc image: rustc links through `cc`,
-# which drops `-static-libstdc++` without a word, so the linker is pointed at
-# `g++` to make it a C++ link.
-#
-# What it buys differs. On glibc it pins the residue to an old GLIBCXX baseline
-# so the binary loads on RHEL 8. Here there is no such baseline to reach for --
-# Alpine has one libstdc++ and no version skew across releases -- so the value
-# is simply that less of it has to be present at runtime.
-# `-crt-static` is the musl-specific half, and without it there is no addon at
-# all. Rust's musl targets default to `crt-static`, which produces a
-# statically-linked *executable* and **cannot produce a `cdylib`**:
-#
-#   error: cannot produce cdylib for `meo-canvas-node` as the target
-#          `x86_64-unknown-linux-musl` does not support these crate types
-#
-# A Node addon is a shared object by definition, so the default is simply wrong
-# for this artefact. Turning it off makes musl behave like every other target
-# here: a dynamically linked `.so` against the system libc, which on Alpine is
-# musl and is present by construction.
-#
-# This is the clearest example of why musl is a second instance of this work
-# rather than a variant of the glibc image. Nothing in the glibc build has an
-# equivalent, and no amount of care over there would have surfaced it.
+# The same `g++` linker as the glibc image, since `cc` drops
+# `-static-libstdc++`. Alpine has one libstdc++, so here it only means less of
+# it must be present at runtime.
+
+# `-crt-static` or there is no addon: Rust's musl targets default to
+# `crt-static`, which "cannot produce cdylib". Off, the addon is a dynamic `.so`
+# against Alpine's musl, like every other target.
 ENV RUSTFLAGS="-C linker=g++ -C link-arg=-static-libstdc++ -C target-feature=-crt-static"
 
 ARG RUST=1.98.0

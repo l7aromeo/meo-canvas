@@ -1,15 +1,6 @@
 /**
- * Block layout: stacking, margins and box sizing.
- *
- * Block is the display CSS starts from and the one a flex container is not, so
- * it earns an example rather than a row in the flex one: children stack down
- * whatever their width, and a margin between two of them collapses to the
- * larger rather than summing.
- *
- * The three panels drew empty when this was written — a block container that
- * was not the page root laid out none of its children — and they draw now. The
- * cause was not layout at all: the child was painted before its own parent and
- * the parent's background covered it.
+ * Block layout: stacking, margins and box sizing. Children stack down whatever
+ * their width, and a margin between two of them collapses to the larger.
  */
 
 import { Box, Root, type Children, type SceneNode } from 'meo-canvas'

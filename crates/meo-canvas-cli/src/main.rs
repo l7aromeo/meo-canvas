@@ -1,49 +1,12 @@
-//! Renders a scene file to an image from the command line.
-//!
-//! The surface that exists to make the pipeline usable without writing a
-//! program: read an encoded scene, render it, write the bytes. It is also the
-//! only place in the workspace that touches the network, and only when built
-//! with `--features net`.
-//!
-//! # What this crate deliberately excludes
-//!
-//! No scene authoring. The CLI reads the binary format
-//! [`meo_canvas_scene::codec`] defines; it does not parse a text or JSON
-//! description into one. A second authoring syntax is a second thing that can
-//! disagree with the scene types, and the Node addon and the Rust API already
-//! cover authoring.
-//!
-//! No async runtime, with or without `net`. Fetching goes through a blocking
-//! client, because a command-line renderer runs one job and exits -- there is
-//! nothing for an executor to overlap it with.
-//!
-//! # Exit codes
-//!
-//! Distinct per failure class, so a script can branch on what went wrong
-//! without parsing the message. `2` belongs to clap and is what a misspelled
-//! flag produces.
-//!
-//! | code | meaning |
-//! | ---- | ------- |
-//! | 0 | the image was written |
-//! | 2 | the command line was not understood |
-//! | 3 | an input or output file could not be read or written |
-//! | 4 | the scene file is not a scene this revision reads |
-//! | 5 | a font could not be registered |
-//! | 6 | the scene names a source this build cannot obtain |
-//! | 7 | a render pass failed |
+//! Renders a scene file to an image, reading only the
+//! [`meo_canvas_scene::codec`] format and fetching URLs only when built with
+//! `net`. Exit codes: 0 written, 2 bad command line, 3 file I/O, 4 not a scene
+//! this revision reads, 5 font, 6 source unobtainable, 7 render.
 
-// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
-// way.** Measured before it was declared: zero occurrences of the token across
-// every `crates/*/src`. A renderer reaching a C++ library through two binding
-// layers is exactly the crate where an `unsafe` would look reasonable and go
-// unquestioned, and the declaration turns adding one into a decision someone
-// has to make deliberately rather than a line that passes review.
-//
-// The integration tests are separate crates and are not covered: the
-// allocator that measures `codec::decode`'s reservation has to be an
-// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
-// it exists to measure a defect.
+// No source in this workspace writes `unsafe`, and this makes adding one a
+// deliberate decision rather than a line that passes review. Integration tests
+// are separate crates and not covered; their one `unsafe` is the `GlobalAlloc`
+// that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 // The CLI's whole output contract is stdout and stderr: the rendered bytes go
 // to a file or to stdout, and progress goes to stderr. `print_stdout` is a
@@ -86,11 +49,8 @@ struct Cli {
     command: Command,
 }
 
-/// The verbs the binary offers.
-///
-/// A subcommand rather than a bare set of flags, so that a second verb -- an
-/// inspector, a fixture recorder -- is an addition rather than a break in the
-/// command line that already shipped.
+/// The verbs the binary offers: a subcommand, so a second verb is an addition
+/// rather than a break in the command line that shipped.
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Renders a scene file to an image.
@@ -157,12 +117,9 @@ impl Failure {
     }
 }
 
-/// The exit code a core failure belongs to.
-///
-/// Mapped per variant rather than collapsed to one code, because the three a
-/// caller can act on differ: a missing font is fixed by passing `--font`, an
-/// unresolved source by building with `net`, and a malformed scene by
-/// re-encoding it.
+/// The exit code a core failure belongs to, per variant, since the remedies
+/// differ: `--font` for a missing font, a `net` build for an unresolved source,
+/// re-encoding for a malformed scene.
 const fn exit_code_for(error: &Error) -> u8 {
     match error {
         Error::UnresolvedSource(_) => EXIT_UNRESOLVED_SOURCE,
@@ -172,11 +129,8 @@ const fn exit_code_for(error: &Error) -> u8 {
     }
 }
 
-/// The message a failure prints, with the part the caller can act on.
-///
-/// A core error says what went wrong; only the CLI knows that a URL source is
-/// obtainable by a different build of itself. Naming the feature turns "this
-/// crate does not fetch" into an instruction.
+/// The message a failure prints, naming the feature when a URL source needs a
+/// `net` build, so the error is an instruction.
 fn explain(error: &Error) -> String {
     match error {
         Error::UnresolvedSource(_) if cfg!(not(feature = "net")) => {
@@ -190,12 +144,8 @@ fn explain(error: &Error) -> String {
     }
 }
 
-/// Splits a `family=path` pair.
-///
-/// The family is named rather than read from the file because that is the name
-/// a scene's `fontFamily` has to match, and a caller who wants their file
-/// called something else should not have to rename the file. `canvas.type.ts`
-/// settled the same shape as `{ family, paths[] }`.
+/// Splits a `family=path` pair. The family is named rather than read from the
+/// file, since it is the name a scene's `fontFamily` must match.
 fn parse_font(pair: &str) -> Result<(&str, &Path), Failure> {
     let (family, path) = pair.split_once('=').ok_or_else(|| {
         Failure::new(
@@ -214,11 +164,9 @@ fn parse_font(pair: &str) -> Result<(&str, &Path), Failure> {
     Ok((family, Path::new(path)))
 }
 
-/// Works out which container to write.
-///
-/// A named format wins; otherwise the output file's extension names one. There
-/// is no default: writing a PNG because nothing said otherwise turns a
-/// misspelled `--format` into a silently wrong file.
+/// Works out which container to write: a named format wins, then the output's
+/// extension. No default, or a misspelled `--format` writes a silently wrong
+/// file.
 fn resolve_format(args: &RenderArgs) -> Result<ImageFormat, Failure> {
     if let Some(name) = &args.format {
         return ImageFormat::from_extension(name).ok_or_else(|| {
@@ -266,11 +214,8 @@ fn read_scene(path: &Path) -> Result<Scene, Failure> {
     })
 }
 
-/// Builds the renderer every `--font` pair is registered into.
-///
-/// The renderer owns the fonts, so registering them is building it: a caller
-/// rendering a thousand scenes registers once and the faces outlive any one
-/// scene.
+/// Builds the renderer every `--font` pair is registered into, since the
+/// renderer owns the fonts and they outlive any one scene.
 fn build_renderer(pairs: &[String]) -> Result<Renderer, Failure> {
     let mut renderer = Renderer::new();
     for pair in pairs {
@@ -472,14 +417,9 @@ mod tests {
         assert_eq!(options.quality, None);
     }
 
-    /// A temporary path this process alone writes to.
-    ///
-    /// The process id is in it because these tests write a fixed name into a
-    /// shared temporary directory, and cargo runs a crate's test binaries
-    /// concurrently -- the unit tests here and the integration tests beside
-    /// them are separate processes. Two of them sharing a path is a write, a
-    /// delete and a read racing, which fails as a missing file in whichever
-    /// one read last.
+    /// A temporary path this process alone writes to: cargo runs the unit and
+    /// integration test binaries concurrently, and a shared fixed name would
+    /// race.
     fn scratch(name: &str) -> PathBuf {
         std::env::temp_dir()
             .join(format!("meo-canvas-cli-{}-{name}", std::process::id()))

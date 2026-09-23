@@ -3,13 +3,11 @@
 //!
 //! # Why this exists
 //!
-//! A browser canvas has no paragraph. v1 draws text with `fillText` and
-//! `strokeText` and computes everything around them by hand: where the lines
-//! break, how tall a line box is, where its baseline sits, which characters
-//! survive a truncation and where the ellipsis goes. That is the model this
-//! renderer is being moved onto, because it is the model whose answers the
-//! project already trusts -- and because a paragraph decides several of those
-//! for us in ways nothing here can reach.
+//! A canvas has no paragraph, so v9 draws text with `fillText` and computes
+//! everything around it by hand: where the lines break, how tall a line box is,
+//! where its baseline sits, which characters survive a truncation and where the
+//! ellipsis goes. This renderer does the same, because a paragraph decides
+//! several of those in ways nothing here can reach.
 //!
 //! This module is the arithmetic. Nothing in it draws.
 //!
@@ -17,11 +15,11 @@
 //!
 //! A line's **content height** is the face's own ascent plus descent, taken as
 //! the maximum over the runs on that line. Its **box height** is what
-//! `line_height` asks for, or the content height when it asks for nothing.
-//! The difference is **leading**, split half above and half below -- and it is
+//! `line_height` asks for, or the content height when it asks for nothing. The
+//! difference is **leading**, split half above and half below -- and it is
 //! allowed to be negative: a `line_height` tighter than the face needs makes
 //! the glyphs overlap their neighbours rather than moving the baseline, which
-//! is what CSS says and what v1 does.
+//! is what CSS says.
 //!
 //! So the baseline of a line is `top + leading / 2 + ascent`, and a line's
 //! ascent comes from the **face** rather than from the string. That is why
@@ -29,10 +27,10 @@
 //!
 //! # Spaces are runs of no width
 //!
-//! A space between two words is kept as a run carrying a width of zero, and
-//! the gap is added by the arithmetic instead: `space_width + word_spacing`.
-//! v1 does this so that justification and word spacing have one place to
-//! change the gap, rather than having to reach inside a measured run.
+//! A space between two words is kept as a run carrying a width of zero, and the
+//! gap is added by the arithmetic instead: `space_width + word_spacing`. So
+//! justification and word spacing have one place to change the gap, rather than
+//! reaching inside a measured run.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -60,15 +58,13 @@ use crate::{FINITE_CEILING, resolve::ResolvedText};
 /// CSS gets from a strut, and the reason a line does not move when it gains a
 /// descender.
 ///
-/// v1's own string, kept character for character so that a face reporting
+/// v9's own string, kept character for character so that a face reporting
 /// something odd reports it identically in both.
 pub const METRICS_STRING: &str = "Ag|``";
 
-/// Entries the measurement cache holds before the oldest is dropped.
-///
-/// v1's number. Sized for the strings one render draws rather than the strings
-/// that exist: a card's labels, its words, and the per-character measurements
-/// a truncation makes.
+/// Entries the measurement cache holds before the oldest is dropped: v9's
+/// number, sized for the strings one render draws, a card's labels, its words
+/// and a truncation's per-character measurements.
 const MEASUREMENT_LIMIT: usize = 4096;
 
 /// The ascent a face is assumed to have when it reports nothing, as a fraction
@@ -146,13 +142,10 @@ pub struct RunStyle {
     pub variant: Vec<FontVariant>,
     /// The colour the glyphs are filled with.
     ///
-    /// **Here rather than on the node, because a run is what carries it.**
-    /// A segment declaring a colour changes its own ink and nothing else,
-    /// measured against Chrome 151: the paragraph's height and the span's box
-    /// are unmoved and only the pixels differ. The fields above are the ones
-    /// that were already here, and they are exactly the properties a segment
-    /// could carry before this -- everything else a caller set on a segment
-    /// had nowhere to travel and was silently discarded.
+    /// Here rather than on the node, because a run is what carries it: a
+    /// segment declaring a colour changes its own ink and nothing else,
+    /// measured against Chrome 151, where the paragraph's height and the
+    /// span's box are unmoved.
     pub color: Color,
     /// Underline, overline or strike, drawn with the run.
     ///
@@ -185,19 +178,10 @@ impl RunStyle {
                 .font_family
                 .clone()
                 .unwrap_or_else(|| base.family.clone()),
-            // Through `usable` for the same reason `line_gap` is: a plain
-            // `f32` never met `spacing_pixels`, so an infinite size reached the
-            // measurement and collapsed the box around the paragraph. `1e30`
-            // measures fine and is clipped by the canvas, which is what says
-            // this is the arithmetic rather than the size.
-            //
-            // **This took the infinity half only until the `NaN` half was
-            // ruled on**, through a `bounded` that clamped infinities and left
-            // `NaN` alone, because turning a `NaN` size into zero *is* one of
-            // the two answers the ruling was choosing between and a helper's
-            // default is no way to pick it. The ruling refuses `NaN` at the
-            // writer and neutralises it here, so the two halves are the same
-            // answer again and `bounded` is gone.
+            // Through `usable`, as `line_gap` is: an infinite size would reach
+            // the measurement and collapse the box around the paragraph, and a
+            // `NaN` one, refused at the writer, is neutralised here. `1e30`
+            // measures, and the canvas clips it.
             size: usable(style.font_size.unwrap_or(base.size)),
             weight: style.font_weight.unwrap_or(base.weight).get(),
             italic: matches!(
@@ -350,28 +334,25 @@ impl RunStyle {
 /// Shaping is the expensive half of laying text out, and this asks the same
 /// question relentlessly: layout calls a measure function several times per
 /// pass while it searches for a width that fits, and a truncation walks a
-/// string one character at a time. v1 measured the ratio on a twenty-four line
-/// card -- **720 calls resolving to 58 distinct questions**, so ninety-nine
-/// parts in a hundred of the work was a repeat.
+/// string one character at a time. Measured on v9 with a twenty-four line card,
+/// **720 calls resolved to 58 distinct questions**.
 ///
 /// # Why there is no epoch
 ///
-/// v1's cache is global to the process and needs a counter to invalidate it
-/// when a font is registered, since the same `12px Roboto` measures
-/// differently before and after Roboto exists. This one lives for one render:
-/// it is built with the measurer and dropped with it, so a registration
-/// between renders cannot be seen by a cache that no longer exists. The
-/// guarantee v1 buys with the epoch, this gets from its lifetime.
+/// This cache lives for one render: it is built with the measurer and dropped
+/// with it, so a font registered between renders cannot be seen by a cache that
+/// no longer exists. A process-wide cache would need a counter to invalidate it
+/// on every registration, since `12px Roboto` measures differently before and
+/// after Roboto exists.
 pub struct TextMeasurer {
     /// A one-pixel canvas, which is where a measuring context comes from. The
     /// font library is process-wide, so this sees every registered face.
     canvas: Canvas,
     /// Answers, keyed by the font and the string.
     answers: HashMap<(FontKey, u32, String), Measurement>,
-    /// Keys in the order they were inserted, so the oldest can be dropped.
-    ///
-    /// First in, first out, where v1 is least-recently-used. The difference is
-    /// which entry survives a full cache and not what any of them say.
+    /// Keys in the order they were inserted, so the oldest can be dropped:
+    /// first in, first out, which decides only which entry survives a full
+    /// cache and not what any of them say.
     order: VecDeque<(FontKey, u32, String)>,
 }
 
@@ -461,31 +442,14 @@ impl TextMeasurer {
         measurement
     }
 
-    /// The width of a run, which is what the backend measures and nothing
-    /// more.
+    /// The width of a run, which is what the backend measures and nothing more.
     ///
-    /// **No correction, and this is the third arithmetic this function has
-    /// had.** CSS adds one unit after every character including the last, so
-    /// an `n`-character run is `n` spacings wide. What changed each time is
-    /// how much of that the backend already did:
-    ///
-    /// | backend applies | this added | total |
-    /// | --- | --- | --- |
-    /// | none, as v1 assumed | `n - 1` | wrong, a third too wide at 2px |
-    /// | `n - 1`, through 0.15 | one unit | `n`, correct |
-    /// | `n`, from 0.16 | **nothing** | `n`, correct |
-    ///
-    /// meo-skia-canvas 0.16 made `set_letter_spacing` add one unit per
-    /// character rather than `n - 1`, citing the Canvas standard, and its
-    /// changelog measures the change as four glyphs at 10 going from 30 to 40.
-    /// **So the compensation here became a double count** -- every spaced run
-    /// one unit too wide -- which is what `chrome_text_truth` caught on the
-    /// bump: a spaced space measured 7.66 where Chrome makes it 5.66.
-    ///
-    /// **The lesson each time is the same and it is why this table is here:**
-    /// a correction for someone else's arithmetic is only right while their
-    /// arithmetic stands still, and nothing in it says which version it was
-    /// written against.
+    /// CSS adds one letter-spacing unit after every character including the
+    /// last, so an `n`-character run is `n` spacings wide, and
+    /// meo-skia-canvas's `set_letter_spacing` adds exactly that. No correction
+    /// is applied here: one written against a backend's arithmetic is right
+    /// only while that arithmetic holds, and `chrome_text_truth` is what
+    /// catches it moving.
     pub fn run_width(
         &mut self,
         style: &RunStyle,
@@ -497,20 +461,15 @@ impl TextMeasurer {
 
     /// The width of one inter-word space, spacing included.
     ///
-    /// Measured in the node's **base** font rather than in any run's, which is
-    /// v1's choice: the gap between two differently-styled words is one gap,
-    /// and taking it from whichever run happens to precede it would make a
-    /// line's width depend on the order its styles appear in.
+    /// Measured in the node's **base** font rather than in any run's: the gap
+    /// between two differently-styled words is one gap, and taking it from
+    /// whichever run precedes it would make a line's width depend on the order
+    /// its styles appear in.
     ///
-    /// **The spacing is the backend's, as it is in `run_width`.** A single
-    /// character used to come back with none of it -- there was nothing to put
-    /// it between under the `n - 1` rule -- and the unit was added here.
-    /// meo-skia-canvas 0.16 adds one per character, so a space measured with
-    /// spacing already carries its unit and adding another double counts it.
-    ///
-    /// The fallback keeps its own correction: a face that reports **no** space
-    /// width at all gives a measurement the backend never made, so there is no
-    /// spacing in it to inherit.
+    /// The spacing is the backend's, as in `run_width`, so a measured space
+    /// already carries its unit. The fallback adds its own: a face that reports
+    /// **no** space width gives a measurement the backend never made, with no
+    /// spacing in it.
     pub fn space_width(&mut self, base: &RunStyle, letter_spacing: f32) -> f32 {
         let measured = self.measure(base, letter_spacing, " ").width;
         if measured > 0.0 {
@@ -624,31 +583,10 @@ impl Metrics {
         Self {
             letter_spacing: spacing_pixels(base.letter_spacing, base.size),
             word_spacing: spacing_pixels(base.word_spacing, base.size),
-            // `None` is CSS's `normal`, and it arrives as `None` rather
-            // than as a magic number: **`1.0` is a line box exactly one em
-            // tall, which a caller can legitimately ask for.** This used to
-            // exclude it as a sentinel, so every `line-height: 1` in a
-            // document got the face's metrics instead -- twenty of them in
-            // one card, six pixels apiece.
-            //
-            // The zero-and-below guard stays: a non-positive height has no
-            // line box to give and is not what this change is about.
-            //
-            // **This is where a stated height becomes pixels, and it is the
-            // only place a number is multiplied.** A length is already
-            // pixels; a number is a multiple of *this* element's size, which
-            // is why it survives resolution unresolved. A percentage cannot
-            // arrive -- `ResolvedText` never holds one.
-            //
-            // **The `> 0.0` guards below are about sign and catch two of the
-            // three non-finite values by accident**: every comparison with
-            // `NaN` is false, so a `NaN` height falls to `None` and is dropped,
-            // and so does a negative one. `Infinity > 0.0` is true, so an
-            // infinite height went through and collapsed the box around the
-            // paragraph -- a guard that looks like cover because it happens to
-            // refuse most of what it was never checking for. `usable` is what
-            // actually checks it, and the products are passed through it too,
-            // since a finite multiple against an infinite size is infinite.
+            // The one place a stated height becomes pixels: a length already
+            // is, a number multiplies this element's size, and `None` is
+            // `normal`. `> 0.0` refuses `NaN` and negatives but not infinity,
+            // so `usable` checks each product.
             line_height: match base.line_height {
                 Some(LineHeight::Number(multiple)) if multiple > 0.0 => {
                     Some(usable(multiple * usable(base.size)))
@@ -657,29 +595,17 @@ impl Metrics {
                     Some(usable(pixels))
                 }
                 Some(LineHeight::Percent(share)) => {
-                    // Resolution turns every percentage into a length, so
-                    // one here is a scene that skipped it rather than a value
-                    // to interpret. Treated as the length it would have been
-                    // against this element's size, which is the same answer
+                    // Resolution turns every percentage into a length, so one
+                    // here is a scene that skipped it: treated as the length
                     // resolution would have produced.
                     (share > 0.0).then_some(usable(share * usable(base.size)))
                 }
                 _ => None,
             },
-            // **Through `usable` for the reason the spacing fields are.**
-            // `line_gap` is a plain `f32` rather than a `Spacing`, so it does
-            // not pass through `spacing_pixels` and sat one line away from the
-            // check while `lines.rs`'s own multiplication --
-            // `line_gap * (lines.len() - 1)` -- turned a non-finite value into
-            // a non-finite paragraph height. Measured: a box shrink-wrapping
-            // five wrapped lines is 42px tall with no gap, 122px at `40`, and
-            // 200px at `1e30`, where the canvas clips it. At `NaN`, `Infinity`
-            // or `-Infinity` it is **0**, and only the first line draws.
-            //
-            // **No CSS ruling applies to this one.** `line-gap` is not a CSS
-            // property; it is ours, so there is no parse-versus-computed fork
-            // to wait on, and it takes the same answer as its neighbours
-            // because they are the same arithmetic.
+            // Through `usable`, as the spacing fields are: a non-finite gap
+            // times the line count is a non-finite height, and a
+            // shrink-wrapping box lays out at 0 with only the first line drawn.
+            // `line-gap` is ours, not CSS's.
             line_gap: usable(base.line_gap),
         }
     }
@@ -704,46 +630,10 @@ fn spacing_pixels(spacing: Spacing, font_size: f32) -> f32 {
     usable(pixels)
 }
 
-/// A resolved spacing with a value no layout can use replaced.
-///
-/// **The collapse this prevents is not the one it looks like.** A non-finite
-/// letter spacing does not make the text small or invisible: it poisons the
-/// *measurement*, so a box shrink-wrapping that text lays out at zero and
-/// takes its own background, border and siblings' positions down with it.
-/// Measured at `93a00d7` -- the same box is 704px wide at `letterSpacing: 4`,
-/// 4267px at `1e6`, and 0 at `NaN`.
-///
-/// **An absurd finite value is left exactly as it was**, and this is written as
-/// two early returns rather than a `clamp` for that reason alone. `1e6` and
-/// `1e30` both paint today and the box grows to match; a `clamp` against the
-/// ceiling would have quietly pulled `1e30` down to it and changed a render
-/// nothing asked about. This is not a plausibility check -- nothing here
-/// decides a caller's spacing is too large to have meant. Only a value
-/// arithmetic cannot carry is replaced.
-///
-/// **Infinity is clamped rather than dropped, and that is not a coin toss.**
-/// CSS has no `infinity` literal -- `calc(infinity)` is the only way to write
-/// one -- and `calc` clamps. So there is no measured Chrome behaviour under
-/// which an infinite value is dropped, and dropping it is a divergence with no
-/// defence available rather than a reading of an ambiguous rule.
-///
-/// **`NaN` becomes zero, which is `normal`.** Chrome answers a NaN two ways
-/// depending on how it arose -- a `NaN` keyword is a parse error and the
-/// declaration is dropped, a NaN out of `calc` is clamped -- and which one an
-/// API float resembles is a ruling in flight rather than a fact to read off.
-/// For this property the computed answer is measured and it is exactly this
-/// one: Chrome 151 renders `letter-spacing: calc(0/0 * 1px)` as `normal`, in a
-/// 36x14 box identical to declaring nothing. If the ruling goes the other way
-/// the fallback is `base.letter_spacing`, which `RunStyle::of` already has in
-/// hand at its call.
-///
-/// **A large negative spacing still collapses the box's width, and that is
-/// Chrome's answer too, not a leftover.** `letter-spacing: -1000000px` and
-/// `calc(-infinity * 1px)` both give Chrome a `0 x 14` box: the width goes to
-/// zero and the line box keeps its height. So the clamp here does not rescue a
-/// negative infinity into something visible, and it is not meant to -- what it
-/// removes is the *non-finite* arithmetic, after which the value behaves like
-/// the finite neighbours it now sits between.
+/// A resolved spacing no layout can use, replaced: a non-finite one poisons the
+/// measurement and a shrink-wrapping box lays out at zero. Finite values pass
+/// unchanged, `1e30` included. Infinity clamps, as `calc` does, and `NaN` is
+/// zero, `normal`, as Chrome 151 renders `calc(0/0 * 1px)`.
 const fn usable(pixels: f32) -> f32 {
     if pixels.is_nan() {
         return 0.0;
@@ -754,11 +644,9 @@ const fn usable(pixels: f32) -> f32 {
     pixels
 }
 
-/// Splits a segment into words and the whitespace between them.
-///
-/// Newlines are their own pieces, because a wrap has to know a break was asked
-/// for rather than chosen. Every other whitespace run collapses into one gap,
-/// as CSS's `white-space: normal` does.
+/// Splits a segment into words and the whitespace between them. Newlines are
+/// their own pieces, since a wrap must know a break was asked for; any other
+/// whitespace run collapses into one gap, as `white-space: normal` does.
 fn pieces(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -847,17 +735,10 @@ pub fn wrap(
 
             finish(&mut lines, &mut runs, &mut used, false);
 
-            // **A word too wide for the line overflows it, on a line of its
-            // own.** Measured in Chrome: a 278px word in a 100px box is one
-            // line 278px wide when it stands alone, and the second of two
-            // lines when a short word precedes it. Neither is broken.
-            // `overflow-wrap: break-word` is what asks for breaking, and this
-            // scene does not have that property yet -- see [`break_word`].
-            //
-            // v1 breaks such a word between characters, but only when it
-            // arrives at a line that already has something on it, because its
-            // place-it-anyway branch is tested before the width. That
-            // arrangement is v1's, not the browser's.
+            // A word too wide for the line overflows it on a line of its own,
+            // as Chrome does with a 278px word in a 100px box, alone or after a
+            // short word. Only `overflow-wrap: break-word` breaks it; see
+            // [`break_word`].
             used = width;
             runs.push(Run {
                 text: piece.to_owned(),
@@ -871,13 +752,10 @@ pub fn wrap(
     lines
 }
 
-/// Closes the line being built and starts the next one.
-///
-/// Trailing whitespace goes with it: a space at the end of a line is the one
-/// the wrap consumed when it broke there, and CSS does not draw it. `hard`
-/// records **why** the line ended, which truncation needs and nothing else
-/// does -- text may be pulled up across a wrap and never across a newline the
-/// caller wrote.
+/// Closes the line being built and starts the next, dropping the trailing space
+/// the wrap consumed there, which CSS does not draw. `hard` records why the
+/// line ended: truncation pulls text up across a wrap, never across a written
+/// newline.
 fn finish(
     lines: &mut Vec<Line>,
     runs: &mut Vec<Run>,
@@ -897,20 +775,10 @@ fn finish(
     *used = 0.0;
 }
 
-/// Breaks one word into pieces that each fit `max_width`.
-///
-/// Character by character, because there is nothing narrower to break at. A
-/// single character wider than the line is given a piece of its own rather
-/// than being dropped.
-///
-/// **Nothing calls this yet, and that is the correct state.** Chrome does not
-/// break a long word under the default `overflow-wrap: normal` -- measured, in
-/// both arrangements: alone in a box a third its width it is one overflowing
-/// line, and after a short word it is the second line, still whole. Only
-/// `overflow-wrap: break-word` breaks it, and the scene has no such property.
-/// The arithmetic is kept, tested, and waiting for that property rather than
-/// deleted, because the day it is added this is what it needs and rewriting it
-/// then would be rewriting something already measured against the browser.
+/// Breaks one word into pieces that each fit `max_width`, a character wider
+/// than the line taking a piece of its own. Chrome breaks a word only under
+/// `overflow-wrap: break-word`, which the scene lacks, so nothing outside the
+/// tests calls this.
 #[cfg_attr(
     not(test),
     expect(
@@ -967,24 +835,10 @@ fn break_word(
     parts
 }
 
-/// Rebuilds the last visible line so it fills the room an ellipsis leaves it.
-///
-/// # Why the line has to be rebuilt at all
-///
-/// Wrapping breaks at words, so the word that overflowed has already moved to
-/// a line `max_lines` is about to throw away -- leaving the last line ending
-/// at whatever word fitted, with an ellipsis tacked on. **CSS does the
-/// opposite**: the last line takes as many characters as fit, mid-word if that
-/// is where the room runs out, and the ellipsis follows. `Flower of Paradise
-/// Lost` in 140px is `Flower of Par…` in a browser where breaking at the word
-/// gives `Flower of…`.
-///
-/// That is the whole reason `max_lines` and the ellipsis cannot be left to the
-/// backend's paragraph: a paragraph-level limit cannot express it.
-///
-/// Text is pulled up from the lines that follow, which is where the rest went
-/// -- but **never across a newline the caller wrote**, since that is a break
-/// they asked for rather than one wrapping introduced.
+/// Rebuilds the last visible line to fill the room an ellipsis leaves: CSS
+/// takes as many characters as fit, so `Flower of Paradise Lost` in 140px is
+/// `Flower of Par…`, not the wrap's `Flower of…`. Text is pulled up from the
+/// lines after it, never across a newline the caller wrote.
 fn truncate_with(
     measurer: &mut TextMeasurer,
     base: &ResolvedText,
@@ -999,7 +853,7 @@ fn truncate_with(
     let gap = space + metrics.word_spacing;
 
     // The ellipsis takes the style of the last thing written before it, which
-    // is v1's rule and the one that keeps a bold last word's marker bold.
+    // is v9's rule and the one that keeps a bold last word's marker bold.
     let style = all[from]
         .runs
         .iter()
@@ -1081,17 +935,10 @@ fn truncate_with(
         width: marker_width,
     });
 
-    // **A space before the marker is kept if it fits.** v1 strips trailing
-    // whitespace here, reasoning that it pushes the marker away from the text
-    // it belongs to; Chrome does not, because it keeps the longest prefix of
-    // the string that fits and a space is part of the string. Measured:
-    // `Flower of Paradise` at 22px in 90 is drawn as `Flower of …`, 89.98
-    // wide, space and all.
-    //
-    // It only survives while it fits, which is the same rule and not a second
-    // one: the gap a space stands for is arithmetic the marker's own width
-    // competes with, so the line is measured with the marker on it and the
-    // space goes if that is what does not fit.
+    // A space before the marker is kept while it fits, as Chrome keeps the
+    // longest prefix that fits: `Flower of Paradise` at 22px in 90 draws
+    // `Flower of …`, 89.98 wide. The line is measured with the marker on it,
+    // and the space goes if that does not fit.
     while runs.len() > 1
         && line_width(
             &Line {
@@ -1224,16 +1071,10 @@ pub fn layout(
     let base_style = RunStyle::base(base);
     let space = measurer.space_width(&base_style, metrics.letter_spacing);
 
-    // **A line can overflow with no line after it.** Wrapping breaks at
-    // spaces, so a word with no space in it is placed whole however wide it
-    // is -- `Antidisestablishmentarianism` occupies 171.81 in a box of 90 --
-    // and the truncation above never runs, because its trigger is the *line
-    // count*. Chrome cuts such a line at the last **letter** that fits and
-    // draws the marker after it: `Antidisestabli…`, 88.00 wide. Measured in
-    // `crates/meo-canvas/tests/assets/chrome/ellipsis.tsv`.
-    //
-    // The rule is the one `truncate_with` already implements. Only the
-    // trigger was missing.
+    // A line can overflow with no line after it: an unbreakable word is placed
+    // whole, and Chrome cuts it at the last letter that fits, `Antidisestabli…`
+    // at 88.00 in 90 (`chrome/ellipsis.tsv`). `truncate_with` is the rule; this
+    // is its second trigger.
     if let Some(marker) = marker
         && let Some(last) = lines.len().checked_sub(1)
         && line_width(&lines[last], space, metrics.word_spacing) > max_width
@@ -1298,18 +1139,9 @@ mod tests {
         }]
     }
 
-    /// A spacing no arithmetic can carry never reaches a measurement.
-    ///
-    /// The equalities below are exact on purpose and the lint is turned off for
-    /// them by name: `0.0` is the value `normal` resolves to rather than an
-    /// approximation of it, and the pass-through row asserts a number arrived
-    /// *unchanged*, which a tolerance would stop saying.
-    ///
-    /// Not a message defect. A non-finite letter spacing poisons the
-    /// *measurement*, so a box shrink-wrapping that text lays out at zero and
-    /// takes its background, its border and its siblings' positions with it --
-    /// measured at `93a00d7` as a 704px box at `letterSpacing: 4` and a 0px box
-    /// at `NaN`. A paint-side check would have left that standing.
+    /// A spacing no arithmetic can carry never reaches a measurement. The
+    /// equalities are exact: `0.0` is what `normal` resolves to, and the
+    /// pass-through row asserts a number arrived unchanged.
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1328,13 +1160,9 @@ mod tests {
         );
     }
 
-    /// An infinite spacing is clamped, and clamping is not a coin toss here.
-    ///
-    /// CSS has no `infinity` literal -- `calc(infinity)` is the only spelling
-    /// -- and `calc` clamps, so there is no measured Chrome behaviour under
-    /// which an infinite value is dropped. Chrome 151 gives
-    /// `calc(-infinity * 1px)` as `-3.35544e+07px`, a clamp rather than a
-    /// dropped declaration.
+    /// An infinite spacing is clamped: `calc` is CSS's only spelling of
+    /// infinity and it clamps, and Chrome 151 gives `calc(-infinity * 1px)` as
+    /// `-3.35544e+07px`.
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1350,13 +1178,8 @@ mod tests {
         assert_eq!(up, -down, "the two directions are the same distance");
     }
 
-    /// The product is what is checked, not the two numbers that made it.
-    ///
-    /// **This is the row an input-side check fails and every other row here
-    /// passes.** `Em` multiplies by the run's own font size, so two finite
-    /// values overflow to infinity between them; a guard written against
-    /// `spacing` rather than against what it resolved to would let that
-    /// through and the collapse would come back for one spelling only.
+    /// The product is checked, not the numbers that made it: `Em` multiplies by
+    /// the run's own font size, so two finite values can overflow to infinity.
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1368,12 +1191,8 @@ mod tests {
         assert_eq!(resolved, FINITE_CEILING);
     }
 
-    /// An absurd finite spacing is left alone, to the bit.
-    ///
-    /// The ceiling bounds what a non-finite value becomes; it is not a
-    /// plausibility check, and nothing here decides a caller's spacing is too
-    /// large to have meant. Written as a `clamp` this would have pulled `1e30`
-    /// down to the ceiling and changed a render nothing asked about.
+    /// An absurd finite spacing is left alone, to the bit: nothing here judges
+    /// a spacing too large to have meant, and a `clamp` would pull `1e30` down.
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1389,14 +1208,8 @@ mod tests {
         }
     }
 
-    /// The line gap is checked too, and it is not a `Spacing`.
-    ///
-    /// **The field that sat one line from the check and was missed by it.**
-    /// Every other value in `Metrics` arrives through `spacing_pixels`;
-    /// `line_gap` is a plain `f32` and does not, so the repair for its
-    /// neighbours stopped just short of it. A non-finite gap multiplied by the
-    /// line count is a non-finite paragraph height, and the box shrink-wrapping
-    /// that paragraph lays out at zero.
+    /// The line gap is checked too, though it is a plain `f32` rather than a
+    /// `Spacing`: a non-finite gap times the line count is a non-finite height.
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1415,16 +1228,9 @@ mod tests {
         assert_eq!(Metrics::of(&base).line_gap, 1.0e30);
     }
 
-    /// An infinite line height and an infinite size are bounded too.
-    ///
-    /// **The two fields the `line_gap` repair would have missed.** The
-    /// mechanism is a type boundary rather than a field: `spacing_pixels`
-    /// covers the two `Spacing` fields and every plain `f32` is exempt by
-    /// construction, so the count of affected fields is however many of that
-    /// type exist. `line_height`'s own guard is `> 0.0`, which is about sign
-    /// and catches `NaN` and negatives only because every comparison with
-    /// `NaN` is false -- `Infinity > 0.0` is true, so it went through. A guard
-    /// that refuses most of what it was never checking for reads as cover.
+    /// An infinite line height and size are bounded too: both are plain `f32`s
+    /// outside `spacing_pixels`, and `line_height`'s `> 0.0` guard lets
+    /// `Infinity` through.
     #[test]
     fn an_infinite_line_height_or_size_never_reaches_the_measurement() {
         let mut base = style();
@@ -1439,15 +1245,8 @@ mod tests {
         assert!(RunStyle::base(&base).size.is_finite());
     }
 
-    /// A `NaN` size is neutralised, which this file spent a commit not doing.
-    ///
-    /// **The row that replaces a parking test.** While the ruling was open,
-    /// `size` took a helper that clamped infinities and left `NaN` untouched,
-    /// and a test asserted the `NaN` was still a `NaN` -- not because that was
-    /// right, but because the tidy edit that would have changed it was also the
-    /// edit that answered the open question. The ruling is in: refused at the
-    /// writer, where a refusal can be reported; neutralised here, where it
-    /// cannot.
+    /// A `NaN` size is neutralised: refused at the writer, where a refusal can
+    /// be reported, and neutralised here, where it cannot.
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1459,11 +1258,9 @@ mod tests {
         assert_eq!(RunStyle::base(&base).size, 0.0);
     }
 
-    /// And the metrics a paragraph is laid out with carry none of it either.
-    ///
-    /// `spacing_pixels` is private and three call sites reach it; this is the
-    /// one that says the repair is on the path a scene actually takes rather
-    /// than only in the helper.
+    /// And the metrics a paragraph is laid out with carry none of it either:
+    /// the call site a scene takes, where the rows above test `spacing_pixels`
+    /// alone.
     #[test]
     #[expect(clippy::float_cmp, reason = "`normal` resolves to exactly zero")]
     fn resolved_metrics_are_finite_whatever_the_style_asked_for() {
@@ -1526,21 +1323,10 @@ mod tests {
         ]
     }
 
-    /// Prints this crate's line boxes beside the paragraph's, for every case.
-    ///
-    /// **Ignored on purpose: the output is a table for a person to read rather
-    /// than an assertion.** The first round of the text port is two
-    /// independent statements of one layout with their disagreements
-    /// enumerated; deciding which of the two is right, case by case, is what
-    /// the browser measurements are for. An assertion written before those
-    /// land would pin whichever model happened to be written second, which is
-    /// the failure this whole comparison exists to avoid.
-    ///
-    /// `cargo test -p meo-canvas-core --lib -- --ignored --nocapture line_box`
-    ///
-    /// On stderr, because `print_stdout` is denied outside the binary whose
-    /// stdout is its deliverable -- the same reason the fixture harness
-    /// reports there.
+    /// Prints this crate's line boxes beside the paragraph's, on stderr, for a
+    /// person: `cargo test -p meo-canvas-core --lib -- --ignored --nocapture
+    /// line_box`. Ignored, since the browser measurements decide which is
+    /// right.
     #[test]
     #[ignore = "prints a comparison table rather than asserting one"]
     fn report_line_box_disagreements() {
@@ -1651,13 +1437,10 @@ mod tests {
         let mut fractions = plain.clone();
         fractions.variant = vec![FontVariant::DiagonalFractions];
 
-        // **A fraction, because that is the one feature this face answers
-        // to.** Measured across seventeen OpenType tags on the repository's
-        // own Oswald: `frac` moves a nineteen-character sample from 220.61 to
-        // 211.04 and every other tag moves nothing, `smcp` included -- the
-        // face has no small-caps glyphs and nothing synthesises them. A test
-        // written with `SmallCaps` would report this property as dead however
-        // well it worked.
+        // A fraction, the one feature this face answers to: across seventeen
+        // tags on the repository's Oswald, `frac` moves a nineteen-character
+        // sample from 220.61 to 211.04 and every other tag, `smcp` included,
+        // moves nothing.
         let sample = "about 1/2 of it";
         let without = measurer.run_width(&plain, 0.0, sample);
         let with = measurer.run_width(&fractions, 0.0, sample);
@@ -1857,18 +1640,10 @@ mod tests {
         assert!(one.height.mul_add(-2.0, two.height - 10.0).abs() < 0.001);
     }
 
-    /// What `wrapped_lines` and `truncated` report, in each of the four shapes.
-    ///
-    /// **They exist because `lines.len()` cannot answer either question after
-    /// the fact**, and the rescue in [`crate::measure`] needs both: a box
-    /// rounded down from the text's own width breaks a paragraph that fitted,
-    /// and whether that shows as a dropped line or as a marker on a single line
-    /// depends only on whether the text has a space in it.
-    ///
-    /// The third row is the one worth having. A word with no break opportunity
-    /// never raises the line count, so it reaches the marker through the
-    /// overflow trigger rather than the `max_lines` one -- and a fix reading
-    /// only the line count repaired the spaced case and left this one broken.
+    /// What `wrapped_lines` and `truncated` report in four shapes, which
+    /// `lines.len()` cannot. The third matters: a word with no break
+    /// opportunity reaches the marker by overflow, never raising the line
+    /// count.
     #[test]
     fn a_block_reports_what_the_wrap_did_before_max_lines_touched_it() {
         let mut measurer = TextMeasurer::new();
@@ -2003,17 +1778,10 @@ mod tests {
             "the marker is missing: {last:?}"
         );
 
-        // **The point of the rebuild.** Wrapping breaks at words; truncation
-        // does not. The line is rebuilt against a budget the marker has
-        // already been taken out of, and it takes as many *characters* as fit
-        // -- pulling text up from the lines `max_lines` discards when there is
-        // room, and stopping mid-word when there is not. Here it stops
-        // mid-word: `Flower o…` rather than the wrap's own `Flower of`, whose
-        // marker would not have fitted beside it.
-        //
-        // Either way the line is not the wrap's line with a marker stuck on,
-        // and that is the difference a paragraph-level line limit cannot
-        // express.
+        // The line is rebuilt against a budget without the marker and takes as
+        // many characters as fit, pulling text up when there is room and
+        // stopping mid-word when not: `Flower o…` here, not the wrap's `Flower
+        // of` with a marker on.
         let kept = last.trim_end_matches('\u{2026}');
         assert_ne!(
             kept,

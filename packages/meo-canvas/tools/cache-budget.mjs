@@ -1,49 +1,7 @@
-// The Actions cache budget, and where it is going.
-//
-// **GitHub emits no signal when it evicts.** The only symptom is a restore
-// taking one to six seconds instead of thirty to sixty, followed by a cold
-// build -- and nothing looks at that number. On 2026-09-09 this repository sat
-// over the limit for an unknown period, a different leg cold-built on each run,
-// and it read as "Windows is slow" for long enough to reach a task description
-// as a diagnosis. Three runs, from the job step timings:
-//
-//     run           leg      restore  install   just native
-//     34337356783   windows      58s       1s         883s
-//     34339254035   ubuntu        1s      90s        2090s
-//     34343357328   windows       6s     185s        2784s
-//
-// **Per ref, because the total is the autopsy and the breakdown is the
-// warning.** What went wrong was a merged pull request's caches outliving it:
-// 3.53 GiB under `refs/pull/59/merge`, unreadable by anything, sitting beside a
-// working set. A total says the budget is tight; a ref that should not be there
-// says which change to make.
-//
-// **And per superseded key, because the ref is not always the answer.** On
-// 10 September every entry was on the default branch and the floor was right:
-// what was wrong was that five key prefixes each held two entries, differing
-// only in the environment hash, so the older of each pair could never be
-// restored again. The message at the time said to look for a ref that is not
-// the default branch and, failing that, to argue about the floor — neither of
-// which was the case in front of the reader. **A remediation that cannot name
-// the case it just met sends people somewhere else**, so this names the
-// superseded entries and prints the command that removes them.
-//
-// **Every call it makes is bounded, because a gate step that hangs is worse
-// than one that fails.** This reads the network and shells out to `gh`, and
-// neither had a bound when it was written: on 2026-09-10 two `just ci` runs
-// died at this recipe with `terminated on line 1541 by signal 15` after five
-// lines of output, which is a fifteen-minute hang and then whatever was
-// watching giving up. A check that can stop the gate indefinitely is a worse
-// failure than the eviction it exists to catch, and it is the same fault as an
-// unbounded fetch anywhere else -- which this repository already bounds, at
-// sixty seconds, for image sources.
-//
-// **What this cannot see, stated so nobody reads more into a pass.** It takes
-// one reading at one moment. Eviction happens between runs, so a pass means the
-// budget was fine when it looked -- not that nothing was evicted since the last
-// look, and not that nothing will be before the next. Catching an eviction as it
-// happens would mean reading restore durations out of job logs, which is a
-// different tool. This one is a smoke alarm, not a flight recorder.
+// The Actions cache budget, per ref and per superseded key, since GitHub evicts
+// silently and the only symptom is a cold build. It names what to remove and the
+// command that removes it. Every call is bounded so the gate cannot hang, and a
+// pass is one reading at one moment, not proof nothing was evicted since.
 import { execFileSync } from 'node:child_process'
 
 import { ORDER_READS, supersededOf } from './cache-entries.mjs'
@@ -52,21 +10,9 @@ const GIB = 1024 ** 3
 const MIB = 1024 ** 2
 
 /**
- * The size at which this asks for attention, in bytes.
- *
- * **Derived rather than picked, and the derivation is the point.** GitHub
- * documents the limit as "10 GB" without saying which unit; on either reading
- * the headroom argument is the same. An alarm is only useful while there is
- * still room for the next save, so the floor is the limit less the largest
- * single entry: the biggest cache here is the ubuntu set at 2215 MiB, so an
- * alarm at 8 GiB would leave 2 GiB -- less than one of it -- and the next save
- * would evict something before anyone read the warning.
- *
- * 7.5 GiB leaves 2.5 GiB, which is one largest-entry plus a margin. For scale:
- * a clean set is ubuntu 2215 + windows 1398 + macos 1242 + bun 94 = 4949 MiB,
- * and the reading on 2026-09-10 was 6.04 GiB because a windows key had rotated
- * and both copies were still live. So this fires on roughly one more rotation,
- * or on anything that should not be here at all.
+ * The size at which this asks for attention: the 10 GB limit less the largest
+ * single entry, so the alarm fires while the next save still fits. The ubuntu set
+ * is 2215 MiB, so 7.5 GiB leaves one largest entry plus a margin.
  */
 const FLOOR_BYTES = 7.5 * GIB
 
@@ -105,60 +51,17 @@ function token() {
 
 const inCi = process.env['GITHUB_ACTIONS'] === 'true'
 
-// **The total is a fact about the repository, so it fails `main` and reports on
-// a pull request.**
-//
-// This ran everywhere and failed everywhere, and on 2026-09-10 a release-notes
-// pull request went red on `portable` because the shared cache was over the
-// floor -- a gate telling a contributor something true about the repository and
-// nothing about their change, while its three native legs passed on the same
-// commit. The cost is not that they cannot merge: it is a red they cannot act
-// on, and a red a reviewer has to learn to ignore takes the next real failure
-// on the same check down with it. The argument for failing there at all was
-// that somebody had to notice; the pruner notices instead.
-//
-// **Reporting needs positive evidence and enforcing is the default.** The set
-// below is named rather than inverted, so an unset or unrecognised environment
-// enforces rather than passes -- the opposite polarity to a guard that relaxes
-// whenever it cannot tell, which is the shape that made
-// `event !== 'workflow_dispatch'` wrong in `cache-prune.yml` on the same day.
-//
-// **Three events, and each is a change that is not yet on `main`.**
-// `pull_request` is the case this exists for. `pull_request_target` is the same
-// contributor's change evaluated against the base repository, so the argument is
-// identical and it is named now rather than discovered later. `merge_group` is
-// the one worth stating rather than leaving as a consequence of the keying: a
-// merge queue is about to become `main`, so enforcing there is defensible -- and
-// it would jam the whole queue on a shared resource, with no run on `main` to
-// fire the pruner and clear it, which is the deadlock this file's sibling spent
-// a production hour on. Reporting is self-healing instead: the change lands,
-// `main`'s own run fails on the budget, and the pruner runs whatever that
-// conclusion is, and removes the dead entries.
-//
-// `merge_group` fires only where a merge queue is enabled, so that arm is
-// prospective rather than a description of what runs today. It is named now
-// because being wrong in this direction costs one red run on `main` that then
-// fixes itself, and being wrong in the other costs a jammed queue and a person.
-//
-// **And it prints rather than passing quietly**, because a check that silently
-// does nothing is the shape this repository has been burned by repeatedly. The
-// same line names the entries it would have failed on, so a pull request still
-// carries the evidence and only the exit status changes.
-//
-// What this gives up: an over-budget cache is no longer visible as a red on a
-// pull request, so it is noticed on the next run on `main` instead. That is the
-// trade, taken deliberately, and it is why the line below says `reported, not
-// enforced` rather than `skipped`.
+// The total is a fact about the repository: it fails `main` and is reported on a
+// change not yet there -- a pull request, `pull_request_target`, or a merge queue a
+// failure would jam with no `main` run to prune it. The set is named, so an unknown
+// event enforces; reporting prints the entries it would have failed on.
 const REPORT_ONLY_EVENTS = new Set(['pull_request', 'pull_request_target', 'merge_group'])
 const beforeMain = REPORT_ONLY_EVENTS.has(process.env['GITHUB_EVENT_NAME'] ?? '')
 const auth = token()
 
-// **The skip is refused where it would matter.** A check that quietly does
-// nothing without credentials is the shape this repository has been burned by
-// repeatedly, so it is allowed exactly where it cannot hide: on a developer's
-// machine, out loud, naming what would make it run. In CI there is always a
-// token and `actions: read` is granted on this job, so an absence there is a
-// broken workflow rather than a laptop without `gh`.
+// Without credentials this skips only off CI, out loud, naming what would make it
+// run. CI always has a token with `actions: read`, so an absence there is a broken
+// workflow.
 if (auth === undefined) {
   if (inCi) {
     process.stderr.write(
@@ -181,12 +84,8 @@ for (let page = 1; ; page += 1) {
       signal: AbortSignal.timeout(DEADLINE_MS),
     })
   } catch (cause) {
-    // **Unreachable is not the same as fine, and not the same as broken.** In
-    // CI the runner is already talking to this host, so a failure here says the
-    // job's access is wrong and the run is compromised either way. On a machine
-    // it says the network is having a moment, which is not a reason to stop
-    // someone's gate -- the same split the missing-token arm above makes, for
-    // the same reason.
+    // Unreachable fails in CI, where the runner already reaches this host and the
+    // job's access is wrong; on a machine it warns, like the missing-token arm.
     const detail = cause instanceof Error ? cause.message : String(cause)
     if (inCi) {
       process.stderr.write(`\nCould not reach the cache list for ${repo} within ${DEADLINE_MS / 1000}s: ${detail}\n`)
@@ -217,17 +116,8 @@ const refs = [...byRef].sort((a, b) => b[1] - a[1])
 process.stdout.write(`cache budget: ${(total / GIB).toFixed(2)} GiB across ${entries.length} entries, floor ${(FLOOR_BYTES / GIB).toFixed(1)} GiB\n`)
 for (const [ref, size] of refs) process.stdout.write(`  ${(size / GIB).toFixed(2).padStart(6)} GiB  ${ref}\n`)
 
-// **Superseded: same key prefix, read less recently than a sibling.** The rule
-// and its proof are in `cache-entries.mjs`, imported rather than repeated so
-// that this report and `cache-prune.mjs` cannot disagree about which entries
-// are dead.
-//
-// **Read, not created**, and the distinction is the whole of it: the trailing
-// hashes are content rather than a clock, so a newer entry can cache a
-// lockfile state `main` has moved past while an older one is exactly current.
-// This comment used to say "only the newer can ever be restored", which is
-// false, and a reader who believed it produced a delete list containing the
-// two caches `main` actually restores.
+// Superseded: same key prefix, read less recently than a sibling. The rule is
+// `cache-entries.mjs`'s, imported so this report and `cache-prune.mjs` agree.
 const superseded = supersededOf(entries)
 const supersededBytes = superseded.reduce((sum, entry) => sum + entry.size_in_bytes, 0)
 if (superseded.length > 0) {

@@ -1,42 +1,7 @@
-//! Every blend mode, checked against its own formula rather than against a
-//! pinned output.
-//!
-//! # Why not compare with Chrome's numbers directly
-//!
-//! Because they answer two questions at once and neither can be read off the
-//! result. A blend mode's output carries **the backdrop it was given**, and
-//! the backdrop here is a gradient — so a pinned output is a claim about the
-//! blending *and* about where the gradient lands at that pixel, and a failing
-//! row cannot say which one moved.
-//!
-//! They did move, separately: our gradient reads `80, 76, 83` at the dark
-//! sample point where Chrome reads `80, 75, 83`, one unit in green, against an
-//! analytic value of `79.93, 75.79, 82.93` that rounds to Chrome's. Put
-//! through the modes, that one unit came out as `+1` on eleven of them, `+3`
-//! on `color-dodge`'s green and `-4, +3, +3` on `saturation` — thirteen rows
-//! that looked like thirteen defects and were one.
-//!
-//! So: **read our own backdrop and apply the formula to that.** These rows
-//! then say only whether we blend correctly, and the gradient gets a row of
-//! its own that says only where it lands. Two questions, two measurements,
-//! neither carrying the other.
-//!
-//! # Why the amplifying modes matter more than the rest
-//!
-//! `saturation` divides by the backdrop's channel spread — eight units out of
-//! 255 at the dark point — so a one-unit fault in the backdrop leaves it
-//! twelve units wide. `color-dodge` divides by `1 - Cs` and multiplies the
-//! same fault by three. Every other mode here has a gain near one, which is
-//! why eleven of them hid the fault inside a tolerance that would have passed
-//! them all. **The gain is readable off the formula before anything renders**,
-//! and it is what makes a case worth having rather than a curiosity.
-//!
-//! # Where the source's alpha went
-//!
-//! Nowhere: the source is opaque and so is the backdrop, so the compositing
-//! step of Compositing 1 §9 reduces to the blend function alone and every
-//! formula below is `B(Cb, Cs)` with no `Sa`/`Da` term. A translucent source
-//! would need the full equation, and there is no row here that has one.
+//! Every blend mode, checked against its own formula over our own backdrop
+//! rather than against Chrome's pinned output, which also carries where the
+//! gradient lands. `saturation` and `color-dodge` amplify a backdrop error by
+//! about twelve and three, so they are the cases that count.
 
 use meo_canvas::{
     Box, Display, Element, Format, PositionType, Renderer, Root, Styled,
@@ -58,24 +23,14 @@ const SOURCE_AT: (f32, f32) = (10.0, 8.0);
 /// The source's colour, `#4090c0`.
 const SOURCE_INK: Color = Color::rgb(0x40, 0x90, 0xc0);
 
-/// The two points read inside the source.
-///
-/// One where the backdrop under it is dark and one where it is light. On a
-/// flat backdrop `multiply` and `darken` agree wherever the backdrop is
-/// lighter than the source, and `screen` and `lighten` agree wherever it is
-/// darker; the ramp and the two points are what keep those four apart.
+/// The two points read inside the source, over a dark and a light backdrop: on
+/// one flat backdrop `multiply` agrees with `darken` and `screen` with
+/// `lighten`.
 const POINTS: [(&str, usize, usize); 2] =
     [("over dark", 14, 20), ("over light", 42, 20)];
 
-/// Chrome's backdrop at the two points, **read from the table rather than
-/// copied out of it.**
-///
-/// It was two transcribed tuples. That reads identically and is not the same
-/// thing: a transcription is a copy that can drift from the file in silence,
-/// and `blend-modes.tsv` would have been regenerated one day with nothing to
-/// say the constant no longer matched it. It also meant this test *cited* the
-/// table while reading nothing — which satisfies a search for the filename and
-/// leaves the measurement unused.
+/// Chrome's backdrop at the two points, read from `blend-modes.tsv` rather than
+/// transcribed, so a regenerated table cannot silently disagree with a copy.
 fn chrome_backdrop() -> [(u8, u8, u8); 2] {
     let table = include_str!("assets/chrome/blend-modes.tsv");
     let mut found = [None, None];
@@ -177,28 +132,10 @@ fn cell(mode: Option<BlendMode>) -> Element {
     }
 }
 
-/// How many pixels each sample point covers.
-///
-/// **Two, because the output oscillates with period two and one pixel cannot
-/// see it.** Read at a single pixel, `exclusion` over the dark point sits
-/// `+0.99` from the formula on macOS and `-1.01` on Linux -- against a formula
-/// value of `150.01`, the two platforms draw `151` and `149` and **neither
-/// draws the `150` it rounds to**. Sampling the neighbouring pixels shows why:
-/// the error runs `+0.97, -0.02, +0.99, 0.00, -0.99, +0.02` across six
-/// consecutive columns, so a point reading measures where in that pattern the
-/// sample happened to land rather than whether the blend is right.
-///
-/// The residual against the formula is `+1, 0, +1, 0, -1, 0` on consecutive
-/// pixels -- the size and shape of an ordered dither, which this file already
-/// names as the reason Chrome's gradient sits a unit low in green. **Left as
-/// an observation rather than a mechanism**: the drawn values in that region
-/// take only odd integers, which a dither does not by itself explain, and the
-/// Skia path has not been read. The fix does not depend on the cause.
-///
-/// Averaging over a full period cancels a period-two displacement by
-/// construction. Moving the sample to where the oscillation is null would not:
-/// that is fitting to the phase, which is what `TOLERANCE` already did at this
-/// pixel on one platform.
+/// How many pixels each sample covers: two, since the output oscillates with
+/// period two -- `exclusion` reads 151 on macOS and 149 on Linux against
+/// 150.01. Averaging over a full period cancels it; moving the sample to a null
+/// point would fit the phase.
 const PERIOD: usize = 2;
 
 /// Renders one cell and reads a period-wide window at both sample points.
@@ -323,11 +260,9 @@ fn with_luminosity(color: [f64; 3], want: f64) -> [f64; 3] {
     clip([color[0] + shift, color[1] + shift, color[2] + shift])
 }
 
-/// Compositing 1 §10.3's `Sat`: the spread between the extreme channels.
-///
-/// **This is the divisor that makes `saturation` an amplifier.** At the dark
-/// sample point the backdrop spreads eight units out of 255, so a one-unit
-/// error in a channel moves the result by about twelve.
+/// Compositing 1 §10.3's `Sat`, the spread between the extreme channels: the
+/// divisor that makes `saturation` an amplifier, eight units out of 255 at the
+/// dark point.
 fn spread(color: [f64; 3]) -> f64 {
     color[0].max(color[1]).max(color[2]) - color[0].min(color[1]).min(color[2])
 }
@@ -385,37 +320,10 @@ fn expected(mode: &str, backdrop: (u8, u8, u8)) -> (f64, f64, f64) {
     (blended[0] * 255.0, blended[1] * 255.0, blended[2] * 255.0)
 }
 
-/// How far a channel may sit from the formula before it is a defect.
-///
-/// **One unit, and nothing needs the whole of it any more.** Every reading now
-/// lands within `0.49` on this machine, `exclusion` included.
-///
-/// It used to be load-bearing for exactly that mode: point-sampled,
-/// `exclusion` sat at `0.99` over the dark point and `0.78` over the light
-/// one, and the separation read as one implementation's rounding of
-/// `Cb + Cs - 2·Cb·Cs` — Chrome's own rows were off by the same two numbers to
-/// both decimals, so it looked like Skia's arithmetic showing up twice.
-///
-/// **That reading was wrong, and the first Linux run is what showed it.** The
-/// pixel sitting `+0.99` from the formula on macOS sits `-1.01` on Linux:
-/// `151` and `149` against a formula value of `150.01`, with neither platform
-/// drawing the `150` it rounds to. It was never rounding. It was a period-two
-/// oscillation across the pixel grid, and both that `0.99` and Chrome's
-/// matching number were samples of the same wave rather than evidence about
-/// arithmetic. See [`PERIOD`]: averaging over a period cancels it and takes the
-/// worst reading to `0.49`.
-///
-/// **Deliberately not tightened to match.** `0.49` is this machine's number,
-/// and fitting the bound to it would repeat exactly the mistake being undone
-/// here — a tolerance shaped by whichever platform happened to measure it.
-/// Tightening wants a Linux number beside this one first.
-///
-/// A tolerance of one on *pinned Chrome outputs* would have passed eleven
-/// modes carrying a real fault — which is what happened before this walker
-/// changed currency. Against our own backdrop the only thing inside the
-/// tolerance is the blend's own rounding, and a blend genuinely wrong by a
-/// fraction of a unit still shows: `saturation` multiplies it by twelve at the
-/// dark point and `color-dodge` by three.
+/// How far a channel may sit from the formula: one unit, with every reading
+/// within `0.49` here once sampled over [`PERIOD`]. Not tightened to match,
+/// since that is one machine's number; `saturation` and `color-dodge` still
+/// expose a fractional error.
 const TOLERANCE: f64 = 1.0;
 
 /// Which modes we blend differently from the formula today.
@@ -505,23 +413,9 @@ fn every_blend_mode_follows_its_formula() {
     );
 }
 
-/// Where our gradient lands, which is the *other* question the blend rows used
-/// to carry.
-///
-/// **We are the analytic value and Chrome is not**, which is the opposite of
-/// what the blend comparison first suggested. At the dark point the ramp is
-/// analytically `(79.93, 75.79, 82.93)`; we draw `(80, 76, 83)`, which is each
-/// channel rounded to nearest, and Chrome draws `(80, 75, 83)` — one unit low
-/// in green alone. `75.79` does not round to `75` under any rule that also
-/// takes `79.93` to `80`, so Chrome's value is not a rounding rule at all.
-///
-/// The likely reason is the one worth naming rather than the one worth
-/// asserting: **Chrome dithers gradients and we do not** (`PaintStyle`'s
-/// `dither` defaults to `false`, and nothing in the blend scene sets it). A
-/// dither displaces a channel by about a unit, which is the size and the shape
-/// of what is here — five of the six channels across the two points identical
-/// and the sixth off by one. Two pixels cannot prove it, so this test asserts
-/// only our own side, which it can.
+/// Where our gradient lands: the analytic ramp, `(80, 76, 83)` at the dark
+/// point, each channel rounded to nearest. Chrome's `(80, 75, 83)` is no
+/// rounding rule, likely its gradient dither; this asserts only our side.
 #[test]
 fn the_gradient_under_the_blends_is_the_analytic_ramp() {
     let ours = read(None);

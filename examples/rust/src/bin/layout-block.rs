@@ -1,9 +1,6 @@
-//! Block layout: stacking, margins and box sizing.
-//!
-//! Block is the display CSS starts from and the one a flex container is not, so
-//! it earns an example rather than a row in the flex one: children stack down
-//! whatever their width, and a margin between two of them collapses to the
-//! larger rather than summing.
+//! Block layout: stacking, margins and box sizing. Children stack down whatever
+//! their width, and a margin between two collapses to the larger rather than
+//! summing.
 
 use meo_canvas::{
     Box, BoxSizing, Display, Element, FlexDirection, Root, Styled, hex_rgb, px,

@@ -4,16 +4,9 @@ import { Box, Text } from './node.js'
 import { Root } from './root.js'
 
 /**
- * A failure names the property the caller wrote.
- *
- * These go through a real render rather than asserting a Rust `Display`
- * directly, and that is the whole point of them. The Rust-side unit tests
- * prove the message *renders* a property once it has one; they cannot prove
- * the decoder was handed the right name, because they supply the name
- * themselves. Only a decode reads the table.
- *
- * Measured: a unit test asserting the rendered form passes unchanged when the
- * table is mutated to `borderColorAll`, which is the defect these exist for.
+ * A failure names the property the caller wrote, through a real render: a Rust unit
+ * test supplies the name itself, so it passes unchanged when the decoder's table is
+ * mutated to `borderColorAll`, the defect these exist for.
  */
 describe('a value the renderer cannot read', () => {
   const message = async (build: () => Awaited<ReturnType<typeof Root>> | ReturnType<typeof Root>) => {

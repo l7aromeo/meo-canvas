@@ -1,41 +1,7 @@
-// Whether a flex item with a definite base size collapses, or its content
-// dictates the line.
-//
-// **The pair CSS provides for "ignore my content, take your size from the
-// line" is a definite `flex-basis` with a definite minimum**, and the reported
-// case writes both as zero. Zero is one cell of a family: measured here,
-// Chrome collapses at `flex-basis: 1px` and `120px` and at `min-height: 1px`
-// and `0%`, so a reader — or a predicate — that takes the zeros literally is
-// wrong about five neighbours of the row that was filed.
-//
-// **`flex-basis: 0%` is not `flex-basis: 0`, and that is the row that says
-// why.** A percentage basis against a container with no definite cross size
-// resolves as `auto`, so the content dictates and both engines agree. The rule
-// this table is about is **definiteness**, not the number, and the `0%` row is
-// what separates the two readings.
-//
-// **The container's cross size is the other half.** An explicit length or a
-// definite ancestor makes the collapse work; a percentage height does not,
-// because it resolves against an indefinite parent and stays indefinite. So
-// `align-self: flex-start` — no stretch at all — is in here as the row that
-// refuses the obvious description: the trigger is an indefinite cross size
-// rather than stretch.
-//
-// **The number measured is the OUTER box's cross extent**, because that is
-// what a caller sees: a row whose height a sibling should have set, reported
-// at the tall item's height instead. `1024` means the content dictated; `200`
-// means the item collapsed and the sibling won.
-//
-// **The mirror is measured under a shrink-to-fit parent, and the reason is not
-// tidiness.** A block element's `width: auto` fills where `height: auto` fits,
-// so the naive width-direction mirror measures the viewport rather than the
-// shape — it read 1280 on a 1280-wide page, which is a property of the markup.
-// Wrapped in a flex parent at `align-items: flex-start` the width is
-// shrink-to-fit, which is the question the height case asks.
-//
-// `l7aromeo/meo-canvas#145`. Reproduced against taffy 0.14.0 in twenty lines
-// with no code of this repository in the picture, so the divergence is
-// upstream's rather than the conversion's.
+// Whether a flex item with a definite `flex-basis` and minimum collapses to the
+// line: definiteness decides, not zero -- `0%` resolves as `auto`. Reads the outer
+// box's cross extent: `1024` means content dictated, `200` collapsed. The width
+// mirror sits in a shrink-to-fit parent (`l7aromeo/meo-canvas#145`).
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

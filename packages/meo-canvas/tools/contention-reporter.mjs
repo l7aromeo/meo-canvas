@@ -1,27 +1,9 @@
 import { loadavg, availableParallelism } from 'node:os'
 
 /**
- * Says so when a failing run looks like a busy machine rather than a broken tree.
- *
- * **A gate cannot tell a slow box from a bad commit, and reports both as red
- * with a list of names attached.** On 2026-09-08 thirteen tests failed here,
- * every one a `Test timed out in 5000ms`, and the same tree passed on its own
- * minutes later. Establishing that took two more runs; this puts it in the
- * output of the run that failed.
- *
- * **The signature is a failure set that is entirely timeouts.** A genuine defect
- * produces an assertion diff, and a mixture means both are happening — so the
- * line is printed only when nothing failed for any other reason, and it says how
- * many did, which keeps it from claiming contention over a real break.
- *
- * **The load average is what makes it checkable.** Measured on this suite: on a
- * quiet box no test reaches a second — p95 is 57ms, the slowest is 824ms — while
- * under load the thirteen took 7.5 to 8.0 seconds each. Their quiet durations
- * span 118x and their loaded durations span 1.07x, so the time was not being
- * spent in the tests at all: every one of them acquired the same constant while
- * waiting for a core. **A per-test timeout under contention is bounding
- * scheduling latency rather than work**, which is why the number in the message
- * says nothing about the code.
+ * Says so when every failure in a run is a timeout, with the load average, since a
+ * busy machine fails tests that pass alone. Printed only when nothing failed another
+ * way; under load a per-test timeout bounds scheduling latency, not work.
  */
 export default class ContentionReporter {
   /** The load average when the run began, for comparison with the end. */

@@ -1,14 +1,7 @@
-//! What registering a font actually changes.
-//!
-//! **The behaviour here looks impossible from the type**, which is why it is
-//! pinned rather than described. `Fonts` is a value a caller holds, and it
-//! reads as the scope of what it registers; the registry underneath it belongs
-//! to the process, so a registration outlives the `Fonts` that made it and is
-//! visible to every `Fonts` built afterwards.
-//!
-//! One test rather than several, and deliberately: these assertions are about
-//! one process, and splitting them across tests would let the harness run them
-//! on different threads in an order that decides the answer.
+//! What registering a font changes: `Fonts` reads as the scope of what it
+//! registers, but the registry belongs to the thread, so a registration
+//! outlives its `Fonts` and reaches every later one on that thread, and no
+//! other thread.
 use meo_canvas_core::{Fonts, Renderer};
 use meo_canvas_scene::{Scene, Size, node::Node};
 
@@ -89,10 +82,8 @@ fn a_registration_outlives_the_registry_that_made_it() {
 
 #[test]
 fn the_scope_is_the_thread_and_not_the_process() {
-    // **This is the difference between a hazard and a catastrophe**, so it is
-    // measured in both directions rather than inferred from the one above.
-    // A pool of render threads has one copy of the problem each rather than
-    // one shared between them, and each worker still needs its own start-up
+    // Measured both ways, since it separates a hazard from a catastrophe: each
+    // thread in a render pool has its own registry and needs its own start-up
     // registration.
     const IN_WORKER: &str = "MeoFontScopeWorkerProbe";
     const IN_MAIN: &str = "MeoFontScopeMainProbe";

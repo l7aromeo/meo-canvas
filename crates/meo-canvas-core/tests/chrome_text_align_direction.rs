@@ -1,31 +1,7 @@
-//! Where `text-align` puts a line, and which values move with `direction`.
-//!
-//! # What this exists for
-//!
-//! `TextAlign::Start` is documented as flipping under a right-to-left
-//! direction -- *"at the inline start, which flips under a right-to-left
-//! direction"* -- and `TextAlign::Left` as not -- *"at the left edge
-//! regardless of direction"*. The enum is the specification, and
-//! `l7aromeo/meo-canvas#109` reports that the code cannot meet it.
-//!
-//! # Why the `ltr` rows are half the table
-//!
-//! Under `ltr`, `start` lands where `left` does and `end` where `right` does.
-//! Those rows are the control: with only `rtl` rows, a repair to the physical
-//! arms and a repair to nothing produce the same table, because the `rtl` rows
-//! cannot say whether `left` stayed put because it is correct or because
-//! nothing touched it.
-//!
-//! `center` is here and witnesses neither direction, deliberately: it is the
-//! same rectangle under both. Its note says so, so the next person does not add
-//! it believing it covers the centred case.
-//!
-//! # Why the ink and not the box
-//!
-//! A line's box is the container's width whatever the alignment does, so a
-//! measurement of the box reports the container and agrees with itself under
-//! every value. What moves is the ink, which is why both sides of this
-//! comparison walk painted columns.
+//! Where `text-align` puts a line: `start` flips under `rtl` and `left` does
+//! not (`l7aromeo/meo-canvas#109`). `ltr` rows are the control and `center`
+//! witnesses neither direction. Both sides walk painted columns, since a line's
+//! box is always the container's width.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -53,12 +29,9 @@ const CELL: (f32, f32) = (300.0, 60.0);
 /// What the cell is painted with, so the line's own extent can be found.
 const PAPER: (u8, u8, u8) = (255, 255, 255);
 
-/// How far a measured column may sit from Chrome's.
-///
-/// Two pixels, and stated rather than tuned. Chrome reports a fractional
-/// position and this counts whole inked columns, and the two rasterisers do not
-/// agree on where a glyph's antialiased edge stops being paper. The rows this
-/// exists for are separated by 259 columns, not two.
+/// How far a measured column may sit from Chrome's: two pixels, since Chrome
+/// reports a fractional position and this counts whole inked columns. The rows
+/// it separates are 259 columns apart.
 const TOLERANCE: i64 = 2;
 
 /// One row: the direction, the alignment, and where Chrome inked it.
@@ -179,11 +152,9 @@ fn text_align_moves_with_direction_where_chrome_moves_it() {
         "the table changed shape; five alignments across two directions"
     );
 
-    // **The control the table is built around, asserted rather than assumed.**
-    // If `start` and `left` do not agree under `ltr` in Chrome's own numbers,
-    // the rows below cannot separate a repair to the physical arms from a
-    // repair to nothing, and the whole comparison is answering a different
-    // question than the one it claims.
+    // The control, asserted: unless `start` and `left` agree under `ltr` in
+    // Chrome's numbers, the rows below cannot tell a repair to the physical
+    // arms from none.
     let ltr_of = |align: TextAlign| {
         rows.iter()
             .find(|row| row.direction == Direction::Ltr && row.align == align)

@@ -1,11 +1,6 @@
-//! Paint: fills, gradients, borders, shadows, compositing, transforms, masks.
-//!
-//! Every cell is the same box with one property changed, so a cell that looks
-//! like its neighbour is a property that did nothing.
-//!
-//! The last row is `background_image`, which this half could not spell until
-//! `meo_canvas::Style` grew a setter for it: the scene carried it and only the
-//! JavaScript surface could say it.
+//! Paint: fills, gradients, borders, shadows, compositing, transforms, masks
+//! and background images. Every cell is the same box with one property changed,
+//! so a cell like its neighbour is a property that did nothing.
 
 use meo_canvas::{
     Box, Element, FlexDirection, Root, Styled, corners, hex_rgb, pct, px,
@@ -277,15 +272,9 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                     .border_color(TO)
                     .mask(Mask::Shape(MaskShape::Circle)),
             ]),
-            // A background image, and the three things that travel with it.
-            // The picture is eight by four, so a tile is small enough that the
-            // repeat is a pattern rather than one stretched copy.
-            //
-            // All five cells draw the same thing today: the picture is
-            // stretched to the box and the repeat, the size and the offset are
-            // ignored. Left in rather than reduced to one cell -- five cells
-            // that should differ and do not is the showcase saying which parts
-            // work.
+            // A background image and the three things that travel with it --
+            // repeat, size and offset -- on an eight-by-four picture, so a
+            // tile is small enough to read as a pattern.
             row(vec![
                 tiled(
                     BackgroundRepeat::Repeat,

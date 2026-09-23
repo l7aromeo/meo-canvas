@@ -1,28 +1,6 @@
 /**
- * The node factories, and the object shape they all produce.
- *
- * A factory is a plain function returning a plain object. **Nothing crosses into
- * native code here** — the whole tree is built in JavaScript and `Root` encodes
- * it in one pass, because JavaScript evaluates arguments inside out: writing
- * opcodes as each factory ran would land them post-order where the arena is
- * pre-order.
- *
- * ```ts
- * import { Row, Text } from 'meo-canvas'
- *
- * const card = Row({
- *   gap: 16,
- *   padding: 24,
- *   backgroundColor: '#101014',
- *   children: [Text('Ukasyah', { fontSize: 24, fontWeight: 'bold' })],
- * })
- * ```
- *
- * The style properties sit directly in the props, as v1's `BoxProps` carries
- * them, rather than under a `style` key. The **stored** node keeps them in one
- * object because that shape is about hidden classes rather than about how a
- * caller writes it — two different questions.
- *
+ * The node factories, and the one object shape they all produce. Nothing crosses
+ * into native code here: `Root` encodes the finished tree in one pass.
  * @packageDocumentation
  */
 
@@ -54,22 +32,14 @@ export type ImageSource =
        *
        * **Merged rather than replacing**, per key, and `headers` per header
        * name — so a scene-wide `Authorization` survives a source that only sets
-       * an `Accept`, which is how every other pair of settings in this package
-       * behaves.
+       * an `Accept`.
        *
-       * **`signal` is the exception: it composes.** Every other member is a
-       * value this source is stating; a signal is the caller's kill switch, and
-       * one here is composed with the scene's rather than replacing it. So a
-       * signal set here can only make this fetch stop sooner, never let it
-       * outlive an abort at the root.
+       * **`signal` is the exception: it composes** with the scene's, so a signal
+       * set here can only make this fetch stop sooner, never let it outlive an
+       * abort at the root.
        *
-       * **On the source and not on the node**, because a URL can appear in
-       * three places: an image's `src`, a `backgroundImage` and a `mask`. Put
-       * on `ImageProps` this would cover one of them and leave the other two
-       * quietly scene-wide, which is the split that has already produced one
-       * defect here — a URL refusal written against a background image passed
-       * while `Image` went on encoding URLs, because the two paths each held
-       * their own copy of the branch.
+       * **On the source and not on the node**, because a URL can appear in three
+       * places: an image's `src`, a `backgroundImage` and a `mask`.
        */
       readonly httpOptions?: RequestInit
     }
@@ -142,11 +112,8 @@ export interface SceneNode {
 }
 
 /**
- * Builds a node with every key present.
- *
- * The one place a `SceneNode` is constructed, so there is one key order in the
- * package rather than one per factory. A second literal elsewhere is a second
- * hidden class the moment its keys are written in another order.
+ * Builds a node with every key present: the one place a `SceneNode` is
+ * constructed, so the package has one key order and one hidden class.
  */
 function node(
   kind: NodeKind,
@@ -165,33 +132,14 @@ function node(
 /**
  * Anything that can sit inside a container.
  *
- * `false` and `undefined` are members so `condition && Text('…')` reads the way
- * it does in JSX and renders nothing when the condition fails. v1 allows both
- * for that reason, and a conditional written that way is how its users write
- * one — dropping it would break the idiom rather than tidy it.
+ * `false`, `true`, `null` and `undefined` render nothing, and `''` becomes an
+ * empty text node that draws nothing, so every spelling of a conditional reads as
+ * it does in JSX: `cond && Text('…')`, `cond ? Text('…') : null` and
+ * `cond || node`. React 19.2.8 skips the same values, measured rather than assumed.
  *
- * **`null` and `''` are members for the same reason, measured against React
- * 19.2.8 rather than assumed.** `cond ? <X/> : null` is the other half of that
- * idiom and the spelling a ternary produces, and `''` is what an empty string
- * out of data looks like; React renders nothing for either. Both were type
- * errors that also threw at runtime, so the two spellings of one conditional
- * behaved differently — `&&` worked and `? :` did not.
- *
- * **`true` is a member too, and for a spelling rather than for its own sake.**
- * `cond || node` yields `true` when `cond` is a truthy boolean, which is the
- * same half-of-an-idiom asymmetry as `? :` — and React skips it. Admitting
- * `false` while rejecting `true` would leave one spelling of a conditional
- * working and its neighbour throwing, which is the shape this widening exists
- * to remove.
- *
- * **`0` is deliberately not a member.** React renders it as the text `0`, which
- * is a different decision from skipping it, and a caller who writes
- * `items.length && …` meaning "when there are items" would get a visible zero
- * rather than nothing. It stays an error, and the error is where to say so.
- * `NaN` and `0n` render there too — measured, not assumed — and are out for the
- * same reason. An empty array needs no member: it flattens to nothing already.
- * Skipping `0` silently would make this looser than React in the one
- * direction where looser means quieter.
+ * **A number is text, `0` included.** React renders `0` as the text `0` rather
+ * than skipping it, and so does this, so `items.length && …` shows a zero. `NaN`
+ * and `0n` render their spellings too. An empty array flattens to nothing.
  */
 export type Child = SceneNode | string | number | bigint | boolean | null | undefined
 
@@ -201,23 +149,15 @@ export type Children = Child | readonly Child[]
 /**
  * What every container factory accepts: its style, flat, plus its children.
  *
- * The style properties are the props, as v1 spells them. `children` and `name`
- * are not style properties and no style property is called either, so the
- * encoder — which looks up only the names in its own table — never reads them
- * and the props object is stored as the style without a copy.
+ * The style properties are the props, and the props object is stored as the
+ * style without a copy: `children` and `name` are not style properties, so the
+ * encoder never reads them.
  *
- * **A misspelt property is caught in a literal and not in a spread.** TypeScript
- * checks for excess properties only on a fresh object literal, so
- * `Box({ marginLeft: 4 })` is refused while `Box({ ...held })` and
- * `Box(held)` are not. And because the props object **is** the style, and the
- * encoder reads only the names in its own table, a key that reaches it is
- * **dropped rather than refused** — which renders as a plausible wrong picture
- * instead of an error.
- *
- * That is TypeScript's rule rather than this surface's, and the mitigation is
- * knowing it: name the type where a spread is unavoidable —
- * `const base: ContainerProps = { … }` is checked where `const base = { … }`
- * is not.
+ * **A misspelt property is caught at compile time only in a literal.**
+ * TypeScript checks excess properties on a fresh object literal alone, so
+ * `Box({ marginLeft: 4 })` is refused while `Box({ ...held })` is not; the
+ * factory refuses the unknown key at run time instead. Naming the type where a
+ * spread is unavoidable — `const base: ContainerProps = { … }` — catches it earlier.
  */
 export type ContainerProps = Style & {
   /** Its children, drawn in order. A single child need not be wrapped. */
@@ -235,51 +175,29 @@ export type ContainerProps = Style & {
 const NO_CHILDREN: readonly SceneNode[] = Object.freeze([])
 
 /**
- * Whether an entry in a children list or a segment list renders nothing.
- *
- * **One predicate for both lists**, because it is the same question asked of a
- * container's children and of a paragraph's runs. They disagreed before this:
- * children ignored `false` and `undefined` and segments ignored neither, so one
- * caller building both from data met two behaviours for one mistake.
- *
- * `0` is absent on purpose — see {@link Child}.
+ * Whether an entry in a children list or a segment list renders nothing: one
+ * predicate, since it is the same question of both lists. `0` is not among them;
+ * see {@link Child}.
  */
 function ignorable(value: unknown): value is boolean | null | undefined | ((...args: never[]) => unknown) | symbol {
-  // **`''` is deliberately absent.** A string child becomes a text node, so an
-  // empty one becomes an empty text node — which renders byte-identically to no
-  // children at all, measured. Skipping it as well would be a special case for
-  // a value that already disappears.
-  //
-  // **A function or a symbol is skipped rather than refused**, which is what
-  // React does. React also warns; the only warning channel here is typed
-  // `ImageWarning`, so there is nowhere to put one that is not about an image.
-  // The divergence is in the diagnostic, not in the render.
+  // `''` is absent because an empty text node already renders like no child at
+  // all. A function or symbol is skipped rather than refused, as React skips it;
+  // React also warns, and the only warning channel here is about images.
   return value === false || value === true || value === undefined || value === null || typeof value === 'function' || typeof value === 'symbol'
 }
 
 /**
- * A string, number or bigint child, as the text node React renders it as.
- *
- * **A single-segment `RichText`, never `Text`.** `Text`'s content is markup and
- * the renderer parses it, so a caller's angle brackets would be reinterpreted:
- * measured, `Text('<b>bold</b> rest')` draws bolded text at ink 565 where
- * `RichText([{ text: … }])` draws the tags literally at 820. React's text child
- * is literal, and a silent reinterpretation of somebody's data is exactly the
- * failure this change exists to remove.
- *
- * `String()` rather than a format, because that is what React uses -- so
- * `NaN` and `Infinity` render as their spellings and a bigint loses its `n`.
+ * A string, number or bigint child, as React renders it: a one-segment
+ * `RichText`, since `Text` parses markup and would reinterpret a caller's `<`
+ * (`a text child is literal, not markup`). `String()` is React's conversion.
  */
 function textChild(value: string | number | bigint): SceneNode {
   return RichText([{ text: String(value) }])
 }
 
 /**
- * One child as a node: a string or number becomes text, a node stays itself.
- *
- * **A plain object throws**, which is React's line and the one thing that must
- * not become permissive along with the rest. Functions and symbols never reach
- * here -- they are filtered as ignorable, because React skips them.
+ * One child as a node: a string or number becomes text, a node stays itself, and
+ * a plain object throws, as React refuses one.
  */
 function asNode(child: Child): SceneNode {
   if (typeof child === 'string' || typeof child === 'number' || typeof child === 'bigint') {
@@ -290,27 +208,16 @@ function asNode(child: Child): SceneNode {
 }
 
 /**
- * Whether a value is one of this package's nodes rather than a plain object.
- *
- * **`kind` is the discriminator** and every factory sets it. A plain object
- * reaching a children list is a mistake React refuses outright, and refusing it
- * here means the caller hears about it rather than meeting a decoder error four
- * layers down.
+ * Whether a value is one of this package's nodes: `kind` is the discriminator,
+ * and every factory sets it.
  */
 function isNode(value: unknown): value is SceneNode {
   return typeof value === 'object' && value !== null && 'kind' in value
 }
 
 /**
- * The children a container actually has: one or many, with the falsy ones gone.
- *
- * Absent stays absent — a container that named no children has `undefined`,
- * not an empty array — and anything else becomes an array, because the node
- * field is one shape and the encoder should not have to ask which.
- *
- * The array a caller passed is handed straight through when every entry is a
- * node, so the common case allocates nothing. A filter runs only when there is
- * something to filter out.
+ * The children a container actually has. Absent stays `undefined`; anything else
+ * becomes an array, and an array of nodes is handed through without allocating.
  */
 function toChildren(children: Children | undefined): readonly SceneNode[] | undefined {
   if (children === undefined) return undefined
@@ -318,31 +225,22 @@ function toChildren(children: Children | undefined): readonly SceneNode[] | unde
   if (!Array.isArray(children)) return [asNode(children as Child)]
 
   const many = children as readonly Child[]
-  // The fast path stays allocation-free for the common case: an array that is
-  // already all nodes is handed straight through.
-  // `every` with a type guard narrows the array, so neither branch needs an
-  // assertion — the guard is doing the work the casts used to.
+  // `every` with a type guard narrows the array, so neither branch needs a cast.
   const plain = many.every(child => isNode(child))
   if (plain) return many
   return many.filter(child => !ignorable(child)).map(child => asNode(child))
 }
 
 /**
- * Compiles only when `T` is `never`, and names what is left over when it is not.
- *
- * The `extends never` constraint is what does the work. An assertion written as
- * `const _: Leftover = undefined as never` **cannot fail**, because `never` is
- * assignable to everything.
+ * Compiles only when `T` is `never`. The `extends never` constraint does the work:
+ * `const _: Leftover = undefined as never` cannot fail, since `never` fits anything.
  */
 function noPropLeftOver<T extends never>(_leftOver?: T): void {}
 
 /**
- * Every key {@link ContainerProps} accepts: `Style`'s, plus its own two.
- *
- * **The structural half is where drift lives now.** `STYLE_KEYS` is proved
- * against `keyof Style`, so the sixty-nine cannot go stale; `children` and
- * `name` are written here by hand and would, which is why this list carries a
- * proof of its own rather than borrowing the one next door.
+ * Every key {@link ContainerProps} accepts: `Style`'s, proved against `keyof Style`
+ * in `style.ts`, plus `children` and `name`, which are written by hand and so
+ * carry a proof of their own below.
  */
 const CONTAINER_KEYS = [...STYLE_KEYS, 'children', 'name'] as const satisfies readonly (keyof ContainerProps)[]
 
@@ -350,26 +248,13 @@ const CONTAINER_KEYS = [...STYLE_KEYS, 'children', 'name'] as const satisfies re
 noPropLeftOver<Exclude<keyof ContainerProps, (typeof CONTAINER_KEYS)[number]>>()
 
 /**
- * Refuses a props key the factory does not have, naming it.
- *
- * **Checked at run time because the type system checks it almost nowhere.**
- * Excess property checking fires on a fresh object literal and on nothing else,
- * so a props object built from a variable, a spread or `JSON.parse` carries an
- * unknown key straight through and the property is silently ignored -- measured
- * on `Box`, `Text`, `Path` and the paragraph options alike.
+ * Refuses a props key the factory does not have, naming it. Checked at run time
+ * because excess-property checking fires only on a fresh object literal, not on a
+ * variable, a spread or `JSON.parse`.
  */
 function checkProps(props: object, allowed: ReadonlySet<string>, what: string): void {
-  // **The thing, before its keys.** Everything below reads `Object.keys(props)`,
-  // and what that returns for a value which is not a props object decides the
-  // outcome entirely: `'hello'` has `"0"` through `"4"`, so the loop reported
-  // index zero as an unknown property and named the factory in a sentence that
-  // meant nothing; `42`, `true`, `[]`, `''` and a function have no own keys at
-  // all, so the loop found nothing to object to and **the node was built with
-  // default props and rendered**. `Box('')`, `Box(42)` and `Box({})` were
-  // indistinguishable in the output.
-  //
-  // Which makes this the same defect as the one this function exists to stop,
-  // one level out: it checked the keys of a thing without checking the thing.
+  // The thing before its keys: `Object.keys` of a string, a number or an array
+  // reports nonsense or nothing, and `Box(42)` would build a default box.
   if (typeof props !== 'object' || props === null || Array.isArray(props)) {
     throw new TypeError(`${what} takes a props object; it was given ${render(props)}`)
   }
@@ -380,11 +265,8 @@ function checkProps(props: object, allowed: ReadonlySet<string>, what: string): 
 }
 
 /**
- * Every key {@link ParagraphProps} declares.
- *
- * Named separately rather than folded into {@link TEXT_KEYS} because
- * `TextProps` composes **three** sources, and a list built from one spread of
- * everything cannot say which source a missing key came from.
+ * Every key {@link ParagraphProps} declares, apart from {@link TEXT_KEYS} so a
+ * missing key can be traced to the source it came from.
  */
 const PARAGRAPH_KEYS = ['maxLines', 'ellipsis'] as const satisfies readonly (keyof ParagraphProps)[]
 
@@ -436,19 +318,10 @@ const TEXT_KEY_SET: ReadonlySet<string> = new Set(TEXT_KEYS)
 const CONTAINER_KEY_SET: ReadonlySet<string> = new Set(CONTAINER_KEYS)
 
 /**
- * The container-shaped half of a wider props object.
- *
- * **For callers that legitimately hold more than a container takes.** `Root`'s
- * props carry the surface options — `fonts`, `gpu`, `pages`, `scale` and the
- * rest — alongside the page's own style, and it builds each page by handing
- * that object to {@link Box}. Spreading it whole put ten keys into a node's
- * style that the writer then ignored, which is the same defect this module now
- * refuses from a caller: it was simply ours.
- *
- * Filtering through {@link CONTAINER_KEYS} rather than by naming the surface
- * options is what keeps it correct — that list is proved equal to
- * `keyof ContainerProps`, so a style property added later is carried here
- * without anyone remembering to add it.
+ * The container-shaped half of a wider props object, for `Root`, whose props carry
+ * surface options beside the page's style. Filtered through {@link CONTAINER_KEYS},
+ * which is proved equal to `keyof ContainerProps`, so a new style property is
+ * carried without anyone adding it here.
  */
 export function containerPropsOf(props: object): ContainerProps {
   const kept: Record<string, unknown> = {}
@@ -459,30 +332,34 @@ export function containerPropsOf(props: object): ContainerProps {
 }
 
 /**
- * A plain container.
+ * A plain container, laying its children out as a row: CSS's `display: flex`
+ * rather than Yoga's column.
  *
- * Lays its children out as a row, following CSS's `display: flex` rather than
- * Yoga's column.
- *
- * **The display is named rather than inherited.** The scene's default is
- * `block`, which is what a browser gives a `<div>`, so a `Box` that inherited
- * it would stop honouring `gap`, `alignItems` and `justifyContent` without
- * saying so. Naming it costs a spread per container: measured at 0.03 to 0.08
- * microseconds each, 3.1 ms across a hundred thousand, against a build of
- * 90 ms and a render of 8 to 22 ms for a tree of six thousand containers.
- * `Row` and `Column` have always spread for the same kind of reason.
- *
- * **Three orders of magnitude, which is why the number survives the machine it
- * was taken on.** Peers were building at the time; contention that voids a
- * benchmark measuring a few percent cannot reach a conclusion with this much
- * room in it.
+ * **The display is named rather than inherited.** The scene's default is `block`,
+ * as a browser gives a `<div>`, and a `Box` inheriting it would silently stop
+ * honouring `gap`, `alignItems` and `justifyContent`. Naming it costs a spread:
+ * 0.03 to 0.08 microseconds per container, 3.1 ms across a hundred thousand,
+ * against 90 ms to build and 8 to 22 ms to render six thousand.
  */
 export function Box(props: ContainerProps = {}): SceneNode {
   checkProps(props, CONTAINER_KEY_SET, 'Box')
   return node('box', { display: 'flex', ...props }, toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
 }
 
-/** A container whose children run horizontally. */
+/**
+ * A container whose children run horizontally.
+ *
+ * ```ts
+ * import { Row, Text } from 'meo-canvas'
+ *
+ * const card = Row({
+ *   gap: 16,
+ *   padding: 24,
+ *   backgroundColor: '#101014',
+ *   children: [Text('Ukasyah', { fontSize: 24, fontWeight: 'bold' })],
+ * })
+ * ```
+ */
 export function Row(props: ContainerProps = {}): SceneNode {
   checkProps(props, CONTAINER_KEY_SET, 'Row')
   return node('box', withDirection(props, 'row'), toChildren(props.children), props.name, undefined, undefined, undefined, undefined, undefined)
@@ -502,18 +379,9 @@ export function Grid(props: ContainerProps = {}): SceneNode {
 }
 
 /**
- * The caller's props with the display and flex direction the factory names.
- *
- * The one place this package copies a style, and it copies once per container
- * rather than once per property: `Row` and `Column` mean a direction, and a
- * caller who states one keeps it — spreading the props after the default is
- * what makes the caller's value win.
- *
- * **`display` is named here rather than inherited**, because the scene's
- * default is `block`, which is what a browser gives a `<div>`. A factory
- * called `Row` that laid its children out in a column would be a defect; one
- * that relied on the default for it would be a defect the day the default
- * moved. The same reason `Grid` has always named its own.
+ * The caller's props with the display and direction the factory names, spread
+ * first so the caller's own values win. `display` is named rather than inherited,
+ * as in {@link Box}.
  */
 function withDirection(props: ContainerProps, flexDirection: 'row' | 'column'): Style {
   return { display: 'flex', flexDirection, ...props }
@@ -544,22 +412,15 @@ export interface ParagraphOptions {
 }
 
 /**
- * The marker a truncated line ends with when the caller writes `true`.
+ * The marker a truncated line ends with when the caller writes `true`: U+2026
+ * HORIZONTAL ELLIPSIS, one glyph rather than three full stops.
  *
- * U+2026 HORIZONTAL ELLIPSIS, one glyph rather than three full stops.
+ * **Measured rather than assumed.** Chrome's `text-overflow: ellipsis`, read in
+ * Helvetica at 40px, puts its three dots 10px apart across a 31px span, which is
+ * exactly a literal `…`; three full stops sit 7px apart across 26px. The
+ * repository's own Oswald draws the two identically, so it cannot tell them apart.
  *
- * **Measured rather than assumed.** Chrome's `text-overflow: ellipsis` was read
- * in Helvetica at 40px — deliberately not the repository's own Oswald, where
- * `…` and `...` rasterise to identical ink runs with advances 0.36px apart and
- * cannot tell the two answers apart. Chrome's marker has its three dots 10px
- * apart across a 31px span, which is exactly a literal `…`; three full stops
- * sit 7px apart across 26px. v1 draws the same character for `ellipsis: true`
- * (`src/canvas/text.canvas.ts:1244`), so the API reference and the behavioural
- * one agree.
- *
- * The Rust surface spells the same thing `scene::DEFAULT_ELLIPSIS`, which is
- * that language's idiom for it — Rust has no boolean-or-string union worth
- * having.
+ * The Rust surface spells the same thing `scene::DEFAULT_ELLIPSIS`.
  */
 export const DEFAULT_ELLIPSIS = '\u2026'
 
@@ -579,11 +440,6 @@ export interface ParagraphProps {
    * `true` uses {@link DEFAULT_ELLIPSIS}, the character CSS uses. A string
    * replaces it — a longer one simply leaves the text less room. `false`, an
    * empty string and leaving it unset all truncate without a marker.
-   *
-   * The boolean is v1's spelling (`canvas.type.ts:1543`) and `false` is v1's
-   * own applied default, so a ported script that wrote the default explicitly
-   * keeps working. Both booleans threw before this took them: the value crossed
-   * TypeScript unchecked and the arena refused it at the far end.
    */
   readonly ellipsis?: boolean | string
 }
@@ -596,12 +452,8 @@ export type TextProps = Style &
   }
 
 /**
- * The marker `ellipsis` asks for, or `undefined` for no marker at all.
- *
- * An empty string is `undefined` rather than an empty marker because the two
- * draw the same picture, and because v1 reached that answer through a
- * truthiness guard — a caller who wrote `ellipsis: ''` there got no marker and
- * gets none here.
+ * The marker `ellipsis` asks for, or `undefined` for none. An empty string is no
+ * marker rather than an empty one, since the two draw the same picture.
  */
 function markerOf(ellipsis: boolean | string | undefined): string | undefined {
   if (ellipsis === true) return DEFAULT_ELLIPSIS
@@ -610,16 +462,9 @@ function markerOf(ellipsis: boolean | string | undefined): string | undefined {
 }
 
 /**
- * The paragraph properties of `props`, or `undefined` when it sets neither.
- *
- * Each key is added only when it has a value, rather than written as
- * `undefined`: `exactOptionalPropertyTypes` is on, and an explicit `undefined`
- * is a different thing from an absent key to every reader here.
- *
- * `undefined` when nothing survives, which is not the same test as the one on
- * the way in: `ellipsis: false` is a value the caller wrote and resolves to no
- * marker, so a paragraph built from it alone would otherwise be an empty object
- * where an absent one is what every other path produces.
+ * The paragraph properties of `props`, or `undefined` when none survive. A key is
+ * added only when it has a value, since `exactOptionalPropertyTypes` tells an
+ * explicit `undefined` from an absent key; `ellipsis: false` resolves to none.
  */
 function paragraphOf(props: TextProps): ParagraphOptions | undefined {
   const paragraph: { maxLines?: number; ellipsis?: string } = {}
@@ -642,11 +487,8 @@ function paragraphOf(props: TextProps): ParagraphOptions | undefined {
  * ```
  */
 export function Text(content: string, props: TextProps = {}): SceneNode {
-  // **Checked here rather than left to the writer.** `Text` and `RichText` are
-  // the two factories whose first argument is not props, so they are the two a
-  // caller coming from `Box` and `Image` hands an object to -- and an object
-  // travelled all the way to the string table, arriving as `side value 0 is
-  // neither a string nor a Buffer`, an offset into a wire format nobody saw.
+  // Checked here: `Text` and `RichText` are the two factories whose first argument
+  // is not props, so they are the two a caller hands an object to by mistake.
   if (typeof content !== 'string') {
     throw new TypeError(`Text takes its text first and its props second; it was given ${render(content)}`)
   }
@@ -667,19 +509,9 @@ export function RichText(segments: readonly (TextSegment | string | number | big
     throw new TypeError(`RichText takes its segments first and its props second; it was given ${render(segments)}`)
   }
   checkProps(props, TEXT_KEY_SET, 'RichText')
-  // **The same rule children get.** A segment list and a children list are the
-  // same kind of list, and a caller building either from data hits the same
-  // `null`. Before this, children ignored two of the four ignorable values and
-  // segments ignored none, so `[seg, cond && other]` worked in one and threw in
-  // the other.
-  // **The same rule children get, including the conversion.** A string in a
-  // children list becomes a text node; a string in a segment list becomes a
-  // run with that text. Keeping only the *skipping* in step would have left
-  // `''` ignorable in one list and a broken segment in the other -- which the
-  // agreement test caught the moment `''` stopped being ignorable.
-  // **The pass-through is deliberate and a test pins it**: a list needing
-  // neither filtering nor conversion is handed on as it stands, so the common
-  // case allocates nothing.
+  // The same rule children get, conversion included: a string becomes a run with
+  // that text. A list needing neither is handed on as it stands, so the common
+  // case allocates nothing (`carries one segment per run when the runs differ`).
   const plain = segments.every(segment => typeof segment === 'object' && segment !== null)
   const runs = plain
     ? segments
@@ -698,52 +530,24 @@ export function RichText(segments: readonly (TextSegment | string | number | big
 const SEGMENT_KEYS: ReadonlySet<string> = new Set(['text', 'style'])
 
 /**
- * Keys the generated property tables carry, used **only** to decide whether a
- * suggestion is safe.
- *
- * **Deliberately not an allowlist.** Measured, the union is 66 keys where
- * `Style` declares 69: `objectFit`, `objectPosition` and `frame` are carried
- * in a node's payload rather than in a style group, so a check built on this
- * set would refuse three valid properties.
- *
- * **The direction matters and only one of them is sound.** A key *in* the
- * table is certainly a style property; a key *absent* from it may still be
- * one. So the set is safe for deciding whether to suggest a fix and unsafe for
- * deciding whether to refuse a key.
- *
- * **`STYLE_KEYS` in `style.ts` is the complete list and is not this.** That one
- * is proved equal to `keyof Style` and is what a *refusal* uses. This one stays
- * narrower on purpose: `objectFit`, `objectPosition` and `frame` are style keys
- * that mean nothing on a segment, so suggesting `style: { objectFit }` would
- * typecheck and do nothing — a confidently wrong suggestion, which is the thing
- * the gate on this set exists to prevent.
+ * Keys the generated property tables carry, used only to decide whether a
+ * suggestion is safe: a key in the tables is certainly a style property that means
+ * something on a segment. Not an allowlist, since `objectFit`, `objectPosition` and
+ * `frame` are style keys it lacks; `STYLE_KEYS` is what a refusal uses.
  */
 const SUGGESTIBLE_KEYS: ReadonlySet<string> = new Set(Object.values(PROPERTY_TABLES).flatMap(properties => properties.flatMap(property => property.keys)))
 
 /**
- * Refuses a segment carrying a key `TextSegment` does not have.
- *
- * **Checked here because the type system checks it almost nowhere.** Excess
- * property checking fires on a *fresh object literal* and on nothing else, so
- * `RichText([{ text, fontSize }])` is caught and every other route is not —
- * a variable, a spread, `JSON.parse`, and most of all
- * `rows.map(r => ({ text: r.label, fontSize: r.size }))`, which is the case
- * `RichText` exists for. Measured: two of nine spellings rejected at compile
- * time, and the styling silently discarded at runtime for all nine.
- *
- * **The suggestion is worth the extra clause.** The mistake is almost always
- * flat-versus-nested, and unlike most bad input the correct spelling is
- * derivable from the wrong one — so the message can state the fix rather than
- * the rule.
+ * Refuses a segment carrying a key `TextSegment` does not have. Excess-property
+ * checking misses `rows.map(r => ({ text: r.label, fontSize: r.size }))`, the case
+ * `RichText` exists for, and the mistake is nearly always flat-versus-nested, so the
+ * message can state the fix.
  */
 function checkSegment(segment: TextSegment, at: number): void {
   for (const key of Object.keys(segment)) {
     if (SEGMENT_KEYS.has(key)) continue
-    // **The suggestion only where it is certainly right.** A key the generated
-    // property tables carry is a style property, so `style: { key }` is the
-    // fix. A key they do not carry might be a typo for anything, and a
-    // confidently wrong suggestion is worse than none: a caller who follows it
-    // writes a second broken call.
+    // Suggested only where certainly right: a key the property tables carry is a
+    // style property, and a confidently wrong suggestion is worse than none.
     const suggestion = SUGGESTIBLE_KEYS.has(key) ? ` — did you mean style: { ${key} }?` : ''
     throw new TypeError(`segments[${at}] has no property ${JSON.stringify(key)}; a segment takes text and style${suggestion}`)
   }
@@ -777,7 +581,6 @@ export function Image(props: ImageProps): SceneNode {
   return node('image', props, undefined, props.name, undefined, undefined, undefined, src, undefined)
 }
 
-/** What a path node accepts: its data, and its style, flat. */
 /**
  * How a path is painted.
  *
@@ -808,28 +611,17 @@ export type PathProps = Style & {
    * The coordinate space `d` is written in, as SVG's `viewBox`:
    * `[minX, minY, width, height]`.
    *
-   * **Absent means absolute coordinates**, which is what every path did before
-   * this existed. With a box, the path is scaled and centred into the node's
-   * resolved size under SVG's default `preserveAspectRatio` — `xMidYMid meet`
-   * — so it fits without distorting.
+   * **Absent means absolute coordinates.** With a box, the path is scaled and
+   * centred into the node's resolved size under SVG's default
+   * `preserveAspectRatio`, `xMidYMid meet`, so it fits without distorting. This is
+   * what lets a path follow a percentage-sized box, which `d` alone cannot.
    *
-   * **Equivalent to SVG's `viewBox` with
-   * `vector-effect: non-scaling-stroke`.** The drawing scales; the pen does
-   * not. In SVG a two-pixel stroke in a box scaled five times is drawn ten
-   * pixels wide, and ours stays two — deliberately, because a caller authoring
-   * a `d` in a unit square wants `lineWidth` to mean pixels. `vector-effect`
-   * is the piece to add if something ever wants the other behaviour.
+   * **The drawing scales; the pen does not**, as SVG's `viewBox` with
+   * `vector-effect: non-scaling-stroke`: a caller authoring `d` in a unit square
+   * wants `lineWidth` to mean pixels.
    *
-   * **The node must have a size for this to mean anything.** A path node has
-   * no intrinsic size, so one with neither a width nor a height gets an empty
-   * box, and scaling a drawing into nothing draws nothing.
-   *
-   * It exists because a path in a percentage-sized box was otherwise
-   * undrawable: `d` is absolute, `transform.scale` is a number rather than a
-   * length, and a percentage-sized path node still draws `d` in absolute local
-   * coordinates. **A rectangle can be a percentage and a path cannot** — which
-   * is why a chart's bars needed nothing and its line, pie and doughnut need
-   * this.
+   * **The node must have a size.** A path node has no intrinsic size, so one with
+   * neither a width nor a height gets an empty box and draws nothing.
    */
   readonly viewBox?: readonly [number, number, number, number]
   /**
@@ -883,9 +675,7 @@ export function Path(props: PathProps): SceneNode {
 }
 
 /**
- * The keys every node carries, in the order the factories write them.
- *
- * Exported so a test can assert the shape rather than trusting it, since the
- * cost of a second hidden class is invisible until something is profiled.
+ * The keys every node carries, in factory order; exported so a test asserts the
+ * shape, since a second hidden class is invisible until something is profiled.
  */
 export const NODE_KEYS: readonly string[] = ['kind', 'style', 'children', 'name', 'paragraph', 'markup', 'segments', 'src', 'd']

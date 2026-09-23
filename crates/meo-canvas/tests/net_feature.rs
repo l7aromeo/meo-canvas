@@ -1,17 +1,12 @@
-//! What a URL does on each side of the `net` flag.
-//!
-//! **Two tests, one per build, and only one of them compiles at a time.** The
-//! flag is the subject, so a test that ran under both would be measuring
-//! neither.
+//! What a URL does on each side of the `net` flag: one test per build, only one
+//! compiling at a time, since the flag is the subject.
 use meo_canvas::{Box, OnImageError, Renderer, Root, Styled, px};
 
 /// A page whose one node names a URL nothing will answer.
 fn page() -> Root {
-    // **`Throw`, because this file is about the flag rather than the policy.**
-    // The default is `on_image_error(Placeholder)`, under which a dead URL is a
-    // warning and the render finishes -- so both arms below would have nothing
-    // to read. What the flag decides is whether a fetch is *attempted*, and
-    // that distinction is only visible in an error when the failure is one.
+    // `Throw`, since this file is about the flag rather than the policy: under
+    // the default `Placeholder` a dead URL is a warning, and whether a fetch
+    // was attempted shows only in an error.
     Root::new(64.0)
         .on_image_error(OnImageError::Throw)
         .height(64.0)

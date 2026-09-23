@@ -1,31 +1,6 @@
-# Ground truth for sequence(), generated from meo-canvas v1's built module
-# (`dist/esm/animate/sequence.js`).
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
-# the four original tables name, and verified rather than assumed: the
-# generator was first run against those tables and reproduced all 612 of their
-# rows exactly.
-#
-# Neither surface may be written from the other: a misreading of v1 that
-# reaches both looks like agreement. Both are written against this, and this
-# came from v1 running.
-#
-# Values are shortest-round-trip decimals, compared exactly. `-` is a column
-# the row does not use; it is not a value.
-#
-# Steps are `to:duration:hold:motion`, semicolon separated. A duration of
-# `-` asks a spring leg for its own length.
-#
-# `delay` and `stagger` vary separately and together for the reason
-# `track.tsv` gives: the rule that disagreed between the surfaces was
-# invisible while every row zeroed them.
-#
-# The trailing hold is the case worth having: `at` inside it rests at the
-# step's `to` rather than starting the next leg early, and `duration`
-# excludes it. Sampling at 3.2 in the three-step row is inside that hold.
-#
+# `sequence`, v9.0.2 (890eed2). Steps are `to:duration:hold:motion`, `;` apart;
+# a duration of `-` asks a spring for its own length. `-` is an unused column.
 # rows: 80
-#
 # from	delay	stagger	steps	surface	kind	t	index	count	value
 0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	0	0	-	0
 0	0	0	10:1:0:linear;30:2:0.5:linear;0:1:0:linear	both	at	0	1	-	0

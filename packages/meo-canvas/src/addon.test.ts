@@ -1,18 +1,7 @@
-// What the platform lists must *be*, now that they can no longer disagree.
-//
-// `optionalDependencies` and `PLATFORM_PACKAGES` are generated from `TARGETS`
-// by `just platform-packages`, and `just platform-packages-check` fails on a
-// difference. So the assertions this file used to carry — that the three lists
-// agreed — are gone, replaced by that check: **a generated file plus an
-// equality test against its source is one mechanism written twice**, and a
-// reader cannot tell which is authoritative.
-//
-// What remains is the half generation does not answer. A generator can produce
-// a list faithfully derived from `TARGETS` and still wrong: keys that drop the
-// libc, a caret range where an exact pin is required, a package named for one
-// platform under a host key for another. Those are properties of the content
-// rather than of how it is maintained, and no amount of regenerating settles
-// them.
+// What the platform lists must be. Generation from `TARGETS` keeps them agreeing,
+// which `just platform-packages-check` enforces; this file checks their content,
+// which a faithful generator cannot settle: keys carrying the libc, exact pins,
+// and each package named for its own platform.
 
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -51,25 +40,19 @@ describe('the platform target lists', () => {
   })
 
   it('names the staged package what the resolver will ask for', () => {
-    // **The artefact, not a third list generated from the same function.**
-    // `PLATFORM_PACKAGES` and `optionalDependencies` both come out of
-    // `packageName`, so they agree with each other whatever it returns; the
-    // name that decides whether an install works is the one written into the
-    // staged package's own manifest, and until 5 September 2026 nothing
-    // compared them. The scope reached the generator and not the stager, both
-    // generated lists agreed, and `just verify-packed` failed on three
-    // runners with the addon "not found in 2 places".
+    // The staged package's own manifest, not a third list from the same function:
+    // `PLATFORM_PACKAGES` and `optionalDependencies` both come from `packageName`
+    // and agree whatever it returns, while the manifest decides whether an install
+    // works.
     for (const [host, name] of Object.entries(PLATFORM_PACKAGES)) {
       expect(manifest(host, PACKAGE.version).name, `the staged package for ${host}`).toBe(name)
     }
   })
 
   it('scopes every platform package under the main package, which is not scoped', () => {
-    // The shape npm's spam heuristic refused the unscoped names over, on
-    // 5 September 2026. Pinned in both directions because either half alone
-    // passes while the arrangement is wrong: a main package that became
-    // scoped would make `@${PACKAGE.name}/...` above read `@@scope/name/...`,
-    // and a platform package that lost its scope is a name nobody owns.
+    // npm's spam heuristic refuses unscoped platform names, so the main package is
+    // unscoped and the platform packages scoped. Pinned both ways: a scoped main
+    // package would make `@${PACKAGE.name}/...` read `@@scope/name/...`.
     expect(PACKAGE.name.startsWith('@'), 'the main package is scoped').toBe(false)
     for (const name of Object.keys(PACKAGE.optionalDependencies ?? {})) {
       expect(name.startsWith(`@${PACKAGE.name}/`), `${name} is not under the scope`).toBe(true)
@@ -77,12 +60,9 @@ describe('the platform target lists', () => {
   })
 
   it('keys the resolver by the same suffix the builder uses', () => {
-    // The invariant publishing musl introduced. `linux-x64` named one build
-    // unambiguously while there was one; with a glibc and a musl build it names
-    // two, so the host key carries the libc and these keys are exactly the
-    // suffixes `TARGETS` builds. Comparing the values alone would not catch a
-    // key that drifted from its suffix, and a key that no `target()` can ever
-    // return resolves nothing while looking correct.
+    // With a glibc and a musl build, a host key carries the libc, so the keys are
+    // exactly the suffixes `TARGETS` builds; comparing values alone would miss a key
+    // no `target()` can return.
     expect(Object.keys(PLATFORM_PACKAGES).sort()).toEqual(Object.keys(TARGETS).sort())
   })
 

@@ -1,23 +1,7 @@
-//! What a render costs, on a tree shaped like a real one.
-//!
-//! An instrument rather than a gate: it answers "what is this worth" and never
-//! "is this correct". It is outside the `ci` chain because a number that varies
-//! with the machine cannot fail a build honestly, and the golden fixtures
-//! already say whether a change moved a pixel.
-//!
-//! Two things it exists to answer. What a proposed allocation fix is actually
-//! worth against paint and encode, so a tidier allocator profile is not
-//! mistaken for a faster renderer. And the question AGENTS.md records as open:
-//! how much re-laying-out a prepared paragraph saves against rebuilding it,
-//! which has never been a number.
-//!
-//! The GPU is off. A bench whose backend depends on which features a build
-//! happened to compile measures the build rather than the change.
-//!
-//! Setup failures abort with `unreachable!` rather than returning: a bench that
-//! cannot build its scene has nothing to measure, and `clippy::panic` is denied
-//! across the workspace while `unreachable` says the same thing about a case
-//! the setup rules out.
+//! What a render costs on a realistic tree: an instrument, not a gate, and
+//! outside `ci` because a machine-dependent number cannot fail a build
+//! honestly. The GPU is off so it measures the change rather than the build;
+//! setup failures use `unreachable!` since `clippy::panic` is denied.
 
 use std::{hint::black_box, path::PathBuf};
 
@@ -39,13 +23,9 @@ use meo_canvas_scene::{
 /// A scene naming a platform face would measure this machine's font stack.
 const FAMILY: &str = "Bench";
 
-/// How many rows the tree has.
-///
-/// Twelve rows of eight children plus their containers is a little over four
-/// hundred nodes, which is the order a real page reaches: v1's own report cards
-/// and feature sheets sit in the hundreds. Small enough that a run finishes,
-/// large enough that a per-node cost is visible against the fixed cost of
-/// surface allocation and encoding.
+/// How many rows the tree has: twelve of eight children, a little over four
+/// hundred nodes, the order a real page reaches -- enough for a per-node cost
+/// to show against surface allocation and encoding.
 const ROWS: usize = 12;
 
 /// How many children each row holds.
@@ -154,11 +134,8 @@ fn realistic_scene() -> Scene {
     scene
 }
 
-/// A tree the size a large page reaches, for the passes whose cost is per node.
-///
-/// The pipeline benches stay on the smaller tree so a run finishes; the
-/// allocation-sensitive passes are measured here as well, so a per-node claim
-/// is extrapolated from two points rather than from one.
+/// A tree the size a large page reaches, for the per-node passes, so a per-node
+/// claim is extrapolated from two points rather than one.
 fn large_scene() -> Scene {
     let mut scene = realistic_scene();
     let rows: Vec<NodeId> = scene.nodes[0].children.clone();

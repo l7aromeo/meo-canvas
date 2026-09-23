@@ -133,8 +133,7 @@
 //! newer buffer. Adding a [`crate::NodeKind`] variant is such a change: its tag
 //! byte names nothing to this revision, so the buffer is refused rather than
 //! silently drawn without that node. Widening a field or reordering one is the
-//! same. A version bump is the mechanism for that, not an obstacle to it --
-//! the chart node this crate does not yet model arrives with one.
+//! same.
 
 mod impls;
 mod reader;
@@ -160,13 +159,6 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-///
-/// Seven since [`crate::node::HttpOptions`] arrived, in two places at once:
-/// the `Url` arm of [`crate::node::ImageSource`] and [`Scene::http`]. Both are
-/// a field added rather than a tag, so a revision-six reader takes the header
-/// count for whatever follows and misreads the rest of the buffer -- exactly
-/// the case the paragraph above reserves a bump for. One bump covers both,
-/// because a revision is the whole layout rather than a per-field number.
 pub const VERSION: u16 = 7;
 
 /// The largest node count [`decode`] will allocate for.
@@ -293,10 +285,9 @@ impl core::error::Error for CodecError {
 }
 
 /// How a value of one type is written to and read from the wire.
-///
-/// Crate-internal: the format is a promise about bytes, not about which Rust
-/// trait produces them, and a public trait would let a downstream crate add an
-/// implementation the specification above does not describe.
+/// Crate-internal: the format is a promise about bytes, and a public trait
+/// would let another crate add an implementation the specification does not
+/// describe.
 pub(crate) trait Wire: Sized {
     /// Appends this value's bytes.
     fn write(&self, out: &mut Writer<'_>);
@@ -304,19 +295,10 @@ pub(crate) trait Wire: Sized {
     /// Reads one value, advancing the reader past it.
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError>;
 
-    /// The fewest bytes one of these can occupy on the wire.
-    ///
-    /// **What [`Reader::list`] reserves against, and it is not the same
-    /// question as what the count may be.** A count above the bytes remaining
-    /// is corrupt, because every value costs at least one byte -- true, and
-    /// the check that rests on it is right. It says nothing about memory: a
-    /// count the buffer can back still reserves `count * size_of::<T>()`, and
-    /// a `Node` is 1048 bytes in memory against 184 on the wire. One megabyte
-    /// of input reserved 1.02 GB before this existed, measured, and was then
-    /// refused.
-    ///
-    /// One is the honest default for a type that can encode to a single byte.
-    /// A type that cannot says so, and the reservation shrinks by the ratio.
+    /// The fewest bytes one of these occupies on the wire, which
+    /// [`Reader::list`] reserves against: a count the buffer can back still
+    /// reserves `count * size_of::<T>()`, and a `Node` is 1048 bytes in memory
+    /// against 184 on the wire. One unless a type says otherwise.
     const MIN_ENCODED: usize = 1;
 }
 
@@ -475,12 +457,9 @@ mod tests {
     /// floor or the height itself.
     const SURFACE_OFFSET: usize = MAGIC.len() + 2 + 4 + 4 + 1 + 4;
 
-    /// Bytes the surface block occupies when all three optional fields are
-    /// absent: one discriminant each, and no payload behind any of them --
-    /// plus the one byte `on_image_error` always occupies, which is not
-    /// optional and so has no absent form to be shorter than -- plus the four
-    /// bytes of the empty `http` header list's count and the four of the empty
-    /// `image_fetch_attempts` list's.
+    /// The surface block with all three optional fields absent: a discriminant
+    /// each, the byte `on_image_error` always takes, and the four-byte counts
+    /// of the empty `http` and `image_fetch_attempts` lists.
     const ABSENT_SURFACE: usize = 3 + 1 + 4 + 4;
 
     /// Byte offset of the page list in a scene whose surface says nothing.
@@ -774,13 +753,10 @@ mod tests {
         }
     }
 
-    /// The bytes do not depend on how the caller assembled the headers.
-    ///
-    /// **The pin for the sort, the lower-casing and the combining at once**,
-    /// and the reason they live in `Wire::write` rather than in
-    /// [`HttpOptions::header`]: the second value below is a struct literal,
-    /// which is exactly what bypasses a constructor's invariant. Remove any
-    /// one of the three normalisations and this fails.
+    /// The bytes do not depend on how the caller assembled the headers. Pins
+    /// all three normalisations, and why they live in `Wire::write`: the second
+    /// value is a struct literal, which bypasses any constructor. Remove one
+    /// and this fails.
     #[test]
     fn the_encoded_headers_are_canonical() {
         let written = ImageSource::url_with(
@@ -838,14 +814,9 @@ mod tests {
         assert_eq!(decoded, Ok(scene));
     }
 
-    /// A status cannot be separated from its classification on the wire.
-    ///
-    /// **The pairing is unrepresentable rather than validated.** It was two
-    /// fields once -- a classification and an `Option<u16>` beside it -- and
-    /// the combination "`Status`, no code" could be written, decoded, and then
-    /// only be dealt with by inventing a number. A consumer is documented to
-    /// branch on that number: retry a 5xx, do not retry a 4xx. Zero is neither
-    /// and reads as real.
+    /// A status cannot be separated from its classification on the wire: the
+    /// pairing is unrepresentable rather than validated, so "`Status`, no code"
+    /// cannot be decoded and then answered by inventing a number.
     #[test]
     fn a_status_travels_inside_its_own_variant() {
         let mut scene = Scene::new(Size::new(4.0, 4.0));
@@ -1157,11 +1128,9 @@ mod tests {
         round_trip(&Spacing::Em(0.1));
         round_trip(&ImageSource::Path("/a".to_owned()));
         round_trip(&ImageSource::url("https://a.test"));
-        // The options are a field of the arm rather than a variant of
-        // their own, so an empty one and a set one take the same path
-        // and only the second says the list is written at all. Written
-        // canonical, so that `round_trip`'s equality holds -- see
-        // `the_encoded_headers_are_canonical` for the other direction.
+        // The options are a field of the arm, so an empty one and a set one
+        // take the same path. Written canonical so `round_trip`'s equality
+        // holds; `the_encoded_headers_are_canonical` covers the other way.
         round_trip(&ImageSource::url_with(
             "https://a.test",
             HttpOptions::new()
@@ -1194,11 +1163,9 @@ mod tests {
 
     #[test]
     fn corrupting_any_single_byte_never_panics() {
-        // Stepping rather than every byte: the buffer is tens of kilobytes and
-        // a full sweep decodes it once per byte. A stride of 7 is coprime with
-        // every field width in the format -- 1, 2 and 4 -- so it lands on the
-        // first, second, third and fourth byte of a `u32` in turn rather than
-        // always on the same one.
+        // A stride rather than every byte, since a full sweep decodes the
+        // buffer once per byte. 7 is coprime with every field width -- 1, 2
+        // and 4 -- so it lands on each byte of a `u32` in turn.
         const STRIDE: usize = 7;
 
         let bytes = encode(&populated_scene());

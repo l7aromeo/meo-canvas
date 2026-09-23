@@ -1,37 +1,7 @@
-//! The rhythm a dotted border is drawn with, against Chrome.
-//!
-//! # What the table settles
-//!
-//! **A dot is `w` wide and the gap between two is `w`**, at every measured
-//! width. A side carries an open run of `n` dots and `n - 1` gaps, **flush at
-//! both ends**, so the count is `(edge / w + 1) / 2` taken to the nearest
-//! whole number -- zero mismatches in thirty rows, against ten for ceiling and
-//! fourteen for floor.
-//!
-//! **That count is not a dotted rule.** It is
-//! [`meo_canvas_core::paint::fitted_dash`]'s own,
-//! `round((length + gap) / (dash + gap))`, with a nominal pattern of `w` on
-//! and `w` off. The dashed and dotted tables were each taken to be measuring
-//! their own rule and were confirming one, which is stronger evidence than
-//! either was thought to be -- two instruments, two patterns, one answer
-//! neither was looking for.
-//!
-//! # Why 137 and not 240
-//!
-//! `(240 / w + 1) / 2` is an exact half at every width Chrome was read at --
-//! 120.5, 60.5, 40.5, 30.5, 15.5 -- and **a tie is where a rounding rule is
-//! undetermined**. Chrome's own tie answers disagree with each other: 120 at
-//! width 1 and 61 at width 2, down then up. A rule read off a tie is a coin
-//! toss recorded as a measurement. 137 leaves a remainder at every width.
-//!
-//! # Read through the renderer
-//!
-//! Every assertion here paints a box and reads the ink back. A test that
-//! checks the arithmetic while the renderer hands it a different number is
-//! what let a dashed border fit the wrong length for a whole day.
-//!
-//! Measured through `just conformance`;
-//! `crates/meo-canvas/tests/assets/chrome/dotted-rhythm.tsv`.
+//! A dotted border against Chrome: a dot and a gap are each `w`, flush at both
+//! ends, `fitted_dash`'s count with a pattern of `w` on and off. Read along
+//! 137, not 240, since `(240 / w + 1) / 2` is always a tie that no rounding
+//! rule settles. Every assertion paints a box and reads the ink.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -172,12 +142,9 @@ fn a_side_holds_the_dots_chrome_counts() {
 
 #[test]
 fn the_dots_are_the_width_and_so_are_the_gaps() {
-    // Away from the ends, where a run is neither starting nor closing: every
-    // dot is `w` and every gap is `w`, give or take the pixel a fractional
-    // phase moves a boundary by. **Assert the structure and the span, never
-    // every run length** -- a mark of exactly `w` starting at a fractional
-    // offset covers `w - 1`, `w` or `w + 1` pixels depending on where it
-    // falls, and the geometry has not changed.
+    // Away from the ends, every dot and gap is `w` give or take the pixel a
+    // fractional phase moves: a mark of `w` covers `w - 1`, `w` or `w + 1`
+    // pixels. So assert the structure and span, not every run length.
     for row in rows("dotted-span-137") {
         let width: f32 = row[1]
             .parse()

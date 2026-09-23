@@ -2,23 +2,18 @@
 //!
 //! # Why this is not an error and not a warning
 //!
-//! An error stops the render and a caller handles it. A
-//! [`crate::ImageWarning`] reports that a fetch failed, which is a fact about
-//! the world. **A diagnostic is a fact about the caller's own input**: they
-//! wrote something, it was not usable, and the render continued without it.
+//! An error stops the render. A [`crate::ImageWarning`] reports a failed fetch,
+//! a fact about the world. A diagnostic is a fact about the caller's own input:
+//! it was not usable, and the render continued without it.
 //!
-//! The case that makes the channel necessary is one where the render is
-//! *correct*. `<color=#ff00>` is conformant -- CSS's four-digit `#RGBA`, so
-//! yellow at alpha zero -- and a caller who truncated `#ff0000` sees blank
-//! text either way. **Correct behaviour and silent failure with the same
-//! observable**, which no amount of rendering accurately can close.
+//! The render can be correct and still need one. `<color=#ff00>` is CSS's
+//! four-digit `#RGBA`, yellow at alpha zero, and a caller who truncated
+//! `#ff0000` sees blank text either way.
 //!
 //! # Where one is raised
 //!
-//! **Where the distinction still exists.** A value that was dropped and a
-//! value that was never written are the same absence one layer down, so the
-//! only site that can tell them apart is the one that did the dropping.
-//! Raising it later is not worse, it is impossible.
+//! At the site that dropped the value: one layer down, a dropped value and one
+//! never written are the same absence.
 
 use core::fmt;
 
@@ -32,32 +27,23 @@ use core::fmt;
 pub struct Diagnostic {
     /// Where the value was, as the caller spelled it.
     ///
-    /// A path rather than a name: a value nested inside another property has
-    /// no single property name that would find it. `<color=zzz>` and
-    /// `segments[2].color` are paths; `color` is a field.
-    ///
-    /// **Every diagnostic this crate raises today is a markup tag**, so the
-    /// path is the tag as it was written, with the value in it -- the whole
-    /// of `<weight=1500>` rather than `<weight>`. The property-path spelling
-    /// is what a diagnostic about a scene value would use, and nothing
-    /// produces one yet; it is described here because the shape has to hold
-    /// for both, and [`Diagnostic::offset`] is `None` for the second kind.
+    /// A path rather than a name, since a nested value has no single property
+    /// name: `<color=zzz>` and `segments[2].color` are paths, and `color` is a
+    /// field. Every diagnostic raised is a markup tag, so the path is the tag
+    /// as written, value included: `<weight=1500>` rather than `<weight>`. A
+    /// diagnostic about a scene value would take the property-path spelling,
+    /// with [`Diagnostic::offset`] `None`; nothing raises one.
     pub path: String,
     /// What was wrong with it, and what was done instead.
     pub detail: String,
-    /// Where in the markup it was, as a byte offset into the string the
-    /// caller wrote, or `None` for a diagnostic that did not come from
-    /// markup.
+    /// Where in the markup it was, as a byte offset into the string the caller
+    /// wrote, or `None` for a diagnostic that did not come from markup.
     ///
-    /// The offset of the tag's `<`, in the caller's own string rather than in
-    /// anything this crate derived from it -- so `input[offset..]` starts at
-    /// the tag. **There is no end.** `unescape` runs over the whole string
-    /// before a tag is scanned, and an escape inside a tag body changes its
-    /// length, so `<color=re\\d>` is one byte longer where the caller wrote
-    /// it than in the text the scanner measured. A length taken from the
-    /// scanner would therefore be right only for tags containing no escapes,
-    /// which is worse than absent: nothing would mark the cases where it
-    /// lies.
+    /// The offset of the tag's `<` in the caller's own string, so
+    /// `input[offset..]` starts at the tag. There is no end: `unescape` runs
+    /// before a tag is scanned and an escape inside a tag changes its length,
+    /// so a length from the scanner would be wrong for exactly the tags with
+    /// escapes, and nothing would mark them.
     pub offset: Option<usize>,
 }
 
@@ -110,10 +96,8 @@ mod tests {
     }
 
     /// A diagnostic that did not come from markup has no place to point at.
-    ///
-    /// The pair is the assertion: `new` leaving `None` is what makes the
-    /// field additive rather than a break, and `at` setting it is what makes
-    /// the field worth having. Neither alone says the two constructors differ.
+    /// `new` leaving `None` and `at` setting it, asserted together, say the two
+    /// constructors differ.
     #[test]
     fn only_the_positioned_constructor_carries_an_offset() {
         assert_eq!(Diagnostic::new("<color=zzz>", "not a colour").offset, None);
@@ -123,11 +107,8 @@ mod tests {
         );
     }
 
-    /// Two diagnostics about the same tag in different places differ.
-    ///
-    /// This is the case the offset exists for: without it the two values are
-    /// equal, and a caller with `<color=zzz>` written twice is told the same
-    /// thing twice with nothing to separate the reports.
+    /// Two diagnostics about the same tag in different places differ: without
+    /// the offset, `<color=zzz>` written twice reports the same thing twice.
     #[test]
     fn the_offset_is_part_of_the_identity() {
         let (path, reason) = ("<color=zzz>", "not a colour");
@@ -137,10 +118,8 @@ mod tests {
         );
     }
 
-    /// Two diagnostics about different paths are different diagnostics.
-    ///
-    /// The pair is the point: a type that compared equal on the reason alone
-    /// would collapse two places into one, and the place is the half a caller
+    /// Two diagnostics about different paths differ: comparing on the reason
+    /// alone would collapse two places into one, and the place is what a caller
     /// cannot recover from the render.
     #[test]
     fn the_path_is_part_of_the_identity() {

@@ -1,21 +1,7 @@
-// What `resolveAddon` says when it cannot produce an addon.
-//
-// **These are the paths with no coverage and the highest cost of being wrong.**
-// A bare `export { PLATFORM_PACKAGES } from ...` — which does not bind the name
-// locally — passed the whole suite and would have thrown a `ReferenceError` on
-// the "no prebuilt addon is published" message, because both internal reads sit
-// on error paths nothing reached. `tsc` caught that one. It will not catch a
-// message that names the wrong host, offers the wrong fix, or says a package
-// was not found when it was found and would not load.
-//
-// # Injected rather than contrived
-//
-// None of this builds a broken host. `resolveAddon` takes its `require` from
-// `createRequire`, imported at module scope, so mocking `node:module` replaces
-// every resolution it performs — and the host triple comes from `process`,
-// which is stubbed per test. That seam already existed: nothing here asked for
-// a change to `resolveAddon` to make it reachable, which is the trade worth
-// refusing.
+// What `resolveAddon` says when it cannot produce an addon: the error paths nothing
+// else reaches, where a message can name the wrong host or offer the wrong fix.
+// `node:module` is mocked, since `resolveAddon` takes its `require` from
+// `createRequire`, and the host triple is stubbed on `process` per test.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -29,11 +15,9 @@ vi.mock('node:module', () => ({ createRequire: () => injected.current }))
 const { resolveAddon, PLATFORM_PACKAGES } = await import('./addon.js')
 
 /**
- * A `require` that answers from a table and throws for anything absent.
- *
- * `resolve` succeeds for an id the table knows even when requiring it throws,
- * which is the whole distinction under test: installed-and-broken is a
- * different problem from not-installed, with a different fix.
+ * A `require` that answers from a table and throws for anything absent. `resolve`
+ * succeeds for an id the table knows even when requiring it throws, which is
+ * installed-and-broken as opposed to not installed.
  */
 function requiring(table: Record<string, unknown>) {
   const load = (id: string) => {
@@ -100,15 +84,9 @@ describe('a platform nothing is published for', () => {
 
 describe('a glibc host', () => {
   it('is given the gnu build, because `glibc` and `gnu` are different words', () => {
-    // **The regression.** `target()` returned the C library's name, so a glibc
-    // Linux host derived `linux-x64-glibc`, which matches no key, and every
-    // such host was told no addon is published for it -- the whole primary
-    // Linux target. npm's `libc` field takes `glibc`; every triple naming the
-    // same thing spells it `gnu`.
-    //
-    // It survived because musl is spelled identically in both, so the musl
-    // half of the keying worked and the tests that could see it run on darwin.
-    // Only a Linux CI run, or this, catches it.
+    // `target()` spells a glibc host's suffix `gnu`: npm's `libc` field says
+    // `glibc`, and a key built from that would match nothing. musl is spelled the
+    // same both ways, so only a glibc Linux host shows it.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     const addon = { rendered: true }
     injected.current = requiring({ '@meo-canvas/linux-x64-gnu': addon })
@@ -167,12 +145,9 @@ describe('a platform package that does not resolve', () => {
     host({ platform: 'darwin', arch: 'arm64' })
     injected.current = requiring({})
 
-    // Skipped at install, bundled away from the `node_modules` it resolved
-    // against, or never installed at all: the three arrive here identically,
-    // so all three are named. The bundler one reads least like itself -- the
-    // output works while it sits beside the tree it was built in and fails the
-    // moment it is copied into an image on its own -- and naming only the
-    // install sent that reader to a command that would not have helped.
+    // Skipped at install, bundled away from its `node_modules`, or never installed:
+    // the three arrive identically, so all three are named, the bundler case
+    // because a bundle works beside its tree and fails once copied out alone.
     expect(() => resolveAddon()).toThrow(/was not found in 2 places/)
     expect(() => resolveAddon()).toThrow(/--omit=optional/)
     expect(() => resolveAddon()).toThrow(/mark meo-canvas external/)
@@ -199,12 +174,9 @@ describe('a platform package that resolves and will not load', () => {
   })
 
   it('names the missing shared object and what installs it', () => {
-    // **No binary this project publishes reaches this**, and the branch is kept
-    // for a target that links dynamically, for a `MEO_CANVAS_ADDON` built any
-    // way at all, and for musl's `libstdc++`. The `linux-arm64-gnu` artefact was
-    // read: eight `DT_NEEDED` entries, none of them fontconfig or freetype,
-    // all resolving on a stock `node:22-slim`. So this test is what keeps the
-    // branch honest rather than what keeps it alive.
+    // No published binary reaches this, since fontconfig and freetype are linked
+    // statically; the branch is kept for a dynamically linked target, a
+    // `MEO_CANVAS_ADDON` binary and musl's `libstdc++`, and this keeps it honest.
     host({ platform: 'linux', arch: 'x64', glibc: '2.39' })
     injected.current = requiring({
       '@meo-canvas/linux-x64-gnu': dlopen('libfontconfig.so.1: cannot open shared object file: No such file or directory'),
@@ -217,13 +189,10 @@ describe('a platform package that resolves and will not load', () => {
   })
 
   it("recognises musl's wording, which is not glibc's", () => {
-    // **The branch never fired on musl**, because the pattern wanted the
-    // library name and `cannot open shared object file` adjacent -- true of
-    // glibc and of neither half of musl's sentence. musl is the one target
-    // where a missing library is expected rather than hypothetical: its
-    // artefact needs a `libstdc++` a bare Alpine image lacks. Both strings
-    // below were read off the loaders, not recalled, by loading an object with
-    // a `DT_NEEDED` nothing provides on `node:22-slim` and `node:22-alpine`.
+    // musl words this differently from glibc, and is the one target where a missing
+    // library is expected: its artefact needs a `libstdc++` a bare Alpine image
+    // lacks. Both strings were read off the loaders, on `node:22-slim` and
+    // `node:22-alpine`, loading an object with a `DT_NEEDED` nothing provides.
     host({ platform: 'linux', arch: 'x64' })
     injected.current = requiring({
       '@meo-canvas/linux-x64-musl': dlopen('Error loading shared library libstdc++.so.6: No such file or directory (needed by /app/meo-canvas.node)'),
@@ -239,11 +208,9 @@ describe('a platform package that resolves and will not load', () => {
   })
 
   it('does not read a wrong-architecture binary as a missing dependency', () => {
-    // musl opens both sentences with `Error loading shared library`, and this
-    // one is an artefact for another architecture -- a different failure with a
-    // different fix. Matching everything after that prefix would have told the
-    // reader to install a package that would not have helped. Measured: this is
-    // what `node:22-alpine` says when handed the glibc build.
+    // musl opens both sentences with `Error loading shared library`, and this one is
+    // a binary for another architecture, with a different fix. It is what
+    // `node:22-alpine` says when handed the glibc build.
     host({ platform: 'linux', arch: 'x64' })
     injected.current = requiring({
       '@meo-canvas/linux-x64-musl': dlopen('Error loading shared library /app/meo-canvas.node: Exec format error'),

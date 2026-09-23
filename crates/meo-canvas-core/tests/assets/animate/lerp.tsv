@@ -1,26 +1,7 @@
-# Ground truth for lerp(), generated from meo-canvas v1's built module
-# (`dist/esm/animate/interpolate.js`) rather than from either v2 implementation.
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
-# the four original tables name, and verified rather than assumed: this
-# generator was first run against those tables and reproduced all 612 of their
-# rows exactly, which is what establishes it is the same v1 they came from.
-#
-# Neither surface may be written from the other: a misreading of v1 that reaches
-# both looks like agreement. Both are written against this, and this came from
-# v1 running, not from anyone reading it.
-#
-# Values are shortest-round-trip decimals, compared exactly. There is no
-# tolerance here.
-#
-# **lerp does not clamp**, which is why `t` runs outside 0..1 here: the
-# overshooting curves need the extrapolation, and a table that sampled only
-# 0..1 could not tell an unclamped implementation from a clamped one.
-# Reversed ranges and a zero-length range are here for the same reason.
-#
+# `lerp` as v9.0.2 (commit 890eed2) computes it. It does not clamp, so `t` runs
+# outside 0..1, beside reversed and zero-length ranges.
 # from	to	t	value
 # rows: 28
-#
 0	100	-0.5	-50
 0	100	0	0
 0	100	0.25	25

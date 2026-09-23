@@ -12,10 +12,9 @@ use crate::{
 
 /// One thing running inside a [`Parallel`].
 ///
-/// **An enum rather than a boxed trait object.** The three samplable types are
-/// the three there are, the crate already spells this choice as an enum in
-/// [`Motion`](crate::animate::track::Motion), and it keeps `Parallel` `Clone`,
-/// `Debug` and `PartialEq` where a `dyn` member would not be.
+/// An enum rather than a boxed trait object, as
+/// [`Motion`](crate::animate::track::Motion) is, so `Parallel` stays `Clone`,
+/// `Debug` and `PartialEq`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Member<T> {
     /// A single motion between two values.
@@ -28,19 +27,10 @@ pub enum Member<T> {
 
 /// Several motions started together, sampled as one.
 ///
-/// **What v1's `parallel` is, in a language with no mapped types.** There a
-/// group is a record of named members and `at` returns a record of their
-/// values, assembled by TypeScript from whatever was passed in. Rust cannot
-/// build that type, so the values come back in declaration order and
-/// [`Parallel::names`] gives the names in the same order. **The numbers match
-/// the JavaScript surface exactly; the container does not, and cannot.**
-///
-/// Until 4 September 2026 this crate had no group at all, only
-/// [`longest`], on the argument that a caller with three tracks writes a
-/// struct with three fields and calls each. That argument was wrong about the
-/// timing -- which is why `longest` existed -- and the user overruled it in
-/// the animation audit: the two surfaces now offer the same three operations
-/// on the same three things.
+/// The JavaScript surface returns a record keyed by member name, a type Rust
+/// cannot build from what was passed in. So [`Parallel::at`] returns the values
+/// in declaration order and [`Parallel::names`] the names in the same order:
+/// the numbers are the same on both surfaces and the container is not.
 ///
 /// ```
 /// use meo_canvas_core::animate::{
@@ -81,10 +71,9 @@ impl<T: Animatable> Parallel<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Track`] for a group with no members. **A group of
-    /// nothing has no duration rather than a duration of zero**, and zero
-    /// would read as finished to every caller that checks -- which is why this
-    /// refuses rather than answering, as v1 does.
+    /// Returns [`Error::Track`] for a group with no members: a group of
+    /// nothing has no duration, and a duration of zero would read as finished
+    /// to every caller that checks.
     ///
     /// ```
     /// use meo_canvas_core::animate::group::{Member, Parallel};
@@ -202,11 +191,10 @@ impl<T: Animatable> Parallel<T> {
 
     /// How long a staggered set of `count` groups runs for.
     ///
-    /// **The count reaches each member and the longest answer wins**, rather
-    /// than the count being applied to the group's own length. A group whose
-    /// members stagger differently is as long as whichever member the stagger
-    /// stretches furthest, which is not in general the member that is longest
-    /// for a single item.
+    /// The count reaches each member and the longest answer wins, rather than
+    /// the count scaling the group's own length: a stagger stretches each
+    /// member differently, so the longest set need not come from the longest
+    /// member.
     ///
     /// # Errors
     ///
@@ -225,10 +213,8 @@ impl<T: Animatable> Parallel<T> {
 impl<T: Animatable> Member<T> {
     /// How long this member runs for.
     ///
-    /// Not a [`Sampled`] implementation, deliberately: that trait's `at`
-    /// returns one value, and a nested group's returns one per member of it.
-    /// A `Member` is what a group is built from rather than something a caller
-    /// samples, so it answers only the two questions a group needs of it.
+    /// Not a [`Sampled`] implementation: that trait's `at` returns one value,
+    /// and a nested group's returns one per member of it.
     ///
     /// # Errors
     ///
@@ -276,7 +262,7 @@ impl<T: Animatable> Sampled for Parallel<T> {
     clippy::float_cmp,
     reason = "every expected value here is exact in binary -- halves, \
               quarters and the eighths `outCubic` lands on -- and each came \
-              from v1 through the JavaScript surface. The exact comparison is \
+              from v9 through the JavaScript surface. The exact comparison is \
               the assertion, as in `tests/animate_vectors.rs`; an epsilon \
               would hide the disagreement these exist to find."
 )]
@@ -316,12 +302,10 @@ mod tests {
     }
 
     #[test]
-    fn a_group_samples_where_v1_samples() {
-        // Measured from v1 through the JavaScript surface:
-        // `parallel({x: track({from:0,to:100,duration:1,ease:'outCubic'}),
-        //            y: sequence({from:0,steps:[{to:4,duration:2}]})})`
-        // at time 0.25 gives `{x: 57.8125, y: 0.5}`, and its duration is 2 --
-        // the longer member.
+    fn a_group_samples_where_v9_samples() {
+        // Measured from v9 through the JavaScript surface, for an `outCubic`
+        // track 0..100 over 1s beside a sequence 0..4 over 2s: `{x: 57.8125, y:
+        // 0.5}` at 0.25s, and a duration of 2, the longer member's.
         let curve = Track {
             motion: Motion::Ease(Easing::OutCubic),
             ..track(100.0, 1.0, 0.0)
@@ -359,15 +343,10 @@ mod tests {
 
     #[test]
     fn a_set_of_groups_takes_the_count_to_each_member() {
-        // **The case that separates propagating the count from ignoring it.**
-        // A member lasting 1s and staggering by 1s, beside one lasting 2s and
-        // not staggering: for a single item the second is longer, and for
-        // three items the first is. An implementation that applied the count
-        // to the group's own length would answer 2 here and pass every
-        // less careful test.
-        //
-        // Measured from v1 through the JavaScript surface: duration 2,
-        // totalDuration(3) 3, totalDuration(5) 5.
+        // Separates propagating the count from ignoring it: a 1s member
+        // staggering by 1s beside a 2s one that does not. Measured from v9
+        // through the JavaScript surface: duration 2, totalDuration(3) 3,
+        // totalDuration(5) 5.
         let uneven = group(vec![
             ("staggering", Member::Track(track(5.0, 1.0, 1.0))),
             ("long", Member::Track(track(9.0, 2.0, 0.0))),
@@ -415,11 +394,9 @@ mod tests {
 
     #[test]
     fn the_three_types_answer_the_same_three_questions_through_the_trait() {
-        // **The point of the trait, asserted rather than assumed.** A caller
-        // generic over `Sampled` gets the same three answers from a track, a
-        // planned sequence and a group, and the numbers are the ones the
-        // inherent methods give. Nothing else here calls the trait, so
-        // without this the impls compile and are never run.
+        // A caller generic over `Sampled` gets the inherent methods' answers
+        // from a track, a planned sequence and a group. Nothing else here calls
+        // the trait.
         fn ask<M: Sampled>(motion: &M, count: usize) -> (f64, f64) {
             (
                 motion
@@ -454,7 +431,7 @@ mod tests {
         }
         .plan()
         .unwrap_or_else(|error| unreachable!("{error}"));
-        // Measured from v1 through the JavaScript surface: a sequence delayed
+        // Measured from v9 through the JavaScript surface: a sequence delayed
         // by 0.25 running 1s reports 1.25, and three of them 2.25.
         assert_eq!(ask(&run, 3), (1.25, 2.25));
         assert_eq!(
@@ -478,18 +455,9 @@ mod tests {
 
     #[test]
     fn the_trait_answers_the_same_way_for_a_colour_as_for_a_number() {
-        // **The other instantiation.** `Animatable` has two implementors and
-        // every other test here uses `f64`, so the uniformity the trait states
-        // was proven for numbers and assumed for colours -- and a colour is
-        // where the three types could plausibly differ, since `Rgba` mixes per
-        // channel and a group's `at` returns a compound value of them.
-        //
-        // A generic with one instantiation exercised reads as covered and
-        // uncovered at once: the question to ask a coverage report about a
-        // generic is which instantiations, not whether it is covered.
-        //
-        // Measured from v1 through the JavaScript surface: a track from red to
-        // blue over a second is `{r: 127.5, g: 0, b: 127.5, a: 1}` at 0.5s.
+        // `Rgba`, the other `Animatable`: every other test here uses `f64`.
+        // Measured from v9 through the JavaScript surface: red to blue over 1s
+        // is `{r: 127.5, g: 0, b: 127.5, a: 1}` at 0.5s.
         let red = Rgba {
             r: 255.0,
             g: 0.0,

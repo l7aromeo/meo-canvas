@@ -1,21 +1,7 @@
-// Where `text-align` puts a line, and which values move with the direction.
-//
-// Reported as `l7aromeo/meo-canvas#109`: `TextAlign::Start` is documented as
-// flipping under a right-to-left direction and cannot. The enum is the
-// specification the code fails -- `Start` says "at the inline start, which
-// flips under a right-to-left direction" and `Left` says "at the left edge
-// regardless of direction" -- and both reach the same arm.
-//
-// **The `ltr` rows are the control and they are half the table.** Under `ltr`,
-// `start` must land where `left` does and `end` where `right` does. Without
-// them a repair to the physical arms and a repair to nothing look identical:
-// the `rtl` rows alone cannot say whether `left` stayed put because it is
-// correct or because nothing touched it.
-//
-// `center` is here and proves nothing about either direction, deliberately. It
-// is the same rectangle under both, so it cannot witness a flip -- and a row
-// that cannot fail is worth keeping only when it says so, which its note does.
-// Without it the next person adds it believing it covers the centred case.
+// Where `text-align` puts a line, and which values move with the direction
+// (`l7aromeo/meo-canvas#109`). The `ltr` rows are the control: `start` must land on
+// `left` and `end` on `right`. `center` is identical in both directions and cannot
+// witness a flip; its note says so.
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

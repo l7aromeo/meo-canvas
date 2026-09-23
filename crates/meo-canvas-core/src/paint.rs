@@ -12,11 +12,9 @@
 //! this pass computes the absolute baseline from [`LayoutResult::baseline`] and
 //! subtracts the paragraph's own ascent to reach the top it passes in.
 //!
-//! Today the two agree and the subtraction cancels. Writing it the other way
-//! would tie glyph placement to the box, and any later change that makes a
-//! text box taller than its text -- encoding a baseline into the height is the
-//! candidate on the table -- would silently move every glyph. The baseline is
-//! the fixed point; the box is not.
+//! The two agree, so the subtraction cancels. It is written this way so that a
+//! text box taller than its text cannot move a glyph: the baseline is the
+//! fixed point, and the box is not.
 //!
 //! # Nothing here is verified by executing it
 //!
@@ -63,12 +61,9 @@ use crate::{
     resolve::{DecodedImage, Resolved, ResolvedText},
 };
 
-/// Opacity at or above which a node needs no isolation layer.
-///
-/// Exactly one. Below it the node's children must be composited together and
-/// then faded as a group, or overlapping siblings show through each other; at
-/// it there is nothing to fade and the layer would cost an offscreen surface
-/// for no visible difference.
+/// Opacity at or above which a node needs no isolation layer: exactly one.
+/// Below it overlapping children must be composited and faded as a group; at it
+/// a layer would cost an offscreen surface for nothing.
 const OPAQUE: f32 = 1.0;
 
 /// Degrees in a full turn, for converting a scene's rotation to radians.
@@ -78,18 +73,9 @@ const DEGREES_PER_TURN: f32 = 360.0;
 /// does -- twelve o'clock against three.
 const QUARTER_TURN_DEGREES: f32 = 90.0;
 
-/// Names the property a rendering failure came from, keeping the reason.
-///
-/// The backend says what went wrong and cannot say which property carried it:
-/// it is handed a string and never sees the scene. The call site knows the
-/// property and throws that away by stringifying into [`Error::Paint`], so this
-/// is the one place both halves are in scope.
-///
-/// **The reason is kept rather than replaced.** `invalid SVG path: could not
-/// parse SVG path data: "not a path"` already names the failure and quotes the
-/// input; what it lacks is which of `d` and `mask` was being parsed, and those
-/// two produce byte-identical text today from two different call sites. Writing
-/// a message of our own here would lose a good explanation to gain a name.
+/// Names the property a rendering failure came from, keeping the backend's
+/// reason, which quotes the input but cannot say whether `d` or `mask` was
+/// being parsed.
 fn in_property(property: &str, error: &impl core::fmt::Display) -> Error {
     Error::Paint(format!("{property}: {error}"))
 }
@@ -111,11 +97,8 @@ pub struct SurfaceOptions {
     pub color_space: ColorSpace,
 }
 
-/// This crate's [`ColorType`] as the renderer's.
-///
-/// Exhaustive over ours, so a variant added here fails the build. The other
-/// direction is [`from_skia_color_type`], which is test-only and exists for
-/// exactly the direction this match cannot see.
+/// This crate's [`ColorType`] as the renderer's, exhaustive over ours;
+/// `from_skia_color_type`, test-only, covers the other direction.
 const fn to_skia_color_type(color_type: ColorType) -> PixelDepth {
     use meo_skia_canvas::PixelDepth as Skia;
     match color_type {
@@ -193,9 +176,9 @@ impl Surface {
     /// than half of one.
     ///
     /// The canvas options are stated rather than inherited. `Canvas::new`
-    /// takes `CanvasOptions::default()`, which sets `gpu: true`
-    /// (`meo-skia-canvas-0.11.0/src/canvas.rs:217`), so every render would ask
-    /// for the GPU whether or not anyone decided it should. Naming the field
+    /// takes `CanvasOptions::default()`, which sets `gpu: true`, so every
+    /// render would ask for the GPU whether or not anyone decided it should.
+    /// Naming the field
     /// here is what makes `gpu` a decision the caller took rather than a
     /// default nobody read.
     ///
@@ -279,17 +262,10 @@ impl Surface {
         self.canvas.page_count()
     }
 
-    /// The canvas, for the encode pass.
-    ///
-    /// Mutable because encoding mutates: `Canvas::to_buffer` takes `&mut self`
-    /// (`canvas.rs:551`) since it prepares the surface before reading it. A
-    /// shared borrow cannot encode, so there is no shared accessor beside this
-    /// one -- nothing reads the canvas without also preparing it.
-    ///
-    /// Crate-internal: no public signature of this crate names a Skia type,
-    /// and `encode` is in the same crate, so it costs nothing to keep the
-    /// promise here. There is deliberately no `to_buffer` on `Surface` --
-    /// that would be encode's job living in paint.
+    /// The canvas, for the encode pass, mutable because `Canvas::to_buffer`
+    /// prepares the surface before reading it. Crate-internal, as no public
+    /// signature names a Skia type, and there is no `to_buffer` here: encoding
+    /// is encode's job.
     pub(crate) const fn canvas_mut(&mut self) -> &mut Canvas {
         &mut self.canvas
     }
@@ -365,38 +341,25 @@ pub fn draw(
     result
 }
 
-/// One entry in the traversal's own stack.
-///
-/// Iterative rather than recursive, for the reason `Scene::validate` is: a
-/// scene is caller data, and a tree deeper than the thread's stack would abort
-/// the process instead of returning an error. The explicit `Leave` is what
-/// keeps `save`/`restore` balanced without the call stack to unwind it.
+/// One entry in the traversal's own stack: iterative, as `Scene::validate` is,
+/// because a deep scene would overflow the thread's stack. `Leave` keeps `save`
+/// and `restore` balanced.
 #[derive(Debug, Clone)]
 enum Step {
     Enter(NodeId),
-    /// A participant, and the clipping ancestors between it and its context.
-    ///
-    /// A hoisted node paints as a sibling of its context root rather than
-    /// nested under its parent, so nothing would apply the `overflow` of the
-    /// parents it was lifted past. Clipping is not stacking: CSS applies an
-    /// ancestor's clip to a descendant however the two are ordered.
-    ///
-    /// **Only a clip can be owed.** Every other thing an ancestor could impose
-    /// — a transform, an opacity, a blend, a mask, a filter — establishes a
-    /// stacking context, so a node carrying one is never an intermediate. That
-    /// is what makes this a list of rectangles rather than a replay of the
-    /// ancestors' state.
+    /// A participant, and the clips of the ancestors it was hoisted past: CSS
+    /// applies an ancestor's clip however the two are ordered. Only a clip can
+    /// be owed, as anything else an ancestor imposes makes it a stacking
+    /// context.
     EnterClipped {
         id: NodeId,
         clips: Vec<NodeId>,
     },
     Leave {
         layers: u8,
-        /// The node whose mask is composited as its group layer closes.
-        ///
-        /// `Some` only for a node that opened one: masking is `DestinationIn`
-        /// against everything the group drew, so it has to happen inside the
-        /// layer and after the last of it.
+        /// The node whose mask is composited as its group layer closes:
+        /// `DestinationIn` against everything the group drew, so inside the
+        /// layer, after its last draw.
         masked: Option<NodeId>,
     },
 }
@@ -511,31 +474,10 @@ fn walk(
     Ok(())
 }
 
-/// Everything one stacking context paints, in the order it paints them.
-///
-/// # Why this is not simply the children
-///
-/// A stacking context gathers its descendants **through** any that establish no
-/// context of their own. A `z-index: -1` child of a plain `<div>` does not
-/// belong to that div's stack — the div has no stack — it belongs to the
-/// nearest ancestor that has one, where it paints *before* that ancestor's
-/// content and so behind the div's own background.
-///
-/// Painting each node's children under that node, which is what this did
-/// before, gives every node a stack of its own. Measured: a `z-index: -1` child
-/// showed through in all three of a plain parent, an `overflow: hidden` parent
-/// and an `isolation: isolate` one, where Chrome shows it only in the third.
-///
-/// # The order
-///
-/// CSS's painting order, restricted to what a scene here can hold: negative
-/// `z_index` first, then descendants the index does not apply to, then those it
-/// does at zero or above. The sort is stable, so tree order decides within a
-/// rank — which is what makes "document order within a z-index" true rather
-/// than incidental.
-///
-/// A participant that establishes a context is one entry, entered whole. Its
-/// own descendants are gathered by its own call and never appear here.
+/// Everything one stacking context paints, in CSS's order: negative `z_index`,
+/// then descendants it does not apply to, then zero and above, sorted stably. A
+/// context gathers through descendants that make none, so a `z-index: -1` child
+/// of a plain `<div>` paints behind the div.
 fn participants(
     scene: &meo_canvas_scene::Scene,
     root: NodeId,
@@ -561,20 +503,10 @@ fn participants(
     /// owes, and the key of the ancestor it hangs from.
     type Pending = (NodeId, NodeId, Vec<NodeId>, Key);
 
-    /// Which of CSS's painting steps a node belongs to within its parent.
-    ///
-    /// Appendix E orders a stacking context's contents: in-flow
-    /// non-positioned descendants at steps 3 and 5, then at step 6
-    /// **everything positioned and every child stacking context with a
-    /// `z_index` of zero**. So the upper band is not "positioned" alone.
-    ///
-    /// The case that separates the two readings is a **static flex or grid
-    /// item with `z_index: 0`**. Flexbox §5.4 gives such an item a stacking
-    /// context even though it is not positioned, which puts it at step 6,
-    /// while a static item with `auto` paints as an inline block at step 5 --
-    /// so the indexed one is above whatever the document order. Measured
-    /// against Chrome, which disagreed on exactly those two rows when this
-    /// asked about position alone.
+    /// Which of CSS's painting steps a node takes within its parent: Appendix E
+    /// puts everything positioned and every child context at `z_index` 0 at
+    /// step 6, so a static flex or grid item at 0 is above its siblings, as
+    /// Chrome shows.
     const fn layer(node: &Node, indexed: bool) -> u8 {
         let positioned =
             !matches!(node.layout.position_type, PositionType::Static);
@@ -586,13 +518,9 @@ fn participants(
     }
 
     let mut found: Vec<Ranked> = Vec::new();
-    // Iterative for the reason `walk` is: a scene is caller data, and a tree
-    // deeper than the thread's stack would abort rather than return an error.
-    // A pre-order walk, so `found` is in document order before it is sorted and
-    // the sort's stability is what decides ties.
-    // The context's own clip is owed by its participants just as any
-    // intermediate's is — it is not applied around them, so that a node
-    // entitled to escape it can.
+    // Iterative and pre-order, so `found` is in document order and the stable
+    // sort decides ties. The context's own clip is owed by its participants
+    // rather than applied around them, so one entitled to escape it can.
     let root_clips = clips_its_children(node);
     let mut pending: Vec<Pending> = node
         .children
@@ -619,34 +547,16 @@ fn participants(
             continue;
         };
 
-        // **A non-zero `z_index` joins the context root's own ordering**
-        // rather than its ancestor's place in it. CSS puts such a child
-        // stacking context at step 2 or step 7 of the *context* -- before
-        // every in-flow descendant or after every positioned one -- so a
-        // `z_index: -1` child of a plain block paints beneath that block's
-        // background, which is the hoist `fixtures/stacking-hoist` exists for.
-        // Starting its key afresh is what lets it overtake its own ancestor.
-        //
-        // **Zero is not one of those, and that is the whole of this
-        // distinction.** Step 6 holds positioned descendants with `auto` *and*
-        // child stacking contexts with `0`, together, in tree order -- so
-        // `z_index: 0` and `z_index: auto` do not rank against each other at
-        // all and the later box wins. Measured against Chrome, where ranking
-        // the explicit zero above the automatic one disagreed in three rows,
-        // one per container kind. The two differ in whether a stacking
-        // context is established, which is [`establishes_stacking_context`]'s
-        // question and not this one.
+        // A non-zero `z_index` keys afresh at the context root, CSS's step 2 or
+        // 7, so a `z_index: -1` child of a plain block paints beneath its
+        // background (`fixtures/stacking-hoist`). Zero does not: step 6 holds
+        // it beside `auto`.
         let indexed = stacks_by_z_index(parent, source);
         let explicit =
             indexed && source.paint.z_index.is_some_and(|index| index != 0);
-        // The third component is the node's place in the pre-order walk,
-        // which is document order. Without it a *sibling's* descendant
-        // compares against a shorter key as though it were an ancestor: three
-        // absolutely-positioned panels and the twelve stripes behind them all
-        // key as `(0, 1)`, and the stripes' children would sort after the
-        // panels and paint over them.
-        //
-        // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
+        // The third component is the pre-order position, so a sibling's
+        // descendant never keys as though it were an ancestor. The cast is
+        // exact: the arena is bounded by `MAX_NODES`, a `u32`.
         let own = (
             if indexed {
                 source.paint.z_index.unwrap_or(0)
@@ -691,23 +601,9 @@ fn participants(
         }
     }
 
-    // **By the path, not by a flat key.** Each node's key is one `(z, layer)`
-    // pair per step from the context root down to it, compared in order, and
-    // the sort is stable so tree order decides the rest.
-    //
-    // A flat key was tried first and is wrong twice over. Ranking by `z` alone
-    // loses CSS's rule that a positioned box paints above an in-flow one
-    // whatever the document order — 66 of 231 rows of the paint-order table
-    // disagreed with Chrome on exactly that, every one of them
-    // `relative`, `absolute` or `sticky` against `static`. And adding a
-    // "positioned" key *flat* sorts a static grandchild before its own
-    // positioned parent, whose background then covers it: `display: block`
-    // below the page root painted no children at all.
-    //
-    // The path key has both properties by construction. An ancestor's key is a
-    // strict prefix of its descendant's, and a prefix sorts first, so a
-    // descendant can never overtake the box it sits in; and within one parent
-    // the last pair decides, which is where CSS's ordering belongs.
+    // By the path, not a flat key: one `(z, layer)` pair per step from the
+    // context root, a prefix sorting first, so a descendant never overtakes its
+    // box. A flat key disagreed with Chrome in 66 of 231 paint-order rows.
     found.sort_by(|left, right| left.key.cmp(&right.key));
     found
         .into_iter()
@@ -718,37 +614,10 @@ fn participants(
         .collect()
 }
 
-/// Whether `child` slips out of `clipper`'s `overflow`.
-///
-/// `overflow` clips a node's **content**, and an absolutely positioned node is
-/// not a box's content merely by sitting inside it: it is laid out against its
-/// containing block, and CSS clips it only where the clipper is that containing
-/// block or lies between it and one. So an unpositioned box clips its in-flow
-/// children and lets an absolute one through.
-///
-/// Ported from v1's `b434a23`, which fixed the same defect there, and measured
-/// against it: a 50-wide absolute child in a 20-wide clipper is clipped when
-/// the clipper is `relative` and not when the clipper names no position.
-///
-/// A [`PositionType::Fixed`] node escapes every clipper **but the one that
-/// captures it**. Its containing block is not any positioned ancestor — it is
-/// the transform that captures it, or nothing at all — so neither a static nor
-/// a relative box cuts one where either would cut an absolute node.
-///
-/// Ported from v1's `4f542d8`. Measured before: a 50-wide fixed child in a
-/// 20-wide clipper painted 20 columns under a static clipper and 20 under a
-/// relative one, where both should be 50.
-///
-/// # Capture and clip are one rule
-///
-/// Both arms ask [`is_containing_block`], which is the same predicate
-/// [`crate::layout`] attaches an out-of-flow box with — deliberately, because
-/// a box is clipped by its containing block's `overflow` and by nothing it was
-/// merely written inside. They were two rules for an hour and Chrome found it
-/// in ten rows: a transformed clipper with `overflow: hidden` placed an
-/// out-of-flow child exactly where the browser does and then **drew it whole**,
-/// because layout knew the transform had captured it and paint still thought
-/// every fixed box escapes everything.
+/// Whether `child` slips out of `clipper`'s `overflow`: an absolute child
+/// passes an unpositioned clipper, and a fixed one every clipper but the
+/// transform that captures it. [`is_containing_block`] is the rule layout
+/// attaches them by.
 const fn escapes_clip(clipper: &Node, child: &Node) -> bool {
     match child.layout.position_type {
         // Only a transform captures a fixed box, so only a transform clips
@@ -762,39 +631,18 @@ const fn escapes_clip(clipper: &Node, child: &Node) -> bool {
     }
 }
 
-/// Whether this node's `overflow` clips what is inside it.
-///
-/// Not a stacking-context trigger, which is the whole point: a clip binds a
-/// descendant however the two are ordered, so a node hoisted out of a clipping
-/// parent is still clipped by it.
+/// Whether this node's `overflow` clips what is inside it. Not a
+/// stacking-context trigger: a clip binds a descendant however the two are
+/// ordered.
 const fn clips_its_children(node: &Node) -> bool {
     !matches!(node.layout.overflow.0, Overflow::Visible)
         || !matches!(node.layout.overflow.1, Overflow::Visible)
 }
 
-/// Whether this node establishes a stacking context.
-///
-/// The declarations that create one, of the twenty-seven CSS lists, restricted
-/// to those a still renderer can observe and this scene can express:
-///
-/// - **positioned with a `z_index` other than `auto`** — `Some(_)`, not
-///   `Some(0)` against `None`: `Some(0)` creates a context and `None` does not,
-///   which is the whole reason [`PaintStyle::z_index`] is an `Option`
-/// - an `opacity` below one
-/// - a `blend_mode` other than `Normal`
-/// - a `mask`, which stands for CSS's `clip-path` and `mask-image` both
-/// - a `transform`
-/// - a `filter` or a `backdrop_filter`
-///
-/// `overflow` is **not** one, and that is the trap this list exists to avoid:
-/// clipping is not isolation. Measured in Chrome — a `z-index: -1` child of an
-/// `overflow: hidden` parent is hidden exactly as it is under a plain one.
-///
-/// Absent because the scene cannot say them: `isolation` and `contain`, whose
-/// only observable effect in a still render *is* the context, and which are
-/// worth adding once the painter can act on one. Absent because they mean
-/// nothing here: `will-change`, a promise about a future value in a renderer
-/// that draws once, and `perspective`, since nothing else here is 3D.
+/// Whether this node establishes a stacking context: positioned with a numeric
+/// `z_index`, `opacity` below one, a blend, a mask, a transform or a filter.
+/// Not `overflow`: Chrome hides a `z-index: -1` child under `hidden` as under
+/// none.
 fn establishes_stacking_context(node: &Node) -> bool {
     let positioned = !matches!(node.layout.position_type, PositionType::Static);
     (positioned && node.paint.z_index.is_some())
@@ -806,40 +654,16 @@ fn establishes_stacking_context(node: &Node) -> bool {
         || node.effects.backdrop_filter.is_some()
 }
 
-/// Whether `child`'s `z_index` gives it a place in `parent`'s stack.
-///
-/// CSS 2.1 §9.9.1 gives `z-index` to positioned elements only. Flexbox §5.4 and
-/// Grid §6.2 each extend it to their items whatever their position, because
-/// being an item of that container is itself what earns the place. So: the
-/// child is positioned -- anything but [`PositionType::Static`] -- or its
-/// parent lays out as flex or grid.
-///
-/// This is neither v1's rule, which is absolutely positioned only, nor "every
-/// sibling", which was this renderer's first answer and is wrong for a block
-/// container.
-///
-/// Measured in Chrome across all five combinations rather than derived from the
-/// three specifications, because a rule assembled from three documents is a
-/// rule nobody has seen run:
-///
-/// | container | child | `z_index` |
-/// |---|---|---|
-/// | block | static | ignored |
-/// | block | relative | applied |
-/// | flex | static | applied |
-/// | flex | relative | applied |
-/// | grid | static | applied |
+/// Whether `child`'s `z_index` places it in `parent`'s stack: positioned, or an
+/// item of a flex or grid parent (CSS 2.1 §9.9.1, Flexbox §5.4, Grid §6.2).
+/// Measured in Chrome: ignored only on a static child of a block.
 const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
     !matches!(child.layout.position_type, PositionType::Static)
         || matches!(parent.layout.display, Display::Flex | Display::Grid)
 }
 
-/// Paints a node's own box and kind, under its own `overflow`.
-///
-/// In a save of its own, because a node's `overflow` clips **its** content and
-/// not what a descendant painted elsewhere in the order: the clip has to be
-/// gone by the time this context's participants are painted, so that one
-/// entitled to escape it can. See [`escapes_clip`].
+/// Paints a node's own box and kind under its own `overflow`, in a save of its
+/// own, so the clip is gone before this context's participants paint.
 fn paint_own_content(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
@@ -856,18 +680,9 @@ fn paint_own_content(
     // layouts it exists for.
     context.set_dither(node.paint.dither);
 
-    // **Outer shadows are drawn before the node's own clip, because that clip
-    // is not theirs.** `overflow` clips an element's content and its
-    // descendants; an outer shadow is painted outside the border edge and is
-    // neither, so the element's own `overflow` does not reach it. Chrome
-    // agrees, measured: with `hidden`, `scroll`, `auto` and a `border-radius`
-    // alongside, the ink under the box reads 169,15,30 against 176,16,32 for
-    // unshadowed ground -- the same as with no `overflow` at all.
-    //
-    // Inset shadows stay inside `paint_box`, under the clip, because they are
-    // painted within the border box and CSS does clip them. Chrome again: an
-    // inset shadow under `overflow: hidden` reads exactly as it does without
-    // one. **Moving both would have been the easy repair and the wrong one.**
+    // Outer shadows go before the node's own clip, being neither content nor a
+    // descendant: Chrome leaves them unclipped under every `overflow`. Inset
+    // shadows stay under it in `paint_box`, since CSS clips those.
     let result = draw_outer_shadows(context, &node.paint, &node.effects, rect)
         .and_then(|()| {
             if clips_its_children(node) {
@@ -881,14 +696,9 @@ fn paint_own_content(
     result
 }
 
-/// The node's outer box shadows, in paint order.
-///
-/// Split out of [`paint_box`] so it can be drawn before the node's own
-/// `overflow` clip is established -- see [`paint_own_content`]. Reversed,
-/// because CSS Backgrounds and Borders 3 §7.1 paints a shadow list **front to
-/// back**: the first one written is the one on top, so it has to be drawn last.
-/// Drawn in list order the last one won instead. Measured: `10px 0 0 red, 10px
-/// 0 0 blue` reads red beside the box in Chrome and read blue here.
+/// The node's outer box shadows, reversed because CSS paints the list front to
+/// back: `10px 0 0 red, 10px 0 0 blue` reads red in Chrome. Drawn before the
+/// node's own clip; see [`paint_own_content`].
 fn draw_outer_shadows(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -918,16 +728,9 @@ fn enter_node(
     // put back while that is still all there is.
     draw_backdrop(context, node, rect, device)?;
 
-    // The node's own `overflow` is **not** applied here. It clips descendants,
-    // and a descendant reaches this painter as a participant of whichever
-    // context gathers it rather than nested inside this call — so the clip
-    // travels with the participant, in the list `Step::EnterClipped` carries,
-    // where a node entitled to escape it can. Applied here it would wrap
-    // everything this node gathers with no way out, which is how an absolute
-    // child of a clipper that was *also* a stacking context stayed clipped
-    // after `escapes_clip` was taught to let it through.
-    //
-    // The node's own content is clipped by the caller, in a save of its own.
+    // The node's own `overflow` is not applied here: descendants arrive as
+    // participants carrying the clips they owe, and wrapping them here would
+    // leave them no way out. The caller clips the node's own content.
 
     let mut layers = 0_u8;
     let alpha = node.paint.opacity.clamp(0.0, OPAQUE);
@@ -982,13 +785,9 @@ fn paint_box(
         })?;
     }
 
-    // Inset shadows after the background and before the border, which is where
-    // CSS puts them. Drawn with the outer ones they were painted **and then
-    // covered by the very background they fall on**, which is why the arm
-    // looked unimplemented from the outside.
-    // Reversed for the same reason as the outer ones above, and measured the
-    // same way: two inset shadows offset right land their ink on the left
-    // inner edge, and Chrome shows the first-written colour there.
+    // Inset shadows after the background and before the border, where CSS puts
+    // them, reversed like the outer ones: Chrome shows the first-written on
+    // top.
     for shadow in node.effects.box_shadows.iter().rev().filter(|s| s.inset) {
         draw_box_shadow(context, paint, rect, shadow)?;
     }
@@ -996,14 +795,9 @@ fn paint_box(
     if let Some(background) = paint.background_image.as_ref()
         && let Some(decoded) = resolved.background(id)
     {
-        // The box it is painted into, which is what a vector document is
-        // rasterised at. `background-size` may then tile or inset it, and a
-        // tile smaller than the box is drawn from these pixels rather than
-        // re-rasterised: a background is not the case this arm was built for,
-        // and a second rasterisation per tile would be.
-        // No tint: `color` is a property of the node's own picture, and a
-        // background image is not that picture. A background that wanted one
-        // would be a second question with its own name.
+        // The box it is painted into, which a vector document is rasterised at,
+        // tiles reusing these pixels. No tint: `color` is the node's own
+        // picture, and a background image is not that picture.
         let image = raster_of(resolved, decoded, id, rect.size, None)?;
         draw_background_image(context, paint, background, &image, rect)?;
     }
@@ -1012,13 +806,9 @@ fn paint_box(
     Ok(())
 }
 
-/// Pixels for a decoded source, at the size it is about to be drawn.
-///
-/// **The size is in device pixels, not layout pixels.** A vector document is
-/// rasterised at exactly what is asked for, so asking in layout pixels would
-/// draw a page at `scale: 2` from a raster half the resolution of the surface
-/// -- the upscale this whole arm exists to avoid. A raster source ignores the
-/// size and hands back the pixels the file carried.
+/// Pixels for a decoded source at the size it is about to be drawn, in device
+/// pixels, so a document at `scale: 2` is not rasterised at half the surface's
+/// resolution. A raster source ignores the size.
 fn raster_of(
     resolved: &Resolved<'_>,
     decoded: &DecodedImage,
@@ -1057,12 +847,9 @@ fn paint_kind(
         NodeKind::Box => Ok(()),
         NodeKind::Text { .. } => draw_text(context, measurer, id, node, rect),
         NodeKind::Image { fit, position, .. } => {
-            // **The arm an unresolved image already took.** This returned
-            // `Ok(())` before the placeholder existed and still does under
-            // `Ignore`, so an image that decoded does not reach a single new
-            // branch: the `Option` match below is the one every image node has
-            // always paid for, and everything the placeholder costs is inside
-            // the arm a resolved image never enters.
+            // The arm an unresolved image takes, returning under `Ignore`: a
+            // decoded image reaches no new branch, and the placeholder's cost
+            // is all inside this arm.
             let Some(decoded) = resolved.image(id) else {
                 if resolved.scene().on_image_error == OnImageError::Placeholder
                 {
@@ -1075,58 +862,14 @@ fn paint_kind(
                 return Ok(());
             };
             let intrinsic = decoded.intrinsic_size();
-            // **Clipped, because CSS clips replaced content and this did not.**
-            // `fit_image`'s own note says the destination may be larger than
-            // the box and "the caller crops"; this caller did not, so a
-            // `cover` whose aspect did not match its box painted outside the
-            // element -- reported from a real consumer as a 152x186 avatar in
-            // a 26x26 frame painting 26x32.
-            //
-            // **Not only `cover`.** `None` draws at intrinsic size, so any
-            // source larger than its box overflows too. Nobody reported that
-            // one because `cover` is the common case; the clip is
-            // unconditional because the rule is about the element rather than
-            // about the fit, which is how Chrome applies it.
-            //
-            // Measured rather than assumed, on an `<img>` with no `overflow`
-            // declared on it or any ancestor and a page larger than the box:
-            // Chrome paints `cover` and `none` inside the box and its computed
-            // `overflow` is `clip`. Forcing `overflow: visible` makes the same
-            // picture spill exactly as this used to.
-            // `tests/assets/chrome/object-fit-overflow.tsv` carries the run,
-            // including that last row -- without a case that spills, three
-            // rows saying "inside" are also what a harness blind to everything
-            // outside the box would print.
-            //
-            // **Placed in the content box, not the box.** CSS puts replaced
-            // content inside the border *and* the padding, and Chrome does
-            // both and adds them: an 80x80 `<img>` with an 8px border paints
-            // its picture at `68,68,64,64`, with 8px of padding at exactly the
-            // same rectangle, and with both at `76,76,48,48`. Fitting to the
-            // box instead put the picture over the element's own border --
-            // measured as every one of a ring's pixels gone, where Chrome
-            // keeps all of them.
-            //
-            // Text and child boxes already land here; this arm was the one
-            // drawing into the box itself, so this is one path brought into
-            // line with the other two rather than a change to what a box is.
-            //
-            // The corners follow the inner curve, tighter than the box's own
-            // by the inset it sits inside -- see `clip_to_rounded`, which
-            // carries the measurement.
+            // Clipped, and placed in the content box, as CSS does replaced
+            // content: Chrome keeps `cover` and `none` inside the box
+            // (`object-fit-overflow.tsv`), an 80x80 `<img>` with an 8px border
+            // at `68,68,64,64`. See `clip_to_rounded`.
             let placed = fit_image(intrinsic, content, *fit, *position);
-            // **Rasterised at the size it is drawn, not at the size it
-            // states.** For a raster source these are the same pixels either
-            // way; for a vector document this is the difference between a
-            // 40x40 star drawn at 200 being sharp and being an upscale, which
-            // is the whole argument for keeping the document rather than
-            // turning it into pixels at decode time.
-            // **The node's own colour, not the inherited one.** A browser
-            // does not pass a page's `color` into an `<img>`: inline SVG takes
-            // it, an SVG loaded as an image resolves `currentColor` against
-            // its own document and falls back to black. This element is the
-            // second kind, which is also the shape v9's `Image({ color })`
-            // had.
+            // Rasterised at the size drawn, which keeps a vector source sharp,
+            // and in the node's own colour: an SVG loaded as an image resolves
+            // `currentColor` in its own document, falling back to black.
             let image =
                 raster_of(resolved, decoded, id, placed.size, node.text.color)?;
             context.save();
@@ -1213,40 +956,9 @@ fn paint_kind(
     }
 }
 
-/// Draws a text node, line box by line box.
-///
-/// # The content box, not the border box
-///
-/// Text lays out inside the border **and** the padding, which is v1's rule and
-/// CSS's. The rectangle handed down here is the border box -- the same one the
-/// background and the border are drawn on -- so a node that drew its text from
-/// it put the first glyph under its own border and wrapped against a width
-/// that included it.
-///
-/// # Why the wrap happens again here
-///
-/// Layout settles a width; the width it last *asked* about is not always that
-/// one, because a flex pass narrows an item and then re-offers it. v1 re-wraps
-/// in its render pass for exactly this reason and says so. The shaping is
-/// cached, so what this costs is the wrap arithmetic and not the shaping.
-/// `Start` and `End` resolved against the direction, leaving the rest alone.
-///
-/// **The enum is the specification and it distinguishes them.**
-/// `TextAlign::Start` is documented as "at the inline start, which flips under
-/// a right-to-left direction" and `TextAlign::Left` as "at the left edge
-/// regardless of direction", and the placement below folded the two together
-/// so neither could flip. `l7aromeo/meo-canvas#109`.
-///
-/// Measured rather than read off the specification: under `rtl` Chrome puts
-/// `start` where it puts `right` and `end` where it puts `left`, while `left`
-/// and `right` do not move --
-/// `crates/meo-canvas/tests/assets/chrome/text-align-direction.tsv` carries all
-/// ten, and its `ltr` rows are the control that makes the physical
-/// arms' stillness a measurement rather than an assumption.
-///
-/// `Justify` and `Center` pass through: a centred line is the same rectangle
-/// under either direction, which the table records and its note says witnesses
-/// nothing.
+/// `Start` and `End` resolved against the direction, the rest unchanged: under
+/// `rtl` Chrome puts `start` where `right` goes and `end` where `left` goes
+/// (`text-align-direction.tsv`, `l7aromeo/meo-canvas#109`).
 const fn physical(align: TextAlign, direction: Direction) -> TextAlign {
     match (align, direction) {
         (TextAlign::Start, Direction::Ltr)
@@ -1257,6 +969,9 @@ const fn physical(align: TextAlign, direction: Direction) -> TextAlign {
     }
 }
 
+/// Draws a text node line box by line box, in its content box, inside the
+/// border and the padding. Re-wrapped at the width layout settled, which is not
+/// always the last width it asked about; the shaping is cached.
 fn draw_text(
     context: &mut Context2D,
     measurer: &mut SceneMeasurer<'_>,
@@ -1284,14 +999,9 @@ fn draw_text(
     let space = measurer.space(&base, metrics.letter_spacing);
     let gap = space + metrics.word_spacing;
 
-    // **The block within the node's box, not a line within its line box.**
-    // CSS's `vertical-align` places one inline box on its line, which a scene
-    // with one paragraph per node cannot ask for; v1 places the whole
-    // paragraph in the box that holds it, and where the two disagree v1 wins.
-    //
-    // Not clamped at zero, also v1: a paragraph taller than its box hangs out
-    // of it rather than being pinned to the top. A node sized to its own text
-    // has nothing left over, so all three alignments agree there.
+    // The block within the node's box, placed as v9 places a paragraph, since
+    // CSS's `vertical-align` places an inline box on its line. Not clamped, so
+    // a paragraph taller than its box hangs out of it.
     let free = content.size.height - block.height;
     let mut top = content.origin.y
         + match style.vertical_align {
@@ -1317,9 +1027,9 @@ fn draw_text(
     let mut draw = |context: &mut Context2D| {
         for (index, line) in block.lines.iter().enumerate() {
             let width = line_width(line, space, metrics.word_spacing);
-            // **Justification skips the last line**, which is CSS's rule and
-            // v1's: stretching a line that ends a paragraph spaces out a few
-            // words across the whole measure.
+            // **Justification skips the last line**, which is CSS's rule:
+            // stretching a line that ends a paragraph spaces out a few words
+            // across the whole measure.
             let justify = matches!(
                 physical(style.align, node.layout.direction),
                 TextAlign::Justify
@@ -1377,11 +1087,8 @@ fn draw_text(
     result
 }
 
-/// Draws one run: its shadows, then the glyphs themselves.
-///
-/// Every shadow is a full pass over the run before the real one, which is v1's
-/// shape and the reason a shadow is cast by the **outlined** glyph rather than
-/// by the fill alone.
+/// Draws one run: its shadows, each a full pass over the run, then the glyphs,
+/// so a shadow is cast by the outlined glyph rather than by the fill alone.
 fn draw_run(
     context: &mut Context2D,
     node: &Node,
@@ -1421,16 +1128,9 @@ fn draw_run(
     paint_run(context, style, run, x, baseline);
 }
 
-/// Puts one run down, with its outline if it has one.
-///
-/// CSS centres a text stroke on the glyph's outline and paints it **over** the
-/// fill, so half the width falls inside the letter and a thick stroke visibly
-/// thins it. `paint_order` swaps the two, which is the only way to have a
-/// heavy outline and whole letterforms at once.
-///
-/// A round join rather than the canvas default of a mitre: a mitre throws a
-/// spike off every sharp corner of a glyph, which is not what a browser draws
-/// for `-webkit-text-stroke`. v1's reasoning, and v1's `miterLimit` with it.
+/// Puts one run down with its outline: CSS strokes over the fill, centred on
+/// the outline, and `paint_order` swaps them. A round join, since a mitre
+/// spikes every sharp corner, which `-webkit-text-stroke` does not.
 fn paint_run(
     context: &mut Context2D,
     style: &ResolvedText,
@@ -1504,11 +1204,8 @@ fn content_box(node: &Node, rect: Rect) -> Rect {
     )
 }
 
-/// Sets the rule drawn under, over or through a run.
-///
-/// One flag set at a time: the scene carries a single keyword where the
-/// backend takes three independent lines, which is CSS's own shape --
-/// `text-decoration-line` is a set — narrowed to what the wire can say.
+/// Sets the rule drawn under, over or through a run, one at a time: the scene
+/// carries one keyword where the backend takes three lines.
 fn set_text_decoration(context: &mut Context2D, decoration: TextDecoration) {
     let lines = match decoration {
         TextDecoration::None => SkiaTextDecoration::default(),
@@ -1631,25 +1328,16 @@ fn box_path(
     box_path_continuing(context, radii, rect)
 }
 
-/// The same contour, added to whatever path is already open.
-///
-/// Split from [`box_path`] for the callers that need two contours in one path —
-/// a ring, and an inset shadow's surround-with-a-hole — where a second
-/// `begin_path` would discard the first.
+/// The same contour, added to the open path, for a ring and an inset shadow's
+/// surround, where a second `begin_path` would discard the first.
 fn box_path_continuing(
     context: &mut Context2D,
     radii: Corners<f32>,
     rect: Rect,
 ) -> Result<(), Error> {
-    // **A radius that is not a usable number is dropped here, where it is
-    // used.** Skia refuses the whole rectangle for a non-finite radius --
-    // `invalid rect: Rect { .. }`, thrown out of a paint that was going to
-    // succeed -- and a negative radius is invalid CSS that Chrome drops to
-    // zero. Both become a square corner, which is what the browser draws.
-    //
-    // Layout normalises the same way at `to_taffy_style`, and this is the
-    // second door rather than a duplicate: a corner radius is never a layout
-    // input, so nothing in that pass sees it.
+    // A non-finite radius makes Skia refuse the rectangle and a negative one is
+    // invalid CSS, so both become a square corner, as in Chrome. Layout
+    // normalises its own values separately; a radius is never a layout input.
     let corners = [
         usable_radius(radii.top_left),
         usable_radius(radii.top_right),
@@ -1657,20 +1345,9 @@ fn box_path_continuing(
         usable_radius(radii.bottom_left),
     ];
 
-    // A square box is a rounded one with every radius at zero, **not**
-    // `Context2D::rect`. The two add contours by different mechanisms —
-    // `rect` calls Skia's `add_rect`, and `round_rect_elliptical` calls
-    // `add_path_with_transform` with `AddPathMode::Extend`
-    // (`meo-skia-canvas-0.11.0/src/context2d.rs:1837` against `:2354`) — and
-    // mixing them in one path joins the two contours instead of leaving them
-    // separate.
-    //
-    // That matters here because `ring_path` fills an outer contour and an inner
-    // one with the even-odd rule to leave a border. Joined, they become one
-    // self-intersecting contour, and a 40x40 box with a 4px border painted
-    // **a blue triangle over half of it** rather than a border. Any radius at
-    // all, even one, took the other branch and was correct — which is why every
-    // bordered golden, all of them rounded, missed it.
+    // A square box is a rounded one at radius zero, not `Context2D::rect`: the
+    // two add contours differently and, mixed in one path, join them, so
+    // `ring_path`'s even-odd fill painted a triangle over half a 40x40 box.
     if corners.iter().all(|radius| *radius <= 0.0) {
         return context
             .round_rect_elliptical(
@@ -1711,15 +1388,9 @@ fn clip_to_box(
     clip_to_rounded(context, paint.border_radius, rect)
 }
 
-/// The corner radii of a node's content box.
-///
-/// Each is the node's own radius less the inset it sits inside, floored at
-/// zero. The **larger** of a corner's two adjacent insets is subtracted: our
-/// radii are scalar where CSS's inner corner is an ellipse with a different
-/// reduction per axis, and rounding a little more than CSS clips a little more
-/// of the picture, where rounding less would let it paint outside the curve.
-/// With uniform insets -- which is every case anyone has reported -- the two
-/// agree exactly.
+/// The corner radii of a node's content box: its own less the larger adjacent
+/// inset, floored at zero. Scalar where CSS's inner corner is an ellipse, so it
+/// clips slightly more rather than paint outside the curve.
 fn inner_radii(node: &Node, rect: Rect, content: Rect) -> Corners<f32> {
     let left = content.origin.x - rect.origin.x;
     let top = content.origin.y - rect.origin.y;
@@ -1736,43 +1407,9 @@ fn inner_radii(node: &Node, rect: Rect, content: Rect) -> Corners<f32> {
     }
 }
 
-/// Clips to a rectangle with the corner radii given rather than the ones a
-/// node declares.
-///
-/// **Replaced content needs this and nothing else does.** It is clipped to the
-/// *content* box, whose corners follow a tighter curve than the box's own: CSS
-/// reduces each radius by the border it sits inside, and Chrome does the same
-/// for padding. Measured on an 80x80 `<img>` with a 20px radius and an 8px
-/// border, `object-fit: cover` paints 3922 pixels -- against about 3972 for a
-/// 12px inner curve, 3753 for the outer 20px curve applied to the smaller
-/// rectangle, and 4096 for no curve at all.
-/// Draws the mark that stands in for a picture that never arrived.
-///
-/// # What it looks like and why
-///
-/// A hairline frame, a wash, and one short diagonal, all in **one mid grey at
-/// three alphas**. `rgb(128,128,128)` is equidistant from a white card and a
-/// near-black one, so the same three numbers read on both and the renderer
-/// needs no idea what is behind the box -- which it could not have. A
-/// theme-conditional palette here would be a guess dressed as a feature.
-///
-/// # What Chrome does, measured
-///
-/// Chrome paints a **one-pixel border and nothing else** for a broken `<img>`
-/// with a box to paint in: the non-background pixel count is exactly `4n-4` at
-/// 24, 80 and 200 square, and a loaded image of the same size has no border at
-/// all. So the frame here is conformant and the wash and mark are a deliberate
-/// departure -- a hairline alone is too easy to read as a styled empty box on a
-/// busy card, and the case this exists for is a card a person glances at.
-///
-/// # The two clamps, which are the whole design
-///
-/// **The stroke does not scale linearly.** `min(w,h)/32` bounded to 1..=2.5: a
-/// linear stroke is invisible at 24 pixels and a cartoon at 400.
-///
-/// **The mark is size-capped and centred** rather than drawn corner to corner.
-/// A diagonal across the box looks right on a square and smears across a
-/// 300x84 strip; one small centred mark reads the same at every aspect.
+/// Draws the mark for a picture that never arrived: a frame, a wash and a short
+/// centred diagonal in one mid grey at three alphas, which reads on light and
+/// dark cards. Chrome paints the frame alone; the stroke is bounded to 1..=2.5.
 fn draw_missing(
     context: &mut Context2D,
     radii: Corners<f32>,
@@ -1844,6 +1481,10 @@ fn draw_missing(
     result
 }
 
+/// Clips to a rectangle with the radii given, for replaced content in its
+/// content box, whose corners follow a tighter curve: an 80x80 `<img>` at
+/// radius 20 with an 8px border paints 3922 pixels in Chrome, about a 12px
+/// inner curve's 3972.
 fn clip_to_rounded(
     context: &mut Context2D,
     radii: Corners<f32>,
@@ -1854,16 +1495,9 @@ fn clip_to_rounded(
     Ok(())
 }
 
-/// Paints a node's background picture across its box.
-///
-/// **Tiled by drawing the tiles, not by a pattern shader**, which is v1's own
-/// choice and its reason: `Space` distributes the leftover between whole tiles
-/// and `Round` stretches them so a whole number fits, and a repeating fill can
-/// express neither. Drawing them keeps the size, the origin and the step in
-/// one place for all six modes rather than two rules in two shapes.
-///
-/// Clipped to the box, corners included: a background stops where its node
-/// does, and a tile that overhangs the last row is cut rather than skipped.
+/// Paints a node's background picture across its box, tile by tile, since a
+/// pattern shader cannot express `Space` or `Round`. Clipped to the box,
+/// corners included.
 fn draw_background_image(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -1942,12 +1576,9 @@ struct TileRun {
     extent: f32,
 }
 
-/// How big one tile is drawn.
-///
-/// A single length sets that axis and the other follows the picture's own
-/// proportions, which is CSS's rule for `background-size: 40px` and the reason
-/// [`Dimension::Auto`] has to survive as far as here. `Cover` and `Contain`
-/// scale to the box the way an image node's `object-fit` does.
+/// How big one tile is drawn: a single length sets that axis and the picture's
+/// proportions set the other, as `background-size: 40px` does; `Cover` and
+/// `Contain` scale as `object-fit` does.
 fn background_tile(
     size: BackgroundSize,
     intrinsic: Size,
@@ -1999,17 +1630,9 @@ fn resolve_dimension(dimension: Dimension, reference: f32) -> Option<f32> {
     }
 }
 
-/// Where the first tile's near edge sits.
-///
-/// **A percentage is a share of the slack, not a distance from the edge.** CSS
-/// lines the same fraction of the picture up with that fraction of the box, so
-/// `100%` puts the picture's far edge against the box's far edge rather than
-/// pushing it out by a whole width.
-///
-/// Truncated to a whole pixel, which is v1's behaviour: its `tileOrigin` ends
-/// in a `| 0`. That reads as incidental rather than intended -- a length in
-/// points is not truncated two lines above it -- but it is what v1 draws, and
-/// half a pixel of origin is a different row of anti-aliasing.
+/// Where the first tile's near edge sits: a percentage is a share of the slack,
+/// so `100%` puts the far edges together. Truncated to a whole pixel, as v9's
+/// `tileOrigin` is: half a pixel of origin is another row of anti-aliasing.
 fn tile_origin(position: Length, extent: f32, tile: f32) -> f32 {
     match position {
         Length::Points(points) => points,
@@ -2017,14 +1640,9 @@ fn tile_origin(position: Length, extent: f32, tile: f32) -> f32 {
     }
 }
 
-/// Every tile offset along one axis.
-///
-/// `Space` fits whole tiles and shares the remainder out as equal gaps,
-/// pinning the first and last to the edges -- so it ignores the origin, as CSS
-/// does. `Round` scales the tile instead, so a whole number fills the axis
-/// exactly. Every other mode leaves the tile at its own length and steps by
-/// it, from the origin, **both ways**: a positive origin still has to cover
-/// the near edge, which is the tile the naive loop leaves out.
+/// Every tile offset along one axis: `Space` shares the remainder between whole
+/// tiles pinned to both edges, `Round` scales the tile to fit a whole number,
+/// and the rest step from the origin both ways, covering the near edge.
 fn lay_tiles_out(
     extent: f32,
     tile: f32,
@@ -2033,8 +1651,8 @@ fn lay_tiles_out(
     origin: f32,
 ) -> TileRun {
     // A tile far below a pixel would otherwise ask for millions of draws, and
-    // a scene is caller data: the cap is a hang turned into a picture. v1 has
-    // no cap, and at these sizes neither picture is one anybody looks at.
+    // a scene is caller data: the cap turns a hang into a picture, at sizes
+    // where nobody looks at the picture.
     const MOST_TILES: usize = 4096;
 
     if !repeats {
@@ -2107,28 +1725,9 @@ fn lay_tiles_out(
     }
 }
 
-/// Strokes the border, one edge at a time where the edges differ.
-///
-/// A single stroked rounded rectangle would be wrong wherever two edges have
-/// different widths or colours, which CSS allows and `Sides` carries.
-/// Fills the border ring, edge by edge where the edges differ.
-///
-/// CSS puts a border **inside** the border box: the outer edge of the stroke is
-/// the box itself and the border grows inward, so a border is the ring between
-/// the border box and the padding box rather than a line centred on the box
-/// edge. Both rings are rounded — the inner radii derive from the outer ones,
-/// each axis reduced by that side's width and floored at zero
-/// (CSS Backgrounds 3 §5.2) — which is what makes a rounded card's border
-/// follow its fill instead of squaring off around it.
-///
-/// The ring is one path: the outer rounded rectangle and the inner one, filled
-/// even-odd. Where the edges differ, each edge clips that same ring to its own
-/// share before filling. **The clip is the specification, not an
-/// approximation**: CSS Backgrounds 3 §4.4 divides a corner between its two
-/// edges along the straight line joining the outer corner point to the inner
-/// corner point, and a quadrilateral through those four points is exactly that
-/// line on both ends. Unequal widths move the inner corner, so the join angle
-/// follows the widths without being computed from them.
+/// Fills the border ring, edge by edge where the edges differ: between the
+/// border box and the padding box, both rounded (Backgrounds 3 §5.2), each edge
+/// clipped along §4.4's line from the outer corner point to the inner one.
 fn draw_border(
     context: &mut Context2D,
     node: &Node,
@@ -2164,13 +1763,9 @@ fn draw_border(
 
     let inner = inner_box(rect, widths);
 
-    // Dashes and dots are strokes, not a ring: a fill has no rhythm to break.
-    //
-    // Named rather than written as "not solid" so that `BorderStyle::None`
-    // cannot route here. It cannot reach this line today -- `used_border`
-    // returns zeros for it and the guard above has already returned -- but a
-    // negated match would send it to the dash stroker the moment that gate
-    // moved, and a border with no style would come back as dashes.
+    // Dashes and dots are strokes, not a ring. Named rather than "not solid",
+    // so `BorderStyle::None`, which `used_border` already zeroes, cannot reach
+    // it.
     if matches!(
         paint.border_style,
         BorderStyle::Dashed | BorderStyle::Dotted
@@ -2240,11 +1835,8 @@ fn draw_border(
     Ok(())
 }
 
-/// The padding box: the border box less each side's width.
-///
-/// Collapses to zero rather than going negative when the widths meet, which is
-/// a border thick enough to cover the box and is a picture rather than an
-/// error.
+/// The padding box: the border box less each side's width, collapsing to zero
+/// rather than going negative.
 fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
     let width = (rect.size.width - widths.left - widths.right).max(0.0);
     let height = (rect.size.height - widths.top - widths.bottom).max(0.0);
@@ -2257,13 +1849,8 @@ fn inner_box(rect: Rect, widths: Sides<f32>) -> Rect {
     )
 }
 
-/// Narrows the clip to one edge's share of the ring.
-///
-/// The wedge between the two division lines at that edge's corners, extended
-/// far enough to clear the ring there and never past where the two meet. Both
-/// border paths use it, so a solid border and a dashed one divide their
-/// corners the same way by construction rather than by two implementations
-/// agreeing.
+/// Narrows the clip to one edge's share of the ring, the wedge between the
+/// division lines at its corners; both border paths use it.
 fn clip_to_edge(
     context: &mut Context2D,
     edge: usize,
@@ -2306,36 +1893,9 @@ fn clip_to_edge(
     context.clip(SkiaFillRule::NonZero);
 }
 
-/// Clips to one edge's **territory** rather than to its wedge.
-///
-/// # What differs from [`clip_to_edge`], and why it is a second function
-///
-/// The wedge splits every corner down its mitre so each edge paints its own
-/// half. **This gives each corner to exactly one edge**: an edge owns the
-/// corner it starts at and gives away the one it ends at, so a corner mark is
-/// stroked once rather than as two halves that overlap.
-///
-/// The two are separate because the divided case must not move. Chrome's
-/// two-colour corner reads `0.753` on the diagonal -- two half-covered
-/// antialiased halves -- and that is the right answer wherever the edges
-/// differ. Only a corner between edges that agree reaches this.
-///
-/// # The shape
-///
-/// A rectangle rather than a wedge: from the **outer** line of the previous
-/// side, across this side's own run, to the **inner** line of the next side.
-///
-/// ```text
-/// wedge                     territory
-/// +--------------+          +--------------+
-/// |\            /|          |              |
-/// | \          / |          |              |
-/// +--+--------+--+          +-----------+--+
-/// ```
-///
-/// Drawn once, the mark is exact at any opacity: two halves composite to
-/// `1 - (1 - a)^2` and one mark is `a`. Chrome draws it once at every alpha,
-/// measured at `0.502` for `rgba(0, 0, 0, .5)`.
+/// Clips to one edge's territory rather than its wedge, so a corner between
+/// agreeing edges is drawn once: two halves make `1 - (1 - a)^2`, and Chrome
+/// reads `0.502` at `rgba(0, 0, 0, .5)`. Differing edges keep the wedge.
 fn clip_to_owned_edge(
     context: &mut Context2D,
     edge: usize,
@@ -2361,15 +1921,9 @@ fn clip_to_owned_edge(
     // Past the inner edge of the widest side, so the clip never cuts the
     // stroke it is meant to contain.
     let depth = widest + 1.0;
-    // The corner this edge gives away: pulled back along its own run by the
-    // next side's width, which is where that side's territory begins.
-    //
-    // **Unless that side draws nothing.** Chrome fills a corner square from
-    // whichever edge is drawn -- measured both ways round, `border-top` alone
-    // and `border-left` alone each fill the whole square with no diagonal --
-    // so handing the corner to an edge of zero width would leave it to
-    // nobody. The start-corner convention only decides between two edges that
-    // both draw.
+    // The corner this edge gives away, pulled back by the next side's width,
+    // unless that side draws nothing: Chrome fills the corner from whichever
+    // edge draws.
     let given = [widths.top, widths.right, widths.bottom, widths.left][next];
     let handover = if given > 0.0 {
         (
@@ -2385,13 +1939,8 @@ fn clip_to_owned_edge(
             inward.1.mul_add(depth, point.1),
         )
     };
-    // **The only boundary that may cut anything is the handover.** A clip is
-    // antialiased, so an edge of it lying exactly on the mark's tangent eats
-    // the rim: bounding the territory at the box's outer line dropped the
-    // corner's first row from `5` to `3` against Chrome. So the other three
-    // sides are pushed clear -- outward past the outer line, and back past
-    // the owned corner -- and the rectangle cuts only where this edge's
-    // territory actually ends.
+    // Only the handover may cut: the other sides are pushed clear, since a clip
+    // edge on the mark's tangent eats its rim (3 against Chrome's 5).
     let clear = |point: (f32, f32), back: f32| {
         (
             along.0.mul_add(back, inward.0.mul_add(-depth, point.0)),
@@ -2415,33 +1964,9 @@ fn clip_to_owned_edge(
     context.clip(SkiaFillRule::NonZero);
 }
 
-/// The width at and above which a dotted mark is a circle.
-///
-/// **Below it Chrome draws a square**, measured by MC Main at every width
-/// from one to seven, as total ink over one window:
-///
-/// ```text
-/// width 1   3.000   three 1x1 marks, each exactly 1.000   square
-/// width 2   4.000   2x2, no rim                           square
-/// width 3   9.000   3x3, no rim                           square
-/// width 4  11.988   rimmed, pi r^2 = 12.57                circle
-/// width 5  19.831   pi r^2 = 19.63                        circle
-/// width 7  39.604   pi r^2 = 38.48                        circle
-/// ```
-///
-/// **The squares are exact integers with no antialiasing anywhere.** A circle
-/// cannot produce an integer at any subpixel position, so `9.000` over a 3x3
-/// with no rim settles the shape without an argument about it. Ours drew a
-/// disc at every width -- `2.984` at width 2, which is π short a little
-/// antialiasing, and exactly what CSS Backgrounds 3 describes. **Chrome does
-/// not do what the specification says below four pixels**, and this follows
-/// Chrome, as everything else here does.
-///
-/// **Fractional widths are unmeasured.** Whether the rule is *below four* or
-/// *below some fractional threshold* is not known, and this constant assumes
-/// the first: a 3.5-pixel border squares here. A single Chrome reading at
-/// 3.5 settles it, and `crates/meo-canvas-core/src/paint.rs` is where the
-/// answer goes when it exists.
+/// The width at and above which a dotted mark is a circle: below it Chrome
+/// draws exact squares, ink `3.000`, `4.000`, `9.000` at widths 1 to 3, which
+/// no disc gives, and circles from 4. Fractional widths are unmeasured.
 const ROUND_DOT_WIDTH: f32 = 4.0;
 
 /// The dash and the gap a dashed border of this width is drawn with.
@@ -2462,14 +1987,7 @@ const ROUND_DOT_WIDTH: f32 = 4.0;
 /// dash asserting itself, which is what stops a one-pixel dashed line reading
 /// as a dotted one.
 ///
-/// **Width 3 was measured after this was written and sits in the upper
-/// regime**: `on:6 off:3`, which is `2w` and `1w`. So the step is at 3 rather
-/// than after it, and the boundary here is a row of the table rather than the
-/// guess it started as.
-///
-/// This replaced `max(2, w * 1.5)` on and `max(1, w)` off, which was v1's and
-/// wrong at every width: v1's rhythm is a decision made without a browser to
-/// check against, and the browser is the baseline for behaviour.
+/// Width 3 sits in the upper regime, `on:6 off:3`, so the step is at 3.
 ///
 /// `crates/meo-canvas/tests/assets/chrome/border-rhythm.tsv`.
 ///
@@ -2485,11 +2003,8 @@ pub fn dash_pattern(width: f32) -> (f32, f32) {
     }
 }
 
-/// The line a broken border is stroked along, and the radii it curves by.
-///
-/// Half of each edge's width in from the box, so a stroke of that width lands
-/// inside the border box where CSS puts a border. The radii shrink with the
-/// inset and are floored at zero, as CSS floors them.
+/// The line a broken border is stroked along: half each edge's width in, so the
+/// stroke lands where CSS puts a border, with its radii shrunk and floored.
 fn centre_line(
     paint: &PaintStyle,
     rect: Rect,
@@ -2536,44 +2051,10 @@ fn centre_line(
     (centre, curved)
 }
 
-/// Strokes a dashed or dotted border, edge by edge.
-///
-/// # Why this is not the ring
-///
-/// A solid border is the region between the border box and the padding box,
-/// filled. A dashed one is that region **interrupted**, and a fill has no
-/// rhythm to break — so the broken styles are strokes of the box's centre
-/// line, at the border's own width, with a dash pattern.
-///
-/// # The pattern
-///
-/// Chrome's, measured. Dashed takes its lengths from [`dash_pattern`], which
-/// carries the numbers and the two regimes they fall into. Dotted is a
-/// zero-length dash with round caps at a period of twice the width, which
-/// draws circles of the border's own diameter — that one was v1's and turns
-/// out to be Chrome's as well, on and off both exactly the width at all four
-/// measured sizes.
-///
-/// # The fitting, and the two shapes a border can take
-///
-/// A side is fitted to a whole number of dashes, the dash keeping its nominal
-/// length and the slack going into the gaps — but **only while `radius <=
-/// width`**, where the inner corner is square. Above that the inner corner is
-/// genuinely round and the whole border becomes one continuous run, fitted as
-/// a loop. [`fits_per_side`] carries the measurement.
-///
-/// The length fitted is the **border box's** straight run and not the centre
-/// line's; [`straight_run`] carries why, and `chrome_border_rhythm.rs` has the
-/// row that reads it back out of our own render.
-///
-/// # Per edge, through the same wedges the solid path uses
-///
-/// Each edge is clipped to its own corner-divided wedge and strokes the whole
-/// centre line in its own colour and width, so per-edge colours and the corner
-/// division behave exactly as they do for a solid border. Where two edges
-/// differ in width the centre line is a compromise — it is inset by half of
-/// each side's own width, and the stroke of the wider edge is centred a little
-/// off its own middle.
+/// Strokes a dashed or dotted border along its centre line, since a fill has no
+/// rhythm, each edge through the solid path's wedges: dashes from
+/// [`dash_pattern`], dots a zero-length dash. Per side while radius is at most
+/// width, else round the loop; see [`fits_per_side`].
 fn stroke_broken_border(
     context: &mut Context2D,
     node: &Node,
@@ -2600,20 +2081,9 @@ fn stroke_broken_border(
     let edge_colors = paint.border_color;
     let curves = fitted_radii(paint, rect);
     let per_side = fits_per_side(curves, widths);
-    // **Only a square corner.** Where the corner is a straight mitre the
-    // division buys nothing between edges that agree and costs a seam down
-    // the diagonal, so it goes. Where the corner is a curve it is not a seam
-    // at all: the band crosses the diagonal obliquely and Chrome reads
-    // `0.325 0.412 0.439` there, partial by geometry. Removing the division
-    // on the curve drove ours from `0.753` to `1.000` -- **further from
-    // Chrome, not nearer** -- so the loop branch keeps it.
-    //
-    // Opaque only: undivided, both sides draw the corner mark and it lands on
-    // itself, which is exact at full opacity and doubles through a
-    // translucent colour. Chrome draws it once at every opacity, so a
-    // translucent square corner is still wrong. The repair is to make the mark
-    // owned by one edge rather than drawn by both, which is unfiled at the time
-    // of writing.
+    // Only a square corner is left undivided: on a curve the band crosses the
+    // diagonal obliquely and Chrome reads partial coverage there, and
+    // undividing it moved ours from `0.753` to `1.000`, further from Chrome.
     let undivided = per_side && uniform_edges(paint, widths);
 
     for (edge, (width, colour)) in [
@@ -2629,16 +2099,10 @@ fn stroke_broken_border(
             continue;
         }
         context.save();
-        // **A corner between two matching edges is not divided**, because
-        // dividing it is what puts a seam down its diagonal: both edges draw
-        // the mark, each clipped to its own half, and two antialiased halves
-        // composite to `1 - (1 - 0.5)^2` rather than to one -- measured at
-        // `0.753` here against Chrome's `1.000`.
-        //
-        // **Where the edges differ the division stays, and the seam with
-        // it.** Chrome's own two-colour corner reads `0.753` on the same
-        // diagonal, so there the seam is the right answer and removing it
-        // would be a second defect rather than a fix.
+        // A corner between matching edges is owned by one edge rather than
+        // divided, which would seam its diagonal (`0.753` against Chrome's
+        // `1.000`); between differing edges Chrome has that seam too, so the
+        // division stays.
         if undivided {
             clip_to_owned_edge(context, edge, outer_corners, widths);
         } else {
@@ -2659,14 +2123,9 @@ fn stroke_broken_border(
 
         let dotted = matches!(paint.border_style, BorderStyle::Dotted);
         if dotted {
-            // The pattern itself is set per side or per loop below, because
-            // it is fitted to the length it will run along.
-            //
-            // **A dot below `ROUND_DOT_WIDTH` is a square, not a circle**,
-            // because Chrome's is. The dash is zero-length, so the cap *is*
-            // the mark: a round cap draws a disc of the border's width and a
-            // square cap draws a square of it, at the same place and with the
-            // same rhythm.
+            // The pattern is set per side or per loop below, fitted to its run.
+            // Below `ROUND_DOT_WIDTH` a dot is a square cap, as Chrome's is:
+            // with a zero-length dash, the cap is the mark.
             context.set_line_cap(if width < ROUND_DOT_WIDTH {
                 StrokeCap::Square
             } else {
@@ -2692,11 +2151,9 @@ fn stroke_broken_border(
                 },
             )
         } else {
-            // Above the threshold the border is one continuous run round the
-            // whole path, **fitted to the perimeter rather than to a side**.
-            // Chrome's loop has no seam: the slack is spread all the way
-            // round, so the corner the run starts at is unobservable and this
-            // may start wherever the path does.
+            // Above the threshold one continuous run round the path, fitted to
+            // the perimeter: Chrome's loop has no seam, so where it starts is
+            // unobservable.
             let around = perimeter(&centre_paint, centre);
             let loop_fit: [f32; 2] = if dotted {
                 fitted_dot_loop(around, width)
@@ -2717,14 +2174,8 @@ fn stroke_broken_border(
     Ok(())
 }
 
-/// Whether every edge that is drawn shares one colour and one width.
-///
-/// **The condition for leaving a corner undivided.** A division exists to give
-/// each edge its own paint over its own half of the corner; where the two
-/// halves would be painted identically it buys nothing and costs the seam.
-///
-/// A zero-width edge is skipped by the caller and so cannot disagree: a box
-/// with a border on two sides is uniform if those two match.
+/// Whether every drawn edge shares one colour and one width, the condition for
+/// leaving a corner undivided; the caller skips a zero-width edge.
 fn uniform_edges(paint: &PaintStyle, widths: Sides<f32>) -> bool {
     let sides = [
         (widths.top, paint.border_color.top),
@@ -2776,12 +2227,9 @@ fn stroke_fitted_side(
 ) -> Result<(), Error> {
     let (from, to) =
         straight_run(side.rect, side.centre, side.edge, side.curves);
-    // **A dot is drawn by a round cap, so its ink reaches half a width past
-    // the point the path names.** A dashed run is butt-capped and ends where
-    // it says; a dotted one centred on the corner would put half its first
-    // dot outside the box. So the dotted run is inset by half a width at each
-    // end, which is what makes the ink flush at both -- Chrome reads
-    // `first@0 last@136` on a 137 edge at every measured width.
+    // A dot's round cap reaches half a width past its point, so a dotted run is
+    // inset by half a width at each end: Chrome reads `first@0 last@136` on a
+    // 137 edge.
     let (from, to) = if side.dotted {
         inset_ends(from, to, side.width / 2.0)
     } else {
@@ -2798,16 +2246,9 @@ fn stroke_fitted_side(
         context.set_line_dash(&fitted);
         context.begin_path();
         context.move_to(from.0, from.1);
-        // **The last dot sits at exactly the path's length, and a dash walker
-        // emits at offsets strictly inside it** -- so the final dot of every
-        // dotted run was dropped. Each corner then carried one dot instead of
-        // two: the edge that *starts* there drew, the edge that ends there did
-        // not. It read as flush only because the neighbouring edge's first dot
-        // stood in for the missing last one.
-        //
-        // A four-thousandth of a pixel is enough to make the offset strictly
-        // interior, and moves no dot anywhere: the positions are multiples of
-        // the period and the period is unchanged.
+        // The last dot sits at exactly the path's length and a dash walker
+        // emits strictly inside it, so each run would lose its final dot.
+        // `1e-4` of the run moves no dot, the period being unchanged.
         let reach = if side.dotted { straight * 1e-4 } else { 0.0 };
         context.line_to(
             (to.0 - from.0).mul_add(1.0 + reach / straight, from.0),
@@ -2818,13 +2259,9 @@ fn stroke_fitted_side(
     fill_corner_arcs(context, side)
 }
 
-/// Fills the two corners at the ends of a fitted side.
-///
-/// **A corner below the threshold is filled rather than dashed, and no gap
-/// falls inside it.** Whether Chrome fills it by rule or the adjoining dash
-/// simply covers it is not separable at the radii where this branch applies —
-/// an arc that short is under one dash long — so this claims the behaviour
-/// and not the reason.
+/// Fills the two corners at the ends of a fitted side, so no gap falls inside a
+/// corner below the threshold; whether Chrome fills by rule or by the adjoining
+/// dash cannot be told apart there.
 fn fill_corner_arcs(
     context: &mut Context2D,
     side: &SideRun<'_>,
@@ -2868,11 +2305,8 @@ fn fill_corner_arcs(
     Ok(())
 }
 
-/// Pulls both ends of a segment in along its own direction.
-///
-/// Returns it unchanged when it is shorter than twice the inset: there would
-/// be nothing left to draw along, and crossing the ends over would stroke it
-/// backwards.
+/// Pulls both ends of a segment in along its direction, leaving it unchanged
+/// when shorter than twice the inset rather than crossing the ends.
 fn inset_ends(
     from: (f32, f32),
     to: (f32, f32),
@@ -2904,11 +2338,9 @@ fn inset_ends(
 /// # The count is the general rule, not a dotted one
 ///
 /// Chrome takes `(length / w + 1) / 2` to the nearest whole number, measured
-/// across seven edge lengths at five widths. **That is
-/// [`fitted_dash`]'s own count** -- `round((length + gap) / (dash + gap))`
-/// with a nominal pattern of `w` on and `w` off -- so the dashed and dotted
-/// tables were confirming one rule while each was taken to be measuring its
-/// own. Two instruments, two patterns, one answer neither was looking for.
+/// across seven edge lengths at five widths. That is [`fitted_dash`]'s own
+/// count, `round((length + gap) / (dash + gap))`, with a nominal pattern of
+/// `w` on and `w` off.
 ///
 /// A tie is where that rule is undetermined and Chrome's own answers disagree
 /// with each other, so the fixture for this is a 131- or 137-wide box rather
@@ -2929,18 +2361,10 @@ fn inset_ends(
 ///
 /// **Ours is a symmetric disc. Chrome's leans toward the corner diagonal.**
 ///
-/// The mechanism offered for it was *two overlapping discs, one from each
-/// edge* -- and **our own render refutes that on its own terms**: we place a
-/// dot from each edge at the corner too, and two discs sharing a centre are
-/// one disc, which is exactly the symmetric shape we draw. **Whatever leans
-/// Chrome's corner into the diagonal is not two coincident discs**, and it has
-/// not been measured. The difference is a handful of part-covered pixels per
-/// corner.
-///
-/// Worth knowing before chasing it: **at width 4 the two shapes are
-/// indistinguishable** -- a disc of diameter 4 saturates its own 4x4 box, so
-/// the shoulders that separate them do not exist to read. The case only
-/// discriminates from width 8 up, which is why it went unnoticed.
+/// It is not two coincident discs, one from each edge, which is what we draw;
+/// the mechanism is unmeasured, and the difference is a few part-covered
+/// pixels per corner. At width 4 the two shapes are indistinguishable, since a
+/// disc of diameter 4 saturates its box, so only width 8 and up discriminates.
 ///
 /// `crates/meo-canvas/tests/assets/chrome/dotted-rhythm.tsv`.
 #[must_use]
@@ -2993,8 +2417,7 @@ pub fn fitted_dot_loop(length: f32, width: f32) -> (f32, f32) {
 /// box at radius 8 holds 46 marks where the outer perimeter predicts 47, and
 /// Chrome's own 137x120 row holds 41 where the outer predicts 42. So a
 /// dashed border fits the **outer** straight run per side and the **centre**
-/// path round a loop -- two mechanisms, which is not what either of us
-/// expected and is measured on both sides.
+/// path round a loop: two mechanisms, measured on both renderers.
 ///
 /// Chrome's loop has no seam, so this says nothing about where the run starts.
 #[must_use]
@@ -3007,41 +2430,10 @@ pub fn fitted_loop(length: f32, width: f32) -> (f32, f32) {
     (dash, (count.mul_add(-dash, length) / count).max(0.0))
 }
 
-/// The same contour [`box_path`] draws, opened at the top-left tangent.
-///
-/// # Why this exists rather than a dash offset
-///
-/// A dashed loop's phase begins where its path begins. Chrome's begins at a
-/// tangent -- its dashes fall on `x = 8` of a 240x48 box at radius 8, which is
-/// where the top edge's straight part starts -- and ours fell on `x = 3`,
-/// which is inside the arc and is not a landmark at all. **Neither our own
-/// start point nor the offset from it to a tangent is derivable**: the two
-/// candidate starts a rounded rectangle might open at predict 8 and 10.5, and
-/// the phase we actually got is neither, so `round_rect` is opening somewhere
-/// unstated or Skia's measured length differs from the geometric one by the
-/// conic approximation of the arcs. An offset tuned until the picture agreed
-/// would be a number nobody could derive, and the first box with a different
-/// radius would move it.
-///
-/// So the path is traced from the tangent instead, and the phase starts there
-/// **because the path does** -- the same reason each side of a square box is
-/// stroked as its own line rather than given a computed offset.
-///
-/// **Which tangent is not a choice**: the outer contour's is at `r` from the
-/// box's edge, and the centre line's is at `w / 2 + (r - w / 2)`, the same
-/// point. They separate only where the centre radius floors at zero, `r < w /
-/// 2`, and a box on this branch has `r > w`. On the branch that uses an
-/// anchor, there is one point to mean.
-///
-/// # The hazard
-///
-/// Skia adds a rectangle and a rounded rectangle to a path by different
-/// mechanisms, and mixing them in one path joins the contours instead of
-/// leaving them separate -- which painted a triangle over half a box once
-/// already; [`box_path_continuing`] carries that story. This traces lines and
-/// arcs only, so it never takes the rectangle route, and **it is used for the
-/// dashed loop alone**. Every filling caller stays on [`box_path`], where the
-/// contour's start point does not matter and the even-odd ring does.
+/// The contour [`box_path`] draws, opened at the top-left tangent, where
+/// Chrome's dashed loop begins its phase (`x = 8` of a 240x48 box at radius 8);
+/// no offset from our own start is derivable. Lines and arcs only, for the
+/// dashed loop.
 fn anchored_loop(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -3096,56 +2488,18 @@ fn anchored_loop(
     Ok(())
 }
 
-/// The length of the closed path a rounded box is stroked along.
-///
-/// Each corner takes its radius off both of the sides it joins and gives back
-/// a quarter arc, so a radius costs `2r` of straight and returns `pi * r / 2`.
-///
-/// This is what a continuous border is fitted to. **Not a side**: above the
-/// threshold Chrome fits the loop, spreads the remainder round the whole of
-/// it, and leaves no seam — which is why a side of such a box is neither
-/// flush at its corners nor a whole number of periods long. Ours was flush at
-/// both ends of every side for the accidental reason that each stroke began
-/// at a corner, and flushness is the *per-side* signature.
+/// The length of the closed path a rounded box is stroked along: each corner
+/// costs `2r` of straight and returns `pi * r / 2`. A continuous border is
+/// fitted to it, as Chrome fits the loop with no seam.
 fn perimeter(paint: &PaintStyle, rect: Rect) -> f32 {
     let curved: f32 = radii_at(paint).iter().sum();
     let straight = 2.0f32.mul_add(rect.size.width + rect.size.height, 0.0);
     (std::f32::consts::FRAC_PI_2 - 2.0).mul_add(curved, straight)
 }
 
-/// The same ramp, rotated round the sweep by a fraction of a turn.
-///
-/// # Why the stops move and not the angle
-///
-/// **CSS starts a conic sweep at twelve o'clock and a canvas starts it at
-/// three**, so a `from` handed straight to the shader draws the ramp a quarter
-/// turn late -- measured against Chrome as a uniform 270 degrees across every
-/// sample of every conic case. v1 converts the angle
-/// (`gradient.canvas.ts:42`) and this crate did not, so it is a port defect
-/// rather than one we invented.
-///
-/// **The angle cannot carry the correction here.** Skia's sweep takes a start
-/// and an end and **clamps outside them rather than wrapping**: moving the
-/// range to `[from - 90, from + 270]` leaves every pixel past the end reading
-/// the last stop, and moving it to `[from + 270, from + 630]` leaves every
-/// pixel before the start reading the first. Both were measured -- white at
-/// twelve o'clock, then black everywhere. The range has to stay the full turn
-/// it already is.
-///
-/// The local-matrix slot that would rotate the shader is passed `None` by the
-/// binding (`meo-skia-canvas-0.11.0/src/shader.rs:428`) and is not exposed, so
-/// that route is closed too.
-///
-/// So the ramp moves instead of the frame. A stop at `p` is read where the
-/// sweep is at `p`, and we want the colour CSS puts a quarter turn earlier, so
-/// every position shifts by `turns` and wraps.
-///
-/// # The seam
-///
-/// Wrapping splits the ramp, and the pair that straddles `0` would otherwise
-/// interpolate the long way round the circle. A stop is planted at each end
-/// carrying the colour the ramp actually has there, so the seam is a join
-/// rather than a jump.
+/// The ramp rotated round the sweep by `turns`: CSS starts a conic sweep at
+/// twelve o'clock and a canvas at three, and Skia clamps outside its range, so
+/// the stops move. A stop at each end carries the ramp's colour there.
 fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
     if stops.is_empty() {
         return Vec::new();
@@ -3154,12 +2508,8 @@ fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
     let origin = (-turns).rem_euclid(1.0);
     let seam = seam_color(stops, turns);
 
-    // Walked from the new origin rather than shifted in place. **Shifting
-    // collapses the ends**: a ramp's stops at `0` and `1` are the same point
-    // on a circle, so moving both by the same amount lands them together and
-    // destroys the order the ramp is read in -- measured as a picture mirrored
-    // about the vertical, matching Chrome at twelve and six o'clock and
-    // reversed at three and nine.
+    // Walked from the new origin rather than shifted in place: stops at `0` and
+    // `1` are one point on a circle, and shifting both mirrors the picture.
     let mut out = Vec::with_capacity(stops.len() + 2);
     out.push(SkiaGradientStop {
         position: 0.0,
@@ -3184,30 +2534,9 @@ fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
     out
 }
 
-/// The ramp's colour where the rotation wraps it.
-///
-/// `-turns` is the position in the original ramp that lands on the seam, so
-/// this is the ramp read at that point: the two stops it falls between, mixed
-/// by how far along it sits.
-///
-/// **Mixed in the encoded space and not in linear light.** The stops are
-/// stored premultiplied and linear, but the gradient interpolates the way CSS
-/// does, so a seam blended linearly lands in the wrong place -- a quarter of
-/// the way from black to white is `64` encoded and `137` linear, and the
-/// second is what we drew before this converted. The blend has to happen in
-/// whichever space the ramp either side of it is being drawn in.
-/// # Panics
-///
-/// **On an empty `stops`, and the guard against that is the caller's.** The
-/// first and last stop are read before anything else, so there is nothing
-/// sensible to return for a gradient with no colours in it. `conic_shader`
-/// refuses that case five lines above the call, and the render fuzz reaches
-/// this arm often enough that the refusal is exercised rather than merely
-/// present -- 1,509 of one 2,000-scene run were empty-gradient refusals.
-///
-/// The assertion below is what makes that caller's check load-bearing instead
-/// of incidental: a second caller added later fails here in a debug build
-/// rather than indexing past the end in a release one.
+/// The ramp's colour where the rotation wraps it, mixed in the encoded space
+/// the ramp is drawn in. Panics on an empty `stops`, which `conic_shader`
+/// refuses before the call; the debug assertion catches a second caller.
 fn seam_color(stops: &[SkiaGradientStop], turns: f32) -> RgbaLinear {
     debug_assert!(
         !stops.is_empty(),
@@ -3260,12 +2589,8 @@ fn encoded(value: f32) -> f32 {
     }
 }
 
-/// The four outer radii, scaled the way CSS scales them when two on one side
-/// overrun it.
-///
-/// The border box's own radii, not the centre line's: Chrome fits a side to
-/// its **outer** straight run, and below the fitting threshold the centre
-/// line's radius has floored at zero while the outer one has not.
+/// The four outer radii, scaled as CSS scales two that overrun a side: the
+/// border box's own, since Chrome fits a side to its outer straight run.
 fn fitted_radii(paint: &PaintStyle, rect: Rect) -> [f32; 4] {
     let [top_left, top_right, bottom_right, bottom_left] = radii_at(paint);
     let ratio = |sum: f32, length: f32| {
@@ -3287,79 +2612,9 @@ fn fitted_radii(paint: &PaintStyle, rect: Rect) -> [f32; 4] {
     ]
 }
 
-/// Whether this box is dashed side by side rather than round its path.
-///
-/// **The threshold is a degeneracy rather than a margin.** The inner edge of a
-/// border curves by `radius - width`; where that is zero or negative **the
-/// inner corner is square**, and Chrome fits each side on its own exactly as
-/// it does for a square box. Above it the inner corner is genuinely round and
-/// the border becomes one continuous run round the whole path.
-///
-/// # The signature, which is a length and not a presence
-///
-/// What separates the two is **a mark longer than that side's own dash**,
-/// which only two per-side runs butting at a corner can produce. Ink spanning
-/// the tangent is *not* the signature: a continuous run crosses the corner
-/// with one ordinary dash, and reading presence rather than length inverts the
-/// answer on exactly the case in question.
-///
-/// ```text
-/// w 4/4    on:8.1   one dash at that width   crossing, not butting
-/// w 8/8    on:26.8  against a 16 dash        butting
-/// w 12/12  on:64.8  against a 24 dash        butting
-/// ```
-///
-/// # Uniform widths: `radius > width`
-///
-/// ```text
-/// width 4   r 0, 4 -> 3 butting marks     r 5, 6, 8, 12, 24 -> none
-/// width 8   r 4, 6, 7, 8 -> 3 butting     r 9, 10, 12       -> none
-/// ```
-///
-/// Both turn at `r > w`. Flushness at a tangent does **not** measure this and
-/// contradicted it three times: it recurs in bands as the arithmetic comes
-/// round -- at width 2, flush at radii 1-4, not 5-7, flush 8-9 -- which is a
-/// coincidence with a period rather than a branch. An earlier reading of this
-/// threshold as `5 < r <= 6` came from exactly that, and `w + 2` and `1.5w`
-/// were both fitted to it.
-///
-/// # Unequal widths: the **thinner** side decides, and it is measured
-///
-/// Two pairs, both walked by Agent Zero at `r = 6`, and neither side butts:
-///
-/// ```text
-/// w_top 4 / w_left 8    off:9.8  over the corner    continuous
-/// w_top 4 / w_left 12   off:13.1 over the corner    continuous
-/// ```
-///
-/// So a corner is degenerate up to `min(w_a, w_b)`. The second pair is what
-/// makes it a rule rather than a fit: at `4/8` the two candidate thresholds
-/// are 4 and 8 with the radius between them, and at `4/12` they are far apart
-/// and the answer still follows the smaller.
-///
-/// **What this displaced**: that Chrome asks each *side* about its own width,
-/// which a corner would see as `min`. That framing accounts for each side
-/// keeping its own dash length -- `2w` at 12 on one side of a corner and `2w`
-/// at 4 on the other -- but so does this one, because a continuous border is
-/// still stroked edge by edge in each edge's own width. It fails on the bit
-/// that does separate them: it predicts the thicker side butts at a corner its
-/// own width calls degenerate, and at both pairs it does not.
-///
-/// **A consequence worth meeting here rather than in a render**: a thin edge
-/// beside a thick one sends the whole corner continuous early. Widths 1 and 20
-/// at a radius of 2 is continuous, though the 20-wide side's own geometry is
-/// nowhere near its threshold. That follows from both rows rather than adding
-/// to them, and it is where this rule would be wrong if it is wrong.
-///
-/// # Why the arc is safe to fill from whichever wedge is painting
-///
-/// **Dash length is per side; whether the corner is filled is a corner
-/// decision.** So a corner's two sides never branch differently, and the arc
-/// between them never has two answers to choose from. That is a reason rather
-/// than a construction -- the code would happily paint a corner twice if the
-/// sides disagreed -- so it is written here: if a measurement ever shows one
-/// side of a corner fitted and the other continuous, [`fill_corner_arcs`]
-/// becomes a third case and not a detail.
+/// Whether this box is dashed side by side rather than round its path: per side
+/// while each corner's radius is at most its thinner adjoining width, the inner
+/// corner then square. Measured as a mark longer than the side's dash.
 fn fits_per_side(curves: [f32; 4], widths: Sides<f32>) -> bool {
     let pairs = [
         (widths.top, widths.left),
@@ -3373,17 +2628,9 @@ fn fits_per_side(curves: [f32; 4], widths: Sides<f32>) -> bool {
         .all(|(radius, (one, other))| *radius <= one.min(other))
 }
 
-/// The straight part of one side: where its ink begins and ends.
-///
-/// **Taken from the border box and not from the line it is drawn on.** Chrome
-/// fits a side to `outer - r_start - r_end`, which the centre line cannot
-/// give: inset by half a width, its own radius floors at zero, and at width 8
-/// with a 1px radius the two lengths differ by 6. Three radii at that width
-/// track the outer run exactly.
-///
-/// So the run is positioned across the side by the centre line -- a stroke of
-/// the border's width lands where CSS puts a border -- and along it by the
-/// border box.
+/// The straight part of one side, from the border box: Chrome fits `outer -
+/// r_start - r_end`, 6 longer than the centre line's at width 8 and radius 1.
+/// Positioned across the side by the centre line.
 fn straight_run(
     rect: Rect,
     centre: Rect,
@@ -3409,12 +2656,8 @@ fn straight_run(
     }
 }
 
-/// Narrows the clip to one corner's share of a side.
-///
-/// Everything within `distance` of `corner` along `direction`, which for a
-/// rounded box is exactly the part of the side the arc occupies. `reach`
-/// carries the polygon far enough out to cover the ring in both directions;
-/// the wedge this sits inside does the real cutting.
+/// Narrows the clip to one corner's share of a side, everything within
+/// `distance` of `corner` along `direction`; the enclosing wedge cuts.
 fn clip_to_corner(
     context: &mut Context2D,
     corner: (f32, f32),
@@ -3448,11 +2691,8 @@ fn clip_to_corner(
     context.clip(SkiaFillRule::NonZero);
 }
 
-/// The centre line of one side, corner to corner.
-///
-/// Ordered so that it starts at the side's first corner in the same rotation
-/// the wedges use — top, right, bottom, left — because the dash starts where
-/// the line does and Chrome anchors it at the corner.
+/// The centre line of one side, corner to corner in the wedges' rotation: the
+/// dash starts where the line does, and Chrome anchors it at the corner.
 const fn side_line(centre: Rect, edge: usize) -> ((f32, f32), (f32, f32)) {
     let (left, top) = (centre.origin.x, centre.origin.y);
     let right = left + centre.size.width;
@@ -3514,11 +2754,8 @@ pub fn fitted_dash(length: f32, width: f32) -> (f32, f32) {
     )
 }
 
-/// The direction every corner's division line runs in.
-///
-/// The fallback is the 45-degree mitre, reached only when a corner's two
-/// points coincide -- both its widths are zero, and there is no ring there to
-/// divide.
+/// The direction every corner's division line runs in, the mitre where both
+/// widths at a corner are zero.
 fn divisions_at(
     outer: [(f32, f32); 4],
     inner: [(f32, f32); 4],
@@ -3535,26 +2772,9 @@ fn divisions_at(
     })
 }
 
-/// The direction a corner's division line runs in.
-///
-/// CSS Backgrounds 3 §4.4 divides a corner between its two edges along the
-/// line **from the corner's outer point to its inner point**. With equal
-/// widths that is the 45-degree mitre everyone pictures; with unequal ones it
-/// leans towards the thinner edge; and **when one width is zero the inner
-/// point lies on that side, the line degenerates to the box edge, and the
-/// whole arc falls to the other edge**.
-///
-/// That last case is what this function exists for. Each edge used to be
-/// clipped to a quadrilateral running outer corner, outer corner, inner
-/// corner, inner corner -- which is the right region only where the corner is
-/// square. Where it is rounded, the ring sweeps *past* the inner box's own
-/// edge, into a part of the corner that quadrilateral does not contain: with
-/// `border-left: 0` and a 20px radius, the top edge painted its two pixels and
-/// the arc below them was handed to an edge with no width to paint it, leaving
-/// a gap the fill showed straight through.
-///
-/// `fallback` is used only when the two points coincide, which means both
-/// widths at that corner are zero and there is no ring there to divide.
+/// The direction a corner's division line runs in: outer point to inner
+/// (Backgrounds 3 §4.4). With one width zero it runs along the box edge and the
+/// whole arc goes to the other edge, where a quadrilateral clip left a gap.
 fn division(
     outer: (f32, f32),
     inner: (f32, f32),
@@ -3569,12 +2789,9 @@ fn division(
     }
 }
 
-/// How far along its own division line one corner is from where that line
-/// meets the next corner's.
-///
-/// `None` when the two are parallel, which two opposite mitres of equal widths
-/// are not but two vertical ones can be. The caller falls back to its own
-/// clearance then.
+/// How far along its division line one corner is from where it meets the next
+/// corner's; `None` when the two are parallel, and the caller keeps its own
+/// clearance.
 fn meeting_point(
     from: (f32, f32),
     along: (f32, f32),
@@ -3603,23 +2820,9 @@ const fn radii_at(paint: &PaintStyle) -> [f32; 4] {
     ]
 }
 
-/// Draws a shadow that falls **inside** the box.
-///
-/// The outer arms of this feature all worked — offset, spread, colour and two
-/// at once — while `inset` returned without drawing, so every test and the
-/// `box-shadow` fixture passed with one arm of it doing nothing.
-///
-/// # How it is drawn
-///
-/// A shadow is a property of the paint rather than a separate draw, so an inset
-/// one is the same trick as an outer one turned inside out: clip to the box,
-/// then fill **everything except** the box — offset, and shrunk by the spread —
-/// with the shadow configured. Skia casts that fill's shadow inwards, the clip
-/// keeps it to the box, and the fill itself is invisible because it lies
-/// entirely outside the clip.
-///
-/// The outer rectangle is the box grown by enough to cover any offset and blur,
-/// so the hole is what casts and the surround never shows an edge of its own.
+/// Draws a shadow that falls inside the box: clip to the box, then fill all
+/// outside it, offset and shrunk by the spread, with the shadow configured, so
+/// Skia casts inward and the fill itself stays outside the clip.
 fn draw_inset_box_shadow(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -3700,13 +2903,9 @@ fn contour(rect: Rect, radii: [(f32, f32); 4]) -> Result<PathBuilder, Error> {
     Ok(path)
 }
 
-/// Builds the ring between the border box and the padding box as one path.
-///
-/// Two subpaths filled even-odd, which is what makes the inner one a hole. The
-/// inner corners are elliptical because each axis shrinks by a different side's
-/// width: a 20px corner inside a 2px top and an 8px right is 18px tall and 12px
-/// wide, and drawing it circular would leave the fill and the border
-/// disagreeing about where the curve is.
+/// Builds the ring between the border box and the padding box, two subpaths
+/// filled even-odd. The inner corners are elliptical: 20px inside a 2px top and
+/// an 8px right is 18 tall and 12 wide.
 fn ring_path(
     paint: &PaintStyle,
     outer: Rect,
@@ -3752,54 +2951,17 @@ fn ring_path(
         ],
     )?;
 
-    // **`Path2D::add_path` appends; `Context2D::round_rect_elliptical`
-    // extends.** That is the whole of this bug. Building both contours on the
-    // context joined them into one self-intersecting shape, and filling it
-    // even-odd drew a diagonal across the box — half of it at first, and after
-    // a narrower fix still a wedge across the bottom edge. Two paths added as
-    // separate subpaths are two regions, which is what a ring is.
+    // `Path2D::add_path` appends a subpath where the context extends one, so
+    // the two contours stay two regions rather than one self-intersecting
+    // shape.
     ring.add_path(&hole.build(SkiaFillRule::EvenOdd));
     Ok(ring.build(SkiaFillRule::EvenOdd))
 }
 
-/// Draws one box shadow.
-///
-/// # Drawn as a shape, not as a property of a fill
-///
-/// The obvious way is Skia's own shadow: set `shadow_blur`, `shadow_color` and
-/// `shadow_offset`, then fill the box. It draws the blurred copy correctly and
-/// then draws **the box itself** in whatever the fill style is -- and the fill
-/// cannot be transparent, because the shadow is derived from the drawn shape's
-/// own alpha and a transparent shape casts nothing. So that route always
-/// leaves a solid silhouette of the box on the canvas in the shadow's colour.
-///
-/// While every background was opaque the silhouette was invisible, covered by
-/// the background painted next. A translucent one showed it: a
-/// `rgba(0,0,0,0.5)` box over `#b01020` read `33, 3, 6` where Chrome reads
-/// `88, 8, 16`, the second coat of half-alpha black that
-/// `1 - (1-0.5)^2 = 0.75` describes.
-///
-/// Clipping the silhouette away gets most of it and cannot get all of it: its
-/// antialiased rim straddles the border contour, the clip feathers across the
-/// same pixels, and the two coverages multiply instead of cancelling. Measured
-/// on the `box-shadow` fixture, on the top-left contour of a card whose shadow
-/// is offset 6,6 with no blur -- where CSS puts nothing at all -- that left 14
-/// units of 255 behind, down from 23 with no clip.
-///
-/// Nor can the silhouette be moved out of the way. Drawing the source past the
-/// clip and paying the distance back through the shadow's offset is the
-/// standard trick and it fails here: **Skia clips the source before it blurs
-/// it**, so a source outside the clip blurs from almost nothing. Measured,
-/// that turned a 10px-blur card's ink from 137 to 226 against a 250 page.
-///
-/// So the shadow is drawn as what it is: the border box, moved by the offset
-/// and grown by the spread, filled in the shadow's colour through a Gaussian
-/// mask blur. There is no silhouette to remove because none is made, and the
-/// rim probe reads zero rather than fourteen.
-///
-/// The clip stays, and now says only what CSS Backgrounds and Borders 3 §7.1.1
-/// says: an outer shadow is drawn outside the border edge only, so a
-/// translucent background cannot reveal the part that falls beneath it.
+/// Draws one box shadow as a shape, the border box moved, grown and filled
+/// through a Gaussian mask blur: Skia's own shadow leaves a silhouette of its
+/// source (`33, 3, 6` against Chrome's `88, 8, 16`). Clipped outside the border
+/// edge, per Backgrounds 3 §7.1.1.
 fn draw_box_shadow(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -3834,16 +2996,9 @@ fn draw_box_shadow(
     let result = (|| -> Result<(), Error> {
         clip_outside_box(context, paint, rect, shadow_reach(rect, shadow))?;
 
-        // Sigma is exactly half the blur radius -- CSS Backgrounds and Borders
-        // 3 §7.1.1, and the same halving `meo-skia-canvas` applies to its own
-        // `shadow_blur` (`context/mod.rs:1634`). Taking the same route to the
-        // same number is what keeps this rewrite from moving the blur while it
-        // moves the silhouette.
-        //
-        // A mask blur rather than an image filter: the shape is one flat
-        // colour, so blurring its coverage and blurring its pixels give the
-        // same answer, and the mask is the cheaper of the two. Skipped
-        // entirely at zero, where Skia declines to build one.
+        // Sigma is half the blur radius (Backgrounds 3 §7.1.1), as
+        // `meo-skia-canvas` halves `shadow_blur`. A mask blur, the shape being
+        // one flat colour; skipped at zero, where Skia builds none.
         if shadow.blur > 0.0 {
             let blur =
                 MaskFilter::blur(BlurStyle::Normal, shadow.blur * 0.5, true)
@@ -3863,19 +3018,9 @@ fn draw_box_shadow(
     result
 }
 
-/// The corner radii of an outer shadow's shape, once the spread is applied.
-///
-/// CSS Backgrounds and Borders 3 §7.1.1 grows each radius by the spread and
-/// floors it at zero -- **except that a square corner stays square**, which is
-/// the part a reading of "grow every radius" gets wrong.
-///
-/// Measured, and the two rules are told apart by one ray. A square 50x50 box
-/// with `0 0 0 6px` carries ink 6 steps out along the corner diagonal in
-/// Chrome, which is a right angle at the spread box's own corner; a radius
-/// grown to 6 would have curved that corner away and read less. A box with
-/// `border-radius: 16px` and the same spread reads `-1` on that ray -- no ink
-/// even one step out -- which only a radius of 22 produces. Both rows are in
-/// `shadow-extent.tsv`.
+/// An outer shadow's corner radii: each grows by the spread, floored at zero,
+/// except that a square corner stays square (Backgrounds 3 §7.1.1).
+/// `shadow-extent.tsv` tells the two rules apart on the diagonal.
 fn spread_radii(paint: &PaintStyle, spread: f32) -> [(f32, f32); 4] {
     let grow = |radius: f32| {
         if radius > 0.0 {
@@ -3894,17 +3039,9 @@ fn spread_radii(paint: &PaintStyle, spread: f32) -> [(f32, f32); 4] {
     ]
 }
 
-/// Clips to everything **outside** `rect`'s box, out to `margin`.
-///
-/// The complement of [`clip_to_box`], and built the way
-/// [`draw_inset_box_shadow`] builds its hole: a surround rectangle and the
-/// box's own contour in one path, filled by the even-odd rule, so the box is
-/// the hole. There is no difference-clip on this binding, and this is the
-/// shape that stands in for one.
-///
-/// `margin` is how far past the box the surround reaches, and has to clear
-/// everything the shadow can paint -- [`shadow_reach`] is that distance. A
-/// clip that stopped nearer would cut the ink rather than the box.
+/// Clips to everything outside `rect`'s box out to `margin`, a surround and the
+/// box filled even-odd, this binding having no difference clip. `margin` must
+/// clear the shadow, which [`shadow_reach`] gives.
 fn clip_outside_box(
     context: &mut Context2D,
     paint: &PaintStyle,
@@ -3933,11 +3070,8 @@ fn clip_outside_box(
             (radii.bottom_left, radii.bottom_left),
         ],
     )?;
-    // `Path2D::add_path` appends a subpath; building the second contour on the
-    // *context* extends the first instead, and the joined self-intersecting
-    // shape is what `ring_path` documents at length. Built that way this clip
-    // came out empty and the shadow vanished outright -- which the `below`
-    // probe caught, and no interior probe could have.
+    // `Path2D::add_path` appends, where building on the context would join the
+    // contours and empty the clip; the `below` probe catches that.
     outside.add_path(&hole.build(SkiaFillRule::EvenOdd));
     context.clip_path(
         &outside.build(SkiaFillRule::EvenOdd),
@@ -3946,14 +3080,8 @@ fn clip_outside_box(
     Ok(())
 }
 
-/// How far from `rect`'s edge a shadow's ink can reach.
-///
-/// Blur, spread and offset, plus the box itself so the figure is an
-/// over-estimate rather than an exact bound -- the callers want a margin they
-/// cannot be caught short by, not a tight one. Three times the blur is where a
-/// Gaussian is spent, which is what the inset path already used and is kept
-/// here so the two agree by construction rather than by two edits landing
-/// together.
+/// How far past `rect`'s edge a shadow's ink can reach: three blurs, spread and
+/// offset, plus the box, an over-estimate no caller is caught short by.
 fn shadow_reach(rect: Rect, shadow: &BoxShadow) -> f32 {
     shadow.blur.mul_add(3.0, shadow.spread.abs())
         + shadow.offset_x.abs()
@@ -3962,15 +3090,9 @@ fn shadow_reach(rect: Rect, shadow: &BoxShadow) -> f32 {
         + rect.size.height
 }
 
-/// Sets the fill or stroke source for a painted path.
-/// Sets a path's fill or stroke, and reports how a radial gradient among them
-/// wants its space squashed.
-///
-/// `None` for every paint but an elliptical radial, and **`None` for a
-/// stroke** whatever the gradient: the squash is a non-uniform scale of the
-/// space, which would squash the stroke's own width with it. A radial gradient
-/// stroking a path stays a circle, and that is the one place this renderer
-/// still draws v1's shape.
+/// Sets a path's fill or stroke, and the squash an elliptical radial wants:
+/// `None` otherwise, and always for a stroke, whose width a squash would
+/// distort, so a stroked radial gradient stays a circle.
 fn set_paint(
     context: &mut Context2D,
     paint: &PathPaint,
@@ -3997,35 +3119,9 @@ fn set_paint(
     Ok(None)
 }
 
-/// A radial gradient's two radii, from its own centre.
-///
-/// CSS's default for `radial-gradient` is **`farthest-corner ellipse`**: an
-/// ellipse with the aspect ratio of the farthest *sides* that passes through
-/// the farthest *corner*. With `dx` and `dy` the distances to the farthest
-/// side on each axis, the corner sits at `(dx, dy)`, so a ratio-preserving
-/// ellipse through it has `rx = dx * sqrt(2)` and `ry = dy * sqrt(2)`.
-///
-/// # What this replaced, and why the old comment read as true
-///
-/// It was half the box's diagonal, from the box's centre, which is
-/// `farthest-corner` **only** for a circle at the centre -- so the comment
-/// claiming `farthest-corner` was right about the intent and wrong about both
-/// the shape and the point. Measured in a 120x60 box with `at 25% 75%`, the
-/// old radius fell 31 pixels short of the far corner and the ramp held its
-/// last stop flat across everything past it.
-///
-/// # Measured against Chrome, at the mid-edges
-///
-/// ```text
-///                         left  right  top  bottom
-/// ellipse, CSS's default  0.68  0.68   0.67  0.67
-/// circle                  0.82  0.81   0.51  0.50
-/// ours before this        0.87  0.87   0.42  0.42
-/// ```
-///
-/// **The corners cannot tell the two apart** -- they are equidistant from the
-/// centre of a rectangle whichever shape is drawn -- so the mid-edges are the
-/// sample, and an ellipse is the one that reads the same at all four.
+/// A radial gradient's two radii from its own centre: CSS's `farthest-corner
+/// ellipse`, `sqrt(2)` times the distance to the farthest side on each axis.
+/// Checked against Chrome at the mid-edges, which tell ellipse from circle.
 fn radial_radii(centre: Point, rect: Rect) -> (f32, f32) {
     let right = rect.origin.x + rect.size.width;
     let bottom = rect.origin.y + rect.size.height;
@@ -4041,11 +3137,8 @@ fn radial_radii(centre: Point, rect: Rect) -> (f32, f32) {
     )
 }
 
-/// How a radial gradient's circle is squashed into its ellipse.
-///
-/// Skia's radial shader is a circle and this binding exposes no local matrix
-/// for it, so the ellipse is made by squashing the **space** the circle is
-/// drawn in: clip to the shape, scale about the gradient's centre, fill.
+/// How a radial gradient's circle is squashed into its ellipse: the shader is a
+/// circle with no local matrix here, so the space is scaled about the centre.
 #[derive(Debug, Clone, Copy)]
 struct Squash {
     /// The point the scale is about: the gradient's own centre.
@@ -4115,24 +3208,10 @@ fn build_gradient(
             )
         }
         GradientGeometry::Conic { at, from } => {
-            // **CSS starts a conic sweep at twelve o'clock and a canvas
-            // starts it at three**, so a `from` handed straight to the shader
-            // draws the ramp a quarter turn late -- measured against Chrome as
-            // a uniform 270 degrees across every sample of every conic case,
-            // with a spread of two bytes that is quantisation rather than
-            // variation.
-            //
-            // v1 converts (`gradient.canvas.ts:42`, `degreesToCanvasAngle`)
-            // and this crate did not, so it is a port defect rather than one
-            // we invented. The turn is applied to the angle handed to the
-            // shader and **not** to `from` itself: a caller's `from` is CSS's,
-            // and reinterpreting it would move every angle they wrote.
-            // **The whole angle goes into the ramp, including `from`.** The
-            // sweep always covers one full turn from Skia's own zero, because
-            // Skia clamps outside its range rather than wrapping: a range of
-            // `[from, from + 360]` leaves every pixel below `from` reading the
-            // first stop, which at `from: 90deg` painted the entire box one
-            // flat colour.
+            // CSS starts a conic sweep at twelve o'clock and a canvas at three,
+            // so the whole angle, `from` included, goes into the ramp. The
+            // sweep covers one turn from Skia's zero, since Skia clamps outside
+            // its range.
             Shader::sweep_gradient(
                 place(at),
                 0.0,
@@ -4149,17 +3228,9 @@ fn build_gradient(
     Ok((shader, squash))
 }
 
-/// Fills a shape with a gradient, squashing the space for an elliptical one.
-///
-/// A radial gradient is drawn as a circle and made elliptical by scaling the
-/// space about its centre — Skia's radial shader is a circle and this binding
-/// exposes no local matrix for it. So the shape is clipped first, in its own
-/// coordinates, and the fill that follows happens in the squashed space where
-/// the circle reads as the ellipse CSS asks for.
-///
-/// The rectangle filled under that scale is the clip's own bounds stretched by
-/// the inverse of it, which is what covers the clip however tall the squash
-/// makes it.
+/// Fills a shape with a gradient: clipped first, then filled in space squashed
+/// about the centre, so a radial circle reads as CSS's ellipse, over the clip's
+/// bounds under the inverse scale.
 fn fill_with_gradient(
     context: &mut Context2D,
     squash: Option<Squash>,
@@ -4193,12 +3264,9 @@ fn fill_with_gradient(
     result
 }
 
-/// The two endpoints of a linear gradient's line.
-///
-/// The angle is CSS's: measured clockwise from twelve o'clock, so zero runs
-/// bottom to top. The line passes through the box's centre and is long enough
-/// that its ends fall outside the box, which is what makes the first and last
-/// stops reach the corners.
+/// A linear gradient's endpoints: CSS's angle, clockwise from twelve so zero
+/// runs bottom to top, through the centre and past the box, so the end stops
+/// reach the corners.
 fn gradient_line(angle_degrees: f32, rect: Rect) -> (Point, Point) {
     let radians = angle_degrees / DEGREES_PER_TURN * core::f32::consts::TAU;
     let (sin, cos) = radians.sin_cos();
@@ -4267,31 +3335,9 @@ const fn to_skia_blend(mode: BlendMode) -> SkiaBlendMode {
     }
 }
 
-/// Filters what is already on the canvas behind the node, in its own box.
-///
-/// # Why a readback rather than a filter on the layer
-///
-/// `save_layer_with` takes a backdrop [`ImageFilter`], which is the direct
-/// route — and the binding builds one only from its own typed `FilterOp`s.
-/// The CSS chain a scene carries is parsed by `parse_filter`, which is
-/// `pub(crate)`: reachable from `set_filter_css` and from nowhere else. So
-/// the chain is applied the one way a caller can apply it, to a draw, and the
-/// thing drawn is the backdrop itself read back off the surface.
-///
-/// # Why the transform is reset
-///
-/// `get_image_data` works in device pixels and ignores the transform, as the
-/// Canvas standard says it does. Rather than trying to unrotate a readback,
-/// the pixels go back down in device space too: the **clip is kept**, since
-/// Skia stores it in device space and it survives the reset, so a rotated or
-/// scaled node still filters exactly its own box. The blur is therefore in
-/// device pixels and grows with the page scale, which is what a browser does
-/// with a device pixel ratio.
-///
-/// A backdrop is read at eight bits in sRGB whatever the surface's own depth
-/// is. The image carries that space, so drawing it back into a wide-gamut or
-/// float surface converts rather than reinterprets; what is lost is precision
-/// in the filtered region, not colour.
+/// Filters what is already behind the node by reading it back and redrawing it:
+/// the backdrop `ImageFilter` route takes only typed `FilterOp`s. The transform
+/// is reset, as the readback is in device pixels, and the clip survives it.
 fn draw_backdrop(
     context: &mut Context2D,
     node: &Node,
@@ -4303,11 +3349,9 @@ fn draw_backdrop(
     };
 
     let transform = context.get_transform();
-    // The chain is applied to a draw made with the transform reset, so its
-    // lengths have to be device lengths. v1 rewrites them for exactly this
-    // reason, and without it the same tree exported at two scales is two
-    // different pictures -- `blur(6px)` at `scale: 2` covering three page
-    // pixels rather than six.
+    // The chain is drawn with the transform reset, so its lengths become device
+    // lengths, as v9 rewrites them: `blur(6px)` at `scale: 2` would otherwise
+    // cover three page pixels.
     let scaled = scale_filter_lengths(css, page_scale(transform));
     // Grown by how far the chain reaches in from outside, so a blur at the
     // node's edge pulls in what is beyond it rather than smearing the edge
@@ -4378,22 +3422,9 @@ fn draw_backdrop(
     result
 }
 
-/// The average of the transform's two axis lengths.
-///
-/// One number for a transform that may scale the axes differently, which is
-/// what a filter's single radius needs. v1's own reading of the matrix.
-/// The transform that fits a path's `viewBox` into the box it was given.
-///
-/// **SVG's `xMidYMid meet`, which is its default and the only one here.** One
-/// scale for both axes — the smaller, so the whole box fits — and the
-/// remainder split evenly, which is what centres it. A per-axis scale would
-/// fill the node exactly and distort the drawing; `meet` keeps the shape and
-/// leaves letterboxing.
-///
-/// A zero or negative extent has no scale that means anything, so the path is
-/// placed unscaled at the node's origin rather than multiplied by infinity —
-/// the same choice as a zero `maxValue` in a chart, and for the same reason: a
-/// degenerate input should draw something explicable rather than nothing.
+/// The transform fitting a path's `viewBox` into its box: SVG's default
+/// `xMidYMid meet`, the smaller scale with the remainder split evenly. A
+/// degenerate extent places the path unscaled at the node's origin.
 fn view_box_transform(
     view: (f32, f32, f32, f32),
     rect: Rect,
@@ -4424,14 +3455,9 @@ fn view_box_transform(
         b: 0.0,
         c: 0.0,
         d: scale_y,
-        // `mul_add` because clippy asks for it and it is right here: this
-        // crate is the single implementation both surfaces render through, and
-        // nothing compares these numbers bit-for-bit against another engine.
-        // The opposite rule holds in `animate`, where the comparison is exact
-        // against v1's own output — the boundary is the comparison, not the
-        // file.
-        // Under `none` the remainder is zero on both axes, so the centring
-        // term vanishes and this is the same expression for both cases.
+        // `mul_add`, as nothing compares these numbers bit-for-bit against
+        // another engine; `animate`, which is compared exactly, refuses it.
+        // Under `none` the remainder is zero and the centring term vanishes.
         tx: width
             .mul_add(-scale_x, rect.size.width)
             .mul_add(0.5, min_x.mul_add(-scale_x, rect.origin.x)),
@@ -4441,6 +3467,9 @@ fn view_box_transform(
     }
 }
 
+/// The average of the transform's two axis lengths: one number for a transform
+/// that may scale its axes differently, which a filter's single radius needs,
+/// read as v9 reads the matrix.
 fn page_scale(transform: Affine) -> f32 {
     let horizontal = transform.a.hypot(transform.b);
     let vertical = transform.c.hypot(transform.d);
@@ -4452,13 +3481,9 @@ fn page_scale(transform: Affine) -> f32 {
     }
 }
 
-/// Rewrites a filter chain's `px` lengths into device pixels.
-///
-/// Only `blur` and `drop-shadow` carry lengths; a `brightness` factor or a
-/// `hue-rotate` angle means the same thing at any resolution. Only `px` is
-/// rewritten, which is v1's rule too -- an `em` resolves against the context's
-/// font size inside the binding, and a chain arriving in `em` is one this
-/// renderer has never been asked for.
+/// Rewrites a filter chain's `px` lengths into device pixels: only `blur` and
+/// `drop-shadow` carry lengths, and only `px`, as in v9, since an `em` resolves
+/// inside the binding.
 fn scale_filter_lengths(css: &str, scale: f32) -> String {
     if (scale - 1.0).abs() < f32::EPSILON {
         return css.to_owned();
@@ -4513,12 +3538,9 @@ fn next_pixel_length(args: &str) -> Option<(f32, &str, &str)> {
     None
 }
 
-/// How far past its own box a filter chain reaches, in the chain's own units.
-///
-/// Three standard deviations, which is where a Gaussian has given up
-/// nine-thousand-nine-hundred-and-seventy parts in ten thousand of its weight;
-/// v1's constant, and the reason a blurred backdrop does not show a seam at
-/// the node's edge. `drop-shadow` adds its offset on top of its blur.
+/// How far past its box a filter chain reaches: three standard deviations,
+/// 99.7% of a Gaussian's weight and v9's constant, so a blurred backdrop shows
+/// no seam, plus `drop-shadow`'s offset.
 fn filter_spill(css: &str) -> f32 {
     const DEVIATIONS_TO_COVER: f32 = 3.0;
     let mut spill = 0.0;
@@ -4565,12 +3587,8 @@ struct FilterCall<'css> {
     args_end: usize,
 }
 
-/// The top-level function calls in a filter chain, outermost only.
-///
-/// Nested parentheses are skipped rather than reported: `drop-shadow(2px 2px
-/// 4px rgb(0 0 0 / 50%))` is one call whose arguments happen to contain
-/// another, and reading the `rgb` as a filter would look for lengths in a
-/// colour.
+/// The top-level calls in a filter chain, skipping nested parentheses, so the
+/// `rgb` inside a `drop-shadow` is not read as a filter.
 fn filter_calls(css: &str) -> Vec<FilterCall<'_>> {
     let mut calls = Vec::new();
     let mut chars = css.char_indices();
@@ -4646,33 +3664,9 @@ fn device_bounds(transform: Affine, rect: Rect) -> Rect {
     )
 }
 
-/// Composites the node's mask over everything its group layer drew.
-///
-/// # Why a layer of its own rather than a blended fill
-///
-/// `DestinationIn` keeps the destination only where the source has alpha —
-/// but a blend touches **only the pixels the draw covers**. Filling an
-/// ellipse with `DestinationIn` therefore trims nothing outside the ellipse:
-/// the rest of the group survives untouched, which is a mask that keeps
-/// everything. Drawing the mask into its own layer and closing that layer
-/// under `DestinationIn` composites the mask as one rectangle covering the
-/// group, so the transparent parts of it clear what they cover.
-///
-/// This is why the mask cannot be applied where the node is entered. The
-/// group has to be complete first, which is the moment [`Step::Leave`] names.
-///
-/// The group it composites against is the one [`enter_node`] opens: a mask is
-/// one of the three things `needs_group` tests for, so a masked node always
-/// has one. Drop it from that test and this would trim the page instead of
-/// the node.
-///
-/// # What each kind contributes
-///
-/// [`Mask::Shape`] and [`Mask::Path`] are opaque geometry: a hard edge, and
-/// the alpha is the coverage. [`Mask::Gradient`] and [`Mask::Image`] carry
-/// their own alpha, which is what makes a fade-out edge expressible — the
-/// gradient's stops and the image's alpha channel are read as the mask
-/// directly, not as a luminance the way CSS's default `mask-mode` does.
+/// Composites the node's mask over its complete group layer, in a layer of its
+/// own closed under `DestinationIn`, since a blended fill trims only the pixels
+/// it covers. Shape and path masks are coverage; the others are their alpha.
 fn apply_mask(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
@@ -4786,42 +3780,9 @@ fn draw_mask(
 #[cfg(test)]
 mod tests {
 
-    /// The corner a broken border turns, against Chrome's own alphas.
-    ///
-    /// # The seam, and when it is correct
-    ///
-    /// Each edge of a dashed or dotted border is clipped to its half of the
-    /// corner and strokes through it, so **both edges draw the corner mark and
-    /// each draws half of it.** Two antialiased halves composite source-over
-    /// to `1 - (1 - 0.5)^2`, not to one: a light diagonal down the corner.
-    ///
-    /// **Chrome has that seam too -- exactly when the two edges differ.** Its
-    /// two-colour corner reads `0.753` on the diagonal, ours reads `0.753`,
-    /// and there the seam is the right answer. Its one-colour corner reads
-    /// `1.000` and ours read `0.753`, which was the defect: **a division that
-    /// buys nothing, because both halves would be painted identically.**
-    ///
-    /// So the rule is not *remove the seam* but **do not divide a corner whose
-    /// two edges agree**. Both readings are pinned here, because a fix that
-    /// removed the seam everywhere would pass a test that only checked the
-    /// first.
-    ///
-    /// Chrome measured by MC Main: dotted border, width 8, box 60x60,
-    /// `border-top-color: #ff0000; border-left-color: #0000ff` for the
-    /// two-colour case, through `foreignObject` to canvas and `getImageData`.
-    /// Ours are read from a transparent page, so the alpha channel is the
-    /// coverage with nothing composited under it.
-    /// A corner radius Skia cannot use is a square corner, not a failed paint.
-    ///
-    /// **This is the one row of the bad-value grid that threw rather than
-    /// drawing the wrong thing.** `border-radius: NaN` reached Skia, which
-    /// refused the whole rectangle -- `invalid rect: Rect { .. }` -- so a
-    /// render that was going to succeed returned an error instead. Chrome
-    /// drops the declaration and computes `0px`.
-    ///
-    /// The radius is normalised in `box_path_continuing` rather than beside
-    /// the layout normalisation, because a corner radius is never a layout
-    /// input: the two are the same rule at the two places values are used.
+    /// A corner radius Skia cannot use is a square corner, not a failed paint:
+    /// `border-radius: NaN` made Skia refuse the rectangle, where Chrome
+    /// computes `0px`. Normalised in `box_path_continuing`.
     mod unusable_radius {
         use meo_canvas_scene::{
             Corners, Scene, Size,
@@ -4865,6 +3826,10 @@ mod tests {
         }
     }
 
+    /// The corner a broken border turns, against Chrome's alphas (dotted, width
+    /// 8, 60x60): `1.000` for one colour and `0.753` for two, the seam two
+    /// antialiased halves leave. Both are pinned, as removing the seam
+    /// everywhere passes one.
     mod corner_seam {
         use meo_canvas_scene::{
             Corners, Scene, Sides, Size,
@@ -4903,19 +3868,13 @@ mod tests {
             let alpha = |x: usize, y: usize| {
                 u32::from(pixels[(((y * stride) + x) * 4) + 3])
             };
-            // The first mark whose left edge is past the middle, so the
-            // window is far from both corners whatever the fitted rhythm is.
-            // The middle row of the band, not its far edge: `band` itself is
-            // the first row *outside* a border of that width, where every
-            // scan reads blank and the search finds nothing it is looking
-            // for.
+            // The first mark past the middle, far from both corners, read on
+            // the band's middle row: `band` itself is the first row outside the
+            // border.
             let middle = (band / 2).max(1);
-            // **At Chrome's threshold, not at any ink at all.** A run
-            // pattern is read at alpha 0.5; scanning for `> 0` stops on the
-            // antialiased fringe a column early, which shifts the whole
-            // window and pulls the previous mark's tail into the sum. That
-            // cost a `6.008` against Chrome's `4.000` and read as a rhythm
-            // disagreement.
+            // At Chrome's threshold of alpha 0.5: scanning for any ink stops on
+            // the fringe a column early and pulls in the previous mark's tail
+            // (`6.008`, not `4.000`).
             let lit = |x: usize| alpha(x, middle) >= 128;
             let mut left = 120;
             while left < 200 && lit(left) {
@@ -4975,11 +3934,8 @@ mod tests {
                         .map(|x| {
                             let alpha =
                                 u32::from(pixels[(((y * stride) + x) * 4) + 3]);
-                            // **Rounded, not truncated.** The grid this is
-                            // compared against rounds, and a digit scale read
-                            // one way against a grid written the other differs
-                            // by one at the rim for no reason at all -- two
-                            // conventions, read as two renderers.
+                            // Rounded, not truncated, like the grid it is
+                            // compared against.
                             if alpha == 0 {
                                 '.'
                             } else {
@@ -5076,67 +4032,12 @@ mod tests {
             (info.width as usize, pixels)
         }
 
-        /// Prints the corner as a grid of alpha digits, for eyes.
-        ///
-        /// **A single cell cannot tell a mark drawn in the right dash phase
-        /// from one drawn in the wrong phase at the same coverage.** The
-        /// assertions below read the diagonal; this reads the whole 8x8, and
-        /// it is what a change to the corner's geometry should be compared
-        /// against before and after.
-        ///
-        /// Chrome's own, measured by MC Main -- 60x60, `border: 8px dotted`,
-        /// opaque beside `rgba(0, 0, 0, 0.5)`:
-        ///
-        /// ```text
-        /// .599995.        .245542.
-        /// 59999994        25555552
-        /// 99999999        45555554
-        /// 99999999        45555554
-        /// 99999999        45555554
-        /// 99999999        45555554
-        /// 59999994        25555552
-        /// .599994.        .245442.
-        /// ```
-        ///
-        /// **The translucent grid is the opaque one at half alpha, cell for
-        /// cell** -- no cell reaches 7, which is what a doubled composite
-        /// would give. One mark at one alpha, not two halves.
-        ///
-        /// # The digit scale, because two conventions read as two renderers
-        ///
-        /// **Every grid here is `round(alpha * 9 / 255)`, and so is this
-        /// printer.** It was `alpha * 9 / 255` truncated for one afternoon,
-        /// and against the same rounded grids ours read `.489984.` where
-        /// Chrome read `.599995.` -- a whole cell out at every rim pixel,
-        /// from a renderer that agreed exactly. **Truncation loses a digit
-        /// wherever coverage is just under a step**, which at a mark's
-        /// antialiased rim is most of it.
-        ///
-        /// So: compare a grid only against one written in the same
-        /// convention, and say which convention it is. `254` is `9` here and
-        /// `8` under truncation, and nothing in the picture says which you
-        /// are looking at.
-        ///
-        /// `cargo test -p meo-canvas-core --lib corner_grid -- --ignored
-        /// --nocapture`
         #[test]
         fn a_dots_ink_is_chromes_from_four_pixels_up() {
-            // **The reading that killed "our dot is smaller".** Total ink over
-            // one window, against Chrome measured by MC Main at the same
-            // anchor: two columns before the mark, ending `w + 1` after it
-            // starts.
-            //
-            // The inference that our mark was undersized came from the corner
-            // grid, whose rim was two digits light -- **and a corner mark
-            // carries corner geometry.** On a straight run the marks are the
-            // same size to within four hundredths of an ink unit out of two
-            // hundred. **That inference is refuted, and it is pinned here so
-            // it cannot be reopened from the corner grid**, which is still
-            // there and still suggests it.
-            //
-            // What remains is a sub-pixel horizontal offset: same size, same
-            // ink, coverage distributed a little differently between
-            // neighbouring pixels.
+            // Total ink over one window on a straight run, against Chrome at
+            // the same anchor: equal to four hundredths of a unit, so a corner
+            // grid's light rim is corner geometry, not a small dot. A sub-pixel
+            // offset remains.
             for (width, chrome) in
                 [(4.0_f32, 11.988_f64), (8.0, 51.996), (16.0, 198.722)]
             {
@@ -5151,20 +4052,10 @@ mod tests {
 
         #[test]
         fn a_dot_squares_below_four_pixels_and_rounds_at_four() {
-            // **Both sides of the boundary, because a fix that squares
-            // everything passes a test that only checks the small side.**
-            //
-            // Discriminated by area rather than by looking: a square of width
-            // `w` is `w^2` of ink and a circle inscribed in it is `pi/4` of
-            // that, about `0.785 w^2`. At three those are `9` and `7.07`; at
-            // four, `16` and `12.57`. **Nothing else about the mark has to be
-            // agreed for the two to be told apart.**
-            //
-            // Chrome measured by MC Main at every width from one to seven:
-            // exact integers with no antialiasing at 1, 2 and 3 -- `3.000`,
-            // `4.000`, `9.000` -- and rimmed circles from 4. **An integer is
-            // the proof: a circle cannot produce one at any subpixel
-            // position.**
+            // Both sides of `ROUND_DOT_WIDTH`, told apart by area: a square of
+            // width `w` is `w^2` of ink and its inscribed circle `0.785 w^2`.
+            // Chrome gives integers at 1 to 3, which no circle can, and rimmed
+            // circles from 4.
             let (_, three, _) = dot(3.0);
             assert!(
                 three > 8.5,
@@ -5179,27 +4070,10 @@ mod tests {
             );
         }
 
-        /// Walks our top-left quarter arc the way the Chrome table walks it.
-        ///
-        /// **Zero is the LEFT tangent**, sweeping through the diagonal to the
-        /// top -- `walkArc(cx, cy, Math.PI)` in
-        /// `packages/meo-canvas/tools/conformance/borders.mjs`, which starts
-        /// at angle π and adds a quarter turn. Read the other way round every
-        /// run below is mirrored and the comparison is of two different
-        /// walks.
-        ///
-        /// Radius, sampling and threshold all follow that generator: the
-        /// centre path's radius is `radius - width / 2`, six hundred steps,
-        /// each sample **floored** to a pixel, ink is red below 128 on white.
-        ///
-        /// Chrome at `radius 8, width 4`, `border-rhythm.tsv` line 71:
-        ///
-        /// ```text
-        /// quarter=9.4  first-ink@0  on:4.4 off:4.1 on:1.0
-        /// ```
-        ///
-        /// `cargo test -p meo-canvas-core --lib arc_walk -- --ignored
-        /// --nocapture`
+        /// Walks our top-left quarter arc as `walkArc` in `borders.mjs` walks
+        /// Chrome's: from the left tangent through the diagonal, 600 floored
+        /// samples, ink below 128. `cargo test -p meo-canvas-core --lib
+        /// arc_walk -- --ignored --nocapture`
         #[test]
         #[ignore = "prints a walk rather than asserting one"]
         fn arc_walk() {
@@ -5311,11 +4185,8 @@ mod tests {
             (quarter, first.unwrap_or_else(|| "-".to_owned()), runs)
         }
 
-        /// The same box's straight run, for the comparison that needs no
-        /// browser.
-        ///
-        /// If the arc and the side disagree here, the disagreement is inside
-        /// one renderer and cannot be a window, a threshold or a convention.
+        /// The same box's straight run, compared inside one renderer, where a
+        /// disagreement cannot be a window, a threshold or a convention.
         fn straight_runs(
             pixels: &[u8],
             stride: usize,
@@ -5356,38 +4227,10 @@ mod tests {
             runs
         }
 
-        /// Prints the curved corner of a dashed border, against Chrome's.
-        ///
-        /// The `borders-dashed-radius` case: `240x48`, `border: 4px dashed`,
-        /// `border-radius: 8px`, top-left. **Chrome, measured by MC Main:**
-        ///
-        /// ```text
-        /// .......79
-        /// .......79
-        /// .23....69
-        /// .594...59
-        /// 29994..0.
-        /// 59996....
-        /// 79992....
-        /// 89991....
-        /// 9999.....
-        /// ```
-        ///
-        /// **The diagonal numbers that opened this -- `0.635 0.753 0.753`
-        /// against Chrome's `0.325 0.412 0.439` -- are not a coverage
-        /// difference.** Widened to sixteen columns the grids show why:
-        /// Chrome's arc carries a **gap** across the diagonal, blank from
-        /// column 0 to 6 in its first four rows, and ours carries a **mark**
-        /// there. Comparing alphas at those cells reads our ink against the
-        /// fringe of their gap.
-        ///
-        /// So the question is the dash phase around the arc, not the band's
-        /// thickness, and *twice the coverage* was an artefact of sampling a
-        /// mark against a gap. **Both engines put marks on the vertical part
-        /// of the corner and only one puts one on the diagonal.**
-        ///
-        /// `cargo test -p meo-canvas-core --lib curve_grid -- --ignored
-        /// --nocapture`
+        /// Prints `borders-dashed-radius`'s curved corner against Chrome's,
+        /// whose arc has a gap across the diagonal where ours has a mark: dash
+        /// phase, not coverage. `cargo test -p meo-canvas-core --lib curve_grid
+        /// -- --ignored --nocapture`
         #[test]
         #[ignore = "prints a grid rather than asserting one"]
         fn curve_grid() {
@@ -5426,22 +4269,9 @@ mod tests {
             eprintln!("  total ink {ink:.3}");
         }
 
-        /// Prints an ordinary dot from a straight run, at four widths.
-        ///
-        /// **Away from every corner**, so no corner rule is in the reading:
-        /// the dot nearest the middle of a 240-wide top edge. The corner
-        /// grids answer where a mark goes; this answers **how big it is**.
-        ///
-        /// Why four widths rather than one: **a diameter wrong by a constant
-        /// and one wrong by a ratio are the same picture at a single width.**
-        /// CSS Backgrounds 3 makes a dot a circle of the border's width, so
-        /// the candidates are an inset of a fixed fraction of a pixel against
-        /// a scale just under one, and only a spread of widths separates
-        /// them.
-        ///
-        /// Digits are `round(alpha * 9 / 255)`, as everything else here.
-        ///
-        /// `cargo test -p meo-canvas-core --lib dot_grid -- --ignored
+        /// Prints a dot from the middle of a straight run at four widths, since
+        /// a diameter wrong by a constant or by a ratio agrees at any one
+        /// width. `cargo test -p meo-canvas-core --lib dot_grid -- --ignored
         /// --nocapture`
         #[test]
         #[ignore = "prints a grid rather than asserting one"]
@@ -5461,6 +4291,10 @@ mod tests {
             }
         }
 
+        /// Prints the corner as a grid of alpha digits, `round(alpha * 9 /
+        /// 255)` like every grid here, against Chrome's 60x60 `border: 8px
+        /// dotted`. `cargo test -p meo-canvas-core --lib corner_grid --
+        /// --ignored --nocapture`
         #[test]
         #[ignore = "prints a grid rather than asserting one"]
         fn corner_grid() {
@@ -5493,20 +4327,10 @@ mod tests {
 
         #[test]
         fn a_translucent_corner_is_one_mark_at_one_alpha() {
-            // **The reading that ownership exists for.** Divided, both edges
-            // draw the corner mark and it composites with itself:
-            // `1 - (1 - a)^2`, so a half-alpha border came out at three
-            // quarters down the middle of its own mark. Owned by one edge it
-            // is drawn once and the mark is the source alpha.
-            //
-            // Chrome measured by MC Main: `0.502` for `rgba(0, 0, 0, .5)` on
-            // a square corner, and its whole 8x8 grid is the opaque grid at
-            // half alpha, cell for cell -- **no cell reaches the doubled
-            // value anywhere.**
-            //
-            // Read inside the mark rather than at its rim: the rim is where
-            // our dot and Chrome's differ in size, which is a separate
-            // difference this test is not about.
+            // Owned by one edge, the corner mark is drawn once at the source
+            // alpha, where divided it made `1 - (1 - a)^2`. Chrome reads
+            // `0.502` at `rgba(0, 0, 0, .5)`. Read inside the mark, away from
+            // the rim.
             let alpha = diagonal_at(Color::rgba(0, 0, 0, 128));
             for (index, value) in alpha.into_iter().enumerate().take(4).skip(2)
             {
@@ -5520,27 +4344,10 @@ mod tests {
 
         #[test]
         fn one_drawn_edge_takes_the_whole_corner_square() {
-            // **Both orientations, because a rule that names the drawn edge
-            // in one and not the other would pass a single test.** With only
-            // the top border drawn the corner belongs to no neighbour; with
-            // only the left border drawn the same square belongs to no
-            // neighbour from the other side. Chrome fills it solid either
-            // way, measured by MC Main at `240x48`: ten rows of `9` under
-            // `border-top` alone, ten columns of `9` beside `border-left`
-            // alone, and **no diagonal in either.**
-            //
-            // **This pins agreement, not a fix.** The start-corner
-            // convention would hand such a corner to an edge that draws
-            // nothing -- but the handover is pulled back by *the neighbour's
-            // width*, so a neighbour of zero width pulls it back by nothing
-            // and the corner stays inside the drawn edge's territory. It was
-            // already right, measured before the branch below it existed:
-            // replacing that branch with the unconditional form leaves this
-            // test green.
-            //
-            // So the branch states the rule and this states the behaviour.
-            // **Neither is the other's guard**, and a reader should not read
-            // a passing run here as evidence that the branch works.
+            // Both orientations: with only the top or the left border drawn,
+            // Chrome fills the corner square solid with no diagonal. This pins
+            // the behaviour, and passes without the zero-width branch in
+            // `clip_to_owned_edge`.
             for (top, left) in [(8.0_f32, 0.0_f32), (0.0, 8.0)] {
                 let mut scene = Scene::new(Size::new(60.0, 60.0));
                 let id = scene
@@ -5594,13 +4401,8 @@ mod tests {
         }
     }
 
-    /// The transform a `viewBox` produces, checked against SVG's own rule.
-    ///
-    /// Verified against a render before these were written: a `0 0 10 10` box
-    /// in a 100x50 node at (20, 10) draws its unit square at `x 45..94,
-    /// y 10..59` — scale 5, fifty wide, centred horizontally with twenty-five
-    /// pixels either side and flush vertically. The numbers below are that
-    /// reading turned into arithmetic.
+    /// The transform a `viewBox` produces, against SVG's rule: `0 0 10 10` in a
+    /// 100x50 node at (20, 10) draws its unit square at `x 45..94, y 10..59`.
     mod view_box {
         use meo_canvas_scene::{Point, Rect, Size};
 
@@ -5702,11 +4504,8 @@ mod tests {
         },
     };
 
-    /// A surface that rasterises on the CPU, which is what a test wants.
-    ///
-    /// Named rather than written out at each of the dozen call sites: a
-    /// three-field literal repeated that many times is a change to
-    /// [`SurfaceOptions`] rippling through a file that does not care about it.
+    /// A surface that rasterises on the CPU, named once rather than written at
+    /// a dozen call sites.
     const fn on_the_cpu() -> SurfaceOptions {
         SurfaceOptions {
             gpu: false,
@@ -5770,13 +4569,9 @@ mod tests {
         }
     }
 
-    /// A surface states its GPU request rather than inheriting one.
-    ///
-    /// `Canvas::new` takes `CanvasOptions::default()`, which sets `gpu: true`
-    /// (`meo-skia-canvas-0.11.0/src/canvas.rs:217`). Before this was explicit
-    /// every render asked for the GPU and rasterised on the CPU only because
-    /// no backend was compiled — a property of the feature set rather than a
-    /// decision. This fails if the field stops being named.
+    /// A surface states its GPU request: `CanvasOptions::default()` sets `gpu:
+    /// true`, so without the field every render asks for the GPU. Fails if the
+    /// field stops being named.
     #[test]
     fn a_surface_asks_for_the_backend_it_was_told_to() {
         let off = Surface::new(Size::new(8.0, 8.0), 1.0, on_the_cpu())
@@ -5936,15 +4731,9 @@ mod tests {
         assert!((start.y - 50.0).abs() < 0.01);
     }
 
-    /// Which parent a static child hangs from decides whether `z_index`
-    /// ranks it at all, so both parents are here.
-    ///
-    /// `stacks_by_z_index` gives a static child a stacking context only under
-    /// a flex or grid parent -- Flexbox §5.4 -- and under a block parent an
-    /// unpositioned child's `z_index` does not apply. **Before the scene's
-    /// default display became `block` this test built a flex parent without
-    /// saying so**, and the block half was untested: a change that ranked
-    /// every static child by `z_index`, in any parent, passed.
+    /// Which parent a static child hangs from decides whether `z_index` ranks
+    /// it, so both are here: a flex parent ranks it (Flexbox §5.4) and a block
+    /// one does not.
     #[test]
     fn children_draw_in_z_order_then_document_order() {
         let ordered = |display: Display| {
@@ -6027,12 +4816,9 @@ mod tests {
 
     #[test]
     fn a_positioned_box_paints_above_an_in_flow_one_whatever_the_order() {
-        // Measured against Chrome across 231 combinations of position and
-        // container: 66 disagreed, every one of them `relative`, `absolute`
-        // or `sticky` against `static`, and every one because this list was
-        // sorted by `z` alone and so kept document order. CSS 2.1 Appendix E
-        // paints in-flow non-positioned descendants at steps 3 and 5 and
-        // everything positioned at step 6.
+        // CSS 2.1 Appendix E paints in-flow non-positioned descendants at steps
+        // 3 and 5 and everything positioned at step 6: sorted by `z` alone, 66
+        // of 231 Chrome combinations disagreed.
         let mut scene = Scene::new(Size::new(40.0, 40.0));
         let mut positioned = Node::container();
         positioned.layout.position_type = PositionType::Relative;
@@ -6054,17 +4840,9 @@ mod tests {
 
     #[test]
     fn an_explicit_zero_ranks_with_auto_and_not_above_it() {
-        // CSS step 6 holds positioned descendants with `auto` and child
-        // stacking contexts with `0` **together**, in tree order. So these two
-        // do not rank against each other and the later one wins, however the
-        // index is spelled -- measured against Chrome in three rows, one per
-        // container kind, where ranking the explicit zero above the automatic
-        // one put the wrong box on top.
-        //
-        // Nested one level down, because that is where the two spellings came
-        // apart: an explicit index starts its key afresh at the context root,
-        // and a zero doing that would overtake an `auto` sibling written after
-        // it.
+        // Step 6 holds `auto` positioned boxes and `0` contexts together in
+        // tree order, so the later wins however the index is spelled. Nested,
+        // because an explicit index keys afresh at the context root.
         let mut scene = Scene::new(Size::new(40.0, 40.0));
         let container = scene
             .push(NodeId::ROOT, Node::container())
@@ -6120,11 +4898,9 @@ mod tests {
 
     #[test]
     fn a_negative_child_is_hoisted_out_of_a_parent_that_makes_no_context() {
-        // The defect `fixtures/stacking-hoist` pins, as an ordering assertion.
-        // A `z_index: -1` child of a parent with no stacking context belongs to
-        // the *grandparent's* context, where it paints before the parent's own
-        // background — so it comes first in the page's participant list rather
-        // than being nested under a parent that paints before it.
+        // The ordering `fixtures/stacking-hoist` pins: a `z_index: -1` child of
+        // a parent with no context joins the grandparent's, before the parent's
+        // background.
         let mut scene = Scene::new(Size::new(40.0, 40.0));
         let parent = scene
             .push(NodeId::ROOT, Node::container())
@@ -6208,11 +4984,9 @@ mod tests {
     #[test]
     fn an_absolute_child_escapes_an_unpositioned_clipper_and_not_a_positioned_one()
      {
-        // `overflow` clips a box's content, and an absolute node is not a box's
-        // content merely by sitting inside it. Ported from v1's `b434a23` and
-        // measured against it: a 50-wide absolute child in a 20-wide clipper
-        // paints 50 columns through a static clipper and 20 through a relative
-        // one.
+        // An absolute node is not a box's content by sitting inside it: a
+        // 50-wide one in a 20-wide clipper paints 50 columns through a static
+        // clipper and 20 through a relative one.
         let owed_by = |clipper_position| {
             let mut scene = Scene::new(Size::new(40.0, 40.0));
             let mut clipper = Node::container();
@@ -6320,16 +5094,9 @@ mod tests {
         assert_eq!(ordered_ids(&scene, NodeId::ROOT), vec![ids[1], ids[0]]);
     }
 
-    /// The renderer's [`meo_skia_canvas::PixelDepth`] as ours.
-    ///
-    /// Test-only, and it exists for its exhaustiveness rather than for anything
-    /// it computes: `to_skia_color_type` is exhaustive over our enum, so it
-    /// catches a variant we add, and this is exhaustive over theirs, so it
-    /// catches a variant they add. Upstream's own `all()` is `pub(crate)`
-    /// (`meo-skia-canvas-0.11.0/src/pixels.rs:493`) and cannot be walked from
-    /// here, so a compile error is the only guard available -- and it is a
-    /// stronger one than a runtime conformance test, which would fail after a
-    /// build rather than instead of one.
+    /// The renderer's [`meo_skia_canvas::PixelDepth`] as ours, test-only and
+    /// exhaustive over theirs, so a variant they add fails to compile:
+    /// upstream's `all()` is `pub(crate)` and cannot be walked from here.
     const fn from_skia_color_type(
         color_type: meo_skia_canvas::PixelDepth,
     ) -> ColorType {
@@ -6425,12 +5192,6 @@ mod tests {
         assert!(draw(&mut surface, &resolved, &empty, &mut measurer).is_err());
     }
 
-    /// Draws a scene exercising every node kind and most of the paint surface.
-    ///
-    /// This asserts only that the traversal completes without error. It cannot
-    /// assert what was drawn: executing a fill proves the call was made, not
-    /// that the pixels are right. Everything visual here is covered by golden
-    /// fixtures or not at all — see the module documentation.
     /// Renders one bordered box and returns its pixels, eight bits per
     /// channel.
     fn bordered_corner(top: f32, left: f32, radius: f32) -> Vec<u8> {
@@ -6504,13 +5265,9 @@ mod tests {
     const BORDER: meo_canvas_scene::style::paint::Color =
         meo_canvas_scene::style::paint::Color::rgb(200, 40, 40);
 
-    /// The ring the border *should* cover, drawn as one fill.
-    ///
-    /// The oracle the per-edge path is checked against. `ring_path` is what
-    /// the uniform path already uses and what the per-edge path fills through
-    /// its clips, so with one colour on every edge the two must agree: the
-    /// division decides which colour a part of the ring takes, and where
-    /// every part takes the same colour it must not be visible at all.
+    /// The ring the border should cover, as one fill: the oracle for the
+    /// per-edge path, which must show no division where every edge has one
+    /// colour.
     fn reference_ring(top: f32, left: f32, radius: f32) -> Vec<u8> {
         use meo_canvas_scene::{
             Point,
@@ -6562,31 +5319,6 @@ mod tests {
         i16::from(pixels[at + 1]) - i16::from(pixels[at]) > 40
     }
 
-    /// A corner between two edges of different widths leaves no gap in the
-    /// ring.
-    ///
-    /// # What the oracle is
-    ///
-    /// Not the picture we drew last time, and not a row of pixels read by
-    /// eye: **the ring drawn as a single fill**, which is the same
-    /// [`ring_path`] the per-edge pass fills through its clips. Every edge is
-    /// given the same colour, so the division between them must leave no
-    /// trace -- and where the reference says "border", a gap in the division
-    /// shows as the box's own fill.
-    ///
-    /// The comparison is one-sided and deliberately loose: seams between two
-    /// clipped fills antialias differently from one unclipped fill, and that
-    /// difference is not the question. Only "the reference has border here and
-    /// we have fill" is.
-    ///
-    /// # Why these five pairs
-    ///
-    /// A rule that special-cased zero would pass `0` against `2` and fail at
-    /// `1` against `20`, where the division should sit almost entirely on the
-    /// thick side. Both orders, because the division is **not** symmetric: it
-    /// runs from the outer corner point to the inner one, so swapping the two
-    /// widths reflects it. Equal widths are the control -- the 45-degree
-    /// mitre every bordered fixture already draws, which must not move.
     #[test]
     fn a_radial_gradient_is_an_ellipse_measured_from_its_own_centre() {
         use meo_canvas_scene::Point as ScenePoint;
@@ -6621,6 +5353,9 @@ mod tests {
         assert!(core::f32::consts::SQRT_2.mul_add(-100.0, ry).abs() < 0.001);
     }
 
+    /// A corner between edges of different widths leaves no gap, against the
+    /// ring drawn as one fill in one colour. Five pairs in both orders, the
+    /// division not being symmetric; equal widths are the control.
     #[test]
     fn a_corner_between_unequal_edges_leaves_no_gap() {
         const RADIUS: f32 = 20.0;
@@ -6648,6 +5383,9 @@ mod tests {
         }
     }
 
+    /// Draws a scene of every node kind and most of the paint surface,
+    /// asserting only that the traversal completes; golden fixtures cover the
+    /// pixels.
     #[test]
     fn a_scene_of_every_kind_draws_without_error() {
         let mut scene = Scene::new(Size::new(200.0, 120.0));
@@ -6723,14 +5461,9 @@ mod tests {
         draw(&mut surface, &resolved, &solved, &mut measurer)
             .unwrap_or_else(|error| unreachable!("{error}"));
     }
-    /// Drives the traversal over the features the simple scene does not reach:
-    /// transforms, all three gradient kinds, shadows, per-edge borders,
-    /// overflow clipping, filters and background images.
-    ///
-    /// Like `a_scene_of_every_kind_draws_without_error`, this asserts only
-    /// that the walk completes. It exists so those paths execute at all — an
-    /// arm that panics or returns an error is caught here; an arm that draws
-    /// the wrong pixels is caught by a fixture and by nothing in this file.
+    /// Drives the traversal over transforms, all three gradients, shadows,
+    /// per-edge borders, clipping, filters and background images, asserting
+    /// only that it completes; fixtures cover the pixels.
     #[test]
     fn the_decorated_paths_draw_without_error() {
         use meo_canvas_scene::style::paint::{Color, GradientStop};

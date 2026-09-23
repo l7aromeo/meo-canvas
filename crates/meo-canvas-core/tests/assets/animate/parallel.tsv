@@ -1,43 +1,6 @@
-# Ground truth for parallel(), generated from meo-canvas v1's built module
-# (`dist/esm/animate/parallel.js`).
-#
-# v1 at tag v9.0.2, commit 890eed2, working tree clean -- the same provenance
-# the four original tables name, and verified rather than assumed: the
-# generator was first run against those tables and reproduced all 612 of their
-# rows exactly.
-#
-# Neither surface may be written from the other: a misreading of v1 that
-# reaches both looks like agreement. Both are written against this, and this
-# came from v1 running.
-#
-# Values are shortest-round-trip decimals, compared exactly. `-` is a column
-# the row does not use; it is not a value.
-#
-# # The members are declared here and rows name them by letter
-#
-# An inline encoding of a nested group is unreadable and needs a parser on
-# both sides. A fixed vocabulary needs neither: each walker builds these
-# three and looks them up.
-#
-#   A = track     from 0 to 100  duration 1  ease outCubic
-#   B = sequence  from 0  steps 4:2:0:linear
-#   C = track     from 0 to 5    duration 1  stagger 1
-#
-# **C is the discriminating member.** With A (duration 1, no stagger) and
-# B (duration 2), `totalDuration` gives 2 whether or not the count reaches
-# the members. With C's stagger of 1 it gives 3 at count 3 and 5 at count
-# 5 -- so an implementation that ignores the count answers 2 and is caught.
-#
-# Every member also appears **alone**, so a member built differently on one
-# surface is caught directly rather than as a group disagreement whose
-# cause is a guess.
-#
-# `at` rows carry one member per row rather than a record: the group's
-# value is a JavaScript object and a Rust `Vec` in declaration order, and
-# a row holding a record literal would assume one of them.
-#
+# `parallel`, v9.0.2 (890eed2). A = track 0..100, 1s, outCubic; B = sequence
+# from 0, steps 4:2:0:linear; C = track 0..5, 1s, stagger 1. `-` is unused.
 # rows: 122
-#
 # members	surface	kind	t	index	count	key	value
 A	both	at	0	0	-	A	0
 A	both	at	0	1	-	A	0
