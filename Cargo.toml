@@ -8,56 +8,33 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.4"
 edition = "2024"
-# 1.98 is the floor the workspace actually needs and the current stable
-# (`rustc 1.98.0 (88d9e12ae 2026-08-18)`). Nothing here reaches below it, and a
-# lower number would be a claim no CI job checks.
+# The floor the workspace needs; a lower number would be a claim no CI job
+# checks.
 rust-version = "1.98"
 license = "MIT"
 repository = "https://github.com/l7aromeo/meo-canvas"
 homepage = "https://l7aromeo.github.io/meo-canvas/"
 authors = ["L A Romeo <ukasyahrz@outlook.com>"]
-# `readme` is deliberately not inherited: an inherited path resolves against the
-# workspace root, so every member would advertise the same file. Each member
-# names its own.
+# `readme` is not inherited: an inherited path resolves against the workspace
+# root, so every member would advertise the same file.
 
 [workspace.dependencies]
-# Internal members. Both a `path` and a `version` because a member published to
-# crates.io carries the version and a local build follows the path; naming only
-# one makes the crate either unpublishable or untestable.
+# Both `path` and `version`: a published member carries the version and a
+# local build follows the path, so naming one leaves the crate either
+# unpublishable or untestable.
 meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.1.4" }
 meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.1.4" }
 
-# The drawing backend, from crates.io rather than a path or a workspace member.
-# `default-features = false` is what keeps its `node-addon` feature off, and so
-# keeps its `#[neon::main]` out of the graph: a `.node` addon has exactly one
-# module-init symbol, and `meo-canvas-node` owns it.
-#
-# **0.16.1 rather than 0.16, because 0.16.0 renders an SVG source wrong.**
-# `Svg::rasterize` allocated a surface at the size asked for and then drew a
-# root carrying absolute lengths at its intrinsic size in the corner, so an
-# image node with a document source ignored every fit that scales
-# (`l7aromeo/meo-skia-canvas#212`, fixed by `l7aromeo/meo-skia-canvas#213`).
-# Measured on 0.16.0, ten rows of
-# `crates/meo-canvas/tests/assets/chrome/object-fit.tsv` disagree with Chrome
-# and every one is the SVG source; on 0.16.1 none does.
-#
-# **The floor is here rather than only in the lockfile because a consumer never
-# reads ours.** `"0.16"` admits 0.16.0, and a crate depending on `meo-canvas`
-# resolves this requirement against the registry -- so a fix expressed only in
-# `Cargo.lock` is a fix only this repository has.
+# No default features: its `node-addon` would add a second `#[neon::main]`, and
+# `meo-canvas-node` owns the only one. A floor rather than `0.16`, since a
+# consumer never reads our lockfile: older versions misdraw an SVG source
+# (`l7aromeo/meo-skia-canvas#212`) and an animated AVIF's colour space.
 meo-skia-canvas = { version = "0.16.3", default-features = false }
 
-# Layout. `calc` is off: taffy's calc is not an evaluator but an opaque
-# `*const ()` handle the caller resolves, so it adds a surface with no
-# implementation behind it. It is also not what makes `TaffyTree` `!Send` --
-# `CompactLengthInner.tagged_ptr` (taffy-0.14.0/src/style/compact_length.rs:64)
-# is the ungated representation of every length, and a build with `calc`
-# removed fails `assert_send::<TaffyTree<()>>()` identically.
-#
-# `flexbox_balance` is off for the same reason `calc` is: it adds the
-# `balance` and `balance-reverse` values of css-flexbox-2 to `FlexWrap`, and
-# Chrome ships neither, so it would be surface with no behavioural target
-# behind it.
+# `calc` is off: taffy's calc is an opaque handle the caller resolves, not an
+# evaluator. It is not what makes `TaffyTree` `!Send`; every length is a tagged
+# pointer with or without it. `flexbox_balance` is off because Chrome ships
+# neither of the `FlexWrap` values it adds.
 taffy = { version = "0.14", default-features = false, features = [
     "flexbox",
     "grid",
@@ -67,53 +44,31 @@ taffy = { version = "0.14", default-features = false, features = [
     "content_size",
 ] }
 
-# CSS colour parsing. The same crate `meo-skia-canvas` parses its own colour
-# strings with (`meo-skia-canvas-0.12.1/Cargo.toml:148`), so a colour this
-# workspace resolves and one the backend resolves agree by construction rather
-# than by two implementations tracking CSS Color 4 in parallel. It is already in
-# the graph through that dependency; naming it here adds no crate, only an edge.
-# Decoding the payload of a `data:` image source. Already in the graph under
-# the `net` feature -- ureq depends on it -- and named here so a build without
-# `net` gets the same decoder rather than a hand-written one. Untrusted input
-# is where a decoder's padding, whitespace and alphabet edges get found by a
-# caller rather than by us.
+# Decodes a `data:` image source. `ureq` already brings it under `net`; naming
+# it gives a build without `net` the same decoder rather than a hand-written one.
 base64 = "0.23"
+# The parser `meo-skia-canvas` uses for its own colour strings, so a colour
+# resolved here and one resolved by the backend agree by construction.
 csscolorparser = "0.8"
 
 neon = "1.1"
-# The pool the addon's asynchronous encodes run on. **Not `cx.task`**, which is
-# libuv's pool: that pool is shared with `fs`, `dns` and `crypto`, and libuv
-# gives it four threads by default -- so a 130 ms encode there does not free the
-# event loop so much as move the stall into `fs.readFile`. rayon has its own
-# pool, sized to the machine, and `meo-skia-canvas` spawns its own off-thread
-# encodes on it for the same reason.
-#
-# Already in the graph through `meo-skia-canvas`, which reports
-# `rayon::current_num_threads()` in its backend info. Naming it here adds an
-# edge rather than a crate.
+# The addon's asynchronous encodes run here, not on `cx.task`: libuv's pool has
+# four threads shared with `fs`, `dns` and `crypto`, so a 130 ms encode there
+# moves the stall into `fs.readFile`. Already in the graph through
+# `meo-skia-canvas`, so naming it adds an edge rather than a crate.
 rayon = "1.11"
 clap = { version = "4.6", features = ["derive"] }
-# The one HTTP client that does not decide the consumer's runtime for them:
-# ureq 3.4's required dependencies are `base64`, `log`, `percent-encoding`,
-# `ureq-proto` and `utf8-zero`, with no tokio and no futures anywhere. reqwest
-# lists `tokio`, `hyper`, `hyper-util` and `tower` as non-optional even before
-# its `blocking` feature is asked for.
+# The HTTP client that does not choose the consumer's runtime: no tokio and no
+# futures among its required dependencies, where reqwest requires `tokio`,
+# `hyper` and `tower` even for its `blocking` feature.
 ureq = "3.4"
-# **A floor rather than a use.** Nothing in this workspace imports `rustls`; it
-# enters the graph under `net` because `ureq` speaks TLS with it. `ureq`
-# requires `^0.23`, which resolves to `0.23.44` -- and `RUSTSEC-2026-0285`,
-# published 14 September 2026, is a TLS 1.3 handshake flaw fixed in `0.23.45`.
-# A lockfile pin fixes that here and nowhere else, because a consumer of the
-# published crate resolves the manifest requirement rather than this lockfile.
-# Naming the minimum is what carries the fix to them.
-#
-# Retires the day `ureq` requires `0.23.45` or newer: the floor is theirs to
-# hold, and this becomes a dependency nobody imports.
+# A floor, not a use: nothing imports `rustls`, but `ureq`'s `^0.23` admits
+# versions with `RUSTSEC-2026-0285`, and only the manifest reaches a consumer.
+# Retires when `ureq` itself requires `0.23.45` or newer.
 rustls = ">=0.23.45"
 thiserror = "2.0"
-# Benchmarking. Not in the `ci` chain: a bench is an instrument, not a gate --
-# it answers "what is this worth" rather than "is this correct", and a number
-# that varies with the machine cannot fail a build honestly.
+# Benchmarks are an instrument, not a gate, so none is in the `ci` chain: a
+# number that varies with the machine cannot fail a build honestly.
 criterion = { version = "0.8", default-features = false, features = [
     "cargo_bench_support",
 ] }
@@ -160,9 +115,8 @@ must_use_candidate = "allow"
 # -- `meo-skia-canvas` and `taffy` pin their own. Failing our build over another
 # crate's dependency tree is a lint we could never act on.
 multiple_crate_versions = "allow"
-# `missing_docs = "deny"` already covers the public surface. Extending the same
-# demand to private items turns every three-line helper into a documentation
-# exercise without adding anything a reader of the file does not see.
+# `missing_docs = "deny"` covers the public surface; demanding a doc on every
+# private three-line helper adds nothing a reader of the file does not see.
 missing_docs_in_private_items = "allow"
 
 missing_errors_doc = "warn"

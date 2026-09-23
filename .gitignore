@@ -2,9 +2,8 @@
 *
 
 # Directories are re-included so git descends into them; their contents stay
-# ignored by the rule above until a pattern below names them. A file cannot be
-# re-included while its parent directory is excluded, so this line comes before
-# every allow.
+# denied until a pattern below names them. A file cannot be re-included under
+# an excluded directory, so this comes before every allow.
 !*/
 
 # -- Workspace root ---------------------------------------------------------
@@ -23,12 +22,8 @@
 !/README.md
 
 # -- Community health -------------------------------------------------------
-# GitHub serves these from the **default branch**, so while `main` is the v1
-# lineage the repository looks complete and this branch has none of them. At the
-# swap they would simply vanish: no security policy, no code of conduct, and no
-# issue templates for the form people actually file through. Named here so they
-# can exist at all -- every one of these paths is refused by the `*` above, which
-# is why copying them across from `main` would have failed silently.
+# GitHub serves these from the default branch. Each is named because the `*`
+# above refuses it, and a refused path fails to add in silence.
 !/CODE_OF_CONDUCT.md
 !/SECURITY.md
 !/CONTRIBUTING.md
@@ -38,19 +33,14 @@
 !/.github/ISSUE_TEMPLATE/*.md
 !/.github/FUNDING.yml
 !/SUPPORT.md
-# The v9 -> v10 migration guide. At the root rather than in the package, and
-# linked from the README by absolute URL: the npm tarball ships only `dist`,
-# `src`, `package.json`, `LICENSE` and `README.md`, so a relative link would
-# 404 for exactly the reader it is written for.
+# The v9 -> v10 migration guide, at the root and linked by absolute URL: the npm
+# tarball does not ship it, so a relative link would 404 for its reader.
 !/MIGRATING.md
 
 # -- Brand ------------------------------------------------------------------
-# The banners on the three READMEs, and the script that draws them. Drawn by
-# meo-canvas itself, so they are proof rather than illustration: if rendering
-# breaks, the banner breaks. **Not LFS** -- our own encoder is efficient enough
-# that an animated banner is a few hundred kilobytes, and README images are
-# fetched on every npm and crates.io page view, which is metered bandwidth on
-# LFS and free here.
+# The README banners and the script that draws them with meo-canvas itself.
+# Not LFS: an animated banner is a few hundred kilobytes, and README images are
+# fetched on every registry page view, which LFS meters.
 !/tools/brand/**
 !/docs/assets/brand/*.webp
 !/docs/assets/brand/*.png
@@ -58,12 +48,9 @@
 !/LICENSE
 
 # -- Release notes ----------------------------------------------------------
-# Written by hand, one file per version per channel. `release.yml` and
-# `crates-io.yml` read the file for the version they are publishing and refuse
-# to release without it, so these have to be trackable or the refusal is
-# permanent: the error would name a path `git add` cannot take, and no amount
-# of writing the note would satisfy it. Only `.md`, so a scratch file left in
-# the directory is still refused by the `*` above.
+# One file per version per channel. The release workflows refuse to publish
+# without the version's note, so it must be trackable; only `.md`, so a stray
+# scratch file stays refused.
 !/docs/releases/README.md
 !/docs/releases/npm/*.md
 !/docs/releases/rust/*.md
@@ -85,10 +72,8 @@
 !/packages/*/tsconfig*.json
 !/packages/*/README.md
 
-# `cargo package` can only carry files under the crate's own directory, so a
-# root LICENSE reaches no published crate. Each one gets a copy: a crate that
-# declares `license = "MIT"` and ships no licence text is making a claim it does
-# not carry, and `cargo package --list` said all four did exactly that.
+# `cargo package` carries only files under the crate's directory, so each
+# crate keeps its own copy of the licence text its `license` field claims.
 !/crates/*/LICENSE
 
 # The package manifest's `files` list names LICENSE, so the tarball npm
@@ -97,16 +82,13 @@
 !/packages/**/*.ts
 !/packages/**/*.js
 !/packages/**/*.mjs
-# `*.ts` does not cover `*.d.mts`, and one of them is what lets a typechecked
-# file import a `.mjs` tool. Ignored, a fresh clone fails `just typecheck` on a
-# module that is right there.
+# `*.ts` does not cover `*.d.mts`, which lets a typechecked file import a
+# `.mjs` tool; without it a fresh clone fails `just typecheck`.
 !/packages/**/*.d.mts
 
-# The JavaScript reference tool is its own package so it can pin the TypeScript
-# TypeDoc loads. Everything it needs to install and run is named here, one file
-# at a time -- the first commit of this directory shipped the two `.mjs` files
-# the rule above already allowed and silently dropped the config, the manifest
-# and the baseline, because `git add -A` does not add what this file denies.
+# The reference tool is its own package so it can pin the TypeScript TypeDoc
+# loads. Each file it needs is named, since `git add -A` skips what this file
+# denies.
 !/packages/*/tools/typedoc/package.json
 !/packages/*/tools/typedoc/bun.lock
 !/packages/*/tools/typedoc/typedoc.json
@@ -115,11 +97,8 @@
 !/packages/*/tools/typedoc/undocumented-baseline.txt
 !/packages/*/tools/private-docs-baseline.txt
 
-# The vendored tree carries the licence of the project it came from. MIT asks
-# for the notice to travel with a substantial portion of the code, and the
-# whole JavaScript surface of another project is one. Keeping it beside the
-# code rather than in the root LICENSE means it stays true if the vendored
-# copy is ever dropped.
+# The vendored tree's own licence, which MIT asks to travel with the code; kept
+# beside it so it stays true if the vendored copy is dropped.
 !/packages/*/vendor/LICENSE
 
 # -- Formatter --------------------------------------------------------------
@@ -131,37 +110,23 @@
 !/.prettierrc
 !/.prettierignore
 
-# The vitest config, and the reason it is called out rather than swept up by a
-# pattern: this file *is* the JavaScript floor. It carries the 90% thresholds,
-# `all: true`, and the named exclusions for the three generated tables. Absent,
-# vitest still finds the tests and `--coverage` still runs -- with no thresholds
-# and a denominator of whatever some test happened to import, so the recipe
-# passes and measures nothing. It went untracked from the day it was written,
-# and every gate agreed the floor was enforced while CI enforced nothing.
+# The vitest config is the JavaScript coverage floor: thresholds, `all: true`
+# and the generated-table exclusions. Without it `--coverage` still runs and
+# passes while measuring nothing, so it is named rather than left to a pattern.
 !/vitest.config.mts
 
 # -- Golden fixtures --------------------------------------------------------
-# Scenes and the images they must produce. The images are the assertion, so
-# they are tracked like source: a diff that changes one is a diff that changes
-# what the renderer draws. `.mcs` is the persistence format, named for the
-# `MCSC` magic that opens it; `.json` is for a case a human writes by hand.
+# Scenes and the images they must produce; the images are the assertion.
+# `.mcs` is the persistence format, named for its `MCSC` magic; `.json` is a
+# case written by hand.
 !/fixtures/**/*.mcs
 !/fixtures/**/*.json
 !/fixtures/**/*.png
 
 # -- Examples ---------------------------------------------------------------
-# A real consumer project, installed by link rather than from a registry, so it
-# exercises the package boundary — the exports map, the types field, the entry
-# point — rather than reaching into `src` the way the tests do.
-#
-# Only `src` is tracked. What each example writes goes to its own `out/`, which
-# is denied below by name rather than by falling through the default: a reader
-# who has just seen `fixtures/**/*.png` allowed deserves to see why these are
-# not. A fixture image *is* the assertion — a diff that changes one changes what
-# the renderer draws. An example's output is checked against the other surface
-# by `just example` at the moment it is written, so it asserts nothing once
-# written and tracking it would put megabytes of regenerable pictures in every
-# clone.
+# Consumer projects installed by link, so they exercise the package boundary.
+# Their `out/` is denied below: `just example` compares it as it is written, so
+# unlike a fixture image it asserts nothing once written.
 !/examples/*/package.json
 !/examples/*/tsconfig*.json
 !/examples/**/*.ts
@@ -174,29 +139,23 @@
 !/.github/workflows/*.yml
 !/.github/dependabot.yml
 
-# The build images the Linux addons are compiled in. Named by extension rather
-# than by filename because there is one per libc family and the second arrives
-# with musl -- a per-file allow would have to be edited to add a target, which
-# is the cost this repository is trying not to pay.
+# The Linux addons' build images, one per libc family, named by extension so
+# adding a target needs no edit here.
 !/containers/Dockerfile.*
 !/containers/*.sh
 
 # -- Build output and local configuration -----------------------------------
-# Re-ignored after the allows so git prunes them instead of walking every entry
-# to discover each one is ignored. `!*/` above otherwise makes it descend into
-# all of them.
-#
-# `.cargo/` holds the `[patch.crates-io]` that points meo-skia-canvas at a
-# sibling checkout. That patch is one machine's convenience, and committing it
-# would break every clone that does not have the sibling.
+# Re-ignored after the allows so git prunes them rather than descending, as
+# `!*/` would. `.cargo/` holds a local `[patch.crates-io]` to a sibling
+# meo-skia-canvas checkout, which would break any clone without one.
 target/
 node_modules/
 dist/
 examples/*/out/
 .cargo/
-# What `just pack` writes: two tarballs and the staged platform package, one of
-# them a 51 MB binary. A release is built from a commit, never committed.
+# What `just pack` writes, including a 51 MB binary. A release is built from a
+# commit, never committed.
 release/
 
-# Evaluation scratch: agent-owned reports, merged by hand, never committed
+# Local scratch output, never committed.
 .tmp/
