@@ -1,14 +1,7 @@
 /**
- * The front door: a scene, painted, with the ways to read it back.
- *
- * `Root` is the only thing in this package that touches native code. Everything
- * else builds plain objects; this walks them into an arena, hands that across
- * once, and returns a {@link Canvas} over the painted surface.
- *
- * **Resolve, measure, layout and paint happen here, once.** Every method on the
- * canvas that comes back is an encode of work already done, which is why two
- * formats cost one paint.
- *
+ * The front door: `Root` walks a scene into an arena, hands it across once, and
+ * returns a {@link Canvas}. Resolve, measure, layout and paint happen once, so
+ * every format the canvas encodes costs one paint.
  * @packageDocumentation
  */
 
@@ -20,43 +13,17 @@ import type { ColorSpace, ColorType, OnImageError } from './index.js'
 import type { Style } from './style.js'
 
 /**
- * How long a fetch may take, connection and body together.
- *
- * **Sixty seconds, matching `GLOBAL_TIMEOUT` in `meo-canvas-core`'s `resolve`,
- * so the two surfaces wait the same length of time.** `fetch` has no timeout of
- * its own: without this, a URL that accepts a connection and then says nothing
- * holds the render for as long as the peer cares to hold it, which on a server
- * is a request that never completes rather than one that fails.
- *
- * That a caller *can* pass their own `AbortSignal` is not a reason to leave it
- * unbounded. A default that hangs is a defect whether or not it is overridable,
- * and it is the same argument the crate rejected for itself.
+ * How long a fetch may take, connection and body together: sixty seconds, as
+ * `GLOBAL_TIMEOUT` in `meo-canvas-core`'s `resolve`. `fetch` has no limit of its
+ * own, and a default that hangs is a defect whether or not a caller can override it.
  */
 const FETCH_TIMEOUT_MS = 60_000
 
 /**
- * The signal a fetch runs under: this renderer's ceiling, and the caller's.
- *
- * **A ceiling rather than a default, and the difference is the whole point.** A
- * bound `httpOptions` could raise would be this defect with a supported
- * spelling: a signal that never fires, or an omitted one, and the hang is
- * reachable again through the documented API. `AbortSignal.any` aborts on the
- * first of the two, so a caller who knows their host may ask for five seconds
- * and get five, and nobody gets sixty-one.
- *
- * Nothing that works today breaks: a caller's existing signal keeps behaving
- * exactly as it did, because tightening is all it could ever do. A caller who
- * wants a different policy fetches the bytes themselves and passes them inline,
- * which is the same escape the crate offers and is what makes the two surfaces
- * consistent rather than merely similar.
- *
- * The ceiling is returned beside the composed signal because the two failures
- * have to be told apart afterwards: a limit this renderer chose and a caller's
- * own abort send a reader to different places.
- *
- * `ms` is a parameter so the ceiling can be asserted in a test without waiting
- * a minute for it. It is not reachable from {@link RootProps} — which is the
- * property under test.
+ * The signal a fetch runs under: this renderer's ceiling and the caller's, first to
+ * fire wins, so a caller can ask for five seconds and nobody gets sixty-one. The
+ * ceiling comes back too, to tell its expiry from a caller's abort. `ms` exists for
+ * a test and is not reachable from {@link RootProps}.
  */
 export function fetchDeadline(
   caller: AbortSignal | null | undefined,
@@ -68,26 +35,15 @@ export function fetchDeadline(
 }
 
 /**
- * The largest image this surface will fetch.
- *
- * Thirty-two mebibytes, matching `MAX_IMAGE_BYTES` in `meo-canvas-core`. Sixty
- * seconds against it is a floor of about 4.5 Mbit/s, which is why the timeout
- * and the cap are one decision rather than two.
+ * The largest image this surface fetches: 32 MiB, as `MAX_IMAGE_BYTES` in
+ * `meo-canvas-core`. Against sixty seconds that is a floor of about 4.5 Mbit/s.
  */
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024
 
 /**
- * The response body, refused once it passes {@link MAX_IMAGE_BYTES}.
- *
- * **Counted while reading rather than believed from `content-length`**, which a
- * server may omit and may lie about — the crate's own fetch says the same, and
- * a cap that trusts a header is a cap an attacker sets. `arrayBuffer()` cannot
- * do this: it has already allocated the whole body by the time it returns.
- *
- * The limit is named as this renderer's in the message, because a caller
- * meeting it needs to know whose number it is before they can decide whether to
- * fetch the bytes themselves and pass them as an inline source — which is the
- * escape, and the same one the crate offers.
+ * The response body, refused once it passes {@link MAX_IMAGE_BYTES}. Counted while
+ * reading, since `content-length` may be absent or false and `arrayBuffer()` has
+ * allocated the whole body by the time it returns.
  */
 async function bounded(url: string, response: Response): Promise<Uint8Array> {
   const reader = response.body?.getReader()
@@ -326,18 +282,13 @@ export type RootProps = Style & {
    * Defaults to `'placeholder'`: a URL that cannot be fetched or decoded draws
    * a neutral mark, the layout is unchanged, and the failure is recorded on
    * {@link Canvas.warnings}. A `src` that is a path or a buffer fails the
-   * render whatever this says — the caller is holding that input and can check
-   * it before rendering, where a fetch's outcome does not exist until the
-   * render runs. As the report that prompted this put it:
+   * render whatever this says — the caller holds that input and can check it
+   * before rendering, where a fetch's outcome does not exist until the render
+   * runs.
    *
-   * > a URL that is present and well-formed and answers 404 passes through it
-   * > untouched. Every consumer that writes this helper will write it with the
-   * > same blind spot, because the information it would need — whether the
-   * > fetch will succeed — does not exist at the point where the node is built.
-   *
-   * `'throw'` is the behaviour of every version before this one, for a caller
-   * whose URLs come from a manifest they control: there a 404 means their own
-   * deployment is broken and finishing the render hides it.
+   * `'throw'` fails the render instead, for a caller whose URLs come from a
+   * manifest they control: there a 404 means their own deployment is broken and
+   * finishing the render hides it.
    *
    * `'ignore'` draws nothing at all — **and still records the warning**. Every
    * setting records it. This chooses what is drawn, never what is known.
@@ -407,12 +358,8 @@ export interface NativeRenderer {
 }
 
 /**
- * What `Root` reaches for, injected so a caller can supply their own.
- *
- * **The filesystem used to be here too, and is not any more.** `toFile` writes
- * the file where it encodes it rather than handing bytes back, so there is
- * nothing left for an injected writer to receive; the native surface is the
- * one seam, and it is the seam a test wanted anyway.
+ * What `Root` reaches for, injected so a caller can supply their own: the native
+ * renderer, which is the one seam.
  */
 export interface RootDependencies {
   /** What paints the scene. */
@@ -420,11 +367,8 @@ export interface RootDependencies {
 }
 
 /**
- * The addon, which is what `Root` uses when told nothing.
- *
- * Resolved on the first call rather than when this module loads: a caller who
- * supplies their own renderer — a test, or a host without a filesystem — should
- * not need the native module present to import the package.
+ * The addon, which `Root` uses when told nothing. Resolved on the first call, so a
+ * caller supplying their own renderer need not have the native module present.
  */
 function installed(): RootDependencies {
   return { renderer: load() }
@@ -456,12 +400,9 @@ function isBuilder(children: Children | PageBuilder | undefined): children is Pa
 }
 
 /**
- * How many pages the props ask for, and at what rate.
- *
- * `pages` and `duration` are two spellings of one number and naming both is a
- * contradiction rather than a preference, so it is refused. A page count named
- * without a builder is refused too: there is no per-page content to vary, so
- * `pages: 5` beside static children asked for something that would not happen.
+ * How many pages the props ask for, and at what rate. `pages` beside `duration`
+ * is refused as a contradiction, and a count without a builder as a sequence with
+ * nothing to vary.
  */
 function sequence(props: RootProps): { count: number; fps: number } {
   const fps = props.fps ?? DEFAULT_FPS
@@ -558,38 +499,19 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   const height = props.height ?? (typeof props.minHeight === 'number' ? props.minHeight : 0)
   let arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, undefined, [], props.httpOptions)
 
-  // **Fetched here, at the surface, and only bytes cross the wire.**
-  //
-  // `meo-canvas-core` can fetch too, behind a default-off `net` feature, and
-  // that is deliberate rather than duplication: with the feature off it refuses
-  // a URL exactly as this surface used to, so **the two surfaces fail the same
-  // way and the difference between them is a build flag rather than a
-  // capability gap.** Doing it here as well means the addon needs no HTTP stack
-  // and a Node caller gets `fetch`, with the platform's own proxy, TLS and DNS
-  // rather than a second set inside a native module.
-  //
-  // The second encode is the price of not having a second walker. This module
-  // would otherwise need its own idea of everywhere a source can appear — image
-  // `src`, background image, mask — which is exactly the kind of duplicate that
-  // drifts the first time a source moves. The encoder already knows; the first
-  // pass asks it, and a scene naming no URL never runs the second.
+  // Fetched here, at the surface, and only bytes cross the wire, so the addon
+  // needs no HTTP stack and a Node caller gets the platform's proxy, TLS and DNS.
+  // The second encode is the price of not keeping a second walker of every place
+  // a source can appear; a scene naming no URL never runs it.
   if (arena.requests.length > 0) {
-    // **Deduped by the request, not by the address.** Two sources at one URL
-    // that would send different headers are two fetches; two that would send
-    // the same one are one. Keying this by URL alone — which is what it did
-    // before options could be per-source — collapses the first pair into a
-    // single fetch whose headers depend on which node the encoder reached
-    // first, and the encoder's order is not something a caller can see.
+    // Deduped by the request, not the address: two sources at one URL with
+    // different headers are two fetches.
     const wanted = new Map<string, ImageRequest>()
     for (const request of arena.requests) if (!wanted.has(request.key)) wanted.set(request.key, request)
     const fetched = new Map<string, Uint8Array>()
-    // **Tolerated failures are recorded, not swallowed.** Under `'throw'` this
-    // stays empty and every `throw` below fires as it always did; otherwise a
-    // failure lands here with the reason this surface measured, crosses the
-    // arena, and comes back as a warning identical to the one a crate consumer
-    // gets for the same event. Without carrying the reason the renderer could
-    // only say "a URL failed", and the two surfaces would disagree about one
-    // real 404.
+    // Tolerated failures are recorded with the reason, which crosses the arena and
+    // comes back as the warning a crate consumer gets for the same event. Under
+    // `'throw'` this stays empty and each failure throws.
     const attempts: FetchAttempt[] = []
     const tolerated = (props.onImageError ?? 'placeholder') !== 'throw'
     const failed = (attempt: FetchAttempt, error: TypeError): void => {
@@ -620,11 +542,8 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
             failed({ url, failure: 'transport', detail }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`, { cause }))
             return
           }
-          // **A caller who aborted is not a missing image.** They asked for
-          // the render to stop, and answering with a tasteful placeholder
-          // would be ignoring the instruction rather than tolerating a fact
-          // about the world. This throws whatever the policy says, which is
-          // the same reasoning that keeps a path failure loud.
+          // A caller who aborted is not a missing image: they asked the render to
+          // stop, so this throws whatever the policy says.
           if (caller?.aborted ?? false) {
             throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
           }
