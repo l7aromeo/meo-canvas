@@ -47,12 +47,8 @@ function fake(bytes = Buffer.from([1, 2, 3])) {
 }
 
 /**
- * A canvas over a fake surface.
- *
- * There is no fake filesystem any more, and nothing here lost coverage by it:
- * the file a `toFile` writes is recorded by the surface, in `fake`'s `wrote`,
- * because that is where the write now happens. The object is kept rather than
- * returning the canvas bare so the call sites below read the same.
+ * A canvas over a fake surface. The file a `toFile` writes is recorded by the
+ * surface, in `fake`'s `wrote`, where the write happens.
  */
 function canvasOver(native: NativeCanvas) {
   return { canvas: new Canvas(native) }
@@ -124,8 +120,7 @@ describe('data urls', () => {
   })
 
   it('resolves with the same url as the blocking form', async () => {
-    // The awaited form exists because v1's did. There is no I/O in an encode,
-    // so it is the same call without the `await` and this says so.
+    // Both forms write the same `data:` URL.
     const { canvas } = canvasOver(fake(Buffer.from([0, 16, 131])).native)
 
     await expect(canvas.toURL()).resolves.toBe(canvas.toURLSync('png'))
@@ -203,9 +198,8 @@ describe('release', () => {
 
 describe('what the paint settled on', () => {
   it('reports the request and the outcome apart', () => {
-    // v1 reports both because they disagree, and the disagreement is the
-    // useful reading: a build with no GPU backend, a driver that declines and
-    // a float `colorType` all rasterise on the CPU whatever was asked for.
+    // The request and the outcome disagree: a build with no GPU backend, a driver
+    // that declines and a float `colorType` all rasterise on the CPU.
     const { canvas } = canvasOver(fake().native)
 
     expect(canvas.gpu).toBe(true)
@@ -226,8 +220,8 @@ describe('what the paint settled on', () => {
   })
 })
 
-describe('the surface v1 had', () => {
-  it('carries no saveAs, which v1 deprecated', () => {
+describe('the surface v9 had', () => {
+  it('carries no saveAs, which v9 deprecated', () => {
     const { canvas } = canvasOver(fake().native)
 
     // A deprecated name reintroduced in a rewrite is one nobody gets to remove.

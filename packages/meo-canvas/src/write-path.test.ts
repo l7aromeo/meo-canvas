@@ -7,43 +7,20 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { Box, Root } from './index.js'
 
 /**
- * That `toFile` writes the file `toBuffer` would have handed back.
- *
- * `toFile` no longer encodes to a `Buffer` and then writes it: the bytes never
- * come back through JavaScript, so a page-spanning format streams into the
- * file instead of existing whole in memory first. That is the point of the
- * change and it is invisible in the output — the file is the same either way.
- *
- * What is *not* guaranteed by construction is that the two paths still resolve
- * the same pages. They are two calls into the encoder now, and the case where
- * they can disagree is the one where two rules collide: an `EncodeOptions.page`
- * naming one frame of a format that otherwise gathers them all. A writer that
- * ignored `page` would produce a whole animation, which is a perfectly
- * plausible GIF; nothing about the file says which was asked for. So these
- * compare the paths rather than inspecting either.
- *
- * Byte equality rather than a decoded comparison, and no decoder is needed for
- * it: two files that differ in frame count differ in bytes, and two that agree
- * byte for byte agree about everything.
+ * That `toFile` writes the file `toBuffer` would have handed back. They are
+ * separate calls into the encoder, and a writer ignoring `page` would write a whole
+ * animation, a plausible GIF, so these compare the two paths byte for byte.
  */
 
 /**
- * A scene of three pages, each a different flat colour.
- *
- * Different colours on purpose: identical pages encode to identical bytes, so
- * a comparison over them would pass against a writer that always wrote the
- * first page and against one that always wrote the last.
+ * Three pages in different flat colours: identical pages would pass against a
+ * writer that always wrote the first page, or the last.
  */
 const COLOURS = ['#ff0000', '#00ff00', '#0000ff']
 
 /**
- * The colour for a page, refusing rather than returning `undefined`.
- *
- * An absent colour would render transparent on every page, which is how a
- * first version of this file passed its comparisons while drawing nothing: the
- * page builder is handed a `PageInfo`, not an index, and `COLOURS[page]` was
- * quietly undefined. The throw is what makes that a failure rather than a
- * green run over identical blank pages.
+ * The colour for a page, refusing rather than returning `undefined`, which would
+ * render transparent pages that compare equal while drawing nothing.
  */
 function colourFor(index: number): string {
   const found = COLOURS[index]
