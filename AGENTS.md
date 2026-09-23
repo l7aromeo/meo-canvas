@@ -276,8 +276,8 @@ slower and never faster, so a **green** under load is stronger than a quiet
 green, a **red** under load is uninformative, and a **timing** is worthless in
 both directions.
 
-**Targeted checks are the signal while another lane is live**; the full gate runs
-when the tree is yours.
+**Targeted checks are the signal while another build is running**; the full
+gate runs when the machine is quiet.
 
 ### Say what you checked and what you did not
 
