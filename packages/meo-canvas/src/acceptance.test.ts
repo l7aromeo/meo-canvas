@@ -1,12 +1,6 @@
-// The acceptance harness's reading of a container's output, and its verdict.
-//
-// The harness itself needs docker and six images; these are the two pure
-// functions inside it, exercised against fabricated output. That is deliberate
-// rather than a convenience: the branches here are where a harness *misreports*,
-// and the failures worth pinning are the ones where it would pass — a row that
-// proves nothing counted as a row that passed, or a run where nothing could be
-// asked exiting clean. Neither is reachable by running it against a good binary,
-// which is exactly why they survive in harnesses nobody tests.
+// The acceptance harness's reading of a container's output, and its verdict: the
+// two pure functions inside it, against fabricated output, since the branches that
+// misreport are the ones a run against a good binary never reaches.
 
 import { describe, expect, it } from 'vitest'
 
@@ -46,11 +40,9 @@ describe('reading one container', () => {
   })
 
   it('treats output it cannot parse as ambiguous, not as a binary that failed', () => {
-    // The shape that produced six false failures once: the probe was mangled
-    // and every row came back like this. It must never read as `loaded` — and
-    // it must not read as `answered` either, which would report a harness
-    // fault as "this image cannot load the binary". A segfault inside `dlopen`
-    // also prints nothing, so neither side owns this outcome.
+    // A mangled probe answers like this, and it must read as neither `loaded` nor
+    // `answered`, which would report a harness fault as an image that cannot load
+    // the binary. A segfault inside `dlopen` also prints nothing.
     expect(classify('PRESENT \nsh: syntax error near unexpected token')).toMatchObject({
       kind: 'ambiguous',
       status: 'UNREADABLE',
