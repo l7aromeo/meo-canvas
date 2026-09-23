@@ -168,7 +168,7 @@ audit:
 
 # Compiles and tests `net`, which no other recipe builds, once on Linux: whether
 # it compiles is a fact about the code. A local `just ci` does not build it.
-# Measured at 10s cold and 17 more crates.
+# `net` adds 19 crates to the core's tree, `ureq` and `rustls` with theirs.
 [doc("Compile and test the `net` feature, which no other recipe builds.")]
 net-check:
     cargo clippy -p meo-canvas -p meo-canvas-core -p meo-canvas-cli --all-targets --features net -- -D warnings
