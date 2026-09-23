@@ -476,30 +476,32 @@ impl DecodedImage {
         }
     }
 
-    /// The frame a node asked for, or this image unchanged. A one-frame raster
-    /// ignores the index; a document refuses any but zero, and an index past a
-    /// raster's last frame is [`Error::UndecodableImage`] naming the node.
+    /// The frame a node asked for, or this image unchanged. A frame names one
+    /// frame of an animated source, so a one-frame source ignores the index,
+    /// and an index past an animated source's last frame is
+    /// [`Error::FrameOutOfRange`] naming the node, the index and the count.
     fn at_frame(self, frame: Option<u32>, node: NodeId) -> Result<Self, Error> {
-        let Some(index) = frame.map(|index| index as usize) else {
+        let Some(index) = frame else {
             return Ok(self);
         };
-        // A document has one frame and SVG animation is not rasterised here, so
-        // a later frame is refused as the fourth frame of a two-frame GIF is.
+        // A document has one frame, since SVG animation is not rasterised here,
+        // so it ignores the index as a still raster does.
         let Kind::Raster(image) = &self.kind else {
-            return if index == 0 {
-                Ok(self)
-            } else {
-                Err(Error::UndecodableImage(node))
-            };
+            return Ok(self);
         };
-        if index == 0 || image.frame_count() <= 1 {
+        let frames = image.frame_count();
+        if index == 0 || frames <= 1 {
             return Ok(self);
         }
-        if index >= image.frame_count() {
-            return Err(Error::UndecodableImage(node));
+        if index as usize >= frames {
+            return Err(Error::FrameOutOfRange {
+                node,
+                index,
+                frames: u32::try_from(frames).unwrap_or(u32::MAX),
+            });
         }
         image
-            .frame(index)
+            .frame(index as usize)
             .map(|image| Self {
                 kind: Kind::Raster(image),
             })
@@ -1962,25 +1964,24 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_document_has_one_frame() {
-        // A frame index past the only frame is refused rather than answered
-        // with that frame, which is the rule the raster arm already has for a
-        // two-frame GIF asked for its fourth.
-        let mut scene = Scene::new(Size::ZERO);
-        let mut node = image_node(svg_source(SIZED_SVG));
-        if let NodeKind::Image { frame, .. } = &mut node.kind {
-            *frame = Some(3);
+    fn a_one_frame_source_ignores_a_frame_index() {
+        // A frame names one frame of an animated source. A document and a
+        // still raster have one frame to draw, so any index draws it.
+        for (kind, source) in [
+            ("an SVG document", svg_source(SIZED_SVG)),
+            ("a still raster", ImageSource::Bytes(RED_PNG.to_vec())),
+        ] {
+            let mut scene = Scene::new(Size::ZERO);
+            let mut node = image_node(source);
+            if let NodeKind::Image { frame, .. } = &mut node.kind {
+                *frame = Some(3);
+            }
+            scene
+                .push(NodeId::ROOT, node)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let resolved = Resolved::new(&scene, &Fonts::new());
+            assert!(resolved.is_ok(), "{kind} at frame 3 gave {resolved:?}");
         }
-        scene
-            .push(NodeId::ROOT, node)
-            .unwrap_or_else(|error| unreachable!("{error}"));
-        assert!(
-            matches!(
-                Resolved::new(&scene, &Fonts::new()),
-                Err(Error::UndecodableImage(_))
-            ),
-            "a document answered for a frame it does not have"
-        );
     }
 
     #[test]

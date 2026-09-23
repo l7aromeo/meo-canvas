@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 import { describe, expect, it } from 'vitest'
@@ -583,6 +584,23 @@ describe('an image source that cannot be resolved', () => {
         children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
       }),
     ).rejects.toThrow(/49151/)
+  })
+})
+
+describe('an image frame', () => {
+  /** Two frames of flat colour, the animated source the crate's own tests draw from. */
+  const gif = readFileSync(new URL('../../../crates/meo-canvas/tests/assets/two-frames.gif', import.meta.url))
+  const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>')
+
+  it('is ignored by a source with one frame, an SVG as much as a still raster', async () => {
+    const canvas = await Root({ width: 20, height: 20, children: Image({ src: { bytes: svg }, width: 20, height: 20, frame: 1 }) })
+    await canvas.toBuffer('png')
+    canvas.release()
+  })
+
+  it('past the last frame is refused naming the frame and the count', async () => {
+    const drawn = Root({ width: 20, height: 20, children: Image({ src: { bytes: gif }, width: 20, height: 20, frame: 3 }) })
+    await expect(drawn).rejects.toThrow('asks for frame 3 of an image with 2 frames')
   })
 })
 

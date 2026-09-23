@@ -340,6 +340,26 @@ pub enum Error {
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
 
+    /// A frame index past the last frame of an animated image source.
+    ///
+    /// **Refused rather than drawn as some other frame**: a scene asking for
+    /// the fourth frame of a two-frame source asked for something the source
+    /// cannot answer. A source with one frame, a still raster or an SVG
+    /// document, ignores the index, since there is only that frame to draw.
+    #[error(
+        "node {} asks for frame {index} of an image with {frames} frames",
+        .node.get()
+    )]
+    #[non_exhaustive]
+    FrameOutOfRange {
+        /// The node that asked.
+        node: NodeId,
+        /// The frame it asked for, counting from zero.
+        index: u32,
+        /// How many frames the source has.
+        frames: u32,
+    },
+
     /// A colour asked for on a source that is not a vector document.
     ///
     /// **Refused rather than ignored.** A colour recolours an SVG's
@@ -801,6 +821,38 @@ impl RenderedCanvas {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every [`Error`] variant, named with no wildcard. `Error` is
+    /// `#[non_exhaustive]`, so a caller outside this crate needs a wildcard and
+    /// cannot see a new variant; this match is where one fails to compile.
+    #[test]
+    fn every_error_variant_is_named() {
+        const fn named(error: &Error) -> &'static str {
+            match error {
+                Error::UnresolvedSource(_) => "UnresolvedSource",
+                Error::SourceFetch { .. } => "SourceFetch",
+                Error::Steps(_) => "Steps",
+                Error::Spring(_) => "Spring",
+                Error::Keyframes(_) => "Keyframes",
+                Error::Track(_) => "Track",
+                Error::Chart(_) => "Chart",
+                Error::Scene(_) => "Scene",
+                Error::FontRegister { .. } => "FontRegister",
+                Error::ImageRead { .. } => "ImageRead",
+                Error::DataUri { .. } => "DataUri",
+                Error::UndecodableImage(_) => "UndecodableImage",
+                Error::FrameOutOfRange { .. } => "FrameOutOfRange",
+                Error::TintOnRaster(_) => "TintOnRaster",
+                Error::UnparsableSvg(_) => "UnparsableSvg",
+                Error::DecoderPanicked(_) => "DecoderPanicked",
+                Error::UnknownFont(_) => "UnknownFont",
+                Error::Layout(_) => "Layout",
+                Error::Paint(_) => "Paint",
+                Error::Encode { .. } => "Encode",
+            }
+        }
+        assert_eq!(named(&Error::Layout(String::new())), "Layout");
+    }
 
     /// A cause held as `#[source]` reaches the message, once: putting `{0}`
     /// back on `Error::Scene` fails the first assertion, and removing the walk
