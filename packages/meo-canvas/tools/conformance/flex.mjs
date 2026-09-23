@@ -1,16 +1,7 @@
 // Where a flex container puts its children, for every pair of `justify-content`
-// and `align-items`.
-//
-// Thirty combinations, three children each, ninety rows. The children have
-// **unequal cross sizes and no height of their own**, which is what makes
-// `stretch` a different picture from `flex-start`: an item with a height set
-// is stretched to exactly the height it already had, and a matrix built that
-// way reports one of its five alignments as a duplicate of another.
-//
-// Rectangles rather than pixels. `getBoundingClientRect` is what Chrome laid
-// out, and the equivalent on our side is the bounding box of each child's own
-// colour — the same question asked of two renderers that will never agree on
-// an antialiased edge.
+// and `align-items`: thirty combinations of three children with unequal cross
+// sizes and no height of their own, so `stretch` differs from `flex-start`. Read
+// as rectangles -- each child's colour bounds here, `getBoundingClientRect` there.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -25,12 +16,8 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const BOX = { width: 160, height: 80 }
 
 /**
- * The three children, by width and by the height of the spacer inside them.
- *
- * The spacer is what gives a child an intrinsic height without giving it a
- * height: `align-items: stretch` then has something to change, and the three
- * differ from each other so `flex-start`, `center` and `flex-end` are three
- * pictures rather than one.
+ * The three children, by width and by the height of the spacer inside them, which
+ * gives each an intrinsic height without a height, so `stretch` has work to do.
  */
 const CHILDREN = [
   { width: 24, content: 20 },
@@ -42,20 +29,14 @@ const JUSTIFY = ['flex-start', 'flex-end', 'center', 'space-between', 'space-aro
 const ALIGN = ['flex-start', 'flex-end', 'center', 'stretch', 'baseline']
 
 /**
- * The wrapping cases, measured with **six** children in a box that fits three.
- *
- * Separate from the matrix because they need twice the children: with three
- * there is nothing to wrap, and a `wrap` that never wrapped would agree with
- * `nowrap` on every row of the matrix above.
+ * The wrapping cases, measured with six children in a box that fits three, apart
+ * from the matrix: with three there is nothing to wrap.
  */
 const WRAPS = ['nowrap', 'wrap', 'wrap-reverse']
 
 /**
- * The box the wrapping cases use: narrow enough that six children cannot fit.
- *
- * The matrix's 160 fits all six on one line, so measured there `wrap` and
- * `nowrap` agree and the table would report a working property as untested.
- * 88 fits three of them.
+ * The box the wrapping cases use: 88 fits three children, where the matrix's 160
+ * fits all six and `wrap` would agree with `nowrap`.
  */
 const WRAP_BOX = { width: 88, height: 56 }
 

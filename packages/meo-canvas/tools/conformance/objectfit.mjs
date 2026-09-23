@@ -1,15 +1,7 @@
-// Where each `object-fit` rule puts a picture inside its box.
-//
-// Asked because the fixture asked: `fixtures/object-fit/notes.json` ends with
-// "needs a Chrome number", and `object-fit` is one of the properties a browser
-// answers exactly — five rules, five distinct rectangles, no interpolation
-// argument in any of them.
-//
-// The source is the fixture's own picture: eight by four, with a **magenta
-// column at x=0 and a cyan column at x=7**. That is what separates `fill` from
-// `cover`, which both fill the box and differ only in what they cut: a
-// symmetric picture reads the same stretched as cropped, and the first version
-// of that fixture could not tell the two apart at all.
+// Where each `object-fit` rule puts a picture inside its box -- five distinct
+// rectangles. The source is the fixture's 8x4 picture with a magenta column at x=0
+// and a cyan one at x=7, which tell `cover` from `fill`: a symmetric picture reads
+// the same stretched as cropped.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -23,33 +15,10 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const SOURCE = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/fit-marks.png')
 const VECTOR = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/fit-marks.svg')
 
-/** The boxes every rule places its picture in.
- *
- * **72 is not enough on its own, and the fixture it produced could not fail for
- * one of its five rules.** CSS defines `scale-down` as the smaller of `none`
- * and `contain`, so wherever the picture already fits they are the same rule by
- * definition -- and an 8x4 source fits a 72x72 box. The two rows came out
- * byte-identical, correctly, and a renderer implementing `scale-down` as `none`
- * passed the table, its walker, and everything built on them.
- *
- * The boxes below 8 wide are where the two separate: `none` crops the picture
- * to the box, `scale-down` shrinks it to fit.
- *
- * **6 and not 4.** A 4x4 box halves an eight-pixel source, and this renderer
- * scales with a smoothing filter where Chrome is pinned to
- * `image-rendering: pixelated` -- so the magenta column arrives blended past
- * any tolerance that can still tell the source's four colours apart, and the
- * mark columns read `-` here against Chrome's `magenta`. The rectangles agree
- * at 4 exactly; it is the marks that stop being readable. 6 separates the two
- * rules in the rectangle AND in both marks, which is the row worth committing.
- *
- * **100x200 is the widest aspect disagreement this picture allows.** 1:2 against
- * a 2:1 source, where the square boxes are 1:1 against it. The disagreement is
- * what the table needs: where a box shares the picture's aspect, `fill`,
- * `contain` and `cover` are one rectangle, and a renderer that letterboxes what
- * it should stretch passes every row. Measured rather than supposed -- a 200x100
- * box against this source agrees on all five rules both with that defect present
- * and with it fixed, so it would have been a row that cannot go red.
+/** The boxes every rule places its picture in. Below 8 wide `scale-down` shrinks
+ * where `none` crops; 6, not 4, since at 4 our smoothing blends the marks past
+ * reading. 100x200 disagrees with the 2:1 source, where a matching aspect makes
+ * `fill`, `contain` and `cover` one rectangle.
  */
 const BOXES = [
   { width: 72, height: 72 },
@@ -66,21 +35,9 @@ const CYAN = [40, 200, 200]
 
 const FITS = ['fill', 'contain', 'cover', 'none', 'scale-down']
 
-/** The two source kinds, because the rule is one and they disagreed under it.
- *
- * **A table with one source kind cannot state the finding.** `object-fit` was
- * covered here before this column existed and was never wrong -- it walked
- * `fit-marks.png` and only that, so the property was guarded for one of the two
- * kinds a caller can supply and the uncovered one is the kind that diverged.
- *
- * The vector is the same picture rather than a similar one: rasterised at its
- * own 8x4 it is byte-identical to the bitmap on all thirty-two pixels, checked
- * before it was committed. That is what makes a disagreement in these rows a
- * disagreement about placement -- if the two arts differed, every row would and
- * none of it would mean anything.
- *
- * Raster first and in the order it already had, so the rows this table carried
- * before are the same rows in the same places with one column added.
+/** The two source kinds, raster first. The vector is the same picture: rasterised
+ * at 8x4 it matches the bitmap on all thirty-two pixels, so a disagreement between
+ * the two is about placement.
  */
 const SOURCES = [
   { kind: 'raster', path: SOURCE, type: 'image/png' },

@@ -1,21 +1,7 @@
-// Where an outer box-shadow's ink is allowed to land, and where it is not.
-//
-// CSS Backgrounds and Borders 3 §7.1.1: an outer shadow is drawn *outside* the
-// border edge only — the border box is clipped out of it. So the element's own
-// background never composites over its own shadow, and a translucent
-// background can never reveal one.
-//
-// **The translucent row is the whole measurement.** Over an opaque background
-// the two possible implementations agree exactly: painting the shadow under
-// the box and then covering it, or clipping it out of the box, both leave the
-// background's own colour at every point inside. An opaque case therefore pins
-// nothing, and is measured here anyway so that the table says so rather than a
-// comment claiming it.
-//
-// The `below` probe is the control the inside probes need. A renderer that
-// fixed the inside reading by *not drawing the shadow at all* would satisfy
-// every other row here; only a point outside the box can tell a clipped shadow
-// from an absent one.
+// Where an outer box-shadow's ink may land: outside the border edge only (CSS
+// Backgrounds 3 §7.1.1), so a translucent background never reveals it. Only the
+// translucent row discriminates -- opaque ones agree either way -- and `below` is
+// the control that tells a clipped shadow from an absent one.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -46,12 +32,8 @@ const BACKGROUNDS = {
 const SHADOW = '0 1px 2px rgba(0, 0, 0, 0.5)'
 
 /**
- * Three points: two inside the border box and one outside it.
- *
- * `inside` is the centre, far from every edge, which no blur of 2px reaches.
- * `inside top` sits 2px below the top edge, which is where an *inset* shadow's
- * ink is heaviest and where an outer one's would be if it leaked upward.
- * `below` sits 2px under the bottom edge, in the outer shadow's ink.
+ * Three points: `inside`, the centre, beyond a 2px blur; `inside top`, 2px below
+ * the top edge, where an upward leak would show; and `below`, 2px under the box.
  */
 const PROBES = [
   ['inside', BOX.left + BOX.width / 2, BOX.top + BOX.height / 2],
@@ -66,12 +48,8 @@ const PROBES = [
 ]
 
 /**
- * Two shadows in the same place in the two orders.
- *
- * Identical geometry and different colours, so the `beside` probe reads which
- * one is on top and nothing else. CSS Backgrounds 3 §7.1: a list of shadows is
- * painted **front to back**, so the FIRST one written is the one on top -- the
- * opposite of the order a loop that draws them in sequence produces.
+ * Two shadows with identical geometry in both orders, so `beside` reads which is
+ * on top. CSS Backgrounds 3 §7.1 paints a list front to back: the first is on top.
  */
 const RED = 'rgb(220, 40, 40)'
 const BLUE = 'rgb(40, 60, 220)'
@@ -89,20 +67,10 @@ const CASES = [
   ['opaque', 'inset red then blue', `inset ${PAIR('10px')} ${RED}, inset ${PAIR('10px')} ${BLUE}`],
   ['opaque', 'inset blue then red', `inset ${PAIR('10px')} ${BLUE}, inset ${PAIR('10px')} ${RED}`],
 
-  // **`overflow` against a shadow.** `overflow` clips an element's content and
-  // its descendants; an outer shadow is painted outside the border edge and is
-  // neither, so the element's own `overflow` does not touch it. An inset shadow
-  // is painted inside and is clipped — and those two rows in one table are what
-  // separates "the clip is too broad" from "shadows are broken under a clip".
-  //
-  // `scroll` and `auto` are here because nothing had asked. `hidden` is the
-  // reported case; the other two take the same painter path here and whether
-  // Chrome treats them alike is a measurement rather than a reading.
-  //
-  // The last row is the axis question: `overflow-x: hidden` with `overflow-y:
-  // visible`. CSS computes a `visible` alongside a non-`visible` to `auto`, so
-  // the expectation is that Chrome clips both — and that expectation is exactly
-  // the sort this table exists to replace.
+  // `overflow` clips content and descendants, not an outer shadow, but it does clip
+  // an inset one -- telling a too-broad clip from shadows broken under one. `hidden`
+  // was reported; `scroll` and `auto` are measured too. The last row has
+  // `overflow-x: hidden` beside `visible`, which CSS computes to `auto`.
   ['opaque', 'outer, overflow visible', SHADOW, { overflow: 'visible' }],
   ['opaque', 'outer, overflow hidden', SHADOW, { overflow: 'hidden' }],
   ['opaque', 'outer, overflow scroll', SHADOW, { overflow: 'scroll' }],

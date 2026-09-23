@@ -1,21 +1,7 @@
-// What a percentage height resolves against when the box is out of flow.
-//
-// Reported as `l7aromeo/meo-canvas#84`: a percentage height on an absolutely
-// positioned box came out zero, and the same third written as `top`/`bottom`
-// came out right. The renderer decides definiteness itself and hands taffy the
-// result, so this is a question about our rule rather than about the layout
-// engine, and the rule was written from the flex parent alone.
-//
-// **The controls are the point.** This is a fix to a fix: the arm next to the
-// one that is wrong is right, and has a measured Chrome number behind it -- a
-// `min-height: 200%` child of an absolutely positioned, content-sized box is
-// 20, not 40. A repair that makes out-of-flow boxes definite everywhere trades
-// one wrong answer for another, and only a table carrying both kinds of row
-// can see that happen. Six of the fourteen rows below must not move.
-//
-// Every height is `getBoundingClientRect().height`, which is the used height
-// after layout rather than the declaration. The declarations are in the table
-// too, because a row is only readable if you can see the scene it came from.
+// What a percentage height resolves against when the box is out of flow
+// (`l7aromeo/meo-canvas#84`). The renderer decides definiteness itself; six of the
+// fourteen rows are controls that must not move. Heights are the used
+// `getBoundingClientRect().height`, and each row carries its declarations.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -30,11 +16,8 @@ const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/ch
 const VIEWPORT = { width: 400, height: 400 }
 
 /**
- * One scene per row, written out rather than built by a helper.
- *
- * The question is *which box is the containing block*, so a helper that
- * assembled the ancestor chain would hide the only thing being varied. `#m` is
- * always the element measured.
+ * One scene per row, written out rather than built by a helper, since the
+ * containing block is what varies. `#m` is always the element measured.
  */
 const CASES = [
   {
@@ -78,12 +61,9 @@ const CASES = [
   {
     key: 'abs-percent-grandparent-sized',
     note: 'the same chain with the in-between box 60 tall',
-    // **The other half of the question, and it needs its own row.** Giving the
-    // in-between box a height separates *which* box was resolved against --
-    // 59.98 for the grandparent, whose content is now 180, against 20 for the
-    // parent -- but it also makes that parent definite, so this row cannot
-    // also ask whether the percentage survived at all. One row per question:
-    // the row above asks *whether*, this one asks *which*.
+    // Which box was resolved against: a height on the in-between box separates
+    // 59.98 for the grandparent from 20 for the parent. It also makes the parent
+    // definite, so whether the percentage survives is the row above.
     html: `<div style="position:relative;display:flex;flex-direction:column;align-items:flex-start">
              <div style="width:50px;height:120px"></div>
              <div style="width:70px;height:60px">
@@ -180,23 +160,8 @@ const { page, close } = await open()
 try {
   await page.setViewportSize(VIEWPORT)
 
-  // **Asked of the browser that is about to take the measurements**, rather
-  // than written down beside them. A stamp that survives regeneration by being
-  // retyped is worse than no stamp, because it is a claim about provenance that
-  // provenance no longer backs: the next person runs `just conformance`, sees
-  // the line vanish, and pastes back a version that may name a browser which
-  // produced none of the rows beneath it.
-  //
-  // **The stamp is no longer emitted here.** This tool was right that a table
-  // has to name the browser that produced it, and right that a hand-written
-  // line does not survive its own regeneration -- and it fixed that for one
-  // table out of fifteen. `table()` in `browser.mjs` now does it for all of
-  // them, from the version the launch recorded, so a second line here would be
-  // a duplicate stamp and a second mechanism for the thing being centralised.
-  //
-  // The `?? 'unknown'` fallback goes with it, and is not replaced: `table()`
-  // throws when it is called before `open()`, so an unstamped table is a
-  // failure rather than a table claiming it does not know.
+  // No stamp here: `table()` in `browser.mjs` writes it from the version the
+  // launch recorded, and throws if called before `open()`.
   const lines = [
     '# What a percentage height resolves against when the box is out of flow.',
     `# Chrome, viewport ${VIEWPORT.width}x${VIEWPORT.height}.`,
