@@ -1,31 +1,7 @@
-// Does the built binary demand more than the target declares?
-//
-// # What this catches, and the one thing it structurally cannot
-//
-// It compares the symbol versions the artefact requires against the `floors`
-// declared for its target, and fails when the artefact asks for more. That is
-// **drift**: a build base changed, a dependency started using a newer symbol,
-// and the package would begin failing to load on machines it claims. Catching
-// it here names the symbol that moved, which beats discovering the floor rose
-// and hunting for why.
-//
-// **It cannot establish that the artefact loads.** A ceiling compares version
-// tags, and an unversioned symbol has none: a binary reporting `GLIBCXX_3.4.21`
-// — under every ceiling — still failed to load on `undefined symbol:
-// _M_replace_cold`, a GCC 12 symbol carrying no version at all. Loading it is
-// the gate; this is the diagnostic. Both are worth having and they are not
-// substitutes.
-//
-// # Why the ceiling is read rather than carried
-//
-// The floors live in `TARGETS` because they are a property of the target, and a
-// second copy here would be a number that can drift from the one the platform
-// package actually ships. They already drifted once in the other direction:
-// they sat at `2.35`/`3.4.30` through three commits after the build base moved
-// them to `2.28`/`3.4.21`, and **nothing caught it, because a floor declared
-// too high fails nothing.** This step is what makes that visible — it reports
-// the measured numbers whether or not they exceed, so a declaration that has
-// fallen behind reads as an obvious gap rather than a quiet pass.
+// Does the built binary demand more symbol versions than its target's `floors` in
+// `TARGETS` declare? It names the symbol that drifted, and prints the measured
+// numbers either way, so a floor declared too high shows. It cannot prove the binary
+// loads -- an unversioned symbol has no tag -- which `acceptance.mjs` decides.
 
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -47,11 +23,8 @@ function newer(left, right) {
 }
 
 /**
- * Every versioned symbol the binary imports, grouped by family.
- *
- * Read from the **undefined** symbols specifically. A defined symbol carrying a
- * version is one the binary provides, not one it demands, and counting those
- * would report a floor the artefact does not actually have.
+ * Every versioned symbol the binary imports, grouped by family: undefined symbols
+ * only, since a defined one is provided rather than demanded.
  */
 function required(binary) {
   const dump = execFileSync('objdump', ['-T', binary], { encoding: 'utf8', maxBuffer: 64 << 20 })

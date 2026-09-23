@@ -1,22 +1,7 @@
-// The two places a target is named that are not `TARGETS`, written from it.
-//
-// A target used to be declared in three places: `TARGETS` here in the tools,
-// `optionalDependencies` in `package.json` (what an install *fetches*), and
-// `PLATFORM_PACKAGES` in `src/addon.ts` (what a process *resolves*). A test
-// asserted the three agreed, which caught drift but did not prevent it —
-// adding two targets meant editing three files and being told about the two
-// you forgot. **Generation removes the possibility rather than reporting it**,
-// and the drift check replaces that assertion rather than joining it: a
-// generated file plus an equality test between it and its source is one
-// mechanism written twice, and a reader cannot tell which is authoritative.
-//
-// # Why a committed file and not an import
-//
-// `src/addon.ts` ships inside `dist/`; `tools/` does not ship. The runtime
-// cannot import the build-time list, so the list has to arrive in the package
-// as source. That is the same constraint `src/generated/doc-examples.ts`
-// answers, and this follows it: generate, commit, and fail a gate on a
-// difference.
+// Writes the two places a target is named besides `TARGETS`: `optionalDependencies`
+// in `package.json`, which an install fetches, and `PLATFORM_PACKAGES` in
+// `src/generated/platform-packages.ts`, which a process resolves. Committed, since
+// `src/addon.ts` ships and `tools/` does not; a gate fails on a difference.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -29,13 +14,9 @@ const PACKAGE = resolve(HERE, '../package.json')
 const GENERATED = resolve(HERE, '../src/generated/platform-packages.ts')
 
 /**
- * The host key a running process derives for a target.
- *
- * Identical to the suffix, and that is the invariant `src/addon.ts` documents:
- * on Linux the key carries the C library, because one `platform-arch` has both
- * a glibc and a musl build and a key that could not say which would have two
- * answers. Written as a pass-through rather than dropped so the relation is
- * stated where it is relied upon.
+ * The host key a running process derives for a target: the suffix itself, which
+ * on Linux carries the C library. A pass-through, so the relation is stated where
+ * it is relied upon.
  */
 function hostKey(suffix) {
   return suffix

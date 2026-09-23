@@ -1,35 +1,7 @@
-// The two release channels agree about which tag belongs to which, and
-// `docs.yml`'s filter is run rather than read.
-//
-// **The failure this exists for is silent.** `docs.yml` decides whether a tag
-// has a JavaScript reference by matching it against a regular expression, and
-// on a `release` event a tag that does not match prints a notice and publishes
-// nothing: no error, no red job, no deploy. So a prefix changed in
-// `release.yml` and not here does not break a release, it removes the
-// documentation from one and says so in a line nobody reads. That is the
-// failure mode this file is about, and it is why the check is here rather than
-// in a comment saying "keep these in step".
-//
-// **It extracts the prefixes rather than restating them.** A table of tag
-// shapes written down here would be a second opinion about what the workflows
-// do, and the interesting failure is exactly the one where the two disagree.
-// So the npm prefix comes out of `release.yml`'s own `git_tag=` line, the Rust
-// prefix out of `crates-io.yml`'s, and the pattern out of `docs.yml`'s `grep`.
-// Rename a prefix in one file and this fails, because the tag it now builds is
-// run through the filter that did not change.
-//
-// **The pattern is run through `grep -E`, not through `RegExp`.** They are
-// different languages -- POSIX ERE has no lazy quantifiers, no `\d`, and
-// different escaping inside a bracket expression -- and a JavaScript engine
-// agreeing with a pattern the shell will reject is the shape of a check that
-// tests the wrong thing. This shells out to the same `grep -Eq` the workflow
-// runs, on the same string.
-//
-// **What it does not check:** that the tag is ever pushed, that `docs.yml` is
-// triggered at all, or that the site directory is named correctly. The first
-// two are workflow wiring; the third is checked by the deploy failing to
-// appear in the index, which is the failure that made the directory strip the
-// prefix in the first place and is not mechanically testable from here.
+// The two release channels agree on which tag is whose, and `docs.yml`'s filter is
+// run rather than read: a tag it refuses publishes no reference, silently. The
+// prefixes come from `release.yml`'s and `crates-io.yml`'s own lines, and the pattern
+// runs through `grep -E`, as the workflow runs it, rather than `RegExp`.
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -111,12 +83,9 @@ if (pattern && npm && rust) {
     }
   }
 
-  // **The tag-to-version derivation, run rather than restated.** This is the
-  // step that was wrong: `${VERSION#v}` was correct while the tag was
-  // `v10.0.0` and silently wrong once it was `npm-v10.0.0`, because `#v` does
-  // not strip a prefix the string does not begin with. The two lines are
-  // lifted out of `docs.yml` and executed in `bash`, so a change to them is a
-  // change to what this asserts.
+  // The tag-to-version derivation, lifted out of `docs.yml` and executed in `bash`:
+  // `${VERSION#v}` alone does not strip `npm-v`, since `#v` removes only a prefix
+  // the string begins with.
   const derivation = (() => {
     const found = workflow('docs.yml').match(/^\s*VERSION="\$\{TAG#npm-\}"\n\s*VERSION="\$\{VERSION#v\}"$/m)
     if (!found) {
@@ -151,11 +120,8 @@ if (pattern && npm && rust) {
       const [got, dir] = computed(tag)
       if (got !== want) fail(`docs.yml turns ${tag} into ${JSON.stringify(got)}, not ${JSON.stringify(want)}`)
 
-      // **And the directory it then writes has to be one the index can read.**
-      // `docs.yml` writes `site/v${VERSION}`; `site-index.mjs` parses the
-      // directory names it finds. A name that does not parse is not an error
-      // anywhere -- the reference deploys, the index never lists it, and
-      // `latest/` never advances past the last release named the old way.
+      // The directory `docs.yml` writes must parse in `site-index.mjs`; one that
+      // does not deploys unlisted and `latest/` stops advancing, with no error.
       if (!indexParses(dir)) {
         fail(`site-index.mjs would not list the directory docs.yml writes for ${tag}: ${JSON.stringify(dir)}`)
       }
@@ -169,15 +135,9 @@ if (pattern && npm && rust) {
     }
   }
 
-  // The notes both channels now require, and the directory each reads from.
-  //
-  // **Including whether the file could be committed at all.** `.gitignore`
-  // here denies everything and re-includes by name, so a notes directory
-  // nobody named is refused by `git add` -- and the release would then stop on
-  // an error naming a path that cannot be created, permanently, however many
-  // times someone writes the note. That is a two-line omission in a file
-  // nobody reads during a release, and it is checked here because there is no
-  // other moment at which anyone would look.
+  // The notes both channels require, and whether each directory can be committed:
+  // `.gitignore` denies everything and re-includes by name, so an unnamed notes
+  // directory is refused by `git add` and the release cannot proceed.
   for (const [file, dir] of [
     ['release.yml', 'docs/releases/npm/'],
     ['crates-io.yml', 'docs/releases/rust/'],

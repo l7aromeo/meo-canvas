@@ -1,25 +1,7 @@
-// Lifts the wire enums out of the scene crate into TypeScript.
-//
-// Every enum that crosses the arena is written as one number: the same
-// discriminant the byte codec writes, because both sides read `from_wire`. The
-// writer on this side has to know those numbers.
-//
-// Hand-copying them would be the fourth copy of each list -- the enum, the two
-// halves of `wire_enum!`, and this -- and the drift is silent in the worst
-// available way. A variant inserted upstream does not make a value fail to
-// decode; it makes it decode as a *different variant*. That is precisely the
-// failure `wire_enum!` exists to prevent within Rust, and copying its output by
-// hand would reintroduce it at the language boundary.
-//
-// So the numbers are read from the declarations themselves. `wire_enum!` writes
-// discriminants explicitly at the call site -- its own comment says why:
-// position changes when a variant is inserted and the byte a variant is written
-// as cannot -- which is what makes this parseable without evaluating Rust.
-//
-// The Rust module path is derived from the file, so a test can check every enum
-// the arena tables name against what is actually declared. Two generated files
-// reading two halves of one format is exactly where a set check earns its
-// keep.
+// Lifts the wire enums out of the scene crate into TypeScript. Each crosses the
+// arena as the discriminant `wire_enum!` writes explicitly at its call site, which
+// is what makes the numbers parseable without evaluating Rust. The module path is
+// derived from the file, so a test checks every enum the arena tables name.
 
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -55,31 +37,21 @@ async function sources(directory) {
 }
 
 /**
- * The Rust module path a file declares its items in.
- *
- * `src/style/layout.rs` is `meo_canvas_scene::style::layout`, `src/lib.rs` is
- * the crate root. Mechanical because the crate uses one file per module and no
- * `#[path]`; a file that broke that assumption would produce a path no arena
- * table names, which the set check below turns into a failure.
+ * The Rust module path a file declares its items in: `src/style/layout.rs` is
+ * `meo_canvas_scene::style::layout`. Mechanical, since the crate has one file per
+ * module and no `#[path]`; a break would fail the set check.
  */
 function modulePath(path) {
   const relative = path.slice(SCENE_SRC.length + 1).replace(/\.rs$/, '')
   if (relative === 'lib') return CRATE
-  // Split on both separators, because this is a filesystem path becoming a
-  // Rust module path and Windows spells the first one `\`. Splitting on `/`
-  // alone emitted `meo_canvas_scene::style\layout` there -- not a crash, a
-  // **wrong generated file**, which `arena-enums-check` reported as the table
-  // being stale on Windows and nowhere else. Committing that file from a
-  // Windows machine would have put backslashes into module paths for everyone.
+  // Split on both separators: Windows spells the path separator `\`, and a
+  // module path must never carry one.
   return [CRATE, ...relative.split(/[/\\]/)].join('::')
 }
 
 /**
- * Where the brace opened at `from` closes, or `-1`.
- *
- * Counted rather than matched with one expression, and comments are skipped:
- * a variant's doc comment may contain a brace, and a regular expression that
- * also had to survive that would be the harder thing to trust.
+ * Where the brace opened at `from` closes, or `-1`. Counted, skipping comments,
+ * since a variant's doc comment may contain a brace.
  */
 function closes(text, from) {
   let depth = 0

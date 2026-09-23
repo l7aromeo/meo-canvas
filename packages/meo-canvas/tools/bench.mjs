@@ -1,49 +1,7 @@
-// What a render costs in time and in memory, measured through the shipped
-// surface rather than through the core.
-//
-// `cargo bench` already times the pipeline in Rust. This asks a different
-// question that criterion cannot: what a long-lived Node process holding this
-// addon looks like after a few thousand renders — whether it settles, and how
-// far above where it started.
-//
-// # What each number is, and what it is not
-//
-// **RSS is not comparable between machines.** It counts the addon's own ~51 MB
-// mapping, the Skia allocations behind it and V8's heap in one figure, and the
-// mapping alone differs with the build. Every number here is therefore reported
-// as a delta from a baseline taken after the addon is loaded and one warm-up
-// render has run, so the constant part is subtracted rather than reported as if
-// it were a cost per render.
-//
-// **Peak is sampled, so it is a lower bound**, and it is sampled two ways. A
-// timer at {@link SAMPLE_INTERVAL_MS} catches a spike inside a render; a read
-// after every render catches the rest. The timer alone was not enough — a
-// native call holds the event loop for most of a render, so the first version
-// of this took **zero** timer samples in a 2.7 s run and reported a peak of
-// `+0.0 MiB` beside a final `+7.7 MiB`. A peak below the figure it bounds is
-// the instrument saying it never looked, so the sample count is printed: read
-// it before reading the peak.
-//
-// It is still not an allocator high-water mark. A peak equal to the final RSS
-// means "nothing bigger was seen", not "nothing bigger happened".
-//
-// **Idle is the one that answers "does it leak".** Memory still held after an
-// explicit collection and {@link IDLE_MS} of quiet is retained, not garbage
-// awaiting a collector that had not run. Without the forced collection the
-// reading measures V8's laziness — a process that allocated nothing at all
-// would still show a high RSS if the last thing it did was allocate.
-//
-// **Wall time is reported as percentiles.** A mean over renders hides the shape
-// that matters here: whether the slow tail is a few percent or a third of them.
-//
-// # A reading, so a later one has something to be read against
-//
-// On an M-series mac, release addon, this scene: 75 renders/s, p50 13.3 ms,
-// p99 14.5 ms. Idle rss above baseline was **+7.0 MiB after 200 renders and
-// +12.7 MiB after 1000** -- five times the work for 1.8 times the memory. That
-// shape is what says it is a bounded cache filling rather than a leak; a leak
-// would have been near +35 MiB, and the two points are what distinguish them.
-// **One measurement could not have.**
+// What a render costs in time and memory through the shipped surface, over thousands
+// of renders in one process. RSS is a delta from a warm baseline; peak is sampled,
+// a lower bound, with its sample count printed; idle, after a forced collection,
+// answers "does it leak"; wall time is percentiles.
 
 // The built package, not the source: this measures what a consumer installs,
 // and `dist` is what `exports` points at.
@@ -68,10 +26,7 @@ const mib = bytes => `${bytes < 0 ? '' : '+'}${(bytes / 1024 / 1024).toFixed(1)}
 const abs = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MiB`
 
 /**
- * A scene with something of each kind in it.
- *
- * Text, a gradient and nested boxes rather than one rectangle: a scene that
- * exercises one pass says nothing about the passes it skips, and text is the
+ * A scene with text, a gradient and nested boxes, so every pass runs -- text is the
  * one that shapes, measures and caches.
  */
 function scene(index) {
