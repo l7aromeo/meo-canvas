@@ -7,46 +7,10 @@ import { Box } from './node.js'
 import { encodeScene } from './arena.js'
 
 /**
- * Where the two chart surfaces deliberately spell a number differently.
- *
- * # The divergence
- *
- * A chart label is a number turned into text, and the two languages part
- * company at the top of the range: JavaScript switches to exponential notation
- * at `1e21` and Rust's `Display` never does. So a value of `1e21` is drawn as
- * `1e+21` here and as `1000000000000000000000` on the Rust surface, and every
- * other chart check is silent about it — `chart.differential.test.ts` stops
- * short of the threshold on purpose, and the pinned agreement charts carry
- * whole numbers far below it.
- *
- * **It is left open rather than fixed.** Closing it means implementing one
- * language's number formatting in the other from scratch, with no helper on
- * either side to reach for. That is more commitment than a label at `1e21`
- * earns.
- *
- * # Why it is pinned rather than written down
- *
- * A deviation recorded only in prose is indistinguishable from a defect, and
- * nothing tells the next reader whether it still holds. Pinned, it is
- * self-reporting: **the day somebody closes the gap, these tests fail, and that
- * failure is the notification.**
- *
- * Each assertion pins **the spelling on this side and the absence of the
- * other's**, so a change to either surface reddens a row and the message says
- * which one moved. A pin reading only "the two differ" would pass for two
- * surfaces that had both become wrong.
- *
- * # Two paths, two thresholds
- *
- * The y-axis divisions are rounded to two decimals before they are spelled and
- * the value labels are not, which moves the boundary by a decade: rounding
- * `1e21` yields `999999999999999900000`, below the exponential threshold, so
- * the axis agrees there and parts at `1e22`. The two controls are what make
- * that a measurement rather than a story — one path agreeing at a threshold
- * where the other does not is the evidence that these are two paths and not one
- * condition described twice.
- *
- * The Rust half of this pin is `crates/meo-canvas/tests/chart_number_spelling.rs`.
+ * Where the two surfaces deliberately spell a number differently: JavaScript goes
+ * exponential at `1e21` and Rust's `Display` never does. Pinned rather than closed,
+ * so closing it reds a row; each asserts this side's spelling and the absence of
+ * the other's. The Rust half is `crates/meo-canvas/tests/chart_number_spelling.rs`.
  */
 interface Addon {
   sceneBytes(slots: Float64Array, values: readonly (string | Buffer)[]): Buffer
@@ -75,12 +39,8 @@ const valueLabel = (value: number) => encoded(value, { showValues: true })
 const yAxisLabel = (value: number) => encoded(value, { showYAxis: true })
 
 /**
- * Whether the scene carries `text` as a string of its own.
- *
- * Matched with its length prefix rather than as a loose substring, because
- * `1000000000000000000000` is a substring of `10000000000000000000000` and a
- * bare search would have one threshold's expectation satisfied by the other's
- * output.
+ * Whether the scene carries `text` as a string of its own, matched with its length
+ * prefix: `1000000000000000000000` is a substring of `10000000000000000000000`.
  */
 function spells(bytes: Buffer, text: string): boolean {
   const length = Buffer.alloc(4)
