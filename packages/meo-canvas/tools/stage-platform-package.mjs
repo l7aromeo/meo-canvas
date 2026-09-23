@@ -1,19 +1,7 @@
-// Stages one platform package: a directory holding the compiled addon and a
-// manifest saying which host it is for.
-//
-// A package per target rather than one package holding every binary, because a
-// caller downloads what it can run and nothing else — the addon is 51 MB, so
-// two targets in one package is 51 MB wasted on every install and seven is
-// six. `os`, `cpu` and `libc` are what let a package manager skip the ones it
-// cannot use, and being listed in `optionalDependencies` is what makes skipping
-// them succeed rather than fail.
-//
-// The alternative — a postinstall script that downloads the right binary — needs
-// the network at install time and breaks offline installs, locked-down CI and
-// any environment with `--ignore-scripts`.
-//
-// Run for the host by `just pack`, and once per target by the release workflow,
-// which passes the binary it just built.
+// Stages one platform package: the compiled addon and a manifest naming its host.
+// One package per target, so an install downloads only the 51 MB binary it can
+// run; `os`, `cpu` and `libc` let a package manager skip the rest, and
+// `optionalDependencies` makes skipping succeed. Run by `just pack` and the release.
 
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -23,13 +11,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PACKAGE = resolve(HERE, '../package.json')
 
 /**
- * Every target a release carries, and what a package manager needs to pick one.
- *
- * The keys are the package-name suffixes. `PLATFORM_PACKAGES` in `src/addon.ts`
- * maps a running host onto them and `optionalDependencies` pins them, and
- * `addon.test.ts` asserts all three agree — a target added in one place and not
- * the others fails that test rather than shipping a package nothing resolves or
- * naming one nothing builds.
+ * Every target a release carries, keyed by package-name suffix. `addon.test.ts`
+ * asserts these, `PLATFORM_PACKAGES` in `src/addon.ts` and `optionalDependencies`
+ * agree, so a target named in one place and not the others fails there.
  */
 export const TARGETS = {
   'darwin-arm64': { os: ['darwin'], cpu: ['arm64'], rust: 'aarch64-apple-darwin', runner: 'macos-latest' },
@@ -39,12 +23,9 @@ export const TARGETS = {
     libc: ['glibc'],
     rust: 'x86_64-unknown-linux-gnu',
     runner: 'ubuntu-latest',
-    // Measured on the artefact the `manylinux_2_28` image produces, which is
-    // what these have to track. They were `2.35`/`3.4.30` from the
-    // `ubuntu-latest` build and stayed there after the container landed: a
-    // floor declared *above* what the artefact demands fails nothing, it
-    // under-promises quietly and tells a consumer to expect a newer machine
-    // than they need.
+    // Measured on the artefact the `manylinux_2_28` image produces. A floor
+    // declared above what the artefact demands fails nothing and tells a
+    // consumer to expect a newer machine than they need.
     floors: { glibc: '2.28', glibcxx: '3.4.21' },
   },
   'linux-arm64-gnu': {
@@ -53,51 +34,29 @@ export const TARGETS = {
     libc: ['glibc'],
     rust: 'aarch64-unknown-linux-gnu',
     runner: 'ubuntu-24.04-arm',
-    // **Inherited from the x64 build, and now measured on this one.** These
-    // were the sibling's numbers, declared rather than omitted because an
-    // absent `floors` means "no ELF floor to check here" -- true of darwin and
-    // win32 and false of this -- with the release's own assertion as the
-    // mechanism that would correct them.
-    //
-    // It did not have to: an `aarch64-unknown-linux-gnu` artefact built from
-    // `2b5f580` in `Dockerfile.glibc` reads exactly `GLIBC_2.28` and
-    // `GLIBCXX_3.4.21`, measured 5 September 2026. So the inherited pair were
-    // right, and are no longer inherited.
+    // Measured on an `aarch64-unknown-linux-gnu` artefact built from `2b5f580` in
+    // `Dockerfile.glibc`: `GLIBC_2.28` and `GLIBCXX_3.4.21`, 5 September 2026.
     floors: { glibc: '2.28', glibcxx: '3.4.21' },
   },
-  // The musl pair carry no `floors`, and the reason differs from win32's. A
-  // musl binary links no glibc at all, so a glibc floor is not merely unknown
-  // here, it does not exist. Whether a GLIBCXX floor applies is unmeasured --
-  // no musl artefact exists yet -- and deliberately left absent rather than
-  // guessed: `tools/acceptance.mjs` is what decides whether these load, and a
-  // floor invented here would be a claim the assertion would happily confirm
-  // against itself.
+  // No `floors` on the musl pair: a musl binary links no glibc, so that floor does
+  // not exist, and a GLIBCXX floor is unmeasured. `tools/acceptance.mjs` decides
+  // whether these load; a floor guessed here would be confirmed against itself.
   'linux-x64-musl': { os: ['linux'], cpu: ['x64'], libc: ['musl'], rust: 'x86_64-unknown-linux-musl', runner: 'ubuntu-latest' },
   'linux-arm64-musl': { os: ['linux'], cpu: ['arm64'], libc: ['musl'], rust: 'aarch64-unknown-linux-musl', runner: 'ubuntu-24.04-arm' },
   // No `floors`: the floors are ELF symbol versions, and a PE binary has none.
   // Windows links DirectWrite rather than fontconfig and freetype, so the
   // acceptance harness loads it on the runner rather than in a container.
   'win32-x64': { os: ['win32'], cpu: ['x64'], rust: 'x86_64-pc-windows-msvc', runner: 'windows-latest' },
-  // The seventh target, and the one `meo-skia-canvas` builds that this did not.
-  // No `floors` for the same reason as x64.
-  //
-  // The commit that added it (d7b5417) says this one compiles Skia from source
-  // because rust-skia has no prebuilt for the triple. **That is wrong**, and the
-  // first release rehearsal measured it: 7 minutes, zero compile lines, a
-  // prebuilt downloaded like every other Windows and glibc target. The claim
-  // came from reading `windows.rs::specific_target`, which is about the `win7`
-  // vendor and says nothing about prebuilts; the key is built in
-  // `binary_cache/binaries.rs`. Left here rather than silently fixed, because a
-  // reader of that commit message will otherwise believe it.
+  // No `floors`, as for x64. rust-skia ships a prebuilt for this triple, so no Skia
+  // compile runs -- d7b5417's message says otherwise, reading
+  // `windows.rs::specific_target`, which is about the `win7` vendor; the prebuilt
+  // key is built in `binary_cache/binaries.rs`.
   'win32-arm64': { os: ['win32'], cpu: ['arm64'], rust: 'aarch64-pc-windows-msvc', runner: 'windows-11-arm' },
 }
 
 /**
- * Which C library this process runs against, on Linux.
- *
- * The same check `src/addon.ts` makes and for the same reason -- Node reports
- * `glibcVersionRuntime` only on a glibc host -- duplicated here because this
- * tool is run by `just` and by the workflow with plain `node`, and cannot
+ * Which C library this process runs against, on Linux. The same check as
+ * `src/addon.ts`, duplicated because this runs under plain `node` and cannot
  * import the shipped surface.
  */
 function hostLibc() {
@@ -106,19 +65,9 @@ function hostLibc() {
 }
 
 /**
- * The target suffix for the machine this is running on.
- *
- * **Derived by matching the host against `TARGETS`, never written down.** The
- * `pack` recipe used to pick a suffix with a two-branch ternary on `os()`,
- * which ignored architecture and had no Windows branch -- so packing on an
- * arm64 Linux host staged an arm64 binary into a package named
- * `linux-x64-gnu`, declaring `cpu: ["x64"]`, and packed it cleanly. A wrong
- * artefact from a green command, and npm would then install it on machines
- * that cannot load it.
- *
- * Refuses rather than guessing when the host matches no target: packing an
- * artefact under a name that describes a different machine is the failure this
- * exists to prevent, and having no name at all is the safe end of it.
+ * The target suffix for this machine, derived by matching the host against
+ * `TARGETS` on OS, architecture and libc. Refuses when nothing matches, since a
+ * package named for a different machine would install where it cannot load.
  */
 export function hostSuffix() {
   const arch = process.arch
@@ -135,52 +84,15 @@ export function hostSuffix() {
 }
 
 /**
- * The ELF symbol floors a target's artefact currently has.
- *
- * **This is a diagnostic, not a gate, and the difference is structural.** The
- * release workflow asserts the built binary does not exceed these, which
- * catches versioned drift early and names the symbol that moved -- worth having,
- * and much better than discovering a floor rose and hunting for why. What it
- * cannot do is establish that the artefact loads: an *unversioned* symbol has no
- * tag to compare, and a binary reporting `GLIBCXX_3.4.21`, under every ceiling,
- * still failed to load on `undefined symbol: _M_replace_cold`. Only loading it
- * decides that, which is what `tools/acceptance.mjs` is for.
- *
- * These are the numbers the artefact has **today**, not the ones we want. They
- * are declared so a rise is noticed, and they are expected to be edited down as
- * the build moves to an older base image -- a gate that is expected to be red
- * teaches people to ignore it, so the declaration tracks reality and tightens
- * behind it.
- *
- * A target with no ELF floors carries no `floors` key at all rather than a null:
- * darwin has none, and neither will win32. Absent means "nothing here to
- * check", which the asserting step reports rather than skipping silently, since
- * an unchecked target that prints nothing is indistinguishable from one that
- * passed.
+ * The ELF symbol floors a target's artefact has today. The release asserts the
+ * binary stays under them, a diagnostic naming the symbol that moved; only a load
+ * decides, which is `tools/acceptance.mjs`. Absent on targets with no ELF floors.
  */
 
 /**
- * The package a target's binary ships in: a scope named for the main package,
- * with the target suffix as the package name.
- *
- * **Scoped, and npm's spam heuristic is why.** The unscoped
- * `meo-canvas-<suffix>` names were refused with `E403 Package name triggered
- * spam detection` on 5 September 2026 -- two isolated publishes, nineteen
- * hours apart, on the account that had published four of exactly that shape
- * the day before. The same binary repacked under `@meo-canvas/` reached the
- * ordinary two-factor prompt instead, and published.
- *
- * **The main package stays unscoped**, so `npm install meo-canvas` is
- * unchanged; only the binaries move, and `optionalDependencies` resolves them
- * by name from the same registry.
- *
- * **This lives here because `TARGETS` lives here, and one of them without the
- * other is how a target gets two names.** It did: the scope landed in
- * `generate-platform-packages.mjs` alone, so `optionalDependencies` and
- * `PLATFORM_PACKAGES` asked for `@meo-canvas/darwin-arm64` while the staged
- * package still called itself `meo-canvas-darwin-arm64`. Both generated lists
- * agreed with each other and neither agreed with the artefact, so the test
- * comparing them passed and `just verify-packed` failed on three runners.
+ * The package a target's binary ships in: `@<main>/<suffix>`. Scoped because
+ * npm refused the unscoped names with `E403 Package name triggered spam detection`;
+ * the main package stays unscoped. It lives beside `TARGETS` so a target has one name.
  */
 export function packageName(main, suffix) {
   // A scoped main package would compose `@@scope/name/suffix`, which npm will
@@ -229,26 +141,18 @@ export function stage(suffix, binary, outDir) {
   return { name: manifest(suffix, version).name, version, staged }
 }
 
-// The command-line half runs only when this file *is* the command. `TARGETS`,
-// `hostSuffix` and `manifest` are imported by `src/addon.test.ts`, which
-// asserts them against the other places a target is named, and an unguarded
-// body would exit that test run with a usage message instead.
-//
-// **This comment claimed `manifest` was imported before it was.** It was not,
-// and the check it described did not exist -- which is how the scope reached
-// the two generated lists and not the staged manifest, with every test green.
-// A comment asserting a check is not a check.
+// The command-line half runs only when this file is the command: `TARGETS`,
+// `hostSuffix` and `manifest` are imported by `src/addon.test.ts`, and an
+// unguarded body would end that test run with a usage message.
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [suffix, binary, outDir] = process.argv.slice(2)
-  // The release workflow needs the same list as a job matrix, and deriving it
-  // here is what keeps the workflow from being a fourth place a target is
-  // named. One line of JSON on stdout, which is what `$GITHUB_OUTPUT` takes.
-  // The host's own suffix, so `just pack` asks rather than deciding. See
-  // `hostSuffix` for what the ternary this replaces got wrong.
+  // The host's own suffix, so `just pack` asks rather than deciding.
   if (suffix === '--host') {
     process.stdout.write(`${hostSuffix()}\n`)
     process.exit(0)
   }
+  // The same list as the release workflow's job matrix, so the workflow is not a
+  // fourth place a target is named. One line of JSON, which `$GITHUB_OUTPUT` takes.
   if (suffix === '--matrix') {
     process.stdout.write(
       `${JSON.stringify({
