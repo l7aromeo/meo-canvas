@@ -9,13 +9,9 @@ import type { ColorType } from './index.js'
 import { Root, fetchDeadline, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
 /**
- * Slot index of the page count: magic, version, three geometry floats, and the
- * three discriminants of the surface block, and the one slot `onImageError`
- * always occupies.
- *
- * Named rather than written at each use. The header has changed twice and each
- * time the failure was five assertions reading one slot too early, which reads
- * as five bugs rather than as one moved field.
+ * Slot index of the page count: magic, version, three geometry floats, the three
+ * surface discriminants, and the slot `onImageError` always occupies. Named, so a
+ * header change moves one number rather than five reads.
  */
 const PAGE_COUNT = 2 + 4 + 3 + 1 + 1
 
@@ -137,15 +133,9 @@ describe('the canvas Root describes', () => {
 })
 
 describe('a url source', () => {
-  // **These pin `'throw'` rather than changing in substance.** They are about
-  // what a fetch does — the status it reports, the signal it keeps, the body
-  // it bounds — and the default is now `'placeholder'`, under which a failure
-  // is a warning and the render finishes. That would leave every assertion
-  // below with nothing to read.
-  // **Every test here stubs `fetch`.** A test that dials out is a test that
-  // fails on an aeroplane, and worse, one whose failure mode is a DNS error
-  // dressed up as a renderer error — which is exactly what the two tests this
-  // replaced did once the surface started fetching.
+  // These pin `'throw'`: they are about what a fetch does, and under the default
+  // `'placeholder'` a failure is a warning with nothing to read. Every test stubs
+  // `fetch`, so none dials out or fails on DNS dressed as a renderer error.
   const withFetch = (handler: typeof fetch) => {
     const real = globalThis.fetch
     globalThis.fetch = handler
@@ -359,8 +349,8 @@ describe('a sequence', () => {
   })
 
   it('derives the page count from a duration and a rate', async () => {
-    // `ceil(duration * fps)`, as v1 derives it: a second at thirty is thirty
-    // pages, and a fraction of a page is still a page that has to be drawn.
+    // `ceil(duration * fps)`: a second at thirty is thirty pages, and a fraction of
+    // a page is still a page that has to be drawn.
     const { slots } = await arenaFor({ width: 10, height: 10, duration: 1, children: () => Text('x') })
     const rounded = await arenaFor({ width: 10, height: 10, duration: 0.1, fps: 24, children: () => Text('x') })
 
@@ -462,15 +452,9 @@ describe('the renderer Root reaches for when told nothing', () => {
   })
 
   it('resolves a percentage against the box rather than against a hundred times it', async () => {
-    // Measured in pixels, on purpose. The scene stores a percentage as a
-    // fraction where `1.0` is 100%, and this surface wrote `'50%'` as `50` for
-    // a while — five thousand per cent — while **every** test agreed: the case
-    // fixture probes each percentage property with `1`, and `'1%'` written as
-    // `1` is exactly Rust's `Percent(1.0)`. The round trip and the byte
-    // comparison both passed against the one value where the bug is invisible.
-    //
-    // So this asserts a rendered width. A comparison against Rust's bytes
-    // cannot catch a units error that Rust's own probe shares.
+    // Measured in pixels: the case fixture probes percentages with `1`, where `'1%'`
+    // without the division by a hundred equals Rust's `Percent(1.0)`, so a units
+    // error both surfaces share would pass every byte comparison.
     const covered = async (width: number | `${number}%`): Promise<number> => {
       const canvas = await Root({
         width: 200,
@@ -492,14 +476,9 @@ describe('the renderer Root reaches for when told nothing', () => {
   })
 
   it('reports the CPU when a float layout forces it, whatever was asked', async () => {
-    // v1 documents that a float `colorType` falls back to the CPU because no
-    // GPU composites float, and this is the only check that says the alias
-    // reaches a float variant at all: comparing buffers cannot, since a float
-    // layout changes compositing depth whether or not the engine fell back.
-    //
-    // **It claims only that.** `RGBAF16` and `RGBAF32` both report `cpu`, so
-    // swapping the two in the alias table would pass this. What it pins is that
-    // each names *a* float layout rather than an integer one.
+    // A float `colorType` falls back to the CPU, since no GPU composites float, and
+    // this is the only check that an alias reaches a float variant. It claims only
+    // that: `RGBAF16` and `RGBAF32` both report `cpu`, so swapping them passes.
     const engine = async (colorType?: ColorType): Promise<string> => {
       const canvas = await Root({ width: 8, height: 8, gpu: true, ...(colorType === undefined ? {} : { colorType }) })
       const settled = canvas.engine
@@ -518,28 +497,10 @@ describe('the renderer Root reaches for when told nothing', () => {
   })
 
   it('draws different pixels on the two rasterisers', async () => {
-    // The check a fake renderer cannot satisfy. An assertion against a fake can
-    // only say that a value was copied from one object to another, which stays
-    // true when nothing on the far side reads it.
-    //
-    // Two real renders that must differ cannot pass by copying a field. When no
-    // GPU backend is compiled in they are both the CPU and this says so rather
-    // than passing for the wrong reason.
-    //
-    // **A rounded box, and the curve is the whole point.** The two rasterisers
-    // resolve anti-aliased edges a level or two apart and agree exactly on a
-    // picture that has none, so the scene has to contain a curve for this to
-    // mean anything. A curve always does; text does not reliably.
-    //
-    // Measured, on this scene at 200×80: text differs at `fontSize: 23` and
-    // `24` and is **byte-identical at 16, 20, 22, 28, 32 and 48** — a narrow
-    // window rather than a threshold, which is why text is the wrong choice
-    // however large it is made. A rounded box differs at every radius from 8 to
-    // 30 and at every width tried. A square box agrees, as it should.
-    //
-    // A scene without a curve makes this fail rather than pass quietly, which
-    // is the right way round — but it fails for a reason that has nothing to do
-    // with the GPU, so change the scene knowing that.
+    // Two real renders that must differ, which a fake renderer cannot satisfy by
+    // copying a field; with no GPU backend compiled both are the CPU and this says
+    // so. The scene needs a curve: text differs between the rasterisers only at 23
+    // and 24px here, where a rounded box differs at every radius from 8 to 30.
     const of = async (gpu: boolean): Promise<Uint8Array> => {
       const canvas = await Root({
         width: 200,
@@ -830,12 +791,9 @@ describe('a signal is composed rather than overridden', () => {
     }
   }
 
-  // **A signal is a channel, not a value.** Every other member of `RequestInit`
-  // is something the source states, and the source stating it again is an
-  // override. A signal is the caller's kill switch, and letting a source
-  // replace it puts a hole in that switch exactly where someone was specific —
-  // which contradicts what this module already defends: a caller who aborted
-  // asked for the render to stop, and is not a missing image.
+  // A signal is a channel, not a value: the caller's kill switch, which a source's
+  // own signal composes with rather than replaces, so a caller who aborted still
+  // stops the render.
   it('still aborts a source that brought its own when the root aborts', async () => {
     const seen = await signalsFor({
       width: 10,
