@@ -1,13 +1,7 @@
-//! Runs the binary and checks what a script would see.
-//!
-//! The exit codes are a documented contract, and `exit_code_for`'s unit test
-//! covers the mapping rather than the program: a script branching on 5 against
-//! 6 depends on the *process* returning it. Only spawning the binary checks the
-//! whole path from an argv to a status.
-//!
-//! `CARGO_BIN_EXE_meo-canvas` is set by cargo for an integration test of a
-//! crate that builds `meo-canvas`, so the path is the binary this test run just
-//! compiled rather than whatever is on `PATH`.
+//! Runs the binary and checks what a script would see: `exit_code_for`'s unit
+//! test covers the mapping, and only spawning the process checks the path from
+//! argv to status. `CARGO_BIN_EXE_meo-canvas` is the binary this test run
+//! compiled.
 
 use std::{
     path::{Path, PathBuf},
