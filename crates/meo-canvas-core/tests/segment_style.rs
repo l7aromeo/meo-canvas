@@ -1,21 +1,6 @@
-//! A `RichText` segment's own styling reaching the drawing.
-//!
-//! # Why this is a whole file
-//!
-//! Because the defect it guards was silent on both surfaces and the feature
-//! demonstrably worked: `fontSize` and `fontWeight` on a segment have always
-//! applied, so a caller who tried per-run styling with a bold run and shipped a
-//! coloured one got no signal at all. The keys that failed were the ones with
-//! no field to travel in -- `RunStyle` carried `family`, `size`, `weight`,
-//! `italic` and `variant`, and those are exactly the keys that worked.
-//!
-//! # Every case is a pair
-//!
-//! A row asserting only that a styled segment differs from an unstyled one
-//! would pass on a renderer that drew nothing at all. So each property is also
-//! set at **node** level, which is the path that already worked, and the node
-//! row is what proves the scene can show that property before the segment row
-//! is allowed to mean anything.
+//! A `RichText` segment's own styling reaching the drawing. Each property is
+//! also set on the node, the path known to show it, so a renderer that drew
+//! nothing cannot pass by the segment differing from an unstyled one.
 
 use meo_canvas_core::{
     ImageFormat, Renderer, encode::EncodeOptions, resolve::Fonts,

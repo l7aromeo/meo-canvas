@@ -1,22 +1,7 @@
-//! A page as tall as what is in it, which is what v1 does when a height is
-//! left out.
-//!
-//! # Why the picture is measured rather than the layout
-//!
-//! Because the claim is about the **surface**, not about the solve. Layout
-//! could resolve a root to any height at all and still be painted onto a sheet
-//! of the size the scene stated, which is exactly what happened before: the
-//! surface was allocated from `scene.size` before layout had run, so a height
-//! it derived had nowhere to go. Reading the encoded PNG's own header is the
-//! only assertion that distinguishes "solved a height" from "made a canvas that
-//! tall".
-//!
-//! # The control is the same scene with a stated height
-//!
-//! Content sizing that agreed with a stated height on every scene would be
-//! indistinguishable from ignoring the flag, so each case is run twice: once
-//! asking for the content's height and once stating a different one. A pair
-//! that reports the same number twice is measuring nothing.
+//! A page as tall as its content, measured from the encoded PNG's own header,
+//! since layout could solve any height and still paint onto a sheet of the
+//! stated size. Each case also runs with a different stated height as the
+//! control.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{

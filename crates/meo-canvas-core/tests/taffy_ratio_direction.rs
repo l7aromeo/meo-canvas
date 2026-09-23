@@ -1,47 +1,7 @@
-//! A taffy defect we compensate for, pinned so that fixing it cannot pass
-//! unnoticed.
-//!
-//! # What is wrong
-//!
-//! **A ratio box whose inline size is an outcome of layout has its axes
-//! resolved in the wrong order.** taffy derives the *width* from the block size
-//! rather than deriving the block size from a fit-content width, so every ratio
-//! box in a solved tree satisfies `width = round(height x ratio)`.
-//!
-//! ```text
-//! ratio 0.85, a 30x10 child, shrink-to-fit parent   taffy 9 x 10    Chrome 29.98 x 35.28
-//! ratio 2.0,  the same child                        taffy 20 x 10   Chrome 30 x 15
-//! ```
-//!
-//! 9 is `round(10 x 0.85)` and 20 is `10 x 2.0`. Chrome takes the inline size
-//! as fit-content and derives the block size from it, transferring back to the
-//! inline axis only when some other term -- the content's own height, or an
-//! author `min-height` -- wins the block size instead.
-//!
-//! # Why the assertions are of the wrong numbers
-//!
-//! A test asserting Chrome's values would fail, and a failing test cannot be
-//! committed. So this pins what taffy actually does, with the right answer
-//! beside it: **the day taffy is fixed, this fails, and the failure is the
-//! notification** that the compensation in `layout.rs` can be deleted. Grep
-//! `[WORKAROUND]` to find it.
-//!
-//! The same shape is measured against Chrome from the other side, through the
-//! renderer rather than through taffy alone, in
-//! `crates/meo-canvas/tests/assets/chrome/aspect-ratio-percentage.tsv` --
-//! `ratio-shrink-issue-97` and the rows beside it.
-//!
-//! # The control
-//!
-//! [`clearing_the_ratio_restores_the_fit_content_width`] is why the
-//! compensation is possible at all: taffy computes the inline size correctly
-//! when the ratio is absent. Without that row this file would say the defect
-//! exists and nothing about whether it can be worked around.
-//!
-//! Upstream: `DioxusLabs/taffy#804`, tracked as `l7aromeo/meo-canvas#97` for
-//! the shrink-to-fit rows. The definite-width rows are
-//! `l7aromeo/meo-canvas#104`, which has no upstream issue of its own.
-//! Reproduced against taffy 0.14.0.
+//! Pins an inherited taffy defect: a ratio box whose inline size is a layout
+//! outcome gets `width = round(height x ratio)` -- 9 x 10 where Chrome gives
+//! 29.98 x 35.28. Asserts taffy's numbers, so a fix fails here and the
+//! `[WORKAROUND]` in `layout.rs` can go. `DioxusLabs/taffy#804`.
 
 use meo_canvas_core::layout::to_taffy_style;
 use meo_canvas_scene::style::{layout::LayoutStyle, paint::BorderStyle};
@@ -49,11 +9,8 @@ use meo_canvas_scene::style::{layout::LayoutStyle, paint::BorderStyle};
 /// The ratio every row here uses, matching the conformance table's.
 const RATIO: f32 = 0.85;
 
-/// Solves a shrink-to-fit box holding one 30x10 child and reports its size.
-///
-/// Built from `to_taffy_style`'s own output rather than a hand-written
-/// `taffy::Style`, because a reconstruction would be a claim about the
-/// translation as well as about taffy.
+/// Solves a shrink-to-fit box holding one 30x10 child and reports its size,
+/// built from `to_taffy_style`'s output so the translation is under test too.
 fn shrink_box(ratio: Option<f32>) -> (f32, f32) {
     let style = to_taffy_style(
         &LayoutStyle {
@@ -146,17 +103,10 @@ fn clearing_the_ratio_restores_the_fit_content_width() {
     );
 }
 
-/// The second workaround's defect: a content-derived floor is transferred.
-///
-/// **CSS has two minimums and taffy has one slot.** An automatic minimum block
-/// size, taken from the content, does **not** transfer back into the inline
-/// axis; an author's `min-height` does. taffy's `min_size.height` behaves like
-/// the second, so a content-derived floor written there takes a 100-wide box to
-/// 255 -- Chrome keeps it at 100 and makes it 300 tall.
-///
-/// This is why `l7aromeo/meo-canvas#104` is compensated by clearing the ratio
-/// rather than by writing a floor. The day taffy distinguishes the two, this
-/// fails and the compensation can go.
+/// A content-derived floor is transferred: taffy's one `min_size.height` slot
+/// acts as an author `min-height`, taking a 100-wide box to 255 where Chrome
+/// keeps 100 and grows to 300. So `l7aromeo/meo-canvas#104` clears the ratio
+/// instead.
 #[test]
 fn a_content_derived_floor_is_transferred_into_the_width() {
     let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();
@@ -214,22 +164,10 @@ fn a_content_derived_floor_is_transferred_into_the_width() {
     );
 }
 
-/// The second workaround's defect as the compensation actually meets it: no
-/// author minimum anywhere, and the ratio caps the box.
-///
-/// **This is the row `floor_ratio_heights` exists for, and it is not the row
-/// above.** That one writes an author `min-height` and pins that taffy
-/// transfers it into the width -- which is what CSS asks for, so it can only
-/// fire if taffy stops doing something correct. It says why a floor cannot be
-/// written; it says nothing about whether the defect is still there. The
-/// `[WORKAROUND]` at `layout.rs` names two retirement conditions,
-/// "distinguishes the two" and "applies the automatic minimum itself", and only
-/// the first is visible from that row. On the second -- the likelier fix -- the
-/// compensation would go dead with every test in this tree still green.
-///
-/// So this pins the defect itself. 118 is `round(100 / 0.85)`: taffy takes the
-/// ratio-derived height as a ceiling where CSS gives a ratio box an automatic
-/// minimum block size from its content, which a non-scrolling box keeps.
+/// The second defect as the compensation meets it: with no author minimum, the
+/// ratio caps a definite-width box at 118 (`round(100 / 0.85)`) where CSS gives
+/// it an automatic minimum from its content. Without this row, a taffy fix of
+/// that kind would leave the compensation dead with every test still green.
 #[test]
 fn a_ratio_caps_a_definite_width_box_with_no_author_minimum() {
     let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();
@@ -242,11 +180,8 @@ fn a_ratio_caps_a_definite_width_box_with_no_author_minimum() {
             ..taffy::Style::default()
         })
         .unwrap_or_else(|error| unreachable!("{error}"));
-    // Through `to_taffy_style` rather than a hand-written `taffy::Style`, as
-    // every other row here is: `LayoutStyle::default()` is `Display::Block` and
-    // a bare `taffy::Style` is too, so the two agree today and agreeing is not
-    // the point. A reproduction that names its own display is measuring a box
-    // it chose; this one measures the box the renderer builds.
+    // Through `to_taffy_style`, as every row here is, so this measures the box
+    // the renderer builds rather than one the test chose.
     let style = to_taffy_style(
         &LayoutStyle {
             aspect_ratio: Some(RATIO),
@@ -292,16 +227,11 @@ fn a_ratio_caps_a_definite_width_box_with_no_author_minimum() {
     );
 }
 
-/// The property the second workaround depends on, as the first has its own.
-///
-/// A ratio-cleared solve of a definite-width block box reports the content's
-/// height at that width -- which is the quantity Chrome floors with, measured:
-/// text 100 wide is 120 tall with a ratio and 120 without, against 160 at its
-/// min-content width. If this stopped holding, the compensation would floor
-/// with the wrong number and every conformance row would stay green.
-// [FOUNDATION] the property `floor_ratio_heights` rests on, as the row above
-// is the first compensation's. The paragraph above says what a change here
-// would cost; the tag is what makes it findable from the other end.
+/// A ratio-cleared solve of a definite-width box reports the content's height.
+// [FOUNDATION] the property `floor_ratio_heights` rests on: that height is the
+// one Chrome floors with (text 100 wide is 120 tall with or without a ratio,
+// 160 at min-content). If it stopped holding, the compensation would floor with
+// the wrong number and every conformance row would stay green.
 #[test]
 fn clearing_the_ratio_reports_the_content_height_at_that_width() {
     let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();

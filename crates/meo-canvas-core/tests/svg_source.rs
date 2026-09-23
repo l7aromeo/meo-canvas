@@ -1,20 +1,7 @@
-//! An SVG source is rasterised for the surface it lands on, not for its own
-//! stated size.
-//!
-//! # Why this file exists
-//!
-//! The unit tests beside `raster` prove the document is rasterised at the size
-//! it is *asked* for. **They cannot see what asks.** A painter that asked in
-//! layout pixels would pass every one of them and still draw a page at
-//! `scale: 2` from a raster half the surface's resolution -- which is the
-//! bitmap upscale that keeping the document was meant to avoid.
-//!
-//! So this measures the pixels. A diagonal edge rasterised at device
-//! resolution steps one pixel at a time; the same edge rasterised at layout
-//! resolution and drawn twice as large steps two, and **every one of its
-//! transitions lands on an even column**. That is a property of the upscale
-//! rather than of the drawing, which is what makes it a test rather than a
-//! golden.
+//! An SVG source is rasterised for the surface it lands on, not its own size.
+//! The unit tests beside `raster` see the size asked for, not what asks, so
+//! this reads pixels: rasterised in layout pixels and scaled up, a diagonal
+//! edge's blend spreads over twice as many part-covered pixels.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -35,24 +22,16 @@ const WEDGE: &str = concat!(
 );
 
 /// A document authored for `currentColor`, and the same drawing with its fill
-/// written out.
-///
-/// The pair is the point: a tint recolours the first and leaves the second
-/// exactly as its author wrote it, and **that is the row that would have
-/// caught a tint implemented as a string replace over every `fill`.**
+/// written out: a tint recolours the first and not the second, which is what
+/// catches a tint done as a string replace over every `fill`.
 const CURRENT_COLOR: &str = concat!(
     r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" "##,
     r##"viewBox="0 0 20 20"><rect width="20" height="20" "##,
     r##"fill="currentColor"/></svg>"##
 );
 /// A document that declares its own `color` and paints with `currentColor`.
-///
-/// **The row that makes "absent" mean something.** With no tint the document's
-/// own green is what `currentColor` resolves to; the mutation that calls
-/// `set_current_color(black)` when nothing was asked for replaces a colour the
-/// root declared, and this is the only case where that is visible -- SVG's
-/// initial `color` is black, so a document with no `color` of its own renders
-/// identically either way.
+/// SVG's initial `color` is black, so only a document with its own colour shows
+/// the difference between no tint and a black one.
 const SELF_COLOURED: &str = concat!(
     r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" "##,
     r##"viewBox="0 0 20 20" color="#00ff00"><rect width="20" height="20" "##,
@@ -158,19 +137,10 @@ fn drawn(scale: f32) -> (usize, Vec<u8>) {
     (info.width as usize, bytes)
 }
 
-/// How many pixels sit between ink and paper -- the softness of the edge.
-///
-/// **Two discriminators were tried before this one.** Where a row's ink
-/// *starts* is column zero on every row, because the wedge's diagonal is its
-/// right edge, so it could not separate anything. Where it *ends*, and whether
-/// those ends step by one column or two, does separate a doubled raster in
-/// principle and not in practice: the upscale is smoothed rather than blocky,
-/// so its ends step by one as well and the mutation passed.
-///
-/// What does separate them is how far the smoothing spreads. A document
-/// rasterised at device resolution has about one part-covered pixel per row
-/// along the diagonal; the same document rasterised at half that and scaled up
-/// has the blend spread over two, plus the interpolation's own ramp.
+/// How many part-covered pixels lie between ink and paper along the edge. Where
+/// a row's ink starts or ends cannot separate the two rasters, since the
+/// upscale is smoothed and steps by one too; how far the blend spreads can --
+/// about one pixel per row at device resolution, two when scaled.
 fn edge_softness(width: usize, bytes: &[u8]) -> usize {
     let height = bytes.len() / (width * 4);
     (0..height)
@@ -188,11 +158,9 @@ fn a_document_is_rasterised_for_the_surface_and_not_for_itself() {
     assert_eq!(width, 40, "a 20pt page at scale 2 is 40 pixels wide");
 
     let softness = edge_softness(width, &bytes);
-    // **Measured both ways rather than reasoned about.** Rasterising for the
-    // surface gives 20 part-covered pixels over the whole edge; asking in
-    // layout pixels and letting the draw call scale gives 118. The bound sits
-    // between them with room on each side, so neither antialiasing noise nor
-    // a change of one pixel's coverage moves the answer.
+    // Measured both ways: rasterising for the surface gives 20 part-covered
+    // pixels, asking in layout pixels gives 118. The bound sits well
+    // between them.
     assert!(
         softness < 60,
         "the wedge's edge is {softness} pixels of blend, where a document \
@@ -222,15 +190,10 @@ fn a_colour_recolours_a_document_that_asked_for_one() {
         "a `currentColor` document did not take the colour it was given"
     );
 
-    // **Absent is absent, and the first version of this row could not say
-    // so.** Asserting that an untinted `currentColor` document renders black
-    // passes for a renderer that sets black when nothing was asked for --
-    // because SVG's own initial `color` is black, so the two are the same
-    // picture. Measured: the mutation passed.
-    //
-    // A document that declares its own `color` is where they separate. With
-    // nothing set it keeps its green; setting black "for consistency" would
-    // replace a colour its author wrote.
+    // Absent is absent: an untinted `currentColor` document renders black
+    // either way, since SVG's initial `color` is black. A document
+    // declaring its own `color` is where a tint set "for consistency" would
+    // show.
     assert_eq!(tinted(CURRENT_COLOR, None), [0, 0, 0]);
     assert_eq!(
         tinted(SELF_COLOURED, None),
@@ -334,11 +297,8 @@ const MARKS: &str = concat!(
 /// The cell colour, which is what "not ink" means below.
 const CELL: (u8, u8, u8) = (240, 240, 240);
 
-/// Renders one source at one fit and returns the bounding box of its ink.
-///
-/// Reads [`ImageFormat::Raw`] rather than a PNG because the question is where
-/// the picture landed, and a decode step between the paint and the assertion
-/// is one more thing that can be wrong.
+/// Renders one source at one fit and returns the bounding box of its ink. Reads
+/// [`ImageFormat::Raw`], so no decode sits between the paint and the assertion.
 fn ink(
     source: ImageSource,
     fit: ObjectFit,
@@ -396,12 +356,8 @@ fn ink(
     (left, top, right - left + 1, bottom - top + 1)
 }
 
-/// The same document rasterised at its own size, as PNG bytes.
-///
-/// **The control is generated rather than committed**, so the two source kinds
-/// are provably the same picture. A committed bitmap would be a second asset
-/// that could drift from the document and turn a divergence in the drawing
-/// into a divergence in the art.
+/// The same document rasterised at its own size, as PNG bytes. Generated rather
+/// than committed, so the two source kinds are provably one picture.
 fn marks_as_raster() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(8.0, 4.0));
     let id = scene
@@ -428,33 +384,10 @@ fn marks_as_raster() -> Vec<u8> {
         .unwrap_or_else(|error| unreachable!("it did not render: {error}"))
 }
 
-/// Every object-fit rule but `fill` puts a document where it puts a bitmap.
-///
-/// **`fill` differing is correct, and this test exists to stop it being
-/// "fixed".** An `<img>` whose source is a document with a `viewBox` and no
-/// `preserveAspectRatio` carries SVG's default, `xMidYMid meet`: `object-fit`
-/// sizes the replaced element, and the document then fits itself inside that
-/// uniformly and centres it. So a stretch never reaches the drawing, and the
-/// visible result is `contain`'s rectangle. Chrome does exactly this --
-/// `tests/assets/chrome/object-fit.tsv` has `fill` and `contain` on the same
-/// rectangle for every `svg` row and on different ones for every `raster` row,
-/// at all three box sizes.
-///
-/// The other four rules preserve the source's aspect, so the document fills
-/// what it is given and the two kinds agree.
-///
-/// **Written the other way round first, and the table refused it.** Making the
-/// kinds agree under `fill` took a renderer that matched Chrome on all thirty
-/// rows and broke three of them.
-///
-/// `l7aromeo/meo-canvas#95` is where this was reported, and it expects the two
-/// kinds to agree -- true only at its own box, 200x133 against 60x40 art, where
-/// a correct implementation draws 199.5x133 and a copy of the bitmap's rule
-/// draws 200x133. Half a pixel apart, inside the slack that issue declares for
-/// a vector edge. The placement itself was wrong until `meo-skia-canvas` 0.16.1
-/// (`l7aromeo/meo-skia-canvas#212`); measured on 0.16.0,
-/// `fill`, `contain` and `cover` are wrong at every box here and `scale-down`
-/// at 6x6.
+/// Every object-fit rule but `fill` places a document where it places a bitmap.
+/// `fill` differs correctly: a document with a `viewBox` keeps SVG's default
+/// `xMidYMid meet` and fits itself inside the stretched box, as `contain` does;
+/// `tests/assets/chrome/object-fit.tsv` shows Chrome doing the same.
 #[test]
 fn a_document_is_placed_like_a_bitmap_except_where_it_fits_itself() {
     let raster = marks_as_raster();

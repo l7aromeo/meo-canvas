@@ -1,22 +1,6 @@
-//! Claims the README makes, asserted against the manifest rather than read.
-//!
-//! # Why prose needs a test at all
-//!
-//! `crates/meo-canvas-core/README.md` said **"Fetch-free and runtime-free"**
-//! for as long as it was true, and went on saying it after the `net` feature
-//! landed. **Nothing failed**: no test covers prose, the claim was still
-//! syntactically fine, and the only signal was a person reading it against the
-//! code. That is the worst kind of stale -- an outward-facing statement that is
-//! wrong in the one file a user actually reads.
-//!
-//! **A claim with a test behind it is not prose any more.** This file pins the
-//! part of that sentence a machine can check: which features are on by default.
-//! The rest of it -- *no async runtime either way* -- is pinned by the
-//! `runtime-free` recipe, which reads the dependency tree.
-//!
-//! What cannot be pinned here stays prose and is honest about it: whether text
-//! is *shaped by Skia and broken into lines here* is architecture, and only a
-//! reader can check it.
+//! Claims the README makes, asserted against the manifest: which features are
+//! on by default. The `runtime-free` recipe pins "no async runtime either way";
+//! that text is shaped and broken here is architecture and stays prose.
 
 /// The manifest this crate is built from, read at compile time.
 const MANIFEST: &str = include_str!("../Cargo.toml");
@@ -33,11 +17,9 @@ fn default_features() -> &'static str {
 
 #[test]
 fn fetching_is_not_on_by_default() {
-    // **The claim: an unresolved URL is an error unless a build asks for the
-    // network.** Asserted against the manifest rather than against
-    // `cfg!(feature = "net")`, which would only describe however *this* test
-    // was compiled -- `--all-features` would make it pass while saying
-    // nothing, and that is the failure mode the whole file is about.
+    // An unresolved URL is an error unless a build asks for the network,
+    // asserted on the manifest: `cfg!(feature = "net")` describes only how this
+    // test was compiled, so `--all-features` would pass it.
     let default = default_features();
     assert!(
         !default.contains("net"),

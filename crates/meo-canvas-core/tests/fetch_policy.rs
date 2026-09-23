@@ -1,15 +1,7 @@
-//! The size limit and the timeouts, through the path a caller reaches.
-//!
-//! **Only the size case is here.** The global timeout was verified the same
-//! way and is not committed: a host that accepts a connection and says nothing
-//! returns `FetchFailure::Transport` with `"timeout: global"` after **60.1
-//! seconds**, measured once. A minute of a gate to re-prove a constant is not
-//! worth it, and a test that sleeps for a minute is one people learn to skip.
-//!
-//! That measurement is the one that matters, though, so it is written down
-//! rather than assumed: the timeout spans `read_to_vec`, which happens after
-//! `.call()` returns. A clock that stopped at the response header would have
-//! left the hang exactly where it was and looked like a fix.
+//! The size limit and the timeouts, through the path a caller reaches. Only the
+//! size case is committed: the global timeout, verified once at 60.1 seconds,
+//! spans `read_to_vec` after `.call()` returns, and a minute-long test is one
+//! people learn to skip.
 #![cfg(feature = "net")]
 
 use std::{io::Write, net::TcpListener};
@@ -30,12 +22,9 @@ fn scene_naming(url: String) -> Scene {
 /// The same, with options on the source.
 fn scene_sending(url: String, http: HttpOptions) -> Scene {
     let mut scene = Scene::new(Size::new(64.0, 64.0));
-    // **`Throw`, because this file is about the classification rather than the
-    // policy.** The default is `Placeholder`, under which an oversized image
-    // is softened into a warning and the render finishes -- which is the right
-    // default and would make every assertion below unreachable. The warning
-    // carries the same `failure` value this checks, copied from the same
-    // error, so pinning it here pins it for both paths.
+    // `Throw`, since this file is about the classification: under the default
+    // `Placeholder` an oversized image becomes a warning carrying the same
+    // `failure` value, so pinning it here pins both paths.
     scene.on_image_error = OnImageError::Throw;
     let root = scene
         .root()
@@ -108,14 +97,9 @@ fn an_image_past_the_limit_says_so_in_this_crate_s_own_words() {
     );
 }
 
-/// Reads the request before answering it.
-///
-/// **Without this the server is the defect.** Closing a socket with the
-/// request still unread in the kernel's receive buffer sends an RST, which
-/// discards whatever the client had not yet read -- so a 1 MiB response came
-/// back as "Peer disconnected" with no timeouts configured and
-/// "Invalid argument (os error 22)" with them, and both look exactly like a
-/// library fault.
+/// Reads the request before answering: closing with it unread sends an RST that
+/// discards the response, which surfaces as "Peer disconnected" or "os error
+/// 22" and looks exactly like a library fault.
 fn drain_request(stream: &std::net::TcpStream) {
     use std::io::{BufRead, BufReader};
     let Ok(clone) = stream.try_clone() else {
@@ -131,12 +115,8 @@ fn drain_request(stream: &std::net::TcpStream) {
     }
 }
 
-/// Serves one 1x1 PNG and hands back the request line and headers it read.
-///
-/// The request is returned rather than asserted on inside the thread: an
-/// assertion that fails on a spawned thread fails the *thread*, and the test
-/// carries on to whatever it does next with the panic recorded nowhere a
-/// reader will look.
+/// Serves one 1x1 PNG and returns the request line and headers it read, rather
+/// than asserting in the thread, where a failure fails only the thread.
 fn recording() -> (String, std::sync::mpsc::Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| unreachable!("{error}"));

@@ -1,61 +1,7 @@
-//! The cross size a ratio box takes in a **row** container, which is the half
-//! of the ratio compensation nothing else exercises.
-//!
-//! # What this pins
-//!
-//! `derived_cross` in `crates/meo-canvas-core/src/layout.rs` writes the size a
-//! ratio'd item should have taken when the solve did not give it one. Its two
-//! arms are the parent's direction: a column container derives a **width**
-//! from a height, and a row container derives a **height** from a width. The
-//! column arm is asserted from several directions -- the conformance table in
-//! `crates/meo-canvas/tests/assets/chrome/flex-ratio-cross.tsv` is built on a
-//! column container, and every row of it lands there. **The row arm was
-//! reached by nothing.**
-//!
-//! Found by neutering it: returning `None` from the row arm before the write
-//! left the whole of `meo-canvas-core` and `meo-canvas` green -- 65 summary
-//! lines, no failures. A print inside the arm then showed the stronger fact,
-//! that no test in either crate *enters* it at all.
-//!
-//! # Why a ratio of one hides this branch, and why both rows here avoid it
-//!
-//! The arm writes `height = width / ratio`. **At `ratio: 1` that is
-//! `height = width`, which is also what several unrelated rules produce**, so
-//! a row-container case at ratio one agrees with the compensated answer
-//! whether or not the compensation ran. The first scene tried here was exactly
-//! that -- a bound `min-width: 300` at ratio one -- and it gives `300 x 300`
-//! with the arm live and `300 x 300` with it neutered. **The branch fires and
-//! changes nothing**, which is indistinguishable from a branch that never
-//! fired, and is why a test written around it would have passed in both
-//! directions.
-//!
-//! So both asserted rows sit **off** ratio one, and on opposite sides of it,
-//! which also pins the direction of the derivation rather than only its
-//! existence:
-//!
-//! ```text
-//! ratio 0.5   arm live 300 x 600   arm neutered 300 x 248
-//! ratio 2     arm live 300 x 150   arm neutered 424 x 248
-//! ```
-//!
-//! `248` is the container's own content height, so the neutered answer is the
-//! stretch rather than the derivation -- a number that arrives from somewhere
-//! else entirely and could not be mistaken for a rounding difference. `600`
-//! overflows the container by more than twice its height and `150` falls well
-//! inside it, so no single unrelated rule produces both.
-//!
-//! # What this file does not claim
-//!
-//! **It is not a browser comparison.** No row here is measured against Chrome;
-//! the conformance tables do that, and adding a row to one of them is a
-//! separate question from whether this branch is asserted at all. What is
-//! pinned is the decision the branch makes, in the terms the branch makes it.
-//!
-//! **It carries no `[FOUNDATION]` marker**, because it rests on no property of
-//! the dependency. The compensation for `l7aromeo/meo-canvas#129` names
-//! `crates/meo-canvas-core/tests/taffy_flex_ratio.rs` as its probe, and that
-//! is where the marked row belongs. This file asserts what the compensation
-//! itself does, which is a different question and needs a different file.
+//! The cross size a ratio box takes in a row container: `derived_cross`'s row
+//! arm, `height = width / ratio`, which nothing else reaches. Both rows sit off
+//! ratio one -- 0.5 gives 300 x 600 and 2 gives 300 x 150 -- since at one,
+//! unrelated rules coincide with the answer. Not a browser comparison.
 
 use meo_canvas_core::{Available, Measure, MeasuredLeaf, layout::solve};
 use meo_canvas_scene::{
@@ -89,12 +35,9 @@ const HEIGHT: f32 = 248.0;
 /// which is what declines the pin and reaches the derivation.
 const MINIMUM: f32 = 300.0;
 
-/// One empty ratio box in a `424x248` row container, solved.
-///
-/// **Hand-assembled, so the item is `Display::Block`** -- the scene default,
-/// and what a `<div>` is. A scene built through the authoring surface's
-/// factories would be a flex container instead, which is a different scene and
-/// not the one these numbers were taken from.
+/// One empty ratio box in a `424x248` row container, solved. Hand-assembled, so
+/// the item is `Display::Block`, which is what a `<div>` is and what these
+/// numbers were taken from.
 fn item(ratio: f32, grow: f32, minimum: Option<f32>) -> (f32, f32) {
     let mut scene = Scene::new(Size::new(WIDTH, HEIGHT));
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
@@ -151,14 +94,9 @@ fn a_bound_minimum_in_a_row_derives_a_height_below_the_container() {
     );
 }
 
-/// The derived height is the width over the ratio, in both directions.
-///
-/// **The relationship rather than the two magnitudes**, because the
-/// magnitudes are what an unrelated rule can coincide with and the
-/// relationship is what the branch decides. Neither assertion substitutes for
-/// the other: this one would survive a scene change that moved both numbers
-/// together, and the two above would survive a ratio that was read but never
-/// divided by.
+/// The derived height is the width over the ratio, in both directions: the
+/// relationship survives a scene change that moves both magnitudes, and the
+/// magnitudes catch a ratio that is read but never divided by.
 #[test]
 fn the_derived_height_is_the_width_over_the_ratio() {
     for ratio in [0.5_f32, 2.0] {
@@ -172,15 +110,9 @@ fn the_derived_height_is_the_width_over_the_ratio() {
     }
 }
 
-/// A row container taffy already resolves correctly keeps its size.
-///
-/// **The control, and it is the reason the branch is narrow rather than
-/// load-bearing everywhere.** A grown item with no minimum already satisfies
-/// `height == width / ratio` after the first solve, so `derived_cross` returns
-/// `None` and writes nothing. If this row ever moved, the compensation would
-/// have started rewriting sizes that were already right -- which is a
-/// different defect from the one it exists for, and the two would be
-/// indistinguishable from the rows above alone.
+/// A row the solve already gets right keeps its size: `derived_cross` returns
+/// `None` for a grown item with no minimum. If this moved, the compensation
+/// would be rewriting sizes that were already right.
 #[test]
 fn a_row_the_solve_already_gets_right_is_left_alone() {
     let (width, height) = item(2.0, 1.0, None);

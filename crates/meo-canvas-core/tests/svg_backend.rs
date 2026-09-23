@@ -1,28 +1,6 @@
-//! The SVG document API the 0.15 backend adds, exercised at our feature set.
-//!
-//! # Why this test exists at all
-//!
-//! `meo-skia-canvas` 0.15.0 is the first version carrying [`Svg`], and nothing
-//! in this repository consumes SVG as an image source yet. So the bump would
-//! otherwise be a version number with no assertion behind it, and the way to
-//! tell a dependency actually moved is to name something that only exists after
-//! it did.
-//!
-//! **This file cannot compile against 0.14.** `Svg` is not in that version, so
-//! reverting the pin fails the build rather than failing an assertion. That is
-//! the reversion control here, stated rather than dressed up as a runtime
-//! check: a bump adds surface, and a test that still compiled without it would
-//! be testing nothing.
-//!
-//! # What is deliberately not asserted
-//!
-//! **That `set_current_color` changes the drawing.** It is called here and the
-//! rasterization is checked to still succeed, which is the linkage claim. The
-//! visual effect needs pixels, and an [`Image`] exposes no pixel accessor with
-//! `default-features = false` -- reading it back means building a
-//! `crate::paint::Surface` and going through `encode`, which is plumbing that
-//! belongs with the SVG node rather than with a dependency bump. Whoever lands
-//! that node owns the measurement, where the surface already exists.
+//! The `meo-skia-canvas` SVG document API, [`Svg`], at this crate's feature
+//! set: it links and rasterises with `set_current_color` applied. Whether the
+//! tint changes the drawing is asserted in `svg_source.rs`, which reads pixels.
 
 use meo_skia_canvas::{RgbaLinear, image::Svg};
 

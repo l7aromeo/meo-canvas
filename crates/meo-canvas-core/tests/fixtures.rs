@@ -1,54 +1,7 @@
-//! Renders every golden fixture and compares it against its committed image.
-//!
-//! Executing a fill proves the line ran, not that the pixels are right. This is
-//! the only check in the project that looks at the picture.
-//!
-//! # Why the comparison is exact
-//!
-//! Measured rather than assumed: one scene with text, descenders and digits,
-//! rendered five times -- twice in one process with separate renderers, three
-//! times through separate invocations of the CLI -- produced a single SHA-256.
-//! So there is no tolerance here and no threshold to justify. A disagreement is
-//! a regression until someone measures otherwise, and a tolerance argued from a
-//! measured disagreement is a different object from one argued from an
-//! anticipated one.
-//!
-//! The evidence is one architecture and one Skia build. A second machine
-//! disagreeing is the moment to revisit this, with its diff in hand.
-//!
-//! ## The GPU is pinned off, and that is load-bearing
-//!
-//! A build with the Metal backend compiled does **not** produce the same bytes
-//! as one without, and a single scene of text is the measurement that cannot
-//! show it: text is the case where the two rasterisers agree.
-//!
-//! Run with `--features metal`, **eight of the ten fixtures differ**:
-//! `box-shadow` by 6129 pixels, `z-order` by 7560, `gradients` by 2705,
-//! and `baseline-alignment`, `borders-per-edge`, `object-fit`,
-//! `overflow-clip` and `text-descenders` besides. The two that agree are
-//! `block-stacking` and `block-stacking-relative`, which draw nothing but
-//! axis-aligned rectangles.
-//!
-//! The dividing line is anti-aliased edges: a curve has them at every size, and
-//! glyphs have them only at some -- text at 16, 20 and 22 is byte-identical
-//! between the two, 23 and 24 differ, and 28, 32 and 48 agree again. So a
-//! golden with no curve in it says nothing about the rasteriser, and one with a
-//! curve says the two disagree.
-//!
-//! Hence [`fixture_renderer`] sets `gpu` to false rather than taking
-//! `Renderer::new`'s default of true. Without it this suite passes or fails on
-//! a build flag, which is exactly the kind of thing the rest of this section is
-//! about not letting a host decide.
-//!
-//! # What the harness pins
-//!
-//! Everything a host could otherwise supply. The renderer registers exactly one
-//! font, from this repository; the scale is fixed here; the rasteriser is the
-//! CPU whatever the build compiled; and a fixture naming
-//! any other family is an error rather than a resolution -- because
-//! [`meo_canvas_core::resolve::Fonts`] answers `has_family` from the platform's
-//! installed faces as well as the registered ones, so a fixture asking for
-//! Helvetica would render on this machine and differ on any other.
+//! Renders every golden fixture and compares it byte for byte: one scene
+//! rendered five times gave one SHA-256, so there is no tolerance. The harness
+//! pins one font, scale 1 and the CPU, since Metal moves eight fixtures'
+//! anti-aliased edges.
 
 use std::{
     collections::BTreeSet,
@@ -58,18 +11,12 @@ use std::{
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{Scene, node::NodeKind};
 
-/// The one family a fixture may name.
-///
-/// A fixed name rather than the face's own, so the fixture files say which font
-/// they mean without depending on what the file happens to be called or on what
-/// its internal name is.
+/// The one family a fixture may name: fixed, so fixture files do not depend on
+/// the face's file name or internal name.
 const FIXTURE_FAMILY: &str = "Fixture";
 
-/// The scale every fixture renders at.
-///
-/// One. A fixture is a picture of the layout, and a device scale multiplies
-/// pixels without changing what is drawn, so rendering at two would quadruple
-/// every committed image to prove nothing extra.
+/// The scale every fixture renders at. A device scale multiplies pixels without
+/// changing what is drawn, so two would quadruple every image to prove nothing.
 const FIXTURE_SCALE: f32 = 1.0;
 
 /// The face registered as [`FIXTURE_FAMILY`].
@@ -88,17 +35,9 @@ fn fixtures_dir() -> PathBuf {
         })
 }
 
-/// Where a failing fixture leaves its evidence. Untracked.
-///
-/// The directory is created before it is canonicalised, because a path that
-/// does not exist cannot be resolved and the message names it either way -- a
-/// report saying `crates/meo-canvas-core/../../target/...` is one the reader
-/// has to mentally flatten before they can open it.
-/// The platform whose renders `expected.png` holds.
-///
-/// Named rather than implied, because every other platform's golden is defined
-/// relative to it. The images in this repository were rendered on an Apple
-/// Silicon Mac, and that is the whole of why this constant is what it is.
+/// The platform whose renders `expected.png` holds; every other platform's
+/// golden is defined relative to it. The images here were rendered on an Apple
+/// Silicon Mac.
 const REFERENCE: (&str, &str) = ("macos", "aarch64");
 
 /// Whether this host is the one `expected.png` was rendered on.
@@ -112,40 +51,9 @@ fn host_variant() -> String {
 }
 
 /// The image this host is checked against: its own variant where one exists,
-/// and the reference image otherwise.
-///
-/// # Why a variant exists at all
-///
-/// **A different architecture rasterises anti-aliased edges differently, and
-/// that is not a regression.** Measured: on `linux-x86_64`, 15 of the 23
-/// fixtures are byte-identical to the reference and 8 differ -- and the 8 are
-/// exactly the ones containing a curve, a gradient, a blend or a glyph, while
-/// the 15 are the axis-aligned ones. That is the same dividing line the module
-/// header measures for the Metal backend, arrived at independently on a second
-/// axis.
-///
-/// The evidence that it is rasterisation rather than a fault is that **every
-/// Chrome conformance suite passes on Linux** -- blend formulas, gradient
-/// stops, shadow extents, corner geometry, border and dotted rhythm, text
-/// truth, ellipsis truth, min-content widths. Those pin numbers rather than
-/// pixels, and Linux agrees with the browser on all of them. The pixels differ;
-/// what the pixels mean does not.
-///
-/// # Why a fallback rather than a variant per platform
-///
-/// Two thirds of the suite is byte-identical everywhere, and giving those a
-/// file per platform would be the same picture stored three times, each able to
-/// drift from the others. So a variant exists **only where a platform is
-/// measurably different**, and its absence means "this platform agrees with the
-/// reference" -- which is a claim the run then checks rather than assumes.
-///
-/// # What this deliberately does not do
-///
-/// It does not add a tolerance. The module header argues against one, and the
-/// argument survives this change: a comparison that permits a few pixels of
-/// difference cannot tell a rasteriser apart from a regression that happens to
-/// be small, and this suite is the only thing in the project that looks at the
-/// picture at all.
+/// the reference otherwise. Anti-aliased edges rasterise differently per
+/// architecture (8 of 23 fixtures on `linux-x86_64`), so a variant exists only
+/// where a platform measurably differs, and there is no tolerance.
 fn expected_path(name: &str) -> PathBuf {
     let dir = fixtures_dir().join(name);
     if !on_reference() {
@@ -157,11 +65,9 @@ fn expected_path(name: &str) -> PathBuf {
     dir.join("expected.png")
 }
 
-/// Where `MEO_FIXTURE_ACCEPT` writes on this host.
-///
-/// The reference image on the reference platform, and this platform's variant
-/// anywhere else -- so accepting on Linux can never overwrite the image macOS
-/// is checked against.
+/// Where `MEO_FIXTURE_ACCEPT` writes on this host: the reference image on the
+/// reference platform and this platform's variant elsewhere, so accepting on
+/// Linux never overwrites the image macOS is checked against.
 fn accept_path(name: &str) -> PathBuf {
     let dir = fixtures_dir().join(name);
     if on_reference() {
@@ -171,6 +77,8 @@ fn accept_path(name: &str) -> PathBuf {
     }
 }
 
+/// Where a failing fixture leaves its evidence, untracked. Created before it is
+/// canonicalised, since a path that does not exist cannot be resolved.
 fn report_dir(name: &str) -> PathBuf {
     let raw = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/fixtures")
@@ -258,11 +166,9 @@ struct Difference {
     diff: Vec<u8>,
 }
 
-/// Compares two decoded images pixel by pixel.
-///
-/// `None` when they agree. The diff image dims what matches to a quarter of its
-/// luminance and paints what does not in opaque red, so a glance shows both the
-/// drawing and where it went wrong rather than a field of red on black.
+/// Compares two decoded images pixel by pixel, `None` when they agree. The diff
+/// dims matches to a quarter of their luminance and paints mismatches opaque
+/// red.
 fn compare(actual: &Decoded, expected: &Decoded) -> Option<Difference> {
     let mut count = 0;
     let (mut min_x, mut min_y, mut max_x, mut max_y) =
@@ -347,11 +253,9 @@ fn fixture_names() -> Vec<String> {
     names
 }
 
-/// Renders one fixture, returning its PNG bytes.
-///
-/// Fails rather than falls back when the scene names a family the harness did
-/// not register: `Fonts` answers from the platform's installed faces too, so a
-/// fixture asking for a system font would pass here and differ anywhere else.
+/// Renders one fixture, returning its PNG bytes. Fails on a family the harness
+/// did not register, since `Fonts` also answers from the platform's installed
+/// faces.
 fn render_fixture(name: &str) -> Vec<u8> {
     let dir = fixtures_dir().join(name);
     let bytes = std::fs::read(dir.join("scene.mcs")).unwrap_or_else(|error| {
@@ -383,11 +287,8 @@ fn render_fixture(name: &str) -> Vec<u8> {
         })
 }
 
-// An ordinary test, so `cargo test --workspace` runs it and `cargo llvm-cov`
-// counts it. That is what makes AGENTS.md's claim true -- the fixture runner is
-// part of the coverage harness rather than beside it, which is how the paint
-// stage earns its coverage by drawing a picture someone checked rather than by
-// executing a line.
+// An ordinary test, so `cargo test` runs it and `cargo llvm-cov` counts it: the
+// paint stage earns its coverage by drawing a picture someone checked.
 #[test]
 fn every_fixture_matches_its_expected_image() {
     // `MEO_FIXTURE_ACCEPT` names exactly one fixture to rewrite. One name and

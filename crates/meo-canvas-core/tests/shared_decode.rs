@@ -1,16 +1,7 @@
-//! What two nodes drawing one picture get, and what they must not share.
-//!
-//! A source is decoded **once per distinct source** rather than once per node:
-//! sixty nodes drawing one image decoded it sixty times, and nothing pointed
-//! at it because every node got the right bytes -- just not the same ones.
-//!
-//! The risk that arrives with sharing is the opposite one, and it is what this
-//! file is for: **a shared decode must not carry one node's choices to
-//! another.** The only per-node choice a decode can carry is the frame of an
-//! animated source, so that is the case asserted here, through the renderer
-//! rather than against the cache -- a table that hands back the right object
-//! and a picture that draws the right pixels are two claims, and only the
-//! second is what a caller sees.
+//! A source is decoded once per distinct source and shared by every node
+//! drawing it. What sharing risks is carrying one node's choice to another; the
+//! only such choice is an animated source's frame, asserted through the
+//! renderer, since the picture is what a caller sees.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -22,11 +13,9 @@ use meo_canvas_scene::{
     },
 };
 
-/// Two pages of flat colour, encoded as an animated GIF.
-///
-/// Built by our own encoder rather than committed as an asset: bytes we wrote
-/// are bytes we can decode by definition, and a hand-rolled GIF read back as
-/// one frame once already.
+/// Two pages of flat colour as an animated GIF, built by our own encoder: bytes
+/// we wrote are bytes we can decode, where a hand-rolled GIF once read back as
+/// one frame.
 fn two_frames() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(8.0, 8.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {

@@ -1,82 +1,7 @@
-//! A taffy defect we inherit, pinned so that fixing it cannot pass unnoticed.
-//!
-//! # What is wrong
-//!
-//! **A ratio does not derive the cross size when the main size came from
-//! `flex-grow`.** A column item that grows into its line gets the height the
-//! growth gives it and keeps a cross size of nothing, where the ratio should
-//! turn that height into a width.
-//!
-//! ```text
-//! column, align-items: center, height 264, grow 1, ratio 1
-//!     taffy    0 x 248        Chrome  248 x 248
-//! column, align-items: stretch, height 264, grow 1, ratio 1
-//!     taffy  424 x 248        Chrome  424 x 424
-//! ```
-//!
-//! The two rows fail in opposite directions and that is the point: **taffy
-//! never transfers between the axes at all.** Centred, the width is never
-//! derived from the grown height; stretched, the height is never derived from
-//! the stretched width. In both, whichever axis the ratio should have produced
-//! is the one that stayed as it was.
-//!
-//! # The conditions, each measured rather than assumed
-//!
-//! - **`flex-grow` is what breaks it, not the ratio.** The same tree with
-//!   `height: 100%` instead of a grow derives the width correctly -- `248 x
-//!   248`, agreeing with Chrome. A percentage main size and a grown one are the
-//!   same number and only one of them reaches the ratio.
-//! - **An automatic container height is unaffected.** With nothing to grow
-//!   into, centred gives `0 x 0` and stretched `424 x 424`, both Chrome's.
-//! - **A ratio-less row is correct**, so the growth itself is not what fails:
-//!   `0 x 248` centred with no ratio is what Chrome gives.
-//!
-//! Those three are [`the_rows_taffy_gets_right_agree_with_chrome`], and they
-//! are what make the two wrong rows a statement about the ratio rather than
-//! about flex.
-//!
-//! # What the browser does
-//!
-//! Chrome, through the conformance harness's own Playwright rather than a page
-//! written by hand, `getBoundingClientRect()` unrounded, on the same six
-//! shapes: a `440x264` column with `box-sizing: border-box` and 8px of padding,
-//! so the content box is `424x248` in every row.
-//!
-//! So this is a disagreement with the browser, which is our baseline, and not
-//! with a reading of the specification.
-//!
-//! # Why the assertions are of the wrong numbers
-//!
-//! **A test asserting Chrome's values would fail today**, and a failing test
-//! cannot be committed. So this pins what taffy actually does, with the right
-//! answer beside it: **the day taffy transfers the ratio, this fails, and the
-//! failure is the notification.** The defect is otherwise silent, because a
-//! caller sees a box of the wrong width and no error.
-//!
-//! Reproduced in twenty lines of taffy with no code of ours in the picture.
-//!
-//! # Upstream, and what it is not
-//!
-//! <https://github.com/DioxusLabs/taffy/issues/804>, *`aspect_ratio` is not
-//! respected in flex layouts*, open. Reached from the row that actually
-//! diverges rather than from a title: `l7aromeo/meo-canvas#123` reports an
-//! image laid out at its intrinsic size, and the image is not what is wrong
-//! there -- a replaced element in that scene is `1024x1024` in Chrome too. The
-//! report substituted a `div` for the image when measuring the browser, and
-//! the `div` is the thing that diverges.
-//!
-//! **This is the third `[WORKAROUND]` in `layout.rs`.** The other two are
-//! about a ratio box whose *inline* size is fit-content; this is one whose
-//! *main* size arrives from flex growth, which is a different question about
-//! the same upstream defect.
-//!
-//! **Both halves are compensated, and by different code.** Where the item has
-//! no cross contribution of its own, `derived_cross` multiplies the grown main
-//! size by the ratio. Where the item is stretched, `stretched_ratio_minimum`
-//! gives it the main-axis automatic minimum CSS Flexbox 1 §4.5 owes it --
-//! `l7aromeo/meo-canvas#147`, whose answer overflows the line, which is what
-//! all three engines measured there do. The `align-items: stretch` row below
-//! pins what taffy does without it.
+//! Pins an inherited taffy defect: a ratio never transfers between axes when
+//! the main size comes from `flex-grow` -- centred, `0 x 248` where Chrome
+//! gives `248 x 248`; stretched, `424 x 248` against `424 x 424`. Asserts
+//! taffy's numbers so a fix fails here. `DioxusLabs/taffy#804`.
 
 use taffy::prelude::*;
 
@@ -170,17 +95,10 @@ fn a_grown_main_size_never_reaches_the_ratio() {
     }
 }
 
-// [FOUNDATION] the property `stretched_ratio_minimum` rests on: **the cross
-// size it reads is unrounded.** The compensation divides a stretched item's
-// solved cross size by its ratio to get the transferred size suggestion, and
-// that read happens in `solve_page`'s unrounded region -- the fractional part
-// is the whole reason `disable_rounding` is called before any of this.
-//
-// If that stopped holding, the minimum would be wrong by up to half a pixel
-// and **every conformance row would stay green**: `ratio-stretch-main.tsv` is
-// integers throughout and compares within a pixel of slack, so a half-pixel
-// error has nowhere to show. The first sign would be a golden shifting with
-// nothing saying why.
+// [FOUNDATION] the property `stretched_ratio_minimum` rests on: the cross size
+// it divides by the ratio is read unrounded. If it stopped holding, the minimum
+// would be up to half a pixel off and `ratio-stretch-main.tsv`, integers
+// compared within a pixel, would stay green.
 #[test]
 fn a_stretched_cross_size_is_reported_unrounded() {
     let (width, height) = fractional_stretched_item();
@@ -231,26 +149,14 @@ fn fractional_stretched_item() -> (f32, f32) {
 }
 
 // [FOUNDATION] the property `compensate_ratio_direction`'s third arm rests on:
-// **taffy grows the main size to the number Chrome gives.** The compensation
-// reads that solved main size and multiplies it by the ratio, so the `grow with
-// no ratio` row below -- `0 x 248`, Chrome's own answer -- is the 248 every
-// derived cross size is computed from.
-//
-// If taffy's growth stopped being Chrome's, the compensation would derive a
-// width from a wrong height and **every conformance row would stay green**: no
-// table in this tree has a grown flex item with a ratio in it except
-// `flex-ratio-cross.tsv`, whose rows are all computed from the same wrong
-// number and would move together. The first sign would be a golden shifting
-// with nothing saying why.
+// taffy grows the main size to Chrome's number (the ratio-less `0 x 248` row),
+// which the arm multiplies by the ratio. If growth stopped matching, derived
+// widths would be wrong and no conformance row would say why.
 #[test]
 fn the_rows_taffy_gets_right_agree_with_chrome() {
-    // The controls, and each removes one suspect. A percentage main size
-    // reaches the ratio, so the ratio is not simply unimplemented here. An
-    // automatic container height has nothing to grow into, so the defect needs
-    // the growth rather than the ratio. And a ratio-less row grows correctly,
-    // so the growth itself is not what fails.
-    //
-    // Chrome's numbers, measured on the same six shapes.
+    // Controls, each removing a suspect: a percentage main size reaches the
+    // ratio; an automatic height has nothing to grow into; a ratio-less row
+    // grows correctly. Chrome's numbers, on the same six shapes.
     for (name, height, ratio, grow, centre, percentage, chrome) in [
         (
             "height 100% instead of grow",
@@ -303,13 +209,9 @@ fn the_rows_taffy_gets_right_agree_with_chrome() {
     }
 }
 
-/// A grown item's solved size with a written size and an optional cross-axis
-/// maximum, in a `424x248` column.
-///
-/// Written rather than derived, because that is the state
-/// `compensate_ratio_direction` leaves a node in before the second solve: the
-/// compensation has already put a size on both axes and the question is what
-/// taffy does with the maximum still sitting beside them.
+/// A grown item's solved size with a written size and optional cross maximum,
+/// in a `424x248` column: the state `compensate_ratio_direction` leaves a node
+/// in before its second solve.
 fn written_with_maximum(
     ratio: Option<f32>,
     max_width: Option<f32>,
@@ -375,20 +277,9 @@ fn a_cross_maximum_transfers_into_the_main_size() {
 }
 
 // [FOUNDATION] the property the `l7aromeo/meo-canvas#129` compensation rests
-// on: **with no maximum on the style, the main size the compensation writes is
-// the main size taffy solves.** The repair is to apply the maximum itself and
-// take it off the style, which buys nothing if a written main size does not
-// hold on its own.
-//
-// It is the third row of the isolation that found the mechanism, and the one
-// that separates *the maximum transfers* from *a definite cross drags the main
-// down*: the same written pair with the ratio and no maximum keeps 248.
-//
-// If this stopped holding, the compensation would remove the maximum and still
-// get the wrong main size, and every row of `flex-ratio-cross.tsv` would go red
-// at once rather than silently -- which is the good case, and is why this row
-// is cheap insurance rather than the only thing standing between us and a
-// silent failure.
+// on: with no maximum on the style, the main size it writes is the one taffy
+// solves. If not, removing the maximum would not help, and
+// `flex-ratio-cross.tsv` would go red at once.
 #[test]
 fn a_written_main_size_holds_without_a_maximum() {
     let (width, height) = written_with_maximum(Some(1.0), None);

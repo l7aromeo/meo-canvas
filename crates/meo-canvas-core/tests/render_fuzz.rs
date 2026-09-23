@@ -1,12 +1,7 @@
-//! Arbitrary scenes through layout and paint.
-//!
-//! **The numbers are hostile rather than uniform.** A random `f32` is almost
-//! never `NaN`, and `NaN` is what a caller's own arithmetic produces: a width
-//! divided by a count that turned out to be zero, a ratio from an empty
-//! measurement. So the generator draws from the set that breaks things.
-//!
-//! A refusal is a fine outcome and a panic is the finding. The seed is in the
-//! source so a failure is reproducible.
+//! Arbitrary scenes through layout and paint, drawn from the numbers that break
+//! things: a random `f32` is almost never `NaN`, and a caller's arithmetic
+//! often is. A refusal is fine and a panic is the finding; the seed is in the
+//! source.
 use meo_canvas_core::Renderer;
 use meo_canvas_scene::{
     Length, Scene, Size,

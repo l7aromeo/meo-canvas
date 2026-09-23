@@ -1,12 +1,6 @@
-//! What a render does when a URL cannot be fetched.
-//!
-//! **Behind `net`, because the behaviour only exists there.** With the feature
-//! off a URL is `Error::UnresolvedSource` -- a statement about the build rather
-//! than about the world -- and that is deliberately not softened, so there is
-//! nothing here to check. `just net-check` runs this on Linux in CI.
-//!
-//! Every URL below points at `127.0.0.1:1`, which refuses immediately: a test
-//! that waited for a real timeout would be one people learn to skip.
+//! What a render does when a URL cannot be fetched, behind `net`, since without
+//! it a URL is `Error::UnresolvedSource`, unsoftened. Every URL points at
+//! `127.0.0.1:1`, which refuses at once; `just net-check` runs this in CI.
 #![cfg(feature = "net")]
 
 use meo_canvas_core::{

@@ -1,70 +1,7 @@
-//! What a box shrink-wrapping text measures, and why two rounding rules
-//! cannot disagree about it here.
-//!
-//! # The defect this does not have
-//!
-//! v1 fixed a real bug (`meo-canvas-old`, `5815e11`): a box shrink-wrapping
-//! text came out **a pixel shorter than the text inside it**, so the text's
-//! own background spilled past its parent and a sibling laid out after it
-//! started before the text ended. Yoga is where the two parted company --
-//! setting a measure function makes a node `NodeType::Text` and Yoga **ceils**
-//! such a node's edges so glyphs are never cut, while a plain parent
-//! shrink-wrapping it **rounds to nearest**. Three lines measuring 63.3 gave
-//! the text 64 and the box around it 63.
-//!
-//! **taffy has one rule and applies it to every node.** `round_layout`
-//! (`taffy-0.13.0/src/compute/mod.rs:219`) carries no text special case, and
-//! it rounds on *cumulative* coordinates:
-//!
-//! ```text
-//! size.width = round(cumulative_x + width) - round(cumulative_x)
-//! ```
-//!
-//! A child's rounded edge is derived from the same rounded absolute position
-//! as its parent's, **so the two cannot disagree by construction**.
-//!
-//! **These assertions therefore cannot fail for the reason they were
-//! written**, and that is why the mechanism is recorded above them rather than
-//! left to be re-derived. They are kept because the next reader to meet v1's
-//! commit will ask whether we carry the same bug, and one file answering that
-//! is worth more than three that pass silently.
-//!
-//! # What is still open, and is not this
-//!
-//! Yoga ceils because a box shorter than its glyphs cuts them. **taffy rounds,
-//! so text measuring 63.3 gets a 63-pixel box and the last row of ink is a
-//! third of a pixel short.** Nothing disagrees; the box is simply smaller than
-//! the ink. Which of those is right is a Chrome question and is not settled
-//! here.
-//!
-//! # Chrome's answer, and it is none of the candidates
-//!
-//! Four rules were enumerated before the browser was asked -- round or ceil,
-//! per line or on the total -- and a 16px face at `line-height: 1.4` over
-//! three lines separates all four: 66, 67, 68, 69. **Chrome does none of
-//! them.** It works in sixty-fourths of a pixel, **floors each line into that
-//! grid and sums**, and never rounds the total:
-//!
-//! ```text
-//! 22.4 x 64 = 1433.6 -> 1433 -> 22.390625      three lines -> 67.171875
-//! ```
-//!
-//! So our 67 is `0.17` away and the difference is sub-pixel rather than whole.
-//!
-//! **The trap in measuring it was `offsetHeight`, which reports 67** -- an
-//! integer API rounding a fractional layout and handing our own rule back to
-//! us. A check that had stopped there would have closed on a false agreement
-//! reached from a correct number.
-//!
-//! **This is therefore a layout question rather than a text one**: taffy
-//! rounds every box and Chrome rounds none. It is tracked separately, and the
-//! first thing to establish is whether it is observable at all -- one box's
-//! sub-pixel difference vanishes into antialiasing, and only a stack of many
-//! would drift far enough to see.
-//!
-//! **What does not follow: porting v1's whole-pixel measure.** It treats a
-//! defect this crate does not have, and Chrome neither rounds nor ceils a
-//! total, so it would move us further from the browser rather than closer.
+//! A box shrink-wrapping text is exactly its text's height: taffy rounds each
+//! node from cumulative coordinates, `round(x + w) - round(x)`, so child and
+//! parent edges share one rounded position. Chrome floors each line to 1/64 px
+//! and sums: 67.171875 against our 67.
 
 use meo_canvas_core::{
     layout,
@@ -161,9 +98,8 @@ fn solve(text: &str, width: f32) -> (f32, f32, f32) {
 
 #[test]
 fn a_shrink_wrapping_box_is_the_height_of_its_text() {
-    // v1's first case. Yoga gave 64 to the text and 63 to the box; taffy
-    // rounds both from the same cumulative edge, so there is no pixel to
-    // lose.
+    // Text plus sibling is the box: both round from the same cumulative edge,
+    // so no pixel is lost between them.
     let (text, wrapper, _) =
         solve("Flower of Paradise in a narrow column", 120.0);
     let sibling = 10.0;
@@ -175,8 +111,8 @@ fn a_shrink_wrapping_box_is_the_height_of_its_text() {
 
 #[test]
 fn a_sibling_starts_where_the_text_ends() {
-    // v1's third case, and the one the disagreement actually cost: a sibling
-    // laid out after the text began before the text ended.
+    // A sibling laid out after the text starts where the text ends, not
+    // inside it.
     let (_, _, gap) = solve("Flower of Paradise in a narrow column", 120.0);
     assert!(
         gap.abs() < f32::EPSILON,
@@ -186,9 +122,8 @@ fn a_sibling_starts_where_the_text_ends() {
 
 #[test]
 fn the_same_holds_when_the_text_is_padded() {
-    // v1's second case. Padding moves the cumulative origin, which is what
-    // taffy rounds against -- so it is the case that would break a rule
-    // rounding sizes rather than edges.
+    // Padding moves the cumulative origin taffy rounds against, so this is the
+    // case that would break a rule rounding sizes rather than edges.
     let (text, wrapper, gap) =
         solve("Flower of Paradise wrapped over lines", 90.0);
     assert!(text > 0.0, "the text measured nothing");
@@ -198,30 +133,10 @@ fn the_same_holds_when_the_text_is_padded() {
 
 #[test]
 fn a_fractional_total_rounds_once_at_the_end() {
-    // **Where this crate sits in the four-way table, measured rather than
-    // read off the code.** A 16px face at `line-height: 1.4` is 22.4 a line,
-    // and the box comes back as the sum rounded once:
-    //
-    // ```text
-    // lines   total    ours
-    //   2      44.8      45
-    //   3      67.2      67     <- the discriminating case
-    //   4      89.6      90
-    //   5     112.0     112
-    // ```
-    //
-    // Three lines separates the four rules that were on the table before
-    // Chrome was asked -- 66, 67, 68, 69. Chrome turned out to do none of
-    // them: sixty-fourths of a pixel, floored per line, summed, `67.171875`.
-    // The pin stays at our own number because it records *our* rule; the gap
-    // to Chrome is sub-pixel and is tracked as a layout question.
-    // **Two lines is the control**: 44.8 is 45 under both total rules, so it
-    // must agree whatever Chrome turns out to do, and a disagreement there
-    // means something other than rounding is happening.
-    //
-    // This pin fails the moment the rule changes, which is the point: when
-    // Chrome's answer arrives, the number that moves says which rule replaced
-    // which.
+    // Our rule: 22.4 a line, the total rounded once -- 45, 67, 90 and 112 for
+    // two to five lines. Three lines separates the four round-or-ceil rules
+    // (66 to 69); two is the control, 45 under both total rules. Chrome's
+    // 67.171875 is sub-pixel from ours, so this pins our rule.
     for (width, expected) in
         [(120.0, 45.0), (100.0, 67.0), (80.0, 90.0), (60.0, 112.0)]
     {
@@ -287,26 +202,10 @@ fn row_height(text: &str) -> f32 {
         .height
 }
 
-/// A phrase in a roomy row stays on one line, and a single word proves the
-/// check can tell them apart.
-///
-/// # The defect
-///
-/// A measured content width was snapped into sixty-fourths with the same
-/// **floor** the styled lengths use. A styled length is a request and
-/// truncating one is right -- Chrome's `LayoutUnit` does. A measurement is a
-/// claim, and truncating it says the content fits in a box up to a
-/// sixty-fourth narrower than the content is. A flex item's base size is its
-/// max-content contribution, so the item was then sized to that shortfall and
-/// re-measured at it, and **the last word fell off the line**.
-///
-/// It needed a space to fall at, which is why the one-word case was always
-/// right and why nothing in the tree caught it: every text in a row here
-/// either carries `max_lines` or has nowhere to break. Chrome keeps all of
-/// these on one line.
-///
-/// **The single-word row is the control.** Without it this passes on a
-/// renderer that never wraps anything at all.
+/// A phrase in a roomy row stays on one line. A measured width is not floored
+/// the way a styled length is: flooring it sizes the item a sixty-fourth short
+/// and its last word wraps. The single word is the control, which a renderer
+/// that never wraps would otherwise pass.
 #[test]
 fn a_phrase_in_a_roomy_row_does_not_wrap() {
     let one_word = row_height("CRITRate");

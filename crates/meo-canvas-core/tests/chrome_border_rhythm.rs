@@ -1,41 +1,7 @@
-//! The rhythm a dashed border is drawn with, against Chrome.
-//!
-//! # What is settled here and what is not
-//!
-//! **The ratio is.** Chrome runs two regimes — a thin border gets a longer
-//! dash relative to its width — and the five measured widths pin both,
-//! including the width 3 that decides where the step falls.
-//!
-//! **The fitting is, on a square box.** Chrome keeps the dash at its nominal
-//! length, puts the slack in the gaps, and fits the *nearest* whole number of
-//! dashes to each side — not the largest that fits. The two sides below say
-//! so between them: a 48-pixel edge whose three gaps are all *wider* than
-//! nominal, and a 137-pixel one with a gap *narrower*. Each side is stroked
-//! as its own line corner to corner, so the phase restarts at a corner
-//! because the path does.
-//!
-//! **The fitting on a rounded box is not.** A full dash begins exactly where
-//! the arc ends, so a rounded side is fitted on its straight run rather than
-//! carried round the corner — but the length Chrome fits it to is open. A
-//! 240-wide box with a 12px radius at width 4 holds eighteen dashes and
-//! seventeen gaps summing to 213, where `width - 2 * radius` is 216. Three
-//! pixels is either the wrong length or a reading nibbled at the ends of
-//! every run, and only the first and last ink offsets can say which. Until
-//! then a rounded box keeps the whole-path stroke, unfitted.
-//!
-//! # The symmetry, which turned out not to need a mechanism
-//!
-//! Chrome distributes the remainder symmetrically — `5, 6, 5` and not
-//! `6, 5, 5` — and this was written down as something a single dash array
-//! could not express, on the reasoning that every gap in a pattern is one
-//! fractional length. **That reasoning was wrong, and the renderer settles
-//! it**: one gap of `16 / 3` puts its boundaries at 8, 13.33, 21.33, 26.67,
-//! 34.67 and 40, and a rasteriser rounding each where it falls draws
-//! `8, 5, 8, 6, 8, 5, 8` — Chrome's runs, symmetry and all. The symmetry is
-//! the fractional gap seen through pixels, not a rule about remainders.
-//!
-//! `crates/meo-canvas/tests/assets/chrome/border-rhythm.tsv`, through
-//! `just conformance`.
+//! A dashed border's rhythm against Chrome: `3w` on, `2w` off while thin and
+//! `2w` on, `1w` off from width 3, the nearest whole count of dashes fitted per
+//! side with slack in the gaps. Rounded boxes stay unfitted: Chrome's fit
+//! length there (213 against 216) is unresolved.
 
 use meo_canvas_core::{
     ImageFormat, Renderer,
@@ -51,12 +17,9 @@ use meo_canvas_scene::{
     },
 };
 
-/// One measured width: the border, and the ink and gap Chrome repeats.
-///
-/// Read along the top band of a 240x48 box, between x=40 and x=200, counting
-/// a pixel as ink below 128 in the red channel. The runs at the two ends of
-/// that span are cut by the bounds and are not whole periods; these are the
-/// values every whole period in between holds.
+/// One measured width, and the ink and gap Chrome repeats along the top band of
+/// a 240x48 box between x=40 and 200, ink below 128 red; the clipped end runs
+/// are not whole periods.
 struct Rhythm {
     /// The border's width in pixels.
     width: f32,
@@ -67,28 +30,10 @@ struct Rhythm {
     gap: f32,
 }
 
-/// Chrome's rhythm at the five widths the harness measured, **read out of the
-/// table rather than copied from it.**
-///
-/// It was five transcribed structs, and finding that out is what produced the
-/// only interesting thing in this file. **A transcription is not a copy of the
-/// table — it is an interpretation of it**, and this one had drifted from its
-/// own doc comment: the field said *the gap Chrome holds most of the way
-/// along*, and at width 8 the gap Chrome holds most of the way along is **9**,
-/// while the struct said 8. Eight is the NOMINAL gap; nine is what fitting
-/// leaves on a 240-pixel side. Four of the five widths agree with both
-/// readings and only the widest separates them, which is why it survived.
-///
-/// So this reads the modal run either side of the window-clipped ends, and the
-/// test below asserts the nominal against `dash_pattern` and the observed
-/// against `fitted_dash`. Two claims that a single hand-written constant was
-/// silently conflating.
-///
-/// The jump is still the point of the table: the ratio is `3w` on and `2w` off
-/// while the border is thin and `2w` on and `1w` off once it is not, so no
-/// single ratio is right at both ends. **Width 3 decides where the step
-/// falls** — `on:6 off:3` puts it in the upper regime, so the boundary is
-/// `w < 3` rather than `w <= 3`.
+/// Chrome's rhythm at five widths, read out of the table rather than copied. It
+/// gives the nominal gap for `dash_pattern` and the modal fitted one for
+/// `fitted_dash`, which differ only at width 8 (8 against 9). Width 3 is in the
+/// upper regime, so the step falls at `w < 3`.
 fn chrome() -> Vec<Rhythm> {
     let table =
         include_str!("../../meo-canvas/tests/assets/chrome/border-rhythm.tsv");
@@ -156,17 +101,10 @@ fn a_dash_is_the_length_chrome_makes_it() {
             row.ink
         );
 
-        // **The GAP needs two claims, and the transcribed constant made one.**
-        // `dash_pattern` gives the nominal gap, which is what the ratio rule
-        // predicts; the table records what Chrome actually left, which is the
-        // nominal gap after fitting to a 240-pixel side. They agree at four of
-        // the five widths and differ at 8 -- nominal 8, drawn 9 -- so a single
-        // assertion against a hand-written number was true for the wrong
-        // reason at four widths and quietly wrong at the fifth.
-        // Rounded, because the two quantities are not the same kind: the fit
-        // is continuous — `2.04` at width 1 — and a run in the table is whole
-        // pixels of ink, which is that fit rasterised. Comparing them raw asks
-        // a rasteriser to produce a fraction.
+        // Two claims about the gap: `dash_pattern`'s nominal and the table's
+        // fitted, equal except at width 8 (8 against 9). Rounded, since
+        // the fit is continuous (2.04 at width 1) and a table run is
+        // whole pixels.
         let (_, fitted_gap) = fitted_dash(READING_BOX, row.width);
         assert!(
             (fitted_gap.round() - row.gap).abs() < f32::EPSILON,
@@ -215,14 +153,10 @@ struct Fit {
     runs: &'static [f32],
 }
 
-/// The two sides Chrome was read along end to end.
-///
-/// The first is the discriminating one: **a 48-pixel edge at width 4 begins
-/// and ends flush with a whole dash** and its three gaps are `5, 6, 5` -- all
-/// *wider* than the nominal 4. The second, a 137-pixel edge, has a gap
-/// *narrower* than nominal. Together they say the nominal gap is a target
-/// Chrome moves in either direction rather than a floor, which is the rule a
-/// naive fit gets wrong.
+/// The two sides Chrome was read along end to end. A 48px edge at width 4 is
+/// flush with whole dashes and its gaps are `5, 6, 5`, all wider than nominal;
+/// the 137px edge has one narrower. So the nominal gap is a target, not a
+/// floor.
 const SIDES: [Fit; 2] = [
     Fit {
         length: 48.0,
@@ -354,21 +288,10 @@ fn runs_down(stride: usize, pixels: &[u8], x: usize, rows: usize) -> Vec<f32> {
     runs
 }
 
-/// What a caller sees, and the one assertion here that could have caught the
-/// defect the others could not.
-///
-/// **The rest of this file asserts arithmetic and the renderer passed it a
-/// different number.** `fitted_dash(48.0, 4.0)` is the right answer to the
-/// wrong question if the renderer hands it 44 -- which it did, having fitted
-/// the centre line it strokes rather than the border box Chrome fits. Same
-/// dash count, gaps of 4 where Chrome leaves 5, 6, 5, and four pixels of edge
-/// unaccounted for. Every test in this file passed throughout.
-///
-/// So this one goes through `Renderer` and reads the ink back out: the
-/// subject is what is drawn, not what a helper computes.
-///
-/// A 48-tall box at width 4, read down the middle of its left border, which
-/// is the edge Chrome was read along end to end.
+/// What a caller sees: renders through `Renderer` and reads the ink back. The
+/// arithmetic tests would pass a renderer that fits its stroked centre line
+/// (44) rather than the border box Chrome fits (48); the drawn runs down a
+/// 48-tall box's left border at width 4 show it, as gaps of 4 against 5, 6, 5.
 #[test]
 fn the_renderer_draws_the_runs_chrome_draws() {
     let side = &SIDES[0];

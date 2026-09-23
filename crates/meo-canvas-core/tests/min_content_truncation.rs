@@ -1,29 +1,7 @@
-//! A text node's min-content width, with and without a truncation.
-//!
-//! # The claim
-//!
-//! CSS Flexbox 1 §4.5 floors a flex item at its automatic minimum size, which
-//! for text is its min-content width. CSS Sizing 3 §5.1 defines that as the
-//! narrowest the content can get "without overflowing" -- the widest word,
-//! for a run that wraps at spaces.
-//!
-//! `text-overflow: ellipsis` and a line clamp are **used-value** behaviour:
-//! they describe what is drawn when the used width is already below what the
-//! content wants. They are not inputs to intrinsic sizing. So the same text
-//! reports the same min-content width whether or not it carries a marker.
-//!
-//! # Why the pair
-//!
-//! A single string measured once proves nothing: any number is consistent
-//! with any rule. Each case here is measured **twice**, plain and truncating,
-//! and the assertion is that the two agree. A pair that came back equal for
-//! the wrong reason -- because the rule ignored something both halves shared
-//! -- is guarded against by the second axis: `Flower of Paradise` has a
-//! min-content (its widest word) and a max-content (the whole run) that
-//! genuinely differ, so a rule collapsing to either is visible.
-//!
-//! Chrome's own answers are in `chrome_min_content.rs`; this file is the
-//! internal consistency argument and does not need a browser to fail.
+//! A text node's min-content width with and without a truncation: an ellipsis
+//! or line clamp is used-value behaviour, not an input to intrinsic sizing, so
+//! both report the widest word (CSS Sizing 3 §5.1). Each case is measured plain
+//! and truncating; Chrome's answers are in `chrome_min_content.rs`.
 
 use meo_canvas_core::{
     layout,
@@ -58,11 +36,8 @@ fn fonts() -> Fonts {
     fonts
 }
 
-/// A page holding one text node, and the node's id.
-///
-/// The page is wide enough that nothing is constrained by it: what is asked
-/// for below is an *intrinsic* width, and a page narrow enough to clip would
-/// answer a different question.
+/// A page holding one text node, and the node's id; wide enough to constrain
+/// nothing, since what is asked below is an intrinsic width.
 fn page_with_text(
     text: &str,
     size: f32,
@@ -89,11 +64,8 @@ fn page_with_text(
     (scene, node)
 }
 
-/// The width the measurer reports for `text` when asked `available`.
-///
-/// Asked through [`Measure`] directly rather than through a solve, because a
-/// solve only ever exposes the *answer taffy kept*. The defect is in what it
-/// was told, and this is the one place that question is legible.
+/// The width the measurer reports for `text` when asked `available`, through
+/// [`Measure`] directly, since a solve exposes only the answer taffy kept.
 fn intrinsic(
     text: &str,
     size: f32,
@@ -149,12 +121,9 @@ fn a_clamp_does_not_change_min_content_width() {
 
 #[test]
 fn min_content_is_the_widest_word_not_the_marker() {
-    // The second axis. If min-content collapsed to the marker's width, the
-    // assertion above would still pass whenever both halves collapsed the
-    // same way -- so this pins the value, not just the agreement.
-    //
-    // `Flower of Paradise` breaks at spaces: min-content is `Paradise`, which
-    // is strictly between the marker and the whole run.
+    // Pins the value, not only the agreement, which both halves collapsing
+    // alike would pass: `Flower of Paradise` has min-content `Paradise`,
+    // strictly between the marker and the whole run.
     let marker = intrinsic(MARKER, 16.0, plain(), Available::MaxContent);
     let widest = intrinsic("Paradise", 16.0, plain(), Available::MaxContent);
     let whole =
@@ -204,12 +173,9 @@ fn a_word_with_no_break_opportunity_reports_its_whole_width() {
     }
 }
 
-/// Lays out a `space-between` row of the given width holding `HP` and
-/// `46.6%`, and reports the width each text box was given.
-///
-/// `clamp_label` is the whole variable: the same row is solved with the label
-/// truncating and not truncating, and the two answers are compared to each
-/// other rather than to a number written down here.
+/// Lays out a `space-between` row holding `HP` and `46.6%` and reports each
+/// text box's width. `clamp_label` is the only variable, and the two answers
+/// are compared to each other rather than to a written number.
 fn row(width: f32, clamp_label: bool) -> (f32, f32) {
     let mut scene = Scene::new(Size::new(400.0, 100.0));
     let row = scene
@@ -276,15 +242,10 @@ fn row(width: f32, clamp_label: bool) -> (f32, f32) {
 
 #[test]
 fn a_clamped_label_is_floored_where_a_plain_one_is() {
-    // The reported case, end to end -- but **not at the width it was reported
-    // at**. A 150-pixel row has around 90 to spare, so nothing shrinks and
-    // both spellings agree whatever the rule is; that width cannot fail. The
-    // row has to be narrower than its contents before the automatic minimum
-    // size is consulted at all, which is where the two spellings diverged:
-    // the plain label held its 13 and the clamped one fell to the marker's 7.
-    //
-    // Run across the boundary rather than at one width, so the pair is
-    // compared both where the floor is inert and where it binds.
+    // Across the boundary, not only at the reported 150: a row with room to
+    // spare never consults the automatic minimum. Narrower, it binds, which
+    // is where a clamped label at the marker's 7 against the plain label's
+    // 13 would show.
     for width in [150.0_f32, 60.0, 40.0, 25.0] {
         let (plain_label, plain_value) = row(width, false);
         let (clamped_label, clamped_value) = row(width, true);

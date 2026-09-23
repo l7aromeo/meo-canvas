@@ -1,19 +1,7 @@
-//! What a line keeps when it does not fit, against Chrome.
-//!
-//! # Why the string and not the width
-//!
-//! A word-boundary rule and a character rule disagree about **content**, not
-//! about width: `Flower of…` and `Flower of Par…` both fit a 90-pixel box, and
-//! only one of them is what a browser draws. So these rows record the string,
-//! and the test reconstructs ours from the runs rather than measuring ink.
-//!
-//! Chrome does not expose the string it drew for `text-overflow: ellipsis`,
-//! which is why the harness measures with `measureText` instead and computes
-//! the longest prefix that fits with the marker appended. That is the same
-//! question asked in a form the browser will answer.
-//!
-//! Measured through `just conformance`;
-//! `crates/meo-canvas/tests/assets/chrome/ellipsis.tsv`.
+//! What a line keeps when it does not fit, against Chrome: a word rule and a
+//! character rule differ in content, not width, so rows record the string.
+//! Chrome does not expose the drawn string, so the harness finds the longest
+//! prefix that fits with the marker, by `measureText`.
 
 use meo_canvas_core::{
     lines::{Line, Metrics, RunStyle, TextMeasurer, layout, line_width},
@@ -40,13 +28,9 @@ struct Row {
     drawn: &'static str,
 }
 
-/// Chrome's answers, verbatim from the harness.
-///
-/// The fourth and fifth rows are the pair that matters most. **A word with no
-/// space in it is cut mid-word** -- wrapping cannot break it and there is no
-/// line after it, so a truncation triggered by the line count never runs. And
-/// **a space before the marker survives when it fits**, which v1 strips: at
-/// 22px in 90 the browser draws `Flower of …`, space and all.
+/// Chrome's answers, verbatim. A word with no space is cut mid-word, since no
+/// line follows it; a space before the marker is kept when it fits -- `Flower
+/// of …` at 22px in 90.
 const CHROME: [Row; 6] = [
     Row {
         text: "Flower of Paradise",

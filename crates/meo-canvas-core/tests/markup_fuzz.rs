@@ -1,18 +1,7 @@
-//! Marked-up strings through the parser, in bulk.
-//!
-//! **This one takes a `&str` from a caller and indexes it by byte.** `parse`
-//! walks `text.as_bytes()` and then slices `&text[run_start..cursor]`, which
-//! panics if either end is not a character boundary. It is safe because `<` is
-//! `0x3C` and UTF-8 never puts a byte below `0x80` inside a multi-byte
-//! sequence, so a match can only land on a boundary -- an argument worth
-//! having and worth not relying on alone, which is what this is for.
-//!
-//! **The alphabet is tokens rather than characters, and that was measured
-//! rather than assumed.** A per-character generator over the same symbols
-//! produced a styled run in 125 inputs out of 100,000 -- the floor below
-//! caught it -- because a random walk almost never spells `<b>`. Whole tags,
-//! whole closers and whole words reach the parser's interior; the loose
-//! characters stay in the mix so a half-formed tag is still generated.
+//! Marked-up strings through the parser in bulk. `parse` slices by byte, safe
+//! because `<` is `0x3C` and UTF-8 puts no byte below `0x80` inside a sequence;
+//! this checks it. The alphabet is whole tokens: per character, only 125 of
+//! 100,000 inputs reached a styled run.
 use meo_canvas_core::markup;
 use meo_canvas_scene::style::text::TextStyle;
 

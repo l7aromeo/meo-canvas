@@ -1,27 +1,7 @@
-//! What a stack of fractional boxes looks like where the boxes meet.
-//!
-//! # Why this is the observable, and position is not
-//!
-//! taffy rounds every box edge to a whole pixel; Chrome works in sixty-fourths
-//! and rounds none. `rounding_drift.rs` establishes that our edges stay within
-//! half a logical pixel of exact at any depth, so **the difference is bounded
-//! and does not accumulate** -- which leaves the question of whether half a
-//! pixel is visible at all.
-//!
-//! **Comparing positions cannot answer that; comparing seams can.** Our
-//! boundaries land on whole pixels, so a black box meeting a white one gives a
-//! **hard edge**: the last row is black, the next is white, and nothing lies
-//! between. Chrome's boundaries land on sixty-fourths, so the same seam falls
-//! mid-pixel and that row is **blended** -- grey, in proportion to how far
-//! through the pixel the edge sits.
-//!
-//! So the prediction for the row nobody has taken yet: **not that the edges
-//! are in different places, but that Chrome has a grey row where we have
-//! none.** At 1x that is one row per seam out of ten pixels; at 2x the edge
-//! moves by a whole device pixel and the grey row moves with it.
-//!
-//! This file asserts our half -- that our seams are crisp -- so the comparison
-//! is against something recorded rather than re-derived.
+//! Where fractional boxes meet. Our boundaries land on whole pixels, so black
+//! meeting white is a hard edge with no blended row; Chrome's land on
+//! sixty-fourths and blend the seam's row. This asserts our half: the seams are
+//! crisp.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -90,14 +70,9 @@ fn column(scale: f32) -> Vec<u8> {
 
 #[test]
 fn every_seam_is_crisp_at_both_scales() {
-    // **No blended row anywhere down the stack.** Each pixel is the one
-    // colour or the other, because every boundary landed on a whole device
-    // pixel: at scale 1 because layout rounded it there, and at scale 2
-    // because a whole logical pixel is a whole device pixel too.
-    //
-    // Chrome is predicted to differ here rather than in position -- its
-    // boundaries fall on sixty-fourths, so the row containing a seam is a
-    // blend. That row is what the browser comparison should read.
+    // No blended row anywhere: every boundary is on a whole device pixel -- at
+    // scale 1 because layout rounded it, at 2 because a whole logical pixel is
+    // a whole device pixel. Chrome's seam row is predicted to blend.
     for scale in [1.0_f32, 2.0] {
         let blended: Vec<(usize, u8)> = column(scale)
             .into_iter()

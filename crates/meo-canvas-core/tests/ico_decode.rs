@@ -1,20 +1,6 @@
-//! That an ICO handed back to us decodes to the pixels we put in it.
-//!
-//! **The encode side was covered and the decode side was not.** `encode.rs`
-//! reads an ICO's directory back out of the bytes it wrote -- header, count,
-//! and each entry's size -- which is real coverage of the writer. Nothing read
-//! an ICO *in*: there is no `.ico` anywhere in this repository, and the image
-//! assets that exist as inputs are PNG and GIF.
-//!
-//! That gap mattered when `meo-skia-canvas` 0.14.0 moved ICO decoding out of
-//! Skia and into a Rust decoder, because the path that changed was exactly the
-//! one nothing exercised. An input source reaches a decoder through
-//! `ImageSource::Bytes` the same way a `src` does, so the change is reachable
-//! from an ordinary scene.
-//!
-//! Built by our own encoder rather than committed as an asset, for the reason
-//! `shared_decode.rs` gives: bytes we wrote are bytes we can decode by
-//! definition, and a hand-rolled fixture is a second thing that can be wrong.
+//! An ICO handed back to us decodes to the pixels we put in it. `encode.rs`
+//! reads back the directory it writes, and nothing else reads an ICO in. Built
+//! by our own encoder, for the reason `shared_decode.rs` gives.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -29,12 +15,8 @@ use meo_canvas_scene::{
 /// The colour the icon is filled with, and the one the render must show.
 const ICON: (u8, u8, u8) = (192, 57, 43);
 
-/// The colour behind it, chosen to differ from [`ICON`] on every channel.
-///
-/// **This is what makes the assertion able to fail.** An ICO that decoded to
-/// nothing, or to transparency, leaves the background showing -- so the test
-/// distinguishes "decoded" from "did not throw" only because the two colours
-/// share no channel.
+/// The colour behind the icon, differing from [`ICON`] on every channel, so an
+/// ICO that decoded to nothing or to transparency shows as a failure.
 const BEHIND: (u8, u8, u8) = (0, 128, 255);
 
 /// A single-page ICO of flat [`ICON`], written by this crate's own encoder.
