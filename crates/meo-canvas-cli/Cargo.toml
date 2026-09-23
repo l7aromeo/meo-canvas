@@ -22,31 +22,20 @@ path = "src/main.rs"
 doc = false
 
 [features]
-# Off by default. With `net` the CLI resolves `ImageSource::Url` before handing
-# the scene to the core, which stays fetch-free either way; without it, a URL is
-# the same error a Rust caller gets. Default-off because a renderer that reaches
-# the network on an input file's say-so is a surprise, not a convenience.
+# Fetching an `ImageSource::Url`, forwarded to `meo-canvas-core/net`, where the
+# fetch lives. Off by default: a renderer that reaches the network on an input
+# file's say-so should be a build someone chose. Without it a URL exits 6 and
+# the message names this feature.
 default = []
-net = ["dep:ureq"]
+net = ["meo-canvas-core/net"]
 
 [dependencies]
 meo-canvas-core = { workspace = true }
 meo-canvas-scene = { workspace = true }
 clap = { workspace = true }
-# Blocking by construction: ureq 3.4 requires no tokio and no futures, where
-# reqwest makes `tokio`, `hyper` and `tower` non-optional even for `blocking`,
-# which would put an async runtime in a synchronous program.
-ureq = { workspace = true, optional = true }
 
 [lints]
 workspace = true
-
-# Declared for the pass that owns them, which is a signature and an
-# `unimplemented!()` body at this stage -- `cargo-machete` reads imports, and a
-# skeleton has none yet. Each entry comes out the moment its pass is written;
-# an entry still here when the crate is finished is a dependency to delete.
-[package.metadata.cargo-machete]
-ignored = ["ureq"]
 
 [dev-dependencies]
 # Decodes what the binary wrote. A file that exists proves nothing -- a

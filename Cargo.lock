@@ -1377,7 +1377,6 @@ dependencies = [
  "meo-canvas-core",
  "meo-canvas-scene",
  "png",
- "ureq",
 ]
 
 [[package]]
