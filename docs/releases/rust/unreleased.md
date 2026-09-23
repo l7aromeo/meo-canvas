@@ -1,3 +1,7 @@
+### Changed
+
+- A frame index past the end of an animated image is refused as `Error::FrameOutOfRange`, naming the index and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
+
 ### Fixed
 
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**
