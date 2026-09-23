@@ -9,59 +9,13 @@ import { Box } from './node.js'
 import { encodeScene } from './arena.js'
 
 /**
- * The same chart, built twice, compared as bytes.
- *
- * # Why bytes and why two implementations
- *
- * **For `Chart` there is no external adjudicator.** Chrome has no charts, v1 is
- * both baselines, and the arithmetic is the specification. So the strongest
- * check available is that **two independent implementations produce the same
- * scene** — and if they differ, one is wrong and the comparison says so
- * without either being trusted.
- *
- * # What this closes, and what it does not
- *
- * **It closes the port and not the geometry.** Both surfaces agreeing on a
- * wrong bar edge passes every byte of this file. What guards the numbers is
- * the rendering: `chart.render.test.ts` on this side and the equivalent on the
- * Rust side, which check the arithmetic against pixels rather than against
- * itself. **Three checks, three different questions, and none substitutes for
- * another.**
- *
- * # Why a comparison to four decimals is safe here
- *
- * The pie's path data is formatted with `toFixed(4)`, and the two languages
- * round halfway cases differently — JavaScript away from zero, Rust to even.
- * **A tie at four decimals needs an odd multiple of `1/20000`, and
- * `20000 = 2^5 x 625` is not a power of two, so no binary float lands on
- * one.** The only transcendentals in chart geometry are `sin` and `cos`, which
- * were measured bit-identical between V8 and libm in the animation work;
- * `exp`, the one known to differ, does not appear.
- *
- * # The first disagreement of a new case is usually the harness
- *
- * **Twice now it has been a font family set on one side only.** The first
- * agreement run ever differed by `fontFamily` and by a page node this side
- * added; the three cases added later differed the same way, because bar's
- * options were copied onto cases whose Rust spec has none. Neither was an
- * implementation. **Check the two option bags field by field before reporting
- * a defect** -- a real disagreement survives that check and a harness
- * asymmetry does not.
- *
- * # Why the asset is checked in rather than written here
- *
- * `ci` runs the Rust tests **before** the JavaScript ones. A test that wrote
- * the asset on every run would leave the Rust side comparing against whatever
- * the previous run produced — the stale-artifact trap, with the staleness
- * created by the suite itself. So the bytes are committed, both sides assert
- * against them, and a legitimate change to the chart is a deliberate
- * regeneration: `UPDATE_CHART_BYTES=1 npx vitest run chart.agreement`.
+ * The same chart, built on both surfaces, compared as bytes: two independent
+ * implementations agreeing is the check a chart has, since no browser draws one.
+ * It closes the port, not the geometry (`chart.render.test.ts`). A new case's first
+ * mismatch is usually two option bags differing; compare them before a defect.
  */
-// `fileURLToPath`, not `.pathname`. A file URL's pathname on Windows is
-// `/D:/a/...`, and handing that to anything that resolves paths prepends the
-// current drive: `D:\D:\a\...`, ENOENT, in the three test files that read an
-// asset from disk and nowhere else. Nine other files here already did this
-// correctly; these three were the ones that had never run on Windows.
+// `fileURLToPath`, not `.pathname`: on Windows the pathname is `/D:/a/...`, and a
+// path resolver prepends the drive again, giving `D:\D:\a\...`.
 const asset = (kind: string) => fileURLToPath(new URL(`../../../crates/meo-canvas/tests/assets/chart/${kind}-bytes.txt`, import.meta.url))
 
 interface Addon {
@@ -77,18 +31,9 @@ function addon(): Addon {
 }
 
 /**
- * The options every case switches on.
- *
- * **A default is a branch neither surface takes**, so an option left alone is
- * one the comparison never sees: the two agree about it trivially and the row
- * reads as coverage it is not.
- *
- * Three options on this surface are deliberately absent and cannot be added
- * here: `yAxisLabelFormatter`, `xAxisLabelFormatter` and the three
- * `render*Item` hooks are **functions**, and a function has no counterpart to
- * compare against on the other side. They are guarded by the tree tests
- * instead. Naming them is the point — otherwise "every option switched on"
- * reads as complete.
+ * The options every case switches on, since an option left at its default is a
+ * branch neither surface takes. The five function-valued options have no bytes to
+ * compare; the `hatches` case compares their effect instead.
  */
 const EVERY_OPTION = {
   showLabels: true,
@@ -104,11 +49,11 @@ const EVERY_OPTION = {
   yAxisColor: '#778899',
 } as const
 
-/** Whole numbers throughout. A pie legend entry reads `label (value)` and
- * formats the value **unrounded**, so `1` and `1.0` would be spelled `1` here
- * and `1` there only by luck; whole numbers keep the two languages'
- * number-to-string rules out of the comparison. They part company at `>= 1e21`
- * and `< 1e-6`, and nowhere a chart will go. */
+/**
+ * Whole numbers throughout: a pie legend spells its value unrounded, and whole
+ * numbers keep the two languages' number-to-string rules, which part at `>= 1e21`
+ * and `< 1e-6`, out of the comparison.
+ */
 const CARTESIAN = {
   labels: ['a', 'b', 'c'],
   datasets: [{ data: [1, 3, 2], label: 'Sales', color: '#3366cc' }, { data: [3, 1, 2] }],
@@ -123,17 +68,9 @@ const SLICES = [
 ]
 
 /**
- * The four charts, and the node each must contain to have had a subject.
- *
- * **A legend position per case**, because the frame branches on it —
- * `left` stacks and `top`/`bottom` run along, so both directions are byte
- * checked. Bar carries no legend at all, which is the case the other three
- * cannot cover.
- *
- * **`mark` is the empty-scene guard.** A byte comparison that passes says the
- * two ports agree; it says nothing about whether either drew anything, and an
- * agreement between two nothings is an agreement. Each case names a node only
- * a drawn chart has and asserts it is there before asserting the bytes match.
+ * The cases, and the node each must contain to have had a subject: an agreement
+ * between two empty scenes is still an agreement. Each carries a legend position,
+ * since the frame branches on it; bar carries none.
  */
 const CASES = [
   {
@@ -174,16 +111,9 @@ const CASES = [
       }),
   },
   {
-    // **The fourth frame branch, and the only one nothing compared.** `left`,
-    // `top` and `bottom` each ride on a kind above; `right` rode on nothing,
-    // and bar carries no legend at all. Deliberately the **same** chart as the
-    // line case with one property changed, so a disagreement here is the
-    // branch and cannot be the data.
-    //
-    // Verified to render before it was pinned, rather than pinned because it
-    // was missing: with no legend the plot spans 216px, and with the legend
-    // `left` or `right` it spans 176 either way -- symmetric, and the legend
-    // takes its side. It was uncovered, not broken.
+    // The `right` frame branch, on the line case's chart with one property changed,
+    // so a disagreement is the branch and not the data. With a side legend the plot
+    // spans 176px either way, against 216 without one.
     kind: 'line-legend-right',
     mark: 'point 0.0',
     chart: () =>
@@ -194,20 +124,10 @@ const CASES = [
       }),
   },
   {
-    // **The five function-valued options, which neither suite reached.** A
-    // function cannot be encoded, so what is compared is its *effect*: the
-    // same formatter and the same hatch on both surfaces must produce the
-    // same tree.
-    //
-    // The two formatters round before they stringify. `3` and `2.4` are not
-    // the risk -- **`Display` and JavaScript's number-to-string part company**
-    // at the ends of the range, and a y-axis division is exactly the kind of
-    // value that arrives as `2.4000000000000004`. Rounding first keeps the
-    // languages' spelling rules out of a comparison that is about the hook.
-    //
-    // Every hatch takes its index into the node it returns, so a case that
-    // called them in the wrong order, or called one of them once, would not
-    // encode to the same bytes as one that did not.
+    // The five function-valued options, compared by effect: the same formatter and
+    // hatch on both surfaces must build the same tree. The formatters round before
+    // stringifying, and each hatch puts its index in its node, so a wrong call
+    // order encodes differently.
     kind: 'hatches',
     mark: 'bar 0.0',
     chart: () =>
@@ -229,6 +149,9 @@ const CASES = [
       }),
   },
   {
+    // Path data is compared at `toFixed(4)`, where JavaScript rounds ties away from
+    // zero and Rust to even; a tie needs an odd multiple of 1/20000, and no binary
+    // float is one.
     kind: 'pie',
     mark: 'slice 0',
     chart: () =>
@@ -239,22 +162,9 @@ const CASES = [
       }),
   },
   {
-    // **`axisColor`, which is reached only when `yAxisColor` is absent.**
-    // `EVERY_OPTION` always sets `yAxisColor`, so every case above takes the
-    // first arm of `options.yAxisColor ?? options.axisColor ?? '#000000'` and
-    // the fallback is a branch neither surface has ever executed.
-    //
-    // **The bag is written out rather than spread from `EVERY_OPTION`**, for
-    // the reason the bar case is: a spread cannot drop a key under
-    // `exactOptionalPropertyTypes`, and the Rust side's bag is written out to
-    // match this one field for field. The file's own warning is that the
-    // first disagreement of a new case is usually two option bags that differ
-    // -- so these two are readable side by side rather than one derived and
-    // one literal.
-    //
-    // The colour is neither `yAxisColor`'s `#778899` nor the `'#000000'` the
-    // chain ends at, so a surface that took the wrong arm encodes differently
-    // from one that took this one.
+    // `axisColor`, reached only when `yAxisColor` is absent, which `EVERY_OPTION`
+    // never is. The bag is written out, as the Rust side's is, and the colour is
+    // neither `#778899` nor the chain's `#000000`, so a wrong arm encodes differently.
     kind: 'axis-fallback',
     mark: 'bar 0.0',
     chart: () =>
@@ -292,10 +202,8 @@ const CASES = [
       }),
   },
   {
-    // v1's `outerRadius * (innerRadius ?? 0.6)`, and 0.6 is what this surface
-    // passes when the caller says nothing — **not the Rust `pie()` default,
-    // which has none.** Written out rather than left off, so the two sides are
-    // agreeing about a stated number instead of about two defaults.
+    // 0.6 is the default on both surfaces; written out so the two agree about a
+    // stated number rather than about two defaults.
     kind: 'doughnut',
     mark: 'slice 0',
     chart: () =>
@@ -309,11 +217,8 @@ const CASES = [
 
 /** Encodes one chart the way the page would, and reports what it named. */
 function encode(chart: ReturnType<typeof Chart>): { hex: string; names: readonly string[] } {
-  // Wrapped, because `Root::new(200, 120)` on the Rust side contributes a page
-  // root of its own -- so a chart used directly as the page would be one node
-  // short and every byte after the count would shift. **The first run differed
-  // by exactly that node and by a font family set on one side only: both were
-  // the harness, neither was an implementation.**
+  // Wrapped, because Rust's `Root::new(200, 120)` adds a page root of its own; a
+  // chart used directly as the page would be one node short and shift every byte.
   const arena = encodeScene([Box({ children: chart })], 200, 120, false, 1)
   const values = arena.values.map(value => (typeof value === 'string' ? value : Buffer.from(value)))
   return {
