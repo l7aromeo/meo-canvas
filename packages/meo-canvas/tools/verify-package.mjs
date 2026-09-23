@@ -1,27 +1,7 @@
-// Installs the packed tarballs into a throwaway project and renders with them.
-//
-// **Packing is not publishing and publishing is not installing.** `npm pack`
-// reports a file list, which says a file is in the tarball and nothing about
-// whether a consumer can reach it: `exports` can point at a path the allowlist
-// dropped, `main` in a platform package can name a binary that is not there,
-// and `optionalDependencies` can pin a version nobody built. Every one of those
-// packs cleanly and fails at the first `import`.
-//
-// So this does what a consumer does — a directory that is not this repository,
-// `npm install` from the tarballs, `import` by package name, render, check the
-// bytes are a PNG. The addon is found the way it will be found in the wild,
-// through the platform package rather than through the copy sitting in this
-// working tree, because the in-tree path does not exist inside `node_modules`.
-//
-// **Then it asks the two things a render cannot.** A render reaches the package
-// one way and erases every type on the way in, so it is blind to a consumer who
-// writes `require` and blind to a declaration that does not compile. Two
-// defects reached a release through exactly those two blind spots, and each is
-// one call away from being impossible: `require` by package name, and `tsc`
-// from the consumer directory with the tsconfig a consumer actually has.
-//
-// Run by `just verify-pack` and by the release workflow, before anything is
-// published.
+// Installs the packed tarballs into a throwaway project and uses them as a consumer
+// does: `import` by name through the platform package, render, check for a PNG --
+// then `require` by name and `tsc` with a consumer's tsconfig, which a render
+// cannot see. Run by `just verify-pack` and the release, before publishing.
 
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -36,25 +16,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 /**
- * Running npm, which takes two Windows-only accommodations rather than one.
- *
- * Both failed the `win32-x64` release job at this step, after the addon had
- * built and packed cleanly -- the artefact was fine and the tool checking it
- * was not, twice over.
- *
- * **The name.** npm on Windows is `npm.cmd`, and `execFileSync` does not
- * consult PATHEXT: `spawnSync npm ENOENT` on a machine where `npm` works in
- * any shell.
- *
- * **The shell.** Naming it correctly then fails differently --
- * `spawnSync npm.cmd EINVAL` -- because Node refuses to spawn a `.cmd` or
- * `.bat` without an explicit shell, which is the fix for CVE-2024-27980: a
- * batch file re-parses its command line, so arguments could escape into it.
- * Passing `shell: true` is the supported way, **and it hands the quoting back
- * to us** -- which is exactly the hazard that CVE describes, so the paths are
- * quoted here rather than trusted to contain nothing a shell reads. They are
- * `mkdtemp` and `readdir` output, not user input, but a temporary directory
- * under `C:\Users\Given Name\` needs no malice to break this.
+ * Running npm, which on Windows is `npm.cmd`: `execFileSync` skips PATHEXT, and Node
+ * spawns a `.cmd` only with a shell since CVE-2024-27980. A shell hands the quoting
+ * back to us, so the paths are quoted -- a `C:\Users\Given Name\` breaks them unquoted.
  */
 const WINDOWS = process.platform === 'win32'
 const NPM = WINDOWS ? 'npm.cmd' : 'npm'
@@ -66,14 +30,9 @@ function arg(value) {
 }
 
 /**
- * The TypeScript the consumer project compiles with, taken from this
- * repository's own pin.
- *
- * **The axis under test is the `tsconfig` and the `node_modules` layout, not
- * the compiler version.** Resolving `typescript` afresh would make a gate that
- * can go red because a release happened, which is a different fact from the one
- * it is here to report; reading the pin keeps the two versions from drifting
- * apart without anyone choosing to.
+ * The TypeScript the consumer project compiles with, from this repository's pin:
+ * the axis under test is the tsconfig and the `node_modules` layout, and a fresh
+ * resolve would turn a TypeScript release red here.
  */
 const TYPESCRIPT = JSON.parse(readFileSync(resolve(HERE, '../../../package.json'), 'utf8')).devDependencies.typescript
 
@@ -145,16 +104,9 @@ process.stdout.write(String(bytes.length))
   process.stderr.write(`rendered ${size} bytes of PNG through the installed package\n`)
 
   // ── The two questions a render cannot ask ────────────────────────────────
-  //
-  // A render proves the runtime works for the one caller shape it uses. It says
-  // nothing about a caller who reaches the package by `require`, and nothing at
-  // all about types, which are erased before anything runs. Both gaps let a
-  // defect through to a release: `exports` carried no `require` condition, so
-  // every CommonJS consumer met `ERR_PACKAGE_PATH_NOT_EXPORTED`; and the
-  // declarations named the ambient `Buffer`, which resolves to `any` in a
-  // consumer that has not put `node` in `types`. Neither is visible from here
-  // without asking, and nothing else in the repository asks: every in-tree
-  // typecheck runs where `@types/node` is a direct development dependency.
+  // `require` by package name, since `exports` needs a `require` condition, and
+  // types compiled where `@types/node` is not a direct dependency, where an ambient
+  // `Buffer` resolves to `any` -- nothing in the tree typechecks from there.
 
   /** The export names one module system sees, sorted so the two can be compared. */
   function names(inputType, source) {
@@ -220,12 +172,9 @@ void [bytes.length, ease('outCubic', 0.5), isColor('#fff')]
 `,
   )
 
-  // **The control, which has to fail before the probe passing means anything.**
-  // `toBuffer` answers a `Buffer`, so assigning it to a `string` is an error --
-  // unless `Buffer` did not resolve, in which case it is `any`, the assignment
-  // is accepted, and `skipLibCheck` swallows the reason. A clean compile here
-  // is the defect, not the absence of one, which is why it is asserted in the
-  // direction that reads backwards.
+  // The control, asserted to fail: assigning `toBuffer`'s `Buffer` to a `string` is
+  // an error unless `Buffer` resolved to `any` and `skipLibCheck` hid why -- so a
+  // clean compile here is the defect.
   writeFileSync(
     join(project, 'control.ts'),
     `import { Box, Root } from 'meo-canvas'
