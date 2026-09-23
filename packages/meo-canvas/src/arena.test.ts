@@ -12,17 +12,9 @@ import type { PositionType } from './index.js'
 import type { BackgroundImage, Gradient, GradientDirection, Style } from './style.js'
 
 /**
- * The reader this file checks the writer against.
- *
- * Deliberately **not** built from the writer's own table. It walks the `type`
- * column of the generated tables — the Rust type, as `arena_group!` spells it —
- * and decodes from that. So a property whose writer emits the wrong number of
- * slots does not merely compare unequal: the cursor desynchronises and the
- * trailing-slot check at the end fails, which is the failure the format itself
- * would suffer.
- *
- * It lives in a test file because it is not part of the package. Nothing ships
- * that reads an arena; the addon does that, in Rust.
+ * The reader this file checks the writer against, built from the generated tables'
+ * Rust `type` column rather than the writer's table: a writer emitting the wrong
+ * number of slots desynchronises it, and the trailing-slot check fails.
  */
 interface Cursor {
   /** The slots being read. */
@@ -72,15 +64,9 @@ function tagged(input: Cursor, tags: readonly string[], what: string): Tagged {
 }
 
 /**
- * Reads a colour, parsed into the channels the fixture names.
- *
- * A colour crosses as a **string** now, one side value like a font family, and
- * the renderer parses it — so this reader parses too, and only the hex forms
- * the cases are written in. That is deliberate: a reader that took every CSS
- * syntax would be a second implementation of the thing under test, and the
- * point of this file is to read what the writer wrote rather than to agree
- * with it. A case written in a syntax this cannot read fails here, which is
- * the right place to find out.
+ * Reads a colour, which crosses as a string, parsed from the hex forms the cases
+ * use. Reading every CSS syntax would re-implement what is under test; a case in a
+ * syntax this cannot read fails here.
  */
 function color(input: Cursor): Record<string, number> {
   const text = side(input)
@@ -202,11 +188,8 @@ function leafName(type: string): string {
 }
 
 /**
- * Reads one value of the type `type` names.
- *
- * A tiny recursive descent over the type expression rather than a table of
- * whole types: `Sides<Option<Length>>` is three rules meeting, and writing the
- * combinations out would be the list this reads instead.
+ * Reads one value of the type `type` names, by recursive descent over the type
+ * expression: `Sides<Option<Length>>` is three rules meeting.
  */
 function read(input: Cursor, type: string): unknown {
   const cleaned = type.replaceAll(/\s+/g, '')
@@ -325,22 +308,10 @@ function sourceValue(value: SideValue): string | number[] {
 }
 
 /**
- * Reads an image source: the tag, its side value, and the headers a url carries.
- *
- * **Reported, not merely consumed.** A url arm is `enum, url, count, count x
- * (name, value)`, so a reader that skipped the pairs would fall out of step with
- * everything after them — which is how this reader failed when the count was
- * added. Consuming without reporting would be worse than that in a quieter way:
- * the agreement test would compare two shapes that both omit the headers and
- * pass without having looked at them, which is a decoration rather than a test.
- *
- * **The key is always present on a url, empty array included**, and that is a
- * detectability argument rather than a tidiness one. A reader that silently
- * drops headers is red on *every* url case when the key is always there, and
- * looks correct on every empty case when the key is absent when empty — which
- * is exactly the consume-but-do-not-report state this reader was in before, and
- * the shape that hid it. The one-difference-between-the-two-cases reading is
- * about diff legibility and loses to that.
+ * Reads an image source: the tag, its side value, and a url's headers, reported
+ * rather than consumed so the agreement test compares them. The key is present on
+ * every url, empty array included, so a reader that drops headers is red on every
+ * url case rather than only on the ones carrying some.
  */
 function readSource(input: Cursor): { tag: string; value: string | number[]; headers?: [string, string][] } {
   const tags = ['path', 'url', 'bytes']
@@ -390,11 +361,9 @@ function readPayload(input: Cursor, kind: string): unknown {
   }
 
   if (kind === 'Image') {
-    // A source is a tag and then a side value, not a tag and a number: the
-    // bytes of an image cannot live in a `Float64Array` any more than a string
-    // can. Bytes come back as a plain array, which is how the case fixture
-    // writes a buffer — a `Uint8Array` here would compare unequal to Rust's own
-    // answer for a difference that is about JavaScript rather than the format.
+    // A source is a tag and a side value, since bytes cannot live in a
+    // `Float64Array`. Bytes come back as a plain array, as the fixture writes a
+    // buffer; a `Uint8Array` would compare unequal to Rust's answer.
     return {
       source: readSource(input),
       fit: read(input, 'ObjectFit'),
@@ -501,51 +470,18 @@ const SIZE = cases.$size as [number, number]
 const SCALE = cases.$scale
 
 /**
- * One probe per property this surface spells, keyed by the scene's field name.
- *
- * Hand-written, and deliberately not derived from the fixture's `value`.
- * Deriving them would mean writing the Rust-to-TypeScript adapter here and then
- * checking the encoder's adapter against it — one adapter checking another
- * adapter from the same hand. These are what a caller would write to mean what
- * the fixture says Rust wrote, and the comparison is against Rust's own answer.
- *
- * Every value is the fixture's probe, which is chosen to differ from the
- * property's default. A probe equal to the default proves nothing: the property
- * would compare equal whether it was written or dropped.
- *
- * **Every fractional value is a quarter, and that is load-bearing rather than
- * arbitrary.** These were all `1` — `'100%'` for the percentages — until a
- * hundredfold units bug shipped: `'50%'` covered a whole two-hundred-pixel
- * canvas, and every check here passed. `Length::Percent` is a fraction where
- * `1.0` is 100%, so `'1%'` written without the division is `Percent(1.0)`
- * too — the one value where forgetting to divide encodes identically to
- * remembering. `0` is the other, being a fixed point of any scaling. A quarter
- * is neither, and is exact in an `f32` so no expectation here carries a
- * rounding argument.
- *
- * Raising one back to `1` reopens the blind spot for that property alone, and
- * nothing in this file would fail.
- *
- * The general form, which is why the quarter is worth the churn it cost: **a
- * fixture with one value per type checks the shape of a read and not its
- * kind.** Moving off `1` immediately surfaced a latent one — `Option`'s
- * presence flag was read through the raw slot path rather than the integer
- * one, which is the same read at `1` and a different read at `0.25`. No
- * reviewer would have caught it, because the read matched its type in every
- * case the suite contained; only a value the suite did not contain separates
- * them.
- */
-/**
- * The one string every string-valued probe is written with.
- *
- * A colour now crosses as a string and is **parsed** on the far side, so a
- * probe value that is not a colour fails the one property that reads one --
- * which is why the filters, the family and a URL are all spelled as a colour
- * here rather than as the word `probe` they used to be. It is a colour first
- * and a string second, and every case that only needs a string is indifferent.
+ * The one string every string-valued probe is written with. A colour crosses as a
+ * string and is parsed, so the probe is a colour, and the cases needing only a
+ * string are indifferent.
  */
 const PROBE_STRING = '#0a141e'
 
+/**
+ * One probe per property this surface spells, keyed by the scene's field name,
+ * written as a caller would rather than derived from the fixture, and each unequal
+ * to its default. Every fraction is a quarter: `'1%'` and `0` encode the same with
+ * or without dividing by a hundred, and a quarter is exact in an `f32`.
+ */
 const PROBES: Readonly<Record<string, Style>> = {
   align_content: { alignContent: 'flex-end' },
   align_items: { alignItems: 'flex-end' },
@@ -608,29 +544,17 @@ const PROBES: Readonly<Record<string, Style>> = {
   vertical_align: { verticalAlign: 'middle' },
   word_spacing: { wordSpacing: 0.25 },
   z_index: { zIndex: 1 },
-  // `'100%'`, not the `'25%'` the kind cases use: this case's percentages come
-  // from `PROBE_FILL`, which is `1.0` for every property, so the probe has to
-  // match it. That is the blind spot this case closes — a hundredfold units error is
-  // invisible at exactly this value — and the probe cannot step out of it
-  // alone, because the bytes it is compared against are written from the fill.
+  // `'100%'` rather than `'25%'`: this case's percentages come from `PROBE_FILL`,
+  // which is `1.0` for every property, and its bytes are written from that fill.
   gradient: {
     gradient: { type: 'radial', at: { x: '25%', y: '25%' }, stops: [{ offset: 0.25, color: PROBE_STRING }] },
   },
   background_image: {
     backgroundImage: {
-      // **The header pair is `PROBE_STRING` twice, and that is the fixture's
-      // doing rather than a choice.** Rust's property-table generator fills
-      // every `String` slot with one sample, so on that side the same hex
-      // colour is the url, the header name and the header value. This side has
-      // to author the same scene or the two describe different bytes.
-      //
-      // It works because `#` is a valid HTTP token character: `new Headers([[
-      // '#0a141e', '#0a141e' ]])` is accepted, where `'bad name'`, `'a:b'` and
-      // `'séparé'` are all refused as invalid header names. **So this case
-      // rests on the sample staying a valid token** — pick one that is not and
-      // this side cannot build the scene at all, and the agreement test fails
-      // with a `TypeError` rather than a byte mismatch, which is a much longer
-      // road to the cause.
+      // The header pair is `PROBE_STRING` twice because Rust's generator fills
+      // every `String` slot with one sample. That works because `#` is a valid HTTP
+      // token character; a sample that is not one makes this side unable to build
+      // the scene, and it fails with a `TypeError` rather than a byte mismatch.
       src: { url: PROBE_STRING, httpOptions: { headers: [[PROBE_STRING, PROBE_STRING]] } },
       repeat: 'repeat-x',
       size: 'cover',
@@ -647,12 +571,8 @@ const PROBES: Readonly<Record<string, Style>> = {
 }
 
 /**
- * The properties the scene carries and this surface does not spell yet, and why.
- *
- * Written down rather than left out. A property with neither a table entry here
- * nor a line in this list fails the partition below, so adding one to an
- * `arena_group!` upstream forces a decision about its TypeScript spelling
- * instead of leaving it silently absent from every scene this package writes.
+ * The properties the scene carries and this surface does not spell, and why. One
+ * with neither a table entry nor a line here fails the partition below.
  */
 const UNSPELT: Readonly<Record<string, string>> = {}
 
@@ -672,39 +592,10 @@ describe('the property tables', () => {
   })
 
   it('spell a property the way a caller writes it, in both tables', () => {
-    // The Rust decoder names the failing property out of its own table and
-    // cannot read this one: it reports `borderColor` for a field the scene
-    // calls `border_color_all`. So the surface spelling exists twice, and the
-    // copy in the Rust is a bare string literal where `keys` below is
-    // `readonly (keyof Style)[]` and therefore checked against `Style` itself.
-    //
-    // The two are not the same datum, which is why this is a rule about them
-    // rather than an equality. `keys` is every spelling that routes to the
-    // slot, and it drives presence; the Rust name is the one spelling a
-    // failure reports. They part company on six rows, in two ways:
-    //
-    //   gridColumn / gridArea    two spellings of one property
-    //   width / height           two properties sharing one slot
-    //
-    // An alias names the primary, because a caller who wrote `gridArea` is
-    // better served by one name they can look up than by two they must choose
-    // between. A symmetric pair names both, because naming one half is
-    // confidently wrong half the time -- a caller who wrote `height` and reads
-    // `width is ...` has been misdirected, where `width or height` is merely
-    // broad. That is the `borderColorAll` rule applied one level in.
-    //
-    // What is checkable here is that every name is a real key and that the
-    // names lead with the primary. Which subset a row carries beyond that is a
-    // judgement: `size as "width"` satisfies both clauses and misdirects a
-    // caller who wrote `height`, because nothing declares which rows are
-    // symmetric pairs and which are aliases.
-    //
-    // That gap is unreachable while it stands. A name is only ever printed by
-    // a variant that reads a side value, and the three symmetric rows are
-    // `Dimension`s, which read none. **It opens the moment a numeric variant
-    // carries the property** -- a change someone will make for an unrelated
-    // reason, and at that point this check needs the distinction declared
-    // rather than inferred from the key order.
+    // The Rust decoder names a failing property from a string literal of its own,
+    // which must be a real key and lead with the primary: an alias names the primary
+    // (`gridColumn`), a pair sharing a slot names both (`width or height`). Nothing
+    // declares which rows are pairs, which holds while no numeric variant prints one.
     for (const { key, table } of GROUPS) {
       for (const property of PROPERTY_TABLES[key] ?? []) {
         const generated = table.find(entry => entry.index === property.index)
@@ -853,15 +744,9 @@ describe('the two grid shorthands', () => {
 })
 
 describe("a gradient's eight direction keywords", () => {
-  // The scene carries an ANGLE and nothing else: `'to-bottom'` is resolved
-  // here, before anything is encoded, so the equivalence is a property of this
-  // surface rather than of the renderer. A fixture would have drawn two
-  // identical cells and proved nothing about where the resolution happened.
-  //
-  // Chrome treats the keyword and the angle as one path, which is what makes
-  // the pairing below the right assertion: not that each keyword writes *an*
-  // angle, but that it writes the SAME angle as the number a caller could have
-  // written instead.
+  // The scene carries only an angle, so each keyword resolves here, and the
+  // assertion is that it writes the same angle a caller could have written
+  // instead, as Chrome treats the two as one path.
   it('each write the angle a caller could have written instead', () => {
     const pairs: readonly [string, number][] = [
       ['to-top', 0],
@@ -904,16 +789,9 @@ describe("a gradient's eight direction keywords", () => {
 })
 
 describe('a colour in every syntax a browser takes', () => {
-  // The regression this fixes was on the surface most callers use: a colour
-  // was packed into one slot here, so only the forms this package could parse
-  // crossed, and `rgba(255,255,255,0.15)`, `red` and `hsl(...)` all threw
-  // where v1 forwarded them. The string is what crosses now and the renderer
-  // parses it.
-  //
-  // Asserted against the **scene bytes** rather than against a decoded value,
-  // because the parse happens on the far side: two spellings of one colour
-  // have to reach the same channels, and the reader in this file only knows
-  // the hex forms on purpose.
+  // A colour crosses as a string and the renderer parses it, so every spelling it
+  // takes is carried. Asserted against the scene bytes, because the parse is on the
+  // far side and this file's reader knows only hex.
   it('reaches the same channels however it is written', () => {
     const hex = throughTheAddon({ backgroundColor: '#0a141e' })
 
@@ -947,9 +825,8 @@ describe('a value the format cannot carry', () => {
   })
 
   it('names what it does take', () => {
-    // The keyword check is what caught this package offering `'oblique'` and
-    // `'baseline'`, neither of which the scene or v1 has. A lookup that fell
-    // back to the zeroth variant would have written `normal` and `top`.
+    // A keyword with no variant throws rather than falling back to the zeroth,
+    // which would write `normal` or `top` for a value nobody asked for.
     expect(() => roundTrip({ display: 'inline' as unknown as 'flex' })).toThrow(/display has no value "inline"; it takes flex, grid, block, none/)
   })
 })
@@ -966,13 +843,8 @@ describe('a mask slot', () => {
 })
 
 /**
- * A container carrying only what the caller names.
- *
- * `Box` names `display: flex`, because the scene's default is `block` and a
- * `Box` is a flex container. These tests are about what the *wire* carries for
- * a property — a shorthand expanding, an optional staying absent — so the
- * factory's own display would be noise in every expectation. An absent
- * optional writes no slot, so a case that names a display still gets one.
+ * A container carrying only what the caller names: `Box` adds `display: flex`,
+ * which would be noise in every expectation about what the wire carries.
  */
 function bare(props: Parameters<typeof Box>[0] = {}): SceneNode {
   const built = Box(props)
@@ -1165,8 +1037,7 @@ describe('a path node', () => {
 
 describe('the effects', () => {
   it('take one shadow or many', () => {
-    // v1 takes `BoxShadowProps | BoxShadowProps[]`, so a caller writing one
-    // does not wrap it. The scene holds a list either way.
+    // One shadow need not be wrapped in a list; the scene holds a list either way.
     const one = page(bare({ boxShadow: { offsetY: 2 } })).groups.effects
     const two = page(bare({ boxShadow: [{ offsetY: 2 }, { offsetY: 4 }] })).groups.effects
 
@@ -1211,7 +1082,7 @@ describe('the effects', () => {
   })
 
   it('read a bare string mask as path data', () => {
-    // v1's shorthand for `{ path }`, and the fill rule CSS starts from.
+    // Shorthand for `{ path }`, with the fill rule CSS starts from.
     expect(page(bare({ mask: 'M0 0 L4 4' })).groups.effects).toEqual({
       mask: { tag: 'path', data: 'M0 0 L4 4', fillRule: 'NonZero' },
     })
@@ -1264,8 +1135,7 @@ describe('a gradient', () => {
   })
 
   it('spreads a colour list evenly and puts one colour at the midpoint', () => {
-    // v1's rule for `colors`. A single colour is a flat fill, and the midpoint
-    // is where v1 puts it.
+    // A single colour is a flat fill, and it sits at the midpoint.
     const stops = (colors: readonly string[]): unknown => (of({ type: 'linear', colors }) as { stops: { offset: number }[] }).stops.map(stop => stop.offset)
 
     expect(stops(['#000000ff'])).toEqual([0.5])
@@ -1312,7 +1182,7 @@ describe('a background image', () => {
   })
 
   it('sizes the width from a bare value and leaves the height to the picture', () => {
-    // v1's reading of `size: 12`, and CSS's one-value form.
+    // CSS's one-value form.
     expect(of({ src: 'a.png', size: 12 })).toMatchObject({
       size: { tag: 'per-axis', value: [{ tag: 'points', value: 12 }, { tag: 'auto' }] },
     })
@@ -1497,20 +1367,9 @@ describe('the positioned values', () => {
 describe('an offset with no position type', () => {
   it('crosses faithfully, and the layout is what ignores it', () => {
     // `PositionType` defaults to `Static`, CSS's initial value, which ignores
-    // `inset`. So the offsets are encoded exactly as written and the layout
-    // does nothing with them — which is what Chrome does, measured across
-    // block, flex and grid.
-    //
-    // Deliberate, and the division is the point: **round-trip fidelity is the
-    // codec's contract and dropping the offsets is the layout's.** Refusing the
-    // combination here, or quietly writing `positionType: 'relative'` beside
-    // it, would make the codec lie to compensate for the layout — and would
-    // cost the `inset` case its byte check, since this node would then carry
-    // two properties where the case carries one.
-    //
-    // v1 has no equivalent, because Yoga's default is `Relative`: a ported tree
-    // that positioned things stops positioning them. That is a porting note,
-    // not a defect in the codec.
+    // `inset`: the offsets are encoded as written and the layout ignores them, as
+    // Chrome does. Round-trip fidelity is the codec's contract and dropping them is
+    // the layout's, so the codec neither refuses them nor adds `relative`.
     const decoded = page(bare({ position: { top: 4 } }))
 
     expect(decoded.groups.layout).toEqual({ inset: [{ tag: 'points', value: 4 }, null, null, null] })
@@ -1553,16 +1412,9 @@ describe('a number that is not one', () => {
 })
 
 /**
- * One probe per node kind the surface can express, keyed by the case's name.
- *
- * The kind cases pin the **payload**, which the property cases cannot: every
- * one of those is a styled `Box`, so without these a change to how a text,
- * image or path node is written passes every gate in this file and fails first
- * in a rendered example, as a slot the reader cannot make sense of.
- *
- * The probes are hand-written for the reason {@link PROBES} are: deriving them
- * from the fixture's `value` would mean writing the Rust-to-TypeScript adapter
- * here and checking the encoder's against it.
+ * One probe per node kind this surface can express, keyed by the case's name. They
+ * pin the payload, which the property cases, all styled `Box`es, cannot; they are
+ * hand-written for the reason {@link PROBES} are.
  */
 const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
   __kind_box: bare(),
@@ -1583,25 +1435,10 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     objectPosition: ['25%', 3],
     frame: 2,
   }),
-  // The same URL with headers. Both url cases carry a `headers` key — this one
-  // with two pairs, `__kind_image_url` with an empty array — because a key that
-  // is always present makes a reader that drops headers red on every url case,
-  // where a key absent-when-empty lets that reader look correct on the empty
-  // one.
-  //
-  // **Authored as an array of pairs, not as an object, and that is the whole
-  // point of the case.** `{ 'x-zeta': '1', 'x-zeta': '2' }` is one key — the
-  // second literal overwrites the first before `Headers` is ever constructed —
-  // so the repeat would vanish and the case would silently stop testing
-  // combining. (Case-variants do survive an object: `X-Zeta` and `x-zeta` are
-  // two distinct JavaScript keys and both reach `Headers`.)
-  //
-  // The encoded form is canonical rather than authored: lower-cased, repeats
-  // combined with `", "`, then sorted by name. So these three pairs cross as
-  // two — `authorization: Bearer probe` and `x-zeta: 1, 2` — and the case holds
-  // all three properties at once. Drop the sort and `x-zeta` comes first; drop
-  // the lower-casing and `X-Zeta` sorts elsewhere as a different name; drop the
-  // combining and there are three records rather than two.
+  // The same URL with headers, authored as pairs because an object literal would
+  // merge the two `x-zeta` keys before `Headers` saw them. The canonical form is
+  // lower-cased, combined with `", "` and sorted, so three pairs cross as two, and
+  // dropping any one of those steps changes the result.
   __kind_image_url_headers: Image({
     src: {
       url: 'https://probe.invalid/a',
@@ -1657,11 +1494,8 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
 }
 
 /**
- * The kinds this surface cannot describe yet, and why.
- *
- * The same partition the style properties have. A kind case with neither a
- * probe nor a line here fails, so a payload added upstream forces a decision
- * rather than being quietly untested from this side.
+ * The kinds this surface cannot describe, and why; a kind case with neither a probe
+ * nor a line here fails, as the style properties do.
  */
 const UNSPELT_KINDS: Readonly<Record<string, string>> = {}
 
@@ -1682,16 +1516,9 @@ describe('the node kinds', () => {
 })
 
 /**
- * What the arena actually carries for a case, out of what the case records.
- *
- * A markup case records two things: the string the arena holds, and what Rust
- * parses it into. Only the first crosses — the parser runs on the far side,
- * which is the whole reason the discriminant exists — so the round trip
- * compares against the markup and the paragraph, and the `parses_to` segments
- * are Rust documenting itself rather than something this side can check.
- *
- * Derived from the case rather than written out beside the probe, so a case
- * whose parse changes does not need this file edited.
+ * What the arena carries for a case. A markup case records the string and what
+ * Rust parses it into; only the string crosses, so the round trip compares the
+ * markup and the paragraph, derived from the case rather than written beside it.
  */
 function carried(value: unknown): unknown {
   const payload = value as { markup?: string; parses_to?: { paragraph: unknown } }
@@ -1718,22 +1545,10 @@ describe('a node kind crosses as itself', () => {
 })
 
 /**
- * The half of the round trip that can disagree with Rust.
- *
- * Everything above proves this package's writer and a reader built from the
- * generated tables agree. Both are from one hand, and two things from one hand
- * can agree perfectly while being wrong together. This hands the arena to the
- * addon, which decodes it into a `Scene` and writes the **byte** format for it,
- * and compares that against the bytes Rust wrote for the same property. Nothing
- * in the comparison is on this side of the language boundary.
- *
- * Bytes rather than pictures on purpose: two different scenes can render to one
- * image, so a property the encoder forgot that happens to change nothing
- * visible would go unnoticed.
- *
- * **These fail when the addon is absent. They are never skipped.** A boundary
- * check that quietly does not run is a check that passes for the wrong reason,
- * and the addon is the only thing here that checks anything against Rust.
+ * The half of the round trip that can disagree with Rust: the addon decodes the
+ * arena and writes the byte format, compared with the bytes Rust wrote for the same
+ * property. Bytes rather than pictures, since two scenes can render alike. These
+ * fail, never skip, when the addon is absent.
  */
 
 /** What the addon exports, of what this file uses. */
@@ -1743,12 +1558,8 @@ interface Addon {
 }
 
 /**
- * The built addon, or an error saying how to build it.
- *
- * Loaded inside a test rather than while the file is being collected. A throw
- * during collection takes the whole file down, so a missing addon would stop
- * the ninety-odd checks above from running at all -- the boundary suite failing
- * is the point, everything else failing with it is collateral.
+ * The built addon, or an error saying how to build it. Loaded inside a test, so a
+ * missing addon fails the boundary suite without stopping collection of the rest.
  */
 function addon(): Addon {
   try {
@@ -1795,17 +1606,10 @@ describe('the bytes Rust writes for the same scene', () => {
   }
 
   it('are the same for markup and for the runs it parses into', () => {
-    // What the markup discriminant is *for*, stated as a check rather than
-    // trusted. The two arenas differ — one carries a string, the other carries
-    // built runs — and the scenes the addon decodes them into are identical, so
-    // the byte codec writes the same thing for both.
-    //
-    // **The arena carries the markup unparsed**, because the parser lives on
-    // the far side so that both surfaces get it. **The byte comparison is where
-    // parsing is checked**, here and in the `__kind_text_markup` case: that
-    // case's `bytes` are the *parsed* scene, and the string `one <b>two</b>`
-    // appears nowhere in them, so the comparison passes only if the addon
-    // produced exactly these runs.
+    // What the markup discriminant is for: the arenas differ, one carrying a string
+    // and one built runs, and decode to the same scene, so the bytes agree. The parse
+    // itself is checked by `__kind_text_markup`, whose bytes are the parsed scene and
+    // do not contain the markup string.
     const markup = Text('one <b>two</b>')
     const runs = RichText([
       { text: 'one ', style: {} },
@@ -1829,17 +1633,9 @@ describe('the bytes Rust writes for the same scene', () => {
 })
 
 /**
- * Every keyword union on the surface, against the enum it crosses as.
- *
- * The one copy of a list this file keeps, and it is checked in both directions:
- * a keyword with no variant behind it fails, and a variant with no keyword in
- * front of it fails. The second direction is the one that rots silently — a
- * variant added upstream is a value the scene can carry and this surface cannot
- * name, and nothing else here notices — the encoder throws only for a keyword
- * with no variant, never for a variant with no keyword.
- *
- * The unions themselves are types, so they are gone at runtime and cannot be
- * read. This is that list written down where it can be checked.
+ * Every keyword union on the surface, against the enum it crosses as, checked both
+ * ways: a keyword with no variant fails, and so does a variant with no keyword,
+ * which nothing else here notices. The unions are types, so this is the list.
  */
 const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
   ['Align', ['flex-start', 'flex-end', 'center', 'stretch', 'baseline', 'space-between', 'space-around', 'space-evenly']],
@@ -1965,30 +1761,17 @@ describe('the keywords this surface offers', () => {
 })
 
 describe('a value of the wrong type is refused where the property is still named', () => {
-  // **The writer is the only door these can arrive through.** The crate surface
-  // cannot express a string where a number goes -- Rust refuses it at compile
-  // time -- so refusing here repairs every case. That is not true of a value
-  // which is in-type on both surfaces, where the check has to move to the point
-  // the value is used.
-  //
-  // Before this, both of these reached the arena as `NaN` and came back as
-  // `slot 33 holds NaN, which is not an integer`. The slot number is an offset
-  // into a wire format the caller never saw, and it moves with the rest of the
-  // scene: the same mistake was measured as slot 33, 34 and 65 in three
-  // different trees. Nothing in that string can be searched for.
+  // The writer is the only door: Rust refuses a string where a number goes at
+  // compile time, so refusing here covers every case. Without it the reader would
+  // report `slot 33 holds NaN`, an offset that moves with the scene.
 
   it('names the property and what it takes, rather than a slot', () => {
     expect(() => throughTheAddon({ zIndex: 'auto' as unknown as number })).toThrow('zIndex is "auto"; it takes a whole number')
   })
 
   it('refuses a weight outside the range CSS defines, naming it', () => {
-    // **Two halves, and only the first was reported.** `1500` and `0` are
-    // in-type and out of range, and the codec clamped them with nothing said --
-    // the element rendered at a weight nobody asked for. `-100` and `1.5` came
-    // back as `slot 30 holds …`, an offset into a wire format the caller never
-    // saw, because `packWeight` tested the type and returned the number
-    // unchecked: the range and the integer-ness were never anyone's job on this
-    // side.
+    // `1500` and `0` would be clamped by the codec with nothing said, and `-100` and
+    // `1.5` would report a slot offset; all are refused here by name.
     for (const weight of [1500, 0, -100, 1.5, NaN, Infinity]) {
       const write = (): unknown => throughTheAddon({ fontWeight: weight })
       expect(write).toThrow('fontWeight')
@@ -2005,13 +1788,8 @@ describe('a value of the wrong type is refused where the property is still named
   })
 
   it('names both arms when the property takes a number or a keyword', () => {
-    // **A union, not an enum.** `fontWeight` takes a number *or* one of two
-    // keywords, so `variant`'s wording would list `normal, bold` and silently
-    // drop the numeric arm -- a message that confidently names an accepted set
-    // excluding the common case, which is worse than the slot number it
-    // replaces. `zIndex` has no keywords at all, so its refusal reads as a
-    // plain type. Two rows that look alike and are three patterns between
-    // them.
+    // A union, not an enum: `variant`'s wording would list `normal, bold` and drop
+    // the numeric arm. `zIndex` has no keywords, so its refusal reads as a type.
     expect(() => throughTheAddon({ fontWeight: 'bolder' as unknown as number })).toThrow(
       'fontWeight is "bolder"; it takes a number from 1 to 1000, or normal or bold',
     )
@@ -2040,16 +1818,9 @@ describe('a value of the wrong type is refused where the property is still named
 })
 
 describe('a value no path handles is refused by the property that was written', () => {
-  // **The neighbouring case to the one above, and it was not covered by it.**
-  // `zIndex: 'auto'` is the wrong *type* for a property that parses nothing;
-  // `width: {}` is the wrong type for a property that parses a string tail. The
-  // second reached `value.endsWith` and came back as
-  // `value.endsWith is not a function` -- the name of a step inside a length
-  // parser, which names neither the property nor the value and cannot be
-  // searched for. Measured across every writer rather than every property: 69
-  // style keys share about a dozen writers, so a per-key table would have
-  // repeated one row twelve times and still missed the writers no key in the
-  // sample used.
+  // The wrong type for a property that parses a string tail, where the case above
+  // is one that parses nothing. Covered per writer rather than per property: the 69
+  // style keys share about a dozen writers.
 
   const unhandled = { '{}': {}, '[]': [], null: null, true: true, 'a function': () => {} } as const
 
@@ -2108,12 +1879,8 @@ describe('a value no path handles is refused by the property that was written', 
   })
 
   describe('the writers that pushed the value into a slot unread', () => {
-    // **The silent half, and the reason this is not only a message defect.**
-    // `out.f32` takes whatever it is given, and the reader turns it into a
-    // number on the way out: `opacity: null` arrived as `0` and rendered the
-    // element invisible, `fontSize: null` blanked the text, and neither said
-    // anything. Verified before the fix by hash, not by eye -- `opacity: null`
-    // and `opacity: 0` produced byte-identical PNGs.
+    // The silent half: `out.f32` takes whatever it is given, so `opacity: null`
+    // would render as `0`, byte-identical to `opacity: 0`, with nothing said.
     it.each(['opacity', 'fontSize', 'flexGrow', 'flexShrink', 'lineGap', 'aspectRatio'])('%s is refused rather than coerced', key => {
       for (const value of Object.values(unhandled)) {
         expect(() => throughTheAddon({ [key]: value })).toThrow(`${key} is`)
@@ -2129,11 +1896,8 @@ describe('a value no path handles is refused by the property that was written', 
     })
   })
 
-  // **`NaN` is refused here and `Infinity` is not, and the predicate is the
-  // whole difference.** `typeof NaN === 'number'`, so it passed every guard
-  // above until it was named: a check about the *type* cannot see it.
-  // `Number.isNaN(value)` sees it; `!Number.isFinite(value)`, which reads as
-  // the same intent and is one word shorter, would take `Infinity` with it.
+  // `NaN` is refused and `Infinity` is not: `typeof NaN` is `'number'`, so only
+  // `Number.isNaN` sees it, and `!Number.isFinite` would take `Infinity` too.
   it.each(['width', 'flexBasis', 'padding', 'gap', 'opacity', 'fontSize', 'flexGrow', 'letterSpacing', 'lineHeight', 'lineGap', 'aspectRatio'])(
     'refuses %s: NaN, naming the property',
     key => {
@@ -2143,12 +1907,9 @@ describe('a value no path handles is refused by the property that was written', 
     },
   )
 
-  // **The pair that says the change stayed on its own side of the surface.**
-  // An infinity is bounded in the core, where a finite ceiling gives it a
-  // meaning; refusing it here would leave that clamp correct and unreachable,
-  // undone from the other surface by a commit whose subject says it is about
-  // `NaN`. The first row alone would pass a writer that let `Infinity` through
-  // to a core that had stopped clamping it, which is why the second is here.
+  // The pair keeping `Infinity` bounded in the core rather than refused here: the
+  // first row alone would pass a writer letting it through to a core that had
+  // stopped clamping it.
   it.each(['width', 'flexBasis', 'padding', 'gap', 'opacity', 'fontSize', 'flexGrow'])('still lets %s carry Infinity to the far side', key => {
     expect(() => throughTheAddon({ [key]: Infinity })).not.toThrow()
   })
@@ -2158,14 +1919,9 @@ describe('a value no path handles is refused by the property that was written', 
     expect(throughTheAddon({ width: Infinity })).not.toEqual(throughTheAddon({}))
   })
 
-  // **A bad string is a different mistake and keeps its own wording.** The
-  // guards sit above the throws these exercise, not in place of them: a caller
-  // who wrote `'50pc'` needs the list of suffixes, and a caller who wrote `{}`
-  // needs to be told the kind is wrong. Replacing the second with the first
-  // would make these fail.
-  // **A list is named as a list rather than as the object it technically is.**
-  // The mistake it comes from is specific -- a caller reaching for CSS's
-  // four-value shorthand -- and "an object" gives them nothing to correct.
+  // A bad string keeps its own wording: `'50pc'` needs the list of suffixes and `{}`
+  // needs to hear the kind is wrong. A list is named as a list, since the mistake is
+  // CSS's four-value shorthand and "an object" gives nothing to correct.
   it('names a list as a list wherever a value is rendered', () => {
     expect(() => throughTheAddon({ padding: [8, 4] as unknown as number })).toThrow('padding is a list')
     expect(() => throughTheAddon({ width: [] as unknown as number })).toThrow('width is a list')
@@ -2220,11 +1976,8 @@ describe('merging http options', () => {
     expect(merged?.redirect).toBe('error')
   })
 
-  // **Each spelling against a known value.** `Headers`, a plain object and an
-  // array of pairs are all legal `HeadersInit`, and a merge written against the
-  // object form passes a test written in the object form while dropping the
-  // other two. The scene-wide header surviving is what says the merge saw the
-  // source's headers at all.
+  // Each `HeadersInit` spelling against a known value, since a merge written for the
+  // object form would pass an object-form test and drop the other two.
   it.each([
     ['a Headers instance', new Headers({ accept: 'image/webp' })],
     ['a plain object', { accept: 'image/webp' }],
@@ -2289,20 +2042,9 @@ describe('the headers a url source carries', () => {
     return at
   }
 
-  // **Sorted by name, and that is the wire contract rather than an
-  // implementation detail.** Two writers that agree on "a count, then that many
-  // pairs" and disagree on the order produce different bytes for the same
-  // request, and the disagreement surfaces as a codec defect a long way from
-  // whoever added a header source. A test written with one header, or with two
-  // whose sorted and insertion orders coincide, passes under either rule and
-  // pins nothing — so these two are chosen to differ: inserted zeta then alpha,
-  // written alpha then zeta.
-  //
-  // **It does not fail if the explicit `sort` is deleted**, because `Headers`
-  // iterates sorted by specification and the normalisation has already done it
-  // — measured, not assumed. It fails when the writer stops normalising through
-  // `Headers` and iterates the object it was handed, which is the edit that
-  // would actually break the order.
+  // Sorted by name is the wire contract. Inserted zeta then alpha, written alpha
+  // then zeta, so the two orders differ. Deleting the `sort` does not fail this,
+  // since `Headers` iterates sorted; iterating the plain object instead does.
   it('writes them sorted by name rather than in the order they were given', () => {
     const arena = encodeScene(
       [Image({ src: { url: 'https://probe.invalid/h', httpOptions: { headers: { 'x-zeta': 'z', 'x-alpha': 'a' } } } })],
@@ -2333,12 +2075,9 @@ describe('the headers a url source carries', () => {
     expect(withTwo.slots.length - withNone.slots.length).toBe(4)
   })
 
-  // **One case holding three properties, and each of the three is what one
-  // plausible wrong edit would break.** The authored pairs are `X-Zeta: 1`,
-  // `authorization: Bearer probe`, `x-zeta: 2`; the canonical form is
-  // lower-cased, combined with `", "`, and sorted by name. Reading the pairs
-  // back off the wire is what makes this a test of the encoding rather than of
-  // `Headers`.
+  // One case, three properties: lower-cased, combined with `", "` and sorted by
+  // name, each broken by a different plausible edit. Read back off the wire, so it
+  // tests the encoding rather than `Headers`.
   it('encodes them lower-cased, combined and sorted', () => {
     const arena = encodeScene(
       [
