@@ -25,10 +25,10 @@ export const SCOPE = [
  * repository, so the qualified example refers to nothing.
  */
 export function verifyLexers() {
-  const rust = 'fn a() {\n    // see n/n#1 and #2\n    let s = "n/n#3";\n}\n'
+  const rust = 'fn a(x: &\'static str) {\n    let c = \'"\';\n    // see n/n#1 and #2\n    let s = "n/n#3";\n}\n'
   const hash = 'a = 1 # see n/n#4 and #5\nb = "n/n#6"\n'
   const seen = kind => {
-    const comments = kind === 'rust' ? commentsOf(rust) : hashCommentsOf(hash)
+    const comments = kind === 'rust' ? commentsOf(rust, { rust: true }) : hashCommentsOf(hash)
     const numbers = []
     for (const [, text] of comments) {
       for (const match of text.matchAll(REFERENCE)) {
@@ -67,7 +67,7 @@ export const REFERENCE_URL = /https:\/\/github\.com\/(?<qualified>[\w.-]+\/[\w.-
  */
 export function commentsIn(path, source) {
   const hash = path.endsWith('justfile') || path.endsWith('.toml') || path.endsWith('.yml')
-  return hash ? hashCommentsOf(source) : commentsOf(source)
+  return hash ? hashCommentsOf(source) : commentsOf(source, { rust: path.endsWith('.rs') })
 }
 
 /**
@@ -82,37 +82,61 @@ export function trackedFiles() {
     .filter(one => one !== '')
 }
 
-/** The comment text of a JavaScript-family or Rust source, as `[line, text]`. */
-export function commentsOf(source) {
-  const found = []
+/**
+ * The comment text of a JavaScript-family or Rust source, as `[line, text]`: the
+ * line a comment ends on, and its text without the closing delimiter or newline. Pass
+ * `rust: true` for a `.rs` file, where `'` opens a string only as a char literal.
+ */
+export function commentsOf(source, { rust = false } = {}) {
+  return scan(source, rust).comments
+}
+
+/**
+ * Where each comment and string literal in a source starts and ends, as
+ * `{ kind, start, end }` with `end` past the closing delimiter: what a parser needs
+ * to read code while skipping the braces and text inside both.
+ */
+export function spansOf(source, { rust = false } = {}) {
+  return scan(source, rust).spans
+}
+
+/** One pass that both {@link commentsOf} and {@link spansOf} read. */
+function scan(source, rust) {
+  const comments = []
+  const spans = []
   let line = 1
   let at = 0
   const state = { block: false, lineComment: false, string: null, raw: 0 }
   let start = 0
-  const flush = end => {
-    if (end > start) found.push([line, source.slice(start, end)])
+  const flush = (end, close) => {
+    if (end > start) comments.push([line, source.slice(start, end)])
+    spans.push({ kind: 'comment', start, end: close })
+  }
+  const closeString = end => {
+    spans.push({ kind: 'string', start, end })
+    state.string = null
+    state.raw = 0
   }
   while (at < source.length) {
     const two = source.slice(at, at + 2)
     if (state.lineComment) {
       if (source[at] === '\n') {
-        flush(at)
+        flush(at, at)
         state.lineComment = false
       }
     } else if (state.block) {
       if (two === '*/') {
-        flush(at)
+        flush(at, at + 2)
         state.block = false
         at += 1
       }
     } else if (state.string !== null) {
       if (state.raw > 0) {
         if (source[at] === '"' && source.slice(at + 1, at + 1 + state.raw) === '#'.repeat(state.raw)) {
-          state.string = null
-          state.raw = 0
+          closeString(at + 1 + state.raw)
         }
       } else if (source[at] === '\\') at += 1
-      else if (source[at] === state.string) state.string = null
+      else if (source[at] === state.string) closeString(at + 1)
     } else if (two === '//') {
       state.lineComment = true
       start = at
@@ -128,16 +152,21 @@ export function commentsOf(source) {
       if (source[at + 1 + hashes] === '"') {
         state.string = '"'
         state.raw = hashes
+        start = at
         at += 1 + hashes
       }
+    } else if (source[at] === "'" && rust && source[at + 1] !== '\\' && source[at + 2] !== "'") {
+      // A Rust lifetime such as `'a` or `'static`, not a char literal.
     } else if (source[at] === '"' || source[at] === "'" || source[at] === '`') {
       state.string = source[at]
+      start = at
     }
     if (source[at] === '\n') line += 1
     at += 1
   }
-  if (state.lineComment || state.block) flush(source.length)
-  return found
+  if (state.lineComment || state.block) flush(source.length, source.length)
+  else if (state.string !== null) closeString(source.length)
+  return { comments, spans }
 }
 
 /**

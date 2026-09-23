@@ -1,7 +1,7 @@
 //! Renders a scene file to an image, reading only the
-//! [`meo_canvas_scene::codec`] format and fetching URLs only when built with
-//! `net`. Exit codes: 0 written, 2 bad command line, 3 file I/O, 4 not a scene
-//! this revision reads, 5 font, 6 source unobtainable, 7 render.
+//! [`meo_canvas_scene::codec`] format; a `net` build fetches URL images through
+//! the core. Exit codes: 0 written, 2 bad command line, 3 file I/O, 4 not a
+//! scene this revision reads, 5 font, 6 source unobtainable, 7 render.
 
 // No source in this workspace writes `unsafe`, and this makes adding one a
 // deliberate decision rather than a line that passes review. Integration tests
@@ -35,8 +35,8 @@ const EXIT_IO: u8 = 3;
 const EXIT_MALFORMED_SCENE: u8 = 4;
 /// A font file could not be registered.
 const EXIT_FONT: u8 = 5;
-/// The scene names an image this build cannot obtain by itself.
-const EXIT_UNRESOLVED_SOURCE: u8 = 6;
+/// A URL image this build does not fetch, or whose fetch failed.
+const EXIT_SOURCE_UNOBTAINABLE: u8 = 6;
 /// Resolve, measure, layout, paint or encode failed.
 const EXIT_RENDER: u8 = 7;
 
@@ -118,11 +118,13 @@ impl Failure {
 }
 
 /// The exit code a core failure belongs to, per variant, since the remedies
-/// differ: `--font` for a missing font, a `net` build for an unresolved source,
-/// re-encoding for a malformed scene.
+/// differ: `--font` for a missing font, a `net` build or a reachable URL for an
+/// image, re-encoding for a malformed scene.
 const fn exit_code_for(error: &Error) -> u8 {
     match error {
-        Error::UnresolvedSource(_) => EXIT_UNRESOLVED_SOURCE,
+        Error::UnresolvedSource(_) | Error::SourceFetch { .. } => {
+            EXIT_SOURCE_UNOBTAINABLE
+        }
         Error::UnknownFont(_) | Error::FontRegister { .. } => EXIT_FONT,
         Error::ImageRead { .. } => EXIT_IO,
         _ => EXIT_RENDER,
@@ -300,7 +302,7 @@ mod tests {
     use meo_canvas_core::Error;
 
     use super::{
-        EXIT_FONT, EXIT_IO, EXIT_UNRESOLVED_SOURCE, ImageFormat, RenderArgs,
+        EXIT_FONT, EXIT_IO, EXIT_SOURCE_UNOBTAINABLE, ImageFormat, RenderArgs,
         encode_options, exit_code_for, parse_font, resolve_format,
     };
 
@@ -515,7 +517,7 @@ mod tests {
         let font = exit_code_for(&Error::UnknownFont("Inter".to_owned()));
         let layout = exit_code_for(&Error::Layout("no".to_owned()));
 
-        assert_eq!(unresolved, EXIT_UNRESOLVED_SOURCE);
+        assert_eq!(unresolved, EXIT_SOURCE_UNOBTAINABLE);
         assert_eq!(font, EXIT_FONT);
         assert_ne!(layout, unresolved);
         assert_ne!(layout, font);

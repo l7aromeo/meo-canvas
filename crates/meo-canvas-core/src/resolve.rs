@@ -476,30 +476,32 @@ impl DecodedImage {
         }
     }
 
-    /// The frame a node asked for, or this image unchanged. A one-frame raster
-    /// ignores the index; a document refuses any but zero, and an index past a
-    /// raster's last frame is [`Error::UndecodableImage`] naming the node.
+    /// The frame a node asked for, or this image unchanged. A frame names one
+    /// frame of an animated source, so a one-frame source ignores the index,
+    /// and an index past an animated source's last frame is
+    /// [`Error::FrameOutOfRange`] naming the node, the index and the count.
     fn at_frame(self, frame: Option<u32>, node: NodeId) -> Result<Self, Error> {
-        let Some(index) = frame.map(|index| index as usize) else {
+        let Some(index) = frame else {
             return Ok(self);
         };
-        // A document has one frame and SVG animation is not rasterised here, so
-        // a later frame is refused as the fourth frame of a two-frame GIF is.
+        // A document has one frame, since SVG animation is not rasterised here,
+        // so it ignores the index as a still raster does.
         let Kind::Raster(image) = &self.kind else {
-            return if index == 0 {
-                Ok(self)
-            } else {
-                Err(Error::UndecodableImage(node))
-            };
+            return Ok(self);
         };
-        if index == 0 || image.frame_count() <= 1 {
+        let frames = image.frame_count();
+        if index == 0 || frames <= 1 {
             return Ok(self);
         }
-        if index >= image.frame_count() {
-            return Err(Error::UndecodableImage(node));
+        if index as usize >= frames {
+            return Err(Error::FrameOutOfRange {
+                node,
+                index,
+                frames: u32::try_from(frames).unwrap_or(u32::MAX),
+            });
         }
         image
-            .frame(index)
+            .frame(index as usize)
             .map(|image| Self {
                 kind: Kind::Raster(image),
             })
@@ -937,13 +939,7 @@ fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
         failure: classify(&error),
     };
 
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(CONNECT_TIMEOUT))
-        .timeout_global(Some(GLOBAL_TIMEOUT))
-        .build()
-        .into();
-
-    let mut request = agent.get(url);
+    let mut request = agent().get(url);
     for (name, value) in &http.headers {
         request = request.header(name, value);
     }
@@ -998,17 +994,24 @@ const GLOBAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 #[cfg(feature = "net")]
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
-/// `classify` against errors `ureq` really raises.
+/// `classify` against errors the fetch agent really raises, and the lookup
+/// rules behind `HostNotFound` against each platform's own wording.
 #[cfg(all(test, feature = "net"))]
 mod fetch_classification {
-    use super::classify;
+    use super::{LOOKUP_PREFIX, agent, classify, lookup_is_transient, relabel};
     use crate::FetchFailure;
+
+    /// A Unix lookup failure as std builds it: `gai_strerror`'s text after
+    /// [`LOOKUP_PREFIX`], with no OS code.
+    fn unix_lookup(detail: &str) -> std::io::Error {
+        std::io::Error::other(format!("{LOOKUP_PREFIX}{detail}"))
+    }
 
     #[test]
     fn a_url_with_no_scheme_is_the_callers_to_fix_and_not_to_retry() {
         // `BadUri` is the one class a caller can act on without a network at
         // all, and the only one this test can reach without one.
-        let Err(refused) = ureq::get("not-a-url").call() else {
+        let Err(refused) = agent().get("not-a-url").call() else {
             unreachable!("a URL with no scheme is refused")
         };
         assert_eq!(classify(&refused), FetchFailure::BadUrl);
@@ -1016,28 +1019,174 @@ mod fetch_classification {
 
     #[test]
     fn a_host_that_does_not_resolve_is_not_a_transport_failure() {
-        // Separating these two is the point of the classification: a name that
-        // does not resolve will not resolve on a retry, and a socket that
-        // dropped may well connect on one.
-        let Err(refused) = ureq::get("http://invalid.invalid/a.png").call()
-        else {
-            unreachable!("the reserved TLD does not resolve")
-        };
-        assert!(
-            matches!(
-                classify(&refused),
-                FetchFailure::HostNotFound | FetchFailure::Transport
+        // A name that does not resolve will not resolve on a retry, and a
+        // socket that dropped may connect on one. RFC 6761 reserves `.invalid`
+        // never to resolve, so a resolver that answers it is rewriting
+        // NXDOMAIN.
+        let result = agent().get("http://invalid.invalid/a.png").call();
+        let refused = result.err();
+        assert_eq!(
+            refused.as_ref().map(classify),
+            Some(FetchFailure::HostNotFound),
+            "`invalid.invalid` came back as {refused:?}, not as a name that \
+             does not resolve; if this network's resolver answers `.invalid`, \
+             which RFC 6761 reserves, it is rewriting NXDOMAIN"
+        );
+    }
+
+    #[test]
+    fn transient_lookups_by_platform() {
+        // `EAI_AGAIN`'s text on each libc, and the codes std reports.
+        for (code, message, windows, transient) in [
+            (None, "Temporary failure in name resolution", false, true),
+            (None, "Try again", false, true),
+            (
+                None,
+                "nodename nor servname provided, or not known",
+                false,
+                false,
             ),
-            "a resolution failure came back as {:?}",
-            classify(&refused)
+            (None, "Name or service not known", false, false),
+            (None, "Name does not resolve", false, false),
+            (
+                None,
+                "Non-recoverable failure in name resolution",
+                false,
+                false,
+            ),
+            (Some(61), "", false, true),
+            (Some(11001), "", true, false),
+            (Some(11002), "", true, true),
+            (Some(11004), "", true, false),
+            (Some(10050), "", true, true),
+        ] {
+            let text = if code.is_some() {
+                String::from("os error")
+            } else {
+                format!("{LOOKUP_PREFIX}{message}")
+            };
+            assert_eq!(
+                lookup_is_transient(code, &text, windows),
+                transient,
+                "{code:?} {message:?} on windows={windows}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_lookup_answer_becomes_host_not_found() {
+        let answered = relabel(ureq::Error::Io(unix_lookup(
+            "nodename nor servname provided, or not known",
+        )));
+        assert_eq!(classify(&answered), FetchFailure::HostNotFound);
+
+        let outage = relabel(ureq::Error::Io(unix_lookup(
+            "Temporary failure in name resolution",
+        )));
+        assert_eq!(classify(&outage), FetchFailure::Transport);
+
+        let late = relabel(ureq::Error::Timeout(ureq::Timeout::Resolve));
+        assert!(
+            matches!(late, ureq::Error::Timeout(ureq::Timeout::Resolve)),
+            "a lookup that ran out of time came back as {late:?}"
         );
     }
 }
 
-/// What `ureq` reported, as the class a caller branches on. `Io`,
-/// `ConnectionFailed` and `Timeout`, which the timeouts [`fetch`] sets raise,
-/// are the transport and worth a retry; TLS, proxy, protocol, redirect and
-/// cookie failures are `Other`, which a retry does not fix.
+/// The agent every fetch goes through: this crate's bounds, and a resolver
+/// that tells a name that does not exist from a lookup that could not finish.
+#[cfg(feature = "net")]
+fn agent() -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_global(Some(GLOBAL_TIMEOUT))
+        .build();
+    ureq::Agent::with_parts(
+        config,
+        ureq::unversioned::transport::DefaultConnector::default(),
+        Lookup::default(),
+    )
+}
+
+/// `ureq`'s own resolver, with its failures passed through [`relabel`].
+/// `ureq` raises `HostNotFound` only for a lookup that succeeds with no usable
+/// address; a lookup that fails arrives as `Io`, which reads as transport.
+#[cfg(feature = "net")]
+#[derive(Debug, Default)]
+struct Lookup(ureq::unversioned::resolver::DefaultResolver);
+
+#[cfg(feature = "net")]
+impl ureq::unversioned::resolver::Resolver for Lookup {
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error>
+    {
+        self.0.resolve(uri, config, timeout).map_err(relabel)
+    }
+}
+
+/// A failed lookup as `HostNotFound`, unless it was an outage, which stays
+/// `Io` and so reads as transport. A lookup that ran out of time is already
+/// `Timeout` and passes through, as does every other error.
+#[cfg(feature = "net")]
+fn relabel(error: ureq::Error) -> ureq::Error {
+    match error {
+        ureq::Error::Io(io)
+            if !lookup_is_transient(
+                io.raw_os_error(),
+                &io.to_string(),
+                cfg!(windows),
+            ) =>
+        {
+            ureq::Error::HostNotFound
+        }
+        other => other,
+    }
+}
+
+/// Whether a failed lookup was an outage rather than an answer. Windows gives
+/// its socket error code; Unix gives an OS code only for `EAI_SYSTEM`, and
+/// otherwise `gai_strerror`'s text after [`LOOKUP_PREFIX`], so that text is
+/// what tells `EAI_AGAIN` apart. Pinned by `transient_lookups_by_platform`.
+#[cfg(feature = "net")]
+fn lookup_is_transient(
+    code: Option<i32>,
+    message: &str,
+    windows: bool,
+) -> bool {
+    match code {
+        Some(code) if windows => !WINSOCK_ANSWERS.contains(&code),
+        Some(_) => true,
+        None => message
+            .strip_prefix(LOOKUP_PREFIX)
+            .is_some_and(|detail| LOOKUP_TRANSIENT.contains(&detail)),
+    }
+}
+
+/// What std writes before `gai_strerror`'s text when a Unix lookup fails.
+#[cfg(feature = "net")]
+const LOOKUP_PREFIX: &str = "failed to lookup address information: ";
+
+/// `gai_strerror(EAI_AGAIN)`: macOS 27 (measured) and glibc
+/// (`gai_strerror-strs.h`) give the first, and musl (measured, Alpine 3.24.1)
+/// the second. Every other text is a name that does not resolve.
+#[cfg(feature = "net")]
+const LOOKUP_TRANSIENT: [&str; 2] =
+    ["Temporary failure in name resolution", "Try again"];
+
+/// The Windows socket codes that answer a lookup: `WSAHOST_NOT_FOUND`,
+/// `WSANO_RECOVERY` and `WSANO_DATA`. Any other code, `WSATRY_AGAIN` (11002)
+/// among them, is an outage.
+#[cfg(feature = "net")]
+const WINSOCK_ANSWERS: [i32; 3] = [11001, 11003, 11004];
+
+/// What `ureq` reported, as the class a caller branches on: `HostNotFound`
+/// from [`relabel`]; `Io`, `ConnectionFailed` and `Timeout` as transport,
+/// worth a retry; TLS, proxy, protocol, redirect and cookie failures as
+/// `Other`, which a retry does not fix.
 #[cfg(feature = "net")]
 const fn classify(error: &ureq::Error) -> FetchFailure {
     use crate::FetchFailure;
@@ -1544,8 +1693,9 @@ pub(crate) mod tests {
     const UNREACHABLE: &str = "http://127.0.0.1:1/image.png";
 
     /// Asserts a scene naming a URL is refused as this build refuses it:
-    /// [`Error::UnresolvedSource`] without `net`, [`Error::SourceFetch`] with
-    /// it.
+    /// [`Error::UnresolvedSource`] without `net`. With it the fetch fails, and
+    /// the scene's default `Placeholder` policy softens that into one warning
+    /// for the URL; [`Error::SourceFetch`] is accepted for a stricter policy.
     fn assert_url_is_refused(scene: &Scene, node: Option<NodeId>) {
         let result = Resolved::new(scene, &Fonts::new());
         #[cfg(not(feature = "net"))]
@@ -1559,12 +1709,23 @@ pub(crate) mod tests {
             }
         }
         #[cfg(feature = "net")]
-        {
-            let _ = node;
-            assert!(
-                matches!(result, Err(Error::SourceFetch { .. })),
-                "a URL should have been fetched and failed, got {result:?}"
-            );
+        match result {
+            Ok(resolved) => {
+                let warnings = resolved.into_warnings();
+                assert!(
+                    matches!(
+                        warnings.as_slice(),
+                        [warning] if warning.url == UNREACHABLE
+                            && node.is_none_or(|want| warning.node == want)
+                    ),
+                    "a URL should have been fetched, failed and softened into \
+                     one warning, got {warnings:?}"
+                );
+            }
+            Err(Error::SourceFetch { .. }) => {}
+            other => {
+                unreachable!("a URL should have been fetched, got {other:?}")
+            }
         }
     }
 
@@ -1803,25 +1964,24 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_document_has_one_frame() {
-        // A frame index past the only frame is refused rather than answered
-        // with that frame, which is the rule the raster arm already has for a
-        // two-frame GIF asked for its fourth.
-        let mut scene = Scene::new(Size::ZERO);
-        let mut node = image_node(svg_source(SIZED_SVG));
-        if let NodeKind::Image { frame, .. } = &mut node.kind {
-            *frame = Some(3);
+    fn a_one_frame_source_ignores_a_frame_index() {
+        // A frame names one frame of an animated source. A document and a
+        // still raster have one frame to draw, so any index draws it.
+        for (kind, source) in [
+            ("an SVG document", svg_source(SIZED_SVG)),
+            ("a still raster", ImageSource::Bytes(RED_PNG.to_vec())),
+        ] {
+            let mut scene = Scene::new(Size::ZERO);
+            let mut node = image_node(source);
+            if let NodeKind::Image { frame, .. } = &mut node.kind {
+                *frame = Some(3);
+            }
+            scene
+                .push(NodeId::ROOT, node)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let resolved = Resolved::new(&scene, &Fonts::new());
+            assert!(resolved.is_ok(), "{kind} at frame 3 gave {resolved:?}");
         }
-        scene
-            .push(NodeId::ROOT, node)
-            .unwrap_or_else(|error| unreachable!("{error}"));
-        assert!(
-            matches!(
-                Resolved::new(&scene, &Fonts::new()),
-                Err(Error::UndecodableImage(_))
-            ),
-            "a document answered for a frame it does not have"
-        );
     }
 
     #[test]

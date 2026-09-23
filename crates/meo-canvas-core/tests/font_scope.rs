@@ -106,7 +106,8 @@ fn the_scope_is_the_thread_and_not_the_process() {
 
     assert!(
         !Fonts::new().has(IN_WORKER),
-        "a family registered on a worker reached the main thread, so the          registry is the process's after all -- the module doc says otherwise"
+        "a family registered on a worker reached the main thread, so the \
+         registry is the process's after all -- the module doc says otherwise"
     );
 
     let owner = Fonts::new();
@@ -119,6 +120,7 @@ fn the_scope_is_the_thread_and_not_the_process() {
             .unwrap_or_else(|_| unreachable!("the worker did not panic"));
     assert!(
         !seen_in_a_later_thread,
-        "a family registered on the main thread reached a thread spawned after          it, so the registry is the process's after all"
+        "a family registered on the main thread reached a thread spawned \
+         after it, so the registry is the process's after all"
     );
 }

@@ -41,6 +41,27 @@ export function fetchDeadline(
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024
 
 /**
+ * A rejected `fetch` classified as the crate classifies it. Node 26 rejects with a
+ * `TypeError` whose `cause` is the lookup error (`code: 'ENOTFOUND'`, `syscall:
+ * 'getaddrinfo'`): a lookup that answered is `'host-not-found'`, while `EAI_AGAIN`, a
+ * system error during the lookup, and any other failure are `'transport'`.
+ */
+export function fetchFailure(error: unknown): 'host-not-found' | 'transport' {
+  const seen = new Set<object>()
+  let cause: unknown = error
+  while (typeof cause === 'object' && cause !== null && !seen.has(cause)) {
+    seen.add(cause)
+    if ('syscall' in cause && cause.syscall === 'getaddrinfo') {
+      const code = 'code' in cause ? cause.code : undefined
+      const answered = code === 'ENOTFOUND' || (typeof code === 'string' && code.startsWith('EAI_') && code !== 'EAI_AGAIN')
+      return answered ? 'host-not-found' : 'transport'
+    }
+    cause = 'cause' in cause ? cause.cause : undefined
+  }
+  return 'transport'
+}
+
+/**
  * The response body, refused once it passes {@link MAX_IMAGE_BYTES}. Counted while
  * reading, since `content-length` may be absent or false and `arrayBuffer()` has
  * allocated the whole body by the time it returns.
@@ -547,7 +568,10 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
           if (caller?.aborted ?? false) {
             throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
           }
-          failed({ url, failure: 'transport', detail: String(cause) }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause }))
+          failed(
+            { url, failure: fetchFailure(cause), detail: String(cause) },
+            new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause }),
+          )
           return
         }
         if (!response.ok) {

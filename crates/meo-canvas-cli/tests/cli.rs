@@ -9,7 +9,7 @@ use std::{
 };
 
 use meo_canvas_scene::{
-    Length, Scene, Size,
+    Length, OnImageError, Scene, Size,
     node::{ImageSource, Node, NodeKind},
     style::paint::ObjectFit,
 };
@@ -18,7 +18,7 @@ use meo_canvas_scene::{
 const EXIT_IO: i32 = 3;
 const EXIT_MALFORMED_SCENE: i32 = 4;
 const EXIT_FONT: i32 = 5;
-const EXIT_UNRESOLVED_SOURCE: i32 = 6;
+const EXIT_SOURCE_UNOBTAINABLE: i32 = 6;
 
 /// A directory of this test run's own, so two tests cannot collide on a name.
 fn scratch(name: &str) -> PathBuf {
@@ -214,15 +214,11 @@ fn the_output_goes_to_stdout_when_no_file_is_named() {
     assert_eq!((reader.info().width, reader.info().height), (6, 3));
 }
 
-#[test]
-fn a_url_source_exits_six_and_names_the_feature_that_would_fetch_it() {
-    // The core never fetches, so a URL reaching it is an error rather than a
-    // network call. Without `net` the CLI cannot resolve it either, and the
-    // message has to say which build would -- an exit code alone leaves the
-    // caller guessing between "bad URL" and "wrong build".
-    let dir = scratch("url");
-
+/// Writes a scene whose one image names `url` and whose policy is `Throw`,
+/// so a failed source ends the render rather than drawing a placeholder.
+fn write_url_scene(dir: &Path, url: &str) -> PathBuf {
     let mut scene = Scene::new(Size::new(4.0, 4.0));
+    scene.on_image_error = OnImageError::Throw;
     let page = scene
         .root()
         .unwrap_or_else(|| unreachable!("a fresh scene has a page"));
@@ -230,9 +226,7 @@ fn a_url_source_exits_six_and_names_the_feature_that_would_fetch_it() {
         .push(
             page,
             Node::new(NodeKind::Image {
-                source: ImageSource::url(
-                    "https://example.invalid/a.png".to_owned(),
-                ),
+                source: ImageSource::url(url.to_owned()),
                 fit: ObjectFit::Contain,
                 position: (Length::Percent(0.5), Length::Percent(0.5)),
                 frame: None,
@@ -243,6 +237,16 @@ fn a_url_source_exits_six_and_names_the_feature_that_would_fetch_it() {
     let path = dir.join("scene.mcs");
     std::fs::write(&path, meo_canvas_scene::codec::encode(&scene))
         .unwrap_or_else(|error| unreachable!("{error}"));
+    path
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
+fn without_net_a_url_source_exits_six_and_names_the_feature() {
+    // An exit code alone leaves the caller guessing between a bad URL and the
+    // wrong build, so the message says which build would fetch it.
+    let dir = scratch("url");
+    let path = write_url_scene(&dir, "https://example.invalid/a.png");
 
     let (code, stderr) = run(&[
         "render",
@@ -251,6 +255,33 @@ fn a_url_source_exits_six_and_names_the_feature_that_would_fetch_it() {
         &dir.join("out.png").to_string_lossy(),
     ]);
 
-    assert_eq!(code, EXIT_UNRESOLVED_SOURCE, "{stderr}");
+    assert_eq!(code, EXIT_SOURCE_UNOBTAINABLE, "{stderr}");
     assert!(stderr.contains("--features net"), "{stderr}");
+}
+
+#[cfg(feature = "net")]
+#[test]
+fn with_net_a_url_source_is_fetched_rather_than_refused() {
+    // Port 1 refuses a connection at once, with no DNS involved, so this is a
+    // fetch that failed rather than one never attempted. A build whose `net`
+    // does not reach the core refuses with "this build cannot fetch" instead.
+    let dir = scratch("url-net");
+    let path = write_url_scene(&dir, "http://127.0.0.1:1/never.png");
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert!(
+        !stderr.contains("this build cannot fetch"),
+        "a `net` build refused to try: {stderr}"
+    );
+    assert!(
+        stderr.contains("127.0.0.1:1"),
+        "the failure does not name the URL it tried: {stderr}"
+    );
+    assert_eq!(code, EXIT_SOURCE_UNOBTAINABLE, "{stderr}");
 }

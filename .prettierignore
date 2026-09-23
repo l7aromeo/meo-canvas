@@ -11,11 +11,6 @@ node_modules
 # it would bury the next real change in a rewrite of every fixture.
 fixtures
 
-# meo-skia-canvas's JavaScript layer, repointed at this binary and kept in that
-# project's style. Formatting it would rewrite all 7,861 lines and ruin the
-# diff against upstream, which is how fixes there are found and applied here.
-packages/*/vendor
-
 # Emitted by the generators (`just arena-tables` and its siblings), whose
 # regenerate-and-diff checks would otherwise fail on formatting, not drift.
 packages/*/src/generated

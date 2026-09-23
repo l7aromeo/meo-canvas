@@ -57,11 +57,10 @@ harness = false
 [lints]
 workspace = true
 
-# `rustls` is never imported, so cargo-machete would report it. `taffy` needs
-# no entry: with it removed, cargo-machete finds `taffy` used and reports
-# nothing.
+# `rustls` is declared only to raise a floor and is never imported, so
+# cargo-machete would report it without this entry.
 [package.metadata.cargo-machete]
-ignored = ["taffy", "rustls"]
+ignored = ["rustls"]
 
 [dev-dependencies]
 # Decoders, not encoders: an encode test asserting on byte length proves

@@ -178,6 +178,9 @@ export interface ImageWarning {
    *
    * `'status'` carries the HTTP code in {@link ImageWarning.status}; the rest
    * describe a fetch that never produced a response to have a code.
+   * `'host-not-found'` is a host whose name does not resolve, and a retry will
+   * not change it; a lookup that could not finish, because the resolver was
+   * unreachable or said to try again, is `'transport'`, which a retry may fix.
    */
   readonly failure: 'status' | 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
   /** The HTTP status, when {@link ImageWarning.failure} is `'status'`. */

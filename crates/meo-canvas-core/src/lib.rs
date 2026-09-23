@@ -187,19 +187,26 @@ pub enum FetchFailure {
     /// **Retry a 5xx, do not retry a 4xx**: the first says the server could
     /// not answer now, the second says it will not answer this request.
     Status(u16),
-    /// The host does not resolve.
+    /// The host's name does not resolve: the lookup answered that there is no
+    /// such name, or no address for it.
     ///
     /// **Do not retry; fix the URL, or the network it is being resolved on.**
+    /// A lookup that could not finish -- the resolver unreachable, or saying
+    /// to try again -- is [`FetchFailure::Transport`] instead, because that
+    /// one may well answer on a retry.
     HostNotFound,
     /// The URL is not one this client can use -- no scheme, or no host.
     ///
     /// **Do not retry; fix the URL.** Nothing about the network will change
     /// this.
     BadUrl,
-    /// The connection failed, or failed partway through.
+    /// The connection failed, failed partway through, or the host's name
+    /// could not be looked up at all.
     ///
     /// **Retry.** This is the class where trying again is the right first
-    /// move: a refused connection, a socket that dropped, a read that stopped.
+    /// move: a refused connection, a socket that dropped, a read that stopped,
+    /// a resolver that was unreachable or said to try again, and this crate's
+    /// own timeout.
     Transport,
     /// The image is larger than this renderer fetches.
     ///
@@ -332,6 +339,26 @@ pub enum Error {
     /// Bytes that no decoder recognises.
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
+
+    /// A frame index past the last frame of an animated image source.
+    ///
+    /// **Refused rather than drawn as some other frame**: a scene asking for
+    /// the fourth frame of a two-frame source asked for something the source
+    /// cannot answer. A source with one frame, a still raster or an SVG
+    /// document, ignores the index, since there is only that frame to draw.
+    #[error(
+        "node {} asks for frame {index} of an image with {frames} frames",
+        .node.get()
+    )]
+    #[non_exhaustive]
+    FrameOutOfRange {
+        /// The node that asked.
+        node: NodeId,
+        /// The frame it asked for, counting from zero.
+        index: u32,
+        /// How many frames the source has.
+        frames: u32,
+    },
 
     /// A colour asked for on a source that is not a vector document.
     ///
@@ -794,6 +821,38 @@ impl RenderedCanvas {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every [`Error`] variant, named with no wildcard. `Error` is
+    /// `#[non_exhaustive]`, so a caller outside this crate needs a wildcard and
+    /// cannot see a new variant; this match is where one fails to compile.
+    #[test]
+    fn every_error_variant_is_named() {
+        const fn named(error: &Error) -> &'static str {
+            match error {
+                Error::UnresolvedSource(_) => "UnresolvedSource",
+                Error::SourceFetch { .. } => "SourceFetch",
+                Error::Steps(_) => "Steps",
+                Error::Spring(_) => "Spring",
+                Error::Keyframes(_) => "Keyframes",
+                Error::Track(_) => "Track",
+                Error::Chart(_) => "Chart",
+                Error::Scene(_) => "Scene",
+                Error::FontRegister { .. } => "FontRegister",
+                Error::ImageRead { .. } => "ImageRead",
+                Error::DataUri { .. } => "DataUri",
+                Error::UndecodableImage(_) => "UndecodableImage",
+                Error::FrameOutOfRange { .. } => "FrameOutOfRange",
+                Error::TintOnRaster(_) => "TintOnRaster",
+                Error::UnparsableSvg(_) => "UnparsableSvg",
+                Error::DecoderPanicked(_) => "DecoderPanicked",
+                Error::UnknownFont(_) => "UnknownFont",
+                Error::Layout(_) => "Layout",
+                Error::Paint(_) => "Paint",
+                Error::Encode { .. } => "Encode",
+            }
+        }
+        assert_eq!(named(&Error::Layout(String::new())), "Layout");
+    }
 
     /// A cause held as `#[source]` reaches the message, once: putting `{0}`
     /// back on `Error::Scene` fails the first assertion, and removing the walk

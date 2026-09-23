@@ -168,12 +168,14 @@ audit:
 
 # Compiles and tests `net`, which no other recipe builds, once on Linux: whether
 # it compiles is a fact about the code. A local `just ci` does not build it.
-# Measured at 10s cold and 17 more crates.
+# `net` adds 19 crates to the core's tree, `ureq` and `rustls` with theirs.
 [doc("Compile and test the `net` feature, which no other recipe builds.")]
 net-check:
-    cargo clippy -p meo-canvas -p meo-canvas-core --all-targets --features net -- -D warnings
+    cargo clippy -p meo-canvas -p meo-canvas-core -p meo-canvas-cli --all-targets --features net -- -D warnings
+    cargo test -p meo-canvas-core --features net --lib
     cargo test -p meo-canvas-core --features net --test fetch_policy
     cargo test -p meo-canvas --features net --test net_feature
+    cargo test -p meo-canvas-cli --features net --test cli
 # Not in `ci`: it regenerates four images rather than checking, so it sits with
 # `conformance`. Wants `dist` and the addon built first.
 [doc("Redraw the README banners with the library itself.")]

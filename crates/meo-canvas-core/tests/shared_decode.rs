@@ -3,7 +3,7 @@
 //! only such choice is an animated source's frame, asserted through the
 //! renderer, since the picture is what a caller sees.
 
-use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
+use meo_canvas_core::{Error, ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
     Scene, Size,
     node::{ImageSource, Node, NodeId, NodeKind},
@@ -84,5 +84,46 @@ fn two_nodes_sharing_a_source_keep_their_own_frames() {
         at(4),
         at(12),
         "both halves drew the same frame of a shared source"
+    );
+}
+
+#[test]
+fn a_frame_past_the_last_is_refused_naming_both_numbers() {
+    // Frame 3 of a two-frame source is something the source cannot answer.
+    let mut scene = Scene::new(Size::new(8.0, 8.0));
+    scene
+        .push(
+            NodeId::ROOT,
+            Node::new(NodeKind::Image {
+                source: ImageSource::Bytes(two_frames()),
+                frame: Some(3),
+                fit: ObjectFit::Fill,
+                position: (Length::ZERO, Length::ZERO),
+            }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let refused = Renderer::new().render_to_buffer(
+        &scene,
+        ImageFormat::Png,
+        &EncodeOptions::default(),
+    );
+    let Err(error) = refused else {
+        unreachable!("frame 3 of a two-frame source drew")
+    };
+    assert!(
+        matches!(
+            error,
+            Error::FrameOutOfRange {
+                index: 3,
+                frames: 2,
+                ..
+            }
+        ),
+        "frame 3 of two came back as {error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "node 1 asks for frame 3 of an image with 2 frames"
     );
 }
