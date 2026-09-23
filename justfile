@@ -172,6 +172,7 @@ audit:
 [doc("Compile and test the `net` feature, which no other recipe builds.")]
 net-check:
     cargo clippy -p meo-canvas -p meo-canvas-core -p meo-canvas-cli --all-targets --features net -- -D warnings
+    cargo test -p meo-canvas-core --features net --lib
     cargo test -p meo-canvas-core --features net --test fetch_policy
     cargo test -p meo-canvas --features net --test net_feature
     cargo test -p meo-canvas-cli --features net --test cli
