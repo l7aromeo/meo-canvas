@@ -1,8 +1,7 @@
 {
-  // A consumer's config, not the library's. It resolves `meo-canvas` through
-  // node_modules the way any project would, so `just typecheck` proves the
-  // package's `types` field points at something real -- which the runtime
-  // failure does not test, since a wrong `types` field still runs.
+  // A consumer's config, not the library's: it resolves `meo-canvas` through
+  // node_modules as any project would, so `just example`'s typecheck proves the
+  // package's `types` field points at something real, which running cannot.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2023"],
