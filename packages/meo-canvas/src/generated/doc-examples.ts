@@ -18,8 +18,8 @@ export async function example_parseColor(): Promise<void> {
   if (from && to) formatColor(mixColor(from, to, 0.5))
 }
 
-/** `node.ts`. */
-export async function example_node(): Promise<void> {
+/** `node.ts, Row`. */
+export async function example_Row(): Promise<void> {
 
   const card = Row({
     gap: 16,
