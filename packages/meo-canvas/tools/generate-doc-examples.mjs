@@ -1,21 +1,7 @@
-// Lifts the fenced examples out of the doc comments into one compiled file.
-//
-// The Rust half runs its examples: `just docs` fails the build on a doctest
-// naming a field that no longer exists. TypeScript compiles nothing inside a
-// comment, so a `.ts` doc example is prose — it can name a removed property and
-// every gate stays green. Renaming a style property leaves every example that
-// used the old name compiling, because none of them is compiled at all.
-//
-// So the examples are lifted into `src/generated/doc-examples.ts`, which the
-// existing `just typecheck` already covers because it covers `src`. That reuses
-// a gate rather than adding one, and it is the same generated-and-diffed shape
-// as the arena tables.
-//
-// Each example becomes a function, so one example's `const card` cannot collide
-// with another's. Imports cannot live in a function, so they are hoisted and
-// deduplicated, and `'meo-canvas'` is rewritten to the package's own entry —
-// the examples name the package as a reader would, and the generated file sits
-// inside it.
+// Lifts the fenced examples out of the doc comments into `src/generated/doc-examples.ts`,
+// so `just typecheck` compiles them: TypeScript compiles nothing inside a comment.
+// Each example becomes a function so names cannot collide; imports are hoisted,
+// merged, and `'meo-canvas'` is rewritten to the package's own entry.
 
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -37,16 +23,9 @@ const CHECKED_IN = resolve(HERE, '../src/generated/doc-examples.ts')
 const TARGET = process.argv[2] ? resolve(process.argv[2]) : CHECKED_IN
 
 /**
- * How an example spells this package when importing from it.
- *
- * The real published name, and it has to be: this is rewritten to
- * {@link LOCAL_SPECIFIER} before the examples are compiled, so a specifier that
- * did not match would leave the example naming a package nobody can install
- * while the gate stayed green -- the rewrite repairs it out of sight. It read
- * `meo-canvas` for a while after the package was scoped to
- * `@l7aromeo/meo-canvas`, which is exactly that; the package is unscoped again
- * and this is the name it publishes under, so the two agree once more. Whatever
- * `packages/meo-canvas/package.json` calls the package, this matches it.
+ * How an example spells this package: the name `packages/meo-canvas/package.json`
+ * publishes under. It is rewritten to {@link LOCAL_SPECIFIER} before compiling, so
+ * a stale name here would compile while naming a package nobody can install.
  */
 const PACKAGE_SPECIFIER = 'meo-canvas'
 
@@ -67,24 +46,16 @@ async function sources() {
     .map(entry => join(SOURCE_DIR, entry.name))
     .sort()
 
-  // **The two READMEs, for the same reason the `.ts` files are here.** A doc
-  // comment's example is lifted because TypeScript compiles nothing inside a
-  // comment; a README's example is not compiled by anything at all, and it is
-  // the one a reader meets first -- on npm and on the repository page, before
-  // they have installed anything.
-  //
-  // The extractor needs no change to read them. It strips a leading `* ` from
-  // each line, which a markdown fence simply does not have, and it keys on
-  // ```ts, which is the fence these use.
+  // The two READMEs too: nothing compiles their examples, and they are what a
+  // reader meets first. The extractor reads them unchanged -- a markdown fence
+  // has no leading `* ` to strip, and these use ```ts.
   return [...files, README_PACKAGE, README_ROOT]
 }
 
 /**
- * Every ```ts block in `text`, with its leading comment asterisks stripped.
- *
- * Line-based rather than one expression over the whole file: a doc comment's
- * every line begins with ` * `, and a regular expression that also had to
- * survive nested backticks in prose would be the harder thing to trust.
+ * Every ```ts block in `text`, with its leading comment asterisks stripped. Read
+ * line by line rather than by one expression that would also have to survive
+ * nested backticks in prose.
  */
 function examples(path, text) {
   const found = []
@@ -115,14 +86,9 @@ function examples(path, text) {
 const DECLARATION = /^export (?:async )?(?:function|const|class|interface|type|enum) (\w+)/
 
 /**
- * The name of the item a block documents, found by reading forward from it.
- *
- * The name rather than the block's line number, which would go stale whenever
- * anything above the comment moved and force a regeneration for a change to no
- * example. A line number is where a thing is; the name is what it is, and only
- * the second is what this gate checks.
- *
- * `undefined` for a block in a module-level comment, which documents no item.
+ * The name of the item a block documents, read forward from it -- a name rather
+ * than a line number, so moving code above a comment changes no example.
+ * `undefined` for a block in a module-level comment.
  */
 function anchorAfter(lines, closedAt) {
   // The comment first: a block sits inside one, and the item is what follows
@@ -149,12 +115,8 @@ function split(body) {
 }
 
 /**
- * One import per source, with the named bindings merged.
- *
- * Deduplicating whole lines is not enough: two examples importing `Text` and
- * `{ Column, Row, Text }` from the same module would emit both and TypeScript
- * would refuse the duplicate binding. The names are merged instead, so an
- * example importing what another already did costs nothing.
+ * One import per source, with the named bindings merged: two examples importing
+ * `Text` and `{ Column, Row, Text }` from one module would otherwise bind `Text` twice.
  */
 function mergeImports(collected) {
   /** `source` -> `{ value: Set<string>, type: Set<string> }`. */
@@ -194,12 +156,8 @@ function mergeImports(collected) {
 function emit(collected) {
   const imports = mergeImports(collected)
 
-  // `async`, so an example may `await`. A caller's example is written the way a
-  // caller writes it, and half of this package's surface returns a Promise.
-  // Named and labelled by the item each example documents rather than by
-  // position or line, so an edit elsewhere in the file does not move them. Two
-  // blocks on one item are numbered against each other, which is the only
-  // ordering left that a reader could be surprised by.
+  // `async`, so an example may `await`. Named by the item each documents, so an
+  // edit elsewhere does not move them; two blocks on one item are numbered.
   const seen = new Map()
   const bodies = collected.map(example => {
     const base = example.anchor ?? example.file.replace(/\.ts$/, '').replaceAll(/[^A-Za-z0-9]/g, '_')
@@ -230,24 +188,9 @@ function emit(collected) {
 const collected = []
 for (const path of await sources()) {
   const text = await readFile(path, 'utf8')
-  // The READMEs are not under `src`, so a blind slice would name them by
-  // whatever the prefix left behind.
-  //
-  // `join` rather than a literal `/`: this is a filesystem path, Windows spells
-  // the separator `\\`, and comparing against `${SOURCE_DIR}/` matched nothing
-  // there -- so every `.ts` source fell into the branch below and was labelled
-  // as the root README. The generated file then differed from the committed one
-  // on Windows alone, which `doc-examples-check` reported as staleness. That is
-  // the second time this separator has bitten in one day; the first was
-  // `generate-arena-enums.mjs`.
-  // The two READMEs are matched by identity rather than by path shape. An
-  // earlier version asked whether the path started with `${SOURCE_DIR}/`, which
-  // on Windows is never true -- the separator there is a backslash -- so every
-  // `.ts` source took the README branch and was labelled `../../README.md`. The
-  // generated file then differed from the committed one on Windows alone, which
-  // `doc-examples-check` reported as staleness. Comparing the paths this module
-  // already holds has no separator in it to get wrong, and is exact where a
-  // prefix test would also accept a sibling directory whose name begins `src`.
+  // The READMEs are not under `src`, and are matched by identity rather than path
+  // shape: a `${SOURCE_DIR}/` prefix never matches on Windows, and would also
+  // accept a sibling directory whose name begins `src`.
   const relative = path === README_PACKAGE ? 'README.md' : path === README_ROOT ? '../../README.md' : path.slice(SOURCE_DIR.length + 1)
   for (const example of examples(path, text)) {
     const { imports, rest } = split(example.body)
