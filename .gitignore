@@ -97,10 +97,6 @@
 !/packages/*/tools/typedoc/undocumented-baseline.txt
 !/packages/*/tools/private-docs-baseline.txt
 
-# The vendored tree's own licence, which MIT asks to travel with the code; kept
-# beside it so it stays true if the vendored copy is dropped.
-!/packages/*/vendor/LICENSE
-
 # -- Formatter --------------------------------------------------------------
 # The lockfile is tracked because `bun install --frozen-lockfile` reads it, in
 # CI and in `ensure-deps`, and refuses to proceed when it and package.json
