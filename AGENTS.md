@@ -672,6 +672,9 @@ a tree that mixes them reads as two conventions.
 1. **A comment states what the code is, today.** Never what it was, what it will
    be, or what changed. Git records history; comments record the present. No
    "used to", "changed from", "now", "no longer" -- and no TODO, FIXME or XXX.
+   **Nor a comparison with v9**: a comment says what this code does, not how it
+   differs from the predecessor. v9 is named only where the code itself reads
+   it -- vectors recorded from it, a tool that diffs its surface.
 2. **A comment earns its place by answering "why this and not the obvious
    alternative".** If the code already says what it does, the comment says why it
    does it that way. Restating the code is worse than silence.
@@ -685,6 +688,12 @@ a tree that mixes them reads as two conventions.
    a doc comment.
 6. **Present tense, indicative.** "Rejects a radius below zero, as a browser
    does." Not "will reject".
+7. **Four lines of text at most, and one where one will do.** A `/**` or `*/`
+   line on its own is not text. This binds every comment no caller reads:
+   `//`, a private item's doc, a private module's `//!`, tests, tools,
+   workflows and the `justfile`. A doc that rustdoc or TypeDoc renders for a
+   caller may run longer and carry an example. What does not fit goes in the
+   commit message, which is where history belongs anyway.
 
 **A reason written in two places gets corrected in one.** Write it once, at the
 place a reader lands, and point at it from the other.
