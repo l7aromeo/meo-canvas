@@ -1544,8 +1544,9 @@ pub(crate) mod tests {
     const UNREACHABLE: &str = "http://127.0.0.1:1/image.png";
 
     /// Asserts a scene naming a URL is refused as this build refuses it:
-    /// [`Error::UnresolvedSource`] without `net`, [`Error::SourceFetch`] with
-    /// it.
+    /// [`Error::UnresolvedSource`] without `net`. With it the fetch fails, and
+    /// the scene's default `Placeholder` policy softens that into one warning
+    /// for the URL; [`Error::SourceFetch`] is accepted for a stricter policy.
     fn assert_url_is_refused(scene: &Scene, node: Option<NodeId>) {
         let result = Resolved::new(scene, &Fonts::new());
         #[cfg(not(feature = "net"))]
@@ -1559,12 +1560,23 @@ pub(crate) mod tests {
             }
         }
         #[cfg(feature = "net")]
-        {
-            let _ = node;
-            assert!(
-                matches!(result, Err(Error::SourceFetch { .. })),
-                "a URL should have been fetched and failed, got {result:?}"
-            );
+        match result {
+            Ok(resolved) => {
+                let warnings = resolved.into_warnings();
+                assert!(
+                    matches!(
+                        warnings.as_slice(),
+                        [warning] if warning.url == UNREACHABLE
+                            && node.is_none_or(|want| warning.node == want)
+                    ),
+                    "a URL should have been fetched, failed and softened into \
+                     one warning, got {warnings:?}"
+                );
+            }
+            Err(Error::SourceFetch { .. }) => {}
+            other => {
+                unreachable!("a URL should have been fetched, got {other:?}")
+            }
         }
     }
 
