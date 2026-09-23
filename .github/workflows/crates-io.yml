@@ -5,24 +5,8 @@ name: crates-io
 run-name: >-
   ${{ inputs.dry_run && 'crates.io — DRY RUN (nothing is published)' || 'crates.io — publish' }}
 
-# Manual only, for the same reason `release.yml` is: a push is how code arrives,
-# and publishing is a decision about code that already arrived. `just
-# release-crate` is what a person runs; this is what it triggers.
-#
-# **It is dispatchable, and for most of this file's life it was not.**
-# `workflow_dispatch` needs the workflow's path to exist on the repository's
-# default branch; the default was the previous lineage's `main`, which carried
-# no `crates-io.yml`, so `gh workflow list --all` did not list this file and the
-# API answered `workflow crates-io.yml not found on the default branch`. The
-# branch swap fixed it, and this workflow first ran on 10 September 2026 --
-# publishing `meo-canvas`, `meo-canvas-scene`, `meo-canvas-core` and
-# `meo-canvas-cli` at `0.1.0-alpha.1`.
-#
-# The paragraph that stood here said it could not be triggered at all, which
-# stopped being true without anything in this file changing. It is replaced
-# rather than deleted because the next reader of a workflow that has run twice
-# should know why it once could not run, and `fixtures.yml` still carries the
-# push-trigger workaround the same constraint forced on it.
+# Manual only, as `release.yml` is: publishing is a decision about code that
+# already arrived. `just release-crate` is what a person runs to dispatch it.
 on:
   workflow_dispatch:
     inputs:
@@ -31,28 +15,17 @@ on:
         type: boolean
         default: true
 
-# `contents: write` is what lets the job tag the commit it published.
-#
-# `id-token: write` is what lets it authenticate. crates.io mints no provenance
-# attestation, so this is not the npm job's reason for the same line -- there it
-# signs an artefact, here it exchanges an OIDC token for a short-lived registry
-# one. Same permission, different purpose, and a comment saying only "no
-# attestation, so no id-token" is what kept it absent while it was needed.
+# `contents: write` lets the job tag what it published. `id-token: write` lets
+# it trade an OIDC token for a short-lived crates.io one; crates.io mints no
+# attestation, so the npm job holds the same line for a different reason.
 permissions:
   contents: write
   id-token: write
 
-# One publish at a time, and never cancelled -- the same reasoning as
-# `release.yml`, which shares neither its registry nor its tag namespace with
-# this workflow but has exactly its shape: `cargo publish --workspace` uploads
-# four crates in sequence, then a tag is pushed and a release opened.
-#
-# The group omits the ref on purpose. Two dispatches at different refs publish
-# the same version to the same registry and push the same `rust-v<version>`
-# tag, so keying on the ref would let precisely the pair that collides run side
-# by side. And cancelling mid-publish leaves crates.io and this repository
-# disagreeing, with nothing that re-runs to fix it -- crates.io has no
-# unpublish, only yank.
+# One publish at a time, never cancelled. The group omits the ref, since two
+# dispatches at different refs publish the same version and push the same
+# `rust-v<version>` tag. Cancelling mid-publish leaves crates.io and the
+# repository disagreeing, and crates.io has no unpublish.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -64,11 +37,9 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
-    # `cargo publish` builds every crate it packages, and three of the four
-    # reach `meo-skia-canvas`, so this compiles the Skia chain on a cold cache
-    # the first time. The bound is the one `ci.yml` uses for the same build,
-    # and it exists because the alternative is six hours of a runner holding a
-    # publish nobody can see the state of.
+    # `cargo publish` builds each crate it packages, and three reach
+    # `meo-skia-canvas`, so a cold cache compiles Skia. The bound is `ci.yml`'s
+    # for the same build; the default is six hours.
     timeout-minutes: 90
 
     steps:
@@ -95,67 +66,19 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
-      # **Saved on a branch, never on a tag -- and unlike `release.yml`, this is
-      # an argument by analogy and not a measurement.** This workflow has never
-      # run, not once, so there is no hit or miss in its history to reason from.
-      # What transfers is the scoping rule rather than any observation: a run
-      # restores from its own ref's scope and from the default branch, so a run
-      # dispatched at a tag cannot read back what it writes, and every release
-      # carries a new tag.
-      #
-      # **What would falsify it:** a tag-dispatched run of this workflow
-      # reporting `Cache hit for:`. That would mean the scoping premise is wrong
-      # and this line should go.
-      #
-      # **What it cannot do is harm.** If this workflow is only ever dispatched
-      # from a branch, the predicate never fires and nothing changes. It
-      # suppresses a save only on the dispatch that provably cannot read one.
-      # **Restores and never saves**, on the same argument as `release.yml`,
-      # where the measurement is: a per-push cache budget is the wrong place to
-      # store warmth for a workflow dispatched a few times a week. This one is a
-      # single job rather than seven, so it gives up less and the argument holds
-      # more easily.
-      #
-      # **It also removes ten `##[error]` annotations from a green run**, and
-      # that is a consequence rather than a second change. `cargo publish
-      # --dry-run` unpacks each crate into `target/package/<crate>-<version>/`,
-      # the action's post step walks `target/` to prune before saving, and it
-      # trips over `tests/trybuild` and `tests/target` directories that are not
-      # in the packaged copy — ten `ENOENT ... opendir` lines on a run that
-      # passes. `dist/save.js` at the pin above reads `save-if` and returns
-      # before any cleaning, so with saving off the walk never happens. Error
-      # annotations on a passing run teach people to stop reading annotations.
+      # Restores and never saves, as `release.yml` does: a per-push cache budget
+      # is the wrong place for warmth a workflow dispatched weekly would use.
+      # Saving off also skips the post step's walk of `target/`, which prints
+      # ten `ENOENT` errors on a green run.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: crates-io
           save-if: false
 
-      # `cargo publish` does not merely upload a tarball: it unpacks each one
-      # into `target/package/` and **builds it**. Three of the four crates reach
-      # `meo-skia-canvas`, so this job compiles the same native chain the addon
-      # build does and needs the same system libraries present.
-      #
-      # `cmake` and `nasm` are libaom's, for the reason `release.yml` states at
-      # its own copy of this step. The list is the one MEASURED against a build
-      # in an `ubuntu:24.04` container, not the one reasoned from the error.
-      #
-      # **`pkg-config` is the load-bearing one and the easiest to omit.** Skia
-      # is built without `embed-freetype`, so `rust-skia` links the system
-      # copies -- and `skia-bindings`' `build_support/platform/linux.rs:37-41`
-      # probes pkg-config and **falls back to bare library names when the probe
-      # fails, silently**. Without `pkg-config` the probe does not complain, it
-      # just stops producing a link line, and the failure surfaces as
-      # `unable to find library -lfreetype`, which points at freetype rather
-      # than at the missing prober.
-      #
-      # `libfreetype-dev` rather than `libfreetype6-dev`: the first is what was
-      # installed and observed to work on 24.04.
-      #
-      # **These are BUILD packages and not runtime ones.** A consumer running
-      # what this builds needs `libfontconfig1 libfreetype6` on Debian, or
-      # `fontconfig freetype` on EL -- see the crate README. Building with only
-      # the set below and then failing at load reads as a broken crate rather
-      # than a missing system library.
+      # `cargo publish` builds each crate in `target/package/`, so this needs
+      # the addon build's libraries: cmake and nasm for libaom, and
+      # `pkg-config`, without which `skia-bindings` fails at `-lfreetype`. Build
+      # packages only; the crate README names the runtime ones.
       - name: Install what the verification build needs
         run: |
           sudo apt-get update
@@ -163,89 +86,34 @@ jobs:
             cmake nasm \
             pkg-config libfontconfig1-dev libfreetype-dev
 
-      # **The rehearsal always runs, including on a real publish.**
-      #
-      # `--workspace` is what makes this safe, and it is not the same thing as
-      # four `cargo publish` calls in a loop. Cargo packages and verifies EVERY
-      # member before it uploads ANY of them, resolving each crate's internal
-      # dependencies against a temporary registry it builds from the packaged
-      # tarballs (`target/package/tmp-registry`) rather than against the paths
-      # in the working tree. Two things follow:
-      #
-      # 1. It computes the dependency order itself -- scene, core, canvas, cli
-      #    -- so the order is not written down here to drift.
-      # 2. A crate that fails to build fails before the first upload. That is
-      #    the failure this whole file is shaped around: crates.io has no
-      #    unpublish, only yank, and a yanked version still resolves for
-      #    existing lockfiles, so a half-published version can never be
-      #    reissued.
-      #
-      # A loop of per-crate publishes cannot do either. It also cannot be
-      # rehearsed at all before the first release: `cargo publish --dry-run -p
-      # meo-canvas-core` fails with `no matching package named
-      # meo-canvas-scene found` on a workspace where nothing is on the registry
-      # yet, because per-crate verification resolves internal dependencies
-      # through crates.io. `--workspace` is the only spelling that can be
-      # practised before it is used.
-      #
-      # **What this rehearsal cannot see, and what closes the gap.** The
-      # temporary registry is built from the tarballs it then verifies, so both
-      # sides of the check come from the working tree: it cannot detect that a
-      # member declares a dependency version crates.io does not have, because it
-      # satisfies that dependency locally either way. What closes it is
-      # `version.workspace` -- all four crates share one version, so an internal
-      # dependency cannot name something this same batch will not create.
-      #
-      # That is a reason, not a property, and it stops holding the day the
-      # workspace version is split. It would reopen silently, because this step
-      # would stay green.
+      # Always runs, including on a real publish. `--workspace` verifies every
+      # member against a registry built from the packaged tarballs before
+      # uploading any, and orders them itself. It cannot see a dependency on a
+      # version crates.io lacks; the shared `version.workspace` rules that out.
       - name: Package and verify every crate
         run: cargo publish --workspace --dry-run
 
-      # `meo-canvas-node` is absent from both this step and the one above
-      # without being named: it carries `publish = false`, so `--workspace`
-      # skips it. Excluding it here as well would be a second place to keep in
-      # step with the manifest.
-      # Trusted Publishing, not a token. All four crates carry a publisher
-      # naming this repository and this workflow filename, and each has
-      # "require trusted publishing for all new versions" set -- so a token
-      # would now be **rejected** by the registry rather than merely
-      # unnecessary. The first release could not use this: a publisher is
-      # configured per crate, on a crate that already exists, so claiming four
-      # unclaimed names needed a token exactly once. That token is deleted.
-      #
-      # The exchange is short-lived and scoped to this run, which is why there
-      # is no secret to leak and nothing to rotate.
+      # Trusted Publishing: each crate names this repository and workflow as
+      # publisher and requires it for new versions, so a token would be
+      # rejected. The OIDC exchange is short-lived and scoped to this run,
+      # leaving no secret to leak or rotate.
       - name: Authenticate to crates.io
         if: ${{ !inputs.dry_run }}
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: auth
 
+      # `meo-canvas-node` is `publish = false`, so `--workspace` skips it here
+      # and in the verification above without naming it.
       - name: Publish
         if: ${{ !inputs.dry_run }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish --workspace
 
-      # Tag AFTER the registry has accepted everything, never before. A tag
-      # pushed first and a publish that then fails leaves a tag with no release
-      # under it and a version that can never be reissued -- `meo-skia-canvas`
-      # has that scar. Tagging last means a failed publish leaves the tree
-      # exactly as it was.
-      #
-      # **The prefix is `rust-v`, and the npm side now carries `npm-v`.** The
-      # two version lines are independent -- npm continues v1 at 10.x, the
-      # crates start fresh at 0.1.0 -- so a shared namespace was never right,
-      # and a crate tag named `v0.1.0` would once have become the "previous
-      # tag" for the next npm release and silently truncated its notes to a
-      # range across two lineages. That particular failure is gone with the
-      # generated notes; the namespaces stay separate because the releases
-      # are, and because `docs.yml` decides whether a tag has a JavaScript
-      # reference by its prefix.
-      #
-      # This lineage has no published tags yet, so the rename from `crates-v`
-      # costs nothing and rewrites nothing. The npm side's 68 `v*` tags were
-      # left alone, which is why `docs.yml` accepts both spellings there.
+      # Tag after the registry accepts everything: a tag pushed before a failed
+      # publish marks a version that can never be reissued. `rust-v`, apart from
+      # `npm-v`, because the lineages version independently and `docs.yml` picks
+      # tags with a JavaScript reference by prefix.
       - name: Tag the commit and open a release
         if: ${{ !inputs.dry_run }}
         env:
@@ -261,16 +129,10 @@ jobs:
           test -n "$version" || { echo "::error::could not read the crate version"; exit 1; }
           git_tag="rust-v${version}"
 
-          # **Written by hand, per version, and a missing file stops the
-          # release** -- the same rule `release.yml` follows and for the same
-          # reason. A range of subjects described one lineage when there was
-          # one lineage; with two channels cutting from the same trunk, the
-          # commits between two crate releases include every npm-side change
-          # and every gate edit, and a page listing all of them tells a crate
-          # consumer nothing. Written against the previous release of THIS
-          # channel is the whole point of the split.
-          #
-          # No fallback to the log. A fallback would make this unable to fail.
+          # Hand-written per version, and a missing file stops the release, as
+          # in `release.yml`: the log between two crate releases carries every
+          # npm change too. No fallback to the log, which would make this unable
+          # to fail.
           notes_source="docs/releases/rust/${version}.md"
           if [ ! -s "${notes_source}" ]; then
             echo "::error::${notes_source} is missing or empty. Release notes are written by hand, per channel and per version, against the previous release of that channel. Write it, commit it, and run this again."
@@ -286,20 +148,10 @@ jobs:
             cat "${notes_source}"
           } > notes.md
 
-          # **Both halves ask whether they have already happened**, because
-          # the step before this one is `cargo publish --workspace` and
-          # crates.io has no unpublish. A failure between the upload and the
-          # tag used to be terminal here: the crates are on the registry, the
-          # re-run dies at `git tag` because the tag now exists, and there is
-          # no path that finishes the job. `release.yml` learned this on
-          # 5 September 2026 and carries the same guard; this workflow has
-          # never run, so it was still carrying the version that fails.
-          #
-          # A tag at a different revision is a real conflict rather than
-          # something to walk past -- someone published this version from
-          # elsewhere -- so it stops rather than attaching a release to a
-          # commit this run did not build. Tags are local because the checkout
-          # above takes `fetch-depth: 0`.
+          # Both halves ask whether they already happened, since crates.io has
+          # no unpublish: a re-run after a failure past the upload finishes what
+          # is left. A tag at another revision is a conflict and stops the run.
+          # Tags are local because the checkout takes `fetch-depth: 0`.
           head=$(git rev-parse HEAD)
           if existing=$(git rev-parse -q --verify "refs/tags/${git_tag}^{commit}"); then
             if [ "$existing" != "$head" ]; then
@@ -308,13 +160,9 @@ jobs:
             fi
             echo "${git_tag} already exists at this commit; not creating it again"
           else
-            # **An annotated tag records who made it, so the runner needs an
-            # identity.** Without one `git tag -a` exits 128 with "empty ident
-            # name" -- which is exactly how `release.yml` died on run
-            # 33966045288 with every package already on npm. This workflow
-            # has the same `git tag -a` and had no `git config` anywhere in
-            # it, so its first real run would have reproduced that failure
-            # with four crates already on crates.io behind it.
+            # An annotated tag records its author, so the runner needs an
+            # identity: without one `git tag -a` exits 128 with "empty ident
+            # name", as `release.yml` did on run 33966045288.
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git tag -a "${git_tag}" -m "meo-canvas crates ${version}"

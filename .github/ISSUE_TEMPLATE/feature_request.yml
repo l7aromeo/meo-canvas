@@ -22,11 +22,11 @@ body:
   - type: input
     id: css
     attributes:
-      label: The CSS or v1 equivalent, if there is one
+      label: The CSS or v9 equivalent, if there is one
       description: >
-        A property name, a `<canvas>` call, or the v1 API this replaces. Where CSS has already
+        A property name, a `<canvas>` call, or the v9 API this replaces. Where CSS has already
         decided the behaviour, that decision is the specification here.
-      placeholder: 'background-clip: text / ctx.filter / v1 `Text` with `stroke`'
+      placeholder: 'background-clip: text / ctx.filter / v9 `Text` with `stroke`'
 
   - type: dropdown
     id: surfaces

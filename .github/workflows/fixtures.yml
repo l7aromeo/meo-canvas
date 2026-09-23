@@ -1,27 +1,14 @@
 name: fixtures
 
-# Renders the golden fixtures on a platform this machine is not, and uploads
-# what it produced.
-#
-# **A golden is a property of the architecture that drew it.** macOS on arm64,
-# Linux on x86_64 and Windows on x86_64 rasterise anti-aliased edges
-# differently, so `tests/fixtures.rs` compares against `expected.<os>-<arch>.png`
-# where one exists and `expected.png` otherwise. `just fixtures-linux` makes the
-# Linux set in the release container; there is no equivalent for Windows on a
-# developer's Mac, and this is it.
-#
-# It writes nothing to the branch: it uploads an artifact, and a person looks at
-# the images before committing them. A workflow that pushed accepted goldens
-# would be a workflow that can turn a rendering regression into a commit without
-# anyone seeing it.
+# Renders the goldens on another platform and uploads them. Anti-aliased edges
+# rasterise differently per architecture, so `tests/fixtures.rs` compares
+# against `expected.<os>-<arch>.png` where one exists. It commits nothing: a
+# person looks at the images, so a regression cannot become a commit unseen.
 run-name: >-
   fixtures — render the goldens
 
-# **Both triggers, and the push one is not redundant.** `workflow_dispatch`
-# requires the workflow file to exist on the repository's default branch, and
-# this repository's default is `main` -- v1's semantic-release branch, which
-# nothing about v10 should be pushed to. So until 10.x is the default, a push to
-# a `fixtures/**` branch is how this is run.
+# `workflow_dispatch` chooses the runner; a push to a `fixtures/**` branch
+# renders on Windows and Linux without one.
 on:
   workflow_dispatch:
     inputs:
@@ -36,15 +23,9 @@ on:
 permissions:
   contents: read
 
-# **The last workflow without one.** Two dispatches, or a dispatch while a
-# `fixtures/**` push is running, would write the same artifact name and race for
-# the same cache key. Keyed by ref *and* by the chosen runner, because rendering
-# the same branch on Windows and on Linux is the ordinary way this is used and
-# those two must not cancel each other.
-#
-# `cancel-in-progress: false`: a run that has spent forty minutes rendering
-# goldens is not superseded by a newer one the way a gate result is. The second
-# waits.
+# Keyed by ref and runner: one branch on two runners runs both, while two runs
+# of one pair would race one artifact name. Not cancelled, since a forty-minute
+# render is not superseded the way a gate result is.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.os || 'matrix' }}
   cancel-in-progress: false
@@ -74,13 +55,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # No `setup-just` here, and its absence is deliberate rather than an
-      # omission. The steps below call `cargo` directly -- so that the run
-      # reproduces the bare `cargo test` whose comparison CI reports, which the
-      # step that does it explains -- and the toolchain is read with `grep`
-      # rather than `just --evaluate` the way `ci.yml` reads its nightly. The
-      # action was installed here and never invoked: a pinned version to keep
-      # in step, and a minute of every run, for a tool nothing in this file ran.
+      # No `setup-just`: the steps call `cargo` directly, reproducing the bare
+      # `cargo test` whose comparison CI reports, and read the toolchain with
+      # grep.
 
       - name: Read the pinned toolchain
         id: toolchain
@@ -93,20 +70,10 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
-      # **Restores, never saves.** This workflow runs on `workflow_dispatch` and
-      # on pushes to `fixtures/**`, so every cache it wrote was scoped to a
-      # branch that gets deleted with its pull request and could never be read
-      # again -- the same waste `save-if` removed from `ci.yml`, which is why
-      # the cache list holds six entries and not one of them is a `fixtures-`.
-      #
-      # **It cannot read `ci.yml`'s entries either, and the key is not why.**
-      # rust-cache appends the job id: `key += `-${job}`` when `add-job-id-key`
-      # is true, which is its default. `ci.yml`'s job is `ci` and this one is
-      # `accept`, so the observed key `v0-rust-macos-latest-ci-Darwin-arm64-...`
-      # carries a segment this job can never produce. Matching the `key:` input
-      # alone would change nothing; sharing would take `add-job-id-key: false`
-      # in **both** files, and one invalidation of the CI cache to get it.
-      # That is a trade for `ci.yml` to make and it is not made here.
+      # Restores, never saves: a `fixtures/**` branch dies with its pull
+      # request, so its cache could never be read. `ci.yml`'s entries are out of
+      # reach as well, since rust-cache appends the job id (`ci` there, `accept`
+      # here); sharing needs `add-job-id-key: false` in both.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: fixtures-${{ inputs.os || matrix.os }}
@@ -128,34 +95,17 @@ jobs:
               ;;
           esac
 
-      # No `--features`, because this has to reproduce the run that fails. `just
-      # test` renders the fixtures first under a bare `cargo test --workspace`
-      # and again with the host's GPU feature, and it is the bare pass whose
-      # comparison CI reports. Accepting from a different build than the one
-      # being checked would pin a picture the gate never produces.
-      # The set is read from the report rather than typed, and the reason the
-      # "one name at a time" rule still holds is that **this commits nothing**.
-      # That rule exists so a bulk accept cannot become a commit unseen; here
-      # the output is an artifact somebody opens. Naming eight fixtures by hand
-      # for a push trigger that carries no inputs would only move the typing.
+      # No `--features`, reproducing the bare `cargo test --workspace` pass
+      # whose comparison CI reports. The set comes from the report rather than
+      # names: this commits nothing, so the one-at-a-time rule of
+      # `fixtures-accept` does not apply.
       - name: Accept every fixture that differs
         run: |
           set -euo pipefail
-          # **The status and the parse are two sources, and this needs both.**
-          # Not failing on the render is still right -- a differing fixture is
-          # what this exists to find and the test reports it by failing -- but
-          # the status has to be kept rather than thrown away with `|| true`,
-          # because it is the only thing that separates "the comparison ran and
-          # agreed" from "nothing ran at all".
-          #
-          # The parse cannot separate them. A compile error, a link failure, a
-          # missing font or a panic before the comparison loop all produce a
-          # report naming no fixture, and this step used to answer every one of
-          # them with "every fixture matches the reference on this platform"
-          # and exit 0 -- on the workflow whose entire purpose is rendering
-          # goldens on a platform nobody here has. The upload below could not
-          # notice either: sixteen variants are committed, so its path always
-          # matches files and `if-no-files-found: error` never fires.
+          # The status and the parse are both needed: a compile error, missing
+          # font or early panic names no fixture, so the parse alone would
+          # report every fixture matching. The upload cannot tell either, since
+          # committed variants always match its path.
           set +e
           report=$(cargo test -p meo-canvas-core --test fixtures -- --nocapture 2>&1)
           status=$?
@@ -167,11 +117,10 @@ jobs:
             exit 0
           fi
 
-          # `fixtures.rs` reports four shapes and this reads one. The other
-          # three -- a size mismatch, bytes that differ where every pixel
-          # agrees, and a reference that is missing outright -- are differences
-          # an accept would paper over, so falling through to the refusal below
-          # is the right answer for them rather than a gap in the pattern.
+          # `fixtures.rs` reports four shapes and this reads one. A size
+          # mismatch, bytes differing where pixels agree, and a missing
+          # reference fall through to the refusal below, since an accept would
+          # hide them.
           names=$(printf '%s\n' "$report" \
             | sed -n 's/^  `\([a-z0-9-]*\)`: .* pixels differ.*/\1/p' | sort -u)
           if [ -z "$names" ]; then

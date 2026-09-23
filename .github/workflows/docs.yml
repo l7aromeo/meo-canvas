@@ -1,50 +1,22 @@
 name: docs
 
-# The JavaScript reference: gated on every pull request, and published once per
-# release rather than once per commit.
-#
-# `latest/` follows the newest stable published release, not `v10`. A reference
-# that tracked the branch would describe methods that are not in anyone's
-# `node_modules` yet, which is worse than describing none: the reader has no
-# way to tell which half of the page they can call. Every release keeps its
-# own copy at `vX.Y.Z/`, prereleases included, so a project pinned to any
-# version still has its documentation.
-#
-# Only the JavaScript half is built. TypeDoc reads `dist/*.d.ts` and needs no
-# native module, so a build is under a minute; `cargo doc` needs a full Skia
-# build, and docs.rs publishes that from the crate's own doc comments, per
-# version, for nothing.
-#
-# Adapted from `meo-skia-canvas/.github/workflows/docs.yml`. Two things differ.
-# That project checks its declarations in; this one builds them with `tsc`
-# first. And that project's release is created before its package is published,
-# so it has to reason about the gap; here `release.yml` creates the GitHub
-# release only after `npm publish` has succeeded, and this workflow still
-# **waits for the version to resolve from the registry** before deploying,
-# because "published" and "installable" are separated by propagation.
+# The JavaScript reference: gated on pull requests, published per release.
+# `latest/` follows the newest stable release and each release keeps its own
+# `vX.Y.Z/`. Only the JavaScript half, since docs.rs builds the Rust one. Waits
+# for the version to resolve from npm before deploying.
 run-name: >-
   docs — ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag || 'check' }}
 
 on:
-  # The GitHub release being published. `release.yml` opens it as the last
-  # step after every package is on npm, so this fires after the publish and
-  # never before it.
+  # A GitHub release being published by hand. `release.yml` opens its release
+  # with `GITHUB_TOKEN`, which starts no workflow, so it dispatches this at the
+  # tag instead.
   release:
     types: [published]
-  # **Derived from what the build reads, not from what looks related.** The job
-  # runs `tsc -p packages/meo-canvas/tsconfig.build.json` and then the TypeDoc
-  # tool, so every input to those two is here and nothing else is: a path added
-  # because it feels adjacent buys a run on every change that cannot affect the
-  # reference.
-  #
-  # **What this list cannot see**, said here rather than left to be discovered.
-  # A path filter is a proxy for "could this change the reference", and the
-  # proxy is narrower than the claim: a dependency whose own types change
-  # breaks declaration emit with nothing in this repository touched, and no
-  # entry below would fire. The lockfile catches the half of that case where
-  # the version moves here; a publisher shipping different types under a
-  # version already pinned is outside it. The release path is what covers that,
-  # because it rebuilds from the tag rather than from a diff.
+  # Every input to `tsc -p packages/meo-canvas/tsconfig.build.json` and the
+  # TypeDoc tool, and nothing else. A path filter cannot see a dependency
+  # shipping different types under a pinned version; the release path covers
+  # that by rebuilding from the tag.
   pull_request:
     paths:
       # What is compiled.
@@ -84,17 +56,10 @@ on:
 permissions:
   contents: read
 
-# **`cancel-in-progress` is conditional here, where `ci.yml` can say `true`
-# flatly.** There a superseded run describes code nobody has any more, so
-# cancelling it is free. Here half the triggers deploy: cancelling one of those
-# mid-flight can leave `gh-pages` pushed and the Pages artifact never uploaded,
-# and two publishes running at once race the same non-force push from two
-# shallow clones with no retry between them.
-#
-# So pull requests keep the cheap behaviour, grouped by ref and cancelling
-# their own supersedes, and every publishing path shares one group that queues
-# instead. Queueing costs a few minutes; cancelling costs a site that disagrees
-# with itself.
+# Pull requests cancel their own superseded runs, as in `ci.yml`. Publishing
+# paths share one group and queue: cancelling mid-deploy can push `gh-pages`
+# without uploading the Pages artifact, and two concurrent publishes race one
+# non-force push.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -125,22 +90,10 @@ jobs:
             release)           TAG="${{ github.event.release.tag_name }}" ;;
             *)                 TAG="" ;;
           esac
-          # `npm-v10.0.0` or `npm-v10.0.0-alpha.6`, and the bare `v10.0.0`
-          # spelling the npm channel used before it was given a prefix. Both
-          # are npm releases and both have a JavaScript reference; the 68
-          # existing `v*` tags were not rewritten, and `workflow_dispatch`
-          # exists to backfill exactly those, so refusing them would make
-          # every release before the rename unrepublishable.
-          #
-          # The Rust lineage is `rust-v*` and produces no JavaScript
-          # reference. **That is what this pattern is for**, and it is why the
-          # npm prefix could not simply be added without touching it: an
-          # anchored `^v` matches neither `npm-v10.0.0` nor `rust-v0.1.0`, so
-          # the rename would have made a release event print a notice and
-          # publish nothing -- no error, no red job, no deploy.
-          #
-          # `tools/release-tags.mjs` runs a tag of every shape through this
-          # exact line rather than through a second copy of it.
+          # `npm-vX.Y.Z[-pre]`, or the unprefixed `vX.Y.Z` of the 68 older npm
+          # tags, which `workflow_dispatch` backfills. `rust-v*` has no
+          # JavaScript reference and must not match. `tools/release-tags.mjs`
+          # runs a tag of each shape through this exact line.
           if [ -n "$TAG" ] && ! printf '%s' "$TAG" | grep -Eq '^(npm-)?v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
               echo "::error::'$TAG' is not an npm release tag (expected npm-vX.Y.Z, npm-vX.Y.Z-pre, or the pre-rename vX.Y.Z)"
@@ -149,20 +102,10 @@ jobs:
             echo "::notice::$TAG is not an npm release tag; nothing published"
             TAG=""
           fi
-          # **The tag and the version are different strings and this is the
-          # one place that turns one into the other.** They were both called
-          # `version` before, and a step three hundred lines below wrote
-          # `${VERSION#v}` to reach the npm spelling -- correct while the tag
-          # was `v10.0.0`, silently wrong the day it became `npm-v10.0.0`,
-          # because `#v` does not strip a prefix the string does not start
-          # with. `npm view meo-canvas@npm-v10.0.0-alpha.6` answers E404, so
-          # the registry wait would have run its whole ten-minute deadline and
-          # failed every release. Deriving it once, beside the pattern that
-          # decides which prefixes are legal, is what keeps the two from
-          # disagreeing again.
-          #
-          # `tools/release-tags.mjs` runs these two lines over a tag of each
-          # shape and asserts what comes out.
+          # The one place a tag becomes a version: `npm-v10.0.0` and `v10.0.0`
+          # both give `10.0.0`. `npm view` answers E404 for a tag spelling,
+          # spending the registry wait's whole deadline.
+          # `tools/release-tags.mjs` checks these two lines over each tag shape.
           VERSION="${TAG#npm-}"
           VERSION="${VERSION#v}"
           {
@@ -209,13 +152,9 @@ jobs:
         with:
           name: reference
           path: target/jsdoc
-          # **The action's default is `warn`, and `warn` is wrong here.** This
-          # step runs only when a version is being published, so no pull
-          # request ever exercises it -- and with the default, a `target/jsdoc`
-          # that came out empty or moved would upload nothing, `publish` would
-          # download nothing, and `cp -r incoming site/${VERSION}` would deploy
-          # an empty reference from a run that was green throughout. The one
-          # path that can fail is the one no rehearsal covers.
+          # `error`, not the default `warn`: only a publish runs this step, so
+          # an empty `target/jsdoc` would otherwise deploy an empty reference
+          # from a green run no pull request rehearses.
           if-no-files-found: error
           retention-days: 1
 
@@ -237,13 +176,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      # **Installable, not merely published.** The release event fires after
-      # `npm publish` returned, and the registry can still take a minute to
-      # serve the version. Deploying `latest/` for a version `npm install`
-      # cannot yet give you is the confusion this whole arrangement exists to
-      # prevent, so this waits for the registry to answer -- bounded, and loud
-      # when the bound is hit, because a version that never appears is a
-      # release that did not happen.
+      # Installable, not merely published: the registry can take minutes to
+      # serve a version after `npm publish` returns. Bounded, and loud at the
+      # bound, since a version that never appears is a release that did not
+      # happen.
       - name: Wait for the release to be installable, not merely published
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -269,40 +205,17 @@ jobs:
 
           resolves "meo-canvas@${VERSION}"
 
-          # **The main package alone was never the question this step claimed
-          # to answer.** It said it was waiting so that `latest/` never
-          # describes a version `npm install` cannot give you -- and an install
-          # of `meo-canvas` also resolves the seven platform packages its
-          # `optionalDependencies` names. Checking one of eight was a green
-          # check for a claim eight times wider.
-          #
-          # **They are optional, which is what makes this necessary rather than
-          # tidy.** npm does not fail an install when it cannot resolve an
-          # `optionalDependencies` entry: it warns, succeeds, and leaves an
-          # installation with no addon that throws on the first render. So the
-          # failure this prevents does not look like a broken release. It looks
-          # like a broken library.
-          #
-          # **Read out of the published manifest rather than listed here.**
-          # Asking npm what that version declares is asking the question the
-          # claim is about; a list in this file would be a second place to keep
-          # in step with `packages/meo-canvas/package.json`, and reading the
-          # checkout would be wrong for a `workflow_dispatch` backfill, whose
-          # `repo/` is a branch rather than the tag being published.
-          #
-          # `jq` rather than `node`, for the reason `crates-io.yml` gives at its
-          # own version read: `npm` is on the image and this step already rests
-          # on that, but nothing here sets a Node up on purpose.
+          # All seven platform packages too: npm installs past an unresolvable
+          # optional dependency with a warning, leaving no addon. Read from the
+          # published manifest, not a list here or the checkout, which a
+          # backfill takes from a branch. `jq`, since nothing here sets up Node.
           declared=$(npm view "meo-canvas@${VERSION}" optionalDependencies --json)
           test -n "$declared" || declared='{}'
           platforms=$(printf '%s' "$declared" | jq -r 'to_entries[] | "\(.key)@\(.value)"')
 
-          # **Zero is a failed read, not an empty set.** Every 10.x ships seven
-          # platform packages, so no entries means the manifest did not parse
-          # or npm answered with nothing -- which is exactly the shape that
-          # would let this step pass having checked nothing, which is what it
-          # was doing before. A version that genuinely ships no platform
-          # package will have to change this line, and should have to.
+          # Zero entries is a failed read, not an empty set: every 10.x ships
+          # seven platform packages. A version that ships none has to change
+          # this line.
           count=$(printf '%s' "$platforms" | grep -c . || true)
           if [ "$count" -eq 0 ]; then
             echo "::error::meo-canvas@${VERSION} declared no optionalDependencies; this check looked at nothing"
@@ -342,30 +255,10 @@ jobs:
             echo "store: empty, first publish"
           fi
 
-      # **`latest/` is the newest stable version, or it does not exist.** It
-      # used to fall back to the newest prerelease when no stable version had
-      # been published, which is where it stands today and will until 10.0.0.
-      # That fallback is gone: `latest/` meaning "the newest thing we have" is
-      # a different promise from `npm install meo-canvas`, and a reader who
-      # follows the link has no way to tell which promise they got. While no
-      # stable version exists there is no `latest/` at all, and
-      # `site-index.mjs` says so and links the newest prerelease by its own
-      # version instead.
-      #
-      # **Chosen here, and not by `site-index.mjs`.** This comment used to
-      # credit the script, which does not decide: the sort below picks the
-      # stable version, stamps it into `latest/VERSION`, and `site-index.mjs`
-      # reads that stamp. It has no fallback of its own any more either -- an
-      # absent stamp means an absent `latest/`, which is what not writing one
-      # means here -- and it refuses outright if the stamp ever names a
-      # prerelease. Two files still implement one rule; the second now fails
-      # loudly rather than papering over the first.
-      #
-      # The brand images come from the repository checkout because the site is
-      # assembled from two sources and they live in neither the reference nor
-      # the store. They are what the library drew of itself -- see
-      # `docs/assets/brand/README.md` -- and the landing page is the one place
-      # a stranger judges this project by a picture.
+      # `latest/` is the newest stable version, or absent, never a prerelease.
+      # The sort below picks it and stamps `latest/VERSION`; `site-index.mjs`
+      # reads the stamp and refuses a prerelease. Brand images come from the
+      # checkout; see `docs/assets/brand/README.md`.
       - name: Assemble the site
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -373,19 +266,10 @@ jobs:
           set -euo pipefail
           touch site/.nojekyll
 
-          # **The directory is the version, with no channel prefix.** The tag
-          # is `npm-v10.0.0-alpha.6` and the directory stays `v10.0.0-alpha.6`,
-          # for a reason that is not tidiness: the sort below and
-          # `site-index.mjs` both read directory names against
-          # `^v(\d+)\.(\d+)\.(\d+)`, so a prefixed directory parses as
-          # nothing. It would deploy, the index would never list it, and
-          # `latest/` would never advance past the last release named the old
-          # way -- with no error anywhere. Stripping the prefix also leaves the
-          # 68 directories already on `gh-pages` correct rather than starting a
-          # second naming scheme beside them.
-          #
-          # There is only one channel here in any case: the Rust reference is
-          # published by docs.rs, so no `rust-v*` release ever reaches this.
+          # The directory is the version without its channel prefix: the sort
+          # below and `site-index.mjs` parse names as `^v(\d+)\.(\d+)\.(\d+)`,
+          # so `npm-v...` would deploy unlisted and never advance `latest/`.
+          # `rust-v*` never reaches this; docs.rs publishes that reference.
           dir="v${VERSION}"
           rm -rf "site/${dir}"
           cp -r incoming "site/${dir}"

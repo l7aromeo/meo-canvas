@@ -1,27 +1,9 @@
 name: encode-hashes
 
-# Measures the encode-agreement hashes on a platform this machine is not, and
-# uploads what it found.
-#
-# **An encoded byte string can be a property of the platform that wrote it.**
-# `crates/meo-canvas/tests/encode_agreement.rs` and its TypeScript half compare
-# eight formats against `flat-hashes.txt`, written on macOS, with a per-row
-# overlay `flat-hashes.<os>-<arch>.txt` for the rows a platform genuinely
-# moves. Measured: `windows-x86_64` moves `tiff` and nothing else, from both
-# surfaces, while `ubuntu-latest` moves nothing. There is no way to produce a
-# Windows row on a developer's Mac, and this is it.
-#
-# **It writes nothing to the branch.** The run prints the rows that differ and
-# uploads them; a person writes the overlay, with the evidence that the
-# difference is real, and commits it. The row is a claim about a platform and a
-# bare hash is unreviewable -- `fixtures.yml` makes the same choice for the
-# same reason, and its sentence is the one to keep: a workflow that pushed
-# accepted values would be a workflow that can turn a regression into a commit
-# without anyone seeing it.
-#
-# The dispatch and the branch push are both here for the reason `fixtures.yml`
-# gives: a workflow is only dispatchable once it is on the default branch, so
-# until this file merges, a push to `encode-hashes/**` is how it runs.
+# Measures the encode-agreement hashes on another platform and uploads them.
+# `encode_agreement.rs` and its TypeScript half compare against macOS's
+# `flat-hashes.txt` with per-platform overlays; `windows-x86_64` moves `tiff`
+# only. It commits nothing: a person writes the overlay, as with `fixtures.yml`.
 run-name: >-
   encode-hashes — measure on ${{ inputs.os || 'every runner' }}
 
@@ -100,12 +82,10 @@ jobs:
       # hour.
       - run: just addon
 
-      # **Both surfaces, and the JavaScript one is what prints.** The Rust half
-      # asserts and says which formats moved; the TypeScript half, with
-      # `UPDATE_ENCODE_HASHES=1` on a platform that is not the reference,
-      # prints the rows and writes nothing. Neither is allowed to fail the run
-      # -- a divergence is the thing being measured, so a red step here would
-      # mean the artifact never uploads and the numbers are only in a log.
+      # Both surfaces: Rust asserts and names the formats that moved, TypeScript
+      # with `UPDATE_ENCODE_HASHES=1` prints the rows and writes nothing.
+      # Neither fails the run, since a divergence is the measurement and a red
+      # step would skip the upload.
       - name: Measure
         run: |
           set -uo pipefail
