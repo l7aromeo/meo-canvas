@@ -1,63 +1,17 @@
-# The image the glibc Linux addons are built in, and the glibc version is the
-# whole reason it exists.
-#
-# A binary cannot link against symbol versions its build sysroot does not have,
-# so the build base *is* the floor. Measured on `ubuntu-latest` the addon came
-# out demanding GLIBC_2.35 and GLIBCXX_3.4.30, and failed to load on Rocky 9,
-# Amazon Linux 2023 and everything older -- while being published as
-# `linux-x64-gnu`, a name that claims every glibc Linux on x64. This image is
-# how that name becomes true.
-#
-# What the floor has to clear, measured from the images rather than assumed:
-#
-#   RHEL / Rocky / Alma 8            glibc 2.28   GLIBCXX 3.4.25
-#   AWS Lambda / Amazon Linux 2023   glibc 2.34   GLIBCXX 3.4.33
-#   RHEL / Rocky / Alma 9            glibc 2.34   GLIBCXX 3.4.29
-#   Ubuntu 22.04                     glibc 2.35
-#   Debian 12 / node:22              glibc 2.36
-#
-# # Why manylinux rather than a base we assemble
-#
-# `manylinux_2_28_x86_64` **is** AlmaLinux 8.10 -- glibc 2.28, the lowest row
-# above -- and it already carries gcc-toolset-14 as the default `gcc`/`g++`
-# plus a current cmake. Those are the two hardest parts of assembling this by
-# hand, and PyPA maintains them for the same reason we would: shipping portable
-# native binaries.
-#
-# It also generalises, which matters more with four Linux targets. The same
-# layer applies to `manylinux_2_28_aarch64`, and `musllinux_1_2_*` is the same
-# shape for the musl pair -- Alpine 3.22 with gcc, g++ and cmake already
-# present. One thin layer, four bases we do not maintain.
-#
-# **This is where we diverge from `meo-skia-canvas`, deliberately.** Their
-# image starts from bare `almalinux:8`, whose default GCC is 8.5 -- which has no
-# `<bit>`, so Skia fails on `SkMathPriv.h`, so they install clang and point it
-# at gcc-toolset's headers. Starting from manylinux the default compiler is
-# already GCC 14, so that entire chain is unnecessary here. Their reasoning was
-# right for their starting point and does not transfer.
-# The base is an `ARG` so one file serves both architectures. The x86_64 and
-# aarch64 manylinux images are the same distribution at the same glibc, and
-# nothing in this layer is architecture-specific except the assembler below.
+# The image the glibc Linux addons are built in. The build base is the glibc
+# floor, since a binary cannot link against symbol versions its sysroot lacks:
+# built on `ubuntu-latest` the addon needed GLIBC_2.35 and failed on Rocky 9.
+# `manylinux_2_28` is AlmaLinux 8.10, glibc 2.28, with GCC 14 and cmake.
+
+# The base is an `ARG` so one file serves both architectures: the x86_64 and
+# aarch64 images share a distribution and glibc.
 ARG BASE=quay.io/pypa/manylinux_2_28_x86_64
 FROM ${BASE}
 
-# What the base does not carry.
-#
-# `nasm` is for libaom, which assembles its hot paths on x86 rather than
-# compiling them and raises a FATAL_ERROR when it can find neither nasm nor
-# yasm. **It is x86-only, measured rather than assumed**: `libaom-sys` builds
-# on aarch64 in this image with no assembler installed at all, because libaom
-# uses NEON intrinsics there and compiles them rather than assembling them.
-#
-# It is an `ARG` rather than a second Dockerfile, and that is the whole reason
-# it is one: adding a target should cost a row in `TARGETS` and nothing else,
-# and a forked image for the sake of one package is exactly the kind of second
-# edit that makes the claim untrue. `--build-arg ASSEMBLER=` builds the aarch64
-# image from this same file.
-#
-# `gperf` is fontconfig's build dependency. `ninja-build` and a current `meson`
-# are fontconfig's build system -- EL8 ships meson 0.58, which is too old for
-# fontconfig 2.17, so it comes from pip as it does in `install-fontlibs.sh`.
+# `nasm` is libaom's, which assembles its x86 paths; on aarch64 libaom compiles
+# NEON intrinsics and needs none, measured, so `--build-arg ASSEMBLER=` builds
+# that image from this file. `gperf`, `ninja-build` and meson build fontconfig;
+# EL8 ships meson 0.58, and a current one comes from pip.
 ARG ASSEMBLER=nasm
 RUN dnf -y install --setopt=install_weak_deps=False \
       ${ASSEMBLER} gperf ninja-build make \
@@ -66,30 +20,10 @@ RUN dnf -y install --setopt=install_weak_deps=False \
  && /opt/meson/bin/pip install --no-cache-dir meson
 ENV PATH="/opt/meson/bin:${PATH}"
 
-# The font libraries, built static and installed with NO shared object.
-#
-# # Why they are built rather than installed
-#
-# Skia is compiled without `embed-freetype`, so `rust-skia` links the system
-# freetype and fontconfig -- and its `linux.rs` probes pkg-config for both and
-# falls back to the bare names when the probe fails, silently. Whatever those
-# names resolve to is what the addon then needs at load time, and measured,
-# `libfontconfig.so.1` and `libfreetype.so.6` are absent from every image in
-# the table above, `node:22-slim` included. The addon fails there before glibc
-# is even a question.
-#
-# **Static linking the distribution's own archives is not the fix, and the
-# measurement is the reason.** With the shared objects hidden, `-lfontconfig`
-# does resolve to `libfontconfig.a` and both libraries are absorbed -- zero
-# NEEDED entries, no patched dependency required. But Ubuntu's archive drags
-# its own dependencies onto the link line and the binary comes out needing
-# `libexpat`, `libbz2`, `libpng16` and `libbrotlidec` instead. Three of those
-# four are missing from every image above. Two missing libraries traded for
-# four is a regression, and it would have passed a naive "is fontconfig gone
-# from NEEDED" check.
-#
-# So the libraries are built here with their optional dependencies switched
-# off, which is the part that makes the static link worth having.
+# The font libraries, built static with no shared object: rust-skia links the
+# system freetype and fontconfig, whose shared objects no target image carries,
+# `node:22-slim` included. The distribution's archives drag in `libexpat`,
+# `libbz2`, `libpng16` and `libbrotlidec`; built here, they take none but expat.
 COPY install-fontlibs.sh /opt/install-fontlibs.sh
 RUN bash /opt/install-fontlibs.sh && rm -f /opt/install-fontlibs.sh
 
@@ -98,60 +32,18 @@ RUN bash /opt/install-fontlibs.sh && rm -f /opt/install-fontlibs.sh
 # undefined references -- measured, `XML_GetCurrentLineNumber` first.
 ENV PKG_CONFIG_ALL_STATIC=1
 
-# libstdc++ pinned to an old baseline, and **the linker is the trap**.
-#
-# # What `-static-libstdc++` does here, measured rather than assumed
-#
-# This comment said "absorbed rather than depended on", and the artefact says
-# otherwise: `NEEDED libstdc++.so.6`, and 53 C++ symbols resolved from it at
-# load. Both halves of that were worth measuring rather than softening.
-#
-# The flag is doing most of the work. **396 `std::` symbols are defined in the
-# binary's own `.text`** -- linked in from `libstdc++.a` rather than looked up.
-#
-# It cannot remove the dependency, because it is not the only thing on the link
-# line asking for libstdc++. `rust-skia` emits `cargo:rustc-link-lib=stdc++`
-# unconditionally -- its `link_libraries` opens with `vec!["stdc++"]`
-# (`build_support/platform/linux.rs:37`) -- so rustc puts `-lstdc++` in the
-# dynamic section regardless of what the compiler driver was told. The static
-# archive satisfies what it reaches first and the shared object answers the
-# rest.
-#
-# **What the flag buys is the version of the residue, and that is the whole
-# point.** What is left is old: the newest thing required is GLIBCXX_3.4.21,
-# which is GCC 5.1's C++11 string and stream ABI -- `std::__cxx11::
-# basic_stringstream`, `basic_stringbuf`, `getline`, `locale::name`. A GCC 14
-# link without this flag would demand far newer, and 3.4.21 sits under
-# AlmaLinux 8's own 3.4.25, which is the oldest platform this image targets.
-#
-# So: **static where it reaches, dynamic to a 2015 baseline.** Every image in
-# the acceptance table carries a libstdc++ newer than that.
-#
-# # `g++` here, where `meo-skia-canvas` uses `clang++`, and that is not a
-# # simplification of their design
-#
-# Their image installs clang and points it at gcc-toolset's headers because it
-# starts from bare `almalinux:8`, whose default compiler is GCC 8.5 -- which has
-# no `<bit>`, so Skia fails on `SkMathPriv.h`. **That problem does not exist
-# here.** manylinux already puts gcc-toolset-14 on the path as the default
-# `gcc`/`g++`, so the compiler is GCC 14 before we do anything, and the clang
-# chain would be working around a fault we do not have.
-#
-# This is written down because the divergence looks like a mistake from the
-# outside: a reader comparing the two files sees us not doing what a working
-# upstream does, and the obvious "fix" is to put clang back. The reason we can
-# use `g++` is the base, and if the base ever changes this reasoning goes with
-# it.
-#
-# rustc links through `cc`, the C driver, which does not act on
-# `-static-libstdc++` and drops it without a word. `meo-skia-canvas` shipped a
-# binary reporting GLIBCXX_3.4.21 -- under every ceiling -- that still failed to
-# load on `undefined symbol: _M_replace_cold`, a GCC 12 symbol carrying no
-# version tag at all. Pointing the linker at `g++` makes it a C++ link and the
-# flag takes.
-#
-# **A version ceiling structurally cannot catch this**, which is why the
-# acceptance test is loading the binary and not reading its symbol versions.
+# `-static-libstdc++` defines 396 `std::` symbols in the binary, but rust-skia's
+# unconditional `-lstdc++` keeps `NEEDED libstdc++.so.6`. What the flag buys is
+# the residue's version: GLIBCXX_3.4.21, GCC 5.1's, under AlmaLinux 8's 3.4.25.
+
+# rustc links through `cc`, which drops `-static-libstdc++` silently, so the
+# linker is `g++`. Without it meo-skia-canvas shipped a binary under every
+# GLIBCXX ceiling that failed to load on `_M_replace_cold`, a GCC 12 symbol with
+# no version, which only loading the binary catches.
+
+# `g++` rather than meo-skia-canvas's clang: their base, bare `almalinux:8`, has
+# GCC 8.5 with no `<bit>` for Skia, where manylinux's default is GCC 14. This
+# holds only while the base does.
 ENV RUSTFLAGS="-C linker=g++ -C link-arg=-static-libstdc++"
 
 ARG RUST=1.98.0

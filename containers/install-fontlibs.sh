@@ -1,69 +1,29 @@
 #!/usr/bin/env bash
-# freetype and fontconfig, built static with their optional dependencies off.
-#
-# The optional dependencies are the point. Ubuntu's own `libfontconfig.a` links
-# perfectly well and drags `libexpat`, `libbz2`, `libpng16` and `libbrotlidec`
-# onto the link line with it -- three of which are missing from every image the
-# package claims. Built here, freetype takes none of them and fontconfig takes
-# only expat, which is built static alongside it.
-#
-# Nothing is installed to a system directory and **no shared object is
-# produced**, which is what makes the static link happen without patching
-# rust-skia: with no `libfontconfig.so` to find, its unconditional
-# `-lfontconfig` resolves to the archive.
+# freetype and fontconfig, static with optional dependencies off: the
+# distribution's `libfontconfig.a` drags `libexpat`, `libbz2`, `libpng16` and
+# `libbrotlidec` onto the link. Only expat comes, static too. With no shared
+# object, rust-skia's unconditional `-lfontconfig` resolves to the archive.
 set -euxo pipefail
 
-# **Everything here is built position-independent, and it is not optional.**
-#
-# The addon is a shared object, so every object linked into it must be PIC.
-# Autotools builds a static library non-PIC by default, and the failure is late
-# and does not name the cause:
-#
-#   ld: libskia_bindings.rlib(ftinit.o): relocation R_X86_64_32 against hidden
-#       symbol `tt_driver_class' can not be used when making a shared object
-#
-# `ftinit.o` is freetype's, reached through Skia, and the message says
-# "relocation" rather than "this library is not PIC". It appears only at the
-# final link of the whole addon, after Skia has compiled -- which is an hour in
-# on a cold build. It did not happen while freetype was the distribution's
-# shared library, because a shared library is PIC by construction; it starts the
-# moment the static archives here are the ones being absorbed.
-#
-# All three need saying so explicitly. The two autotools builds take both
-# halves -- `--with-pic` is libtool's switch, `-fPIC` covers anything compiled
-# outside libtool -- and meson takes `-Db_staticpic=true`.
-#
-# meson's `b_staticpic` is passed explicitly rather than relied on, which costs
-# nothing and removes a default from the reasoning.
+# Everything is position-independent: the addon is a shared object, and
+# autotools builds static archives non-PIC, failing the final link an hour in on
+# `relocation R_X86_64_32 against hidden symbol tt_driver_class`. Autotools gets
+# `--with-pic` and `-fPIC`, meson `-Db_staticpic=true`.
 export CFLAGS="${CFLAGS:-} -fPIC"
 
-# Installed into `/usr`, not a private prefix, and Skia is the reason.
-#
-# `third_party/freetype2/BUILD.gn` **hard-codes `/usr/include/freetype2`** as
-# its include path -- rust-skia's own comment says so
-# (`build_support/skia/config.rs:206`). With the libraries in `/opt/fontlibs`,
-# Skia could not find a system freetype and compiled its own, non-PIC, into
-# `libskia.a`. The addon then failed at its final link on
-# `libskia_bindings.rlib(ftinit.o): relocation R_X86_64_32 against hidden
-# symbol tt_driver_class` -- a freetype object we never built, reached through
-# a library we did not know was carrying one.
-#
-# `lib64` because that is where EL puts 64-bit libraries and what the linker
-# and pkg-config search without being told. **Alpine uses `lib` for everything**,
-# so the musl sibling of this image passes `LIBDIR=lib` and the rest of this
-# script is shared between the two families unchanged.
+# Installed into `/usr` because Skia's `BUILD.gn` hard-codes
+# `/usr/include/freetype2`; anywhere else Skia compiles its own non-PIC freetype
+# and the link fails as above. `LIBDIR` defaults to `lib64`, where EL's linker
+# and pkg-config look; the musl image passes `lib`.
 PREFIX=/usr
 LIBDIR="${LIBDIR:-lib64}"
 mkdir -p "$PREFIX" /opt/src
 cd /opt/src
 
-# Fetched to a file and checksummed before anything is unpacked, with a second
-# source. `meo-skia-canvas` had five truncated transfers across three machines
-# and an outright HTTP error from one host during a single release: `curl`'s
-# `--retry` only covers a request that fails before any data arrives, so a
-# stall mid-stream leaves `tar` holding a partial archive with nothing to
-# resume from. Downloading first makes `--retry` mean something and lets
-# `--speed-time` trip on a stall.
+# Fetched to a file and checksummed before unpacking, with a second source:
+# `curl --retry` covers only a request failing before data arrives, so streaming
+# into `tar` turns a stall into a partial archive. A file lets `--retry` and
+# `--speed-time` work.
 fetch() {
   local sha="$1" out="$2"; shift 2
   local url
@@ -79,18 +39,9 @@ fetch() {
   return 1
 }
 
-# The checksums were taken by fetching, not from memory -- the first version of
-# this script carried three remembered sums, two were wrong, and the guard
-# caught it rather than the build.
-#
-# **All three are corroborated by a second, independent host.** expat took some
-# finding: its release lives on GitHub, and SourceForge, Debian's pool, openSUSE
-# and Gentoo's distfiles all refused the fetch or do not carry that exact
-# archive. Buildroot's source cache does, and returns the same bytes -- which
-# makes it two parties rather than one. The distributions were no help for a
-# different reason worth knowing: they have moved to expat 2.8, and they publish
-# SHA512 of a `.tar.gz` or BLAKE2 sums, so none of them states a SHA256 of this
-# `.tar.xz` to compare against at all.
+# Each checksum was taken by fetching and corroborated by a second, independent
+# host; for expat that is Buildroot's source cache, since the distributions
+# publish no SHA256 of this `.tar.xz`.
 
 # expat, for fontconfig's XML backend. Static only.
 EXPAT=expat-2.6.4
@@ -120,16 +71,9 @@ cd "$FREETYPE"
 make -j"$(nproc)" && make install
 cd /opt/src
 
-# fontconfig, static, no tools and no tests. `--wrap-mode=nofallback` refuses to
-# silently download a dependency it cannot find, which is what makes the flags
-# above meaningful rather than advisory.
-#
-# **No `-Dxml-backend=expat` here, and the version is the reason.** That option
-# arrived after 2.15: `meo-skia-canvas` passes it because it builds 2.17.1,
-# and on 2.15.0 meson refuses the whole setup with `Unknown option:
-# "xml-backend"`. 2.15 has no choice to make -- expat is the only backend --
-# so the flag would be stating a default that cannot be otherwise. Moving to
-# 2.17 later means adding it back.
+# fontconfig, static, no tools and no tests; `--wrap-mode=nofallback` refuses to
+# download a missing dependency. No `-Dxml-backend=expat`: 2.15.0 rejects that
+# option, and expat is its only backend.
 FONTCONFIG=fontconfig-2.15.0
 # Corroborated: freedesktop.org and osuosl return the same bytes.
 fetch 63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e "$FONTCONFIG.tar.xz" \
@@ -137,12 +81,8 @@ fetch 63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e "$FONTCON
   "https://ftp.osuosl.org/pub/blfs/conglomeration/fontconfig/$FONTCONFIG.tar.xz"
 tar xJf "$FONTCONFIG.tar.xz"
 cd "$FONTCONFIG"
-# `--libdir=lib` on purpose. meson follows the distribution's convention and
-# EL puts 64-bit libraries in `lib64`, while the autotools builds above use
-# `lib` -- so without this the three archives land in two directories and
-# `PKG_CONFIG_PATH` has to name both. Alpine, where the musl sibling of this
-# image is built, uses `lib` for everything, so normalising here is also what
-# keeps one `PKG_CONFIG_PATH` correct for both families.
+# `--libdir` so meson installs where the autotools builds above do,
+# `$PREFIX/$LIBDIR`, and one `PKG_CONFIG_PATH` names all three archives.
 PKG_CONFIG_PATH="$PREFIX/$LIBDIR/pkgconfig" meson setup build \
   --prefix="$PREFIX" --libdir="$LIBDIR" --default-library=static --wrap-mode=nofallback \
   -Db_staticpic=true \
@@ -150,16 +90,9 @@ PKG_CONFIG_PATH="$PREFIX/$LIBDIR/pkgconfig" meson setup build \
 meson compile -C build
 meson install -C build
 
-# No shared object anywhere in the prefix. This is load-bearing rather than
-# tidiness: rust-skia's `-lfontconfig` cannot be removed without patching its
-# build script, so what it resolves to is decided by what exists on disk.
-# The base image ships expat, and its `-devel` symlink would win.
-#
-# `-lexpat` resolves `libexpat.so` before `libexpat.a`, so the system's own
-# development symlink is enough to put `libexpat.so.1` back in the addon's
-# NEEDED list -- and measured, libexpat is absent from every image this package
-# claims. Only the **linker name** is removed: `libexpat.so.1` stays, because
-# dnf itself links against it and this image still has to work.
+# No linker name for expat: the base image's `-devel` symlink would win over the
+# archive and put `libexpat.so.1`, absent from every target image, in the
+# addon's NEEDED list. `libexpat.so.1` stays, because dnf links against it.
 rm -f "$PREFIX/$LIBDIR/libexpat.so" /usr/lib/libexpat.so
 
 # No linker name for any of the three, so `-lfoo` can only reach the archive.
@@ -171,20 +104,10 @@ find "$PREFIX/$LIBDIR" /usr/lib -maxdepth 1 \
   2>/dev/null | tee /tmp/shared.txt
 test ! -s /tmp/shared.txt || { echo "a linker name survived; -lfoo would find a shared object and the static link would silently not happen" >&2; exit 1; }
 
-# Every archive proved usable in a shared object, by linking one.
-#
-# **Counting relocations does not answer this, and got it exactly backwards.**
-# The first version of this check counted `R_X86_64_32` with `readelf` and
-# reported freetype and expat clean and fontconfig broken. The truth was the
-# other way round: meson builds with debug info by default and `.rela.debug_*`
-# is full of absolute 32-bit relocations that are perfectly legal in a shared
-# object, while the two archives that really could not be used had far fewer
-# and were passed.
-#
-# Asking the linker removes the inference. If `ld -shared` accepts the archive
-# then it can go into the addon, which is the only property anyone cares about.
-# Unresolved symbols are ignored because each library is being linked alone,
-# and their absence is not what is being tested.
+# Every archive proved usable in a shared object by linking one, not by counting
+# `R_X86_64_32`: debug sections hold legal absolute relocations, so a count
+# flags the wrong archives. Unresolved symbols are ignored, since each library
+# links alone.
 for archive in "$PREFIX/$LIBDIR"/libexpat.a "$PREFIX/$LIBDIR"/libfreetype.a "$PREFIX/$LIBDIR"/libfontconfig.a; do
   ld -shared --unresolved-symbols=ignore-all --whole-archive "$archive" -o /tmp/pic-check.so 2>/tmp/pic-check.err || {
     echo "$archive cannot be linked into a shared object:" >&2
