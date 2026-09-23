@@ -5,7 +5,7 @@ Renders an encoded scene file to an image.
 ## Usage
 
 ```text
-meo-canvas scene.mcs --format png --output out.png
+meo-canvas render scene.mcs --format png --output out.png
 ```
 
 Install it with `cargo install meo-canvas-cli`. The binary is named
