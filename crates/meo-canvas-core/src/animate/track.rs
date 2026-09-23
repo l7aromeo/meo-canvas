@@ -2,7 +2,7 @@
 
 #![expect(
     clippy::suboptimal_flops,
-    reason = "compared bit-for-bit against v1's own numbers; see \
+    reason = "compared bit-for-bit against v9's own numbers; see \
               `animate::easing` for the rule and where it does not apply."
 )]
 
@@ -14,10 +14,9 @@ use crate::{
 
 /// What carries a track from one end of its range to the other.
 ///
-/// **An enum rather than two optional fields.** v1 takes `ease` and `spring`
-/// separately and raises when both are given, because a spring carries its own
-/// curve and an easing would have nothing to apply. Here they are alternatives
-/// in the type and the error cannot be written.
+/// An enum rather than two optional fields: a spring carries its own curve, so
+/// an easing beside it would have nothing to apply, and the type cannot hold
+/// both.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Motion {
     /// A timing curve over the track's own duration.
@@ -29,10 +28,9 @@ pub enum Motion {
 impl Default for Motion {
     /// A linear ease.
     ///
-    /// **The identity curve, because a default should add nothing.** Derived
-    /// `Default` cannot name it: the variant carries a value, and `#[default]`
-    /// only marks unit variants. `Track` and `Step` need this so their own
-    /// literals can be closed with `..Default::default()`.
+    /// The identity curve, so a default adds nothing. Derived `Default` cannot
+    /// name it, since `#[default]` marks only unit variants, and `Track` and
+    /// `Step` need it to close their literals with `..Default::default()`.
     fn default() -> Self {
         Self::Ease(Easing::Linear)
     }
@@ -42,13 +40,11 @@ impl Default for Motion {
 ///
 /// # Adding a field here must not break a caller
 ///
-/// Every field is public and the documented way to build one is a struct
-/// literal, so a field added later is a breaking change unless callers wrote
-/// the rest pattern. **They should: `..Default::default()` closes the literal
-/// and absorbs whatever arrives next.** This is [`crate::animate`]'s version of
-/// the reasoning written on the facade's `Style`, which is not
-/// `#[non_exhaustive]` for exactly this reason -- that attribute forbids the
-/// literal outright, and the literal is how these are written.
+/// Every field is public and a struct literal is the documented way to build
+/// one, so close the literal with `..Default::default()` and a field added
+/// later arrives without breaking it. `#[non_exhaustive]` would forbid the
+/// literal outright, which is why neither this nor the facade's `Style` carries
+/// it.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Track<T> {
     /// Where the value starts.
@@ -150,21 +146,14 @@ impl<T: Animatable> Track<T> {
     /// # Ok::<(), meo_canvas_core::Error>(())
     /// ```
     ///
-    /// **This counted only the motion until 4 September 2026.** The delay was
-    /// left out, which disagreed with the JavaScript surface, with v1 behind
-    /// it, and with this crate's own [`Plan::duration`] -- whose length has
-    /// always started at the delay. No doc claimed the old rule and no test
-    /// asserted it, which is how it drifted; it was found by measuring a
-    /// delayed track across the two surfaces, because every conformance vector
-    /// either of them had used a delay of zero, where the two rules give the
-    /// same number.
+    /// The length starts at the delay, as [`Plan::duration`]'s does.
     ///
     /// [`Plan::duration`]: crate::animate::sequence::Plan::duration
     ///
     /// # Errors
     ///
-    /// As [`Track::at`], and for a negative delay -- which has no meaning in a
-    /// length now that the length contains it.
+    /// As [`Track::at`], including a negative delay, which a length that
+    /// contains the delay cannot have.
     pub fn duration(&self) -> Result<f64, Error> {
         if self.delay < 0.0 {
             return Err(Error::Track("delay cannot be negative"));
@@ -213,17 +202,14 @@ impl<T: Animatable> crate::animate::sampled::Sampled for Track<T> {
 
 /// When a page is shown, in seconds from the start of the animation.
 ///
-/// **v1 handed every animated value a `PageInfo` carrying a clock. v2 has no
-/// clock in the scene, and does not need one**: frame timing is already on the
-/// wire, in the options that make an animated file animated at all. So a
-/// page's time is derived from what the caller has already supplied rather
-/// than stored twice.
+/// The scene carries no clock: frame timing is already on the wire, in the
+/// options that make an animated file animated, so a page's time is derived
+/// from those rather than stored twice.
 ///
 /// `frame_delays` wins over `fps`, as it does at encoding time, and a page's
-/// time is the sum of the delays before it. Returns `None` when neither is
-/// set, which is the honest answer for a scene with no timing: **a still
-/// format has no page times, and inventing zero would animate everything at
-/// once.**
+/// time is the sum of the delays before it. Returns `None` when neither is set:
+/// a still format has no page times, and inventing zero would animate
+/// everything at once.
 #[must_use]
 pub fn page_time(options: &EncodeOptions, index: usize) -> Option<f64> {
     if !options.frame_delays.is_empty() {
@@ -272,10 +258,8 @@ mod tests {
 
     #[test]
     fn a_duration_counts_the_delay_before_the_motion() {
-        // v1's `track.duration` is delay + motion, and the JavaScript surface
-        // follows it: a track of 1s after a 0.5s delay reports 1.5. Rust
-        // reported 1.0 until 4 September 2026 -- see the note on `duration`.
-        // Measured against v1 through the JavaScript surface at these inputs.
+        // Delay plus motion: a 1s track after a 0.5s delay reports 1.5,
+        // measured from v9 through the JavaScript surface.
         let delayed = Track {
             delay: 0.5,
             ..linear()
@@ -315,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_staggered_set_lasts_longer_than_one_of_its_members() {
-        // `duration + stagger * (count - 1)`, measured from v1 through the
+        // `duration + stagger * (count - 1)`, measured from v9 through the
         // JavaScript surface: a 1s track after a 0.5s delay staggered by 0.25
         // gives 1.5, 1.5, 1.75, 2.0, 2.25 for counts 0 through 4.
         let staggered = Track {

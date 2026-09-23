@@ -1,61 +1,30 @@
 //! Timing curves: the catalogue, `cubic-bezier` and `steps`.
 //!
-//! # Why `f64` and not `f32`
-//!
-//! Everything the renderer measures is `f32`, and this module is the one place
-//! that is wrong. These functions exist on both surfaces and **the point of
-//! having them twice is that the two can be checked against each other
-//! exactly** -- JavaScript has one number type and it is `f64`, so a `f32`
-//! port could never agree to more than seven digits and every cross-surface
-//! test would need a tolerance nobody could derive. The value crosses into
-//! `f32` when it reaches a style, which is one narrowing at the end rather
-//! than a different arithmetic all the way through.
-//!
-//! # Ported rather than rewritten
-//!
-//! The constants are v1's, and v1's are the ones CSS and every animation
-//! library settled on. A curve rewritten from its name looks right and differs
-//! in the fourth decimal, which is the sort of difference nobody notices until
-//! two surfaces are compared.
+//! In `f64` so the two surfaces compare exactly -- JavaScript has only `f64` --
+//! narrowing to `f32` once, when the value reaches a style. The constants are
+//! CSS's standard ones, checked against vectors recorded from v9; a curve
+//! rewritten from its name differs in the fourth decimal.
 
 //! # Why this module refuses `mul_add`
 //!
-//! `a.mul_add(b, c)` is a *fused* multiply-add: one rounding where `a * b + c`
-//! has two, so it is both faster and more accurate -- and **its last bit
-//! differs from what JavaScript computes**, because JavaScript has no fused
-//! form. Clippy's `suboptimal_flops` asks for it and this module declines,
-//! throughout, because bit-exact agreement with the other surface is the
-//! entire reason these functions are `f64`. A fused operation here would turn
-//! an exact comparison into a tolerance nobody could derive, and the tolerance
-//! would look like a property of the algorithm rather than of one call.
+//! A fused multiply-add rounds once where `a * b + c` rounds twice, so its last
+//! bit differs from JavaScript's, which has no fused form. This module is
+//! compared with `==` on `f64`, so the last bit is the whole assertion.
 //!
-//! **The rule is narrow, and it is about the assertion rather than the
-//! architecture: fused arithmetic is forbidden where the comparison is exact,
-//! and permitted where the comparison's slack is larger than a last-bit
-//! difference.** This module is compared with `==` on `f64`, so the last bit
-//! is the whole assertion. `chrome_blend.rs` also holds a second
-//! implementation of what it checks — the blend formulae, in `f64`, against
-//! what Skia drew — and its `mul_add` is fine, because its stated tolerance is
-//! 1 in 255 and a fused rounding moves about `1e-16`, fourteen orders below
-//! the slack. `paint.rs` likewise.
-//!
-//! Phrasing it about the comparison rather than about how many
-//! implementations exist is what keeps it true later: **tighten a tolerant
-//! comparison to an exact one and its fused arithmetic silently becomes
-//! wrong**, while nothing about the architecture has changed. The tolerance
-//! is also readable in the same file, where the number of implementations is
-//! not. Accuracy and agreement are different goals; the tooling optimises for
-//! accuracy.
+//! The rule follows the comparison, not the architecture: fused arithmetic is
+//! fine where a tolerance dwarfs it -- `chrome_blend.rs` allows 1 in 255
+//! against a `1e-16` difference, and `paint.rs` likewise -- and becomes wrong
+//! the moment such a comparison is made exact.
 
 #![expect(
     clippy::float_cmp,
     clippy::while_float,
     clippy::manual_midpoint,
-    reason = "v1's arithmetic, kept in v1's shape. The equality tests are \
+    reason = "v9's arithmetic, kept in v9's shape. The equality tests are \
               exact by design -- `t == 0.0` and `t == 1.0` are the endpoints a \
               curve is pinned to, not approximations of them -- and the \
               bisection loop's `high - low > EPSILON` and `(low + high) / 2.0` \
-              are the solver v1 runs. `f64::midpoint` computes a midpoint by a \
+              are the solver v9 runs. `f64::midpoint` computes a midpoint by a \
               different route and may round elsewhere, which is a difference \
               this module is compared bit-for-bit on."
 )]
@@ -172,24 +141,18 @@ fn bounce(t: f64) -> f64 {
     1.0 - out_bounce(1.0 - t)
 }
 
-/// How close the solver has to get to a time before it accepts the parameter.
-///
-/// **This is the derived tolerance for every cross-surface comparison of
-/// [`cubic_bezier`]**: two implementations agreeing to `1e-6` in `x` is the
-/// most the algorithm promises, so a test asserting more is asserting an
-/// accident.
+/// How close the solver gets to a time before accepting the parameter: `1e-6`
+/// in `x`, the most the algorithm promises, and so the tolerance for any
+/// cross-surface comparison of [`cubic_bezier`].
 pub const BEZIER_EPSILON: f64 = 1e-6;
 /// Newton's iterations before the bisection fallback takes over.
 const BEZIER_MAX_ITERATIONS: usize = 12;
 
 /// The CSS `cubic-bezier(x1, y1, x2, y2)` curve.
 ///
-/// The curve is parametric, so drawing it at a time means first finding the
-/// parameter whose x is that time. **Newton converges in a few steps and
-/// bisection covers what it cannot**: a near-flat section where the derivative
-/// approaches zero stalls Newton, and so does a curve that has not converged
-/// within twelve iterations. Both fall through to the same bisection,
-/// which cannot stall.
+/// Drawing it at a time means finding the parameter whose x is that time:
+/// Newton, falling back to bisection where a near-flat section stalls it or
+/// twelve iterations pass.
 #[must_use]
 pub const fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64) -> CubicBezier {
     CubicBezier { x1, y1, x2, y2 }
@@ -197,16 +160,9 @@ pub const fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64) -> CubicBezier {
 
 /// A `cubic-bezier` curve, as a value a caller can hold.
 ///
-/// **Named rather than `impl Fn`, because a curve that cannot be named cannot
-/// be stored.** The builder used to return an opaque closure, which a caller
-/// could call and nothing else: not a struct field, not a return type of their
-/// own, and a `Vec` of them only through `Box<dyn Fn>`. The four control points
-/// are the whole state, so the type that holds them is smaller than the box.
-///
-/// [`CubicBezier::at`] rather than a call, matching [`Easing::at`] -- the two
-/// answer the same question and now look alike. `Fn` cannot be implemented on
-/// stable Rust, so a callable spelling is not available; `move |t| curve.at(t)`
-/// is one line for a caller who needs a closure after all.
+/// A struct field, a return type or an element of a `Vec`, which `impl Fn`
+/// cannot be. [`CubicBezier::at`] matches [`Easing::at`]; for a closure,
+/// `move |t| curve.at(t)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CubicBezier {
     x1: f64,
@@ -274,16 +230,12 @@ fn bezier_slope(a: f64, b: f64, t: f64) -> f64 {
 pub const MIN_STEPS: u32 = 1;
 
 /// Quantises progress into `count` equal jumps, as CSS `steps(count, end)`.
-///
-/// **Floors rather than rounds**, which is what holds each step for its full
-/// width: a value a hair below the next boundary belongs to the step it is
-/// still inside. The final instant is pinned to 1 so the animation lands on
-/// its end value rather than a step short of it.
+/// Floors, so each step holds its full width, and pins the final instant to 1
+/// so the animation lands on its end value.
 ///
 /// # Errors
 ///
-/// Returns [`Error::Steps`] for a count below [`MIN_STEPS`]. v1 throws here
-/// and a `Result` is the same refusal spelled the way this crate spells them.
+/// Returns [`Error::Steps`] for a count below [`MIN_STEPS`].
 pub const fn steps(count: u32) -> Result<Steps, Error> {
     if count < MIN_STEPS {
         return Err(Error::Steps(count));
@@ -291,14 +243,9 @@ pub const fn steps(count: u32) -> Result<Steps, Error> {
     Ok(Steps { count })
 }
 
-/// A `steps()` curve, as a value a caller can hold.
-///
-/// Named for the same reason as [`CubicBezier`]: a curve returned as
-/// `impl Fn` can be called and nothing else, and the step count is the whole
-/// of its state.
-///
-/// Constructed through [`steps`], which is where the count is checked, so a
-/// `Steps` that exists is one with at least [`MIN_STEPS`] in it.
+/// A `steps()` curve as a value a caller can hold, named for the reason
+/// [`CubicBezier`] is. Built only through [`steps`], so a `Steps` holds at
+/// least [`MIN_STEPS`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Steps {
     count: u32,
@@ -318,11 +265,9 @@ impl Steps {
     }
 }
 
-/// The standard easing catalogue, by name.
-///
-/// **Every entry clamps its input**, so a track running past its own duration
-/// holds at its end value rather than continuing off the curve. `Back` and
-/// `Elastic` still overshoot *within* that range, which is what they are for.
+/// The standard easing catalogue, by name. Every entry clamps its input, so a
+/// track past its duration holds at its end value; `Back` and `Elastic` still
+/// overshoot within that range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[expect(
     missing_docs,
@@ -441,7 +386,7 @@ impl Easing {
         }
     }
 
-    /// The name v1 spells this curve with, which is the name the vector table
+    /// The name v9 spells this curve with, which is the name the vector table
     /// and the TypeScript surface both use.
     #[must_use]
     pub const fn name(self) -> &'static str {

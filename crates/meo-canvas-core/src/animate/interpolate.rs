@@ -2,7 +2,7 @@
 
 #![expect(
     clippy::suboptimal_flops,
-    reason = "compared bit-for-bit against v1's own numbers; see \
+    reason = "compared bit-for-bit against v9's own numbers; see \
               `animate::easing` for the rule and where it does not apply."
 )]
 
@@ -13,11 +13,9 @@ use crate::{
 
 /// A value with a midpoint.
 ///
-/// **Typed rather than dispatched.** v1's `mix` inspects what it was handed at
-/// run time -- number, colour string, or an array of either -- because
-/// JavaScript gives it no other way to be one function. Here the caller's type
-/// already says which, so a mismatched pair is a compile error rather than the
-/// run-time throw v1 has to raise.
+/// Typed rather than dispatched: the caller's type says which kind of value
+/// is being mixed, so a mismatched pair is a compile error rather than a
+/// run-time refusal.
 pub trait Animatable: Copy {
     /// This value a fraction of the way to another.
     ///
