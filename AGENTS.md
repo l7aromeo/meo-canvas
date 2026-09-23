@@ -691,9 +691,11 @@ a tree that mixes them reads as two conventions.
 7. **Four lines of text at most, and one where one will do.** A `/**` or `*/`
    line on its own is not text. This binds every comment no caller reads:
    `//`, a private item's doc, a private module's `//!`, tests, tools,
-   workflows and the `justfile`. A doc that rustdoc or TypeDoc renders for a
-   caller may run longer and carry an example. What does not fit goes in the
-   commit message, which is where history belongs anyway.
+   workflows, the `justfile` and configuration files. A doc that rustdoc or
+   TypeDoc renders for a caller may run longer and carry an example, and so
+   may a wire-format specification beside the decoder that reads it, since
+   another implementation is written from that text. What does not fit goes
+   in the commit message, which is where history belongs anyway.
 
 **A reason written in two places gets corrected in one.** Write it once, at the
 place a reader lands, and point at it from the other.
