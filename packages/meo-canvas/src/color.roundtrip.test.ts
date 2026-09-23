@@ -1,10 +1,5 @@
-// The four colour functions as one API, rather than four that each work.
-//
-// `parseColor` exists so the other three are reachable: `mixColor` takes an
-// `Rgba`, `interpolate` and `track` blend one, and `formatColor` writes one
-// back. Every test that checks them separately passes with no way in, which is
-// the state this file was written to end -- so each case here starts from a
-// string and ends at a string, the way a caller does.
+// The four colour functions as one API: each case starts from a string and ends at
+// a string, as a caller does, since `parseColor` is what makes the others reachable.
 
 import { describe, expect, it } from 'vitest'
 
