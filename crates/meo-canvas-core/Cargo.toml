@@ -12,61 +12,23 @@ repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
 
-# **Naming both `metal` and `vulkan` builds, and Metal wins.** It did not
-# before 0.12.1: meo-skia-canvas bound both engines to one `Engine` name and a
-# build with both was `error[E0252]` inside a crate the caller never named
-# (l7aromeo/meo-skia-canvas#36). Upstream fixed it by precedence rather than by
-# refusal -- `#[cfg(all(feature = "vulkan", not(feature = "metal")))]` on the
-# module, the engine and the renderer -- because the overlap is only reachable
-# on macOS, where Vulkan runs through MoltenVK anyway.
-#
-# So the failure mode changed rather than went. **A build that names both is
-# silently a Metal build**, which matters because Cargo unifies features: a
-# binary depending on two crates that each want a different backend gets both,
-# and now compiles. `Renderer::engine` reports which one is live, and asking it
-# is the only way to know.
+# Naming both `metal` and `vulkan` builds a Metal binary: meo-skia-canvas gives
+# Metal precedence (l7aromeo/meo-skia-canvas#36), and Cargo unifies features, so
+# a binary whose dependencies want different backends gets both.
+# `Renderer::engine` reports which one is live.
 [features]
-# The GPU backend, chosen at build time and named by the platform that has one:
-# Metal on Apple targets, Vulkan elsewhere. Forwarded rather than declared --
-# `meo-skia-canvas` is what compiles a backend, and this crate is the only path
-# a Rust consumer has to it.
-#
-# Neither is default: a build with no backend named renders on the CPU, which is
-# what a portable `cargo check` needs. That default is also why the two example
-# surfaces silently disagreed -- the addon named a backend and no Rust caller
-# could, so one rendered on the GPU and the other on the CPU while both reported
-# `gpu: true`.
+# The GPU backend, named by the platform that has one: Metal on Apple targets,
+# Vulkan elsewhere. Forwarded to `meo-skia-canvas`, which compiles it: this
+# crate is a Rust consumer's only path to it. Neither is default, so a build
+# naming none renders on the CPU, as a portable `cargo check` needs.
 default = []
 metal = ["meo-skia-canvas/metal"]
 vulkan = ["meo-skia-canvas/vulkan"]
 
-# Fetching an `ImageSource::Url`, off unless a consumer asks.
-#
-# **Off by default because the cost is not the code, it is the dependency.** A
-# consumer who never names a URL should not link an HTTP stack, and with this
-# off the `Url` arm is the refusal it has always been -- so the failure is
-# identical to the one the TypeScript surface gives before it fetches, and the
-# difference between the two builds is a flag rather than a capability gap.
-#
-# The client is blocking, which is the part that matters: see the note beside
-# `ureq` below for what this crate promised and what changed.
-#
-# **The policy, in numbers, because a deployment needs them.** Five seconds to
-# connect, sixty seconds for the whole fetch including the body, and thirty-two
-# mebibytes per image. Fixed rather than configurable: a caller wanting their
-# own policy fetches the bytes and passes `ImageSource::Bytes`, and a timeout
-# that can be set to infinity is the hang this replaced with a supported
-# spelling. Ten redirects and a 64 KiB header cap are still `ureq`'s.
-#
-# The size limit is **functional, not only protective**: an image past it does
-# not render, and the caller gets `FetchFailure::TooLarge` saying so. Thirty-two
-# is about nine seconds of 720p GIF, the least efficient animated format and the
-# one most often linked; ten -- `ureq`'s own default, which this used to inherit
-# -- refused three seconds of it.
-#
-# The two numbers are one decision. Sixty seconds against thirty-two mebibytes
-# is a claim that a host sustains about 4.5 Mbit/s, and moving either alone
-# makes the other the real limit. `resolve::fetch` carries the derivation.
+# Fetching an `ImageSource::Url` over a blocking client, off by default so a
+# consumer who never names a URL links no HTTP stack; off, a `Url` is refused.
+# Fixed bounds, 5 s to connect and 60 s and 32 MiB per image, are argued on
+# `resolve`'s constants; a caller wanting others passes `ImageSource::Bytes`.
 net = ["dep:ureq", "dep:rustls"]
 
 [dependencies]
@@ -77,40 +39,15 @@ meo-skia-canvas = { workspace = true }
 taffy = { workspace = true }
 thiserror = { workspace = true }
 
-# No tokio, no smol, no async of any kind. **That half stands and is the half
-# that was load-bearing**: a runtime in this crate would be a runtime in every
-# Rust consumer of the public `meo-canvas` crate, including those already
-# inside one, and `ureq` is blocking by construction.
-#
-# **The other half of what this comment used to say -- "and no HTTP client" --
-# is no longer true, and it is recorded here rather than deleted.** The user
-# approved fetching on the JavaScript surface and then asked whether the Rust
-# side would fetch too. That was a question, not an instruction: the ruling in
-# answer to it was that the core gains an HTTP client behind a default-off
-# feature, because a Rust surface that cannot do what the JavaScript one does is
-# the asymmetry the fetching decision existed to avoid. So the promise that
-# changed was about the dependency, not about the runtime, and a consumer who
-# does not enable `net` still gets exactly the crate the old comment described.
-#
-# Audited rather than assumed, because the workspace note beside `ureq` lists a
-# smaller tree than the one it actually pulls: `cargo tree -e normal` under the
-# feature also brings `rustls`, `ring`, `flate2`, `once_cell`, `subtle`,
-# `zeroize` and `untrusted`. Grepped for `tokio`, `futures`, `async`, `mio` and
-# `smol` across the whole tree and it is clean -- **no runtime anywhere, which
-# is the claim, and it is bigger than the note suggests, which is not.**
+# No async runtime: one here would be one in every Rust consumer of
+# `meo-canvas`, including those already inside one. `ureq` is blocking and sits
+# behind `net`; `cargo tree -e normal --features net` names no `tokio`,
+# `futures`, `async`, `mio` or `smol`.
 ureq = { workspace = true, optional = true }
-# **Declared to raise a floor, not to be used.** Nothing here imports `rustls`;
-# it arrives under `net` because `ureq` speaks TLS with it. `ureq` requires
-# `^0.23`, which resolves happily to `0.23.44` -- and `RUSTSEC-2026-0285`,
-# published 14 September 2026, is a TLS 1.3 handshake flaw fixed in `0.23.45`.
-#
-# A lockfile pin is a fix only this repository has: a consumer of the published
-# crate resolves the manifest requirement and gets whatever `^0.23` gives them.
-# Naming a minimum here is what carries the fix to them, and it is the only
-# mechanism that does while `ureq`'s own requirement stays where it is.
-#
-# Delete this the day `ureq` requires `0.23.45` or newer, at which point the
-# floor is theirs to hold and this line is a dependency nobody imports.
+# Declared to raise a floor, never imported: `ureq` speaks TLS through `rustls`
+# and requires `^0.23`, which a consumer can resolve below `0.23.45`, the fix
+# for `RUSTSEC-2026-0285`. Retires when `ureq` itself requires `0.23.45` or
+# newer.
 rustls = { workspace = true, optional = true }
 
 [[bench]]
@@ -120,20 +57,16 @@ harness = false
 [lints]
 workspace = true
 
-# `taffy` alone, and only until `layout` imports it. `meo-skia-canvas` came off
-# this list when `resolve` and `measure` began using it, which is the rule: an
-# entry here is a pass not yet written, and an entry still here when the crate
-# is finished is a dependency to delete.
+# `rustls` is never imported, so cargo-machete would report it. `taffy` needs
+# no entry: with it removed, cargo-machete finds `taffy` used and reports
+# nothing.
 [package.metadata.cargo-machete]
 ignored = ["taffy", "rustls"]
 
 [dev-dependencies]
-# Decoders, not encoders: an encode test that asserts on byte length proves
-# nothing -- a one-frame GIF and a three-frame GIF are both "some bytes". These
-# read the output back and count what is in it.
-#
-# `cargo-machete` reads this section too, so a decoder no test calls is reported
-# rather than left to accumulate.
+# Decoders, not encoders: an encode test asserting on byte length proves
+# nothing, so these read the output back and count what is in it.
+# cargo-machete reads this section too, so a decoder no test calls is reported.
 gif = "0.14.2"
 # The bench's harness. A dev-dependency because a bench is not shipped, and
 # `harness = false` above because criterion supplies its own.
