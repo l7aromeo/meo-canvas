@@ -13,3 +13,5 @@
   `on_image_error: Throw`, exits 6, source unobtainable, and names the URL.
 
 - With the `net` feature, an image URL whose host does not resolve is reported as `FetchFailure::HostNotFound` (do not retry) rather than `FetchFailure::Transport` (retry), in `Error::SourceFetch` and in `ImageWarning` alike. A lookup that could not finish, because the resolver was unreachable or said to try again, stays `Transport`.
+
+- An SVG image given `frame(1)` or later now draws, as a still raster does, rather than being refused as `Error::UndecodableImage`.
