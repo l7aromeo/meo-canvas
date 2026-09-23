@@ -1,25 +1,7 @@
-// Count module-private declarations that carry no doc comment, and ratchet.
-//
-// **Why a second count rather than a wider one.** `tools/typedoc/build.mjs`
-// counts what TypeDoc can see, which is the exported surface, and its baseline
-// is `0` -- that zero is what makes the check work, because any rise is a
-// regression and there is nothing to absorb it. Module-private declarations are
-// not undercounted by that tool; they are absent from its model. Folding them in
-// would put this file's undocumented items into that denominator, the baseline
-// would stop being zero, and the number would become a high-water mark instead
-// of a claim.
-//
-// **What this catches, and what it does not.** A doc comment separated from the
-// declaration it describes -- by an insertion between them -- leaves that
-// declaration undocumented, and the count rises. Measured against the one
-// instance of that fault which reached a commit: `defaulted` inserted between
-// `measured`'s doc and `measured` in `arena.ts`, 22 -> 23.
-//
-// **It catches a loss, not a transfer.** If a doc moves from one declaration to
-// another that had none, the total does not move and no ratchet sees it, at any
-// baseline. That is a property of counting rather than of the number, and
-// closing it needs a check comparing which *names* are undocumented rather than
-// how many.
+// Asserts the set of module-private declarations with no doc comment against the
+// names in `private-docs-baseline.txt`. One that loses its doc fails, so a doc moved
+// from one declaration to another fails too; one that gains a doc updates the
+// baseline. Only top-level statements of non-test sources are read.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
