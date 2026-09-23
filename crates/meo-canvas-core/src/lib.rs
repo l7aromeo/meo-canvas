@@ -52,17 +52,10 @@
 //! parallelism happens between renders: each render builds, uses and drops its
 //! own tree on one thread.
 
-// **Nothing in this workspace writes `unsafe`, and this is what keeps it that
-// way.** Measured before it was declared: zero occurrences of the token across
-// every `crates/*/src`. A renderer reaching a C++ library through two binding
-// layers is exactly the crate where an `unsafe` would look reasonable and go
-// unquestioned, and the declaration turns adding one into a decision someone
-// has to make deliberately rather than a line that passes review.
-//
-// The integration tests are separate crates and are not covered: the
-// allocator that measures `codec::decode`'s reservation has to be an
-// `unsafe impl GlobalAlloc`. That is the only `unsafe` in the repository and
-// it exists to measure a defect.
+// Nothing in this workspace writes `unsafe`, and this keeps it so: in a crate
+// reaching C++ through two binding layers one would look reasonable.
+// Integration tests are separate crates; the only `unsafe` in the repository is
+// the allocator in `meo-canvas-scene/tests/codec_reservation.rs`.
 #![forbid(unsafe_code)]
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is
 // its opposite: one asks for `pub(crate)` on an item a private module exports,
@@ -84,47 +77,15 @@ pub mod measure;
 pub mod paint;
 pub mod resolve;
 
-/// The largest magnitude a clamped value is allowed to reach.
-///
-/// **Two quantities share it and neither is the reason for the number.** An
-/// infinite length and an infinite flex factor both have to become something
-/// finite, and what a bound needs is not to be the largest representable value
-/// but to survive the arithmetic downstream of it: a spacing summed across a
-/// line, a length summed across a row of siblings, a set of grow factors added
-/// together.
-///
-/// **Measured, in this engine, not read off another one.** Sweeping a `width`
-/// by magnitude puts the cliff between `1e9` and `1e10` -- `1e8` fills its
-/// container and `1e10` collapses it, with `1e9` already one pixel-row short of
-/// the clean answer. `3.3554432e7` sits three orders below that. A flex factor
-/// is untroubled to `1e38`, because it is unitless and is not summed into a
-/// geometry, so the pixel constraint is the binding one and the factor takes
-/// the same bound for free.
-///
-/// **Chrome's own ceiling is this magnitude and that is a coincidence worth
-/// stating rather than resting on.** `2^25` is the top of its layout unit -- an
-/// internal of another engine's geometry, which would be meaningless here and
-/// would not stay correct if theirs changed. What is taken from Chrome is the
-/// property, not the number.
-///
-/// **So do not align this to Chrome's exact value.** The magnitudes agreeing is
-/// what makes that edit look like tidying, and it would replace a number this
-/// engine measured with one that means nothing here — the same move that put a
-/// wrong Chrome attribution into `layout::sized`'s doc, which this commit
-/// removes. If the cliff moves, re-run the sweep and set this from that.
+/// The largest magnitude a clamped length or flex factor may reach, measured in
+/// this engine: a `width` sweep collapses between `1e9` and `1e10`, and this
+/// sits three orders below. Chrome's `2^25` layout-unit ceiling agreeing is
+/// chance, so re-run the sweep rather than align to it.
 pub(crate) const FINITE_CEILING: f32 = 3.355_443_2e7;
 
-// **The property the number has to have, checked where someone would change
-// it.** `f32::MAX` is what a reader taking this for arbitrary would reach for,
-// and it puts back the collapse these clamps exist to remove: one sum past it
-// is infinity again, so the failure is not on the path the value takes but in
-// the addition after it. Asserted rather than tested, because a test has to be
-// read to be believed and this refuses to compile.
-//
-// It is here because the wrong value was proposed out loud: a reviewer reading
-// the previous ceiling as arbitrary suggested `f32::MAX`, on the reasoning that
-// the finite path was already exercised -- true, and beside the point. 2048 is
-// a line, or a row of siblings, far longer than any this engine lays out.
+// `f32::MAX` would put back the collapse these clamps remove, since one sum
+// past it is infinity. 2048 stands for a line, or a row of siblings, longer
+// than any this engine lays out. Asserted, so a wrong value does not compile.
 const _: () = assert!(FINITE_CEILING.is_finite());
 const _: () = assert!(FINITE_CEILING * 2048.0 < f32::MAX);
 
@@ -213,20 +174,11 @@ impl From<meo_canvas_scene::ImageFetchFailure> for FetchFailure {
 /// Every variant says what to do with it, because a classification whose
 /// meaning is not written down only moves the guesswork.
 ///
-/// **Only distinctions `ureq` reports are here.** There is deliberately no
-/// `Timeout`: **deferred rather than impossible, and the note here used to say
-/// impossible.** `ureq` 3.4's own default `Timeouts` leaves every field `None`
-/// except `await_100`, which cannot arise from the `GET` this crate makes --
-/// measured in `config.rs` rather than read from the note beside it. But this
-/// crate sets a sixty-second global timeout of its own, `fetch_policy.rs`
-/// records it firing at 60.1 seconds and arriving as `Transport`, and the npm
-/// surface has an explicit timeout branch with its own message. The case
-/// occurs. What is deferred is the variant, and `#[non_exhaustive]` above is
-/// what makes adding one later a non-breaking change rather than a reason to
-/// widen the API inside an unrelated release.
-///
-/// Until then a timeout is `Transport`, which is where the crate's own already
-/// landed and whose advice -- retry -- is the right advice for one.
+/// **There is no `Timeout` variant.** This crate's sixty-second global timeout
+/// does fire -- `fetch_policy.rs` records it at 60.1 seconds -- and arrives as
+/// `Transport`, whose advice, retry, is the right advice for one.
+/// `#[non_exhaustive]` is what lets a `Timeout` variant arrive without a
+/// breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FetchFailure {
@@ -253,10 +205,8 @@ pub enum FetchFailure {
     ///
     /// **Do not retry; the asset has to change, or be fetched by the caller.**
     /// Distinct from [`FetchFailure::Transport`] because the two want opposite
-    /// responses and were indistinguishable before this existed: both arrived
-    /// as a transport failure carrying the HTTP client's own wording, so "too
-    /// big" and "too slow" read the same to a caller deciding whether to try
-    /// again.
+    /// responses: "too big" and "too slow" must not read the same to a caller
+    /// deciding whether to try again.
     ///
     /// The limit is this crate's rather than the client's, which is what makes
     /// the case knowable at all -- see `resolve`'s `MAX_IMAGE_BYTES`.
@@ -328,10 +278,9 @@ pub enum Error {
 
     /// A chart given data it cannot draw.
     ///
-    /// **A refusal rather than a reproduction.** v1 mis-draws a negative
-    /// value three different ways -- a bar below the plot, a bar five times
-    /// the height for the *most* negative, and nothing at all when every
-    /// value is zero -- so the port refuses instead of picking one of them.
+    /// **A refusal rather than a guess.** Negative values and data that is
+    /// all zero have no drawing this chart defines, so it refuses instead of
+    /// picking one.
     #[error("{0}")]
     Chart(&'static str),
 
@@ -370,11 +319,9 @@ pub enum Error {
 
     /// A `data:` image source that is not a well-formed data URI.
     ///
-    /// **Separate from [`Error::ImageRead`], which is where this used to
-    /// land.** A `data:` URI carries its own bytes and names no file, so
-    /// reading it as a path failed in `std::fs::read` and reported `cannot
-    /// read image at data:image/svg+xml;base64,PHN2...` -- a filesystem error
-    /// quoting something that was never a filename.
+    /// **Separate from [`Error::ImageRead`].** A `data:` URI carries its own
+    /// bytes and names no file, so a filesystem error would quote something
+    /// that was never a filename.
     #[error("cannot read a data: image source: {detail}")]
     #[non_exhaustive]
     DataUri {
@@ -424,10 +371,6 @@ pub enum Error {
     /// that *panicked* is a fact about us: the input may have been perfectly
     /// good, and drawing a tasteful grey rectangle over our own crash is how a
     /// real defect ships quietly for a year.
-    ///
-    /// The two shared a variant until the soft-fail path existed, at which
-    /// point sharing one made a panic indistinguishable from a 404 to the code
-    /// deciding what may be downgraded.
     #[error("a decoder panicked reading the image for node {}", .0.get())]
     DecoderPanicked(NodeId),
 
@@ -454,20 +397,14 @@ pub enum Error {
     },
 }
 
-/// Schemes an image source is fetched over rather than opened.
-///
-/// The two the JavaScript surface pre-fetches and the `net` feature's client
-/// speaks. Anything else -- `file:`, a Windows drive letter, a bare relative
-/// path -- is a filename and is read as one.
+/// Schemes an image source is fetched over rather than opened: the two the
+/// JavaScript surface pre-fetches and `net` speaks. Anything else, `file:`, a
+/// drive letter or a relative path, is a filename.
 const FETCHED_SCHEMES: [&str; 2] = ["http://", "https://"];
 
-/// The sentence appended to [`Error::ImageRead`] when the path is a URL.
-///
-/// **A bare string source is a path**, and `ImageSource` is tagged, so
-/// `{ src: 'https://...' }` type-checks, is opened as a filename, and fails
-/// with a filesystem error quoting a URL. The classification is deliberate;
-/// without this sentence the message is what makes it read as a failure of the
-/// fetcher, and the reader looks at the network rather than at the spelling.
+/// The sentence appended to [`Error::ImageRead`] when the path is a URL: a bare
+/// string source is a path, so `{ src: 'https://...' }` fails as a file, and
+/// this points the reader at the spelling rather than at the network.
 fn url_hint(path: &str) -> &'static str {
     if FETCHED_SCHEMES
         .iter()
@@ -489,9 +426,8 @@ fn url_hint(path: &str) -> &'static str {
 /// command line prints one line, so both need this.
 ///
 /// **It lives here rather than at either boundary because a variant must not
-/// interpolate its own cause.** [`Error::Scene`] used to write `{0}` by hand;
-/// once one surface walked the chain that printed twice there and once
-/// everywhere else. One walk, one definition, and every `#[source]` rendered
+/// interpolate its own cause**: one that did would print it twice wherever the
+/// chain is walked. One walk, one definition, and every `#[source]` rendered
 /// exactly once wherever an error is shown.
 #[must_use]
 pub fn chained(error: &dyn std::error::Error) -> String {
@@ -534,38 +470,10 @@ impl Default for Renderer {
     }
 }
 
-/// The size to begin a page at.
-///
-/// **A page root's own *definite* size, and `scene.size` for anything else.**
-/// This is what makes [`ImageFormat::Ico`]'s promise reachable -- *the only
-/// format whose pages may differ in size, an icon at 16, 32, 48 and 256 pixels
-/// is one file* -- because a page has to be begun before it can be painted, and
-/// until now every page was begun at `scene.size`.
-///
-/// # Why definite rather than solved
-///
-/// Because a solved size would be circular. Solving the root needs the space
-/// available to it, and that space is the page size this function exists to
-/// determine -- so a page cannot be sized from a layout that has not run and
-/// cannot run until the page is sized. A width and height stated in pixels is
-/// readable before any layout, which breaks the circle.
-///
-/// **So a percentage or `auto` falls back to `scene.size`, and that is the
-/// honest reading rather than a limitation**: a root that says `50%` is asking
-/// for half of something, and the only thing it could be half of is the page.
-/// A root that says nothing has no opinion about how big its page should be.
-///
-/// # The height escapes the circle, and only the height
-///
-/// [`Scene::content_height`] asks for a page as tall as what is in it, and the
-/// argument above does not forbid it. Solving needs a **width** before anything
-/// can be measured, because that is what text breaks its lines against; the
-/// height is a result of that measuring rather than an input to it. So the
-/// solved root rectangle is passed in here, and the caller has run layout
-/// before allocating a surface.
-///
-/// `scene.size.height` is the floor in that case, not the height. A caller who
-/// leaves it at zero gets the content's own height.
+/// The size to begin a page at: a page root's own definite size, which lets ICO
+/// pages differ, and otherwise `scene.size`. Not solved, since solving needs
+/// the page; the height is the exception, the solved one under
+/// [`Scene::content_height`], with `scene.size.height` its floor.
 fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
     let stated = |dimension, fallback| match dimension {
         Dimension::Points(value) => value,
@@ -587,8 +495,8 @@ fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
 impl Renderer {
     /// Whether a renderer asks for the GPU when nothing says otherwise.
     ///
-    /// True, matching v1 -- its `RootProps` carries `gpu` and
-    /// `meo-skia-canvas` defaults it on, so a scene ported from v1 behaves the
+    /// True, matching v9 -- its `RootProps` carries `gpu` and
+    /// `meo-skia-canvas` defaults it on, so a scene ported from v9 behaves the
     /// same without the caller restating it.
     ///
     /// It is a request rather than an outcome. `Canvas::gpu`'s own
@@ -650,19 +558,10 @@ impl Renderer {
         &self.fonts
     }
 
-    /// The surface a scene asks for, falling back to this renderer.
-    ///
-    /// The scene's fields are `Option` so that absent and stated-default are
-    /// different things: absent means the caller does not care and this
-    /// renderer decides, which is the only reading under which "the renderer's
-    /// value is the default" is true. A bare `bool` defaulting to `true` would
-    /// silently override a renderer someone set to the CPU on purpose.
-    ///
-    /// Only `gpu` has a renderer-side value to fall back to. `color_type` and
-    /// `color_space` fall back to their own defaults, which are the renderer's
-    /// too -- `Uint8` and `Srgb` are what `CanvasOptions` uses when nothing
-    /// says otherwise, and adding two more `Renderer` fields nobody sets would
-    /// be a second place to look for one answer.
+    /// The surface a scene asks for, falling back to this renderer: absent
+    /// means the renderer decides, so a scene cannot override a renderer set to
+    /// the CPU. `color_type` and `color_space` fall back to `CanvasOptions`'
+    /// own defaults.
     fn surface_for(&self, scene: &Scene) -> SurfaceOptions {
         SurfaceOptions {
             gpu: scene.gpu.unwrap_or(self.gpu),
@@ -701,11 +600,9 @@ impl Renderer {
         let resolved = Resolved::new(scene, &self.fonts)?;
         let mut measurer = SceneMeasurer::prepare(&resolved, &self.fonts)?;
 
-        // **Solve, then allocate.** A page whose height comes from its content
-        // does not have one until layout has run, so the surface cannot be
-        // created before the first solve -- which is why it starts as `None`
-        // and the first page is what brings it into being. Every page after
-        // that begins on the surface the first one made.
+        // Solve, then allocate: a page whose height comes from its content has
+        // none until layout runs, so the first page creates the surface and
+        // every later page begins on it.
         let mut surface: Option<Surface> = None;
 
         for &page in &scene.pages {
@@ -792,7 +689,7 @@ impl RenderedCanvas {
     ///
     /// Takes `&mut self` because encoding mutates: every encode entry point
     /// upstream is `&mut self` since `Canvas::to_buffer` prepares the surface
-    /// before reading it (`meo-skia-canvas-0.11.0/src/canvas.rs:551`). That is
+    /// before reading it. That is
     /// not a detail to hide behind interior mutability — a `RefCell` here would
     /// let two encodes of one canvas read as independent when they are not.
     /// `&mut` says encoding consumes preparation, which is true.
@@ -880,8 +777,7 @@ impl RenderedCanvas {
     /// the other one. Both are reported because they can disagree and a caller
     /// otherwise has no way to find out: a build with no GPU backend compiled,
     /// a driver that declines and a float `color_type` all rasterise on the CPU
-    /// whatever was asked for, and v1's canvas reports the pair for exactly
-    /// that reason (`canvas.type.ts:1190`).
+    /// whatever was asked for.
     #[must_use]
     pub const fn gpu(&self) -> bool {
         self.surface.gpu()
@@ -899,14 +795,9 @@ impl RenderedCanvas {
 #[cfg(test)]
 mod tests {
 
-    /// A cause held as `#[source]` reaches the message, and reaches it once.
-    ///
-    /// Both halves matter and they pull against each other: the walk is what
-    /// puts the cause in front of a caller, and a variant interpolating its own
-    /// cause is what would print it twice. Asserting the variant's own
-    /// `Display` alongside the walked form is what stops either half being
-    /// restored without the other -- putting `{0}` back on `Error::Scene`
-    /// fails the first assertion, removing the walk fails the second.
+    /// A cause held as `#[source]` reaches the message, once: putting `{0}`
+    /// back on `Error::Scene` fails the first assertion, and removing the walk
+    /// the second.
     #[test]
     fn a_source_reaches_the_message_exactly_once() {
         let error = Error::Scene(meo_canvas_scene::SceneError::NoPages);
@@ -941,12 +832,8 @@ mod tests {
         assert_ne!(chained(&missing), chained(&denied));
     }
 
-    /// A URL read as a filename says so, and a filename does not.
-    ///
-    /// The pair is the point. Asserting only that the URL case carries the
-    /// sentence would pass if it were appended to every path, which would be
-    /// worse than saying nothing -- it would tell a caller their filename was
-    /// a URL.
+    /// A URL read as a filename says so, and a filename does not: the URL case
+    /// alone would pass if the sentence were appended to every path.
     #[test]
     fn a_url_opened_as_a_path_says_which_mistake_it_was() {
         let as_path = |path: &str| Error::ImageRead {
@@ -958,15 +845,10 @@ mod tests {
         assert!(url.contains("read as a filename"), "{url}");
         assert!(url.contains("ImageSource::Url"), "{url}");
 
-        // A real path, and two shapes that are nearly one: a scheme this
-        // crate does not fetch, and a name that merely begins with the
-        // letters.
-        // `data:` is quiet here for one reason on this tree -- it matches
-        // neither prefix in `FETCHED_SCHEMES` -- and for a second once the
-        // dedicated `data:` error variant merges. **Two constructions
-        // guarantee it and either can be removed alone**: adding `data:` to
-        // that list, or folding the variant back into `ImageRead` to cut
-        // duplication, would each be an improvement that passes.
+        // A real path, a scheme this crate does not fetch, and a name that
+        // merely begins with the letters. `data:` is quiet for two reasons,
+        // matching no `FETCHED_SCHEMES` prefix and having its own variant, so
+        // removing either passes here.
         for quiet in [
             "/nope.png",
             "file:///nope.png",
@@ -988,11 +870,8 @@ mod tests {
     use super::{EncodeOptions, Error, ImageFormat, Renderer, chained};
     use crate::resolve::tests::{TEST_FAMILY, TEST_FONT};
 
-    /// A scene of `pages` pages, each carrying one text node.
-    ///
-    /// Text on every page rather than only the first, so a font resolved per
-    /// page rather than per scene would still succeed and the tests that care
-    /// about that distinction have to say so another way.
+    /// A scene of `pages` pages, each carrying one text node, so a font
+    /// resolved per page rather than per scene still succeeds.
     fn paged_scene(pages: usize, size: Size) -> Scene {
         let mut scene = Scene::new(size);
         for index in 0..pages {
@@ -1027,15 +906,10 @@ mod tests {
 
     #[test]
     fn a_float_layout_reports_the_cpu_however_the_gpu_was_asked_for() {
-        // The one oracle the `ColorType` aliases have. v1 documents that a
-        // float `colorType` falls back to the CPU (`canvas.type.ts:1190`), so
-        // an alias that names a float layout must report `"cpu"` even with the
-        // GPU requested -- which pins `RGBAF32` to a float variant rather than
-        // to some eight-bit one.
-        //
-        // **It pins the alias to a float, and nothing further.** `F16` against
-        // `F32` is indistinguishable here: both report `"cpu"`, so swapping the
-        // two would pass this and every other check we have.
+        // The one oracle the `ColorType` aliases have: v9 documents a float
+        // `colorType` falling back to the CPU (`canvas.type.ts:1211`), so a
+        // float alias reports `"cpu"` with the GPU requested. `F16` and `F32`
+        // both do, so it pins no more.
         let renderer = Renderer::new();
         let mut scene = Scene::new(Size::new(4.0, 2.0));
         scene.gpu = Some(true);
@@ -1132,13 +1006,9 @@ mod tests {
         assert_eq!((decoded.width(), decoded.height()), (80, 40));
     }
 
-    /// Every page reaches the encoder, and exactly once.
-    ///
-    /// This is the ordering proof for the render loop. A GIF is
-    /// `PageUse::All`, so the frame count is the page count: two frames would
-    /// mean `begin_page` was skipped for a page, four would mean it ran for
-    /// the first page as well as the later ones, and any count at all proves
-    /// the surface reached `encode` carrying every page rather than one.
+    /// Every page reaches the encoder exactly once: a GIF's frame count is its
+    /// page count, so two frames means a page skipped `begin_page` and four
+    /// means the first page ran it twice.
     #[test]
     fn every_page_reaches_the_encoder_exactly_once() {
         const PAGES: usize = 3;
@@ -1178,11 +1048,7 @@ mod tests {
     }
 
     /// A font missing on a *later* page fails the render before anything is
-    /// drawn.
-    ///
-    /// This is what says resolving happens once for the whole scene rather
-    /// than per page: were it per page, page one would draw and the failure
-    /// would arrive with a partly-painted surface.
+    /// drawn, which says resolving happens once for the whole scene.
     #[test]
     fn a_font_missing_on_a_later_page_fails_the_whole_render() {
         let mut scene = paged_scene(2, Size::new(20.0, 20.0));
@@ -1246,12 +1112,12 @@ mod tests {
         );
     }
 
-    /// The GPU is the renderer's decision, defaulting to v1's.
+    /// The GPU is the renderer's decision, defaulting to v9's.
     #[test]
     fn the_gpu_is_a_renderer_property_with_v1_s_default() {
         let mut cpu_renderer = renderer();
         cpu_renderer.set_gpu(true);
-        assert!(cpu_renderer.gpu(), "v1 defaults the GPU on");
+        assert!(cpu_renderer.gpu(), "v9 defaults the GPU on");
         assert_eq!(Renderer::new().gpu(), Renderer::DEFAULT_GPU);
 
         cpu_renderer.set_gpu(false);
@@ -1340,13 +1206,9 @@ mod tests {
             "expected the dangling node to be named, found {error}"
         );
     }
-    /// Two formats of one picture cost one render.
-    ///
-    /// The property the split exists for. Asserted through the output rather
-    /// than by counting passes: the second encode must produce a real image of
-    /// the same surface, and the PNG must be byte-identical to what a fresh
-    /// single-format render produces — so re-encoding is not a different
-    /// drawing that happens to look similar.
+    /// Two formats of one picture cost one render, asserted through the output:
+    /// the second encode is a real image, and the PNG is byte-identical to a
+    /// fresh single-format render.
     #[test]
     fn one_render_encodes_to_several_formats() {
         let scene = paged_scene(1, Size::new(32.0, 24.0));
@@ -1428,34 +1290,14 @@ mod ico_promise {
     /// `ImageFormat::Ico` names.
     const SIZES: [f32; 4] = [16.0, 32.0, 48.0, 256.0];
 
-    /// A caller can reach the promise at `encode.rs:56`.
-    ///
-    /// **Written as a scene rather than as four `begin_page` calls, and that is
-    /// the whole point of it.** The encoder could always write four directory
-    /// entries at four sizes — `encode.rs`'s own probe proves it — while no
-    /// caller could ask for one, because every page was begun at `scene.size`.
-    /// A test that drives `begin_page` directly passes in both worlds and says
-    /// nothing about whether the promise is reachable.
-    ///
-    /// So this builds a scene whose four page roots **state** their sizes, puts
-    /// it through the public `Renderer`, and reads the directory back out of
-    /// the bytes. The promise is about a file, so the assertion is about a
-    /// file.
+    /// A caller can reach `ImageFormat::Ico`'s promise: four page roots state
+    /// four sizes, go through the public `Renderer`, and the directory is read
+    /// back from the bytes. Driving `begin_page` directly would pass either
+    /// way.
     #[test]
     fn a_scene_whose_page_roots_state_four_sizes_writes_four_ico_entries() {
-        // The scene size is deliberately none of the four, so a page that fell
-        // back to it would be visible in the directory rather than hidden by
-        // agreeing with one of the answers. 16 would have been the natural
-        // pick and would have hidden exactly that.
-        //
-        // **And what it caught was not what it was placed for.** It was put
-        // here against the renderer falling back; the first run reported five
-        // entries with `(100, 100)` ahead of the four, because `Scene::new`
-        // already carries a page and pushing one per size made five. The
-        // scaffolding fell back, not the renderer. A control catches what it
-        // catches -- which is the argument for placing one even when you are
-        // sure what it is for, and the reason not to delete this as
-        // over-caution about a case that cannot happen.
+        // The scene size is none of the four, so a page that fell back to it
+        // shows in the directory rather than agreeing with an answer.
         let mut scene = Scene::new(Size::new(100.0, 100.0));
         for (index, side) in SIZES.into_iter().enumerate() {
             // `Scene::new` already carries a page, so only the rest are pushed.
@@ -1514,15 +1356,9 @@ mod ico_promise {
     }
 }
 
-/// This crate's own README, compiled.
-///
-/// The fences in it are a public promise that a snippet works, and a fence
-/// checked by nothing is the way that promise goes stale -- the reader finds
-/// out, not the gate. Anchoring the file here puts its `rust` blocks in front
-/// of rustdoc, so an example naming an item that moved is a failed build.
-///
-/// `../README.md`, one level up from `src/`: this is the crate's own front
-/// page rather than the repository's, which `meo-canvas` anchors separately.
+/// This crate's own README, compiled, so a `rust` fence naming an item that
+/// moved fails the build. `../README.md` is this crate's front page, not the
+/// repository's.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 pub struct CrateReadme;
