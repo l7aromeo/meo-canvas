@@ -9,66 +9,10 @@ import { Box, type SceneNode } from './node.js'
 import { encodeScene } from './arena.js'
 
 /**
- * Every chart option, swept across every kind, compared as bytes with the Rust
- * surface.
- *
- * # What this asks that `chart.agreement.test.ts` does not
- *
- * That file asks whether the two implementations agree about six charts. This
- * one asks whether they agree about a *combination* — an option paired with a
- * kind, or with a shape of data, that no single pinned chart happens to carry.
- *
- * **Field coverage is not combination coverage**, and the gap is not
- * hypothetical. `fontFamily` is set on exactly one pinned case, a bar chart,
- * and the bar chart is the kind that routes it correctly; a pie's slice label
- * built its own style and dropped the family, and every pinned pie case passed
- * because none of them set one. The same shape produced the second: values are
- * kept whole on purpose there, and whole numbers are the one class for which
- * rounding to two decimals and not rounding at all give the same string.
- *
- * So a suite can reach twenty of twenty fields, be green, and say nothing
- * about either defect. What closes that is varying one thing at a time against
- * every kind, which is what the table below does.
- *
- * # Why bytes, and why an implementation on each side
- *
- * `Chart` has no external adjudicator: no browser draws one, and the
- * arithmetic is the specification. The strongest available check is that two
- * independent implementations produce the same scene — and where they differ,
- * one is wrong and the comparison says so without either being trusted. It
- * closes the port and not the geometry: both surfaces agreeing on a wrong bar
- * edge passes every byte here, and what guards the numbers is the rendering in
- * `chart.render.test.ts`.
- *
- * # Why a digest rather than the bytes themselves
- *
- * The bytes of every case run to about two megabytes, against roughly a
- * hundred and fifty kilobytes for every other committed chart asset together.
- * Each row carries a hash and a **byte length**, because a bare hash mismatch
- * tells a reader nothing and a length does: both defects above were diagnosed
- * from the four- and five-byte difference a dropped string leaves.
- *
- * The hash is FNV-1a rather than anything from `node:crypto`, because the Rust
- * side has to compute the same function and this crate's dev-dependencies do
- * not carry a hash. FNV-1a is six lines in either language and its two
- * constants are published, so neither side is trusting the other's arithmetic.
- * Thirty-two bits is enough here and the length is why: a case passes only if
- * its bytes hash equal *and* are the same length, and the rows are a fixed
- * committed set rather than an open corpus.
- *
- * # Why the two sides build their own cases
- *
- * A single case list read by both would make them agree by construction about
- * *what* to build, which is the part worth testing. Each side constructs the
- * table itself and the digests are what hold them to the same chart; the case
- * names are asserted to be the same set, so a case missing on one side fails
- * rather than passes quietly.
- *
- * # Regenerating
- *
- * `UPDATE_CHART_DIFFERENTIAL=1 npx vitest run chart.differential`. The Rust
- * side never writes the asset: `ci` runs the Rust tests first, so a suite that
- * wrote it would leave that side comparing against the previous run's output.
+ * Every chart option, swept across every kind, compared by FNV-1a digest and byte
+ * length with the Rust surface: field coverage is not combination coverage, and the
+ * pinned charts in `chart.agreement.test.ts` each carry one kind and one bag.
+ * Regenerate with `UPDATE_CHART_DIFFERENTIAL=1`; the Rust side never writes it.
  */
 const asset = () => fileURLToPath(new URL('../../../crates/meo-canvas/tests/assets/chart/differential-digests.txt', import.meta.url))
 
@@ -88,12 +32,9 @@ function addon(): Addon {
 const MARK: Record<ChartType, string> = { bar: 'bar chart', line: 'line chart', pie: 'pie chart', doughnut: 'doughnut chart' }
 
 /**
- * Every option switched on but the one that overrides the axis-colour
- * fallback, so the cases that reach that fallback have a bag to start from
- * that does not mask it. Written this way round because omitting a key and
- * setting it to `undefined` are different things under
- * `exactOptionalPropertyTypes`, and only the first is what a caller who said
- * nothing wrote.
+ * Every option but the one overriding the axis-colour fallback, so the cases
+ * reaching that fallback start from a bag that does not mask it. The key is
+ * omitted rather than `undefined`, as a caller who said nothing omits it.
  */
 const EVERY_BUT_Y_AXIS_COLOUR: BaseChartOptions = {
   showLabels: true,
@@ -204,11 +145,9 @@ function cases(): Case[] {
   }
   for (const [shape, data] of Object.entries(slices)) for (const kind of RADIAL_KINDS) add(`data/${shape}/${kind}`, kind, data, EVERY)
 
-  // A label spelled exactly like the node this file slices from, so the mark
-  // appears three times in the bytes instead of once. The mark both locates
-  // the comparison and is part of what is compared, which is the collision
-  // `a label spelling the mark does not move the slice` measures; here it is
-  // the encoding of the repeated string that is compared.
+  // A label spelled like the node this file slices from, so the mark appears three
+  // times; `a label spelling the mark does not move the slice` measures the
+  // collision, and this compares the repeated string's encoding.
   for (const kind of CARTESIAN_KINDS) {
     add(`data/mark-collision/${kind}`, kind, cartesian([MARK[kind], 'b'], [series([1, 2], MARK[kind])]), EVERY)
   }
@@ -287,19 +226,12 @@ function fromTheChart(bytes: Buffer, mark: string): Buffer {
 }
 
 /**
- * One chart, encoded as the page would encode it.
- *
- * Wrapped in a `Box`, because `Root::new(200, 120)` on the Rust side
- * contributes a page root of its own; the comparison then starts at the
- * chart's own node, so the two framings never enter it.
+ * One chart, encoded as the page would encode it: wrapped in a `Box`, as Rust's
+ * `Root::new(200, 120)` adds a page root, and compared from the chart's own node.
  */
 /**
- * FNV-1a, 32-bit.
- *
- * The offset basis and the prime are the values the FNV specification names
- * (Fowler/Noll/Vo, as published in `draft-eastlake-fnv`); `Math.imul` is what
- * makes the multiply wrap at thirty-two bits exactly as Rust's `wrapping_mul`
- * does, which a plain `*` on a `number` would not.
+ * FNV-1a, 32-bit, with the offset basis and prime `draft-eastlake-fnv` names.
+ * `Math.imul` wraps at thirty-two bits as Rust's `wrapping_mul` does.
  */
 const FNV_OFFSET_BASIS = 0x811c_9dc5
 const FNV_PRIME = 0x0100_0193
@@ -311,11 +243,8 @@ function fnv1a(bytes: Buffer): string {
 }
 
 function encode(one: Case): Encoded {
-  // The whole route, not just the build. A colour the caller cannot spell
-  // crosses this surface unparsed and is refused by the addon at decode, so
-  // `Chart()` returns happily and the refusal arrives from `sceneBytes` —
-  // catching only the build would report a refusal as bytes that were never
-  // produced.
+  // The whole route, not just the build: an unreadable colour crosses unparsed and
+  // the addon refuses it in `sceneBytes`, after `Chart()` has returned.
   let bytes: Buffer
   try {
     const arena = encodeScene([Box({ children: one.build() })], 200, 120, false, 1)
@@ -374,12 +303,8 @@ describe('every option, against every kind, agrees across the two surfaces', () 
   })
 
   /**
-   * The comparison has to be able to fail.
-   *
-   * A digest compared against a constant passes for a scene that encoded
-   * nothing, and a row read from the wrong column passes for everything. Each
-   * of these is a real chart one option away from a committed one, and none of
-   * them may match the row it is named after.
+   * The comparison has to be able to fail: each is a real chart one option away
+   * from a committed row, and none may match the row it is named after.
    */
   it.each([
     { name: 'option/toggles-1111/bar', changed: { showValues: false } },
@@ -403,13 +328,9 @@ describe('every option, against every kind, agrees across the two surfaces', () 
 })
 
 /**
- * Which options a kind can see, stated rather than assumed.
- *
- * A case that varies an option the kind ignores agrees for free, and reads as
- * coverage it is not. This pins both directions: an option that stops being
- * observable fails here, and so does one that starts. The inert entries are
- * not gaps — a line chart draws no per-datum value and a pie has no y axis —
- * and naming them is what stops the list being read as one.
+ * Which options a kind can see, stated rather than assumed and pinned both ways:
+ * an option that stops being observable fails, and so does one that starts. The
+ * inert entries are not gaps: a line chart draws no per-datum value.
  */
 const INERT: Record<string, readonly ChartType[]> = {
   showValues: ['line', 'pie', 'doughnut'],
@@ -486,16 +407,9 @@ describe('every option this file varies can be seen in the bytes', () => {
 })
 
 /**
- * The unreadable colour is what makes those cases refuse.
- *
- * Both surfaces refusing is the assertion, and two surfaces refusing for an
- * unrelated reason would satisfy it just as well — a harness that had stopped
- * producing charts at all would pass every refusal row. So each refusing shape
- * is built again with a colour that reads, and must encode.
- *
- * The two grid rows on a radial kind are the other half: a pie has no grid, so
- * an unreadable grid colour is an option nothing consumes rather than a value
- * something refuses.
+ * The unreadable colour is what makes those cases refuse: each refusing shape is
+ * rebuilt with a readable colour and must encode, so a harness producing nothing
+ * cannot pass. A pie has no grid, so its grid colour is unused rather than refused.
  */
 describe('an unreadable colour is what makes a chart refuse', () => {
   const shapes = (kind: ChartType, colour: string): { role: string; build: () => SceneNode; refuses: boolean }[] =>
@@ -525,15 +439,9 @@ describe('an unreadable colour is what makes a chart refuse', () => {
 })
 
 /**
- * A label that spells the mark does not move where the slice begins.
- *
- * The mark does two jobs: it locates the comparison and it is part of what is
- * compared. A label is user text and can carry it, so the question is whether
- * the first occurrence is still the chart's own node. It is — the node's name
- * is encoded before its subtree's strings — and this measures it rather than
- * assuming it: the same chart with a label of the same byte length that does
- * not spell the mark must slice to the same number of bytes. A slice that
- * began at the label would be shorter.
+ * A label that spells the mark does not move the slice, since a node's name is
+ * encoded before its subtree's strings. Measured: a same-length label that does not
+ * spell the mark slices to the same length, where a slice from the label is shorter.
  */
 describe('a label spelling the mark does not move the slice', () => {
   const decoy: Record<ChartType, string> = { bar: 'qqq qqqqq', line: 'qqqq qqqqq', pie: 'qqq qqqqq', doughnut: 'qqqqqqqq qqqqx' }
@@ -553,14 +461,9 @@ describe('a label spelling the mark does not move the slice', () => {
 })
 
 /**
- * The framing this file uses is the framing the pinned assets were written
- * with.
- *
- * Everything above compares digests against an asset this file generates, so
- * a change to the page wrapper or to where the slice begins would move both
- * sides together and pass. This case is the same bar chart
- * `chart.agreement.test.ts` pins, checked against the bytes *that* file
- * committed — an asset this one does not write.
+ * The framing matches the pinned assets. This file's own asset would move with a
+ * framing change and still pass, so the bar chart `chart.agreement.test.ts` pins is
+ * checked against the bytes that file committed.
  */
 describe('the framing agrees with the pinned assets', () => {
   it('encodes the pinned bar chart to the bytes the agreement asset carries', () => {
