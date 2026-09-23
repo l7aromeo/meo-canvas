@@ -109,7 +109,7 @@ try {
     '# Chrome 151.0.7922.34, 2026-09-06: overflow x clipper position x child',
     '# position x transform x the child offsets. The 120 rows without offsets',
     '# were measured by hand on 2026-08-23 and are reproduced here unchanged.',
-    '# Scene exactly as MC Agent Zero specified: outer 200x120 position:relative;',
+    '# Scene: outer 200x120 position:relative;',
     '# clipper 60x40 overflow:<O> position:<P>, placed by margin 20,20 when in flow',
     '# and by left/top 20,20 when out of it; child 50x40 position:<C>, placed by',
     '# margin 20,30 when in flow and by left/top 20,30 when out of it. `scroll` rows',
