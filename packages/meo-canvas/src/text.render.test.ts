@@ -4,44 +4,21 @@ import { fileURLToPath } from 'node:url'
 import { Root, Text } from './index.js'
 
 /**
- * What `ellipsis` actually draws, as opposed to what a node carries.
- *
- * # Why a render and not the node
- *
- * `node.test.ts` proves that every spelling resolves to the right marker. It
- * cannot prove the thing that was broken: `ellipsis: true` used to cross
- * TypeScript unchecked and be **refused at the arena boundary** with
- * `side value 2 is neither a string nor a Buffer`, a throw naming a slot index
- * rather than the property. Only a render reaches that boundary.
- *
- * # Why the comparisons are between renders
- *
- * There is no browser to agree with here — the marker's identity is settled in
- * `node.test.ts` against Chrome's measurement, and what is left is whether the
- * spellings reach the painter as the same thing. So each case is read against
- * another render rather than against a pinned picture: `true` must draw
- * **exactly** what the literal marker draws, and `false` exactly what leaving
- * it out draws. Two renders differing by nothing is a claim a pinned image
- * cannot make.
+ * What `ellipsis` actually draws: only a render reaches the arena boundary, and each
+ * case is read against another render rather than a pinned picture. `true` must draw
+ * exactly what the literal marker draws, and `false` what leaving it out draws.
  */
 
 /** The test font, so a line breaks at the same place on every machine. */
-// `fileURLToPath`, not `.pathname`. A file URL's pathname on Windows is
-// `/D:/a/...`, and handing that to anything that resolves paths prepends the
-// current drive: `D:\D:\a\...`, ENOENT, in the three test files that read an
-// asset from disk and nowhere else. Nine other files here already did this
-// correctly; these three were the ones that had never run on Windows.
+// `fileURLToPath`, not `.pathname`: see `chart.agreement.test.ts`.
 const FONT = fileURLToPath(new URL('../../../crates/meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf', import.meta.url))
 
 /** A page wide enough for the marker and narrow enough to truncate. */
 const PAGE = { width: 120, height: 40 }
 
 /**
- * Renders one truncated line and returns its bytes.
- *
- * **Throws rather than skips when the addon is missing**, for the reason
- * `chart.render.test.ts` gives: a render test that quietly does not run reads
- * as coverage.
+ * Renders one truncated line and returns its bytes, throwing rather than skipping
+ * without the addon, as `chart.render.test.ts` does.
  */
 async function ink(props: { readonly ellipsis?: boolean | string }): Promise<Buffer> {
   try {

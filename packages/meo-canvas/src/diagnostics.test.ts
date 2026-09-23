@@ -4,11 +4,8 @@ import { Root } from './root.js'
 import { Text } from './node.js'
 
 /**
- * Markup a caller wrote that the renderer could not use.
- *
- * Through a real render, because the claim is that the report survives the
- * parse, the arena and the Neon boundary — none of which a unit test of the
- * parser touches.
+ * Markup a caller wrote that the renderer could not use, through a real render: the
+ * report has to survive the parse, the arena and the Neon boundary.
  */
 describe('markup the renderer could not use', () => {
   const render = async (markup: string) => {
