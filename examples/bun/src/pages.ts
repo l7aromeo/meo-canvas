@@ -1,14 +1,7 @@
 /**
- * Pages: a twelve-frame sequence, and the formats only a sequence exercises.
- *
- * Every page is built from the same function, so what moves between them is
- * what `PageInfo` reports and nothing else. The three derived numbers each
- * drive one thing: `progress` a bar that ends full, `cycle` a rotation that
- * meets itself, `index` the counter that names the page.
- *
- * It writes the still formats as well as the paged ones. What a still format
- * does with twelve pages — write the first, refuse, or write something else —
- * is a thing worth knowing rather than a thing to avoid asking.
+ * Pages: a twelve-frame sequence from one function, so only `PageInfo` varies --
+ * `progress` fills a bar, `cycle` turns a rotation, `index` names the page. The
+ * still formats are written too, to show what each does with twelve pages.
  */
 
 import { Box, Root, Text, type PageInfo, type SceneNode } from 'meo-canvas'

@@ -1,12 +1,7 @@
 /**
- * Paths: fill rules, caps, joins, dashes, and a path drawn by stroke alone.
- *
- * Every cell is the same size and its path is written in the cell's own
- * coordinates, so a difference on the page is a difference in one property
- * rather than in where the shape was put.
- *
- * The last cell of the first row is a gradient-filled path, which this surface
- * could not spell until `PathPaint` grew its third arm.
+ * Paths: fill rules, caps, joins, dashes, a gradient fill, and a path drawn by
+ * stroke alone. Each path is written in its cell's own coordinates, so a difference
+ * is one property, not placement.
  */
 
 import { Box, Path, Root, type SceneNode } from 'meo-canvas'

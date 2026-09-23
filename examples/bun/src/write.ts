@@ -1,9 +1,7 @@
 /**
- * What every example in this directory shares: where it writes and in what.
- *
- * Each example is a scene and nothing else. This decides the formats, the paths
- * and the size, so the nine of them differ only in what they draw — and so the
- * Rust half beside them can differ only in syntax.
+ * What every example here shares: where it writes, in what formats and at what
+ * size, so the nine differ only in what they draw, and the Rust examples beside
+ * them only in syntax.
  */
 
 import { mkdir } from 'node:fs/promises'
@@ -12,11 +10,8 @@ import { dirname } from 'node:path'
 import type { Canvas, Format } from 'meo-canvas'
 
 /**
- * The formats every example writes.
- *
- * One raster family, one vector, and the raw pixels. A format that refuses a
- * scene is a finding rather than something to skip, so this list is the same
- * for every example and a refusal surfaces as an error naming the format.
+ * The formats every example writes: raster, vector and raw pixels, the same list
+ * for every example, so a refusal surfaces as an error naming the format.
  */
 export const FORMATS: readonly Format[] = ['png', 'jpg', 'webp', 'avif', 'bmp', 'tiff', 'svg', 'raw']
 
@@ -29,11 +24,8 @@ export const FORMATS: readonly Format[] = ['png', 'jpg', 'webp', 'avif', 'bmp', 
 export const PAGED_FORMATS: readonly Format[] = ['pdf', 'gif', 'apng', 'ico']
 
 /**
- * Writes a rendered canvas in every format `formats` names.
- *
- * Stops at the first refusal, naming the format. A format that cannot encode a
- * scene is a result worth stopping on rather than skipping: the point of the
- * directory is to say which parts work.
+ * Writes a rendered canvas in every format `formats` names, stopping at the first
+ * refusal and naming the format: which parts work is what the directory shows.
  */
 export async function draw(name: string, canvas: Canvas, formats: readonly Format[] = FORMATS): Promise<void> {
   const directory = `out/${name}`
