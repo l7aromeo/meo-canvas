@@ -6,9 +6,9 @@
 //! `Text` accepts padding and a `Path` accepts a background. Sharing the style
 //! groups here is what keeps that true without repeating them six times.
 //!
-//! The renderer matches [`NodeKind`] exhaustively, so a kind added here
-//! produces a compile error in the paint stage rather than a node that silently
-//! draws nothing.
+//! [`NodeKind`] is `#[non_exhaustive]`, so a kind added here fails to compile
+//! in this crate's exhaustive [`NodeKind::tag`], not in the renderer, whose
+//! paint stage takes a wildcard arm for a kind it does not know.
 //!
 //! Children are [`NodeId`] indices into [`crate::Scene::nodes`] rather than
 //! owned `Vec<Node>`. A flat arena is what makes an id stable across the
@@ -62,8 +62,8 @@ impl NodeId {
 /// source, a background image, a mask) share this type rather than each
 /// growing an options field of their own.
 ///
-/// A struct rather than a bare list of headers so a timeout or a redirect
-/// policy can join it later. Open -- no `#[non_exhaustive]` -- because callers
+/// A struct rather than a bare list of headers, so a field can be added
+/// without changing the type. Open -- no `#[non_exhaustive]` -- because callers
 /// build one, which is the test that also keeps [`NodeKind::Text`] open.
 ///
 /// # Empty is the absence
@@ -139,21 +139,14 @@ impl HttpOptions {
     /// for why each of the three, and why here rather than in
     /// [`HttpOptions::header`].
     ///
-    /// **Combining runs before sorting, and the two do not commute in spirit
-    /// even though they do in effect.** A repeated name's values are joined in
-    /// the order the caller wrote them, which is the order HTTP says is
-    /// significant; sorting first would rely on the sort being stable to get
-    /// the same answer, and a later reader reaching for `sort_unstable_by`
-    /// would then break something no test names.
+    /// **Combining runs before sorting**, so a repeated name's values join in
+    /// the order the caller wrote them -- the order HTTP says is significant --
+    /// without relying on the sort being stable.
     ///
-    /// **ASCII case folding, deliberately, and `str::to_lowercase` is the one
-    /// that looks more correct.** It is Unicode-aware; `Headers` folds ASCII
-    /// only, as the HTTP specification says. The two disagree on `İ`, which
-    /// Unicode lower-cases to *two* scalars -- a different name, sorting
-    /// somewhere else, encoding to different bytes than the other surface. It
-    /// does not matter whether a header name can carry one: "unreachable" is a
-    /// claim about a validator neither surface has been shown to run, and
-    /// `to_ascii_lowercase` closes the gap without needing the claim to hold.
+    /// **ASCII case folding, deliberately.** `str::to_lowercase` is
+    /// Unicode-aware and `Headers` folds ASCII only, as the HTTP specification
+    /// says; the two disagree on `İ`, which Unicode lower-cases to *two*
+    /// scalars and so encodes to different bytes than the other surface.
     /// Pinned by the last row of
     /// `the_canonical_form_lower_cases_combines_and_sorts`.
     #[must_use]
@@ -199,13 +192,9 @@ impl HttpOptions {
 }
 
 impl core::fmt::Debug for HttpOptions {
-    /// Names every header and prints no value.
-    ///
-    /// A derived `Debug` here puts `Authorization: Bearer ...` into whatever
-    /// printed the scene -- a panic message, a test failure, a log line -- and
-    /// none of those is a place the caller chose to put a credential. The
-    /// names are kept because "which headers are set" is the question a person
-    /// debugging a 401 is actually asking.
+    /// Names every header and prints no value: a derived `Debug` would put
+    /// `Authorization: Bearer ...` into a panic message, a test failure or a
+    /// log line. The names answer what a person debugging a 401 asks.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         struct Redacted<'a>(&'a [(String, String)]);
 
@@ -381,39 +370,23 @@ pub enum NodeKind {
         /// The coordinate space `data` is written in, as SVG's `viewBox`:
         /// `(min_x, min_y, width, height)`.
         ///
-        /// **`None` means the path draws in absolute local coordinates**,
-        /// which is what every path did before this existed and what one still
-        /// does without it. With a box, the path is scaled and centred into
-        /// the node's resolved size under SVG's default
-        /// `preserveAspectRatio` — `xMidYMid meet` — so it fits
-        /// without distorting.
+        /// **`None` means the path draws in absolute local coordinates.** With
+        /// a box, the path is scaled and centred into the node's resolved size
+        /// under SVG's default `preserveAspectRatio` — `xMidYMid meet` — so it
+        /// fits without distorting. That is what lets a path fill a
+        /// percentage-sized node, since `d` itself is absolute.
         ///
         /// **Equivalent to SVG's `viewBox` with
         /// `vector-effect: non-scaling-stroke`.** The drawing scales; the pen
         /// does not. In SVG a two-pixel stroke in a box scaled five times is
-        /// drawn ten pixels wide, and ours stays two — deliberately, because a
-        /// caller authoring a `d` in a unit square wants `line_width` to mean
-        /// pixels and a chart's gridlines to stay hairlines whatever the box.
-        /// Nothing here consumes SVG artwork, so nothing wants the other
-        /// behaviour yet; `vector-effect` is the piece to add if something
-        /// does. Asserted in `tests/path_view_box.rs` rather than left true by
-        /// accident.
+        /// drawn ten pixels wide, and here it stays two, so `line_width` means
+        /// pixels and a chart's gridlines stay hairlines whatever the box.
+        /// Asserted in `crates/meo-canvas/tests/path_view_box.rs`.
         ///
         /// **The node must have a size for this to mean anything.** A path
         /// node has no intrinsic size, so one with neither a width nor a
         /// height gets an empty box — and scaling a drawing into nothing draws
-        /// nothing. Without a box that is harmless, since only the origin is
-        /// used; with one it is the difference between a picture and a blank.
-        ///
-        /// It exists because a path in a percentage-sized box was otherwise
-        /// undrawable: `d` is absolute, `Transform::scale_x` is an `f32`
-        /// rather than a length, and a percentage-sized path node
-        /// still draws `d` in absolute local coordinates. A chart's
-        /// line, pie and doughnut all hit that, where its bars did not
-        /// — a rectangle can be a percentage and a path cannot. No
-        /// `preserve_aspect_ratio` field: the web's default is
-        /// the only one anything here has needed, and a knob nobody uses is
-        /// worse than none.
+        /// nothing.
         view_box: Option<(f32, f32, f32, f32)>,
         /// Whether the drawing may be stretched to fill the node.
         ///
@@ -633,12 +606,9 @@ mod tests {
         assert_eq!(LineJoin::ALL.len(), 3);
     }
 
-    /// One URL under two credentials is two sources.
-    ///
-    /// `resolve` keys its decode cache by the whole [`ImageSource`], so this
-    /// is what stops an authenticated fetch answering for an anonymous one --
-    /// the equality that matters is the derived one, and it is derived only
-    /// because the options are inside the variant.
+    /// One URL under two credentials is two sources: `resolve` keys its decode
+    /// cache by the whole `ImageSource`, and the derived equality sees the
+    /// options because they are inside the variant.
     #[test]
     fn options_are_part_of_a_source_s_identity() {
         use std::collections::HashSet;
@@ -655,13 +625,10 @@ mod tests {
         assert!(seen.insert(signed));
     }
 
-    /// The three normalisations, each pinned by a row that fails without it.
-    ///
-    /// Measured against the platform the other surface uses rather than
-    /// asserted: `new Headers([["X-Zeta","1"],["Authorization","B"],
-    /// ["x-zeta","2"]])` iterates as `[["authorization","B"],
-    /// ["x-zeta","1, 2"]]`, so these are the answers the two surfaces have to
-    /// agree on. The join is `", "` with the space.
+    /// The three normalisations, each pinned by a row that fails without it,
+    /// measured against the `Headers` the other surface uses:
+    /// `[["X-Zeta","1"],["Authorization","B"],["x-zeta","2"]]` iterates as
+    /// `[["authorization","B"],["x-zeta","1, 2"]]`, joined with `", "`.
     #[test]
     fn the_canonical_form_lower_cases_combines_and_sorts() {
         /// What the caller wrote, and what the wire carries for it.

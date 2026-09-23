@@ -1,14 +1,7 @@
-//! [`Wire`] for every type a scene is built from.
-//!
-//! One file rather than an implementation beside each type, because the wire
-//! layout is one specification and a reader checking it against the code should
-//! find the whole thing in one place. The enums are absent here: their
-//! implementation comes from the `wire_enum` macro, which is what keeps a
-//! variant's byte declared beside the variant itself.
-//!
-//! Every implementation writes its fields in the order the type declares them
-//! and reads them back in the same order. That is the whole invariant, and it
-//! is checked by the round-trip tests rather than by inspection.
+//! [`Wire`] for every type a scene is built from, in one file so the layout
+//! can be checked against the specification in one place. Each writes its
+//! fields in declaration order and reads them back in that order, which the
+//! round-trip tests check. Enums get theirs from `wire_enum!`.
 
 use super::{CodecError, Reader, Wire, Writer};
 use crate::{
@@ -142,11 +135,9 @@ impl<T: Wire> Wire for Vec<T> {
     }
 }
 
-/// A pair, written as its two halves in declaration order.
-///
-/// Here so a list of pairs is a `Vec<T>` like any other list rather than a
-/// hand-written count-and-loop at the one place that needs it -- which is the
-/// shape that lets a writer and a reader disagree about the count's width.
+/// A pair, written as its two halves in declaration order, so a list of pairs
+/// is a `Vec<T>` rather than a hand-written count-and-loop whose count width a
+/// writer and a reader could disagree on.
 impl<A: Wire, B: Wire> Wire for (A, B) {
     const MIN_ENCODED: usize = A::MIN_ENCODED + B::MIN_ENCODED;
 
@@ -161,15 +152,10 @@ impl<A: Wire, B: Wire> Wire for (A, B) {
 }
 
 impl Wire for HttpOptions {
-    /// Writes [`HttpOptions::canonical`], not the list as it was built.
-    ///
-    /// **So this is the one composite whose encoding is not the identity.**
-    /// `decode(encode(s))` gives back a scene whose headers are lower-cased,
-    /// combined and sorted, which equals `s` when `s` was already canonical
-    /// and is idempotent otherwise. That is deliberate: a golden fixture and a
-    /// cross-surface byte comparison both want one byte string per header set,
-    /// whichever surface assembled it. The type's doc carries the reasoning
-    /// and the measurement behind it.
+    /// Writes [`HttpOptions::canonical`], not the list as built: the one
+    /// composite whose encoding is not the identity, so a golden fixture and a
+    /// cross-surface comparison see one byte string per header set. The
+    /// type's doc says why.
     fn write(&self, out: &mut Writer<'_>) {
         out.list(&self.canonical());
     }
@@ -1018,11 +1004,10 @@ impl Wire for NodeKind {
 }
 
 impl Wire for Node {
-    /// Measured rather than counted by hand, and asserted in
-    /// `a_node_never_encodes_smaller_than_the_reservation_assumes`: a default
-    /// container is 184 bytes of node plus the four its parent spends naming
-    /// it. Every style field is fixed width, so nothing a caller sets makes a
-    /// node smaller -- only larger.
+    /// A default container is 184 bytes of node plus the four its parent
+    /// spends naming it, and every style field is fixed width, so nothing makes
+    /// a node smaller. Asserted in
+    /// `a_node_never_encodes_smaller_than_the_reservation_assumes`.
     const MIN_ENCODED: usize = 184;
 
     fn write(&self, out: &mut Writer<'_>) {
@@ -1049,10 +1034,8 @@ impl Wire for Node {
 }
 
 /// The discriminants are the wire contract, written out rather than derived.
-///
-/// `Status` is the only variant with a payload, and it is written immediately
-/// behind its tag -- so a `Status` without a code cannot be encoded and cannot
-/// be decoded, rather than being a combination somebody has to check for.
+/// `Status`, the one variant with a payload, writes its code immediately behind
+/// its tag, so a `Status` without a code can be neither encoded nor decoded.
 impl Wire for ImageFetchFailure {
     fn write(&self, out: &mut Writer<'_>) {
         match self {

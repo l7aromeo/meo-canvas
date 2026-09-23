@@ -186,12 +186,10 @@ pub struct GradientStop {
 
 /// Which way a linear gradient runs.
 ///
-/// A union on one field rather than two kinds of gradient, which is where v1
-/// has it (`canvas.type.ts:239`: a `GradientDirection` is four numbers *or* one
-/// of eight keywords) and where CSS has it — `linear-gradient()` takes an angle
-/// or a `to <side>` and never changes function name for it. A caller porting a
-/// linear gradient should not have to work out which kind their direction
-/// implies.
+/// A union on one field rather than two kinds of gradient, as CSS has it:
+/// `linear-gradient()` takes an angle or a `to <side>` and never changes
+/// function name for it, so a caller porting a gradient need not work out which
+/// kind their direction implies.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LinearDirection {
     /// Degrees clockwise from twelve o'clock, as CSS measures them.
@@ -203,7 +201,7 @@ pub enum LinearDirection {
     /// Two explicit endpoints, as fractions of the box.
     ///
     /// What an angle cannot say: where the ramp begins and where it ends, as
-    /// against merely which way it runs. v1's four-number direction.
+    /// against merely which way it runs.
     Between {
         /// Where the first stop sits.
         start: (Length, Length),
@@ -223,16 +221,11 @@ impl Default for LinearDirection {
 /// A gradient's shape, and the geometry that shape reads.
 ///
 /// One variant per [`GradientKind`], each carrying exactly the fields its kind
-/// uses. The fields were flat until the shape changed, and the type's own
-/// documentation admitted the problem: `angle_degrees` was ignored by `Radial`
-/// and `center` was ignored by `Linear`, so three kinds shared four fields and
-/// each read two. A radial gradient can no longer carry an angle nobody reads.
+/// uses, so a radial gradient cannot carry an angle nobody reads.
 ///
 /// The tag stays a separate fieldless [`GradientKind`], as [`NodeTag`] is to
 /// [`NodeKind`]: `wire_enum!` writes `from_wire`, which turns a byte back into
-/// a value and cannot invent a payload to go with it. Keeping the tag apart is
-/// what lets both wire formats and the TypeScript keyword table stay exactly as
-/// they are.
+/// a value and cannot invent a payload to go with it.
 ///
 /// [`NodeTag`]: crate::node::NodeTag
 /// [`NodeKind`]: crate::node::NodeKind
@@ -248,9 +241,8 @@ pub enum GradientGeometry {
         /// The point it radiates from, as a fraction of the box.
         ///
         /// Named `at` rather than `center` because that is what a caller
-        /// writes: v1 spells the conic one `at` (`canvas.type.ts:280`) and
-        /// both v2 surfaces follow it, under the settled rule that the
-        /// JavaScript name is authoritative and Rust snake-cases it.
+        /// writes: v9 spells the conic one `at` (`canvas.type.ts:280`), and
+        /// the JavaScript name is the one Rust snake-cases.
         at: (Length, Length),
     },
     /// Around a point.
@@ -260,8 +252,8 @@ pub enum GradientGeometry {
         /// The angle the sweep begins at, in degrees clockwise from twelve
         /// o'clock.
         ///
-        /// Named for CSS's own `from <angle>` keyword, which v1 also matched
-        /// (`canvas.type.ts:285`). The unit lives in this sentence rather than
+        /// Named for CSS's own `from <angle>` keyword. The unit lives in this
+        /// sentence rather than
         /// in the name: a suffix is what a type reaches for when it cannot say
         /// its unit any other way, and a doc comment can.
         from: f32,

@@ -1,13 +1,7 @@
-//! Malformed bytes through `decode`, in bulk.
-//!
-//! **A refusal is the expected outcome and a panic is the finding.** `decode`
-//! reads bytes that, on the JavaScript surface, arrive from a caller, so every
-//! shape of corruption has to come back as a `CodecError` rather than as an
-//! unwind through the addon boundary.
-//!
-//! The generator is seeded and the seed is in the source: a failure here is
-//! reproducible by running it again, rather than a story about a run nobody
-//! else has.
+//! Malformed bytes through `decode`, in bulk: a refusal is the expected
+//! outcome and a panic is the finding, since caller bytes must come back as a
+//! `CodecError` rather than unwind through the addon boundary. The generator
+//! is seeded in the source, so a failure reproduces by running it again.
 use meo_canvas_scene::{Scene, Size, codec, node::Node};
 
 /// The number of inputs. Enough to be worth the second it costs, and

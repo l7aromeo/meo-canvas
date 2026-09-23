@@ -1,25 +1,12 @@
-//! The macro every wire enum in this crate is declared with.
-//!
-//! A wire enum is one that crosses [`crate::codec`] as a single byte. Three
-//! things have to agree for that to work: the variant list, the byte each
-//! variant is written as, and the mapping back. Writing those three by hand is
-//! writing the same list three times, and the failure mode is silent -- a
-//! variant added to the enum and forgotten in the decoder reads back as a
-//! different variant, not as an error.
-//!
-//! [`wire_enum`] emits all three from one list, plus the [`crate::codec::Wire`]
-//! implementation and an `ALL` slice that lets a test round-trip every variant
-//! of every enum without naming any of them. That slice is why `codec` reaches
-//! full arm coverage from a handful of tests rather than one per variant.
+//! The macro every wire enum is declared with: one list emits the enum, the
+//! byte each variant is written as, the mapping back, the
+//! [`crate::codec::Wire`] impl and an `ALL` slice. By hand, a variant forgotten
+//! in the decoder would read back as a different variant, not an error.
 
-/// Declares an enum whose values cross the wire as one byte.
-///
-/// Emits the enum itself, `to_wire`/`from_wire`, and an `ALL` constant listing
-/// every variant in declaration order.
-///
-/// Discriminants are written explicitly at the call site rather than derived
-/// from position, because position changes when a variant is inserted and the
-/// byte a variant is written as cannot.
+/// Declares an enum whose values cross the wire as one byte, with
+/// `to_wire`/`from_wire` and an `ALL` constant in declaration order.
+/// Discriminants are written at the call site rather than derived from
+/// position, which moves when a variant is inserted.
 macro_rules! wire_enum {
     (
         $(#[$meta:meta])*

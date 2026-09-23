@@ -6,11 +6,9 @@
 //!
 //! # Why they are on the scene and not on the renderer
 //!
-//! `Surface::new` in `meo-canvas-core` takes size, scale and gpu, and until
-//! now two of those came from the scene and one from the renderer for no
-//! reason a caller could see. A caller writes all four in one place —
-//! `Root({ width, height, scale, gpu })` on either surface — so the scene is
-//! where they belong.
+//! A caller writes size, scale and `gpu` in one place — `Root({ width,
+//! height, scale, gpu })` on either surface — so the scene carries all of
+//! them rather than splitting them with the renderer.
 //!
 //! # Why every one of them is optional
 //!
@@ -27,8 +25,8 @@ wire_enum! {
     ///
     /// Every layout `meo-skia-canvas` offers, named as it names them. The list
     /// is copied rather than delegated because upstream's own `all()` is
-    /// `pub(crate)` (`meo-skia-canvas-0.11.0/src/pixels.rs:493`) and cannot be
-    /// walked from here — so the guard is a compile-time one instead, and it is
+    /// `pub(crate)` and cannot be walked from here — so the guard is a
+    /// compile-time one instead, and it is
     /// stronger than a conformance test: `to_skia` matches exhaustively over
     /// this enum and `from_skia` matches exhaustively over theirs, so a variant
     /// added on either side fails the build rather than a test.
@@ -116,18 +114,17 @@ wire_enum! {
     }
 }
 
-/// The names v1 accepts that are not variant names.
+/// The names v9 accepts that are not variant names.
 ///
 /// `meo-skia-canvas`'s TypeScript accepts fifteen spellings for eight spaces
 /// (`meo-skia-canvas/lib/index.d.ts:240`): `'hdr10'` and `'rec2020-pq'` are one
-/// space, and so are `'p3'` and `'display-p3'`. A v1 caller has one of those
+/// space, and so are `'p3'` and `'display-p3'`. A v9 caller has one of those
 /// fifteen written down, and seven of them name nothing here.
 ///
 /// **Associated constants rather than variants**, so the wire enum stays
 /// honest: [`ALL`](ColorSpace::ALL) is still eight, `to_wire` and `from_wire`
-/// stay total, and the generator still emits eight keywords rather than
-/// fifteen. An alias is a second name for a space, not a second space, and only
-/// a constant says that.
+/// stay total, and the generator emits eight keywords rather than fifteen. An
+/// alias is a second name for a space, not a second space.
 ///
 /// [`ColorType`] carries the same aliases for the same reason.
 impl ColorSpace {
@@ -149,9 +146,9 @@ impl ColorSpace {
     pub const P3_LINEAR: Self = Self::DisplayP3Linear;
 }
 
-/// The names v1 accepts that are not variant names.
+/// The names v9 accepts that are not variant names.
 ///
-/// The same problem [`ColorSpace`]'s aliases solve, in the enum where a v1
+/// The same problem [`ColorSpace`]'s aliases solve, in the enum where a v9
 /// caller is most likely to hit it: `'rgba'` is the spelling in
 /// `RootProps.colorType`'s own default (`canvas.type.ts:1202`), and it names
 /// nothing here -- the layout is [`Uint8`](ColorType::Uint8).
@@ -168,7 +165,7 @@ impl ColorType {
     /// `'rgb'`, which is [`Rgb888x`](ColorType::Rgb888x) -- eight bits a
     /// channel with a padding byte, since there is no three-byte layout.
     pub const RGB: Self = Self::Rgb888x;
-    /// `'rgba'`, which is [`Uint8`](ColorType::Uint8). v1's default.
+    /// `'rgba'`, which is [`Uint8`](ColorType::Uint8). v9's default.
     pub const RGBA: Self = Self::Uint8;
     /// `'RGBAF16'`, which is [`F16`](ColorType::F16).
     pub const RGBAF16: Self = Self::F16;
@@ -183,7 +180,7 @@ mod tests {
     use super::{ColorSpace, ColorType};
 
     #[test]
-    fn the_defaults_are_what_v1_defaulted_to() {
+    fn the_defaults_are_what_v9_defaulted_to() {
         // `RootProps.colorType` defaults to `'rgba'` and `colorSpace` to
         // `'srgb'` (`canvas.type.ts:1202`, `:1211`), which are these.
         assert_eq!(ColorType::default(), ColorType::Uint8);
@@ -191,13 +188,11 @@ mod tests {
     }
 
     #[test]
-    fn each_alias_names_the_space_v1_spells_it() {
-        // Asserted one by one rather than derived, because there is nothing to
-        // derive it from: which space `'hdr10'` means is a fact about v1's
-        // vocabulary, not about either enum. A constant pointing at the wrong
-        // variant resolves happily and composites in the wrong space, and on
-        // this side that is one `assert_eq!` away from being caught -- which is
-        // more than the TypeScript alias table can say for itself.
+    fn each_alias_names_the_space_v9_spells_it() {
+        // One by one, since there is nothing to derive it from: which space
+        // `'hdr10'` means is a fact about v9's vocabulary. A constant pointing
+        // at the wrong variant resolves happily and composites in the
+        // wrong space.
         assert_eq!(ColorSpace::LINEAR, ColorSpace::SrgbLinear);
         assert_eq!(ColorSpace::P3, ColorSpace::DisplayP3);
         assert_eq!(ColorSpace::P3_LINEAR, ColorSpace::DisplayP3Linear);
@@ -208,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn each_layout_alias_names_the_layout_v1_spells_it() {
+    fn each_layout_alias_names_the_layout_v9_spells_it() {
         assert_eq!(ColorType::RGBA, ColorType::Uint8);
         assert_eq!(ColorType::RGB, ColorType::Rgb888x);
         assert_eq!(ColorType::BGRA, ColorType::Bgra8888);
@@ -216,7 +211,7 @@ mod tests {
         assert_eq!(ColorType::RGBAF16_NORM, ColorType::F16Norm);
         assert_eq!(ColorType::RGBAF32, ColorType::F32);
 
-        // The one that matters most: v1's default spelling.
+        // The one that matters most: v9's default spelling.
         assert_eq!(ColorType::RGBA, ColorType::default());
     }
 
@@ -267,17 +262,10 @@ wire_enum! {
     /// loudly whatever this says: the caller is holding the input and can
     /// check it before rendering. Only a
     /// [`Url`](crate::node::ImageSource::Url) consults this, because whether a
-    /// fetch will succeed is a fact about the world at render time and no care
-    /// upstream establishes it. As the report that prompted this put it, of the
-    /// guard a consumer would write for themselves:
-    ///
-    /// > a URL that is present and well-formed and answers 404 passes through
-    /// > it untouched. Every consumer that writes this helper will write it
-    /// > with the same blind spot, because the information it would need —
-    /// > whether the fetch will succeed — does not exist at the point where the
-    /// > node is built.
-    ///
-    /// That is why the default is not [`Throw`](Self::Throw).
+    /// fetch will succeed is a fact about the world at render time: a URL that
+    /// is present, well-formed and answers 404 passes any guard a caller can
+    /// write where the node is built. That is why the default is not
+    /// [`Throw`](Self::Throw).
     ///
     /// **Every variant records a warning.** The render result carries one entry
     /// per source that failed, whichever of these is chosen, so turning the
@@ -292,18 +280,13 @@ wire_enum! {
         /// is drawn as nothing, also as Chrome does.
         #[default]
         Placeholder = 0,
-        /// Fail the whole render, as every version before this one did.
-        ///
-        /// The behaviour of `10.0.0-alpha.5` exactly, for a caller whose
-        /// sources come from a manifest they control -- there a 404 means their
-        /// own deployment is broken and finishing the render hides it.
+        /// Fail the whole render, for a caller whose sources come from a
+        /// manifest they control -- there a 404 means their own deployment is
+        /// broken and finishing the render hides it.
         Throw = 1,
-        /// Draw nothing at all, and still record the warning.
-        ///
-        /// **The warning is still recorded**, which is the whole difference
-        /// between this and not noticing. A caller who finds the mark
-        /// distracting keeps the diagnostic; the render result carries the same
-        /// entries it would have under [`Placeholder`](Self::Placeholder).
+        /// Draw nothing at all, and still record the warning: a caller who
+        /// finds the mark distracting keeps the diagnostic, with the entries
+        /// [`Placeholder`](Self::Placeholder) would have given.
         Ignore = 2,
     }
 }
@@ -316,13 +299,10 @@ wire_enum! {
 /// *why* it failed, or the renderer must invent a vaguer warning than a crate
 /// consumer gets for the identical event.
 ///
-/// **`Status` carries its code rather than sitting beside an `Option<u16>`.**
-/// The pairing was separate fields once, and a `Status` with no code beside it
-/// was representable -- in Rust, and in an arena, which is bytes. The only
-/// thing to do with that state is invent a number, and a fabricated `0`
-/// reaches a consumer as a status they are documented to branch on: retry a
-/// 5xx, do not retry a 4xx. Zero is neither and reads as real. Carrying the
-/// code inside the variant deletes the state instead of detecting it.
+/// **`Status` carries its code rather than sitting beside an `Option<u16>`**,
+/// so a `Status` with no code cannot be represented. The only thing to do with
+/// that state is invent a number, and a fabricated `0` reaches a consumer as a
+/// status they are documented to branch on -- retry a 5xx, not a 4xx.
 ///
 /// Not a `wire_enum!` for that reason -- that macro is for variants with no
 /// payload. The discriminants below are the wire contract and are written out

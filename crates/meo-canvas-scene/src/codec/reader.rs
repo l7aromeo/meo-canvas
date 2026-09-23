@@ -1,9 +1,6 @@
-//! Reading primitives back out of a byte slice.
-//!
-//! Every method is fallible and every failure names the offset it happened at,
-//! because the reader is the half that meets a buffer it did not write. An
-//! error that says only "truncated" leaves a caller inspecting a fixture with
-//! nothing to inspect.
+//! Reading primitives back out of a byte slice. Every method is fallible and
+//! every failure names the offset it happened at, because the reader is the
+//! half that meets a buffer it did not write.
 
 use super::{CodecError, Wire};
 
@@ -126,12 +123,9 @@ impl<'bytes> Reader<'bytes> {
             .map_err(|_| CodecError::InvalidUtf8 { offset })
     }
 
-    /// Takes a count followed by that many values.
-    ///
-    /// The count is checked against the bytes left before anything is
-    /// reserved: every element costs at least one byte, so a count above the
-    /// remaining length is a corrupt prefix rather than a large list, and
-    /// reserving for it would honour a number the buffer cannot back.
+    /// Takes a count followed by that many values. A count above the bytes
+    /// left is a corrupt prefix, since every element costs at least one byte,
+    /// and is refused before anything is reserved.
     pub(crate) fn list<T: Wire>(&mut self) -> Result<Vec<T>, CodecError> {
         let offset = self.offset;
         let count = self.u32()? as usize;
@@ -143,17 +137,10 @@ impl<'bytes> Reader<'bytes> {
                 available,
             });
         }
-        // **The count is bounded and the reservation is not the count.**
-        // `count <= available` is right about whether the prefix is corrupt,
-        // and says nothing about the memory it asks for: a `Node` is 1048
-        // bytes in memory and 184 on the wire, so a count this buffer can back
-        // still reserved a thousand times the buffer. Measured before this
-        // line existed: one megabyte of input, 1.02 GB reserved, then refused.
-        //
-        // So the reservation is bounded by what the remaining bytes can
-        // actually contain, at the smallest this type encodes to. A count
-        // larger than that is still allowed to be read -- it will run out of
-        // bytes and fail honestly -- it is simply not reserved for up front.
+        // The count is bounded, and the reservation is not the count: a `Node`
+        // is 1048 bytes in memory and 184 on the wire, so reserving `count`
+        // would ask a thousand times the buffer. Reserve what the remaining
+        // bytes can hold; a larger count still reads, and fails honestly.
         let capacity = count.min(available / T::MIN_ENCODED.max(1));
         let mut values = Vec::with_capacity(capacity);
         for _ in 0..count {
