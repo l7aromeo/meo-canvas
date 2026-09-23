@@ -1,49 +1,32 @@
 //! Turns a marked-up string into the segments a `Text` node holds.
 //!
-//! [`meo_canvas_scene::style::text::TextSegment`] is the scene's representation
-//! of styled text, and something has to produce it from the string a caller
-//! actually writes. In v1 that something was TypeScript -- `TextNode`'s
-//! constructor parsed the markup on its way into the node -- which meant only
-//! JavaScript callers got rich text. A Rust caller writing
-//! `Text::new("hello <b>world</b>")` would have got the angle brackets
-//! literally.
-//!
-//! So the parser lives here, above the scene crate and below every surface, for
-//! the same reason text measurement does: one implementation serves the addon,
-//! the CLI and a Rust caller alike, and none of them can disagree with the
-//! others about what `<b>` means.
+//! The parser lives here, above the scene crate and below every surface, so the
+//! addon, the CLI and a Rust caller share one implementation and cannot
+//! disagree about what `<b>` means.
 //!
 //! # The grammar
 //!
-//! Ported from `text.canvas.ts` -- `processEscapeSequences` at `:250` and
-//! `parseRichText` at `:298` -- because the markup is a published surface and a
-//! string that rendered one way in v1 has to render the same way here.
+//! v9's, from its `processEscapeSequences` and `parseRichText`, because the
+//! markup is a published surface and a string that rendered one way in v9
+//! renders the same way here.
 //!
 //! Escapes are processed first, over the whole string, and then tags are
 //! scanned in the result. There is no escape for a `<`: `\<` is not a sequence
-//! v1 knows, so it keeps both characters, and the backslash it leaves is then
-//! what stops the tag scanner matching. A backslash therefore does suppress a
-//! tag -- and prints itself doing it. Writing a literal `<b>` is not something
-//! this markup can express, which is v1's position too.
+//! the table knows, so it keeps both characters, and the backslash is what
+//! stops the tag scanner matching. A backslash therefore suppresses a tag and
+//! prints itself doing it, and a literal `<b>` cannot be written.
 //!
 //! Five tags carry meaning -- `color`, `weight`, `size`, `b` and `i` -- and
 //! their values may be double-quoted, single-quoted or bare. Any other tag name
 //! is consumed and styles nothing, and a closing tag closes whatever is open
-//! regardless of the name it gives. Both are v1's behaviour rather than
-//! decisions taken here; see [`parse`].
+//! regardless of the name it gives; see [`parse`].
 //!
 //! # What a segment inherits
 //!
-//! v1 seeded its parse with the node's own colour, weight and size
-//! (`text.canvas.ts:58-64`) and wrote them into every segment, because a v1
-//! segment carried a resolved style rather than an override.
-//!
-//! Here the base is [`TextStyle::default`], whose every field is `None`
-//! meaning "inherit". A segment records only what a tag actually set, and
-//! everything else resolves from the node and its ancestors at paint. The
-//! observable behaviour is v1's -- a tag inherits from the node it sits in --
-//! without freezing the node's style into the scene at parse time, where a
-//! later change to the node would no longer reach the text.
+//! The base is [`TextStyle::default`], whose every field is `None`, meaning
+//! inherit. A segment records only what a tag set, and everything else resolves
+//! from the node and its ancestors at paint, so a tag inherits from the node it
+//! sits in without the node's style being frozen into the scene at parse time.
 
 use meo_canvas_scene::style::text::{
     FontStyle, FontWeight, TextSegment, TextStyle,
@@ -53,8 +36,8 @@ use crate::{color::parse_color, diagnostic::Diagnostic};
 
 /// The spaces a `\t` becomes.
 ///
-/// Four, which is v1's (`text.canvas.ts:256`). A real tab stop depends on the
-/// column the tab lands in, and neither renderer has ever had columns.
+/// Four, as in v9's escape table. A real tab stop depends on the column the
+/// tab lands in, and neither renderer has columns.
 const TAB: &str = "    ";
 
 /// Parses markup into styled segments.
@@ -85,37 +68,22 @@ const TAB: &str = "    ";
 /// `color` and `weight` do not: `<color=red>a<color=zzz>b` draws `b` red, and
 /// the enclosing weight survives a `<weight=heavy>` the same way.
 ///
-/// This is v1's behaviour on all three, **measured by running it rather than
-/// read from it**, because the source suggests the opposite. v1 validates one
-/// arm: `text.canvas.ts:351-357` runs `Number(value)` for `size` and assigns
-/// `undefined` when it is `NaN`. `color` and `weight` at `:341-349` assign the
-/// raw string with no validation, and it is the Canvas API that ignores an
-/// invalid assignment to `fillStyle` or `font`, leaving the previous value
-/// standing. So the citation above is accurate about `size` and about nothing
-/// else.
+/// This is v9's behaviour, measured by running it: its `size` arm assigns
+/// `undefined` for a `NaN`, and its `color` and `weight` arms assign the raw
+/// string, which the Canvas API ignores, leaving the previous value standing.
 ///
-/// A value out of range and a value that will not parse are the same thing
-/// here, which is also v1's: `<weight=1500>` and `<weight=0>` keep the
-/// enclosing weight exactly as `<weight=heavy>` does.
-///
-/// A tag carrying no value is different again -- `<color>` clears, because v1
-/// assigns `undefined` for it -- and every case above raises a diagnostic
-/// naming what could not be used.
-///
-/// **v1 warned on one of the three and this restores that one warning**, not a
-/// facility it had. `text.canvas.ts:355` prints
-/// `Invalid numeric value for size tag: ...` to stderr, and nothing is printed
-/// for a bad weight or colour -- observed by running v1, not read from it. The
-/// asymmetry has the same cause as the fallbacks: `size` is the arm v1
-/// validates, so it is the only arm with anything to notice.
+/// A value out of range and a value that will not parse are the same thing:
+/// `<weight=1500>` and `<weight=0>` keep the enclosing weight as
+/// `<weight=heavy>` does. A tag carrying no value is different again: `<color>`
+/// clears. Every case above raises a diagnostic naming what could not be used.
 ///
 /// # Tags this does not know
 ///
 /// An unknown tag name is consumed and styles nothing, and its closing tag
-/// closes the span it opened: `<foo>x</foo>` renders `x` unstyled, not
-/// `<foo>x</foo>`. A closing tag ignores the name it gives, so `</b>` closes an
-/// open `<i>`. Both follow v1 (`text.canvas.ts:332,365`) -- the switch there
-/// has no default arm and the closing branch never reads the name.
+/// closes the span it opened: `<foo>x</foo>` renders `x` unstyled. A closing
+/// tag ignores the name it gives, so `</b>` closes an open `<i>`. Both are
+/// v9's: its switch has no default arm and its closing branch never reads the
+/// name.
 ///
 /// A `<` that does not begin a well-formed tag is ordinary text.
 ///
@@ -137,11 +105,10 @@ pub fn parse(input: &str) -> Vec<TextSegment> {
 
 /// [`parse`], and what it could not use.
 ///
-/// **Added beside the total form rather than replacing it**, because
-/// `parse` and [`parse_paragraph`] are this crate's public API and a caller
-/// who does not want diagnostics should not have to say so at every call. The
+/// Beside the total form because `parse` and [`parse_paragraph`] are public,
+/// and a caller who does not want diagnostics should not have to say so. The
 /// two share one implementation, so they cannot disagree about what a tag
-/// means -- the total one calls this and drops the second half.
+/// means: the total one calls this and drops the second half.
 #[must_use]
 pub fn parse_reporting(input: &str) -> (Vec<TextSegment>, Vec<Diagnostic>) {
     let mut found = Vec::new();
@@ -158,16 +125,10 @@ fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
     let mut run_start = 0;
     let mut cursor = 0;
 
-    // **The tags in `input` and in `text` line up one for one**, so a
-    // diagnostic can name a byte in the string the caller wrote rather than in
-    // the one this function derived. No arm of `unescape` emits `<`, and an
-    // escape it does not know keeps both characters -- `\<` stays `\<` -- so a
-    // `<` is never invented and never hidden. `source_from` walks `input`'s
-    // `<` in step with `text`'s.
-    //
-    // `at` is `None` only if that correspondence breaks, which needs a new
-    // `unescape` arm to emit or swallow a `<`. The offset is dropped rather
-    // than guessed if it ever does.
+    // The `<`s in `input` and `text` line up one for one, since no `unescape`
+    // arm emits or hides a `<`, so `source_from` walks them in step and a
+    // diagnostic names a byte in the caller's string. Were that broken, `at` is
+    // `None` and the offset is dropped rather than guessed.
     let mut source_from = 0;
 
     let bytes = text.as_bytes();
@@ -188,7 +149,7 @@ fn walk(input: &str, found: &mut Vec<Diagnostic>) -> Vec<TextSegment> {
         cursor = end;
 
         if tag.closing {
-            // The name is not read, exactly as v1 does not read it.
+            // The name is not read, exactly as v9 does not read it.
             style = stack.pop().unwrap_or_else(|| {
                 // Nothing was open. **Nobody writes this on purpose**, so a
                 // diagnostic here cannot become the noise a caller learns to
@@ -256,14 +217,9 @@ pub fn parse_paragraph(input: &str) -> Vec<TextSegment> {
     segments
 }
 
-/// Records a run of text under the style in force, unless the run is empty.
-/// A diagnostic carrying the tag's place in the caller's string, where one
-/// is known.
-///
-/// Every site here has a position, so `None` means the correspondence in
-/// [`walk`] broke rather than that this tag had no place. Reporting without
-/// the offset is the right answer either way: the caller still learns what
-/// was wrong, and an offset that might be wrong is worse than none.
+/// A diagnostic carrying the tag's place in the caller's string, where one is
+/// known. `None` means the correspondence in [`walk`] broke; the caller still
+/// learns what was wrong, and an offset that might be wrong is worse than none.
 fn reported(path: String, detail: String, at: Option<usize>) -> Diagnostic {
     match at {
         Some(offset) => Diagnostic::at(path, detail, offset),
@@ -271,6 +227,7 @@ fn reported(path: String, detail: String, at: Option<usize>) -> Diagnostic {
     }
 }
 
+/// Records a run of text under the style in force, unless the run is empty.
 fn push_run(segments: &mut Vec<TextSegment>, text: &str, style: &TextStyle) {
     if text.is_empty() {
         return;
@@ -287,11 +244,8 @@ struct Tag<'a> {
     closing: bool,
     /// The name, lowercased.
     name: String,
-    /// The value, absent when the tag carried none or carried an empty one.
-    ///
-    /// Empty and absent are the same thing because v1 selects among its three
-    /// capture groups with `||` (`text.canvas.ts:323`), and an empty string is
-    /// falsy there -- so `<color="">` reaches the switch with no value at all.
+    /// The value, absent when the tag carried none or an empty one: v9 chooses
+    /// among its captures with `||`, where an empty string is falsy.
     value: Option<&'a str>,
 }
 
@@ -302,14 +256,11 @@ fn apply(
     at: Option<usize>,
     found: &mut Vec<Diagnostic>,
 ) {
-    /// What a value tag carried, once read.
-    ///
-    /// Three outcomes and not two, because **an absent value and an unusable
-    /// one are different in v1** and the difference is observable. A tag with
-    /// no value assigns `undefined` there and clears; a tag whose value will
+    /// What a value tag carried, once read. Three outcomes, because in v9 a tag
+    /// with no value assigns `undefined` and clears, while one whose value will
     /// not parse assigns the raw string, which the canvas then ignores.
     enum Read<T> {
-        /// The tag carried no value. Clears, as `<color>` does in v1.
+        /// The tag carried no value. Clears, as `<color>` does in v9.
         Absent,
         /// The value parsed.
         Good(T),
@@ -317,11 +268,9 @@ fn apply(
         Unusable,
     }
 
-    /// One value tag: parse it, and say so when it will not parse.
-    ///
-    /// **The `None` a bad value produces and the `None` an absent property
-    /// produces are the same value one layer down**, so this is the last place
-    /// the two can be told apart. A diagnostic raised later would be guessing.
+    /// One value tag: parse it, and say so when it will not parse. This is the
+    /// last place a bad value's `None` and an absent property's `None` can be
+    /// told apart.
     fn read<T>(
         tag: &Tag<'_>,
         parse: impl Fn(&str) -> Option<T>,
@@ -330,12 +279,10 @@ fn apply(
         found: &mut Vec<Diagnostic>,
     ) -> Read<T> {
         let Some(written) = tag.value else {
-            // **Reported although the clearing is deliberate and v1's.** The
-            // grammar this surface documents says a tag's value "may be
-            // double-quoted, single-quoted or bare" and never describes a tag
-            // without one, so a caller who reaches this is more likely to have
-            // lost a value than to be using an idiom nothing offers them. One
-            // who meant it loses nothing by being told.
+            // Reported although the clearing is v9's: the documented grammar
+            // never describes a tag without a value, so a caller here more
+            // likely lost one, and one who meant it loses nothing by being
+            // told.
             found.push(reported(
                 format!("<{}>", tag.name),
                 "carries no value, so the property was cleared; write \
@@ -358,7 +305,7 @@ fn apply(
 
     match tag.name.as_str() {
         // Colour and weight leave the enclosing value standing when the value
-        // is unusable, because that is what v1 does -- measured by running it,
+        // is unusable, because that is what v9 does -- measured by running it,
         // not inferred: `<color=red>a<color=notacolour>b` draws `b` red there.
         "color" => match read(
             tag,
@@ -382,7 +329,7 @@ fn apply(
             Read::Good(weight) => style.font_weight = Some(weight),
             Read::Unusable => {}
         },
-        // Size clears, and **that is the one arm v1 validates**: it runs
+        // Size clears, and **that is the one arm v9 validates**: it runs
         // `Number(value)` and assigns `undefined` on `NaN`. Measured the same
         // way -- `<size=30><size=wide>MMM` renders at the node's own size.
         "size" => match read(
@@ -397,10 +344,9 @@ fn apply(
         },
         "b" => style.font_weight = Some(FontWeight::BOLD),
         "i" => style.font_style = Some(FontStyle::Italic),
-        // No default arm in v1's switch either: the tag is consumed, the stack
-        // still carries it, and its closing tag still pops. What is new is that
-        // the caller is told -- the text renders identically to writing no tag
-        // at all, so nothing in the output could have told them.
+        // No default arm, as in v9's switch: the tag is consumed, the stack
+        // carries it and its closing tag pops. Reported, because the text
+        // renders as though no tag were written.
         other => found.push(reported(
             format!("<{other}>"),
             "not a tag this parser knows; its text is kept and the tag ignored"
@@ -410,12 +356,9 @@ fn apply(
     }
 }
 
-/// Parses a weight keyword or number.
-///
-/// `normal` and `bold` are the two keywords `canvas.type.ts:884` names beside
-/// the numbers. CSS's relative `lighter` and `bolder` are absent there and
-/// absent here: both are defined against the parent's computed weight, which is
-/// a resolution step this parser does not have and v1 never had either.
+/// Parses a weight keyword or number: `normal` and `bold` are the keywords v9's
+/// `fontWeight` type names. CSS's `lighter` and `bolder` are relative to the
+/// parent's computed weight, a resolution step this parser does not have.
 fn parse_weight(value: &str) -> Option<FontWeight> {
     let trimmed = value.trim();
     if trimmed.eq_ignore_ascii_case("normal") {
@@ -424,59 +367,27 @@ fn parse_weight(value: &str) -> Option<FontWeight> {
     if trimmed.eq_ignore_ascii_case("bold") {
         return Some(FontWeight::BOLD);
     }
-    // **Out of range is refused, not clamped.** `FontWeight::new` clamps, and
-    // it has to: it is the only way to build the type, and the codec and the
-    // arena reach it with a value that has already passed a type gate
-    // (`codec/impls.rs:354` says so deliberately). Markup is the other case --
-    // a string somebody typed -- and CSS's rule for a declaration it cannot use
-    // is to drop it, leaving the property at whatever it already was. Clamping
-    // here produced the one class of answer in the whole tag survey that is
-    // *confidently wrong*: `<weight=1500>` rendered at 1000 and `<weight=0>` at
-    // 1, both plausible, neither what the caller asked for, and no way from the
-    // outside to tell them from a weight that was meant.
-    //
-    // **Three layers, three answers, and they agree rather than conflict.**
-    // A reader who finds a clamp for one property and a refusal for the same
-    // property will assume one of them is a bug, so the reason is here:
-    //
-    //   markup      `<weight=1500>`      refused; the enclosing weight stands
-    //   typed API   `fontWeight: 1500`   throws at the writer, before the wire
-    //   codec       `FontWeight::new`    clamps, deliberately
-    //
-    // What differs is what each layer is holding. The two writing sides take a
-    // value somebody typed, so they can refuse it and say which property was
-    // wrong. The codec takes bytes that already crossed a wire, where refusing
-    // means failing a decode over a value a browser would have clamped -- and
-    // `codec/impls.rs` says so at its own call site.
-    //
-    // So `FontWeight::new` clamping is not a laxness this arm works around. It
-    // is the only constructor, and it is right for the caller it was written
-    // for; this arm is the other caller, and the range check belongs here
-    // rather than in the type.
+    // Out of range is refused, not clamped, as CSS drops a declaration it
+    // cannot use. `FontWeight::new` clamps because the codec reaches it with
+    // bytes that already crossed a wire; markup is a string somebody typed, so
+    // the range check is here rather than in the type.
     let weight = trimmed.parse::<u16>().ok()?;
     (FontWeight::MIN..=FontWeight::MAX)
         .contains(&weight)
         .then(|| FontWeight::new(weight))
 }
 
-/// Parses a size in pixels.
-///
-/// A negative or non-finite size is refused rather than clamped, and so is a
-/// zero: all three name no text, and clearing the property leaves the span the
-/// size it inherits, which is the reading that puts something on the page.
+/// Parses a size in pixels. A negative, non-finite or zero size names no text
+/// and is refused, leaving the span the size it inherits.
 fn parse_size(value: &str) -> Option<f32> {
     let size = value.trim().parse::<f32>().ok()?;
     (size.is_finite() && size > 0.0).then_some(size)
 }
 
-/// Scans a tag beginning at `at`, which must index a `<`.
-///
-/// Returns the tag and the byte index just past its `>`, or `None` when what
-/// follows is not a well-formed tag -- in which case the `<` is ordinary text.
-///
-/// The grammar is v1's regular expression (`text.canvas.ts:301`) read left to
-/// right: `<`, an optional `/`, one or more word characters, optionally `=`
-/// and a value, then `>`.
+/// Scans a tag at `at`, which must index a `<`, returning it and the index past
+/// its `>`, or `None` when the `<` is ordinary text. The grammar is v9's
+/// `tagRegex` read left to right: `<`, an optional `/`, word characters,
+/// optionally `=` and a value, then `>`.
 fn scan_tag(text: &str, at: usize) -> Option<(Tag<'_>, usize)> {
     let rest = text.get(at + 1..)?;
     let mut offset = 0;
@@ -488,7 +399,7 @@ fn scan_tag(text: &str, at: usize) -> Option<(Tag<'_>, usize)> {
 
     let name_start = offset;
     // `\w` is ASCII alphanumerics and the underscore, and nothing else: a tag
-    // named in another script does not match in v1 and does not match here.
+    // named in another script does not match in v9 and does not match here.
     offset += rest[name_start..]
         .bytes()
         .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
@@ -519,11 +430,9 @@ fn scan_tag(text: &str, at: usize) -> Option<(Tag<'_>, usize)> {
     ))
 }
 
-/// Scans a tag's value, returning it and how many bytes it occupied.
-///
-/// Three forms, in v1's order: double-quoted, single-quoted, or bare. A quoted
-/// form runs to its closing quote and may be empty; a bare one runs to the
-/// first whitespace or `>` and may not.
+/// Scans a tag's value, returning it and its length in bytes: double-quoted,
+/// single-quoted or bare, in v9's order. A quoted form may be empty; a bare one
+/// runs to the first whitespace or `>` and may not.
 fn scan_value(rest: &str) -> Option<(&str, usize)> {
     for quote in ['"', '\''] {
         if let Some(body) = rest.strip_prefix(quote) {
@@ -537,17 +446,10 @@ fn scan_value(rest: &str) -> Option<(&str, usize)> {
     (end > 0).then(|| (&rest[..end], end))
 }
 
-/// Resolves backslash escapes, over the whole string, before any tag is read.
-///
-/// v1's table at `text.canvas.ts:250-277`. The three that surprise: `\t` is
-/// four spaces rather than a tab, `\r`, `\f` and `\v` are all newlines, and
-/// `\0` and `\b` delete themselves.
-///
-/// An escape v1 does not know keeps both characters, and so does a backslash
-/// with nothing after it. A backslash before a line terminator keeps both too,
-/// because v1's `\\(.)` cannot match one: JavaScript's `.` excludes `\n`, `\r`,
-/// `\u{2028}` and `\u{2029}`, so `\` followed by a real newline is left alone
-/// rather than swallowing it.
+/// Resolves backslash escapes over the whole string, as v9's
+/// `processEscapeSequences` does: `\t` is four spaces, `\r`, `\f` and `\v` are
+/// newlines, and `\0` and `\b` delete themselves. Anything else keeps both
+/// characters, including a trailing backslash and one before a line terminator.
 fn unescape(input: &str) -> String {
     if !input.contains('\\') {
         // The overwhelmingly common case, and the only reason this is worth
@@ -562,7 +464,7 @@ fn unescape(input: &str) -> String {
             out.push(character);
             continue;
         }
-        // A backslash with nothing after it is the end of the string, and v1's
+        // A backslash with nothing after it is the end of the string, and v9's
         // `\\(.)` needs a character to match, so it stands for itself.
         let Some(escaped) = chars.next() else {
             out.push('\\');
@@ -574,18 +476,14 @@ fn unescape(input: &str) -> String {
             '\\' => out.push('\\'),
             '\'' => out.push('\''),
             '"' => out.push('"'),
-            // **A translation, not a discard.** Every arm here maps an
-            // escape to what it means for laid-out text -- `\r`, `\f` and
-            // `\v` all become a newline, which is lossy and deliberate --
-            // and NUL and backspace mean no glyph, so they map to nothing.
-            // Nothing was written that could not be used, which is why this
-            // is silent where `<color>` is not.
+            // A translation, not a discard: `\r`, `\f` and `\v` become a
+            // newline and NUL and backspace nothing, which is what each means
+            // for laid-out text. Nothing written went unused, so this is silent
+            // where `<color>` is not.
             '0' | 'b' => {}
-            // Everything else keeps both characters, the line terminators
-            // included -- JavaScript's `.` matches none of `\n`, `\r`,
-            // `\u{2028}` or `\u{2029}`, so v1's regular expression never
-            // reaches them and the pair survives for that reason rather than
-            // for the reason an unknown letter does.
+            // Everything else keeps both characters. A line terminator does
+            // because v9's `\\(.)` never matches one: JavaScript's `.` excludes
+            // `\n`, `\r`, `\u{2028}` and `\u{2029}`.
             other => {
                 out.push('\\');
                 out.push(other);
@@ -599,12 +497,9 @@ fn unescape(input: &str) -> String {
 mod diagnostic_tests {
     use super::{parse_paragraph, parse_paragraph_reporting};
 
-    /// The offset, checked by slicing rather than by comparing an integer.
-    ///
-    /// An expected index would be this test computing the parser's own
-    /// arithmetic a second time, and would agree whenever both are wrong the
-    /// same way. Slicing the caller's own string and requiring the tag to
-    /// begin there cannot: it fails unless the offset points at the tag.
+    /// The offset, checked by slicing the caller's string rather than comparing
+    /// an integer: an expected index would repeat the parser's arithmetic and
+    /// agree whenever both are wrong alike.
     fn starts_at(input: &str, found: &super::Diagnostic) -> bool {
         let Some(offset) = found.offset else {
             return false;
@@ -614,12 +509,8 @@ mod diagnostic_tests {
             .is_some_and(|rest| rest.starts_with(&found.path))
     }
 
-    /// Which of three identical-looking tags was the bad one.
-    ///
-    /// **The two inputs below report byte-identical diagnostics without an
-    /// offset** -- `<color=zzz>` and nothing else -- so a caller could not tell
-    /// the middle tag from the first. That is the gap: not that the report is
-    /// vague, but that two different inputs produce the same one.
+    /// Which of three identical-looking tags was the bad one: without an offset
+    /// the two inputs below report byte-identical diagnostics.
     #[test]
     fn the_offset_separates_two_inputs_that_report_the_same_thing() {
         let middle_bad =
@@ -657,14 +548,9 @@ mod diagnostic_tests {
         assert!(found[0].offset < found[1].offset, "{found:?}");
     }
 
-    /// An escape before the tag moves it in the caller's string and not in
-    /// the parser's.
-    ///
-    /// **This is the test that fails if the offset comes from the scanner's
-    /// cursor.** `\t` is two bytes as written and four once resolved, and the
-    /// parser walks the resolved text, so a cursor taken from there points
-    /// two bytes past the tag for every escape that precedes it. Slicing the
-    /// original string is what catches it.
+    /// An escape before the tag moves it in the caller's string and not in the
+    /// parser's: `\t` is two bytes written and four resolved, so an offset from
+    /// the scanner's cursor lands two bytes past the tag.
     #[test]
     fn an_escape_before_a_tag_does_not_move_its_offset() {
         let input = r"\tone\ttwo<color=zzz>x</color>";
@@ -675,17 +561,9 @@ mod diagnostic_tests {
     }
 
     /// An escaped `<` is text, and the tag after it still counts from the
-    /// caller's string.
-    ///
-    /// `\<` is not an escape the parser knows, so it keeps both characters and
-    /// the `<` still opens a tag -- which is what makes the tags in the two
-    /// strings line up at all. A parser change that swallowed `\<` would move
-    /// every offset after it, and this is what would say so.
-    ///
-    /// **The leading `\t` is what makes this discriminate.** Without it the
-    /// input and the resolved text are the same string, so every candidate
-    /// offset agrees and the case proves nothing; the `\t` shifts the resolved
-    /// text by two and separates them.
+    /// caller's string, since `\<` keeps both characters. The leading `\t`
+    /// shifts the resolved text two bytes from the input, which is what makes
+    /// this discriminate.
     #[test]
     fn an_escaped_opener_still_lines_the_tags_up() {
         let input = r"\t\<color=red> then <color=zzz>b</color>";
@@ -695,11 +573,9 @@ mod diagnostic_tests {
         assert!(starts_at(input, &found[0]), "{found:?}");
     }
 
-    /// An unknown tag renders as if it were not written, and now says so.
-    ///
-    /// The ink is the point: `<nope>abc</nope> def` and `abc def` produce the
-    /// same segments, so **nothing in the output could tell a caller their tag
-    /// did nothing**. The diagnostic is the only thing that can.
+    /// An unknown tag renders as if it were not written, and is reported:
+    /// `<nope>abc</nope> def` and `abc def` produce the same segments, so only
+    /// the diagnostic tells the caller.
     #[test]
     fn an_unknown_tag_is_reported_though_the_text_is_unchanged() {
         let (with_tag, found) = parse_paragraph_reporting("<nope>abc</nope> d");
@@ -716,11 +592,8 @@ mod diagnostic_tests {
         assert!(found[0].detail.contains("not a tag this parser knows"));
     }
 
-    /// A value that will not parse is reported, and a good one is not.
-    ///
-    /// The pair is the check. Asserting only the bad case would pass on a
-    /// parser that reported every tag, which would be noise a caller learns
-    /// to ignore -- and an ignored channel is the silence this exists to end.
+    /// A value that will not parse is reported and a good one is not: asserting
+    /// only the bad case would pass on a parser that reported every tag.
     #[test]
     fn a_bad_value_is_reported_and_a_good_one_is_not() {
         for (markup, path) in [
@@ -821,7 +694,7 @@ mod tests {
 
     #[test]
     fn an_empty_quoted_value_is_the_same_as_no_value() {
-        // v1 picks among its capture groups with `||`, and "" is falsy there.
+        // v9 picks among its capture groups with `||`, and "" is falsy there.
         for input in ["<color=\"\">x", "<color>x"] {
             assert_eq!(parse(input)[0].style.color, None, "{input}");
         }
@@ -868,43 +741,20 @@ mod tests {
             parse("<weight=1000>x")[0].style.font_weight,
             Some(FontWeight::new(FontWeight::MAX))
         );
-        // **Dropped means the declaration is ignored, so the enclosing weight
-        // stands** -- CSS's own meaning of dropping a declaration, and v1's
-        // too, measured rather than read. With a drawing first segment at an
-        // enclosing 400, `<weight=1001>`, `<weight=1500>` and `<weight=heavy>`
-        // all read 947 ink against 1123 for a weight that applies, and
-        // `<weight=1000>` applies -- so the boundary is CSS's and an
-        // out-of-range number is the same as an unparseable keyword.
-        //
-        // **Neither half of this arrived with the other, and neither is
-        // right alone.** Refusing an out-of-range value and keeping the
-        // enclosing one when a value is refused were written on separate
-        // branches against separate reasons. Alone, each gives a wrong answer
-        // for this input -- 1000 by clamping, or the base by clearing -- and
-        // only the pair matches v1. The test could not be written on either
-        // branch, which is why it is written here.
+        // Refused out of range and the enclosing weight kept, as CSS and v9 do:
+        // at an enclosing 400, `<weight=1001>`, `<weight=1500>` and
+        // `<weight=heavy>` read 947 ink, an applied weight 1123. Either half
+        // alone gives 1000 or the base.
         assert_eq!(
             parse("<weight=700>a<weight=1500>b")[1].style.font_weight,
             Some(FontWeight::new(700))
         );
     }
 
-    /// Only `size` clears on a value it cannot read. The other two do not.
-    ///
-    /// **v1 validates one of the three.** `text.canvas.ts:351-357` runs
-    /// `Number(value)` for `size` and assigns `undefined` when it is `NaN`;
-    /// `color` and `weight` at `:341-349` assign the raw string with no
-    /// validation at all. So the enclosing value surviving those two is **a
-    /// fact about the Canvas API rather than about v1's intent** -- an invalid
-    /// assignment to `fillStyle` or `font` is ignored and the previous value
-    /// stands, which is why reading v1's source suggests the opposite of what
-    /// running it shows.
-    ///
-    /// Measured by running v1, each row against a control that binds:
-    /// `<color=red>a<color=notacolour>b` draws `b` red where a valid inner
-    /// green draws it green; a bad weight leaves ink at the enclosing 900's
-    /// 410 where an explicit 400 gives 166; a bad size renders at the node's
-    /// own 7px where `<size=30>` gives 22px.
+    /// Only `size` clears on a value it cannot read. Measured by running v9,
+    /// each row against a binding control: a bad colour draws `b` red, a bad
+    /// weight leaves the enclosing 900's ink of 410 (400 gives 166), and a bad
+    /// size renders at the node's 7px (`<size=30>` gives 22px).
     #[test]
     fn only_a_size_clears_when_its_value_is_not_understood() {
         assert_eq!(
@@ -922,17 +772,9 @@ mod tests {
     }
 
     /// Every site that discards input reports, and the deliberate ones stay
-    /// quiet.
-    ///
-    /// **Enumerated from the walk rather than from a list of inputs**, because
-    /// a list can miss a site. The four value cases were found by a survey
-    /// organised around *what a bad value does*; these last two are about the
-    /// **absence** of a value or an opener, which is a different axis and is
-    /// why that frame could not see them.
-    ///
-    /// The quiet rows are the ones a caller writes on purpose: a literal `<`,
-    /// an unclosed span, and a tag name nothing matches are all visible in the
-    /// output, so the render itself is the report.
+    /// quiet. Enumerated from the walk, since a list of inputs can miss a site.
+    /// A literal `<`, an unclosed span and an unmatched name are quiet because
+    /// they are visible in the output.
     #[test]
     fn every_discard_reports_and_nothing_else_does() {
         let count =
@@ -951,21 +793,15 @@ mod tests {
         assert_eq!(count("<color=red>a</color>"), 0, "valid");
         assert_eq!(count("plain"), 0, "no markup");
 
-        // `unescape` runs before any tag is read and never reports. Its arms
-        // are a translation table: `\r` becomes a newline and `\0` becomes
-        // nothing, both because that is what the character means once laid
-        // out. The row is here so the next enumeration over this file finds
-        // it already decided rather than re-deriving it.
+        // `unescape` never reports: its arms translate, `\r` to a newline and
+        // `\0` to nothing, as each character means once laid out.
         assert_eq!(count(r"a\0b"), 0, "an escape is translated, not discarded");
         assert_eq!(count(r"a\bb"), 0, "the same for backspace");
     }
 
-    /// A tag carrying no value clears, which is not the same as one carrying
-    /// an unusable value.
-    ///
-    /// v1 assigns `undefined` for the first and the raw string for the second,
-    /// so the two part company on `color` and `weight`. Keeping them apart is
-    /// the whole reason `apply` reads three outcomes rather than two.
+    /// A tag carrying no value clears; one carrying an unusable value does not.
+    /// v9 assigns `undefined` for the first and the raw string for the second,
+    /// which is why `apply` reads three outcomes.
     #[test]
     fn a_tag_with_no_value_clears_where_an_unusable_one_does_not() {
         assert_eq!(parse("<color=red>a<color>b")[1].style.color, None);
@@ -990,7 +826,7 @@ mod tests {
 
     #[test]
     fn a_closing_tag_ignores_the_name_it_gives() {
-        // v1's closing branch never reads the name, so this closes the italic.
+        // v9's closing branch never reads the name, so this closes the italic.
         let segments = parse("<i>a</b>b");
         assert_eq!(segments[0].style.font_style, Some(FontStyle::Italic));
         assert_eq!(segments[1].style.font_style, None);
@@ -1031,13 +867,10 @@ mod tests {
 
     #[test]
     fn whitespace_ends_a_bare_value_and_so_ends_the_tag() {
-        // The bare form stops at the first space, and the pattern then wants a
-        // `>` where the space is. So a bare value cannot contain one, and a
-        // tag written as though it could is text. `<color="a b">` is the way
-        // to say it.
-        // U+FEFF counts as whitespace to JavaScript's `\s` and to nothing
-        // else, so it ends a bare value here for v1's sake and for no other
-        // reason.
+        // A bare value stops at the first whitespace, where the pattern wants a
+        // `>`, so it cannot hold a space: `<color="a b">` can. U+FEFF is
+        // whitespace to JavaScript's `\s` alone, so it ends a bare value here
+        // for v9's sake.
         let bom = "<color=red\u{feff}>x";
         let joined: String =
             parse(bom).iter().map(|s| s.text.as_str()).collect();
@@ -1095,8 +928,8 @@ mod tests {
 
     #[test]
     fn a_digit_is_a_word_character_so_it_can_name_a_tag() {
-        // `\w` is alphanumeric, so `<2>` matches v1's tag pattern, is an
-        // unknown name, and is consumed. Surprising, and v1's.
+        // `\w` is alphanumeric, so `<2>` matches v9's tag pattern, is an
+        // unknown name, and is consumed. Surprising, and v9's.
         let joined: String =
             parse("1<2>3").iter().map(|s| s.text.as_str()).collect();
         assert_eq!(joined, "13");
@@ -1104,7 +937,7 @@ mod tests {
 
     #[test]
     fn a_backslash_suppresses_a_tag_and_prints_itself_doing_it() {
-        // `\<` is not an escape v1 knows, so the pair survives; the surviving
+        // `\<` is not an escape v9 knows, so the pair survives; the surviving
         // backslash is then what stops `<b\>` matching the tag pattern. There
         // is no way to write a literal `<b>` and no way to hide the backslash.
         let input = r"a\<b\>c";

@@ -143,12 +143,9 @@ impl ImageFormat {
 
     /// The IANA media type this format is served as.
     ///
-    /// Delegated to the renderer rather than matched here, for the reason
-    /// [`ImageFormat::from_extension`] is: upstream's `mime_type` reads the
-    /// same trait table its `extension` and `is_animated` read
-    /// (`meo-skia-canvas-0.11.0/src/export.rs:576`), so a format whose type
-    /// changes there changes here, and there is one table rather than a second
-    /// one restating it.
+    /// Delegated to the renderer, whose `mime_type` reads the same traits table
+    /// as its `extension` and `is_animated`, so there is one table rather than
+    /// a second restating it.
     ///
     /// [`Raw`](ImageFormat::Raw) has no registered type and reports
     /// `application/octet-stream`.
@@ -168,10 +165,8 @@ impl ImageFormat {
     /// statement of intent as `.png`. A caller who writes `to_file("x.raw")`
     /// has named the format; nothing is being inferred.
     ///
-    /// The two questions were being answered in three places — here, the
-    /// addon's format tag, and the JavaScript surface's `formatForPath` — with
-    /// the Rust half of the pair disagreeing with the other two. `to_file`
-    /// refused a `.raw` path that `toFile` accepted.
+    /// The addon's format tag and the facade's `to_file` both resolve through
+    /// this, so a `.raw` path means the same on both surfaces.
     #[must_use]
     pub fn from_named(name: &str) -> Option<Self> {
         if name.eq_ignore_ascii_case("raw") {
@@ -220,10 +215,8 @@ impl ImageFormat {
     /// Whether this format's pages are frames with durations.
     ///
     /// Distinct from [`spans_pages`](Self::spans_pages): PDF, TIFF and ICO
-    /// gather every page and carry no clock, so a frame rate is meaningless to
-    /// them rather than merely unused. WebP and AVIF animate as well as GIF and
-    /// APNG, which is what `canvas.type.ts:1353` spells as
-    /// `AnimatedFormat = 'gif' | 'apng' | 'webp' | 'avif'`.
+    /// gather every page and carry no clock, so a frame rate means nothing to
+    /// them. WebP and AVIF animate as well as GIF and APNG.
     #[must_use]
     pub fn is_animated(self) -> bool {
         to_skia_format(self).is_animated()
@@ -266,24 +259,20 @@ pub struct EncodeOptions {
     pub matte: Option<u32>,
     /// Which page is written, counting from zero.
     ///
-    /// **Not only for a single-page format**, which is what this said until
-    /// the two file-writing paths were measured against each other. Naming a
-    /// page wins over a format that would otherwise gather them all: a GIF
-    /// asked for page 1 of three is a one-frame GIF, and a PDF asked for one
-    /// page is a one-sheet PDF. [`EncodeOptions::written_pages`] is that rule,
-    /// and `tests/write_path.rs` is the measurement — three frames with this
-    /// unset, one with it named, on both the encoding and the writing path.
+    /// Naming a page wins over a format that would otherwise gather them all:
+    /// a GIF asked for page 1 of three is a one-frame GIF, and a PDF asked
+    /// for one page is a one-sheet PDF. [`EncodeOptions::written_pages`]
+    /// is that rule, and `tests/write_path.rs` pins it on both the
+    /// encoding and the writing path.
     ///
-    /// An index past the last page is refused rather than clamped.
-    ///
-    /// `None` writes every page for a format that spans them, and otherwise
-    /// the last page — the one a caller who drew a sequence and asked for a
-    /// PNG almost always means.
+    /// An index past the last page is refused rather than clamped. `None`
+    /// writes every page for a format that spans them, and otherwise the last
+    /// page, the one a caller who drew a sequence and asked for a PNG almost
+    /// always means.
     pub page: Option<usize>,
     /// Frames per second for an animated format.
     ///
-    /// `None` leaves the encoder's own default, which is 30 -- the same rate
-    /// v1 assumed when a caller gave a duration and no rate.
+    /// `None` leaves the encoder's own default, which is 30.
     pub fps: Option<f32>,
     /// Per-frame durations in milliseconds, overriding [`fps`](Self::fps).
     ///
@@ -390,13 +379,10 @@ const fn to_skia_format(
     }
 }
 
-/// Lowers this crate's options onto the renderer's.
-///
-/// Only the fields a caller set are written; the rest keep the renderer's own
-/// defaults, which is what makes `fps: None` mean 30 rather than zero. A field
-/// this crate does not expose -- `density`, `msaa`, `bit_depth`, `chroma`,
-/// `color_space`, `page_range` -- is left alone rather than restated, so the
-/// default that applies is the renderer's and there is one copy of it.
+/// Lowers this crate's options onto the renderer's, writing only the fields a
+/// caller set, so `fps: None` means the renderer's 30 rather than zero. Fields
+/// this crate does not expose, `density`, `msaa` and the rest, keep the
+/// renderer's defaults, of which there is one copy.
 fn to_skia_options(
     options: &EncodeOptions,
 ) -> meo_skia_canvas::export::EncodeOptions {
@@ -559,20 +545,10 @@ pub fn prepare(
     format: ImageFormat,
     options: &EncodeOptions,
 ) -> Result<PreparedEncode, Error> {
-    // Counted through the surface rather than the canvas, so the count is read
-    // without a Skia type entering this function's reasoning, and read before
-    // the mutable borrow the prepare itself needs.
-    //
-    // The surface's pages rather than the scene's: a page that failed to begin
-    // is not one the encoder can write, and `frame_delays` is checked against
-    // what is written.
-    //
-    // **Before the snapshot, which is a choice.** The handle could report its
-    // own page count and be validated against that instead, and upstream's
-    // shape invites it -- but this crate has no `page_range`, so the two counts
-    // agree, and validating first means a caller error costs nothing rather
-    // than a snapshot that is thrown away. It also keeps the order of the two
-    // failures exactly what it was before the split.
+    // The surface's page count, read before the mutable borrow the prepare
+    // needs: a page that failed to begin is not one the encoder can write.
+    // Validating before the snapshot means a caller error costs no snapshot,
+    // and with no `page_range` here the handle's own count would agree.
     options.validate(format, surface.page_count())?;
 
     // `&mut`, because `prepare_export` resolves the page selection against the
@@ -749,14 +725,9 @@ mod tests {
                 .find(|format| super::to_skia_format(*format) == upstream)
         }
 
-        // Driven from the renderer's list rather than ours, which is the whole
-        // point: a format it gains that this crate has not mapped has no entry
-        // to disagree with, so a loop over `ImageFormat::ALL` would pass while
-        // the gap widened. Driven from `Skia::all()`, the missing entry is the
-        // failure.
-        //
-        // Collected rather than asserted inside the loop, so a release adding
-        // three formats reports three rather than the first of them.
+        // Driven from `Skia::all()` rather than `ImageFormat::ALL`, so a format
+        // the renderer gains and this crate has not mapped is a failure rather
+        // than a missing row. Collected, so three new formats report three.
         let unmapped: Vec<Skia> = Skia::all()
             .filter(|upstream| local(*upstream).is_none())
             .collect();
@@ -823,9 +794,8 @@ mod tests {
 
     #[test]
     fn an_unset_option_keeps_the_renderers_default() {
-        // `fps: None` meaning 30 is the renderer's default, not one restated
-        // here -- which is what makes it agree with v1's `DEFAULT_FPS` without
-        // this crate holding a copy of the number.
+        // `fps: None` meaning 30 is the renderer's default, not a copy of the
+        // number held here.
         let lowered = super::to_skia_options(&EncodeOptions::default());
         let untouched = meo_skia_canvas::export::EncodeOptions::default();
 
@@ -873,12 +843,10 @@ mod tests {
 
     #[test]
     fn the_animated_set_is_the_one_v1_names() {
-        // `canvas.type.ts:1353` spells it
-        // `AnimatedFormat = 'gif' | 'apng' | 'webp' | 'avif'`, and
-        // `meo-skia-canvas`'s own traits table agrees -- WebP and AVIF are
-        // `animated: true, pages: All` there. Both animate over a multi-page
-        // scene, which is easy to miss because each is best known as a still
-        // format.
+        // v9's `AnimatedFormat` in `src/canvas/canvas.type.ts` is
+        // `'gif' | 'apng' | 'webp' | 'avif'`, and `meo-skia-canvas`'s traits
+        // table agrees. WebP and AVIF animate over a multi-page scene, though
+        // each is best known as a still format.
         let animated: Vec<ImageFormat> = ImageFormat::ALL
             .iter()
             .copied()
@@ -992,18 +960,10 @@ mod ico_pages {
         height: u32,
     }
 
-    /// Reads an ICO's directory, which is the only part this asserts on.
-    ///
-    /// **Decoded from the bytes we wrote rather than inferred from the call we
-    /// made.** A test that checks the encoder was invoked with four pages
-    /// passes whether or not the file has four entries, and the promise in
-    /// `ImageFormat::Ico` is about the file.
-    ///
-    /// Layout: a six-byte header of `reserved:u16 = 0`, `type:u16 = 1`,
-    /// `count:u16`, then `count` sixteen-byte entries whose first two bytes are
-    /// the width and height. **A zero means 256** -- one byte cannot hold it,
-    /// which is why an icon's largest conventional size is the one that reads
-    /// as nothing.
+    /// Reads an ICO's directory from the bytes written: `ImageFormat::Ico`
+    /// promises something about the file. A six-byte header, then `count`
+    /// entries of sixteen bytes starting with width and height, where one byte
+    /// cannot hold 256 and so zero means 256.
     fn directory(bytes: &[u8]) -> Vec<Entry> {
         assert!(bytes.len() >= 6, "an ICO has at least a header");
         assert_eq!(

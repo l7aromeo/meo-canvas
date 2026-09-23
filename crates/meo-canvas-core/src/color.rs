@@ -1,21 +1,19 @@
 //! Turning a CSS colour string into a [`Color`].
 //!
-//! The scene carries colours as four bytes, so every surface that accepts the
-//! string a caller wrote has to resolve it somewhere. This is that somewhere,
-//! and it is one function rather than one per surface: the addon reads a
-//! `matte` from an options object, [`crate::markup`] reads a `<color=…>` tag,
-//! and a Rust caller writes a name -- three callers, one answer.
+//! The scene carries colours as four bytes, so every surface that accepts a
+//! colour string resolves it here: the addon reading a `matte`,
+//! [`crate::markup`] reading a `<color=…>` tag, and a Rust caller writing a
+//! name. Three callers, one answer.
 //!
 //! # Why `csscolorparser`
 //!
-//! It is the crate `meo-skia-canvas` parses its own colour strings with
-//! (`meo-skia-canvas-0.11.0/Cargo.toml:148`), so it is already in the graph and
-//! a colour this workspace resolves agrees with one the backend resolves by
-//! construction. The alternative is a second implementation of CSS Color 4
-//! tracking the first, which is a class of disagreement nothing would report.
+//! `meo-skia-canvas` parses its own colour strings with it, so it is already in
+//! the graph, and a colour resolved here agrees with one the backend resolves
+//! by construction. A second implementation of CSS Color 4 would be a
+//! disagreement nothing reports.
 //!
-//! Its `named-colors` feature is on by default, which is what makes `"black"`
-//! -- v1's own default `borderColor` -- resolve rather than fail.
+//! Its default `named-colors` feature is what makes `"black"` resolve rather
+//! than fail.
 
 use meo_canvas_scene::style::paint::Color;
 
@@ -42,43 +40,32 @@ pub fn parse_color(css: &str) -> Option<Color> {
     Some(Color::rgba(r, g, b, a))
 }
 
-/// The same parse, **unclamped**, in the units the surfaces use.
+/// The same parse, unclamped, in the units the surfaces use.
 ///
-/// `r`, `g` and `b` run 0 to 255 and `a` runs 0 to 1 -- v1's shape, which both
-/// the TypeScript surface and [`crate::animate::color::Rgba`] carry.
+/// `r`, `g` and `b` run 0 to 255 and `a` runs 0 to 1, the shape the TypeScript
+/// surface and [`crate::animate::color::Rgba`] carry.
 ///
 /// # Why unclamped, and why this is not [`parse_color`]
 ///
-/// `color(srgb 1.25 1.25 1.25)` is a real colour outside the gamut, and it is
-/// **the only CSS syntax that can express one**. A scene stores four bytes, so
-/// [`parse_color`] clamps -- right for a renderer. An animation mixing colours
-/// needs somewhere to be outside the gamut between two of them, and clamping
-/// at the parse would flatten the overshoot before the mix ever saw it. **The
-/// clamp belongs where a colour becomes paint and not before.**
+/// `color(srgb 1.25 1.25 1.25)` is a real colour outside the gamut, and the
+/// only CSS syntax that can express one. A scene stores four bytes, so
+/// [`parse_color`] clamps. An animation mixing colours needs room outside the
+/// gamut between two of them, so the clamp belongs where a colour becomes paint
+/// and not at the parse.
 ///
-/// Both spellings come through here: the `color(srgb ...)` pre-pass and
-/// everything `csscolorparser` reads. **One parser, one answer** -- which is
-/// why the addon exports this rather than each surface parsing for itself.
+/// Both spellings come through here, the `color(srgb ...)` pre-pass and
+/// everything `csscolorparser` reads, which is why the addon exports this
+/// rather than each surface parsing for itself.
 ///
 /// # The number a channel reads back as
 ///
-/// `csscolorparser` holds its channels as `f32`, so `rgba(0, 0, 0, 0.1)`
-/// arrives here as `0.10000000149011612` -- the nearest `f32` to what the
-/// author wrote, widened. That is an internal float width leaking through a
-/// public boundary, and it is what a caller of the addon's `parseColor` saw.
-///
-/// **Channels are held at `f32` precision and presented as the shortest
-/// decimal that identifies that value**, so an alpha written as a decimal or a
-/// percentage reads back as written; an alpha written as a hex byte is
-/// `byte / 255` exactly, computed where the byte is known rather than
-/// recovered from the `f32`. The two rules are different because the authors
-/// wrote different things: a decimal is a number, and `7f` is a byte, whose
-/// value is a ratio no shortest decimal reaches from an `f32`.
-///
-/// Neither reference had this right. v1 quantises alpha to eight bits and
-/// rounds to three decimals, answering `0.102`; this answered
-/// `0.10000000149011612`; the browser answers `0.1`, and the browser is the
-/// tiebreak, as it is for the mix clamp in [`crate::animate::color`].
+/// `csscolorparser` holds channels as `f32`, so `rgba(0, 0, 0, 0.1)` arrives as
+/// the nearest `f32` to `0.1`. An alpha written as a decimal or a percentage is
+/// presented as the shortest decimal naming that `f32`, which reads back as
+/// written. An alpha written as a hex byte is `byte / 255`, computed where the
+/// byte is known: `7f` is a byte, and no shortest decimal reaches `127/255`
+/// from an `f32`. The browser answers `0.1` here, and is the tiebreak, as it is
+/// for the mix clamp in [`crate::animate::color`].
 #[must_use]
 pub fn parse_channels(css: &str) -> Option<[f64; 4]> {
     if let Some([r, g, b, a]) = extended_srgb(css) {
@@ -96,14 +83,9 @@ pub fn parse_channels(css: &str) -> Option<[f64; 4]> {
     Some([r, g, b, hex_alpha(css).unwrap_or_else(|| widen(parsed.a))])
 }
 
-/// An `f32` as the shortest decimal that identifies it.
-///
-/// For anything a person types -- seven significant digits or fewer -- that
-/// decimal is what they typed, because the `f32` they got is the nearest one
-/// to it and no shorter string names it. `Display` for `f32` is defined to
-/// print exactly that string, so this is a widening rather than a rounding: it
-/// returns the `f64` nearest the decimal that names the `f32`, and every
-/// `f32` still maps to a distinct `f64`.
+/// An `f32` as the shortest decimal that identifies it. For anything a person
+/// types, seven significant digits or fewer, that is what they typed; `Display`
+/// for `f32` prints exactly that string, and distinct `f32`s stay distinct.
 fn widen(channel: f32) -> f64 {
     channel
         .to_string()
@@ -111,16 +93,9 @@ fn widen(channel: f32) -> f64 {
         .unwrap_or_else(|_| f64::from(channel))
 }
 
-/// The alpha of a hex colour, as the byte the author wrote over 255.
-///
-/// `None` for every other spelling, including a hex colour with no alpha --
-/// `#808080` is opaque, and `1.0` needs no recovering.
-///
-/// **Where the byte is known.** `#0000007f` is alpha `127/255`, which is
-/// `0.4980392156862745`; the shortest decimal naming the `f32` is
-/// `0.49803922`, which is neither the byte nor the ratio. `#000000cc` happens
-/// to work either way because `204/255` is exactly `0.8`, which is why it
-/// cannot be the only hex row a test carries.
+/// The alpha of a hex colour, as the author's byte over 255, or `None` for any
+/// other spelling, including hex with no alpha. `#0000007f` is `127/255`, where
+/// the shortest decimal naming the `f32` is `0.49803922`, neither of the two.
 fn hex_alpha(css: &str) -> Option<f64> {
     let digits = css.trim().strip_prefix('#')?;
     if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -138,28 +113,10 @@ fn hex_alpha(css: &str) -> Option<f64> {
     Some(f64::from(byte) / 255.0)
 }
 
-/// The channels of a `color(srgb …)` string, unclamped, or `None` for
-/// anything else.
-///
-/// **A pre-pass rather than a second parser.** `csscolorparser` dispatches on
-/// the function name and implements `rgb`, `hsl`, `hwb`, `hsv`, `lab`, `lch`,
-/// `oklab` and `oklch` (`csscolorparser-0.8.3/src/parser.rs:213`); `color()`
-/// is not among them and 0.8.3 is the newest release. So a string **v1
-/// accepts and Chrome draws** was refused here, which is a defect rather than
-/// a missing luxury -- and `color(srgb …)` is additionally the only CSS
-/// syntax that can name a colour outside the gamut, which is what
-/// [`crate::animate`] needs to hand back an overshooting mix.
-///
-/// Everything else goes through unchanged, so this is one form our dependency
-/// does not implement, handled in the one place that already owns colour.
-///
-/// # The other colour spaces are refused rather than guessed
-///
-/// `display-p3`, `rec2020`, `a98-rgb`, `prophoto-rgb` and `xyz` share this
-/// syntax over spaces we have no conversion for. Treating their numbers as
-/// sRGB would draw a wrong colour silently, so they return `None` and reach
-/// the caller as the same refusal any unparseable string gets. **That is a
-/// known gap: what is missing is the conversion, not the syntax.**
+/// The channels of a `color(srgb …)` string, unclamped, or `None`. A pre-pass:
+/// `csscolorparser`'s `parse_abs` has no `color()`. Other spaces return `None`,
+/// since there is no conversion for them and their numbers read as sRGB would
+/// draw a wrong colour silently.
 pub(crate) fn extended_srgb(css: &str) -> Option<[f64; 4]> {
     let (space, values) = color_function(css)?;
     if !space.eq_ignore_ascii_case("srgb") {
@@ -181,18 +138,15 @@ pub(crate) fn extended_srgb(css: &str) -> Option<[f64; 4]> {
     Some([red, green, blue, alpha])
 }
 
-/// The colour space of a `color()` string we cannot convert, if that is why
-/// it was refused.
+/// The colour space of a `color()` string we cannot convert, if that is why it
+/// was refused.
 ///
-/// **So a caller can say which half is missing.** `parse_color` returns
-/// `None` for everything it cannot read, which tells a caller that a string
-/// is not a colour -- true of `"bananas"` and misleading for
-/// `color(display-p3 1 0 0)`, which is a colour, in a space we have no
-/// conversion for. A surface building an error message asks this and says the
-/// space is unsupported rather than the string unparseable.
+/// So a caller can say which half is missing: [`parse_color`] returns `None`
+/// for `"bananas"` and for `color(display-p3 1 0 0)` alike, and only the second
+/// is a colour, in a space with no conversion here.
 ///
-/// Returns `None` for `srgb`, which is supported, and for anything that is
-/// not a `color()` function at all.
+/// Returns `None` for `srgb`, which is supported, and for anything that is not
+/// a `color()` function.
 #[must_use]
 pub fn unsupported_space(css: &str) -> Option<&str> {
     let (space, _) = color_function(css)?;
@@ -205,12 +159,9 @@ fn color_function(css: &str) -> Option<(&str, &str)> {
     inner.trim().split_once(char::is_whitespace)
 }
 
-/// Extended channels narrowed to the bytes a scene carries.
-///
-/// **This is where an out-of-gamut colour stops being one.** The scene holds
-/// four bytes per colour, so a channel above 1 or below 0 has nowhere to go
-/// and is clamped here -- which is the same place a browser clamps, at the
-/// point of painting rather than during interpolation.
+/// Extended channels narrowed to the bytes a scene carries. An out-of-gamut
+/// colour is clamped here, where a colour becomes paint, as a browser clamps it
+/// at painting rather than during interpolation.
 fn to_rgba8(channels: [f64; 4]) -> [u8; 4] {
     let [r, g, b, a] = channels;
     [r, g, b, a * 255.0].map(|value| {
@@ -232,21 +183,15 @@ mod tests {
 
     #[test]
     fn an_alpha_a_person_wrote_reads_back_as_they_wrote_it() {
-        // The defect this rule replaced: `csscolorparser` holds channels as
-        // `f32`, so this answered `0.10000000149011612` -- an internal float
-        // width reaching a caller of the addon's `parseColor`. v1 answers
-        // `0.102`, quantising to eight bits. The browser answers `0.1`.
-        //
-        // The values a person writes are the ones that could not be seen: no
-        // test anywhere parsed a string carrying an alpha, so the parameter
-        // was never varied from its default of opaque.
+        // `csscolorparser` holds channels as `f32`, so a plain widening answers
+        // `0.10000000149011612` for `0.1`. The browser answers `0.1`.
         for (css, alpha) in [
             ("rgba(0, 0, 0, 0.1)", 0.1_f64),
             ("rgba(0, 0, 0, 0.33)", 0.33),
             ("rgba(0, 0, 0, 0.9)", 0.9),
             ("rgba(0, 0, 0, 0.005)", 0.005),
-            // Exactly representable already, so these passed before and are
-            // the control: the rule must not move a number that was right.
+            // Exact in `f32` already: the control, a number the rule must not
+            // move.
             ("rgba(0, 0, 0, 0.25)", 0.25),
             ("rgba(0, 0, 0, 0.5)", 0.5),
             ("rgba(0, 0, 0, 0.75)", 0.75),
@@ -300,10 +245,9 @@ mod tests {
 
     #[test]
     fn widening_a_channel_does_not_move_a_byte_off_its_own_value() {
-        // The trap in the fix rather than in the defect. Widening each channel
-        // *before* scaling would multiply the shortest decimal of `128/255` by
-        // 255 in `f64` and land a hair under 128, breaking rows that passed.
-        // The scaling stays in `f32`, where it is exact.
+        // Widening each channel *before* scaling would multiply the shortest
+        // decimal of `128/255` by 255 in `f64` and land a hair under 128. The
+        // scaling stays in `f32`, where it is exact.
         for (css, bytes) in [
             ("#808080", [128.0_f64, 128.0, 128.0]),
             ("#f2aa4c", [242.0, 170.0, 76.0]),
@@ -325,9 +269,8 @@ mod tests {
 
     #[test]
     fn an_out_of_gamut_colour_keeps_its_channels_and_its_alpha() {
-        // `color(srgb ...)` is parsed here rather than by the dependency, and
-        // now at `f64` from the text -- so an overshoot is the author's number
-        // rather than the nearest `f32` to it.
+        // `color(srgb ...)` is parsed here at `f64` from the text, so an
+        // overshoot is the author's number rather than the nearest `f32` to it.
         let [r, g, b, a] = parse_channels("color(srgb 1.25 -0.1 0.5 / 0.1)")
             .unwrap_or_else(|| unreachable!("a colour"));
         assert_eq!(r.to_bits(), 318.75_f64.to_bits(), "1.25 * 255");
@@ -338,9 +281,8 @@ mod tests {
 
     #[test]
     fn a_named_colour_resolves() {
-        // The case that made this public: v1's default `borderColor` is the
-        // string `'black'`, so a surface that took only hex would break ported
-        // code on a default nobody wrote.
+        // A name, not only hex: `'black'` is a default a ported scene carries
+        // without anyone writing it.
         assert_eq!(parse_color("black"), Some(Color::rgba(0, 0, 0, 255)));
         assert_eq!(
             parse_color("rebeccapurple"),
@@ -359,9 +301,7 @@ mod tests {
 
     #[test]
     fn a_color_function_in_srgb_resolves() {
-        // Refused before this: `csscolorparser` has no `color()` at all, and
-        // both baselines accept this string -- v1 parses it directly and
-        // Chrome draws it.
+        // `csscolorparser` has no `color()` at all, and Chrome draws this.
         let red = Some(Color::rgba(255, 0, 0, 255));
         assert_eq!(parse_color("color(srgb 1 0 0)"), red);
         assert_eq!(parse_color("color(srgb 1.0 0.0 0.0 / 1)"), red);
@@ -404,8 +344,8 @@ mod tests {
 
     #[test]
     fn alpha_is_the_one_channel_that_does_not_scale() {
-        // `r`, `g` and `b` are 0 to 255 and `a` is 0 to 1, which is v1's shape
-        // and the surface's. A parse that scaled all four alike would report
+        // `r`, `g` and `b` are 0 to 255 and `a` is 0 to 1, the surface's
+        // shape. A parse that scaled all four alike would report
         // an opaque colour as `a: 255` and every caller comparing against 1
         // would read it as transparent.
         let half = parse_channels("rgba(0, 0, 0, 0.5)")
