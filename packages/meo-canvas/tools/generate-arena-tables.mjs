@@ -42,7 +42,11 @@ function parseGroups(source) {
   return groups
 }
 
-/** The span between a `{` at `open` and its matching `}`. */
+/**
+ * The span between a `{` at `open` and its matching `}`, counting every brace in
+ * the text: a brace inside a Rust comment or string counts too, so an unbalanced
+ * one in a doc comment inside an `arena_group!` misplaces the group's end.
+ */
 function braced(source, open) {
   let depth = 0
   for (let index = open; index < source.length; index += 1) {
@@ -66,9 +70,9 @@ function parseGroup(source, body) {
   const inner = braced(body.text, header.index + header[0].length - 1)
 
   const properties = []
-  // One entry per `N => field as "caller": Type,`; the type runs to the comma closing
-  // the entry at depth zero. An entry with no caller name does not match, and the
-  // contiguity check then names the gap.
+  // One entry per `N => field as "caller": Type,`, matched over the raw body, comments
+  // included; the type runs to the comma closing the entry at depth zero. An entry
+  // with no caller name does not match, and the contiguity check names the gap.
   let cursor = 0
   const entry = /(\d+)\s*=>\s*(\w+)\s+as\s+"([^"]+)"\s*:/g
   entry.lastIndex = 0
