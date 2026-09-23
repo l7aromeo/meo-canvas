@@ -159,8 +159,7 @@ describe('the spring against v9', () => {
     expect(wrong).toEqual([])
   })
 
-  // The regime counter Agent One's own run used to retract a coverage claim:
-  // it reported that no natural configuration lands in the critical band, and
+  // Each damping regime is reached by the table, the critical band included:
   // `stiffness: 100, damping: 20` is a ratio of exactly 1.
   it('covers all three damping regimes', () => {
     const regimes = new Set<string>()
