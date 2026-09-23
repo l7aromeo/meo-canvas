@@ -7,6 +7,8 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { spansOf } from './comments.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SOURCE = resolve(HERE, '../../../crates/meo-canvas-node/src/arena.rs')
 const CHECKED_IN = resolve(HERE, '../src/generated/arena-tables.ts')
@@ -24,17 +26,35 @@ function fail(message) {
 }
 
 /**
+ * The source read two ways, both the same length so an offset means the same in
+ * each: `code` with every comment blanked, and `shape` with string literals blanked
+ * too, so a brace, an entry or a macro name inside either is never read as code.
+ */
+function views(source) {
+  const code = source.split('')
+  const shape = source.split('')
+  for (const { kind, start, end } of spansOf(source, { rust: true })) {
+    for (let at = start; at < end; at += 1) {
+      if (source[at] === '\n') continue
+      shape[at] = ' '
+      if (kind === 'comment') code[at] = ' '
+    }
+  }
+  return { code: code.join(''), shape: shape.join('') }
+}
+
+/**
  * Every `arena_group!` invocation, as `{ name, sceneType, properties }`. Brace-counted,
  * since a lazy match would stop at the first `}` inside `Sides<Option<Length>>`.
  */
-function parseGroups(source) {
+function parseGroups({ code, shape }) {
   const groups = []
   const opener = /arena_group!\s*\{/g
 
   let found
-  while ((found = opener.exec(source)) !== null) {
-    const body = braced(source, found.index + found[0].length - 1)
-    groups.push(parseGroup(source, body))
+  while ((found = opener.exec(shape)) !== null) {
+    const body = braced(shape, found.index + found[0].length - 1)
+    groups.push(parseGroup(code, shape, body))
     opener.lastIndex = body.end
   }
 
@@ -42,44 +62,39 @@ function parseGroups(source) {
   return groups
 }
 
-/**
- * The span between a `{` at `open` and its matching `}`, counting every brace in
- * the text: a brace inside a Rust comment or string counts too, so an unbalanced
- * one in a doc comment inside an `arena_group!` misplaces the group's end.
- */
-function braced(source, open) {
+/** The span between the `{` at `open` in `shape` and its matching `}`, as offsets. */
+function braced(shape, open) {
   let depth = 0
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1
-    else if (source[index] === '}') {
+  for (let index = open; index < shape.length; index += 1) {
+    if (shape[index] === '{') depth += 1
+    else if (shape[index] === '}') {
       depth -= 1
-      if (depth === 0) {
-        return { text: source.slice(open + 1, index), end: index + 1 }
-      }
+      if (depth === 0) return { start: open + 1, end: index + 1 }
     }
   }
   return fail(`unbalanced braces from offset ${open}`)
 }
 
 /** One group: its module name, the scene type it fills, and its properties. */
-function parseGroup(source, body) {
-  const header = /pub\(crate\)\s+mod\s+(\w+)\s+for\s+([\w:]+)\s*\{/.exec(body.text)
+function parseGroup(code, shape, body) {
+  const header = /pub\(crate\)\s+mod\s+(\w+)\s+for\s+([\w:]+)\s*\{/.exec(shape.slice(body.start, body.end))
   if (!header) fail('an `arena_group!` body has no `mod NAME for TYPE {` header')
 
   const [, name, sceneType] = header
-  const inner = braced(body.text, header.index + header[0].length - 1)
+  const inner = braced(shape, body.start + header.index + header[0].length - 1)
+  const text = code.slice(inner.start, inner.end - 1)
 
   const properties = []
-  // One entry per `N => field as "caller": Type,`, matched over the raw body, comments
-  // included; the type runs to the comma closing the entry at depth zero. An entry
-  // with no caller name does not match, and the contiguity check names the gap.
+  // One entry per `N => field as "caller": Type,`, matched with comments blanked; the
+  // type runs to the comma closing the entry at depth zero. An entry with no caller
+  // name does not match, and the contiguity check names the gap.
   let cursor = 0
   const entry = /(\d+)\s*=>\s*(\w+)\s+as\s+"([^"]+)"\s*:/g
   entry.lastIndex = 0
   let match
-  while ((match = entry.exec(inner.text)) !== null) {
+  while ((match = entry.exec(text)) !== null) {
     const [, index, field, caller] = match
-    const type = readType(inner.text, entry.lastIndex)
+    const type = readType(text, entry.lastIndex)
     properties.push({
       index: Number(index),
       name: field,
@@ -190,9 +205,9 @@ function emit(groups, magic, version) {
   return `${lines.join('\n')}`
 }
 
-const source = await readFile(SOURCE, 'utf8')
+const source = views(await readFile(SOURCE, 'utf8'))
 const groups = parseGroups(source)
-const output = emit(groups, constant(source, 'MAGIC'), constant(source, 'VERSION'))
+const output = emit(groups, constant(source.code, 'MAGIC'), constant(source.code, 'VERSION'))
 
 await mkdir(dirname(TARGET), { recursive: true })
 await writeFile(TARGET, output, 'utf8')
