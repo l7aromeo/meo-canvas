@@ -1,8 +1,6 @@
-//! Flexbox: every direction, both wraps, and each way of distributing a line.
-//!
-//! Rows of coloured blocks rather than a picture, because the question each row
-//! answers is *where things sit*. A block that fails to move is visible against
-//! its neighbours; a prettier scene would hide it.
+//! Flexbox: every direction, both wraps, and each way of distributing a line,
+//! as rows of coloured blocks, since a block that fails to move shows against
+//! its neighbours.
 
 use meo_canvas::{
     Align, Box, Column, FlexDirection, FlexWrap, Justify, Root, Row, Styled,

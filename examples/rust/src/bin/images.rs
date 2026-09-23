@@ -1,8 +1,6 @@
-//! Images: every fit, both source kinds, position, borders and radius.
-//!
-//! One picture eight pixels wide and four tall, drawn into square boxes — so
-//! every fit resolves to a visibly different rectangle rather than to a
-//! difference a reader has to measure.
+//! Images: every fit, both source kinds, position, borders and radius, from one
+//! 8x4 picture in square boxes so every fit resolves to a visibly different
+//! rectangle.
 
 use meo_canvas::{
     Align, Box, Element, FlexDirection, Image, ObjectFit, Overflow, Root,

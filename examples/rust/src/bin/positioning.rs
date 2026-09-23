@@ -1,9 +1,6 @@
 //! Every `PositionType`, every kind of `z_index`, and what clipping does to
-//! each.
-//!
-//! Overlap is the whole subject, so every cell here is a stack of boxes that
-//! cover one another. A box that fails to move is a colour that fails to
-//! appear.
+//! each: every cell is a stack of overlapping boxes, so a box that fails to
+//! move is a colour that fails to appear.
 
 use meo_canvas::{
     Box, Element, FlexDirection, Overflow, PositionType, Root, Styled, hex_rgb,

@@ -1,28 +1,21 @@
-//! What every example in this directory shares: where it writes and in what.
-//!
-//! Each example is a scene and nothing else. This decides the formats, the
-//! paths and the size, so that the nine of them differ only in what they draw —
-//! and so that the JavaScript half beside them can differ only in syntax.
+//! What every example shares: where it writes and in what formats, paths and
+//! size, so the nine differ only in what they draw and the JavaScript half only
+//! in syntax.
 
 use std::path::PathBuf;
 
 use meo_canvas::{Canvas, Format, Renderer, Root};
 
-/// The family the text examples name, and the file behind it.
-///
-/// One font from this repository rather than a platform face: the two surfaces
-/// must draw the same bytes, and a family resolved from whatever the host has
-/// installed is not the same family twice.
+/// The family the text examples name, and its file: one font from this
+/// repository, since both surfaces must draw the same bytes and a host's
+/// installed face is not the same family twice.
 pub const FONT: (&str, &str) = (
     "Showcase",
     "../../crates/meo-canvas-core/tests/assets/fonts/Oswald-VariableFont_wght.ttf",
 );
 
-/// The formats every example writes.
-///
-/// One raster family, one vector, and the raw pixels. A format that refuses a
-/// scene is a finding rather than something to skip, so this list is the same
-/// for every example and a refusal surfaces as an error naming the format.
+/// The formats every example writes: one raster family, one vector and raw
+/// pixels. A refusal surfaces as an error naming the format rather than a skip.
 pub const FORMATS: &[Format] = &[
     Format::Png,
     Format::Jpeg,
@@ -41,11 +34,8 @@ pub const FORMATS: &[Format] = &[
 pub const PAGED_FORMATS: &[Format] =
     &[Format::Pdf, Format::Gif, Format::Apng, Format::Ico];
 
-/// The extension a format's file takes.
-///
-/// `Format::extension` answers `bin` for raw, which is the filename convention
-/// rather than the tag a caller writes. The directory is named by tag on both
-/// surfaces so the two trees compare file for file.
+/// The extension a format's file takes: the tag, not `Format::extension`'s
+/// `bin` for raw, so the two surfaces' trees compare file for file.
 #[must_use]
 pub fn tag(format: Format) -> &'static str {
     match format {
@@ -57,10 +47,7 @@ pub fn tag(format: Format) -> &'static str {
 /// Renders `root` and writes it in every format `formats` names.
 ///
 /// # Errors
-///
-/// Returns the first failure, naming the format it was writing. A format that
-/// cannot encode a scene is a result worth stopping on rather than skipping:
-/// the whole point of the directory is to say which parts work.
+/// The first failure, naming the format it was writing.
 pub fn draw(
     name: &str,
     root: Root,
@@ -69,16 +56,10 @@ pub fn draw(
     draw_with_fonts(name, root, formats, &[])
 }
 
-/// The same, with families registered before anything is measured.
-///
-/// Fonts live on the [`Renderer`] here and on `Root` in the JavaScript surface,
-/// because a renderer outlives any one scene and JavaScript exposes no such
-/// object. It is the one place the two examples differ in where a thing is
-/// written rather than in how.
+/// [`draw`], with families registered first on the [`Renderer`].
 ///
 /// # Errors
-///
-/// As [`draw`], and additionally when a font file cannot be read.
+/// As [`draw`], and when a font file cannot be read.
 pub fn draw_with_fonts(
     name: &str,
     root: Root,

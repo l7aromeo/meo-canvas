@@ -1,8 +1,5 @@
-//! Paths: fill rules, caps, joins, dashes, and a path drawn by stroke alone.
-//!
-//! Every cell is the same size and its path is written in the cell's own
-//! coordinates, so a difference on the page is a difference in one property
-//! rather than in where the shape was put.
+//! Paths: fill rules, caps, joins, dashes, and a path drawn by stroke alone,
+//! each cell's path in its own coordinates so a difference is one property.
 
 use meo_canvas::{
     Box, Element, FillRule, FlexDirection, Path, Root, Styled, hex_rgb, px,

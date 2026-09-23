@@ -1,11 +1,6 @@
-//! Text: size, weight, style, decoration, alignment, spacing and markup.
-//!
-//! One string repeated with one property changed at a time. A property that
-//! does nothing is a line that looks like the one above it, which is what a
-//! showcase is for: `text_decoration` and a centred or right `text_align` both
-//! drew exactly that, and both draw now. The two rows that still repeat their
-//! neighbour are `text_stroke` and `paint_order`, which the binding underneath
-//! cannot express -- its text style carries a colour and no stroke width.
+//! Text: size, weight, style, decoration, alignment, spacing, stroke and
+//! markup, one string repeated with one property changed at a time, so a
+//! property that does nothing looks like the line above it.
 
 use meo_canvas::{
     Box, Element, FlexDirection, LineHeight, Root, Styled, Text, TextAlign,
