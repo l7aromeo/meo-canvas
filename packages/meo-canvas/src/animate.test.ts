@@ -34,15 +34,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const VECTORS = resolve(HERE, '../../../crates/meo-canvas-core/tests/assets/animate')
 
 /**
- * One table, comment lines and blanks dropped.
- *
- * **The row count is asserted against the count the file declares**, and that
- * is not ceremony. A hex colour begins with `#`, this format's comment
- * character, so `#808080` as a bare first field is dropped by the filter above
- * without a word -- leaving a table that looks complete and tests fewer rows
- * than it lists. `parse-color.tsv` lost three rows that way before its count
- * was compared with its generator's. Quoting fixed that file; the census is
- * what stops the next one, whatever swallows the row.
+ * One table, comment lines and blanks dropped, with the row count asserted against
+ * the count the file declares: a hex colour opens with `#`, this format's comment
+ * character, so an unquoted `#808080` row would be dropped without a word.
  */
 function rows(name: string): string[][] {
   const text = readFileSync(resolve(VECTORS, name), 'utf8')
@@ -71,20 +65,18 @@ function num(row: string[], index: number): number {
   return Number(text(row, index))
 }
 
-describe('the easing catalogue against v1', () => {
+describe('the easing catalogue against v9', () => {
   const table = rows('easing.tsv')
 
-  // **No epsilon.** The vectors are printed at JavaScript's default precision,
-  // which is the shortest string that round-trips an `f64`, and this runs on
-  // the engine that produced them. If a tolerance is ever needed here, that is
-  // a finding about one of the two implementations rather than a reason to add
-  // one — bring the row and the differing bit.
+  // No epsilon: the vectors are printed at the shortest string that round-trips an
+  // `f64`, on the engine that produced them. A tolerance needed here would be a
+  // finding about one implementation; bring the row and the differing bit.
   it('reproduces every row exactly', () => {
     const wrong: string[] = []
     for (const [name, t, expected] of table) {
       const got = ease(name as EasingName, Number(t))
       if (got !== Number(expected)) {
-        wrong.push(`${name} at t=${t}: v1 ${expected}, ours ${got}`)
+        wrong.push(`${name} at t=${t}: v9 ${expected}, ours ${got}`)
       }
     }
     expect(wrong).toEqual([])
@@ -101,7 +93,7 @@ describe('the easing catalogue against v1', () => {
   it('reads a table with rows in it', () => {})
 })
 
-describe('cubic-bezier against v1', () => {
+describe('cubic-bezier against v9', () => {
   const table = rows('bezier.tsv')
 
   it('reproduces every row exactly', () => {
@@ -109,7 +101,7 @@ describe('cubic-bezier against v1', () => {
     for (const [x1, y1, x2, y2, t, expected] of table) {
       const got = cubicBezier(Number(x1), Number(y1), Number(x2), Number(y2))(Number(t))
       if (got !== Number(expected)) {
-        wrong.push(`cubic-bezier(${x1},${y1},${x2},${y2}) at t=${t}: v1 ${expected}, ours ${got}`)
+        wrong.push(`cubic-bezier(${x1},${y1},${x2},${y2}) at t=${t}: v9 ${expected}, ours ${got}`)
       }
     }
     expect(wrong).toEqual([])
@@ -118,7 +110,7 @@ describe('cubic-bezier against v1', () => {
   it('reads a table with rows in it', () => {})
 })
 
-describe('steps against v1', () => {
+describe('steps against v9', () => {
   const table = rows('steps.tsv')
 
   // The boundaries are sampled a billionth either side, because floor and
@@ -129,7 +121,7 @@ describe('steps against v1', () => {
     for (const [count, t, expected] of table) {
       const got = steps(Number(count))(Number(t))
       if (got !== Number(expected)) {
-        wrong.push(`steps(${count}) at t=${t}: v1 ${expected}, ours ${got}`)
+        wrong.push(`steps(${count}) at t=${t}: v9 ${expected}, ours ${got}`)
       }
     }
     expect(wrong).toEqual([])
@@ -143,15 +135,12 @@ describe('steps against v1', () => {
   it('reads a table with rows in it', () => {})
 })
 
-describe('the spring against v1', () => {
+describe('the spring against v9', () => {
   const table = rows('spring.tsv')
 
-  // **No tolerance here either, and that is a real claim rather than an
-  // oversight.** The Rust half needs one unit of last-place slack on `exp`,
-  // because a transcendental is not required to be correctly rounded and its
-  // libm differs from V8's. This side runs on the engine that produced the
-  // vectors, so the same slack would be hiding something rather than allowing
-  // for it.
+  // No tolerance here either: the Rust half needs one unit of last-place slack on
+  // `exp`, whose libm differs from V8's, but this side runs on the engine that
+  // produced the vectors, where the same slack would hide something.
   it('reproduces every row exactly', () => {
     const wrong: string[] = []
     for (const [from, to, stiffness, damping, mass, velocity, t, expected] of table) {
@@ -164,7 +153,7 @@ describe('the spring against v1', () => {
         velocity: Number(velocity),
       })
       if (got !== Number(expected)) {
-        wrong.push(`spring k=${stiffness} c=${damping} m=${mass} at t=${t}: v1 ${expected}, ours ${got}`)
+        wrong.push(`spring k=${stiffness} c=${damping} m=${mass} at t=${t}: v9 ${expected}, ours ${got}`)
       }
     }
     expect(wrong).toEqual([])
@@ -192,21 +181,15 @@ describe('the spring against v1', () => {
 })
 
 describe('the helpers that now have a vector table', () => {
-  // **These were pinned inline and are now walked.** The block that used to sit
-  // here was headed "the pieces with no vector table yet" and said that if a
-  // table arrived, it should be replaced by a walker rather than kept beside
-  // one. These are those tables, generated from v1 at the same tag by the same
-  // method as the original four.
-  //
-  // A `kind` column of `diverges` marks a row where this surface deliberately
-  // differs from v1; those are asserted in their own tests rather than here,
-  // because a ground-truth table cannot both be the reference and record where
-  // we left it.
+  // Generated from v9 at the same tag by the same method as the four tables above.
+  // A `kind` of `diverges` marks a row where this surface deliberately differs;
+  // those are asserted in their own tests, since a reference cannot also record
+  // where we left it.
 
   /** A field, unquoted where the table quoted it. */
   const field = (value: string): string => (value.startsWith('"') ? (JSON.parse(value) as string) : value)
 
-  it('springDuration matches v1 across every regime and rest window', () => {
+  it('springDuration matches v9 across every regime and rest window', () => {
     const table = rows('spring-duration.tsv')
     for (const row of table) {
       const spec = {
@@ -222,7 +205,7 @@ describe('the helpers that now have a vector table', () => {
     }
   })
 
-  it('lerp matches v1, including outside 0..1', () => {
+  it('lerp matches v9, including outside 0..1', () => {
     const table = rows('lerp.tsv')
     for (const row of table) {
       const [from, to, t] = [num(row, 0), num(row, 1), num(row, 2)]
@@ -230,7 +213,7 @@ describe('the helpers that now have a vector table', () => {
     }
   })
 
-  it('mapRange matches v1, clamped and not', () => {
+  it('mapRange matches v9, clamped and not', () => {
     const table = rows('map-range.tsv')
     for (const row of table) {
       const ours = mapRange(num(row, 0), [num(row, 1), num(row, 2)], [num(row, 3), num(row, 4)], { clamp: text(row, 5) === 'true' })
@@ -238,7 +221,7 @@ describe('the helpers that now have a vector table', () => {
     }
   })
 
-  it('formatColor matches v1, in and out of gamut', () => {
+  it('formatColor matches v9, in and out of gamut', () => {
     const table = rows('format-color.tsv')
     for (const row of table) {
       const color = { r: num(row, 0), g: num(row, 1), b: num(row, 2), a: num(row, 3) }
@@ -246,7 +229,7 @@ describe('the helpers that now have a vector table', () => {
     }
   })
 
-  it('interpolate matches v1, with an ease and without', () => {
+  it('interpolate matches v9, with an ease and without', () => {
     const table = rows('interpolate.tsv')
     for (const row of table) {
       const t = num(row, 0)
@@ -260,7 +243,7 @@ describe('the helpers that now have a vector table', () => {
     }
   })
 
-  it('mixColor matches v1 wherever we do not deliberately differ', () => {
+  it('mixColor matches v9 wherever we do not deliberately differ', () => {
     const table = rows('mix-color.tsv')
     let compared = 0
     for (const row of table) {
@@ -275,7 +258,7 @@ describe('the helpers that now have a vector table', () => {
     expect(compared).toBe(7)
   })
 
-  it('mix matches v1 over numbers, arrays and colours', () => {
+  it('mix matches v9 over numbers, arrays and colours', () => {
     const table = rows('mix.tsv')
     for (const row of table) {
       const [kind, agreement, from, to, t, expected] = [text(row, 0), text(row, 2), text(row, 3), text(row, 4), text(row, 5), text(row, 6)]
@@ -295,11 +278,8 @@ describe('the helpers that now have a vector table', () => {
 })
 
 describe('the refusals, which no table can carry', () => {
-  // A `throws` contract is not a vector: nothing about it comes from v1, and
-  // filing it under ground truth would say it did. These stayed inline when the
-  // numeric pins moved into tables -- and this one was dropped in that move and
-  // restored, having been caught by ESLint reporting its import as unused
-  // rather than by anything asserting the behaviour was gone.
+  // A `throws` contract is not a vector: nothing about it comes from v9, so it is
+  // asserted inline rather than filed under ground truth.
 
   it('refuses a spring that carries a range its owner already defines', () => {
     // A track and a sequence step each define their own range and drive the
@@ -315,40 +295,28 @@ describe('the refusals, which no table can carry', () => {
 describe('the divergences the tables record rather than assert', () => {
   // A ground-truth table cannot both be the reference and record where we left
   // it, so the `diverges` rows are asserted here instead -- and asserted as
-  // *differences*, so that quietly adopting v1's rule would fail rather than
+  // *differences*, so that quietly adopting v9's rule would fail rather than
   // pass.
 
-  it('does not clamp t where v1 does', () => {
+  it('does not clamp t where v9 does', () => {
     const black = { r: 0, g: 0, b: 0, a: 1 }
     const white = { r: 255, g: 255, b: 255, a: 1 }
-    // v1 answers '#ffffff' for both of these.
+    // v9 answers '#ffffff' for both of these.
     expect(mixColor(black, white, 1.25)).toEqual({ r: 318.75, g: 318.75, b: 318.75, a: 1 })
     expect(mixColor(black, white, -0.25)).toEqual({ r: -63.75, g: -63.75, b: -63.75, a: 1 })
     expect(formatColor(mixColor(black, white, 1.25))).toBe('color(srgb 1.25 1.25 1.25)')
   })
 
   it('parses the alpha the author wrote, not an eight-bit approximation of it', () => {
-    // This was `it.fails` until the parse boundary was fixed on 4 September
-    // 2026, which is what makes it evidence: it failed on both surfaces, and
-    // passes on both now, so the fix reached the shared parser rather than one
-    // side of it.
-    //
-    // v1 answers 0.102 here, quantising alpha to eight bits. This surface
-    // answered 0.10000000149011612, because `csscolorparser::Color` holds
-    // `f32` and both v2 surfaces read the number through it. Neither was what
-    // the author wrote, and `getComputedStyle` in a browser answers 0.1.
-    //
-    // Only the alphas that are not exact in binary32 ever failed: 0.5, 0.25
-    // and 0.75 read back correctly all along, which is why the round numbers
-    // looked fine.
+    // v9 answers 0.102 here, quantising alpha to eight bits, and reading through an
+    // `f32` gives 0.10000000149011612; `getComputedStyle` answers 0.1, and so does
+    // this. Only alphas inexact in binary32 differ, so 0.5, 0.25 and 0.75 prove
+    // nothing here.
     for (const alpha of [0.1, 0.33, 0.9]) {
       expect(parseColor(`rgba(0, 0, 0, ${alpha})`)?.a, `rgba(0, 0, 0, ${alpha})`).toBe(alpha)
     }
-    // Hex bytes reached the same defect by another route, and are fixed by a
-    // different rule: the byte is known, so the alpha is `byte / 255` exactly
-    // rather than the shortest decimal naming an `f32`. `#000000cc` is the one
-    // that looks like it should escape either way -- 204/255 is exactly 0.8 in
-    // decimal, and 0.8 is still not representable in binary32.
+    // Hex bytes take a different rule: the byte is known, so the alpha is exactly
+    // `byte / 255`. `#000000cc` is 0.8 in decimal and still not exact in binary32.
     expect(parseColor('#0000007f')?.a, '#0000007f').toBe(0x7f / 255)
     expect(parseColor('#000000cc')?.a, '#000000cc').toBe(0.8)
     // A percentage lands on the same f32 as its decimal spelling.
@@ -357,10 +325,8 @@ describe('the divergences the tables record rather than assert', () => {
 })
 
 describe('track, sequence and parallel against their vector tables', () => {
-  // These three were the last helpers pinned inline. The tables came from v1
-  // at the same tag by the same method as the rest, so the numbers below are
-  // the ones the Rust walker reads -- one file, two surfaces, rather than two
-  // independent claims about the same reference.
+  // From v9 at the same tag by the same method as the rest, and the Rust walker
+  // reads the same files: one table, two surfaces.
 
   const page = (time: number) => ({ time })
 
@@ -381,7 +347,7 @@ describe('track, sequence and parallel against their vector tables', () => {
     return motion.totalDuration(num(row, kind + 3))
   }
 
-  it('a track answers where v1 answers', () => {
+  it('a track answers where v9 answers', () => {
     let compared = 0
     for (const row of rows('track.tsv')) {
       const duration = maybe(text(row, 2))
@@ -405,7 +371,7 @@ describe('track, sequence and parallel against their vector tables', () => {
     expect(compared).toBe(132)
   })
 
-  it('a sequence answers where v1 answers', () => {
+  it('a sequence answers where v9 answers', () => {
     for (const row of rows('sequence.tsv')) {
       const steps = text(row, 3)
         .split(';')
@@ -424,7 +390,7 @@ describe('track, sequence and parallel against their vector tables', () => {
     }
   })
 
-  it('a group answers where v1 answers', () => {
+  it('a group answers where v9 answers', () => {
     // The member vocabulary `parallel.tsv` declares in its header. `C` is the
     // discriminating one: with A and B alone, `totalDuration` answers 2
     // whether or not the count reaches the members.
@@ -449,17 +415,14 @@ describe('track, sequence and parallel against their vector tables', () => {
     }
   })
 
-  it('refuses the configurations v1 refuses', () => {
+  it('refuses the configurations v9 refuses', () => {
     // Refusals stay inline for the reason they always have: a `throws`
-    // contract is not a vector, and nothing about it comes from v1.
+    // contract is not a vector, and nothing about it comes from v9.
     expect(() => track({ from: 0, to: 1, duration: 1, ease: 'linear', spring: {} })).toThrow(/not both/)
     expect(() => track({ from: 0, to: 1 })).toThrow(/needs a `duration`/)
     expect(() => track({ from: 0, to: 1, duration: 1, delay: -1 })).toThrow(/delay cannot be negative/)
-    // **The cast is the assertion, not a way around one.** `TrackConfig` no
-    // longer accepts a spring carrying a range, so this line stopped compiling
-    // when the type was narrowed -- which is the narrowing working. The runtime
-    // refusal still has to be covered, because a JavaScript caller has no
-    // compiler to be told by, and reaching it now requires saying so out loud.
+    // The cast is the assertion: `TrackConfig` refuses a spring carrying a range at
+    // compile time, and the runtime refusal is still covered for JavaScript callers.
     const ranged = { from: 0 } as unknown as Omit<SpringConfig, 'from' | 'to'>
     expect(() => track({ from: 0, to: 1, spring: ranged })).toThrow(/cannot carry them/)
     expect(() => sequence({ from: 0, steps: [] })).toThrow(/at least one step/)
@@ -471,11 +434,11 @@ describe('track, sequence and parallel against their vector tables', () => {
 })
 
 describe('colour', () => {
-  // `formatColor` answers are v1's, taken by running it at `v9.0.2` /
+  // `formatColor` answers are v9's, taken by running it at `v9.0.2` /
   // `890eed2`. The out-of-gamut rows matter most: hex cannot hold a channel
   // above 255 or below 0, and clamping would substitute a duller colour
   // without saying so.
-  it('formatColor matches v1', () => {
+  it('formatColor matches v9', () => {
     expect(formatColor({ r: 128, g: 128, b: 128, a: 1 })).toBe('#808080')
     expect(formatColor({ r: 255, g: 0, b: 0, a: 0.5 })).toBe('rgba(255, 0, 0, 0.5)')
     expect(formatColor({ r: 300, g: -20, b: 128, a: 1 })).toBe('color(srgb 1.176471 -0.078431 0.501961)')
@@ -483,18 +446,18 @@ describe('colour', () => {
     expect(formatColor({ r: 127.5, g: 0.4, b: 254.6, a: 1 })).toBe('#8000ff')
   })
 
-  it('mixColor reaches v1 through formatColor', () => {
+  it('mixColor reaches v9 through formatColor', () => {
     const black = { r: 0, g: 0, b: 0, a: 1 }
     const white = { r: 255, g: 255, b: 255, a: 1 }
-    // v1's `mixColor('#000000', '#ffffff', 0.5)` is '#808080'. Ours returns
+    // v9's `mixColor('#000000', '#ffffff', 0.5)` is '#808080'. Ours returns
     // the Rgba and `formatColor` writes the same string.
     expect(formatColor(mixColor(black, white, 0.5))).toBe('#808080')
   })
 
-  // **The deliberate divergence.** v1 clamps `t` here; we do not, because CSS
+  // **The deliberate divergence.** v9 clamps `t` here; we do not, because CSS
   // interpolates colour through an overshooting curve and clamps where the
-  // colour becomes paint. v1 would give '#ffffff' for both of these.
-  it('does not clamp t, where v1 does', () => {
+  // colour becomes paint. v9 would give '#ffffff' for both of these.
+  it('does not clamp t, where v9 does', () => {
     const black = { r: 0, g: 0, b: 0, a: 1 }
     const white = { r: 255, g: 255, b: 255, a: 1 }
     expect(mixColor(black, white, 1.25)).toEqual({ r: 318.75, g: 318.75, b: 318.75, a: 1 })
@@ -512,12 +475,9 @@ describe('colour', () => {
   })
 
   it('refuses a v9 call rather than answering it with nulls', () => {
-    // **The worst line a migration can leave behind.** v9's `mixColor` took two
-    // CSS strings and returned one; passing those here used to answer
-    // `{ r: null, g: null, b: null, a: null }`, which `formatColor` wrote as
-    // `color(srgb NaN NaN NaN / NaN)` -- a valid colour string that paints
-    // nothing anyone asked for, from code that compiles in JavaScript. The cast
-    // is what a JavaScript caller does not need, which is the whole problem.
+    // A v9 `mixColor` call passes two CSS strings, which would otherwise answer
+    // `NaN` channels that `formatColor` writes as a valid colour string painting
+    // nothing. The cast is what a JavaScript caller does not need.
     const v9 = '#000000' as unknown as Rgba
     expect(() => mixColor(v9, v9, 0.5)).toThrow(/takes a colour rather than a string/)
     expect(() => mixColor(v9, v9, 0.5)).toThrow(/parseColor/)
