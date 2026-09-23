@@ -899,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    fn escapes_resolve_to_v1_s_table() {
+    fn escapes_resolve_to_v9_s_table() {
         assert_eq!(unescape(r"a\nb"), "a\nb");
         assert_eq!(unescape(r"a\rb"), "a\nb");
         assert_eq!(unescape(r"a\fb"), "a\nb");
@@ -913,7 +913,7 @@ mod tests {
     }
 
     #[test]
-    fn an_escape_v1_does_not_know_keeps_both_characters() {
+    fn an_escape_v9_does_not_know_keeps_both_characters() {
         assert_eq!(unescape(r"a\qb"), r"a\qb");
         assert_eq!(unescape(r"a\"), r"a\");
         // JavaScript's `.` matches no line terminator, so the pair survives.

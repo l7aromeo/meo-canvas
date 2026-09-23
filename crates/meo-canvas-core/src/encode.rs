@@ -842,7 +842,7 @@ mod tests {
     }
 
     #[test]
-    fn the_animated_set_is_the_one_v1_names() {
+    fn the_animated_set_is_the_one_v9_names() {
         // v9's `AnimatedFormat` in `src/canvas/canvas.type.ts` is
         // `'gif' | 'apng' | 'webp' | 'avif'`, and `meo-skia-canvas`'s traits
         // table agrees. WebP and AVIF animate over a multi-page scene, though

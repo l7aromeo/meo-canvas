@@ -1114,7 +1114,7 @@ mod tests {
 
     /// The GPU is the renderer's decision, defaulting to v9's.
     #[test]
-    fn the_gpu_is_a_renderer_property_with_v1_s_default() {
+    fn the_gpu_is_a_renderer_property_with_v9_s_default() {
         let mut cpu_renderer = renderer();
         cpu_renderer.set_gpu(true);
         assert!(cpu_renderer.gpu(), "v9 defaults the GPU on");

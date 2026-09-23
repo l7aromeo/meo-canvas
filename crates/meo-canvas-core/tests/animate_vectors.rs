@@ -72,7 +72,7 @@ fn at(row: &[&str], index: usize) -> f64 {
 }
 
 #[test]
-fn every_curve_in_the_catalogue_matches_v1() {
+fn every_curve_in_the_catalogue_matches_v9() {
     let table = include_str!("assets/animate/easing.tsv");
     let mut checked = 0;
     for row in rows(table) {
@@ -112,7 +112,7 @@ fn the_catalogue_is_the_whole_catalogue() {
 }
 
 #[test]
-fn a_bezier_solves_where_v1_solves() {
+fn a_bezier_solves_where_v9_solves() {
     let table = include_str!("assets/animate/bezier.tsv");
     for row in rows(table) {
         let (x1, y1) = (at(&row, 0), at(&row, 1));
@@ -128,7 +128,7 @@ fn a_bezier_solves_where_v1_solves() {
 }
 
 #[test]
-fn steps_land_on_the_side_v1_lands_on() {
+fn steps_land_on_the_side_v9_lands_on() {
     let table = include_str!("assets/animate/steps.tsv");
     for row in rows(table) {
         let count = row[0]
@@ -172,7 +172,7 @@ fn ulps_between(ours: f64, theirs: f64) -> i64 {
 const EXP_ULP: i64 = 1;
 
 #[test]
-fn a_spring_is_where_v1_puts_it() {
+fn a_spring_is_where_v9_puts_it() {
     let table = include_str!("assets/animate/spring.tsv");
     let mut regimes = (0, 0, 0);
     for row in rows(table) {
@@ -269,7 +269,7 @@ fn easing_named(name: &str) -> Easing {
 }
 
 #[test]
-fn a_spring_settles_where_v1_settles_for_every_regime() {
+fn a_spring_settles_where_v9_settles_for_every_regime() {
     // `settles_after` had no direct test at all before this table: it was
     // reached only through `Track::duration` and `Sequence::plan`, so it could
     // have drifted with the suite staying green.
@@ -298,7 +298,7 @@ fn a_spring_settles_where_v1_settles_for_every_regime() {
 }
 
 #[test]
-fn a_lerp_lands_where_v1_lands() {
+fn a_lerp_lands_where_v9_lands() {
     // `t` runs outside 0..1 here on purpose: the mix does not clamp, and a
     // table sampling only 0..1 could not tell an unclamped implementation from
     // a clamped one.
@@ -315,7 +315,7 @@ fn a_lerp_lands_where_v1_lands() {
 }
 
 #[test]
-fn a_range_maps_where_v1_maps() {
+fn a_range_maps_where_v9_maps() {
     let table = include_str!("assets/animate/map-range.tsv");
     for row in rows(table) {
         let clamp = field(row[5]) == "true";
@@ -334,7 +334,7 @@ fn a_range_maps_where_v1_maps() {
 }
 
 #[test]
-fn keyframes_land_where_v1_lands() {
+fn keyframes_land_where_v9_lands() {
     let table = include_str!("assets/animate/interpolate.tsv");
     for row in rows(table) {
         let t = at(&row, 0);
@@ -365,7 +365,7 @@ fn keyframes_land_where_v1_lands() {
 }
 
 #[test]
-fn a_mix_lands_where_v1_lands_for_the_kinds_rust_has() {
+fn a_mix_lands_where_v9_lands_for_the_kinds_rust_has() {
     // `kind = array` is skipped: `Animatable` covers `f64` and `Rgba` only, so
     // a Rust caller cannot mix arrays, and the table's `surface` column
     // records the gap. Colour rows are skipped too -- their values are v9's
@@ -436,7 +436,7 @@ fn a_colour_parses_to_the_channels_the_author_wrote() {
 }
 
 #[test]
-fn a_colour_mixes_where_v1_mixes() {
+fn a_colour_mixes_where_v9_mixes() {
     // Asserted to byte precision, all a hex string holds: v9's `mixColor`
     // returns CSS strings and this crate returns `Rgba`, so `127.5` here
     // meets v9's `#808080`, which reads back as 128. The JavaScript walker
@@ -537,7 +537,7 @@ fn answer<M: Sampled<Value = f64>>(
 }
 
 #[test]
-fn a_track_answers_where_v1_answers() {
+fn a_track_answers_where_v9_answers() {
     let table = include_str!("assets/animate/track.tsv");
     let (mut compared, mut skipped) = (0, 0);
     for row in rows(table) {
@@ -567,7 +567,7 @@ fn a_track_answers_where_v1_answers() {
 }
 
 #[test]
-fn a_sequence_answers_where_v1_answers() {
+fn a_sequence_answers_where_v9_answers() {
     let table = include_str!("assets/animate/sequence.tsv");
     let mut compared = 0;
     for row in rows(table) {
@@ -645,7 +645,7 @@ fn member_named(letter: &str) -> Member<f64> {
 }
 
 #[test]
-fn a_group_answers_where_v1_answers() {
+fn a_group_answers_where_v9_answers() {
     // The rows include each member alone as well as in company, so a member
     // built differently here from the JavaScript side is caught directly
     // rather than as a group disagreement whose cause is a guess.

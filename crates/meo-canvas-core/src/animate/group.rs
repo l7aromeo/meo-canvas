@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn a_group_samples_where_v1_samples() {
+    fn a_group_samples_where_v9_samples() {
         // Measured from v9 through the JavaScript surface, for an `outCubic`
         // track 0..100 over 1s beside a sequence 0..4 over 2s: `{x: 57.8125, y:
         // 0.5}` at 0.25s, and a duration of 2, the longer member's.
