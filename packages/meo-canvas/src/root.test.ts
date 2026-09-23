@@ -6,7 +6,7 @@ import type { SideValue } from './arena.js'
 import type { NativeCanvas } from './canvas.js'
 import { Box, Image, Text } from './node.js'
 import type { ColorType } from './index.js'
-import { Root, fetchDeadline, type PageInfo, type RootDependencies, type RootProps } from './root.js'
+import { Root, fetchDeadline, fetchFailure, type PageInfo, type RootDependencies, type RootProps } from './root.js'
 
 /**
  * Slot index of the page count: magic, version, three geometry floats, the three
@@ -583,6 +583,54 @@ describe('an image source that cannot be resolved', () => {
         children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
       }),
     ).rejects.toThrow(/49151/)
+  })
+})
+
+describe('a host whose name does not resolve', () => {
+  /** Node 26's rejection for `http://invalid.invalid/`, field for field as measured. */
+  const lookup = (code: string): TypeError =>
+    new TypeError('fetch failed', {
+      cause: Object.assign(new Error(`getaddrinfo ${code} invalid.invalid`), {
+        code,
+        errno: -3008,
+        syscall: 'getaddrinfo',
+        hostname: 'invalid.invalid',
+      }),
+    })
+
+  it('is host-not-found when the lookup answered, and transport when it could not finish', () => {
+    expect(fetchFailure(lookup('ENOTFOUND'))).toBe('host-not-found')
+    expect(fetchFailure(lookup('EAI_FAIL'))).toBe('host-not-found')
+    // An outage and a system error during the lookup are worth a retry.
+    expect(fetchFailure(lookup('EAI_AGAIN'))).toBe('transport')
+    expect(fetchFailure(lookup('ENETUNREACH'))).toBe('transport')
+    // A refused connection is not a lookup at all.
+    const refused = new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED', syscall: 'connect' }) })
+    expect(fetchFailure(refused)).toBe('transport')
+  })
+
+  it('finds the lookup however deep the cause is, and stops on a cycle', () => {
+    expect(fetchFailure(new Error('outer', { cause: lookup('ENOTFOUND') }))).toBe('host-not-found')
+    const looped: { cause?: unknown } = {}
+    looped.cause = looped
+    expect(fetchFailure(looped)).toBe('transport')
+  })
+
+  it('reaches the warning a caller reads, through the addon', async () => {
+    const real = globalThis.fetch
+    globalThis.fetch = () => Promise.reject(lookup('ENOTFOUND'))
+    try {
+      const canvas = await Root({
+        width: 60,
+        height: 60,
+        children: Image({ src: { url: 'http://invalid.invalid/a.png' }, width: 40, height: 40 }),
+      })
+      expect(canvas.warnings).toHaveLength(1)
+      expect(canvas.warnings[0]?.failure).toBe('host-not-found')
+      canvas.release()
+    } finally {
+      globalThis.fetch = real
+    }
   })
 })
 

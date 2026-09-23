@@ -187,19 +187,26 @@ pub enum FetchFailure {
     /// **Retry a 5xx, do not retry a 4xx**: the first says the server could
     /// not answer now, the second says it will not answer this request.
     Status(u16),
-    /// The host does not resolve.
+    /// The host's name does not resolve: the lookup answered that there is no
+    /// such name, or no address for it.
     ///
     /// **Do not retry; fix the URL, or the network it is being resolved on.**
+    /// A lookup that could not finish -- the resolver unreachable, or saying
+    /// to try again -- is [`FetchFailure::Transport`] instead, because that
+    /// one may well answer on a retry.
     HostNotFound,
     /// The URL is not one this client can use -- no scheme, or no host.
     ///
     /// **Do not retry; fix the URL.** Nothing about the network will change
     /// this.
     BadUrl,
-    /// The connection failed, or failed partway through.
+    /// The connection failed, failed partway through, or the host's name
+    /// could not be looked up at all.
     ///
     /// **Retry.** This is the class where trying again is the right first
-    /// move: a refused connection, a socket that dropped, a read that stopped.
+    /// move: a refused connection, a socket that dropped, a read that stopped,
+    /// a resolver that was unreachable or said to try again, and this crate's
+    /// own timeout.
     Transport,
     /// The image is larger than this renderer fetches.
     ///

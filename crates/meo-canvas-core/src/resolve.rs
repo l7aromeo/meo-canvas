@@ -937,13 +937,7 @@ fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
         failure: classify(&error),
     };
 
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(CONNECT_TIMEOUT))
-        .timeout_global(Some(GLOBAL_TIMEOUT))
-        .build()
-        .into();
-
-    let mut request = agent.get(url);
+    let mut request = agent().get(url);
     for (name, value) in &http.headers {
         request = request.header(name, value);
     }
@@ -998,17 +992,24 @@ const GLOBAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 #[cfg(feature = "net")]
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
-/// `classify` against errors `ureq` really raises.
+/// `classify` against errors the fetch agent really raises, and the lookup
+/// rules behind `HostNotFound` against each platform's own wording.
 #[cfg(all(test, feature = "net"))]
 mod fetch_classification {
-    use super::classify;
+    use super::{LOOKUP_PREFIX, agent, classify, lookup_is_transient, relabel};
     use crate::FetchFailure;
+
+    /// A Unix lookup failure as std builds it: `gai_strerror`'s text after
+    /// [`LOOKUP_PREFIX`], with no OS code.
+    fn unix_lookup(detail: &str) -> std::io::Error {
+        std::io::Error::other(format!("{LOOKUP_PREFIX}{detail}"))
+    }
 
     #[test]
     fn a_url_with_no_scheme_is_the_callers_to_fix_and_not_to_retry() {
         // `BadUri` is the one class a caller can act on without a network at
         // all, and the only one this test can reach without one.
-        let Err(refused) = ureq::get("not-a-url").call() else {
+        let Err(refused) = agent().get("not-a-url").call() else {
             unreachable!("a URL with no scheme is refused")
         };
         assert_eq!(classify(&refused), FetchFailure::BadUrl);
@@ -1016,28 +1017,174 @@ mod fetch_classification {
 
     #[test]
     fn a_host_that_does_not_resolve_is_not_a_transport_failure() {
-        // Separating these two is the point of the classification: a name that
-        // does not resolve will not resolve on a retry, and a socket that
-        // dropped may well connect on one.
-        let Err(refused) = ureq::get("http://invalid.invalid/a.png").call()
-        else {
-            unreachable!("the reserved TLD does not resolve")
-        };
-        assert!(
-            matches!(
-                classify(&refused),
-                FetchFailure::HostNotFound | FetchFailure::Transport
+        // A name that does not resolve will not resolve on a retry, and a
+        // socket that dropped may connect on one. RFC 6761 reserves `.invalid`
+        // never to resolve, so a resolver that answers it is rewriting
+        // NXDOMAIN.
+        let result = agent().get("http://invalid.invalid/a.png").call();
+        let refused = result.err();
+        assert_eq!(
+            refused.as_ref().map(classify),
+            Some(FetchFailure::HostNotFound),
+            "`invalid.invalid` came back as {refused:?}, not as a name that \
+             does not resolve; if this network's resolver answers `.invalid`, \
+             which RFC 6761 reserves, it is rewriting NXDOMAIN"
+        );
+    }
+
+    #[test]
+    fn transient_lookups_by_platform() {
+        // `EAI_AGAIN`'s text on each libc, and the codes std reports.
+        for (code, message, windows, transient) in [
+            (None, "Temporary failure in name resolution", false, true),
+            (None, "Try again", false, true),
+            (
+                None,
+                "nodename nor servname provided, or not known",
+                false,
+                false,
             ),
-            "a resolution failure came back as {:?}",
-            classify(&refused)
+            (None, "Name or service not known", false, false),
+            (None, "Name does not resolve", false, false),
+            (
+                None,
+                "Non-recoverable failure in name resolution",
+                false,
+                false,
+            ),
+            (Some(61), "", false, true),
+            (Some(11001), "", true, false),
+            (Some(11002), "", true, true),
+            (Some(11004), "", true, false),
+            (Some(10050), "", true, true),
+        ] {
+            let text = if code.is_some() {
+                String::from("os error")
+            } else {
+                format!("{LOOKUP_PREFIX}{message}")
+            };
+            assert_eq!(
+                lookup_is_transient(code, &text, windows),
+                transient,
+                "{code:?} {message:?} on windows={windows}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_lookup_answer_becomes_host_not_found() {
+        let answered = relabel(ureq::Error::Io(unix_lookup(
+            "nodename nor servname provided, or not known",
+        )));
+        assert_eq!(classify(&answered), FetchFailure::HostNotFound);
+
+        let outage = relabel(ureq::Error::Io(unix_lookup(
+            "Temporary failure in name resolution",
+        )));
+        assert_eq!(classify(&outage), FetchFailure::Transport);
+
+        let late = relabel(ureq::Error::Timeout(ureq::Timeout::Resolve));
+        assert!(
+            matches!(late, ureq::Error::Timeout(ureq::Timeout::Resolve)),
+            "a lookup that ran out of time came back as {late:?}"
         );
     }
 }
 
-/// What `ureq` reported, as the class a caller branches on. `Io`,
-/// `ConnectionFailed` and `Timeout`, which the timeouts [`fetch`] sets raise,
-/// are the transport and worth a retry; TLS, proxy, protocol, redirect and
-/// cookie failures are `Other`, which a retry does not fix.
+/// The agent every fetch goes through: this crate's bounds, and a resolver
+/// that tells a name that does not exist from a lookup that could not finish.
+#[cfg(feature = "net")]
+fn agent() -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_global(Some(GLOBAL_TIMEOUT))
+        .build();
+    ureq::Agent::with_parts(
+        config,
+        ureq::unversioned::transport::DefaultConnector::default(),
+        Lookup::default(),
+    )
+}
+
+/// `ureq`'s own resolver, with its failures passed through [`relabel`].
+/// `ureq` raises `HostNotFound` only for a lookup that succeeds with no usable
+/// address; a lookup that fails arrives as `Io`, which reads as transport.
+#[cfg(feature = "net")]
+#[derive(Debug, Default)]
+struct Lookup(ureq::unversioned::resolver::DefaultResolver);
+
+#[cfg(feature = "net")]
+impl ureq::unversioned::resolver::Resolver for Lookup {
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error>
+    {
+        self.0.resolve(uri, config, timeout).map_err(relabel)
+    }
+}
+
+/// A failed lookup as `HostNotFound`, unless it was an outage, which stays
+/// `Io` and so reads as transport. A lookup that ran out of time is already
+/// `Timeout` and passes through, as does every other error.
+#[cfg(feature = "net")]
+fn relabel(error: ureq::Error) -> ureq::Error {
+    match error {
+        ureq::Error::Io(io)
+            if !lookup_is_transient(
+                io.raw_os_error(),
+                &io.to_string(),
+                cfg!(windows),
+            ) =>
+        {
+            ureq::Error::HostNotFound
+        }
+        other => other,
+    }
+}
+
+/// Whether a failed lookup was an outage rather than an answer. Windows gives
+/// its socket error code; Unix gives an OS code only for `EAI_SYSTEM`, and
+/// otherwise `gai_strerror`'s text after [`LOOKUP_PREFIX`], so that text is
+/// what tells `EAI_AGAIN` apart. Pinned by `transient_lookups_by_platform`.
+#[cfg(feature = "net")]
+fn lookup_is_transient(
+    code: Option<i32>,
+    message: &str,
+    windows: bool,
+) -> bool {
+    match code {
+        Some(code) if windows => !WINSOCK_ANSWERS.contains(&code),
+        Some(_) => true,
+        None => message
+            .strip_prefix(LOOKUP_PREFIX)
+            .is_some_and(|detail| LOOKUP_TRANSIENT.contains(&detail)),
+    }
+}
+
+/// What std writes before `gai_strerror`'s text when a Unix lookup fails.
+#[cfg(feature = "net")]
+const LOOKUP_PREFIX: &str = "failed to lookup address information: ";
+
+/// `gai_strerror(EAI_AGAIN)`: macOS 27 (measured) and glibc
+/// (`gai_strerror-strs.h`) give the first, and musl (measured, Alpine 3.24.1)
+/// the second. Every other text is a name that does not resolve.
+#[cfg(feature = "net")]
+const LOOKUP_TRANSIENT: [&str; 2] =
+    ["Temporary failure in name resolution", "Try again"];
+
+/// The Windows socket codes that answer a lookup: `WSAHOST_NOT_FOUND`,
+/// `WSANO_RECOVERY` and `WSANO_DATA`. Any other code, `WSATRY_AGAIN` (11002)
+/// among them, is an outage.
+#[cfg(feature = "net")]
+const WINSOCK_ANSWERS: [i32; 3] = [11001, 11003, 11004];
+
+/// What `ureq` reported, as the class a caller branches on: `HostNotFound`
+/// from [`relabel`]; `Io`, `ConnectionFailed` and `Timeout` as transport,
+/// worth a retry; TLS, proxy, protocol, redirect and cookie failures as
+/// `Other`, which a retry does not fix.
 #[cfg(feature = "net")]
 const fn classify(error: &ureq::Error) -> FetchFailure {
     use crate::FetchFailure;
