@@ -233,11 +233,13 @@ ${
 ${rows}
       </ul>
 
-      <!-- The footer links the source and npm. The crate is published on
-           crates.io and docs.rs, and neither is linked from this page. -->
+      <!-- The source, both registries, and the Rust API reference on docs.rs.
+           Fixed URLs, so the page builds without the network. -->
       <footer>
         <a href="https://github.com/l7aromeo/meo-canvas">Source</a>
         <a href="https://www.npmjs.com/package/meo-canvas">npm</a>
+        <a href="https://crates.io/crates/meo-canvas">crates.io</a>
+        <a href="https://docs.rs/meo-canvas">Rust API</a>
       </footer>
     </div>
   </body>
