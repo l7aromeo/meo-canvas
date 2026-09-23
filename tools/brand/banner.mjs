@@ -1,39 +1,7 @@
-// The README banners, drawn by meo-canvas.
-//
-// Run from a checkout:
-//
-//     just brand      # or: node tools/brand/banner.mjs
-//
-// **Drawn by the library rather than by hand, so the banner is proof rather
-// than illustration.** If layout, text shaping, gradients, shadows, paths or
-// the easing catalogue break, the banner breaks with them — and it exercises
-// the animated-encode path at a frame count and size nothing else here does.
-//
-// What it shows is the thing this library is unusual for: **it computes
-// motion.** Four cards, each drawing one curve from the easing catalogue as a
-// stroked path, with a dot running that curve and a bar following it. The
-// fourth is a spring, so the row covers a table lookup, a bezier, a step
-// function and an integrated physical model — which is the whole animation
-// surface in one picture.
-//
-// The motion is a triangle rather than a sawtooth: `t` runs 0 → 1 → 0 across
-// the cycle, so the loop closes without a jump. A banner that snaps back on
-// every repeat reads as a broken GIF.
-//
-// # Why four files
-//
-// GitHub honours `<picture>` and `prefers-color-scheme`; npm and crates.io
-// strip `<source>` and render the `<img>`. So there is a dark one, a light one,
-// and a theme-neutral one for the two registries — neutral meaning it reads on
-// white and on dark, which rules out a near-white or near-black field. The
-// still PNG is the first frame, for anywhere that will not animate.
-//
-// # Fonts
-//
-// No family is registered, so this draws with what the host has. The committed
-// files were rendered on macOS; regenerating on another machine will set the
-// type differently, which is a property of the picture rather than a defect.
-// See `docs/assets/brand/README.md`.
+// The README banners, drawn by meo-canvas: `just brand`, or `node tools/brand/banner.mjs`.
+// Four easing curves stroked as paths, each with a dot and a bar running a closed
+// 0 -> 1 -> 0 loop, so a break in layout, text, paths or animated encode shows here.
+// Dark, light, and neutral for npm and crates.io; fonts are the host's (`docs/assets/brand/README.md`).
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -71,11 +39,8 @@ const PLOT_BOX = { positionType: 'absolute', position: { top: 0, left: 0 }, widt
 const dot = (x, y) => `M ${(x * 100).toFixed(2)},${y.toFixed(2)} m -3.2,0 a 3.2,3.2 0 1,0 6.4,0 a 3.2,3.2 0 1,0 -6.4,0`
 
 /**
- * The four curves, chosen to span the kinds rather than to look different.
- *
- * A table lookup, a curve with overshoot, one that oscillates, and a spring
- * that is integrated rather than evaluated. Anything this library can animate
- * is one of those four shapes.
+ * The four curves, one of each kind this library animates: a table lookup, an
+ * overshoot, an oscillation, and a spring that is integrated rather than evaluated.
  */
 const CARDS = [
   { name: 'outCubic', at: t => ease('outCubic', t) },
@@ -90,12 +55,9 @@ const CARDS = [
 ]
 
 /**
- * Light and dark and neutral are one drawing with the palette swapped, so the
- * three files cannot end up saying different things about the project.
- *
- * `neutral` is the one npm and crates.io show, and it is deliberately neither
- * end of the range: a panel dark enough to carry bright accents and light
- * enough not to become a hole in a white page.
+ * Light, dark and neutral are one drawing with the palette swapped. `neutral`, which
+ * npm and crates.io show, is a panel dark enough for bright accents and light
+ * enough not to be a hole in a white page.
  */
 const THEMES = {
   dark: { field: '#0b0e14', panel: '#141926', edge: '#232a3d', ink: '#e8ecf4', muted: '#8b93a7', accent: '#f2aa4c', trace: '#3c465f' },
@@ -211,12 +173,9 @@ async function draw(name, theme, files) {
 }
 
 /**
- * The drawing, separately from the command that writes it.
- *
- * Exported so a frame can be pulled at an arbitrary point in the loop without
- * re-implementing the scene beside it — which is how the seam at the wrap gets
- * checked, and how the first version's escaped paths were found. The command
- * half runs only when this file *is* the command.
+ * The drawing, exported apart from the command that writes it, so a frame can be
+ * pulled anywhere in the loop -- how the seam at the wrap is checked. The command
+ * half runs only when this file is the command.
  */
 export { CARDS, DURATION, FPS, HEIGHT, THEMES, WIDTH, frame }
 
