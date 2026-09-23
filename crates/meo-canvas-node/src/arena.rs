@@ -99,8 +99,7 @@
 //! expects left alone -- and rich text of one run is byte-identical to plain
 //! text of one run. Without a discriminant the decoder has to guess, and either
 //! guess loses something: parse everything and `RichText` can no longer carry a
-//! literal `<`, parse nothing and a JavaScript caller has no rich text at all,
-//! which is what v1 gave them and what v2 took away.
+//! literal `<`, parse nothing and a JavaScript caller has no rich text at all.
 //!
 //! So the payload says which. It is spelled as the `opt<str>` the format
 //! already has rather than as a new tag: present means "parse this", absent
@@ -121,12 +120,9 @@
 //! slot layout widened. Appending a property to a table is not such a change —
 //! its bit is simply never set by an older writer.
 
-/// Reads the fetches the JavaScript half already attempted.
-///
-/// **Its own function rather than a `Vec` impl**, because the shape is a
-/// struct of four fields and the arena's generic list reader is for values
-/// that know how to read themselves. Keeping it here puts the whole of the
-/// attempt's wire layout in one place beside the header that carries it.
+/// Reads the fetches the JavaScript half already attempted: its own function
+/// rather than a `Vec` impl, since an attempt is four fields rather than a
+/// value that reads itself, and it keeps the layout beside its header.
 fn read_attempts(
     input: &mut Reader<'_>,
 ) -> Result<Vec<ImageFetchAttempt>, ArenaError> {
@@ -142,13 +138,9 @@ fn read_attempts(
     Ok(out)
 }
 
-/// One failure classification, with its HTTP status behind the tag.
-///
-/// **The status lives inside `Status` rather than in a slot beside it**, so a
-/// `Status` with no code cannot be written and cannot be read. The alternative
-/// -- two fields and a rule that they agree -- makes the disagreement
-/// representable, and the only thing to do with it is invent a number that a
-/// consumer is documented to branch on.
+/// One failure classification, with its HTTP status behind the tag, so a
+/// `Status` with no code can be neither written nor read -- the only thing to
+/// do with one would be to invent a number a consumer branches on.
 fn read_failure(
     input: &mut Reader<'_>,
 ) -> Result<ImageFetchFailure, ArenaError> {
@@ -194,11 +186,9 @@ use meo_canvas_scene::{
 };
 use value::ArenaValue;
 
-/// The number every arena starts with.
-///
-/// `MCAR` read as four big-endian bytes. A recognisable constant rather than a
-/// version alone, so an arena assembled from the wrong buffer fails at slot
-/// zero instead of decoding into a plausible scene.
+/// The number every arena starts with: `MCAR` as four big-endian bytes, so an
+/// arena assembled from the wrong buffer fails at slot zero instead of
+/// decoding into a plausible scene.
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
@@ -206,9 +196,8 @@ pub const VERSION: f64 = 6.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
-/// The same bound the byte format uses, and for the same reason: the count is
-/// read before any node is, so a corrupt slot would otherwise reserve whatever
-/// it happened to say.
+/// The byte format's bound, for its reason: the count is read before any node
+/// is, so a corrupt slot would otherwise reserve whatever it happened to say.
 pub const MAX_NODES: usize = 1 << 20;
 
 /// One value the arena could not carry itself.
@@ -220,11 +209,9 @@ pub enum SideValue {
     Bytes(Vec<u8>),
 }
 
-/// The side array an arena's indices point into.
-///
-/// Built once by the addon from the JavaScript array. Owning it rather than
-/// borrowing V8 handles is what lets the decoder be plain Rust and be tested
-/// without a Node process.
+/// The side array an arena's indices point into, built once by the addon.
+/// Owning it rather than borrowing V8 handles lets the decoder be plain Rust,
+/// testable without a Node process.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Values(Vec<SideValue>);
 
@@ -270,11 +257,9 @@ pub enum ArenaError {
         /// How many slots the arena holds.
         length: usize,
     },
-    /// A slot that must hold an exact integer held something else.
-    ///
-    /// A double carries fractions, so "the writer computed an index" and "the
-    /// writer computed a coordinate" are the same type on the wire and only
-    /// this check separates them.
+    /// A slot that must hold an exact integer held something else: an index
+    /// and a coordinate are both doubles on the wire, and only this separates
+    /// them.
     NotAnInteger {
         /// The slot.
         slot: usize,
@@ -458,23 +443,14 @@ pub(crate) struct Reader<'a> {
     slots: &'a [f64],
     values: &'a Values,
     offset: usize,
-    /// What the caller wrote that could not be used.
-    ///
-    /// Collected here because the decode is where this side parses markup, and
-    /// a dropped tag is indistinguishable from an absent one by the time the
-    /// scene exists. The same reason the caller's property name lives here.
+    /// What the caller wrote that could not be used, collected here because
+    /// the decode is where this side parses markup, and a dropped tag looks
+    /// absent once the scene exists.
     found: Vec<Diagnostic>,
-    /// The property being decoded, in the spelling its caller wrote.
-    ///
-    /// The decoder is positional and carries no field names of its own, which
-    /// is why its errors quoted arena offsets. An offset is a position in a
-    /// wire format the caller never saw, and it moves with the rest of the
-    /// scene -- the same mistake in two different trees produced two different
-    /// numbers, so the message could not be searched for or matched on.
-    ///
-    /// `None` outside a group -- a node tag, a child count -- where there is
-    /// no caller property and inventing one would be worse than the
-    /// offset.
+    /// The property being decoded, in the spelling its caller wrote, so an
+    /// error names it rather than an arena offset the caller never saw and
+    /// that moves with the scene. `None` outside a group -- a node tag, a
+    /// child count -- where there is no caller property to name.
     property: Option<&'static str>,
     /// The values a probe stream hands back, if this reader is one.
     ///
@@ -484,21 +460,10 @@ pub(crate) struct Reader<'a> {
     probe: Option<ProbeFills>,
 }
 
-/// What a probe hands back, by what the read asks for.
-///
-/// A probe stream cannot be one number. `bounded_integer` refuses a fractional
-/// slot, so a tag, a count, an enum index and a side index all have to be whole
-/// — and a fill that satisfies them is `1.0`, which is the one value at which a
-/// hundredfold units error between the two surfaces encodes identically.
-/// `Length::Percent(1.0)` is `'100%'`, and `'1%'` written without the division
-/// is the same number, so a probe of it agrees with a writer that never
-/// divides. That blind spot has already shipped a user-visible bug: `'50%'`
-/// rendered at five thousand per cent, and every check in this project passed.
-///
-/// So the probe answers by what the reader wants rather than by one constant:
-/// whole where a whole number is required, fractional where the slot is taken
-/// as it is. The fractional half is where a percentage, an offset, a radius and
-/// a scale factor all land.
+/// What a probe hands back, by what the read asks for: whole where a whole
+/// number is required, fractional where the slot is taken as written. One
+/// constant cannot serve both, since `1.0` is where a hundredfold units error
+/// encodes identically -- `'1%'` with the division forgotten is `'100%'`.
 #[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProbeFills {
@@ -508,14 +473,9 @@ pub(crate) struct ProbeFills {
     fraction: f64,
 }
 
-/// How many ones a probe stream carries.
-///
-/// Thirty-two, comfortably past the widest single property. The largest is
-/// `Option<BackgroundImage>` at fourteen slots -- a presence flag, a tagged
-/// source with its side index, a repeat mode, two optional lengths and two
-/// lengths -- and `Sides<Option<Length>>` is twelve. A stream longer than a
-/// property needs costs nothing, because a read stops when its value is
-/// complete; one slot short and the probe silently has no value, which is what
+/// How many ones a probe stream carries: past the widest property,
+/// `Option<BackgroundImage>` at fourteen slots. Extra slots cost nothing; one
+/// short and the probe silently has no value, which
 /// `every_property_has_a_probe_that_differs_from_its_default` catches.
 #[cfg(test)]
 const PROBE_SLOTS: usize = 32;
@@ -527,41 +487,26 @@ const PROBE_SLOTS: usize = 32;
 #[cfg(test)]
 const PROBE_FILL: f64 = 1.0;
 
-/// The value handed to a read that takes its slot as written.
-///
-/// A quarter, and the two properties of it that matter are that it is exact in
-/// an `f32` — so no case's expectation carries a rounding argument — and that
-/// it is neither of the two numbers at which a hundredfold units error is
-/// invisible. `1.0` is `'100%'` and is also what `'1%'` becomes if the division
-/// is forgotten; `0.0` is a fixed point of any scaling at all.
+/// The value handed to a read that takes its slot as written: a quarter,
+/// exact in an `f32`, and neither `1.0` -- also `'1%'` with the division
+/// forgotten -- nor `0.0`, a fixed point of any scaling.
 #[cfg(test)]
 const PROBE_FRACTION: f64 = 0.25;
 
-/// The second pair, tried where the first lands on a property's own default.
-///
-/// Nothing needs it today: the only two properties that defaulted to the first
-/// fill were `flex_shrink` and `opacity` at `1.0`, and both are read through
-/// the fractional half, which is now a quarter. It is kept because the escape
-/// hatch is the mechanism rather than the constant — a property added with a
-/// default of `0.25` would have no probe at all, and
-/// `every_property_has_a_probe_that_differs_from_its_default` would say so
-/// rather than a case quietly exercising no write path.
-///
-/// Both halves differ from the first pair, since either could be the one that
-/// collides. `2` is still a valid reading of every tagged type, and `0.5` is
-/// still exact in an `f32`.
+/// The second pair, tried where the first lands on a property's default, so a
+/// property defaulting to `0.25` still gets a probe. Both halves differ from
+/// the first pair: `2` reads as every tagged type, and `0.5` is exact in an
+/// `f32`.
 #[cfg(test)]
 const PROBE_FILL_ALTERNATE: ProbeFills = ProbeFills {
     integer: 2.0,
     fraction: 0.5,
 };
 
-/// The pairs a probe tries, in order.
-///
-/// Trying rather than listing which property needs which: a list would be a
-/// second table to keep in step, and
+/// The pairs a probe tries, in order, rather than a second table of which
+/// property needs which.
 /// `every_property_has_a_probe_that_differs_from_its_default` fails if neither
-/// pair produces a distinguishable value.
+/// pair gives a distinguishable value.
 #[cfg(test)]
 pub(crate) const fn probe_fills() -> [ProbeFills; 2] {
     [
@@ -573,35 +518,14 @@ pub(crate) const fn probe_fills() -> [ProbeFills; 2] {
     ]
 }
 
-/// The slot stream and side array a probe value is read out of.
-///
-/// A stream of one value throughout, which is a valid reading for every type
-/// in the format: a number is the fill, a `bool` is true, an enum takes the
-/// variant at that index, an `Option` is present, a list holds that many items,
-/// and a tagged value takes that tag. Two side values so a string index of one
-/// resolves.
-///
-/// What each read actually receives is decided by [`ProbeFills`], not by these
-/// slots. See [`probe_fills`].
+/// The text every probe's string slots hold.
 #[cfg(test)]
 pub(crate) const PROBE_TEXT: &str = "#0a141e";
 
-/// Whether [`PROBE_TEXT`] can be an HTTP header name.
-///
-/// **A third constraint on the sample, and the silent one.** The property
-/// table fills every `String` slot with it, and `background_image`'s source is
-/// a URL, so since [`meo_canvas_scene::node::HttpOptions`] arrived the sample
-/// is also that source's header **name**. The other surface builds the same
-/// case through the platform's `Headers`, which throws `TypeError` on a name
-/// outside the token grammar -- so a sample carrying a space, a colon or any
-/// non-ASCII byte makes that case impossible to construct there, and the
-/// agreement test fails as a thrown exception rather than a byte mismatch.
-/// `#` happens to be a token character; a great many plausible replacements
-/// are not.
-///
-/// RFC 9110's `tchar`. Asserted by `the_probe_text_is_a_valid_header_name` so
-/// a replacement fails here, naming the reason, rather than on the other
-/// surface with a diagnosis nobody reaches quickly.
+/// Whether [`PROBE_TEXT`] is RFC 9110's `tchar`: the sample also fills
+/// `background_image`'s URL header name, and the other surface's `Headers`
+/// throws on a name outside that grammar. Asserted by
+/// `the_probe_text_is_a_valid_header_name`.
 #[cfg(test)]
 pub(crate) fn is_http_token(text: &str) -> bool {
     !text.is_empty()
@@ -610,20 +534,19 @@ pub(crate) fn is_http_token(text: &str) -> bool {
         })
 }
 
+/// The slot stream and side array a probe value is read out of: a valid
+/// reading for every type in the format, and two side values so a string index
+/// of one resolves. What each read receives is decided by [`ProbeFills`].
 #[cfg(test)]
 pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
     (
-        // The contents no longer decide the values a probe reads -- the reader
-        // substitutes by what each read asks for -- but the length still does:
-        // a stream shorter than a property is a truncation, which is the check
-        // that a probe reaching no value is caught.
+        // The length, not the contents, is what matters: the reader
+        // substitutes by what each read asks for, and a stream shorter
+        // than a property is a truncation.
         [PROBE_FILL; PROBE_SLOTS],
-        // A colour string rather than an arbitrary word: every text read in
-        // the arena takes whatever it is given, but a colour is parsed, so a
-        // probe value that is not a colour fails the one property that reads
-        // one. `#0a141e` is a family name nobody would write and a colour
-        // every reader accepts, which is the pair of constraints this value
-        // has to satisfy at once.
+        // A colour string, since a colour is parsed and a probe that is not
+        // one fails the property that reads it; `#0a141e` is also a family
+        // name nobody would write.
         Values::new(vec![
             SideValue::Text(PROBE_TEXT.to_owned()),
             SideValue::Text(PROBE_TEXT.to_owned()),
@@ -632,8 +555,6 @@ pub(crate) fn probe_slots() -> ([f64; PROBE_SLOTS], Values) {
 }
 
 impl<'a> Reader<'a> {
-    /// Names the property whose value is about to be read.
-    ///
     /// Records what a nested parse could not use.
     pub(crate) fn report(&mut self, found: Vec<Diagnostic>) {
         self.found.extend(found);
@@ -644,8 +565,9 @@ impl<'a> Reader<'a> {
         self.found
     }
 
-    /// Called once per property by a group's decode, so an error raised
-    /// anywhere beneath it can say what the caller set.
+    /// Names the property whose value is about to be read, once per property
+    /// by a group's decode, so an error raised beneath it can say what the
+    /// caller set.
     pub(crate) const fn set_property(&mut self, property: &'static str) {
         self.property = Some(property);
     }
@@ -707,12 +629,9 @@ impl<'a> Reader<'a> {
         Ok(value)
     }
 
-    /// Takes the next slot exactly as the stream holds it.
-    ///
-    /// The bounds check and the offset advance, with no probe substitution.
-    /// Every read goes through here so a truncated stream is still an error
-    /// during a probe — the length is what
-    /// `every_property_has_a_probe_that_differs_from_its_default` rests on.
+    /// Takes the next slot exactly as the stream holds it: the bounds check and
+    /// the offset advance, with no probe substitution, so a truncated stream is
+    /// an error even during a probe.
     fn raw_slot(&mut self) -> Result<f64, ArenaError> {
         let value = self.slots.get(self.offset).copied().ok_or(
             ArenaError::Truncated {
@@ -724,14 +643,10 @@ impl<'a> Reader<'a> {
         Ok(value)
     }
 
-    /// Takes a presence flag, which is a whole number.
-    ///
-    /// Separate from [`Reader::slot`] so a probe can tell the two apart: the
-    /// fractional fill is for slots read as written, and a presence flag is not
-    /// one of those. The value is returned unvalidated so the caller still
-    /// reports [`ArenaError::NotAPresenceFlag`] for anything that is neither
-    /// present nor absent, which names the mistake better than "not an
-    /// integer" would.
+    /// Takes a presence flag, separate from [`Reader::slot`] so a probe gives
+    /// it a whole number. Unvalidated, so the caller reports
+    /// [`ArenaError::NotAPresenceFlag`], which names the mistake better than
+    /// "not an integer" would.
     pub(crate) fn flag(&mut self) -> Result<f64, ArenaError> {
         let value = self.raw_slot()?;
         #[cfg(test)]
@@ -754,11 +669,8 @@ impl<'a> Reader<'a> {
         Ok(value)
     }
 
-    /// Takes a small non-negative tag.
-    ///
-    /// Separate from [`Reader::integer`] so a `match` is written against whole
-    /// numbers rather than against `f64` patterns, which do not express what a
-    /// discriminant is.
+    /// Takes a small non-negative tag, separate from [`Reader::integer`] so a
+    /// `match` is written against whole numbers rather than `f64` patterns.
     pub(crate) fn tag(&mut self) -> Result<u32, ArenaError> {
         self.bounded_integer(f64::from(u32::MAX))
             .map(|value| value as u32)
@@ -777,11 +689,9 @@ impl<'a> Reader<'a> {
         Ok(value)
     }
 
-    /// Takes a count, bounded by the slots that could possibly back it.
-    ///
-    /// Every element costs at least one slot, so a count above the remaining
-    /// length is a corrupt slot rather than a large list, and reserving for it
-    /// would honour a number the arena cannot back.
+    /// Takes a count, bounded by the slots that could back it: every element
+    /// costs at least one slot, so a larger count is a corrupt slot rather than
+    /// a large list.
     pub(crate) fn count(&mut self) -> Result<usize, ArenaError> {
         let slot = self.offset;
         let value = self.integer()?;
@@ -792,13 +702,9 @@ impl<'a> Reader<'a> {
         Ok(value as usize)
     }
 
-    /// Takes an index into the side array.
-    ///
-    /// Bounded by what a `u32` holds rather than by the slots remaining, as
-    /// [`Reader::count`] is: an index names a place in the *other* array, so
-    /// the arena's own length says nothing about whether it is plausible. The
-    /// bound that matters is the side array's length, and missing it there is
-    /// [`ArenaError::NoSuchValue`], which names the index a writer got wrong.
+    /// Takes an index into the side array, bounded by a `u32` rather than the
+    /// slots remaining: it names a place in the other array, and missing there
+    /// is [`ArenaError::NoSuchValue`], naming the index a writer got wrong.
     pub(crate) fn index(&mut self) -> Result<usize, ArenaError> {
         self.bounded_integer(f64::from(u32::MAX))
             .map(|value| value as usize)
@@ -936,24 +842,10 @@ arena_group! {
     }
 }
 
-/// Reads a scene out of an arena and its side values.
-///
-/// Every child index and page root is checked against the arena the decoder
-/// built, so a scene from here always satisfies [`Scene::validate`].
+/// Reads a scene, and what the caller wrote that was unusable, out of an arena.
 ///
 /// # Errors
-///
-/// Returns [`ArenaError`] if the arena is not one, was written by another
-/// revision, ends early, holds a slot the format cannot read, names a side
-/// value that is not there, describes something that is not a forest of pages,
-/// or carries slots past the end of the scene.
-/// The scene an arena describes, and what the caller wrote that was unusable.
-///
-/// **Widened rather than given a reporting twin**, which is the opposite of
-/// `markup::parse_reporting` and for a reason that does not hold here: this
-/// crate is the addon, not a library anyone depends on, so there is no caller
-/// to spare a signature change -- and two entry points with no external users
-/// would be two things to keep in step for nobody.
+/// [`ArenaError`] for anything unreadable, or a tree that is not a forest.
 pub fn decode(
     slots: &[f64],
     values: &Values,
@@ -1002,11 +894,9 @@ pub fn decode(
         color_type,
         color_space,
         on_image_error,
-        // **Empty on purpose, and the arena has no slot for it.** The
-        // JavaScript half merges `RootProps.httpOptions` into each source
-        // before it writes, so what crosses is already resolved; carrying the
-        // scene-wide set as well and merging again here would apply the merge
-        // twice. `Scene::http` is the byte format's and the Rust author's.
+        // Empty on purpose: the JavaScript half merges `RootProps.httpOptions`
+        // into each source before writing, so merging the scene-wide set again
+        // here would apply it twice.
         http: meo_canvas_scene::node::HttpOptions::new(),
         image_fetch_attempts: attempts,
         nodes: Vec::new(),
@@ -1026,10 +916,8 @@ pub fn decode(
     Ok((scene, input.into_found()))
 }
 
-/// Reads one node and its subtree, appending them to the arena.
-///
-/// Recursion follows the record's own nesting, and the depth is bounded by
-/// [`MAX_NODES`] because every node costs at least one slot and the count is
+/// Reads one node and its subtree, appending them to the arena. The recursion
+/// depth is bounded by [`MAX_NODES`]: every node costs a slot, and the count is
 /// checked before each push.
 fn read_node(
     input: &mut Reader<'_>,
@@ -1178,11 +1066,8 @@ mod tests {
         is_http_token, layout, paint, text,
     };
 
-    /// The sample has to be a header name, and nothing else says so.
-    ///
-    /// See [`is_http_token`] for why: `background_image`'s probe source is a
-    /// URL, so the sample fills its header name too, and the other surface
-    /// cannot construct a name outside the token grammar at all.
+    /// The sample has to be a header name, and nothing else says so: see
+    /// `is_http_token`.
     #[test]
     fn the_probe_text_is_a_valid_header_name() {
         assert!(
@@ -1197,12 +1082,9 @@ mod tests {
         }
     }
 
-    /// Builds an arena the way the TypeScript writer is specified to.
-    ///
-    /// A second implementation of the format from the documentation rather
-    /// than a call into the decoder's own helpers: the two agreeing is the
-    /// property worth testing, and a test that shared the encoder's code with
-    /// the decoder would agree with itself.
+    /// Builds an arena the way the TypeScript writer is specified to: a second
+    /// implementation from the documentation, since one sharing the decoder's
+    /// helpers would agree with itself.
     #[derive(Default)]
     struct Writer {
         slots: Vec<f64>,
@@ -1278,19 +1160,16 @@ mod tests {
         }
     }
 
-    /// The simplest complete arena: one page, one empty container, no name,
-    /// no children.
     /// Slot index of the page count in a header whose surface says nothing:
-    /// magic, version, four geometry slots -- width, height, the
-    /// content-height flag and scale -- three absent surface discriminants,
-    /// the one slot `on_image_error` always occupies, and the one holding the
-    /// count of fetch attempts. Named rather than written as a number at each
-    /// use, so a header change moves one line instead of three.
+    /// magic and version, four geometry slots, three absent surface
+    /// discriminants, `on_image_error`'s slot and the fetch-attempt count.
     const PAGE_COUNT_SLOT: usize = 2 + 4 + 3 + 1 + 1;
 
     /// Slot index of the first node's tag, one past the page count.
     const FIRST_TAG_SLOT: usize = PAGE_COUNT_SLOT + 1;
 
+    /// The simplest complete arena: one page, one empty container, no name,
+    /// no children.
     fn minimal() -> (Vec<f64>, Values) {
         Writer::default()
             .header(Size::new(40.0, 20.0), 2.0, 1)
@@ -1385,11 +1264,9 @@ mod tests {
         );
     }
 
-    /// The reason a mask slot is 53 bits and not 64.
-    ///
-    /// A double is exact on integers only to 2^53, so bit 53 of a mask packed
-    /// into one slot is lost. The reader refuses the value rather than reading
-    /// a mask with properties silently missing.
+    /// Why a mask slot is 53 bits and not 64: a double is exact on integers
+    /// only to 2^53, so the reader refuses a wider value rather than read a
+    /// mask with properties silently missing.
     #[test]
     fn a_mask_wider_than_a_double_can_hold_is_refused() {
         let too_wide = (1_u64 << BITS_PER_SLOT) as f64;
@@ -1700,10 +1577,8 @@ mod tests {
 
     #[test]
     fn every_css_colour_syntax_reaches_the_scene() {
-        // The point of the change: a caller writes what CSS lets them write,
-        // and `parse_color` is the only thing that reads it. v1 forwarded the
-        // string and took all of these; the packed-channel format took the
-        // first two and refused the rest.
+        // A caller writes what CSS lets them write, and `parse_color` is the
+        // only thing that reads it.
         for (written, expected) in [
             (
                 "#1122 33 44".replace(' ', ""),
@@ -1787,18 +1662,10 @@ mod tests {
         ));
     }
 
-    /// A colour failure names the property the caller wrote, not the field.
-    ///
-    /// The two spellings differ for eleven of the sixty-two properties, and
-    /// `border_color_all` is the one that bites: a caller writes `borderColor`,
-    /// there is no `borderColorAll` on the surface, and a message naming it
-    /// sends them grepping their own source for a property that does not exist.
-    /// Deriving the name from the Rust field produced exactly that, which is
-    /// why the table carries the caller's spelling instead.
-    ///
-    /// The slot form is asserted beside it because it is what a read outside a
-    /// group still produces, and a repair that removed it would leave those
-    /// errors with no location at all.
+    /// A colour failure names the property the caller wrote, not the field:
+    /// eleven of sixty-two differ, and a caller writes `borderColor` where the
+    /// field is `border_color_all`. The slot form beside it is what a read
+    /// outside a group produces.
     #[test]
     fn a_colour_failure_names_the_caller_s_property() {
         let named = ArenaError::UnreadableColor {
@@ -1848,12 +1715,9 @@ mod tests {
         );
     }
 
-    /// Every property in the tables carries a caller-facing name.
-    ///
-    /// The macro requires it, so this cannot fail while the crate compiles --
-    /// which is the point. The name is written beside the field in the table
-    /// that defines the wire format, so adding a property without one is a
-    /// build error rather than a message that quotes an arena offset.
+    /// Every property carries a caller-facing name. The macro requires it, so
+    /// this cannot fail while the crate compiles -- which is the point: a
+    /// property added without one is a build error.
     #[test]
     fn every_group_property_carries_a_caller_name() {
         assert_eq!(layout::NAMES.len(), layout::COUNT);
@@ -1955,12 +1819,9 @@ mod tests {
         // panic, which is what lets a reader skip a property it does not know.
         assert!(!mask.has(BITS_PER_SLOT * 4));
     }
-    /// Reads one value straight out of a slot sequence.
-    ///
-    /// The unit of the format a TypeScript writer gets wrong first: a type's
-    /// slot count and tag numbering. Each case below is the smallest arena
-    /// that carries one value, so a failure names the type rather than the
-    /// scene it was buried in.
+    /// Reads one value straight out of a slot sequence: the smallest arena
+    /// carrying one value, so a failure names the type -- its slot count and
+    /// tag numbering, what a TypeScript writer gets wrong first.
     fn read_one<T: super::value::ArenaValue>(
         slots: &[f64],
         values: &Values,
@@ -2353,11 +2214,9 @@ mod tests {
         assert!(read_one::<PathPaint>(&[7.0], &none).is_err());
     }
 
-    /// The whole pipeline, arena in and image bytes out, with no V8 anywhere.
-    ///
-    /// This is what makes the addon's own logic testable: everything in
-    /// `lib.rs` above `render_off_thread` is V8 marshalling that only a
-    /// JavaScript test can reach.
+    /// The whole pipeline, arena in and image bytes out, with no V8: everything
+    /// in `lib.rs` above `render_off_thread` is marshalling only a JavaScript
+    /// test can reach.
     #[test]
     fn an_arena_renders_to_an_image() {
         let (slots, values) = minimal();
@@ -2410,11 +2269,8 @@ mod tests {
             Err(ArenaError::Truncated { .. })
         ));
     }
-    /// `sceneBytes`'s own path, without the V8 half.
-    ///
-    /// The neon export is `decode` then `codec::encode`; this checks the pair
-    /// produces a scene the byte format reads back identically, which is the
-    /// property the TypeScript round trip rests on.
+    /// `sceneBytes`'s own path without V8: `decode` then `codec::encode`, read
+    /// back identically, which the TypeScript round trip rests on.
     #[test]
     fn an_arena_re_encodes_through_the_byte_format() {
         let (slots, values) = minimal();
@@ -2436,18 +2292,10 @@ mod tests {
         slots[FIRST_TAG_SLOT] = 99.0;
         assert!(decode(&slots, &values).is_err());
     }
-    /// Every property has a probe value distinguishable from its default.
-    ///
-    /// The check Agent Zero asked for, as a test rather than as a rule stated
-    /// in prose. A case whose value equals the property's default gives an
-    /// encoder nothing to do: a correct writer may legitimately leave the mask
-    /// bit clear, the case still round-trips, and the test passes while
-    /// exercising no write path. Sixty such cases would be sixty green results
-    /// that prove nothing, and nothing would say which.
-    ///
-    /// Where the ones-stream lands on the default -- `flex_shrink` and
-    /// `opacity` both default to `1.0` -- the generator must choose another
-    /// value, and this is what tells it which properties those are.
+    /// Every property has a probe value distinguishable from its default: a
+    /// case equal to the default lets a correct writer leave the mask bit
+    /// clear, so it round-trips while exercising no write path, and nothing
+    /// would say which.
     #[test]
     fn every_property_has_a_probe_that_differs_from_its_default() {
         let mut same = Vec::new();
@@ -2496,14 +2344,9 @@ mod tests {
         );
     }
 
-    /// No two groups name a property the same thing.
-    ///
-    /// The round-trip artefact is keyed by the Rust field name, flat across all
-    /// four groups, so a name used twice would put two cases in one key and
-    /// silently drop one of them. Sixty-two names are unique today; this is
-    /// what keeps that true when a group grows. `text::opacity` beside
-    /// `paint::opacity` is the shape of the mistake, and it would be an
-    /// entirely reasonable field to add.
+    /// No two groups name a property the same thing: the round-trip artefact
+    /// is keyed by field name across all four groups, so a repeat would drop a
+    /// case silently. `text::opacity` beside `paint::opacity` is the shape.
     #[test]
     fn no_property_name_is_used_by_two_groups() {
         let mut seen: std::collections::BTreeMap<&str, &str> =
