@@ -1,3 +1,7 @@
+### Added
+
+- `frame` takes a negative index, counting from the end: `.frame(-1)` draws the last frame of an animated image and `.frame(-2)` the one before it. A source with one frame ignores a negative index as it does a positive one.
+
 ### Changed
 
 - A frame index past the end of an animated image is refused as `Error::FrameOutOfRange`, naming the index and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
