@@ -17,3 +17,11 @@
 - An SVG image given `frame(1)` or later now draws, as a still raster does, rather than being refused as `Error::UndecodableImage`.
 
 - The CLI README's usage line omitted the `render` subcommand, so the command it showed was rejected with "unrecognized subcommand".
+
+- **`meo-canvas` exited 0 with nothing on stderr when an image URL could not be
+  obtained.** A dead URL in a `net` build, or a failed fetch the scene recorded,
+  was drawn as a placeholder, or as nothing, and no trace of it reached the
+  caller. Each such source now prints one line on stderr,
+  `meo-canvas: warning: node=… nodes=… failure=… url=… detail=…`, with
+  `status=…` after `failure=status`; the exit code stays 0. The CLI README
+  documents the fields.
