@@ -24,6 +24,7 @@
 # -- Project documentation ----------------------------------------------------
 # The maintained docs AGENTS.md links to for depth. Each is named, so a stray
 # file under docs/ stays refused.
+!/docs/design.md
 !/docs/porting-v9.md
 !/docs/releasing.md
 !/docs/upstream-workarounds.md

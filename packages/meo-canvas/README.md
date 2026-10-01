@@ -274,10 +274,12 @@ same thread does about four a second at 4000×4000, where the encode alone is
 ~256 ms.
 
 **"Paint" here is the whole native call** — the arena decode, resolve, measure,
-layout and the drawing. `AGENTS.md`'s benchmark table splits the same render
-differently, at 2.86 ms of _drawing_ against 9.16 ms of encode, because its
-`draw` is only the last of those stages. The two agree on the total and measure
-different things; the roughly 6 ms between them is where the flat floor lives.
+layout and the drawing. The
+[benchmark table](https://github.com/l7aromeo/meo-canvas/blob/main/docs/design.md#performance-baseline)
+splits the same render differently, at 2.86 ms of _drawing_ against 9.16 ms of
+encode, because its `draw` is only the last of those stages. The two agree on
+the total and measure different things; the roughly 6 ms between them is where
+the flat floor lives.
 
 So plan with the whole render rather than the floor. **A thumbnail and a poster
 cost the same to paint and nothing like the same to encode**, and the floor is

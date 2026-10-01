@@ -44,7 +44,7 @@ export default tseslint.config(
     rules: {
       // Off: `Canvas.toBuffer` and `toURL` are `async` with no `await` because the
       // contract is a rejection, not a throw, which a caller's `.catch` sees (see
-      // AGENTS.md on throwing and rejecting).
+      // docs/design.md on throwing and rejecting).
       '@typescript-eslint/require-await': 'off',
       // A parameter a signature forces on you may be named `_x` and left
       // unused. A variable may not: an unused variable is dead code, and
