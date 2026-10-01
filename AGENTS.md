@@ -80,6 +80,11 @@ the cost of finishing it transfers to them at the least convenient moment.
 pressure, a passing test that does not test it, or "no one hits this". If
 something is wrong and cannot be fixed now, say so plainly and record why.
 
+**Fix what let the defect happen, not its symptom.** Change the order, the data
+structure or the contract, rather than adding a cap, a retry or a special case
+around it. A safety net may sit beside a structural fix, never in its place;
+where only a band-aid is practical, say so.
+
 ---
 
 ## Working agreements
@@ -88,6 +93,21 @@ something is wrong and cannot be fixed now, say so plainly and record why.
 Commit freely, gate the work, then stop and report. Pushing, opening a pull
 request, publishing and tagging are maintainer decisions taken one at a time.
 Approval for one does not carry to the next.
+
+**Agents never publish.** Never run `npm publish`, `npm dist-tag`,
+`npm deprecate`, `cargo publish` or anything else that writes to a registry;
+never dispatch `release.yml` or `crates-io.yml`, which `just release-npm` and
+`just release-crate` do, without the maintainer's word for that run, dry runs
+included; never push a tag; never enter credentials, tokens or one-time codes.
+
+**Whoever submits a change is its author.** Using AI tools to work here is
+allowed, and the person submitting a change answers for its correctness, its
+review and everything it ships, as for code written by hand. A change carries
+only that person's authorship: no `Co-Authored-By` or other attribution line
+naming a tool or a model.
+
+**This file changes only with the maintainer's approval.** Propose a change to
+it; do not make one unasked.
 
 **Nothing an agent produces for its own benefit belongs in this repository.**
 Plans, specs, design notes, task lists, scratch analyses, session transcripts,
@@ -101,8 +121,18 @@ reader cannot tell from the maintained kind.
 What _does_ belong: the commit message, a comment next to the code that needs
 explaining, and this file.
 
-**The maintainer's working arrangements stay out of the repository.** Commits,
-issues, pull requests and code comments describe the code and the reasoning.
+**How the work was organised stays out of the project.** Code, comments, commit
+messages, branch names, pull requests, release notes and issue comments read as
+the project's own work, and none of them mentions:
+
+- agents, sessions, workers or a supervisor, by role or by name;
+- task assignments, hand-offs, review rounds or instructions received;
+- internal reasoning or drafts beyond what a reviewer needs to understand the
+  change;
+- AI tools or models, attribution lines included.
+
+**That covers the commit removing such a mention.** Say what the code states
+now; quoting what was taken out puts it back into the history.
 
 ### Git safety
 
@@ -674,7 +704,9 @@ a tree that mixes them reads as two conventions.
    "used to", "changed from", "now", "no longer" -- and no TODO, FIXME or XXX.
    **Nor a comparison with v9**: a comment says what this code does, not how it
    differs from the predecessor. v9 is named only where the code itself reads
-   it -- vectors recorded from it, a tool that diffs its surface.
+   it -- vectors recorded from it, a tool that diffs its surface. A runtime
+   message is not a comment: one written for someone porting from v9 may name
+   v9's spelling, since that is the guidance the reader needs.
 2. **A comment earns its place by answering "why this and not the obvious
    alternative".** If the code already says what it does, the comment says why it
    does it that way. Restating the code is worse than silence.
@@ -1073,6 +1105,20 @@ pack / verify-pack            Tarballs into release/, installed elsewhere and re
 abi-floor / acceptance        What the Linux addon demands; loading it on six bare images.
 release-npm / release-crate   Dispatch the workflows and watch them.
 ```
+
+**`just ci` is not everything CI runs.** A change in these places needs the
+recipe beside it as well, because nothing in `ci` would see it go wrong:
+
+| If you touched                                       | Also run                            | Where CI runs it     |
+| ---------------------------------------------------- | ----------------------------------- | -------------------- |
+| anything behind a `net` feature, or URL fetching     | `just net-check`                    | `ci.yml`, Linux only |
+| a dependency or the lockfile                         | `just audit`                        | `ci.yml`, Linux only |
+| how the addon loads, or a worker thread loading it   | `just threads-probe`                | `ci.yml`             |
+| what the package ships: `files`, `exports`, platform | `just verify-pack`                  | `release.yml` only   |
+| the Linux build: `containers/`, link flags           | `just abi-floor`, `just acceptance` | `release.yml` only   |
+
+**The packaging and Linux rows run nowhere before a release**, so a defect there
+surfaces only once a release is under way.
 
 **The package manager is bun.** `bun.lock` is the lockfile and `packageManager`
 names the version; everything installs with `bun install --frozen-lockfile`. Two
