@@ -76,6 +76,11 @@ export async function example_style(): Promise<void> {
   Image({ src: 'star.svg', width: 40, height: 40, color: '#e8c07a' })
 }
 
+/** `style.ts`. */
+export async function example_style_2(): Promise<void> {
+  Image({ src: 'loader.gif', frame: -1 }) // the last frame
+}
+
 /** `README.md`. */
 export async function example_README_md(): Promise<void> {
 

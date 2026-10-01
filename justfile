@@ -1001,10 +1001,10 @@ conformance-writes:
 gate-lists-check:
     node packages/meo-canvas/tools/gate-lists.mjs
 
-# GitHub evicts silently: a dead 3.53 GiB cache once made another leg cold-build
-# every run. Needs a token -- `GITHUB_TOKEN` in CI, `gh auth token` locally --
-# and fails without one only in CI.
-[doc("Fail if the Actions cache is near the limit; name the refs holding it.")]
+# The working set -- every cache entry less those the prune after `ci` deletes --
+# against a floor, and any superseded entry a successful prune left behind. Needs a
+# token -- `GITHUB_TOKEN` in CI, `gh auth token` locally -- and fails without one only in CI.
+[doc("Fail if the Actions cache working set nears the limit, or a prune left an entry.")]
 cache-budget-check:
     node packages/meo-canvas/tools/cache-budget.mjs
 

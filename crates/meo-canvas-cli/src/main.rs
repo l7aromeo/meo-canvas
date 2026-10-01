@@ -25,7 +25,8 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use meo_canvas_core::{
-    Error, ImageFormat, Renderer, chained, encode::EncodeOptions,
+    Error, FetchFailure, ImageFormat, ImageWarning, Renderer, chained,
+    encode::EncodeOptions,
 };
 use meo_canvas_scene::Scene;
 
@@ -266,18 +267,61 @@ fn write_output(bytes: &[u8], output: Option<&Path>) -> Result<(), Failure> {
     )
 }
 
+/// A failure class as the npm surface spells `ImageWarning.failure`, so a
+/// script reading either surface matches the same words.
+const fn failure_class(failure: FetchFailure) -> (&'static str, Option<u16>) {
+    match failure {
+        FetchFailure::Status(code) => ("status", Some(code)),
+        FetchFailure::HostNotFound => ("host-not-found", None),
+        FetchFailure::BadUrl => ("bad-url", None),
+        FetchFailure::Transport => ("transport", None),
+        FetchFailure::TooLarge => ("too-large", None),
+        // `FetchFailure` is non-exhaustive, and a class this build does not
+        // name prints as the catch-all rather than failing the render.
+        _ => ("other", None),
+    }
+}
+
+/// A URL as one space-free token: space, tab, CR and LF percent-encoded, the
+/// spelling a client reads as the same URL.
+fn url_token(url: &str) -> String {
+    url.replace(' ', "%20")
+        .replace('\t', "%09")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+/// One warning as one stderr line. Every field before `detail` is one token;
+/// `detail` runs to the end of the line with CR and LF turned into spaces.
+/// `the_warning_line_keeps_a_spaced_url_and_detail_on_one_line` pins this.
+fn warning_line(warning: &ImageWarning) -> String {
+    let (class, status) = failure_class(warning.failure);
+    let status =
+        status.map_or_else(String::new, |code| format!(" status={code}"));
+    format!(
+        "meo-canvas: warning: node={} nodes={} failure={class}{status} url={} \
+         detail={}",
+        warning.node.get(),
+        warning.nodes,
+        url_token(&warning.url),
+        warning.detail.replace(['\n', '\r'], " "),
+    )
+}
+
 /// Reads the scene, renders it, and writes the result.
 fn render(args: &RenderArgs) -> Result<(), Failure> {
     let format = resolve_format(args)?;
     let scene = read_scene(&args.scene)?;
     let renderer = build_renderer(&args.fonts)?;
     let options = encode_options(args);
+    let fail =
+        |error: Error| Failure::new(explain(&error), exit_code_for(&error));
 
-    let image = renderer
-        .render_to_buffer(&scene, format, &options)
-        .map_err(|error| {
-            Failure::new(explain(&error), exit_code_for(&error))
-        })?;
+    let mut canvas = renderer.render(&scene).map_err(fail)?;
+    for warning in canvas.warnings() {
+        eprintln!("{}", warning_line(warning));
+    }
+    let image = canvas.to_buffer(format, &options).map_err(fail)?;
 
     write_output(&image, args.output.as_deref())
 }
@@ -299,11 +343,12 @@ fn main() -> ExitCode {
 mod tests {
     use std::path::PathBuf;
 
-    use meo_canvas_core::Error;
+    use meo_canvas_core::{Error, FetchFailure};
 
     use super::{
         EXIT_FONT, EXIT_IO, EXIT_SOURCE_UNOBTAINABLE, ImageFormat, RenderArgs,
-        encode_options, exit_code_for, parse_font, resolve_format,
+        encode_options, exit_code_for, failure_class, parse_font,
+        resolve_format,
     };
 
     /// The arguments a caller who named nothing optional would produce.
@@ -521,5 +566,42 @@ mod tests {
         assert_eq!(font, EXIT_FONT);
         assert_ne!(layout, unresolved);
         assert_ne!(layout, font);
+    }
+
+    #[test]
+    fn failure_classes_are_the_npm_surface_words() {
+        // The words are the npm package's `ImageWarning.failure` union, read
+        // from its source so a rename on either side fails here.
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/meo-canvas/src/index.ts"
+        );
+        let source = std::fs::read_to_string(path)
+            .unwrap_or_else(|error| unreachable!("{path}: {error}"));
+        let union = source
+            .lines()
+            .find_map(|line| {
+                line.trim().strip_prefix("readonly failure: 'status'")
+            })
+            .unwrap_or_else(|| unreachable!("no failure union in {path}"));
+        let mut npm: Vec<&str> = std::iter::once("status")
+            .chain(union.split('\'').skip(1).step_by(2))
+            .collect();
+        npm.sort_unstable();
+
+        let mut ours: Vec<&str> = [
+            FetchFailure::Status(404),
+            FetchFailure::HostNotFound,
+            FetchFailure::BadUrl,
+            FetchFailure::Transport,
+            FetchFailure::TooLarge,
+        ]
+        .into_iter()
+        .map(|failure| failure_class(failure).0)
+        .chain(std::iter::once("other"))
+        .collect();
+        ours.sort_unstable();
+
+        assert_eq!(ours, npm);
     }
 }

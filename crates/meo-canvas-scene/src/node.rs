@@ -358,8 +358,10 @@ pub enum NodeKind {
         /// Where the image sits within the box when it does not fill it, as a
         /// fraction of the leftover space on each axis.
         position: (Length, Length),
-        /// Which frame of an animated source to draw. `None` draws the first.
-        frame: Option<u32>,
+        /// Which frame of an animated source to draw, counting from zero. A
+        /// negative index counts from the end, so `-1` is the last. `None`
+        /// draws the first, and a source with one frame ignores the index.
+        frame: Option<i32>,
     },
 
     /// An arbitrary shape from SVG path data.

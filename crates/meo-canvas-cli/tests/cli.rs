@@ -9,7 +9,7 @@ use std::{
 };
 
 use meo_canvas_scene::{
-    Length, OnImageError, Scene, Size,
+    ImageFetchAttempt, Length, OnImageError, Scene, Size,
     node::{ImageSource, Node, NodeKind},
     style::paint::ObjectFit,
 };
@@ -214,11 +214,17 @@ fn the_output_goes_to_stdout_when_no_file_is_named() {
     assert_eq!((reader.info().width, reader.info().height), (6, 3));
 }
 
-/// Writes a scene whose one image names `url` and whose policy is `Throw`,
-/// so a failed source ends the render rather than drawing a placeholder.
-fn write_url_scene(dir: &Path, url: &str) -> PathBuf {
+/// Writes a scene whose one image names `url`, under `policy`, carrying
+/// `attempts` as the fetches a capturing surface already made.
+fn write_url_scene(
+    dir: &Path,
+    url: &str,
+    policy: OnImageError,
+    attempts: Vec<ImageFetchAttempt>,
+) -> PathBuf {
     let mut scene = Scene::new(Size::new(4.0, 4.0));
-    scene.on_image_error = OnImageError::Throw;
+    scene.on_image_error = policy;
+    scene.image_fetch_attempts = attempts;
     let page = scene
         .root()
         .unwrap_or_else(|| unreachable!("a fresh scene has a page"));
@@ -246,7 +252,12 @@ fn without_net_a_url_source_exits_six_and_names_the_feature() {
     // An exit code alone leaves the caller guessing between a bad URL and the
     // wrong build, so the message says which build would fetch it.
     let dir = scratch("url");
-    let path = write_url_scene(&dir, "https://example.invalid/a.png");
+    let path = write_url_scene(
+        &dir,
+        "https://example.invalid/a.png",
+        OnImageError::Throw,
+        Vec::new(),
+    );
 
     let (code, stderr) = run(&[
         "render",
@@ -266,7 +277,12 @@ fn with_net_a_url_source_is_fetched_rather_than_refused() {
     // fetch that failed rather than one never attempted. A build whose `net`
     // does not reach the core refuses with "this build cannot fetch" instead.
     let dir = scratch("url-net");
-    let path = write_url_scene(&dir, "http://127.0.0.1:1/never.png");
+    let path = write_url_scene(
+        &dir,
+        "http://127.0.0.1:1/never.png",
+        OnImageError::Throw,
+        Vec::new(),
+    );
 
     let (code, stderr) = run(&[
         "render",
@@ -284,4 +300,177 @@ fn with_net_a_url_source_is_fetched_rather_than_refused() {
         "the failure does not name the URL it tried: {stderr}"
     );
     assert_eq!(code, EXIT_SOURCE_UNOBTAINABLE, "{stderr}");
+}
+
+/// The lines `main.rs` writes for render warnings.
+fn warning_lines(stderr: &str) -> Vec<&str> {
+    stderr
+        .lines()
+        .filter(|line| line.starts_with("meo-canvas: warning: "))
+        .collect()
+}
+
+/// A URL a capturing surface already tried and got a 404 for.
+#[cfg(not(feature = "net"))]
+fn recorded_404(url: &str) -> Vec<ImageFetchAttempt> {
+    vec![ImageFetchAttempt {
+        url: url.to_owned(),
+        failure: meo_canvas_scene::ImageFetchFailure::Status(404),
+        detail: "404 Not Found".to_owned(),
+    }]
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
+fn a_recorded_failed_fetch_warns_on_stderr_and_still_writes_the_image() {
+    // Without `net` a URL warns only through `image_fetch_attempts`, a fetch
+    // the scene's writer already made. Exit 0 with the image written, since
+    // the render finished; the line is the only trace.
+    let dir = scratch("warn-recorded");
+    let url = "https://example.invalid/a.png";
+    let path = write_url_scene(
+        &dir,
+        url,
+        OnImageError::Placeholder,
+        recorded_404(url),
+    );
+    let out = dir.join("out.png");
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &out.to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    assert!(out.exists(), "the image was not written: {stderr}");
+    assert_eq!(
+        warning_lines(&stderr),
+        [format!(
+            "meo-canvas: warning: node=1 nodes=1 failure=status status=404 \
+             url={url} detail=404 Not Found"
+        )],
+        "{stderr}"
+    );
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
+fn the_warning_line_keeps_a_spaced_url_and_detail_on_one_line() {
+    // A script splits the line on spaces up to `detail=`, so the URL's space
+    // is percent-encoded, and the detail's line break becomes a space.
+    let dir = scratch("warn-spaced");
+    let url = "https://example.invalid/a b.png";
+    let attempt = ImageFetchAttempt {
+        url: url.to_owned(),
+        failure: meo_canvas_scene::ImageFetchFailure::Status(404),
+        detail: "404 Not Found\nfrom the cache".to_owned(),
+    };
+    let path =
+        write_url_scene(&dir, url, OnImageError::Placeholder, vec![attempt]);
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        warning_lines(&stderr),
+        [
+            "meo-canvas: warning: node=1 nodes=1 failure=status status=404 \
+             url=https://example.invalid/a%20b.png detail=404 Not Found from \
+             the cache"
+        ],
+        "{stderr}"
+    );
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
+fn one_source_named_by_two_nodes_is_one_line_counting_both() {
+    // `node` is the first node naming the source and `nodes` how many do, as
+    // the README documents.
+    let dir = scratch("warn-twice");
+    let url = "https://example.invalid/a.png";
+    let mut scene = Scene::new(Size::new(4.0, 4.0));
+    scene.image_fetch_attempts = recorded_404(url);
+    let page = scene
+        .root()
+        .unwrap_or_else(|| unreachable!("a fresh scene has a page"));
+    for _ in 0..2 {
+        scene
+            .push(
+                page,
+                Node::new(NodeKind::Image {
+                    source: ImageSource::url(url.to_owned()),
+                    fit: ObjectFit::Contain,
+                    position: (Length::Percent(0.5), Length::Percent(0.5)),
+                    frame: None,
+                }),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+    }
+    let path = dir.join("scene.mcs");
+    std::fs::write(&path, meo_canvas_scene::codec::encode(&scene))
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    let lines = warning_lines(&stderr);
+    assert_eq!(lines.len(), 1, "{stderr}");
+    assert!(lines[0].contains(" node=1 nodes=2 "), "{stderr}");
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
+fn under_throw_a_recorded_failed_fetch_still_fails() {
+    // `Throw` is the scene's way to make an unobtainable image fatal, and a
+    // recorded attempt does not soften it.
+    let dir = scratch("warn-throw");
+    let url = "https://example.invalid/a.png";
+    let path =
+        write_url_scene(&dir, url, OnImageError::Throw, recorded_404(url));
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, EXIT_SOURCE_UNOBTAINABLE, "{stderr}");
+    assert!(warning_lines(&stderr).is_empty(), "{stderr}");
+}
+
+#[cfg(feature = "net")]
+#[test]
+fn with_net_a_dead_url_under_the_default_policy_warns_and_exits_zero() {
+    // The failure class is the core's to decide, so only the line's presence
+    // and its URL are asserted.
+    let dir = scratch("warn-net");
+    let url = "http://127.0.0.1:1/never.png";
+    let path =
+        write_url_scene(&dir, url, OnImageError::Placeholder, Vec::new());
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    let lines = warning_lines(&stderr);
+    assert_eq!(lines.len(), 1, "{stderr}");
+    assert!(lines[0].contains(&format!("url={url} ")), "{stderr}");
 }

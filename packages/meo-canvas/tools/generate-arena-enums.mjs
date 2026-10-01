@@ -7,6 +7,8 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { blankedViews } from './comments.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SCENE_SRC = resolve(HERE, '../../../crates/meo-canvas-scene/src')
 const CHECKED_IN = resolve(HERE, '../src/generated/arena-enums.ts')
@@ -49,21 +51,12 @@ function modulePath(path) {
   return [CRATE, ...relative.split(/[/\\]/)].join('::')
 }
 
-/**
- * Where the brace opened at `from` closes, or `-1`. Counted, skipping comments,
- * since a variant's doc comment may contain a brace.
- */
-function closes(text, from) {
+/** Where the brace opened at `from` in `shape` closes, or `-1`. */
+function closes(shape, from) {
   let depth = 0
-  for (let index = from; index < text.length; index += 1) {
-    if (text.startsWith('//', index)) {
-      const line = text.indexOf('\n', index)
-      if (line === -1) return -1
-      index = line
-      continue
-    }
-    if (text[index] === '{') depth += 1
-    else if (text[index] === '}') {
+  for (let index = from; index < shape.length; index += 1) {
+    if (shape[index] === '{') depth += 1
+    else if (shape[index] === '}') {
       depth -= 1
       if (depth === 0) return index
     }
@@ -71,32 +64,36 @@ function closes(text, from) {
   return -1
 }
 
-/** Every `wire_enum!` declaration in `text`. */
+/**
+ * Every `wire_enum!` declaration in `text`, read with comments and strings blanked
+ * by `blankedViews`, so a brace, a variant or the macro name inside either is not code.
+ */
 function declarations(path, text) {
+  const { code, shape } = blankedViews(text, { rust: true })
   const found = []
   let at = 0
 
   for (;;) {
-    const opened = text.indexOf('wire_enum! {', at)
+    const opened = shape.indexOf('wire_enum! {', at)
     if (opened === -1) break
 
-    const end = closes(text, text.indexOf('{', opened))
+    const end = closes(shape, shape.indexOf('{', opened))
     if (end === -1) fail(path, 'a `wire_enum!` block is never closed')
 
-    found.push(parse(path, text.slice(opened, end + 1)))
+    found.push(parse(path, code.slice(opened, end + 1), shape.slice(opened, end + 1)))
     at = end + 1
   }
 
   return found
 }
 
-/** One declaration's name and variants. */
-function parse(path, block) {
-  const named = /\benum\s+(\w+)\s*\{/.exec(block)
+/** One declaration's name and variants, from its `code` and `shape` views. */
+function parse(path, block, shape) {
+  const named = /\benum\s+(\w+)\s*\{/.exec(shape)
   if (!named) fail(path, 'a `wire_enum!` block declares no enum')
 
   const brace = named.index + named[0].length - 1
-  const end = closes(block, brace)
+  const end = closes(shape, brace)
   if (end === -1) fail(path, `\`${named[1]}\` is never closed`)
 
   const body = block.slice(brace + 1, end)
@@ -105,7 +102,7 @@ function parse(path, block) {
 
   for (const line of body.split('\n')) {
     const trimmed = line.trim()
-    if (trimmed === '' || trimmed.startsWith('//') || trimmed.startsWith('#[')) continue
+    if (trimmed === '' || trimmed.startsWith('#[')) continue
 
     const entry = /^(\w+)\s*=\s*(\d+)\s*,?$/.exec(trimmed)
     if (!entry) {

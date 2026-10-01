@@ -1,6 +1,14 @@
+### Added
+
+- `frame` takes a negative index, counting from the end: `.frame(-1)` draws the last frame of an animated image and `.frame(-2)` the one before it. A source with one frame ignores a negative index as it does a positive one.
+
 ### Changed
 
-- A frame index past the end of an animated image is refused as `Error::FrameOutOfRange`, naming the index and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
+- **Breaking.** `Style::frame`, the `frame` setter and `NodeKind::Image::frame` take an `i32` rather than a `u32`, so that a negative index can count from the end. An integer literal compiles unchanged; a `u32` value needs converting, for example with `i32::try_from`.
+
+- **Breaking.** The scene file format is version 8, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 8"). Re-encode the scene with this release.
+
+- A frame index past either end of an animated image is refused as `Error::FrameOutOfRange`, naming the index as written and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
 
 ### Fixed
 
@@ -17,3 +25,11 @@
 - An SVG image given `frame(1)` or later now draws, as a still raster does, rather than being refused as `Error::UndecodableImage`.
 
 - The CLI README's usage line omitted the `render` subcommand, so the command it showed was rejected with "unrecognized subcommand".
+
+- **`meo-canvas` exited 0 with nothing on stderr when an image URL could not be
+  obtained.** A dead URL in a `net` build, or a failed fetch the scene recorded,
+  was drawn as a placeholder, or as nothing, and no trace of it reached the
+  caller. Each such source now prints one line on stderr,
+  `meo-canvas: warning: node=… nodes=… failure=… url=… detail=…`, with
+  `status=…` after `failure=status`; the exit code stays 0. The CLI README
+  documents the fields.

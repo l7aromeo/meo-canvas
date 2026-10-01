@@ -19,6 +19,37 @@ drive this.
 Build with `--features net` to resolve remote image URLs through a blocking
 client. Without it, a URL in a scene is an error, the same as for a Rust caller.
 
+## Warnings
+
+An image URL the render could not obtain is reported on stderr, one line per
+source, whether the scene's `on_image_error` draws a placeholder for it or
+nothing:
+
+```text
+meo-canvas: warning: node=1 nodes=1 failure=status status=404 url=https://example.invalid/a.png detail=404 Not Found
+```
+
+The fields always come in that order, `status` only when `failure` is `status`.
+`node` is the first node that named the source and `nodes` how many nodes in
+the scene named it, since one source failing is one line however often it is
+drawn. `failure` is one of `status`, `host-not-found`, `bad-url`, `transport`,
+`too-large` or `other`, the words the npm package uses for
+`ImageWarning.failure`.
+
+Every field before `detail` is one token: a space, tab, carriage return or line
+feed in the URL is written percent-encoded (`%20`, `%09`, `%0D`, `%0A`). `detail`
+is free text and runs to the end of the line, with any carriage
+return or line feed in it written as a space. So a script splits the line on
+spaces up to `detail=` and takes the rest as the detail.
+
+The exit code stays 0, since the image was written; a scene whose
+`on_image_error` is `Throw` fails instead, with exit code 6.
+
+Only URL images warn: a URL in a `net` build, or one whose failed fetch the
+scene records in `image_fetch_attempts`. A missing image file is an error with
+exit code 3 whatever the policy. Markup diagnostics are returned to whoever
+builds the scene; a scene file carries none.
+
 ## System libraries
 
 This binary links Skia through [`meo-canvas-core`], so on Linux it needs

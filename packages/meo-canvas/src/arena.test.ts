@@ -368,7 +368,7 @@ function readPayload(input: Cursor, kind: string): unknown {
       source: readSource(input),
       fit: read(input, 'ObjectFit'),
       position: [read(input, 'Length'), read(input, 'Length')],
-      frame: read(input, 'Option<u32>'),
+      frame: read(input, 'Option<i32>'),
     }
   }
 
@@ -1428,12 +1428,12 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     ],
     { maxLines: 2, ellipsis: '...' },
   ),
-  __kind_image_path: Image({ src: 'probe.png', objectFit: 'cover', objectPosition: ['25%', 3], frame: 2 }),
+  __kind_image_path: Image({ src: 'probe.png', objectFit: 'cover', objectPosition: ['25%', 3], frame: -2 }),
   __kind_image_url: Image({
     src: { url: 'https://probe.invalid/a' },
     objectFit: 'cover',
     objectPosition: ['25%', 3],
-    frame: 2,
+    frame: -2,
   }),
   // The same URL with headers, authored as pairs because an object literal would
   // merge the two `x-zeta` keys before `Headers` saw them. The canonical form is
@@ -1452,7 +1452,7 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     },
     objectFit: 'cover',
     objectPosition: ['25%', 3],
-    frame: 2,
+    frame: -2,
   }),
   // The markup form of a text node: `Text` sets the discriminant and the string
   // crosses unparsed, because the parser lives in Rust so both surfaces get it.
@@ -1461,7 +1461,7 @@ const KIND_PROBES: Readonly<Record<string, SceneNode>> = {
     src: { bytes: new Uint8Array([1, 2, 3]) },
     objectFit: 'cover',
     objectPosition: ['25%', 3],
-    frame: 2,
+    frame: -2,
   }),
   __kind_path: Path({
     d: 'M0 0 L4 4',
@@ -1793,6 +1793,30 @@ describe('a value of the wrong type is refused where the property is still named
     expect(() => throughTheAddon({ fontWeight: 'bolder' as unknown as number })).toThrow(
       'fontWeight is "bolder"; it takes a number from 1 to 1000, or normal or bold',
     )
+  })
+
+  // `2 ** 40` is a whole number no `i32` holds; the reader would name slot 31.
+  it('refuses a zIndex outside an i32, naming it', () => {
+    for (const index of [2 ** 40, -(2 ** 31) - 1, 2 ** 31]) {
+      const write = (): unknown => throughTheAddon({ zIndex: index })
+      expect(write).toThrow(RangeError)
+      expect(write).toThrow(`zIndex is ${index}; it takes a whole number from -2147483648 to 2147483647`)
+    }
+  })
+
+  it.each([-(2 ** 31), 2 ** 31 - 1])('still writes zIndex %d, a bound of an i32', index => {
+    expect(throughTheAddon({ zIndex: index }).length).toBeGreaterThan(0)
+  })
+
+  it('refuses a frame that is not a whole number an i32 holds, naming it', () => {
+    const image = (frame: number): string => bytesOf(Image({ src: 'a.png', frame }))
+    expect(() => image(1.5)).toThrow(new TypeError('frame is 1.5; it takes a whole number'))
+    expect(() => image(NaN)).toThrow(new TypeError('frame is NaN; it takes a whole number'))
+    expect(() => image(2 ** 40)).toThrow(new RangeError('frame is 1099511627776; it takes a whole number from -2147483648 to 2147483647'))
+  })
+
+  it.each([0, -1, -(2 ** 31), 2 ** 31 - 1])('still writes frame %d', frame => {
+    expect(bytesOf(Image({ src: 'a.png', frame })).length).toBeGreaterThan(0)
   })
 
   it('renders what was passed so the caller can recognise it', () => {

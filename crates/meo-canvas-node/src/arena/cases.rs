@@ -536,7 +536,7 @@ fn kind_cases() -> Vec<KindCase> {
         // to match.
         fit: ObjectFit::Cover,
         position: (Length::Percent(0.25), Length::Points(3.0)),
-        frame: Some(2),
+        frame: Some(-2),
     };
 
     vec![

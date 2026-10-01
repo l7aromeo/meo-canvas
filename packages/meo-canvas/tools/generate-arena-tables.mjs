@@ -7,7 +7,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { spansOf } from './comments.mjs'
+import { blankedViews } from './comments.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SOURCE = resolve(HERE, '../../../crates/meo-canvas-node/src/arena.rs')
@@ -23,24 +23,6 @@ const MASK_BITS = 53
 /** Fails with a message naming where in the Rust the parse gave up. */
 function fail(message) {
   throw new Error(`${SOURCE}: ${message}`)
-}
-
-/**
- * The source read two ways, both the same length so an offset means the same in
- * each: `code` with every comment blanked, and `shape` with string literals blanked
- * too, so a brace, an entry or a macro name inside either is never read as code.
- */
-function views(source) {
-  const code = source.split('')
-  const shape = source.split('')
-  for (const { kind, start, end } of spansOf(source, { rust: true })) {
-    for (let at = start; at < end; at += 1) {
-      if (source[at] === '\n') continue
-      shape[at] = ' '
-      if (kind === 'comment') code[at] = ' '
-    }
-  }
-  return { code: code.join(''), shape: shape.join('') }
 }
 
 /**
@@ -205,7 +187,7 @@ function emit(groups, magic, version) {
   return `${lines.join('\n')}`
 }
 
-const source = views(await readFile(SOURCE, 'utf8'))
+const source = blankedViews(await readFile(SOURCE, 'utf8'), { rust: true })
 const groups = parseGroups(source)
 const output = emit(groups, constant(source.code, 'MAGIC'), constant(source.code, 'VERSION'))
 

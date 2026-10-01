@@ -602,6 +602,27 @@ describe('an image frame', () => {
     const drawn = Root({ width: 20, height: 20, children: Image({ src: { bytes: gif }, width: 20, height: 20, frame: 3 }) })
     await expect(drawn).rejects.toThrow('asks for frame 3 of an image with 2 frames')
   })
+
+  /** The colour at the centre of the GIF drawn at `frame`. */
+  const centre = async (frame: number): Promise<string> => {
+    const canvas = await Root({ width: 20, height: 20, children: Image({ src: { bytes: gif }, width: 20, height: 20, frame }) })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    const at = (10 * 20 + 10) * 4
+    return [...raw.subarray(at, at + 3)].join(',')
+  }
+
+  it('counts from the end when negative', async () => {
+    // The frames differ, so an index resolved to the wrong one fails.
+    expect(await centre(0)).not.toBe(await centre(1))
+    expect(await centre(-1)).toBe(await centre(1))
+    expect(await centre(-2)).toBe(await centre(0))
+  })
+
+  it('before the first frame is refused naming the frame as written', async () => {
+    const drawn = Root({ width: 20, height: 20, children: Image({ src: { bytes: gif }, width: 20, height: 20, frame: -3 }) })
+    await expect(drawn).rejects.toThrow('asks for frame -3 of an image with 2 frames')
+  })
 })
 
 describe('a host whose name does not resolve', () => {

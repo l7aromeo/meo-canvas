@@ -1,18 +1,18 @@
-// The Actions cache budget, per ref and per superseded key, since GitHub evicts
-// silently and the only symptom is a cold build. It names what to remove and the
-// command that removes it. Every call is bounded so the gate cannot hang, and a
-// pass is one reading at one moment, not proof nothing was evicted since.
+// The Actions cache budget: the working set -- every entry less those superseded,
+// which the prune after each `ci` on `main` deletes -- against a floor, and a failure
+// for any superseded entry that prune should already have removed. Every call is
+// bounded, and a pass is one reading at one moment.
 import { execFileSync } from 'node:child_process'
 
-import { ORDER_READS, supersededOf } from './cache-entries.mjs'
+import { ORDER_READS, budgetOf, verifyBudget } from './cache-entries.mjs'
 
 const GIB = 1024 ** 3
 const MIB = 1024 ** 2
 
 /**
- * The size at which this asks for attention: the 10 GB limit less the largest
- * single entry, so the alarm fires while the next save still fits. The ubuntu set
- * is 2215 MiB, so 7.5 GiB leaves one largest entry plus a margin.
+ * The working set at which this asks for attention: GitHub's 10 GB limit less the
+ * largest entry when it was set, 2215 MiB for ubuntu. That entry is now 2712 MiB,
+ * so the margin is narrower than this derivation assumed.
  */
 const FLOOR_BYTES = 7.5 * GIB
 
@@ -50,6 +50,8 @@ function token() {
 }
 
 const inCi = process.env['GITHUB_ACTIONS'] === 'true'
+
+verifyBudget()
 
 // The total is a fact about the repository: it fails `main` and is reported on a
 // change not yet there -- a pull request, `pull_request_target`, or a merge queue a
@@ -104,51 +106,86 @@ for (let page = 1; ; page += 1) {
   if (page_entries.length < 100) break
 }
 
-// **Counted, so an empty list cannot pass for a healthy one.** Zero entries is
-// a real state -- a fresh repository, or every cache evicted -- and it is also
-// what a wrong query returns. Under the floor either way, which is why the
-// number is printed rather than only compared.
-const total = entries.reduce((sum, entry) => sum + entry.size_in_bytes, 0)
+// The latest successful prune on `workflow_run`, the one event that deletes, so a
+// dry-run dispatch cannot date the stale-entry guard. Unreachable is handled as for
+// the cache list: a failure in CI, a warning on a machine.
+let runs
+try {
+  runs = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/cache-prune.yml/runs?status=success&event=workflow_run&per_page=1`, {
+    headers: { authorization: `Bearer ${auth}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+    signal: AbortSignal.timeout(DEADLINE_MS),
+  })
+} catch (cause) {
+  const detail = cause instanceof Error ? cause.message : String(cause)
+  if (inCi) {
+    process.stderr.write(`\nCould not reach ${repo}'s cache-prune runs within ${DEADLINE_MS / 1000}s: ${detail}\n`)
+    process.exit(1)
+  }
+  process.stdout.write(`cache budget: not checked -- could not reach the API within ${DEADLINE_MS / 1000}s (${detail}).\n`)
+  process.exit(0)
+}
+if (!runs.ok) {
+  process.stderr.write(`\nGitHub answered ${runs.status} listing ${repo}'s cache-prune runs. With \`actions: read\` this call succeeds.\n`)
+  process.exit(1)
+}
+const pruned = (await runs.json()).workflow_runs?.[0]
+
+// **Counted, so an empty list cannot pass for a healthy one.** Zero entries is a real
+// state and also what a wrong query returns, so the numbers are printed, not only compared.
+const budget = budgetOf(entries, { floor: FLOOR_BYTES, prunedAt: pruned?.run_started_at })
+const gib = bytes => `${(bytes / GIB).toFixed(2)} GiB`
 const byRef = new Map()
 for (const entry of entries) byRef.set(entry.ref, (byRef.get(entry.ref) ?? 0) + entry.size_in_bytes)
 
 const refs = [...byRef].sort((a, b) => b[1] - a[1])
-process.stdout.write(`cache budget: ${(total / GIB).toFixed(2)} GiB across ${entries.length} entries, floor ${(FLOOR_BYTES / GIB).toFixed(1)} GiB\n`)
+process.stdout.write(
+  `cache budget: working set ${gib(budget.working)} against a ${(FLOOR_BYTES / GIB).toFixed(1)} GiB floor; ` +
+    `${gib(budget.pending)} superseded, pending prune; ${gib(budget.total)} across ${entries.length} entries\n`,
+)
 for (const [ref, size] of refs) process.stdout.write(`  ${(size / GIB).toFixed(2).padStart(6)} GiB  ${ref}\n`)
 
 // Superseded: same key prefix, read less recently than a sibling. The rule is
 // `cache-entries.mjs`'s, imported so this report and `cache-prune.mjs` agree.
-const superseded = supersededOf(entries)
-const supersededBytes = superseded.reduce((sum, entry) => sum + entry.size_in_bytes, 0)
-if (superseded.length > 0) {
-  process.stdout.write(`  ${superseded.length} superseded, ${(supersededBytes / GIB).toFixed(2)} GiB -- same key prefix, ${ORDER_READS}:\n`)
-  for (const entry of superseded)
+if (budget.superseded.length > 0) {
+  process.stdout.write(`  ${budget.superseded.length} superseded, ${gib(budget.pending)} -- same key prefix, ${ORDER_READS}:\n`)
+  for (const entry of budget.superseded)
     process.stdout.write(`    gh api -X DELETE repos/${repo}/actions/caches/${entry.id}  # ${(entry.size_in_bytes / MIB).toFixed(0)} MiB ${entry.key}\n`)
 }
+process.stdout.write(
+  pruned === undefined
+    ? '  no successful cache-prune run found, so nothing is checked for a prune that missed an entry\n'
+    : `  last successful prune: run ${pruned.id}, started ${pruned.run_started_at}\n`,
+)
 
-if (total > FLOOR_BYTES && beforeMain) {
+const problems = []
+if (budget.stale.length > 0) {
+  problems.push(
+    `cache-prune run ${pruned.id} (${pruned.html_url}) started after the newer sibling of ` +
+      `${budget.stale.map(entry => `${entry.id} ${entry.key}`).join(', ')} was saved, and the entry is still here. ` +
+      'That prune listed both and should have deleted it: read its log for what it selected.',
+  )
+}
+if (budget.over) {
+  const largest = entries.reduce((big, entry) => (entry.size_in_bytes > big.size_in_bytes ? entry : big))
+  problems.push(
+    `The working set is ${gib(budget.working)}, past the ${(FLOOR_BYTES / GIB).toFixed(1)} GiB floor, and the largest ` +
+      `single entry is ${(largest.size_in_bytes / MIB).toFixed(0)} MiB. Superseded entries are already excluded, so ` +
+      'pruning will not bring it down. Read the per-ref lines: a ref that is not the default branch holds caches ' +
+      'nothing can restore. If every ref is the default branch, the working set itself has grown -- look for a ' +
+      'workflow saving into this budget that does not need to, before arguing about the floor.',
+  )
+}
+
+if (problems.length > 0 && beforeMain) {
   process.stdout.write(
-    `cache budget: ${(total / GIB).toFixed(2)} GiB is over the ${(FLOOR_BYTES / GIB).toFixed(1)} GiB floor -- ` +
-      `reported, not enforced, because this is a ${process.env['GITHUB_EVENT_NAME']} and the cache is a ` +
-      'property of the repository rather than of this change. The next run on `main` fails on it.\n',
+    `cache budget: ${problems.length} problem(s) -- reported, not enforced, because this is a ` +
+      `${process.env['GITHUB_EVENT_NAME']} and the cache is a property of the repository rather than of this change. ` +
+      `The next run on \`main\` fails on it.\n${problems.map(one => `  ${one}\n`).join('')}`,
   )
   process.exit(0)
 }
 
-if (total > FLOOR_BYTES) {
-  const largest = entries.reduce((big, entry) => (entry.size_in_bytes > big.size_in_bytes ? entry : big))
-  const remainder = (total - supersededBytes) / GIB
-  process.stderr.write(
-    `\nThe cache is ${(total / GIB).toFixed(2)} GiB, past the ${(FLOOR_BYTES / GIB).toFixed(1)} GiB this asks about, and ` +
-      `the largest single entry is ${(largest.size_in_bytes / MIB).toFixed(0)} MiB.\n\n` +
-      (superseded.length > 0
-        ? `Start with the ${superseded.length} superseded above: the commands are printed and removing them leaves ` +
-          `${remainder.toFixed(2)} GiB, which is ${remainder > FLOOR_BYTES / GIB ? 'still over the floor -- so that is a start and not the fix' : 'under the floor'}.\n`
-        : 'Nothing here is superseded, so there is no dead weight to remove.\n') +
-      'Then read the per-ref lines: a ref that is not the default branch is a pull request or a tag whose caches ' +
-      'outlive it and can never be restored by anything. If every ref is the default branch and nothing is ' +
-      'superseded, the working set itself has grown -- look for a workflow saving into this budget that does not ' +
-      'need to, before arguing about the floor.\n',
-  )
+if (problems.length > 0) {
+  process.stderr.write(`\n${problems.join('\n\n')}\n`)
   process.exit(1)
 }

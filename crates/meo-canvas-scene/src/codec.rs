@@ -55,7 +55,7 @@
 //!
 //! kind     := u8(0)                                          -- Box
 //!           | u8(1) list<segment> opt<u32> opt<str>          -- Text: segments, max_lines, ellipsis
-//!           | u8(2) source enum(fit) length length opt<u32>  -- Image: .., position x/y, frame
+//!           | u8(2) source enum(fit) length length opt<i32>  -- Image: .., position x/y, frame
 //!           | u8(3) str(d) opt<paint> opt<paint> f32 enum enum enum list<f32> f32
 //!                                                            -- Path: fill, stroke, line_width,
 //!                                                               fill_rule, cap, join, dash, offset
@@ -159,7 +159,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 7;
+pub const VERSION: u16 = 8;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -699,7 +699,7 @@ mod tests {
                 ),
                 fit: ObjectFit::ScaleDown,
                 position: (Length::Percent(0.5), Length::Points(2.0)),
-                frame: Some(7),
+                frame: Some(-7),
             },
             NodeKind::Path {
                 data: "M0 0 H10".to_owned(),
@@ -751,6 +751,22 @@ mod tests {
                 .unwrap_or_else(|error| unreachable!("{error}"));
             assert_eq!(decode(&encode(&scene)), Ok(scene));
         }
+    }
+
+    /// The frame ends an image kind, so a frame of `-1` ends its bytes with
+    /// the option flag and four bytes of two's complement.
+    #[test]
+    fn an_image_frame_is_a_signed_integer_on_the_wire() {
+        let kind = NodeKind::Image {
+            source: ImageSource::Bytes(Vec::new()),
+            fit: ObjectFit::Fill,
+            position: (Length::ZERO, Length::ZERO),
+            frame: Some(-1),
+        };
+        let mut bytes = Vec::new();
+        kind.write(&mut Writer::new(&mut bytes));
+        assert!(bytes.ends_with(&[1, 0xFF, 0xFF, 0xFF, 0xFF]), "{bytes:?}");
+        assert_eq!(read_one::<NodeKind>(&bytes), Ok(kind));
     }
 
     /// The bytes do not depend on how the caller assembled the headers. Pins

@@ -504,6 +504,23 @@ function whole(value: unknown, what: string): number {
   return value
 }
 
+/** The smallest Rust `i32`, which is what `zIndex` and `frame` are in the scene. */
+const INT32_MIN = -(2 ** 31)
+/** The largest Rust `i32`. */
+const INT32_MAX = 2 ** 31 - 1
+
+/**
+ * Refuses anything but a whole number a Rust `i32` holds, naming the property. The
+ * reader refuses a larger one too, as a slot offset the caller never saw.
+ */
+function int32(value: unknown, what: string): number {
+  const integer = whole(value, what)
+  if (integer < INT32_MIN || integer > INT32_MAX) {
+    throw new RangeError(`${what} is ${integer}; it takes a whole number from ${INT32_MIN} to ${INT32_MAX}`)
+  }
+  return integer
+}
+
 /**
  * Refuses anything but a number, naming the property. `NaN` is refused and
  * `Infinity` is not: an infinity means *as large as possible* and is bounded on the
@@ -1304,7 +1321,7 @@ const PAINT_PROPERTIES: readonly Property[] = [
     index: 10,
     rust: 'z_index',
     keys: ['zIndex'],
-    write: (out, style) => out.optional(style.zIndex, index => out.integer(whole(index, 'zIndex'))),
+    write: (out, style) => out.optional(style.zIndex, index => out.integer(int32(index, 'zIndex'))),
   },
 ]
 
@@ -1536,7 +1553,7 @@ function writeImagePayload(out: ArenaWriter, src: ImageSource, style: Style | un
   const position = style?.objectPosition ?? CENTRED
   writeLength(out, position[0], 'objectPosition x')
   writeLength(out, position[1], 'objectPosition y')
-  out.optional(style?.frame, frame => out.integer(frame))
+  out.optional(style?.frame, frame => out.integer(int32(frame, 'frame')))
 }
 
 /**
