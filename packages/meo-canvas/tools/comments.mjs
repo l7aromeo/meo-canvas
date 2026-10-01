@@ -100,6 +100,24 @@ export function spansOf(source, { rust = false } = {}) {
   return scan(source, rust).spans
 }
 
+/**
+ * A source read two ways, both its own length so an offset means the same in each:
+ * `code` with comments blanked, and `shape` with string contents blanked too, so a
+ * brace, a keyword or an entry inside either is never read as code.
+ */
+export function blankedViews(source, { rust = false } = {}) {
+  const code = source.split('')
+  const shape = source.split('')
+  for (const { kind, start, end } of spansOf(source, { rust })) {
+    for (let at = start; at < end; at += 1) {
+      if (source[at] === '\n') continue
+      shape[at] = ' '
+      if (kind === 'comment') code[at] = ' '
+    }
+  }
+  return { code: code.join(''), shape: shape.join('') }
+}
+
 /** One pass that both {@link commentsOf} and {@link spansOf} read. */
 function scan(source, rust) {
   const comments = []
