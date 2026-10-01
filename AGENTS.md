@@ -218,9 +218,10 @@ registers exactly one font, `Fixture`, refuses any other, pins the scale and
 turns `gpu` off; `fixtures.yml` uploads artefacts and never commits goldens.
 
 `docs-js` fails on a dead link, a type reaching a signature unexported, or any
-undocumented member (`undocumented-baseline.txt` is `0`, a floor). Coverage has
-two floors: 90% of regions and lines across the workspace, on the pinned
-nightly, and 60% of regions on the Neon boundary; Windows runs only the first.
+undocumented member (`undocumented-baseline.txt` is `0`, a floor). Coverage
+fails below 90% on each side -- regions and lines across the Rust workspace on
+the pinned nightly, and the JavaScript suite under vitest -- and `coverage`
+adds a floor of 60% of regions on the Neon boundary, which Windows skips.
 
 ---
 
