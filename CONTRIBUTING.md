@@ -15,8 +15,9 @@ packages/meo-canvas/  the npm package: TypeScript, plus the tools that check it
 examples/          the same nine scenes written twice, once per surface
 ```
 
-`AGENTS.md` is the long-form argument for why things are the way they are. You do not need to read
-it to send a patch, but it is where the reasoning lives when a review says "because".
+`AGENTS.md` is how work is done here, and `docs/design.md` is why the code is the way it is. You do
+not need to read either to send a patch, but they are where the reasoning lives when a review says
+"because".
 
 ## Getting set up
 

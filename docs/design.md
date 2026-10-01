@@ -476,7 +476,29 @@ timeout, the same over-size read reports a bare I/O error. `fetch` therefore
 counts the bytes itself. A probe isolating one feature has removed the others
 by construction, and the crate ships them together.
 
-## Dependency notes
+## Dependencies
+
+| crate             |        |                                                           |
+| ----------------- | ------ | --------------------------------------------------------- |
+| `meo-skia-canvas` | 0.16.3 | Skia, text shaping, encoding. `default-features = false`. |
+| `taffy`           | 0.14   | Flexbox, CSS grid, block layout. Without `calc`.          |
+| `csscolorparser`  | 0.8    | CSS colour syntax. Channels are `f32`; see design notes.  |
+| `neon`            | 1.1    | Node addon.                                               |
+| `clap`            | 4.6    | CLI.                                                      |
+| `thiserror`       | 2.0    | Error types.                                              |
+| `ureq`            | 3.4    | Remote images, behind the optional `net` feature.         |
+| `rustls`          | 0.23   | A floor, not a use -- see `Cargo.toml`. Under `net`.      |
+| `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.    |
+
+| tool       |       |                                                                |
+| ---------- | ----- | -------------------------------------------------------------- |
+| bun        | 1.4.1 | Package manager and the JavaScript examples' runtime.          |
+| typescript | 6.0.3 | Not 7, which neither typescript-eslint nor TypeDoc loads.      |
+| eslint     | 10    | typescript-eslint 8, `eslint-config-prettier` last.            |
+| prettier   | 3.9   | Whole tree; `.prettierignore` names the machine-written files. |
+| vitest     | 5     | Tests and the JavaScript coverage floor.                       |
+| typedoc    | 0.28  | Its own package, so it pins the TypeScript it loads.           |
+| playwright | 1.63  | Drives Chrome for the conformance tables.                      |
 
 **`taffy::TaffyTree` is neither `Send` nor `Sync`**: taffy represents every
 length as a tagged pointer, so `Style` itself holds a `*const ()`. A tree is
