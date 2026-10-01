@@ -115,7 +115,10 @@ tree. It is the only stage performing I/O, and **whether that I/O leaves the
 machine is a build-time decision**: without the `net` feature, the default, an
 `ImageSource::Url` is refused with `Error::UnresolvedSource` and no HTTP stack
 is linked. The facade forwards the flag, so a consumer of `meo-canvas` enables
-it there. No async runtime, ever.
+it there. What a request carries beyond the URL, `HttpOptions`, belongs to each
+`ImageSource::Url` rather than to the scene: two sources naming one URL with
+different headers are two sources, and a scene's own options merge into each
+source a header at a time. No async runtime, ever.
 
 **measure** shapes each text node and breaks it into lines, in `crate::lines`.
 Skia's `Paragraph` is not on this path; `measure.rs`'s `build_paragraph` is
