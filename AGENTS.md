@@ -273,8 +273,10 @@ reporting it.
 about them.** A field named for a quantity has to hold that quantity, a
 well-chosen error shape can hold the wrong cases, and a sentence true of the
 design goes false once the code it describes changes. When one of them makes
-something look considered, read the contents. Ask what a check is a statement
-about and which frame its evidence came from;
+something look considered, read the contents. Prose has no compiler: a document
+can contradict itself across sections, so fixing a defect means finding every
+sentence about it, here and in the documents this file links. Ask what a check
+is a statement about and which frame its evidence came from;
 [`docs/design.md`](docs/design.md#what-is-this-a-statement-about) has the
 worked cases.
 
