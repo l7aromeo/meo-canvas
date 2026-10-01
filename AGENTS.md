@@ -219,9 +219,10 @@ turns `gpu` off; `fixtures.yml` uploads artefacts and never commits goldens.
 
 `docs-js` fails on a dead link, a type reaching a signature unexported, or any
 undocumented member (`undocumented-baseline.txt` is `0`, a floor). Coverage
-fails below 90% on each side -- regions and lines across the Rust workspace on
-the pinned nightly, and the JavaScript suite under vitest -- and `coverage`
-adds a floor of 60% of regions on the Neon boundary, which Windows skips.
+gates three floors: `coverage-js` fails the JavaScript suite below 90% on all
+three runners; `coverage` fails the Rust workspace below 90% of regions and
+lines on the pinned nightly, and the Neon boundary below 60% of regions, on
+ubuntu and macOS only, since Windows runs the Rust tests without a report.
 
 ---
 

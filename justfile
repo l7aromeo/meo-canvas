@@ -192,11 +192,11 @@ threads-probe: ensure-deps addon
     ./node_modules/.bin/vitest run --pool=threads
 
 
-# Coverage fails below 90% of regions and lines -- no tool fails on branches --
-# on the pinned nightly so branches are measured; `--doctests` counts what
-# `test` runs. `meo-canvas-node/src/lib.rs`, which no Rust calls, is excluded
-# here and floored below.
-[doc("Measure coverage and fail below the 90% floor.")]
+# Fails below 90% of regions and lines (no tool fails on branches) on the pinned
+# nightly, so branches are measured; `--doctests` counts what `test` runs.
+# `meo-canvas-node/src/lib.rs`, which no Rust calls, is excluded and floored
+# below. Neither floor runs on Windows; see the note at the branch.
+[doc("Measure coverage; fail below the 90% floor (not on Windows).")]
 coverage: ensure-deps
     #!/usr/bin/env bash
     set -euo pipefail
@@ -207,8 +207,8 @@ coverage: ensure-deps
     cargo +{{ fmt_toolchain }} llvm-cov --workspace --branch --doctests --no-report
 
     # Not on Windows, where the instrumented addon segfaults under
-    # `--pool=threads`; the Rust floor above still gates there, and `lib.rs`'s
-    # regions are measured on the other two runners.
+    # `--pool=threads`. There the Rust tests above run with no report, so
+    # neither floor gates and `coverage-js` is Windows' only coverage floor.
     if [[ "{{ os() }}" != "windows" ]]; then
 
     # The instrumented addon goes where the suite already looks, not
