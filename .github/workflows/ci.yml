@@ -43,8 +43,8 @@ jobs:
     timeout-minutes: 20
     # A job's `permissions:` replaces the workflow's, so `contents: read` is
     # restated. `actions: read` is for `cache-budget-check`, which lists the
-    # caches, and is granted only here, away from the legs that run third-party
-    # build tooling.
+    # caches and the cache-prune runs, and is granted only here, away from the
+    # legs that run third-party build tooling.
     permissions:
       contents: read
       actions: read
