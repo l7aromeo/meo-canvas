@@ -162,12 +162,13 @@ above the `mod` declaration.
 `just` drives everything. **`just` alone lists every recipe with its one-line
 doc, and the `justfile` is the authority on what each does** -- read the recipe
 rather than a description of it, including this one. A bare verb rewrites the
-tree; a `-check` suffix reports instead. `just ci` runs only reporting recipes
-and is split into `just portable` (reads the tree, no cargo) and `just native`
-(compiles, links or runs the addon). **A prose-only change is not gated by
-`portable`**: `fmt-check`, which runs prettier over Markdown, YAML and JSON,
-sits in `native`. Run `just fmt-check` beside `portable` for a `.md` change,
-and say that you did.
+tree; a `-check` suffix reports instead. `just ci` runs only reporting recipes,
+refuses to start beside another gate in the same tree, and is split into
+`just portable` (reads the tree, no cargo) and `just native` (compiles, links
+or runs the addon). **A prose-only change is not gated by `portable`**:
+`fmt-check`, which runs prettier over Markdown, YAML and JSON, sits in
+`native`. Run `just fmt-check` beside `portable` for a `.md` change, and say
+that you did.
 
 **`just ci` is not everything CI runs.** A change in these places needs the
 recipe beside it too:
