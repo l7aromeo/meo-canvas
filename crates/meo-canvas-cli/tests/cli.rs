@@ -357,6 +357,82 @@ fn a_recorded_failed_fetch_warns_on_stderr_and_still_writes_the_image() {
 
 #[cfg(not(feature = "net"))]
 #[test]
+fn the_warning_line_keeps_a_spaced_url_and_detail_on_one_line() {
+    // A script splits the line on spaces up to `detail=`, so the URL's space
+    // is percent-encoded, and the detail's line break becomes a space.
+    let dir = scratch("warn-spaced");
+    let url = "https://example.invalid/a b.png";
+    let attempt = ImageFetchAttempt {
+        url: url.to_owned(),
+        failure: meo_canvas_scene::ImageFetchFailure::Status(404),
+        detail: "404 Not Found\nfrom the cache".to_owned(),
+    };
+    let path =
+        write_url_scene(&dir, url, OnImageError::Placeholder, vec![attempt]);
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        warning_lines(&stderr),
+        [
+            "meo-canvas: warning: node=1 nodes=1 failure=status status=404 \
+             url=https://example.invalid/a%20b.png detail=404 Not Found from \
+             the cache"
+        ],
+        "{stderr}"
+    );
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
+fn one_source_named_by_two_nodes_is_one_line_counting_both() {
+    // `node` is the first node naming the source and `nodes` how many do, as
+    // the README documents.
+    let dir = scratch("warn-twice");
+    let url = "https://example.invalid/a.png";
+    let mut scene = Scene::new(Size::new(4.0, 4.0));
+    scene.image_fetch_attempts = recorded_404(url);
+    let page = scene
+        .root()
+        .unwrap_or_else(|| unreachable!("a fresh scene has a page"));
+    for _ in 0..2 {
+        scene
+            .push(
+                page,
+                Node::new(NodeKind::Image {
+                    source: ImageSource::url(url.to_owned()),
+                    fit: ObjectFit::Contain,
+                    position: (Length::Percent(0.5), Length::Percent(0.5)),
+                    frame: None,
+                }),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+    }
+    let path = dir.join("scene.mcs");
+    std::fs::write(&path, meo_canvas_scene::codec::encode(&scene))
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    let lines = warning_lines(&stderr);
+    assert_eq!(lines.len(), 1, "{stderr}");
+    assert!(lines[0].contains(" node=1 nodes=2 "), "{stderr}");
+}
+
+#[cfg(not(feature = "net"))]
+#[test]
 fn under_throw_a_recorded_failed_fetch_still_fails() {
     // `Throw` is the scene's way to make an unobtainable image fatal, and a
     // recorded attempt does not soften it.

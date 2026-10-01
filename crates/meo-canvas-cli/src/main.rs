@@ -282,8 +282,18 @@ const fn failure_class(failure: FetchFailure) -> (&'static str, Option<u16>) {
     }
 }
 
-/// One warning as one stderr line: fixed fields in a fixed order, `detail`
-/// last since it is free text, with its line breaks flattened to spaces.
+/// A URL as one space-free token: space, tab, CR and LF percent-encoded, the
+/// spelling a client reads as the same URL.
+fn url_token(url: &str) -> String {
+    url.replace(' ', "%20")
+        .replace('\t', "%09")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+/// One warning as one stderr line. Every field before `detail` is one token;
+/// `detail` runs to the end of the line with CR and LF turned into spaces.
+/// `the_warning_line_keeps_a_spaced_url_and_detail_on_one_line` pins this.
 fn warning_line(warning: &ImageWarning) -> String {
     let (class, status) = failure_class(warning.failure);
     let status =
@@ -293,7 +303,7 @@ fn warning_line(warning: &ImageWarning) -> String {
          detail={}",
         warning.node.get(),
         warning.nodes,
-        warning.url,
+        url_token(&warning.url),
         warning.detail.replace(['\n', '\r'], " "),
     )
 }
