@@ -6,8 +6,8 @@ and how the reference site follows it. The `justfile` recipes and the workflows
 are the authority on the exact steps; this explains what they rely on.
 
 **Nothing is released without an explicit instruction**, and the version is the
-maintainer's decision. An agent never runs a release step itself; `AGENTS.md`
-lists what that covers.
+maintainer's decision. What an agent may and may not run is listed under
+"Agents never publish" in [`AGENTS.md`](../AGENTS.md).
 
 ## Two channels, numbered independently
 
