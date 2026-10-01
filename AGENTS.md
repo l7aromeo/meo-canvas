@@ -1207,18 +1207,9 @@ faces answer `has_family` too, so a fixture asking for Helvetica would pass here
 and differ on any other machine. The reference platform is `("macos",
 "aarch64")`; other platforms compare against `expected.<variant>.png`.
 
-### The reference publishes after the version resolves from npm
+### The reference and the coverage floors
 
-`docs.yml` builds the TypeDoc reference on every pull request that touches the
-surface and publishes it when a release is published -- which `release.yml` does
-only after every package is on npm -- and **still polls `npm view` before
-deploying, because published and installable are separated by propagation.** The
-wait loop in that file has that as its reason; without it, it reads as defensive
-padding and gets shortened.
-
-One directory per version, prereleases included. **`latest/` follows the newest
-_stable_ version**, the way npm's dist-tag does, and two files implement that
-rule -- `docs.yml` picks it and `site-index.mjs` refuses a prerelease stamp.
+How the reference site publishes is in [`docs/releasing.md`](docs/releasing.md).
 
 The tool fails on a dead link or a type reaching a signature unexported, and
 **refuses any undocumented member at all: `undocumented-baseline.txt` is `0`, a
@@ -1246,193 +1237,16 @@ across.
 ## Releasing
 
 **Nothing is released without an explicit instruction**, and the version is the
-maintainer's decision.
+maintainer's decision. Every pull request fills
+`docs/releases/{npm,rust}/unreleased.md` in the commit that makes the change,
+under the channel or channels it reaches; a change that reaches neither says so
+in the pull request rather than inventing an entry.
+[`docs/releases/README.md`](docs/releases/README.md) is the authority on the
+headings, and `CONTRIBUTING.md` on an entry that contradicts an earlier one.
 
-### Two channels, numbered independently
-
-The npm package is **`meo-canvas`**, unscoped, continuing v9's npm lineage rather than starting a new package.
-The cargo crate is `meo-canvas` too and versions independently, starting fresh at
-0.1.0. **They are not comparable and are never synchronised for tidiness.** Tags
-carry the channel: `npm-v*` and `rust-v*`. Release notes are hand-written per
-channel at `docs/releases/{npm,rust}/<version>.md`, against the previous release
-_of that channel_, and a missing note fails the release.
-
-**A note is written before its version exists, so it accumulates in
-`docs/releases/{npm,rust}/unreleased.md` and the release renames that file to
-the version.** Every pull request fills it, in the commit that makes the change
-and under the channel or channels the change reaches; a change that reaches
-neither -- a gate, a test, a workflow -- says so in the pull request rather than
-inventing an entry. Writing it at release time instead is what produces a note
-describing the fix rather than the defect, because the log records the fix and
-the reader is looking for their own symptom. `just release-npm` and
-`just release-crate` refuse to dispatch when the version's note is missing, so
-the forgotten rename stops locally rather than inside a workflow that has
-already built seven addons. `docs/releases/README.md` is the authority on the
-headings and on what belongs under each, and `CONTRIBUTING.md` on what to do
-when a change contradicts an entry already in the file -- the short version
-being that an unreleased entry has no reader, so it is edited rather than
-corrected.
-
-**The 68 existing `v*` tags were not rewritten, and a bare `v10.0.0` is still a
-valid npm tag.** `docs.yml`'s filter is `^(npm-)?v...` on purpose, because
-`workflow_dispatch` backfills exactly those releases, and `release-tags-check`
-asserts it. Narrowing that filter to `npm-v` only, as tidying, breaks the
-backfill.
-
-**The tag carries the channel prefix and the site directory does not**, and that
-asymmetry is deliberate: `site-index.mjs` parses directory names as
-`^v(\d+)\.(\d+)\.(\d+)`, so a directory named `npm-v10.0.0-alpha.6` deploys,
-is never listed, and never advances `latest/` -- with nothing red. Someone
-"fixing" the inconsistency breaks the site quietly.
-
-It was published as `@l7aromeo/meo-canvas` for a while, to let v10 install beside
-`meo-canvas@9`. The requirement was real; the scope was the wrong answer to it --
-an alias lets the consumer choose the local name:
-`npm install meo-canvas-v9@npm:meo-canvas@9`. The example runs that way round
-now that 10.x holds `latest`: the alias goes on whichever generation is not the
-bare install, and that swapped when the first stable shipped.
-
-### The targets, and the one missing on purpose
-
-    linux-x64-gnu     linux-arm64-gnu
-    linux-x64-musl    linux-arm64-musl
-    darwin-arm64      win32-x64         win32-arm64
-
-**`darwin-x64` is excluded because Apple stopped supporting Intel**, and because
-it would need `macos-13`, which GitHub is retiring -- building it means owning a
-target we lose on someone else's timetable. The rule the set comes from:
-everything within our control, and whatever is not gets named as such rather than
-left a silent gap.
-
-**Adding a target is one row in `TARGETS` and nothing else.** That is what the
-`TARGETS` -> build matrix -> `optionalDependencies` -> `PLATFORM_PACKAGES` -> ABI
-floors chain exists to provide. Anywhere a second edit is needed, that is a
-defect in the chain rather than a step in the task.
-
-**A target is named three times and a test asserts all three agree.** `TARGETS`
-is what a release **builds**, `optionalDependencies` is what an install
-**fetches**, `PLATFORM_PACKAGES` is what a process **resolves**. Any two agreeing
-while the third does not is its own silent failure: built and pinned but
-unresolved renders nothing with the binary on disk; pinned and resolved but
-unbuilt fails every install; built and resolved but unpinned works only in a
-checkout, which is where it would be tested.
-
-### A Linux artefact is a property of its build base
-
-The same source built on `ubuntu-latest` demanded glibc 2.35 and failed to load
-on five of the six images the package claims; built in
-`containers/Dockerfile.glibc` it demands 2.28 and loads on all six. **Nothing in
-the tree changed between those two runs.**
-
-The musl image is a second instance of the work rather than a variant: Rust's
-musl targets default to `crt-static`, which cannot produce a `cdylib` at all;
-rust-skia ships no prebuilt Skia for musl so the image compiles all of it, 32 of
-a 35-minute build; and an explicit `--target` must **not** be passed, because
-cargo then builds build scripts without `RUSTFLAGS` and `skia-bindings`' script
-cannot `dlopen` libclang.
-
-**Two instruments, and they are not substitutes.** `just abi-floor` reads the
-built `.node`'s undefined symbols and fails if it demands more than `TARGETS`
-declares -- and prints measured beside declared, because **a floor declared too
-high fails nothing** and under-promises quietly. `just acceptance` loads the
-addon in six images with nothing installed. A ceiling compares version tags and
-an unversioned symbol has none: a binary under every ceiling still failed on
-`_M_replace_cold`. **The floor diagnoses; the load decides.** The musl pair carry
-no floors at all, because musl does not version its symbols, so the load is the
-whole of the evidence.
-
-### The addon does not ship inside the package
-
-It is 28 MB staged for release (53 MB unstripped from `just addon`, which is
-the one in a working tree). One package per target carries one binary, named in
-`optionalDependencies` with its own `os`, `cpu` and `libc`. A postinstall script
-that downloads was the alternative and was refused: it needs the network at
-install time and breaks offline installs, locked-down CI and `--ignore-scripts`.
-
-`resolveAddon` looks in three places in order -- `MEO_CANVAS_ADDON`, the `.node`
-beside the package in a working tree, then the platform package -- and a failure
-names all three. So a checkout tests what it just built, which is why
-`just addon` needs no reinstall to take effect.
-
-**Packing is not installing.** `npm pack` says nothing about whether a consumer
-can reach what is inside: `exports` can name a path the `files` allowlist
-dropped, and a platform package's `main` can name a binary that is not there.
-Both pack cleanly and fail at the first import. `just verify-pack` installs the
-tarballs somewhere that is not this repository and renders through them.
-
-### What triggers a publish
-
-`release.yml`, **`workflow_dispatch` only** -- a push is how code arrives, and
-publishing is a decision about code that already arrived. `just release-npm`
-refuses on a dirty tree, off the branch, or with unpushed commits. `dry_run`
-defaults to **true**, and the dry run is what to run after any change to the
-workflow, because the workflow is the only thing that reads its own YAML.
-
-**Any version containing a hyphen goes to the `next` dist-tag**, never `latest`:
-a semver range never matches a prerelease, so nobody reaches it without naming
-it.
-
-Seven runners build one addon each; the publish job refuses unless all seven
-tarballs are present, then publishes them **before** the main package, which pins
-them at an exact version -- the other order points at versions that do not exist
-yet.
-
-**The tag and the release come last, after the registry has accepted
-everything.** A tag pushed first and a publish that then fails leaves a version
-number that can never be reissued; `meo-skia-canvas` carries that scar.
-
-### A new platform package cannot start on OIDC
-
-**The platform packages are scoped: `@meo-canvas/<suffix>`.** Not
-`meo-canvas-<suffix>`, which is what this file said until a prerelease check
-queried the unscoped names, got seven `E404`s, and reported that all seven needed
-bootstrapping by hand. They did not -- all seven exist. `optionalDependencies` in
-`packages/meo-canvas/package.json` is the authority, and the suffixes come from
-`TARGETS` in `tools/stage-platform-package.mjs`.
-
-A trusted publisher is configured on a package's settings page, and a package
-never published has none. So the first release of every `@meo-canvas/<suffix>` is
-refused -- correctly, with nothing published and no tag -- and **the dry run
-could not have seen it, because `--dry-run` never authenticates.**
-
-Bootstrap by hand: `npm publish --access public --tag next <tgz>` each tarball,
-**one at a time with a pause between**. Four new names in ten seconds tripped
-npm's spam gate on the fifth and sixth; that is a burst heuristic, not a name
-problem. Before releasing a version that adds a platform package:
-`npm view @meo-canvas/<suffix> version` -- an `E404` means bootstrap first, and a
-version means it is already on OIDC. **Query the name `optionalDependencies`
-names**, because the wrong spelling answers `E404` for every package including
-the ones that exist, and that reads as a release blocked rather than a typo.
-
-**Every platform package must exist before the main one, and the check is per
-name rather than per release.** npm and pnpm skip an optional dependency whose
-`os`/`cpu`/`libc` excludes the host and never ask the registry. **yarn resolves
-all seven before installing any**, and a 404 on one fails the whole install --
-measured with yarn 4.10.3 against tarballs npm and pnpm install without
-complaint. So the window between publishing the main package and finishing the
-bootstrap is one in which every yarn install fails, and that window is **the
-expected path rather than an accident.**
-
-### The publishing audit
-
-A sentence true of the architecture but not of the code is fine while nothing is
-published and false the moment something is. Each of these is a shape rather than
-an incident:
-
-- **A claim outlived the constraint that made it true.** "The core performs no
-  network access" was written before the `net` feature and survived it in three
-  places.
-- **A claim outlived the code it described.** The pipeline said measure builds a
-  Skia `Paragraph` per text node; that path is `#[cfg(test)]` now.
-- **A document contradicted itself across two sections.** Fixing a defect means
-  finding every sentence about it, and prose has no compiler to say where they
-  are.
-- **A list was right about its members and wrong about its bounds.** "Frames for
-  GIF and APNG" omitted WebP and AVIF, which animate too.
-- **An exclusive claim was made against the wrong axis.** "The animation helpers
-  are the only JavaScript that runs" -- `Chart` runs too. It does not _draw_,
-  which is the axis the sentence beside it defends, and that is what made the
-  wrong one read as safe.
+The runbook -- channels and tags, targets, Linux artefacts, platform packages,
+the OIDC bootstrap and the reference site -- is
+[`docs/releasing.md`](docs/releasing.md).
 
 ---
 
