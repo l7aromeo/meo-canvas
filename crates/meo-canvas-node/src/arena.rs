@@ -82,7 +82,7 @@
 //! payload(Text)  := opt<u32>(max_lines) opt<str>(ellipsis) text-content
 //! text-content   := 1 str(markup) | 0 list<segment>
 //! segment        := str(text) mask(text) text-values
-//! payload(Image) := source enum(fit) length length opt<u32>(frame)
+//! payload(Image) := source enum(fit) length length opt<i32>(frame)
 //! payload(Path)  := str(d) opt<paint> opt<paint> f32(line_width)
 //!                   enum(fill_rule) enum(cap) enum(join) list<f32>(dash)
 //!                   f32(dash_offset)
@@ -1018,7 +1018,7 @@ fn read_kind(
             source: ImageSource::read(input)?,
             fit: ObjectFit::read(input)?,
             position: <(Length, Length)>::read(input)?,
-            frame: Option::<u32>::read(input)?,
+            frame: Option::<i32>::read(input)?,
         }),
         NodeTag::Path => Ok(NodeKind::Path {
             data: String::read(input)?,

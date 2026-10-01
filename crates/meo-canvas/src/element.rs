@@ -1336,7 +1336,7 @@ mod tests {
 
     #[test]
     fn the_image_properties_reach_the_image_node_and_nothing_else() {
-        let styled = Style::new().object_fit(ObjectFit::Cover).frame(3);
+        let styled = Style::new().object_fit(ObjectFit::Cover).frame(-1);
 
         let image = Image::path("a.png").with_style(styled.clone());
         let scene = image
@@ -1349,7 +1349,7 @@ mod tests {
         match &root.kind {
             NodeKind::Image { fit, frame, .. } => {
                 assert_eq!(*fit, ObjectFit::Cover);
-                assert_eq!(*frame, Some(3));
+                assert_eq!(*frame, Some(-1));
             }
             other => unreachable!("expected an image, found {other:?}"),
         }

@@ -340,12 +340,13 @@ pub enum Error {
     #[error("image bytes for node {} are in no format this decodes", .0.get())]
     UndecodableImage(NodeId),
 
-    /// A frame index past the last frame of an animated image source.
+    /// A frame index past either end of an animated image source.
     ///
     /// **Refused rather than drawn as some other frame**: a scene asking for
-    /// the fourth frame of a two-frame source asked for something the source
-    /// cannot answer. A source with one frame, a still raster or an SVG
-    /// document, ignores the index, since there is only that frame to draw.
+    /// the fourth frame of a two-frame source, or for frame `-3` of it,
+    /// asked for something the source cannot answer. A source with one
+    /// frame, a still raster or an SVG document, ignores the index, since
+    /// there is only that frame to draw.
     #[error(
         "node {} asks for frame {index} of an image with {frames} frames",
         .node.get()
@@ -354,8 +355,9 @@ pub enum Error {
     FrameOutOfRange {
         /// The node that asked.
         node: NodeId,
-        /// The frame it asked for, counting from zero.
-        index: u32,
+        /// The frame it asked for, as written: counting from zero, or from
+        /// the end when negative.
+        index: i32,
         /// How many frames the source has.
         frames: u32,
     },

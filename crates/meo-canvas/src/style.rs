@@ -174,8 +174,10 @@ pub struct Style {
     /// Where an image sits in its box when it does not fill it, as a fraction
     /// of the leftover space on each axis. Read only by an image node.
     pub object_position: Option<(Length, Length)>,
-    /// Which frame of an animated source to draw. Read only by an image node.
-    pub frame: Option<u32>,
+    /// Which frame of an animated source to draw, counting from zero; a
+    /// negative index counts from the end, so `-1` is the last. Read only by
+    /// an image node.
+    pub frame: Option<i32>,
 
     // -- Text -----------------------------------------------------------
     /// The family name text is drawn in. Inherits.
@@ -598,8 +600,14 @@ properties! {
         /// Where an image sits in its box when it does not fill it.
     plain object_position: object_position, (Length, Length);
 
-        /// Which frame of an animated source to draw.
-    plain frame: frame, u32;
+        /// Which frame of an animated source to draw, counting from zero.
+        ///
+        /// A negative index counts from the end, so `-1` is the last frame. A
+        /// source with one frame ignores the index, and an index past either
+        /// end of an animated source is [`Error::FrameOutOfRange`].
+        ///
+        /// [`Error::FrameOutOfRange`]: crate::Error::FrameOutOfRange
+    plain frame: frame, i32;
 
         /// The colour glyphs are drawn in.
         ///

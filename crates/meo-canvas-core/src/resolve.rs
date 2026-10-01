@@ -477,10 +477,11 @@ impl DecodedImage {
     }
 
     /// The frame a node asked for, or this image unchanged. A frame names one
-    /// frame of an animated source, so a one-frame source ignores the index,
-    /// and an index past an animated source's last frame is
-    /// [`Error::FrameOutOfRange`] naming the node, the index and the count.
-    fn at_frame(self, frame: Option<u32>, node: NodeId) -> Result<Self, Error> {
+    /// frame of an animated source, counting from the end when negative, so a
+    /// one-frame source ignores the index, and an index past either end of an
+    /// animated source is [`Error::FrameOutOfRange`] naming the node, the
+    /// index as written and the count.
+    fn at_frame(self, frame: Option<i32>, node: NodeId) -> Result<Self, Error> {
         let Some(index) = frame else {
             return Ok(self);
         };
@@ -493,15 +494,21 @@ impl DecodedImage {
         if index == 0 || frames <= 1 {
             return Ok(self);
         }
-        if index as usize >= frames {
+        // `unsigned_abs` rather than negation, which overflows at `i32::MIN`.
+        let resolved = usize::try_from(index).map_or_else(
+            |_| frames.checked_sub(index.unsigned_abs() as usize),
+            Some,
+        );
+        let Some(resolved) = resolved.filter(|&resolved| resolved < frames)
+        else {
             return Err(Error::FrameOutOfRange {
                 node,
                 index,
                 frames: u32::try_from(frames).unwrap_or(u32::MAX),
             });
-        }
+        };
         image
-            .frame(index as usize)
+            .frame(resolved)
             .map(|image| Self {
                 kind: Kind::Raster(image),
             })
@@ -1966,21 +1973,27 @@ pub(crate) mod tests {
     #[test]
     fn a_one_frame_source_ignores_a_frame_index() {
         // A frame names one frame of an animated source. A document and a
-        // still raster have one frame to draw, so any index draws it.
+        // still raster have one frame to draw, so any index draws it, from
+        // either end and at the extremes.
         for (kind, source) in [
             ("an SVG document", svg_source(SIZED_SVG)),
             ("a still raster", ImageSource::Bytes(RED_PNG.to_vec())),
         ] {
-            let mut scene = Scene::new(Size::ZERO);
-            let mut node = image_node(source);
-            if let NodeKind::Image { frame, .. } = &mut node.kind {
-                *frame = Some(3);
+            for index in [3, -1, i32::MIN, i32::MAX] {
+                let mut scene = Scene::new(Size::ZERO);
+                let mut node = image_node(source.clone());
+                if let NodeKind::Image { frame, .. } = &mut node.kind {
+                    *frame = Some(index);
+                }
+                scene
+                    .push(NodeId::ROOT, node)
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+                let resolved = Resolved::new(&scene, &Fonts::new());
+                assert!(
+                    resolved.is_ok(),
+                    "{kind} at frame {index} gave {resolved:?}"
+                );
             }
-            scene
-                .push(NodeId::ROOT, node)
-                .unwrap_or_else(|error| unreachable!("{error}"));
-            let resolved = Resolved::new(&scene, &Fonts::new());
-            assert!(resolved.is_ok(), "{kind} at frame 3 gave {resolved:?}");
         }
     }
 

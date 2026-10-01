@@ -435,12 +435,22 @@ fn background_image_cases() -> Vec<Case> {
 /// Its own case rather than a row above, because the subject is an `Image`
 /// node and every background row is a `Box`.
 fn frame_cases() -> Vec<Case> {
-    vec![Case {
-        property: "image frame",
-        with: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)).frame(1),
-        without: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)),
-        effect: Effect::Draws,
-    }]
+    vec![
+        Case {
+            property: "image frame",
+            with: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)).frame(1),
+            without: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)),
+            effect: Effect::Draws,
+        },
+        Case {
+            property: "image frame from the end",
+            with: || {
+                Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)).frame(-1)
+            },
+            without: || Image::bytes(TWO_FRAMES).size(px(40.0), px(40.0)),
+            effect: Effect::Draws,
+        },
+    ]
 }
 
 /// `Round` and `Space` against `Repeat`, on a tile the box does not divide: on

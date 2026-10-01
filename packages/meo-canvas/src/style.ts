@@ -850,6 +850,18 @@ export interface Style {
    * writes. Read only by an image.
    */
   readonly objectPosition?: readonly [Length, Length]
-  /** Which frame of an animated source to draw. Read only by an image. */
+  /**
+   * Which frame of an animated source to draw, counting from zero. Read only by an
+   * image.
+   *
+   * A negative index counts from the end, so `-1` is the last frame. A source with
+   * one frame ignores the index, and an index past either end of an animated
+   * source rejects the render naming the index and the frame count.
+   *
+   * @example
+   * ```ts
+   * Image({ src: 'loader.gif', frame: -1 }) // the last frame
+   * ```
+   */
   readonly frame?: number
 }
