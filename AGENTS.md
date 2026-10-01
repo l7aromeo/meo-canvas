@@ -739,98 +739,11 @@ that is now wrong is a defect in this commit, not a task for later.
 
 ### Working around an upstream defect
 
-Two halves, and **the probe half already existed before the tag did**.
-`crates/meo-canvas-core/tests/taffy_negative_margin.rs` has pinned inherited
-taffy defects since long before any of them were compensated for, and its own
-doc says why the assertions are of the wrong numbers: a test asserting the
-browser's values would fail today and could not be committed, so it pins what
-the dependency actually does with the right answer beside it, and **the day the
-dependency is fixed it fails, and that failure is the notification.**
-
-What was missing is a way to find the compensation from the other end. A comment
-explaining that some code works around a dependency is findable only by someone
-who already suspects it is there.
-
-**So a workaround carries `[WORKAROUND]` and a probe, and neither substitutes
-for the other.** The tag makes it greppable; the probe makes it impossible to
-leave behind.
-
-```rust
-// [WORKAROUND] <what the dependency does wrong, and what this does instead>.
-// `owner/repo#N`, tracked as `l7aromeo/meo-canvas#M`. Retires when <the
-// observable that will become true>, which <the test that will say so>
-// asserts.
-```
-
-Four things and each earns its place. The **tag** is a fixed string so a grep
-cannot go loose or tight by accident -- prove the pattern against a site it must
-match and something it must not, as with any other search here. The **short
-description** says what the compensation does, so a reader need not reconstruct
-it. The **qualified references** name the upstream defect and our tracking issue,
-which `issue-refs` enforces. And the **retirement observable** is a fact that
-will become true rather than an event someone has to notice.
-
-**It is not a TODO, and the distinction is not a technicality.** TODO, FIXME and
-XXX are refused because they describe work that ought to happen later.
-`[WORKAROUND]` describes what the code **is** -- compensation is its present
-nature, which is what rule 1 asks a comment to state. The tag is a category
-rather than a deferral.
-
-**Every site the compensation reaches carries the tag**, so a grep returns the
-whole of it rather than its entry point, and the symbol names carry the upstream
-reference too: a tag is findable and a name survives a refactor, and they fail
-against different mistakes.
-
-**The probe asserts two things and both are required.** First, in
-`taffy_negative_margin.rs`'s form, that the dependency still gets it wrong: pin
-the wrong numbers, name the right ones beside them, and say in the failure
-message that the compensation can be deleted. Second -- and this is the half
-that is easy to leave out -- **the property the compensation depends on**.
-
-A workaround rests on the dependency being right about something, and that
-something is untested by every other check in the tree. The ratio compensation
-reads a fit-content width taffy reports correctly only when no ratio is on the
-node; if that stopped holding, all twenty-six conformance rows would stay green
-and the first sign would be a golden moving, with nothing saying why. So the
-probe pins it, beside the defect, and a file asserting only that the defect
-exists is half a probe.
-
-**That half carries its own tag: `[FOUNDATION]`, on the test rather than on the
-code.** The defect rows in a probe announce themselves -- they assert the wrong
-numbers and say so -- and the foundation row looks like any other passing test,
-which is what makes it the one a tidy-up deletes.
-`clearing_the_ratio_reports_the_content_height_at_that_width`, in
-`crates/meo-canvas-core/tests/taffy_ratio_direction.rs`, states the cost in the
-file itself: "If this stopped holding, the compensation would floor with the
-wrong number and every conformance row would stay green." The tag is what makes
-that findable from the compensation rather than only from the probe.
-
-```rust
-// [FOUNDATION] the property <which compensation> rests on, and what a change
-// here would cost.
-#[test]
-fn the_dependency_still_gets_this_right() {
-```
-
-**A probe that compensates nothing carries no marker**: it pins a defect nothing
-in this tree works around, so no code rests on it and there is no property to
-name. The marker belongs to the pair, not to the genre.
-
-**No file is named as the example, and that is the rule rather than an
-omission.** Which probes carry a marker changes as the tree changes -- the file
-that illustrated this paragraph gained a compensation and stopped illustrating
-it -- so naming one freezes a fact that is meant to move. `git grep` for the
-marker answers the question against the tree of the day.
-
-**A check enumerating every tagged site and asserting each still has a live
-probe runs in `portable`**, beside `issue-refs` and `gate-lists-check`:
-`just workaround-probes`. It reads that each site names a probe -- or defers to
-a site in the same file that does -- that the probe is a real test target with a
-test carrying no `#[ignore]`, and that it marks at least one test
-`[FOUNDATION]`. **It sees markers, not properties.** Whether the marked row
-pins the thing the compensation actually rests on is not a question a program
-here can ask, and the tool says so in its own header; what the check buys is
-that the question was answered once, deliberately, where a reader lands.
+A compensation for a dependency's defect carries a `[WORKAROUND]` tag and a
+probe that fails the day the dependency is fixed, beside a `[FOUNDATION]` test
+pinning the property the compensation rests on. The convention in full, and
+what `just workaround-probes` checks, is in
+[`docs/upstream-workarounds.md`](docs/upstream-workarounds.md).
 
 ### A default that means something different from the same value stated explicitly cannot be a default
 

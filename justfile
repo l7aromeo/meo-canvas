@@ -975,8 +975,8 @@ issue-refs:
     node packages/meo-canvas/tools/issue-refs.mjs
 
 # A probe rots silently -- a renamed file, an `#[ignore]`, a deleted foundation
-# row -- and leaves a workaround nobody can retire. `AGENTS.md`'s convention,
-# enforced.
+# row -- and leaves a workaround nobody can retire. The convention in
+# `docs/upstream-workarounds.md`, enforced.
 [doc("Fail if a [WORKAROUND] site has lost its probe.")]
 workaround-probes:
     node packages/meo-canvas/tools/workaround-probes.mjs
