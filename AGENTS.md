@@ -358,9 +358,10 @@ magnitude**, not merely the strategy. No lint checks this; review does.
 **`unwrap` is denied; `expect` warns** and is allowed where its message explains
 the invariant that makes it unreachable. The core returns
 `Result<_, MeoError>` with a variant per failure class, which the addon maps to
-exceptions and the CLI to exit codes. **A validation repair goes where the
-input arrives**: the writer refuses what the type forbids, and the consumer
-clamps what arrives as bytes.
+exceptions and the CLI to exit codes. **Where a validation repair goes is
+decided by whether the other surface can express the bad input.** The writer
+refuses what the type forbids; the consumption side clamps what arrives as
+bytes.
 
 **A value the renderer cannot use is a diagnostic, not an error**: the render
 goes ahead and reports it on both surfaces. **A public enum is marked
