@@ -1236,62 +1236,10 @@ measures the boundary on the other two runners.
 
 ## Porting a v9 component
 
-Six ways a v9 component does not mean in this renderer what it says, found by carrying one
-across a line at a time. **Listed with what each does when you get it wrong**,
-because that decides how much of the port has to be re-checked: a type error
-costs nothing; a value silently wrong by a factor of the font size costs the
-whole render.
-
-1. **A bare `Box` runs the other way, and its shrink is a trap pointing the wrong
-   direction.** v9's direction is Yoga-defaulted to `column` where this renderer follows CSS
-   and uses `row`, so every container writes its axis out. The shrink is not
-   simple: Yoga defaults `flex-shrink` to `0`, so a v9 node _looks_ like it means
-   zero -- but v9's constructors put CSS's value back and all four declare
-   `flexShrink: 1`. **So a v9 node that says nothing about shrinking means `1`,
-   and taffy already means `1`.** The faithful port writes no `flex-shrink` at
-   all. _Writing `0` is a divergence dressed as a reproduction_, and pinned into
-   a wrapper every node passes through it moved a whole card's geometry and made
-   its background stop painting.
-
-2. **`lineHeight` is a different quantity.** v9's is the line box in **pixels**;
-   this renderer's is a **multiple of the em size**. `lineHeight: 24` at 18px is 24 pixels
-   there and 432 here. The trap inside the trap: a component written in pixels
-   may still hold a bare ratio, and those are the only values that carry over
-   unchanged. _Wrong by a factor of the font size, and it does not look like a
-   unit mistake -- it looks like a layout defect._
-
-3. **`ellipsis` no longer changes type -- this hazard is closed**, and is kept
-   here because a porter who read an older copy needs telling it went away. this renderer
-   takes v9's `boolean | string` on both surfaces: `true` draws U+2026, measured
-   in Chrome rather than assumed; `false`, `''` and omitting it all truncate
-   without a marker. **`false` is the one to notice** -- it is v9's own applied
-   default, so the caller most likely to have written it explicitly is the one
-   migrating.
-
-4. **Edge groups are gone.** v9 spells `padding: { Horizontal: 2, Bottom: 2 }`;
-   this renderer has only `top`, `right`, `bottom`, `left`. **From TypeScript this is
-   caught. At runtime it is not**: measured, a node given
-   `padding: { Horizontal: 16 }` renders with no padding at all and nothing is
-   thrown. _Keep the port in TypeScript and the whole class is a compile error;
-   leave it and the class is invisible._
-
-5. **`<b>` inside a plain `Text` is markup there and literal text here**, which
-   has `RichText` for the purpose. _Visible immediately -- the tags draw._
-
-6. **Capitalisation throughout**: `Style.PositionType.Absolute` to `'absolute'`,
-   `position: { Top }` to `{ top }`. _Same as 4: a compile error from TypeScript,
-   silently dropped at runtime._
-
-**And the method**, since the first attempt at this was tuned by eye and thrown
-away. A v9 component's numbers are the geometry Chrome laid out for the template
-it replaced. **The numbers are already the answer:** carry them, do not re-derive
-them, and when something is off, measure both renders and say by how much. A card
-built from a third of the source and an impression of the rest is not a port and
-cannot be corrected into one.
-
-**Assets that are not reachable get a hatched plate at exactly the box the real
-image would fill** -- never a guess at the layout around them, and never nothing.
-_A missing asset must not be readable as a layout defect._
+Six places where a v9 component's text means something different here, most of
+them silent at runtime, and the method that keeps a port faithful, are in
+[`docs/porting-v9.md`](docs/porting-v9.md). Read it before carrying a component
+across.
 
 ---
 
