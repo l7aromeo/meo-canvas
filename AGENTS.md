@@ -117,10 +117,11 @@ one exists: `git branch -f` moves a ref without touching the working tree.
 
 **`.gitignore` denies by default.** Line 2 is `*`, and every tracked path is
 re-included by name, so a new file is untracked and invisible to `git status`
-until an allow line names it. `git status --porcelain` reporting nothing is not
-evidence that a worktree holds no work, and `git status --ignored=matching`
-reports a directory rather than its contents. Before deleting a worktree or
-trusting "clean", enumerate with
+until an allow line names it, and a file a workflow requires can be
+uncommittable, which reads as the workflow being broken.
+`git status --porcelain` reporting nothing is not evidence that a worktree holds
+no work, and `git status --ignored=matching` reports a directory rather than its
+contents. Before deleting a worktree or trusting "clean", enumerate with
 `git ls-files --others --ignored --exclude-standard -- .tmp`.
 
 **Branch names take a conventional type**: `fix/`, `feat/`, `bump/`, `ci/`,
