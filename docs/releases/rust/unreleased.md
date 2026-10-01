@@ -6,6 +6,8 @@
 
 - **Breaking.** `Style::frame`, the `frame` setter and `NodeKind::Image::frame` take an `i32` rather than a `u32`, so that a negative index can count from the end. An integer literal compiles unchanged; a `u32` value needs converting, for example with `i32::try_from`.
 
+- **Breaking.** The scene file format is version 8, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 8"). Re-encode the scene with this release.
+
 - A frame index past the end of an animated image is refused as `Error::FrameOutOfRange`, naming the index and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
 
 ### Fixed
