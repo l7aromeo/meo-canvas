@@ -108,8 +108,8 @@ macOS and Windows need none of this: Skia uses CoreText and DirectWrite there.
 The API documentation is on [docs.rs](https://docs.rs/meo-canvas), and the
 reasoning behind the surface — why the setters are flat, why `Root` is built
 rather than constructed, what each divergence from CSS costs — is in
-[`AGENTS.md`](https://github.com/l7aromeo/meo-canvas/blob/main/AGENTS.md) in
-the repository.
+[`docs/design.md`](https://github.com/l7aromeo/meo-canvas/blob/main/docs/design.md)
+in the repository.
 
 The npm package is the same renderer behind a prebuilt binary, for callers who
 would rather not compile Skia: [`meo-canvas`](https://www.npmjs.com/package/meo-canvas).

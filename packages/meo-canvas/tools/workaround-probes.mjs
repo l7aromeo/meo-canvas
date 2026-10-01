@@ -186,8 +186,8 @@ if (faults.length > 0) {
   process.stderr.write(
     `\n${faults.length} marked site${faults.length === 1 ? '' : 's'} without a live probe behind ` +
       'it. A compensation whose probe has gone is one that cannot be retired without re-deriving ' +
-      'it, and the day the dependency is fixed nothing goes red. AGENTS.md, "Working around an ' +
-      'upstream defect".\n',
+      'it, and the day the dependency is fixed nothing goes red. See ' +
+      'docs/upstream-workarounds.md.\n',
   )
   process.exit(1)
 }

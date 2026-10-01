@@ -15,8 +15,9 @@ packages/meo-canvas/  the npm package: TypeScript, plus the tools that check it
 examples/          the same nine scenes written twice, once per surface
 ```
 
-`AGENTS.md` is the long-form argument for why things are the way they are. You do not need to read
-it to send a patch, but it is where the reasoning lives when a review says "because".
+`AGENTS.md` is how work is done here, and `docs/design.md` is why the code is the way it is. You do
+not need to read either to send a patch, but they are where the reasoning lives when a review says
+"because".
 
 ## Getting set up
 
@@ -73,7 +74,7 @@ full copy here would go stale with nothing to report it, which is why there is n
 | `lint-check`                                                                              | clippy with `-D warnings`, across the workspace, the addon and `examples/rust`               |
 | `typecheck`                                                                               | the shipped TypeScript surface and its tests                                                 |
 | `test` / `test-js`                                                                        | the two test suites                                                                          |
-| `coverage` / `coverage-js`                                                                | a 90% floor on each side; `coverage` carries a second at 60% of regions on the Neon boundary |
+| `coverage` / `coverage-js`                                                                | 90% on each side, plus 60% of regions on the Neon boundary; on Windows only the JS one gates |
 | `docs` / `docs-js`                                                                        | a rustdoc warning fails; so does a dead link or a newly undocumented member                  |
 | `doc-examples-check`                                                                      | the `ts` fences in both READMEs are lifted into a module and compiled                        |
 | `example`                                                                                 | runs all nine examples on both surfaces and compares every byte                              |

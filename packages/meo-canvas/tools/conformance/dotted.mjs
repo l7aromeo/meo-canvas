@@ -108,7 +108,7 @@ try {
       const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...BOX } }))
 
       // Floor for a sample point, round for a value the browser reported. The two
-      // are the same expression and different quantities -- see AGENTS.md.
+      // are the same expression and different quantities -- AGENTS.md, Evidence.
       const y = Math.floor(geometry.top + width / 2)
       const from = Math.round(geometry.left)
 
@@ -288,8 +288,8 @@ try {
     ]
     // The length this walk covers, which is NOT the geometric centreline: the
     // extents are pixel indices, so it runs one short per axis and four short
-    // round the loop. Named for what it is -- see AGENTS.md on a field named for
-    // a geometric quantity holding an instrument's internal one.
+    // round the loop. Named for what it is: a field named for a quantity has to
+    // hold that quantity (AGENTS.md, Evidence).
     const walkLength = path.reduce((sum, part) => sum + part.length, 0)
     const total = Math.round(walkLength * 16)
     const marks = []

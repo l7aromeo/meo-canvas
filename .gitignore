@@ -18,8 +18,16 @@
 
 # Outward-facing package documentation, which AGENTS.md is not: the README is
 # what crates.io and npm render, and `clippy::cargo` requires the `readme` and
-# `license` metadata that names these. Internal prose stays in AGENTS.md alone.
+# `license` metadata that names these.
 !/README.md
+
+# -- Project documentation ----------------------------------------------------
+# The maintained docs AGENTS.md links to for depth. Each is named, so a stray
+# file under docs/ stays refused.
+!/docs/design.md
+!/docs/porting-v9.md
+!/docs/releasing.md
+!/docs/upstream-workarounds.md
 
 # -- Community health -------------------------------------------------------
 # GitHub serves these from the default branch. Each is named because the `*`

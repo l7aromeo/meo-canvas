@@ -79,9 +79,9 @@ So a stable release that follows a prerelease series carries two things a
 prerelease note does not. **An index of the prerelease pages it subsumes**, one
 line each, because the detail is already written and should be reachable rather
 than repeated. And **the crossing itself**: what a caller on the previous
-stable has to change, in their terms. `../../AGENTS.md` has the porting hazards
-under _Porting a v9 component_, and they are the source for that section rather
-than something to re-derive.
+stable has to change, in their terms. [`../porting-v9.md`](../porting-v9.md)
+has the porting hazards, and they are the source for that section rather than
+something to re-derive.
 
 Neither applies to the crate's first stable: `0.1.0-alpha.1` was that channel's
 first release, so nobody crossing into `0.1.0` is leaving an earlier lineage.
