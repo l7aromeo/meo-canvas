@@ -49,7 +49,7 @@ taffy = { version = "0.14", default-features = false, features = [
 base64 = "0.23"
 # The parser `meo-skia-canvas` uses for its own colour strings, so a colour
 # resolved here and one resolved by the backend agree by construction.
-csscolorparser = "0.8"
+csscolorparser = "0.9"
 
 neon = "1.1"
 # The addon's asynchronous encodes run here, not on `cx.task`: libuv's pool has
