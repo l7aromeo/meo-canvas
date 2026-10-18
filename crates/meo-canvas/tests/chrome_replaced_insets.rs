@@ -1,7 +1,7 @@
-//! What insets do to a replaced element (`l7aromeo/meo-canvas#92`): Chrome
-//! keeps an image's intrinsic size and drops an inset rather than stretching
-//! it. Read from ink, and every replaced row asserts 60x40 exactly, since the
-//! defect's rows moved in opposite directions.
+//! What insets and grid alignment do to a replaced element
+//! (`l7aromeo/meo-canvas#92`): Chrome keeps an image's intrinsic size rather
+//! than stretching it to its insets or under `normal`. Read from ink, and every
+//! replaced row asserts its size exactly.
 
 use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
@@ -9,7 +9,7 @@ use meo_canvas_scene::{
     node::{ImageSource, Node, NodeId, NodeKind},
     style::{
         Dimension, Length,
-        layout::{Align, Display, PositionType},
+        layout::{Align, Display, PositionType, TrackSize},
         paint::{Color, ObjectFit},
     },
 };
@@ -302,4 +302,53 @@ fn an_image_with_children_is_a_container() {
          `top`/`bottom` painted {height} tall; the image has children, so it is \
          a container and its height is the distance between its insets"
     );
+}
+
+/// A 200x200 grid cell at [`ORIGIN`] holding the art, under `align`.
+fn grid_cell(align: Option<Align>) -> Scene {
+    let mut scene = Scene::new(Size::new(PAGE, PAGE));
+    scene.nodes[0].paint.background_color =
+        Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+    scene.nodes[0].layout.display = Display::Block;
+    scene.nodes[0].layout.padding.top = Length::Points(ORIGIN);
+    scene.nodes[0].layout.padding.left = Length::Points(ORIGIN);
+
+    let mut grid = Node::new(NodeKind::Box);
+    grid.layout.display = Display::Grid;
+    grid.layout.size = (Dimension::Points(200.0), Dimension::Points(200.0));
+    grid.layout.grid_template_columns = vec![TrackSize::Points(200.0)];
+    grid.layout.grid_template_rows = vec![TrackSize::Points(200.0)];
+    grid.layout.align_items = align;
+    let grid = push(&mut scene, NodeId::ROOT, grid);
+    push(
+        &mut scene,
+        grid,
+        Node::new(NodeKind::Image {
+            source: ImageSource::Bytes(art()),
+            fit: ObjectFit::Fill,
+            position: (Length::ZERO, Length::ZERO),
+            frame: None,
+        }),
+    );
+    scene
+}
+
+/// Grid alignment stretches a replaced item only when asked. Measured in Chrome
+/// 153.0.8010.12 with `getBoundingClientRect` on a 60x40 `<img>`: 60x40 under
+/// `normal`, and 300x200 under `align-items: stretch`, the height stretched and
+/// the width following the ratio, since `justify-items` stays `normal`.
+#[test]
+fn a_replaced_grid_item_stretches_only_when_asked() {
+    for (align, chrome) in [
+        (None, (0, 0, 60, 40)),
+        (Some(Align::Stretch), (0, 0, 300, 200)),
+    ] {
+        assert_eq!(
+            painted(&grid_cell(align)),
+            chrome,
+            "align-items {align:?}: Chrome paints {}x{}",
+            chrome.2,
+            chrome.3
+        );
+    }
 }

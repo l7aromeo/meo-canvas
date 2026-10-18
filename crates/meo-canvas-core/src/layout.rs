@@ -381,43 +381,13 @@ fn child_height_is_definite(
     }
 }
 
-/// Whether this node is replaced in CSS's sense: a childless `Image`, whose
-/// `auto` size is intrinsic and whose over-constrained insets drop rather than
-/// stretch it (`replaced-insets.tsv`). Childless, matching the measurer; Chrome
-/// cannot arbitrate, an `<img>` having no children.
+/// Whether this node is replaced in CSS's sense: a childless `Image`, and what
+/// taffy's `item_is_replaced` is set from, so insets and `normal` grid
+/// alignment leave its `auto` size intrinsic. Childless, matching the measurer;
+/// Chrome cannot arbitrate, an `<img>` having no children.
 const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
     node.children.is_empty()
         && matches!(node.kind, meo_canvas_scene::node::NodeKind::Image { .. })
-}
-
-/// Drops the end inset on an over-constrained axis of a replaced element, as
-/// Chrome does (`replaced-insets.tsv`); taffy has no notion of replaced. A lone
-/// end inset still positions, as `a_lone_end_inset_still_positions` pins, and a
-/// declared size wins.
-const fn unstretch_replaced(
-    style: &mut taffy::Style,
-    source: &meo_canvas_scene::node::Node,
-) {
-    if !is_replaced(source) || !out_of_flow(source) {
-        return;
-    }
-    let layout = &source.layout;
-    // Asked of the scene's own style rather than of taffy's, for the same
-    // reason `insets_settle_it` does: `Dimension::Auto` and `Option::None` are
-    // this crate's vocabulary, and reading them back out of the converted
-    // struct would be a second, weaker statement of what was just written.
-    if matches!(layout.size.0, Dimension::Auto)
-        && layout.inset.left.is_some()
-        && layout.inset.right.is_some()
-    {
-        style.inset.right = taffy::LengthPercentageAuto::auto();
-    }
-    if matches!(layout.size.1, Dimension::Auto)
-        && layout.inset.top.is_some()
-        && layout.inset.bottom.is_some()
-    {
-        style.inset.bottom = taffy::LengthPercentageAuto::auto();
-    }
 }
 
 /// Whether this box is taken out of the flow.
@@ -551,7 +521,7 @@ fn pin_page_root(
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
-    unstretch_replaced(&mut style, source);
+    style.item_is_replaced = is_replaced(source);
     if style.size.width.is_auto() {
         style.size.width =
             taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
@@ -1332,7 +1302,7 @@ where
     })?;
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
-    unstretch_replaced(&mut style, source);
+    style.item_is_replaced = is_replaced(source);
     intrinsic_sizes_it(&mut style, node, source, parent, measure);
     // A block-axis percentage against an indefinite containing block resolves
     // to `auto`, which taffy does not do. Out of flow the containing block is

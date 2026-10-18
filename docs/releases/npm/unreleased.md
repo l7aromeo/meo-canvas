@@ -11,4 +11,5 @@
 
 - An image URL whose host does not resolve is reported in `canvas.warnings` as `failure: 'host-not-found'` (do not retry) rather than `'transport'` (retry). A lookup that could not finish, because the resolver was unreachable or said to try again, stays `'transport'`.
 - An SVG image given `frame: 1` or later draws, as a still raster does, rather than being refused.
+- An `Image` grid item under the default alignment draws at its intrinsic size, as Chrome does, rather than stretched to fill its cell. `alignItems: 'stretch'` still stretches it, its width following its ratio.
 - A `frame` that is not a whole number, or a `frame` or `zIndex` outside -2147483648 to 2147483647, is refused naming the property (`frame is 1.5; it takes a whole number`) rather than a slot the caller never wrote (`slot 41 holds 1.5, which is not an integer`).

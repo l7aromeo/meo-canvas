@@ -32,6 +32,8 @@
 
 - An SVG image given `frame(1)` or later now draws, as a still raster does, rather than being refused as `Error::UndecodableImage`.
 
+- An `Image` grid item under the default alignment draws at its intrinsic size, as Chrome does, rather than stretched to fill its cell. `.align_items(Align::Stretch)` still stretches it, its width following its ratio.
+
 - The CLI README's usage line omitted the `render` subcommand, so the command it showed was rejected with "unrecognized subcommand".
 
 - **`meo-canvas` exited 0 with nothing on stderr when an image URL could not be
