@@ -46,8 +46,8 @@ use meo_skia_canvas::{
     Affine, BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
     FillRule as SkiaFillRule, GradientInterpolation,
     GradientStop as SkiaGradientStop, Image as SkiaImage, Path2D, PathBuilder,
-    PixelColorSpace, PixelDepth, PixelExportOptions, Point, RgbaLinear, Shader,
-    StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
+    PatternRepeat, PixelColorSpace, PixelDepth, PixelExportOptions, Point,
+    RgbaLinear, Shader, StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
     TextBaseline as SkiaTextBaseline, TextDecoration as SkiaTextDecoration,
     TextDecorationStyle as SkiaDecorationStyle,
     filter::{BlurStyle, MaskFilter},
@@ -336,7 +336,20 @@ pub fn draw(
     let context = surface.context();
     context.save();
     context.scale(scale, scale);
-    let result = walk(context, resolved, layout, measurer, page, device);
+    let canvas = Rect::new(
+        meo_canvas_scene::Point::new(0.0, 0.0),
+        Size::new(device.width / scale, device.height / scale),
+    );
+    // The canvas's base: the page root's colour, outside every effect the root
+    // carries, as Chrome paints it (`chrome_root_background.rs`).
+    if let Some(root) = scene.get(page)
+        && !root.paint.background_color.is_invisible()
+    {
+        context.set_fill_style(to_skia_color(root.paint.background_color));
+        context.fill_rect(0.0, 0.0, canvas.size.width, canvas.size.height);
+    }
+    let result =
+        walk(context, resolved, layout, measurer, page, device, canvas);
     context.restore();
     result
 }
@@ -371,6 +384,7 @@ fn walk(
     measurer: &mut SceneMeasurer<'_>,
     page: NodeId,
     device: Size,
+    canvas: Rect,
 ) -> Result<(), Error> {
     let scene = resolved.scene;
     let mut stack = vec![Step::Enter(page)];
@@ -407,7 +421,7 @@ fn walk(
                     clip_to_box(context, &owed.paint, rect)?;
                 }
 
-                let layers = enter_node(context, node, rect, device)?;
+                let layers = enter_node(context, node, rect, device, false)?;
                 paint_own_content(
                     context,
                     resolved,
@@ -416,6 +430,7 @@ fn walk(
                     node,
                     rect,
                     layout.content(id).unwrap_or(rect),
+                    None,
                 )?;
 
                 stack.push(Step::Leave {
@@ -444,7 +459,12 @@ fn walk(
                 };
 
                 context.save();
-                let layers = enter_node(context, node, rect, device)?;
+                // The page root carries the canvas: its background layers
+                // cover it, and its blend mode has nothing beneath to blend
+                // with.
+                let root = (id == page).then_some(canvas);
+                let layers =
+                    enter_node(context, node, rect, device, root.is_some())?;
                 paint_own_content(
                     context,
                     resolved,
@@ -453,6 +473,7 @@ fn walk(
                     node,
                     rect,
                     layout.content(id).unwrap_or(rect),
+                    root,
                 )?;
 
                 stack.push(Step::Leave {
@@ -663,7 +684,13 @@ const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
 }
 
 /// Paints a node's own box and kind under its own `overflow`, in a save of its
-/// own, so the clip is gone before this context's participants paint.
+/// own, so the clip is gone before this context's participants paint. `canvas`
+/// is the page root's surface, which its background layers cover instead.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct input of one node's paint; a struct would \
+              exist only to carry them to the one call site that has them all"
+)]
 fn paint_own_content(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
@@ -672,6 +699,7 @@ fn paint_own_content(
     node: &Node,
     rect: Rect,
     content: Rect,
+    canvas: Option<Rect>,
 ) -> Result<(), Error> {
     context.save();
     // The one place the backend is asked for it. A gradient shallow enough to
@@ -683,14 +711,32 @@ fn paint_own_content(
     // Outer shadows go before the node's own clip, being neither content nor a
     // descendant: Chrome leaves them unclipped under every `overflow`. Inset
     // shadows stay under it in `paint_box`, since CSS clips those.
-    let result = draw_outer_shadows(context, &node.paint, &node.effects, rect)
+    // The canvas layers go under the root's shadows and outside its clip,
+    // neither of which Chrome lets touch them.
+    let result = canvas
+        .map_or(Ok(()), |canvas| {
+            paint_canvas_layers(
+                context,
+                resolved,
+                id,
+                &node.paint,
+                rect,
+                canvas,
+            )
+        })
+        .and_then(|()| {
+            draw_outer_shadows(context, &node.paint, &node.effects, rect)
+        })
         .and_then(|()| {
             if clips_its_children(node) {
                 clip_to_box(context, &node.paint, rect)?;
             }
-            paint_box(context, resolved, id, node, rect).and_then(|()| {
-                paint_kind(context, resolved, measurer, id, node, rect, content)
-            })
+            paint_box(context, resolved, id, node, rect, canvas.is_none())
+                .and_then(|()| {
+                    paint_kind(
+                        context, resolved, measurer, id, node, rect, content,
+                    )
+                })
         });
     context.restore();
     result
@@ -712,6 +758,8 @@ fn draw_outer_shadows(
 }
 
 /// Applies the transform and opens whatever isolation layers the node needs.
+/// The page root's blend mode is ignored: beneath it is only its own canvas
+/// base, which Chrome does not blend it against.
 ///
 /// Returns how many layers were opened, so the matching `Leave` closes exactly
 /// those.
@@ -720,6 +768,7 @@ fn enter_node(
     node: &Node,
     rect: Rect,
     device: Size,
+    page_root: bool,
 ) -> Result<u8, Error> {
     apply_transform(context, node.effects.transform.as_ref(), rect);
 
@@ -734,7 +783,11 @@ fn enter_node(
 
     let mut layers = 0_u8;
     let alpha = node.paint.opacity.clamp(0.0, OPAQUE);
-    let blend = node.paint.blend_mode;
+    let blend = if page_root {
+        BlendMode::Normal
+    } else {
+        node.paint.blend_mode
+    };
     let needs_group = alpha < OPAQUE
         || blend != BlendMode::Normal
         || node.effects.mask.is_some();
@@ -758,13 +811,16 @@ fn enter_node(
     Ok(layers)
 }
 
-/// Draws the node's own box: shadows, background, gradient, image, border.
+/// Draws the node's own box: shadows, background, gradient, image, border. The
+/// background layers are left out where `own_background` is false, for the
+/// page root, whose layers [`paint_canvas_layers`] has painted.
 fn paint_box(
     context: &mut Context2D,
     resolved: &Resolved<'_>,
     id: NodeId,
     node: &Node,
     rect: Rect,
+    own_background: bool,
 ) -> Result<(), Error> {
     let paint = &node.paint;
     // The outer shadows were drawn by [`paint_own_content`] before this node's
@@ -772,12 +828,12 @@ fn paint_box(
     // They are still first in paint order, and still **clipped out of the
     // border box** rather than merely covered by it -- see `draw_box_shadow`.
 
-    if !paint.background_color.is_invisible() {
+    if own_background && !paint.background_color.is_invisible() {
         context.set_fill_style(to_skia_color(paint.background_color));
         fill_box(context, paint, rect)?;
     }
 
-    if let Some(gradient) = paint.gradient.as_ref() {
+    if let Some(gradient) = paint.gradient.as_ref().filter(|_| own_background) {
         let (shader, squash) = build_gradient(gradient, rect)?;
         context.set_fill_shader(&shader);
         fill_with_gradient(context, squash, rect, |context| {
@@ -793,16 +849,81 @@ fn paint_box(
     }
 
     if let Some(background) = paint.background_image.as_ref()
+        && own_background
         && let Some(decoded) = resolved.background(id)
     {
         // The box it is painted into, which a vector document is rasterised at,
         // tiles reusing these pixels. No tint: `color` is the node's own
         // picture, and a background image is not that picture.
         let image = raster_of(resolved, decoded, id, rect.size, None)?;
-        draw_background_image(context, paint, background, &image, rect)?;
+        draw_background_image(context, paint, background, &image, rect, None)?;
     }
 
     draw_border(context, node, rect)?;
+    Ok(())
+}
+
+/// The page root's background layers over the whole canvas, positioned against
+/// the root's box as Chrome's `<html>` positions them: the colour fills it, and
+/// the gradient and image tile from the box's origin, unclipped by its radius.
+/// Pinned by `chrome_root_background.rs`.
+fn paint_canvas_layers(
+    context: &mut Context2D,
+    resolved: &Resolved<'_>,
+    id: NodeId,
+    paint: &PaintStyle,
+    rect: Rect,
+    canvas: Rect,
+) -> Result<(), Error> {
+    if !paint.background_color.is_invisible() {
+        context.set_fill_style(to_skia_color(paint.background_color));
+        context.fill_rect(
+            canvas.origin.x,
+            canvas.origin.y,
+            canvas.size.width,
+            canvas.size.height,
+        );
+    }
+    // A gradient is one tile the size of the box, which CSS's default
+    // `background-repeat` repeats once the canvas is larger than the box: drawn
+    // once, as vectors, and tiled by a pattern from the box's origin.
+    if let Some(gradient) = paint.gradient.as_ref()
+        && rect.size.width > 0.0
+        && rect.size.height > 0.0
+    {
+        let mut tile = Canvas::new(rect.size.width, rect.size.height);
+        let at = Rect::new(meo_canvas_scene::Point::new(0.0, 0.0), rect.size);
+        let (shader, squash) = build_gradient(gradient, at)?;
+        let drawing = tile.context();
+        drawing.set_fill_shader(&shader);
+        fill_with_gradient(drawing, squash, at, |context| {
+            box_path(context, Corners::all(0.0), at)
+        })?;
+        let mut pattern = context
+            .create_pattern_from_canvas(&mut tile, PatternRepeat::Repeat);
+        pattern
+            .set_transform(Affine::translation(rect.origin.x, rect.origin.y));
+        context.set_fill_pattern(&pattern);
+        context.fill_rect(
+            canvas.origin.x,
+            canvas.origin.y,
+            canvas.size.width,
+            canvas.size.height,
+        );
+    }
+    if let Some(background) = paint.background_image.as_ref()
+        && let Some(decoded) = resolved.background(id)
+    {
+        let image = raster_of(resolved, decoded, id, rect.size, None)?;
+        draw_background_image(
+            context,
+            paint,
+            background,
+            &image,
+            rect,
+            Some(canvas),
+        )?;
+    }
     Ok(())
 }
 
@@ -1504,6 +1625,7 @@ fn draw_background_image(
     background: &BackgroundImage,
     image: &SkiaImage,
     rect: Rect,
+    area: Option<Rect>,
 ) -> Result<(), Error> {
     let intrinsic = Size::new(image.width() as f32, image.height() as f32);
     let tile = background_tile(background.size, intrinsic, rect.size);
@@ -1548,9 +1670,29 @@ fn draw_background_image(
         tile_origin(background.position.1, rect.size.height, tile.height),
     );
 
+    // Positioned against `rect` and painted over `area` where one is given, as
+    // the page root's image covers the canvas; otherwise clipped to the box.
+    let (columns, rows) = match area {
+        Some(area) => (
+            columns.over(
+                across,
+                area.origin.x - rect.origin.x,
+                area.origin.x + area.size.width - rect.origin.x,
+            ),
+            rows.over(
+                down,
+                area.origin.y - rect.origin.y,
+                area.origin.y + area.size.height - rect.origin.y,
+            ),
+        ),
+        None => (columns, rows),
+    };
+
     context.save();
     let result = (|context: &mut Context2D| {
-        clip_to_box(context, paint, rect)?;
+        if area.is_none() {
+            clip_to_box(context, paint, rect)?;
+        }
         for left in &columns.offsets {
             for top in &rows.offsets {
                 context.draw_image_sized(
@@ -1568,12 +1710,54 @@ fn draw_background_image(
     result
 }
 
+/// The most tiles one axis of a background lays out. A tile far below a pixel
+/// would otherwise ask for millions of draws, and a scene is caller data: the
+/// cap turns a hang into a picture, at sizes where nobody looks at the picture.
+const MOST_TILES: usize = 4096;
+
 /// Where the tiles sit along one axis, and how long each one is.
 struct TileRun {
     /// Each tile's offset from the box's own edge.
     offsets: Vec<f32>,
     /// The length one tile is drawn at, which `Round` changes.
     extent: f32,
+}
+
+impl TileRun {
+    /// The run continued at its own period over `start..end`, offsets from the
+    /// box's edge: how a repeating root image covers the canvas around the box
+    /// it is positioned against. A run that does not repeat is returned as is.
+    fn over(self, repeats: bool, start: f32, end: f32) -> Self {
+        let (Some(&first), Some(&last)) =
+            (self.offsets.first(), self.offsets.last())
+        else {
+            return self;
+        };
+        let period = match self.offsets.as_slice() {
+            [one, two, ..] => two - one,
+            _ => self.extent,
+        };
+        if !repeats || period <= 0.0 {
+            return self;
+        }
+        let mut offsets = Vec::new();
+        let mut position = first;
+        while position > start && offsets.len() < MOST_TILES {
+            position -= period;
+            offsets.push(position);
+        }
+        offsets.reverse();
+        offsets.extend_from_slice(&self.offsets);
+        position = last;
+        while position + self.extent < end && offsets.len() < MOST_TILES {
+            position += period;
+            offsets.push(position);
+        }
+        Self {
+            offsets,
+            extent: self.extent,
+        }
+    }
 }
 
 /// How big one tile is drawn: a single length sets that axis and the picture's
@@ -1650,11 +1834,6 @@ fn lay_tiles_out(
     repeats: bool,
     origin: f32,
 ) -> TileRun {
-    // A tile far below a pixel would otherwise ask for millions of draws, and
-    // a scene is caller data: the cap turns a hang into a picture, at sizes
-    // where nobody looks at the picture.
-    const MOST_TILES: usize = 4096;
-
     if !repeats {
         return TileRun {
             offsets: vec![origin],

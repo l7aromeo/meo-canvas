@@ -501,8 +501,9 @@ impl Default for Renderer {
 
 /// The size to begin a page at: a page root's own definite size, which lets ICO
 /// pages differ, and otherwise `scene.size`. Not solved, since solving needs
-/// the page; the height is the exception, the solved one under
-/// [`Scene::content_height`], with `scene.size.height` its floor.
+/// the page; the height is the exception, the solved one plus the root's
+/// vertical margins under [`Scene::content_height`], `scene.size.height` its
+/// floor.
 fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
     let stated = |dimension, fallback| match dimension {
         Dimension::Points(value) => value,
@@ -513,7 +514,10 @@ fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
         height: if scene.content_height && root.layout.size.1 == Dimension::Auto
         {
             solved.get(page).map_or(scene.size.height, |rect| {
-                rect.size.height.max(scene.size.height)
+                let edge = |edge| layout::root_margin(edge, scene.size.width);
+                let margins = &root.layout.margin;
+                (rect.size.height + edge(margins.top) + edge(margins.bottom))
+                    .max(scene.size.height)
             })
         } else {
             stated(root.layout.size.1, scene.size.height)

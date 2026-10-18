@@ -86,6 +86,22 @@ circular. The Rust surface says so by chaining: `Root::new(w).height(h)`.
 `content_height.rs` reads the **encoded PNG's own header**, because layout could
 resolve any height and still be painted onto a sheet of the stated size.
 
+### The page root is `<html>` in a canvas-sized viewport
+
+A stated root size is the canvas, which is what lets ICO pages differ. An
+unsized root fills the canvas less its own margins, as Chrome's `<html>` does:
+a percentage margin resolves against the canvas width on either axis, `auto`
+counts as none, an inset moves the root without resizing it, and a page as
+tall as its content is as tall as the root's margin box.
+
+**Its background covers the canvas, painted twice**, which is what Chrome
+does: a base of its colour that no effect of the root's touches, then every
+layer again over the whole canvas inside the root's filter, opacity and mask,
+positioned against the root's box, so a gradient or an image tiles from there.
+The root's blend mode is ignored, having nothing beneath to blend with. Its
+border and shadows stay on its box. `chrome_root_background.rs` pins each rule
+and names what it has not measured.
+
 ### Where state lives
 
 `Renderer` owns everything a render needs that is not the scene: registered

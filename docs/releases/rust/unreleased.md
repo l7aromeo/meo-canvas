@@ -8,6 +8,8 @@
 
 - **Breaking.** The scene file format is version 8, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 8"). Re-encode the scene with this release.
 
+- The page root's background colour fills the whole canvas beneath every effect the root carries, as the root element's does in Chrome: a root with `opacity` below 1, a `mask` or a `border_radius` draws its colour opaque and out to the canvas's corners, with its content, gradient and image over it. Its `filter` applies to the whole canvas; its border and shadows stay on its box.
+
 - A frame index past either end of an animated image is refused as `Error::FrameOutOfRange`, naming the index as written and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
 
 - Building from source on x86_64 needs `yasm`, or `nasm` older than 3, for libaom: libaom 3.11 refuses the nasm 3.01 that Ubuntu 26.04 ships, with "Unsupported nasm: multipass optimization not supported". `cmake` is still needed as before.
@@ -31,6 +33,8 @@
 - With the `net` feature, an image URL whose host does not resolve is reported as `FetchFailure::HostNotFound` (do not retry) rather than `FetchFailure::Transport` (retry), in `Error::SourceFetch` and in `ImageWarning` alike. A lookup that could not finish, because the resolver was unreachable or said to try again, stays `Transport`.
 
 - An SVG image given `frame(1)` or later now draws, as a still raster does, rather than being refused as `Error::UndecodableImage`.
+
+- The page root's `margin` and `position` place it as Chrome places `<html>`, rather than being ignored: an unsized root fills the canvas less its margins, a percentage resolving against the canvas width on either axis, `Dimension::Auto` counting as no margin and a negative margin growing it; a `position` offset moves it without resizing it; and a page as tall as its content counts the root's vertical margins. Its background still covers the whole canvas, its gradient and image tiling from the root's box. A stated size is still the canvas size.
 
 - An `Image` grid item under the default alignment draws at its intrinsic size, as Chrome does, rather than stretched to fill its cell. `.align_items(Align::Stretch)` still stretches it, its width following its ratio.
 

@@ -507,9 +507,10 @@ fn flex_settles_it(
     }
 }
 
-/// Gives the page root the scene's extent on any axis it leaves to content: a
-/// page is the canvas, so percentages and centring beneath it resolve against
-/// the surface. An explicit size on the root is honoured.
+/// Gives the page root the scene's extent less its own margins on any axis it
+/// leaves to content: a page is the canvas, so percentages and centring beneath
+/// it resolve against the surface, and a margined root sits inside it as
+/// Chrome's `<html>` does. An explicit size on the root is honoured.
 fn pin_page_root(
     scene: &Scene,
     page: NodeId,
@@ -522,9 +523,13 @@ fn pin_page_root(
 
     let mut style = to_taffy_style(&source.layout, source.paint.border_style);
     style.item_is_replaced = is_replaced(source);
+    let edge = |dimension| root_margin(dimension, scene.size.width);
+    let margins = &source.layout.margin;
+    let width = scene.size.width - edge(margins.left) - edge(margins.right);
+    let height = scene.size.height - edge(margins.top) - edge(margins.bottom);
     if style.size.width.is_auto() {
         style.size.width =
-            taffy::Dimension::length(scene.size.width * LAYOUT_SCALE);
+            taffy::Dimension::length(width.max(0.0) * LAYOUT_SCALE);
     }
     if style.size.height.is_auto() {
         if scene.content_height {
@@ -533,16 +538,27 @@ fn pin_page_root(
             // in it. `size.height` becomes the floor instead, which is what a
             // caller asking for "at least this tall" means.
             style.min_size.height = taffy::LengthPercentageAuto::length(
-                scene.size.height * LAYOUT_SCALE,
+                height.max(0.0) * LAYOUT_SCALE,
             );
         } else {
             style.size.height =
-                taffy::Dimension::length(scene.size.height * LAYOUT_SCALE);
+                taffy::Dimension::length(height.max(0.0) * LAYOUT_SCALE);
         }
     }
 
     tree.set_style(root, style)
         .map_err(|error| Error::Layout(error.to_string()))
+}
+
+/// One edge of the page root's margin in points, as taffy is given it: a
+/// percentage of the canvas width on either axis, as CSS resolves both, and
+/// `auto` as nothing, as Chrome's `<html>` with `margin: auto` sits at 0,0.
+pub(crate) fn root_margin(edge: Dimension, canvas_width: f32) -> f32 {
+    match margin(edge) {
+        Dimension::Points(points) => snapped(points),
+        Dimension::Percent(fraction) => fraction * canvas_width,
+        Dimension::Auto => 0.0,
+    }
 }
 
 /// Whether a node is a containing block for the absolute boxes beneath it:
