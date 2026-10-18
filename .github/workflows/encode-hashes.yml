@@ -57,7 +57,7 @@ jobs:
           test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
 
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
@@ -69,7 +69,7 @@ jobs:
           save-if: 'false'
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -105,7 +105,7 @@ jobs:
       # rehearsal covers an empty upload -- and an artifact that came out empty
       # would download as nothing and read as "no rows differ", which is a
       # result rather than an absence.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: encode-hashes-${{ inputs.os || matrix.os }}
           path: target/encode-hashes
