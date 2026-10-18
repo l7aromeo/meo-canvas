@@ -14,6 +14,8 @@
 
 - **`rustls` is required at `^0.23.46`** under the optional `net` feature, closing four client-side advisories: an unauthenticated ServerHello downgrading later connections to classical key exchange (`RUSTSEC-2026-0349`), `Debug` output of a client session value exposing its secrets (`-0346`), buffered data sent after an Encrypted Client Hello rejection (`-0347`), and certificate decompression allocating up to 1 GiB before authentication under rustls's `brotli` feature (`-0348`). `ureq` requires `^0.23.22`, so a consumer could resolve an affected version even though this repository's lockfile could not. The requirement was `>=0.23.45`, which a 0.24 release would have satisfied without raising the copy `ureq` uses.
 
+- The `net` feature no longer builds `aws-lc-rs` and `aws-lc-sys`. The `rustls` requirement above took `rustls`'s default features, which select the aws-lc-rs provider and turn on `prefer-post-quantum`, while `ureq` speaks TLS through ring; the requirement now asks for no features, so ring is the only provider compiled.
+
 ### Fixed
 
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**
