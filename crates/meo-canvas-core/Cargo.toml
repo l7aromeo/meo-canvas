@@ -45,9 +45,9 @@ thiserror = { workspace = true }
 # `futures`, `async`, `mio` or `smol`.
 ureq = { workspace = true, optional = true }
 # Declared to raise a floor, never imported: `ureq` speaks TLS through `rustls`
-# and requires `^0.23`, which a consumer can resolve below `0.23.45`, the fix
-# for `RUSTSEC-2026-0285`. Retires when `ureq` itself requires `0.23.45` or
-# newer.
+# and requires `^0.23.22`, which a consumer can resolve below `0.23.46`, the
+# fix for `RUSTSEC-2026-0346` to `-0349`. Retires when `ureq` itself requires
+# `0.23.46` or newer.
 rustls = { workspace = true, optional = true }
 
 [[bench]]

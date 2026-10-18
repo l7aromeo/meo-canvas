@@ -62,10 +62,11 @@ clap = { version = "4.6", features = ["derive"] }
 # futures among its required dependencies, where reqwest requires `tokio`,
 # `hyper` and `tower` even for its `blocking` feature.
 ureq = "3.4"
-# A floor, not a use: nothing imports `rustls`, but `ureq`'s `^0.23` admits
-# versions with `RUSTSEC-2026-0285`, and only the manifest reaches a consumer.
-# Retires when `ureq` itself requires `0.23.45` or newer.
-rustls = ">=0.23.45"
+# A floor, not a use: nothing imports `rustls`, but `ureq`'s `^0.23.22` admits
+# the versions `RUSTSEC-2026-0285` and `-0346` to `-0349` name, and only the
+# manifest reaches a consumer. Caret, so it raises `ureq`'s 0.23 copy rather
+# than a 0.24 beside it. Retires when `ureq` requires `0.23.46` or newer.
+rustls = "^0.23.46"
 thiserror = "2.0"
 # Benchmarks are an instrument, not a gate, so none is in the `ci` chain: a
 # number that varies with the machine cannot fail a build honestly.
