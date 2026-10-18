@@ -38,9 +38,9 @@ fn item(
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
                 align_items: if centre {
-                    Some(AlignItems::CENTER)
+                    AlignItems::CENTER
                 } else {
-                    None
+                    AlignItems::NORMAL
                 },
                 padding: Rect {
                     left: LengthPercentage::length(8.0),
@@ -128,7 +128,7 @@ fn fractional_stretched_item() -> (f32, f32) {
             Style {
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
-                align_items: Some(AlignItems::STRETCH),
+                align_items: AlignItems::STRETCH,
                 size: Size {
                     width: Dimension::length(440.4),
                     height: Dimension::length(264.0),

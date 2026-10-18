@@ -1,7 +1,7 @@
-//! Pins two inherited taffy defects -- a growing flex item drops its negative
-//! margin; a clipping grid item makes its ancestor ignore one -- as taffy's
-//! numbers beside Chrome's, so a fix fails here. DioxusLabs/taffy#1162 and
-//! DioxusLabs/taffy#1163 are fixed by DioxusLabs/taffy#1164, in no release.
+//! Negative margins in an auto-height column, solved by taffy alone against
+//! Chrome's numbers: on a growing flex item, and beside a clipping grid item.
+//! DioxusLabs/taffy#1162 and DioxusLabs/taffy#1163, fixed by
+//! DioxusLabs/taffy#1164 in 0.15.0; a regression fails here before a golden.
 
 use taffy::{
     geometry::Point,
@@ -79,11 +79,9 @@ fn container_height(shrink: f32, top: f32) -> f32 {
 }
 
 #[test]
-fn the_rows_taffy_gets_right_agree_with_chrome() {
-    // The control: taffy and Chrome agree on every row here, so the growing
-    // rows are a defect, not two meanings of one property. The four fractional
-    // rows are DioxusLabs/taffy#1152's fix and read 375, 250, 0 and 0 on
-    // 0.13.0 -- the check that `Cargo.toml`'s 0.14 floor holds.
+fn a_shrinking_child_keeps_its_negative_margin() {
+    // The four fractional rows are DioxusLabs/taffy#1152's fix and read 375,
+    // 250, 0 and 0 on 0.13.0, so they also check `Cargo.toml`'s floor.
     for (shrink, top, chrome) in [
         (1.0_f32, -24.0_f32, 476.0_f32),
         (0.0, 0.0, 500.0),
@@ -103,10 +101,8 @@ fn the_rows_taffy_gets_right_agree_with_chrome() {
     }
 }
 
-/// The container's height with a **growing** child.
-///
-/// Separate from [`container_height`] because it measures a different defect:
-/// the same tree with `flex_grow` added.
+/// The container's height with a **growing** child: the tree of
+/// [`container_height`] with `flex_grow` added.
 fn grown_container_height(grow: f32, shrink: f32, top: f32) -> f32 {
     let mut tree: TaffyTree<()> = TaffyTree::new();
     tree.disable_rounding();
@@ -156,31 +152,27 @@ fn grown_container_height(grow: f32, shrink: f32, top: f32) -> f32 {
 }
 
 #[test]
-fn a_growing_child_has_its_negative_margin_ignored_instead() {
-    // Dropped, not over-applied: with `flex-grow: 1` the container is the
-    // child's size, margin excluded. `-24` and `-0.5` both give 500 and
-    // `flex-shrink` does not matter; Chrome gives `child + margin` for a
-    // `476x500` child in an auto-height column. DioxusLabs/taffy#1162.
-    for (grow, shrink, margin, taffy, chrome) in [
-        (1.0_f32, 0.0_f32, -24.0_f32, 500.0_f32, 476.0_f32),
-        (1.0, 0.0, -0.5, 500.0, 499.5),
-        (1.0, 1.0, -24.0, 500.0, 476.0),
+fn a_growing_child_keeps_its_negative_margin() {
+    // Chrome gives `child + margin` for a `476x500` child in an auto-height
+    // column whatever the shrink; taffy 0.14 gave 500 in all three rows.
+    for (grow, shrink, margin, chrome) in [
+        (1.0_f32, 0.0_f32, -24.0_f32, 476.0_f32),
+        (1.0, 0.0, -0.5, 499.5),
+        (1.0, 1.0, -24.0, 476.0),
     ] {
         let ours = grown_container_height(grow, shrink, margin);
         assert!(
-            (ours - taffy).abs() < 0.01,
-            "grow {grow}, shrink {shrink}, margin {margin}: taffy now gives \
-             {ours} where it gave {taffy} -- if this is Chrome's {chrome}, the \
-             defect is fixed and this test has done its job"
+            (ours - chrome).abs() < 0.01,
+            "grow {grow}, shrink {shrink}, margin {margin}: taffy {ours}, \
+             Chrome {chrome}"
         );
     }
 }
 
 #[test]
 fn the_same_rows_without_growing_are_not_wrong() {
-    // The control: each grow row above has a counterpart taffy gets right, and
-    // the `shrink: 1` pair is correct without grow and wrong with it. Chrome
-    // gives `child + margin` in every row.
+    // Each row above without `flex-grow`, so a failure here and not there
+    // points at the shrink path. Chrome gives `child + margin` in every row.
     for (shrink, margin, chrome) in [
         (1.0_f32, -24.0_f32, 476.0_f32),
         (1.0, -0.5, 499.5),
@@ -190,7 +182,7 @@ fn the_same_rows_without_growing_are_not_wrong() {
         assert!(
             (ours - chrome).abs() < 0.01,
             "grow 0, shrink {shrink}, margin {margin}: taffy {ours}, Chrome \
-             {chrome} -- this row is supposed to agree"
+             {chrome}"
         );
     }
 }
@@ -298,22 +290,19 @@ fn clipped_item_parent_height(hidden: bool, grid: bool, wrapped: bool) -> f32 {
 }
 
 #[test]
-fn a_clipping_grid_item_makes_an_ancestor_ignore_a_negative_margin() {
-    // **Asserting the wrong number on purpose**, the same way the growing case
-    // does. Chrome gives 68 here, and 68 is what the seven rows around it give.
+fn a_clipping_grid_item_leaves_its_ancestor_the_negative_margin() {
+    // Chrome gives 68, as in the seven rows below; taffy 0.14 gave 100.
+    let ours = clipped_item_parent_height(true, true, false);
     assert!(
-        (clipped_item_parent_height(true, true, false) - 100.0).abs() < 0.01,
-        "grid, direct, hidden: taffy now gives {} where it gave 100 -- if this \
-         is Chrome's 68, the defect is fixed and this test has done its job",
-        clipped_item_parent_height(true, true, false)
+        (ours - 68.0).abs() < 0.01,
+        "grid, direct, hidden: taffy {ours}, Chrome 68"
     );
 }
 
 #[test]
 fn the_seven_configurations_around_it_agree_with_chrome() {
-    // The control: the tree is right under flex, under `overflow: visible` and
-    // with a wrapper. The wrapped-and-hidden row clips like the failing one and
-    // comes out right, so the trigger is being the grid item that clips.
+    // Flex, `overflow: visible` and a wrapper, which separate the clipping
+    // grid item above from what merely resembles it.
     for (hidden, grid, wrapped) in [
         (false, true, false),
         (true, true, true),
@@ -326,8 +315,7 @@ fn the_seven_configurations_around_it_agree_with_chrome() {
         let ours = clipped_item_parent_height(hidden, grid, wrapped);
         assert!(
             (ours - 68.0).abs() < 0.01,
-            "{} , {} , overflow {}: taffy {ours}, Chrome 68 -- this row is \
-             supposed to agree",
+            "{} , {} , overflow {}: taffy {ours}, Chrome 68",
             if grid { "grid" } else { "flex" },
             if wrapped { "wrapped" } else { "direct" },
             if hidden { "hidden" } else { "visible" },
@@ -335,11 +323,8 @@ fn the_seven_configurations_around_it_agree_with_chrome() {
     }
 }
 
-/// One container, one pin, and the whole subtree read back.
-fn pinned_subtree(
-    kids: &[(f32, f32)],
-    pin: Option<f32>,
-) -> (f32, Vec<(f32, f32)>) {
+/// One auto-height column, and the whole subtree read back.
+fn column_subtree(kids: &[(f32, f32)]) -> (f32, Vec<(f32, f32)>) {
     let mut tree: TaffyTree<()> = TaffyTree::new();
     tree.disable_rounding();
     let ids: Vec<_> = kids
@@ -369,7 +354,7 @@ fn pinned_subtree(
                 flex_direction: FlexDirection::Column,
                 size: Size {
                     width: length(903.0),
-                    height: pin.map_or_else(auto, length),
+                    height: auto(),
                 },
                 ..Style::default()
             },
@@ -400,12 +385,10 @@ fn pinned_subtree(
     )
 }
 
-/// [FOUNDATION] taffy's error is confined to the container's main size, which
-/// is what lets `compensate_dropped_margins` write that one number and trust
-/// the subtree. If it stops holding, the box comes out right around children
-/// wrong by 224, 217 or 212, and nothing says so.
+/// The container and every child against Chrome, so a container that comes out
+/// right around children wrong by 224, 217 or 212 still fails.
 #[test]
-fn a_correct_main_size_lays_the_subtree_out_correctly() {
+fn a_negative_margin_lays_the_whole_subtree_out_as_chrome_does() {
     /// One shape: its name, its children as `(flex_grow, margin-top)` at 200
     /// tall, Chrome's container height, and Chrome's `(height, y)` per child.
     type Shape<'a> = (&'a str, &'a [(f32, f32)], f32, &'a [(f32, f32)]);
@@ -433,22 +416,10 @@ fn a_correct_main_size_lays_the_subtree_out_correctly() {
     ];
 
     for (name, kids, chrome_container, chrome_kids) in shapes {
-        let (unpinned, _) = pinned_subtree(kids, None);
-        assert!(
-            (unpinned - chrome_container).abs() > 0.5,
-            "{name}: taffy resolved {unpinned} unpinned, which is Chrome's \
-             {chrome_container} -- the defect this rests on is gone and the \
-             compensation can go with it"
-        );
-
-        let (container, kids_out) =
-            pinned_subtree(kids, Some(*chrome_container));
+        let (container, kids_out) = column_subtree(kids);
         assert!(
             (container - chrome_container).abs() < 0.01,
-            "{name}: pinned to {chrome_container} and taffy resolved \
-             {container} -- writing the main size is no longer enough to \
-             reach it, which is the half of this property the compensation \
-             does itself"
+            "{name}: taffy resolved {container}, Chrome {chrome_container}"
         );
         for (index, ((height, y), (want_height, want_y))) in
             kids_out.iter().zip(chrome_kids.iter()).enumerate()
@@ -457,19 +428,16 @@ fn a_correct_main_size_lays_the_subtree_out_correctly() {
                 (height - want_height).abs() < 0.01
                     && (y - want_y).abs() < 0.01,
                 "{name}: child {index} is {height} tall at {y}, Chrome has it \
-                 {want_height} tall at {want_y} -- a correct main size no \
-                 longer yields a correct subtree"
+                 {want_height} tall at {want_y}"
             );
         }
     }
 }
 
-/// [FOUNDATION] in the grid case the children are already right and only the
-/// ancestor's size ignores the margin, so the extent over them is its answer.
-/// If it stops holding, a compensation reading that extent writes a number
-/// with nothing behind it.
+/// The strip and the ancestor over it against Chrome, under `hidden` and
+/// `scroll`: the strip 100 tall at -32, and the ancestor at the 68 it reaches.
 #[test]
-fn a_clipping_grid_item_leaves_only_the_aggregate_wrong() {
+fn a_clipping_grid_item_s_ancestor_reaches_the_strip_s_extent() {
     for overflow in [Overflow::Hidden, Overflow::Scroll] {
         let mut tree: TaffyTree<()> = TaffyTree::new();
         tree.disable_rounding();
@@ -547,8 +515,8 @@ fn a_clipping_grid_item_leaves_only_the_aggregate_wrong() {
         assert!(
             (solved.location.y - -32.0).abs() < 0.01
                 && (solved.size.height - 100.0).abs() < 0.01,
-            "{overflow:?}: the strip is {} tall at {}, and the property this \
-             rests on is that it is 100 tall at -32",
+            "{overflow:?}: the strip is {} tall at {}, Chrome has it 100 tall \
+             at -32",
             solved.size.height,
             solved.location.y
         );
@@ -565,9 +533,8 @@ fn a_clipping_grid_item_leaves_only_the_aggregate_wrong() {
             .size
             .height;
         assert!(
-            (own - 100.0).abs() < 0.01,
-            "{overflow:?}: the ancestor is {own} and taffy no longer ignores \
-             the margin -- the compensation can go"
+            (own - 68.0).abs() < 0.01,
+            "{overflow:?}: the ancestor is {own}, Chrome 68"
         );
     }
 }

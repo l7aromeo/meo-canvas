@@ -4,7 +4,7 @@
 //! The taffy tree is built here, used here and dropped here. It never appears
 //! in a public signature and never crosses a thread, because it cannot: every
 //! length taffy stores is a tagged `*const ()`
-//! (`taffy-0.14.0/src/style/compact_length.rs:64`), which makes `taffy::Style`,
+//! (`taffy-0.15.0/src/style/compact_length.rs:76`), which makes `taffy::Style`,
 //! and therefore `TaffyTree`, `!Send` and `!Sync` regardless of feature
 //! selection -- a build with `calc` removed fails `assert_send` identically.
 //! Confining the tree to one function is what keeps that fact from spreading
@@ -236,20 +236,6 @@ where
     compensate_ratio_direction(
         &mut tree,
         &candidates,
-        root,
-        available,
-        measure,
-        &mut baselines,
-    )?;
-
-    // [WORKAROUND] a column container's automatic main size drops negative
-    // margins. `DioxusLabs/taffy#1162` and `DioxusLabs/taffy#1163`, tracked as
-    // `l7aromeo/meo-canvas#107`; see `compensate_dropped_margins`, probed by
-    // `crates/meo-canvas-core/tests/taffy_negative_margin.rs`.
-    compensate_dropped_margins(
-        scene,
-        &mut tree,
-        &to_scene,
         root,
         available,
         measure,
@@ -913,157 +899,6 @@ where
     )
 }
 
-/// Every container whose own main size dropped a child's negative margin, and
-/// by how much. Chrome applies every margin in all 33 measured cells, so each
-/// clause below describes taffy's defect and none a CSS rule.
-fn dropped_margin_candidates(
-    scene: &Scene,
-    tree: &taffy::TaffyTree<NodeId>,
-    to_scene: &HashMap<taffy::NodeId, NodeId>,
-) -> Vec<(taffy::NodeId, f32)> {
-    to_scene
-        .iter()
-        .filter_map(|(taffy_id, scene_id)| {
-            let container = scene.get(*scene_id)?;
-            // Column containers with an automatic main size, which is where
-            // both defects live: a definite main size is correct in every
-            // measured cell, and so is every row-direction cell.
-            if !matches!(container.layout.display, Display::Flex)
-                || !matches!(
-                    container.layout.flex_direction,
-                    FlexDirection::Column | FlexDirection::ColumnReverse
-                )
-                || !matches!(container.layout.size.1, Dimension::Auto)
-            {
-                return None;
-            }
-            // The containing block's content-box width, which a percentage
-            // margin resolves against: `-10%` with 20px of padding is Chrome's
-            // `-86.30`, pinned by
-            // `a_percentage_margin_resolves_against_the_content_box`.
-            let basis = content_inline_size(tree, *taffy_id);
-            let dropped = children_of(tree, *taffy_id)
-                .into_iter()
-                .filter_map(|child| {
-                    let source = scene.get(*to_scene.get(&child)?)?;
-                    let margin = main_axis_margin(&source.layout, basis);
-                    (margin < 0.0
-                        && (source.layout.flex_grow > 0.0
-                            || holds_clipping_grid_item(
-                                scene, tree, to_scene, child,
-                            )))
-                    .then_some(margin)
-                })
-                .sum::<f32>();
-            (dropped < 0.0).then_some((*taffy_id, dropped))
-        })
-        .collect()
-}
-
-/// A node's own main-axis margin in a column, in points. A percentage resolves
-/// against `basis`, the container's inline size, since taffy drops it as it
-/// drops a length. An `auto` edge counts zero and the other edge still counts:
-/// Chrome gives 176 for `auto` beside `-24` in a 200 column.
-fn main_axis_margin(layout: &LayoutStyle, basis: f32) -> f32 {
-    let resolved = |dimension: Dimension| match dimension {
-        Dimension::Points(points) => points,
-        Dimension::Percent(fraction) => fraction * basis,
-        // Zero rather than absent: every edge resolves now, so this returns a
-        // number rather than an `Option` nothing could make empty. The earlier
-        // signature said *this may not resolve* and, once the `auto` edge
-        // stopped being a reason to skip the child, nothing could produce that.
-        Dimension::Auto => 0.0,
-    };
-    resolved(layout.margin.top) + resolved(layout.margin.bottom)
-}
-
-/// Whether a subtree holds a grid container with a `Hidden` or `Scroll` direct
-/// item, the values taffy gives an automatic minimum of zero. [`clips`] asks
-/// about scroll containers; the two part on `Clip`, which `Overflow` lacks.
-fn holds_clipping_grid_item(
-    scene: &Scene,
-    tree: &taffy::TaffyTree<NodeId>,
-    to_scene: &HashMap<taffy::NodeId, NodeId>,
-    id: taffy::NodeId,
-) -> bool {
-    let Some(source) =
-        to_scene.get(&id).and_then(|scene_id| scene.get(*scene_id))
-    else {
-        return false;
-    };
-    let children = children_of(tree, id);
-    if matches!(source.layout.display, Display::Grid)
-        && children.iter().any(|child| {
-            to_scene
-                .get(child)
-                .and_then(|scene_id| scene.get(*scene_id))
-                .is_some_and(|item| {
-                    let zero_minimum = |overflow| {
-                        matches!(overflow, Overflow::Hidden | Overflow::Scroll)
-                    };
-                    zero_minimum(item.layout.overflow.0)
-                        || zero_minimum(item.layout.overflow.1)
-                })
-        })
-    {
-        return true;
-    }
-    // Depth does not matter: measured with none, one and two plain boxes
-    // between the margined child and the grid, and the ancestor is short in all
-    // three.
-    children
-        .into_iter()
-        .any(|child| holds_clipping_grid_item(scene, tree, to_scene, child))
-}
-
-// [WORKAROUND] taffy resolves a column's automatic main size without the
-// negative margins it should apply. `DioxusLabs/taffy#1162` and
-// `DioxusLabs/taffy#1163`, tracked as `l7aromeo/meo-canvas#107`; retires when
-// `crates/meo-canvas-core/tests/taffy_negative_margin.rs` fails.
-/// Writes the main size taffy should have reached, and solves again. One handle
-/// serves both defects, which share the repair; they are collected apart
-/// because they rest on opposite facts about the tree.
-fn compensate_dropped_margins<M>(
-    scene: &Scene,
-    tree: &mut taffy::TaffyTree<NodeId>,
-    to_scene: &HashMap<taffy::NodeId, NodeId>,
-    root: taffy::NodeId,
-    available: taffy::Size<taffy::AvailableSpace>,
-    measure: &mut M,
-    baselines: &mut HashMap<NodeId, f32>,
-) -> Result<(), Error>
-where
-    M: Measure + ?Sized,
-{
-    let candidates = dropped_margin_candidates(scene, tree, to_scene);
-    if candidates.is_empty() {
-        return Ok(());
-    }
-    for (id, dropped) in &candidates {
-        let solved = tree
-            .layout(*id)
-            .map_err(|error| Error::Layout(error.to_string()))?
-            .size
-            .height;
-        let mut style = tree
-            .style(*id)
-            .map_err(|error| Error::Layout(error.to_string()))?
-            .clone();
-        style.size.height = taffy::Dimension::length(solved + dropped);
-        tree.set_style(*id, style)
-            .map_err(|error| Error::Layout(error.to_string()))?;
-    }
-    solve_once(tree, root, available, measure, baselines)
-}
-
-/// A node's children, or nothing if taffy will not say.
-fn children_of(
-    tree: &taffy::TaffyTree<NodeId>,
-    id: taffy::NodeId,
-) -> Vec<taffy::NodeId> {
-    tree.children(id).unwrap_or_default()
-}
-
 /// The inline size a percentage on this node resolves against: the parent's
 /// content box, as Chrome gives `min-width: 70%` of a 440 box with 8px padding
 /// `296.80`, not `308`. Zero without a parent, which binds nothing.
@@ -1232,11 +1067,10 @@ fn stretched_ratio_minimum(
         return None;
     }
     let style = tree.style(id).ok()?;
-    // Stretch is the initial value, so a container saying nothing is saying
-    // stretch -- `align-items default` is what keeps the `None` arm here.
-    // `no stretch` is what keeps the rest of the match.
-    let align = style.align_self.or(container.align_items);
-    if !align.is_none_or(|value| value == taffy::AlignItems::STRETCH) {
+    // `normal`, the initial value, behaves as `stretch` in a flex container
+    // -- `align-items default` pins that arm, `no stretch` the refusal.
+    let align = style.align_self.unwrap_or(container.align_items);
+    if !align.is_stretch_or_normal() {
         return None;
     }
     let row = matches!(
@@ -1393,8 +1227,8 @@ fn derived_cross(
 
 /// Whether this box is a scroll container, which removes the automatic minimum:
 /// Chrome gives 300 under `visible` and `clip` and 117.64 under `hidden`,
-/// `scroll` and `auto`. `Overflow` has no `Clip`; see
-/// [`holds_clipping_grid_item`].
+/// `scroll` and `auto`. `Overflow` has no `Clip`, the one value that clips
+/// without making a scroll container.
 const fn clips(overflow: taffy::Point<taffy::Overflow>) -> bool {
     !matches!(overflow.x, taffy::Overflow::Visible)
         || !matches!(overflow.y, taffy::Overflow::Visible)
@@ -1472,10 +1306,10 @@ where
     solve_once(tree, root, available, measure, baselines)
 }
 
-/// Builds the taffy tree for a subtree, leaving out `Display::None`. taffy
-/// resolves an out-of-flow child against its parent, so `Fixed` goes to the
-/// page root and `Absolute` to its nearest positioned ancestor; paint walks the
-/// scene.
+/// Builds the taffy tree for a subtree, leaving out `Display::None`, with each
+/// out-of-flow box under its containing block, since taffy's `Style` cannot
+/// make a transform one: `Absolute` under the nearest positioned or transformed
+/// ancestor, `Fixed` under the nearest transformed one or the root.
 fn build<M>(
     scene: &Scene,
     node: NodeId,
@@ -1734,10 +1568,18 @@ pub fn to_taffy_style(
             }
         },
 
-        align_items: layout.align_items.map(to_align_items),
+        // An unset alignment is CSS's initial `normal`, which each layout
+        // mode resolves for itself; `align_self`'s `None` is `auto`.
+        align_items: layout
+            .align_items
+            .map_or(taffy::AlignItems::NORMAL, to_align_items),
         align_self: layout.align_self.map(to_align_items),
-        align_content: layout.align_content.map(to_align_content),
-        justify_content: layout.justify_content.map(to_justify),
+        align_content: layout
+            .align_content
+            .map_or(taffy::AlignContent::NORMAL, to_align_content),
+        justify_content: layout
+            .justify_content
+            .map_or(taffy::JustifyContent::NORMAL, to_justify),
 
         // The scene spells `gap` `(row, column)`, as CSS does, and taffy
         // `(width, height)`: swapped at the crossing, the one place that has to
@@ -1826,9 +1668,9 @@ const fn to_overflow(overflow: Overflow) -> taffy::Overflow {
     }
 }
 
-/// The `inset` taffy is given: dropped for a static node, taffy having no
-/// `Static`. Chrome keeps a static child with `top: 30px` at its flow position
-/// in block, flex and grid alike.
+/// The `inset` taffy is given: dropped for a static node, which reaches taffy
+/// as `Relative` ([`to_position`]). Chrome keeps a static child with `top:
+/// 30px` at its flow position in block, flex and grid alike.
 fn to_taffy_inset(
     layout: &LayoutStyle,
 ) -> taffy::Rect<taffy::LengthPercentageAuto> {
@@ -1843,9 +1685,10 @@ fn to_taffy_inset(
     }
 }
 
-/// taffy has two positions where CSS has three: `Static` and `Relative` both
-/// become `Relative`, and inset and z-order, where they differ, are settled in
-/// [`to_taffy_inset`] and `stacks_by_z_index` in [`crate::paint`].
+/// In-flow positions reach taffy as `Relative`, out-of-flow ones as `Absolute`:
+/// [`build`] has placed each box under its containing block, which taffy's
+/// `Style` cannot make of a transform. `fixed-percent-transformed` in
+/// `absolute-percentage.tsv` fails otherwise; inset is [`to_taffy_inset`]'s.
 const fn to_position(position: PositionType) -> taffy::Position {
     match position {
         // `Sticky` is `Relative` here and not by approximation: CSS defines it
@@ -1855,8 +1698,7 @@ const fn to_position(position: PositionType) -> taffy::Position {
         | PositionType::Relative
         | PositionType::Sticky => taffy::Position::Relative,
         // `Fixed` is out of flow like `Absolute`; **which box it resolves
-        // against is not settled here** but by where the node sits in the tree
-        // handed to taffy. See `fixed_containing_block`.
+        // against is not settled here** but by where [`build`] places it.
         PositionType::Absolute | PositionType::Fixed => {
             taffy::Position::Absolute
         }
@@ -2321,9 +2163,8 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"))
     }
 
-    /// A growing child's negative margin reaches the container's own height;
-    /// without `compensate_dropped_margins` both come out at the child's
-    /// height.
+    /// A growing child's negative margin reaches the container's own height,
+    /// 666 for margins of -24 and -10 as in Chrome.
     #[test]
     fn a_growing_child_s_negative_margin_reaches_the_container() {
         let (mut scene, page) = scene_with_page(903.0, 2000.0);
@@ -2364,8 +2205,8 @@ mod tests {
             node.layout.flex_grow = 1.0;
             node.layout.margin.top = Dimension::Points(-10.0);
         }
-        // An `auto` edge beside the length one, which the first version of
-        // `main_axis_margin` dropped the whole child for.
+        // An `auto` edge beside a length one, which still counts: Chrome gives
+        // 176 for `auto` beside `-24` in a 200 column.
         if let Some(node) = scene.get_mut(second) {
             node.layout.margin.bottom = Dimension::Auto;
         }
@@ -2388,8 +2229,8 @@ mod tests {
         );
     }
 
-    /// A percentage margin reaches the container too: taffy drops it on a
-    /// growing child as it drops a length, 500 against Chrome's 409.70.
+    /// A percentage margin on a growing child reaches the container too,
+    /// Chrome's 409.70.
     #[test]
     fn a_percentage_margin_reaches_the_container() {
         let (mut scene, page) = scene_with_page(903.0, 2000.0);
@@ -2472,9 +2313,8 @@ mod tests {
         );
     }
 
-    /// A clipping grid item stops an ancestor ignoring a negative margin, where
-    /// only the ancestor's size is wrong. Deleting the call, or dropping
-    /// `Overflow::Scroll`, reddens this.
+    /// A negative margin beside a clipping grid item reaches an ancestor's
+    /// height, Chrome's 68, under `hidden` and `scroll` alike.
     #[test]
     fn a_clipping_grid_item_reaches_an_ancestor_s_height() {
         for overflow in [Overflow::Hidden, Overflow::Scroll] {
@@ -2861,8 +2701,8 @@ mod tests {
 
     #[test]
     fn static_and_relative_are_one_position_to_taffy() {
-        // Not injective, and deliberately: taffy has two positions where CSS
-        // has three, and both in-flow ones are in flow. What separates them --
+        // Not injective, and deliberately: a static node reaches taffy
+        // positioned, for the reason on `to_position`. What separates them --
         // whether `inset` moves the node, and whether `z_index` stacks it --
         // is settled on our side, so collapsing them here loses nothing.
         assert_eq!(

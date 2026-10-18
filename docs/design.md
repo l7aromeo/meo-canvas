@@ -364,11 +364,14 @@ other case hidden. Four results carry the design:
   children tie. An implementation treating flex items as positioned gets that
   cell wrong.
 
-`PositionType` carries three variants where taffy carries two. `Static` is
-discriminant `2`, appended, because the discriminants are published in both
-wire formats, and it is the `Default`. It is the only variant that does not
-stack, and `inset` does not apply to it, so `to_taffy_inset` drops it: a static
-child given `top: 30px` sits at its flow position in block, flex and grid alike.
+`PositionType`'s `Static` is discriminant `2`, appended, because the
+discriminants are published in both wire formats, and it is the `Default`. It
+reaches taffy as `Relative`: `build` places every out-of-flow box under its
+containing block itself, because taffy's `Style` makes only a positioned box
+one and a transformed static box is one too. It is the only variant that does
+not stack, and `inset` does not apply to it, so `to_taffy_inset` drops it: a
+static child given `top: 30px` sits at its flow position in block, flex and grid
+alike.
 `Fixed` and `Sticky` stack as positioned variants; they differ from `Relative`
 in where they resolve, not in when they paint.
 
@@ -484,7 +487,7 @@ by construction, and the crate ships them together.
 | crate             |        |                                                           |
 | ----------------- | ------ | --------------------------------------------------------- |
 | `meo-skia-canvas` | 0.16.3 | Skia, text shaping, encoding. `default-features = false`. |
-| `taffy`           | 0.14   | Flexbox, CSS grid, block layout. Without `calc`.          |
+| `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.          |
 | `csscolorparser`  | 0.8    | CSS colour syntax. Channels are `f32`; see design notes.  |
 | `neon`            | 1.1    | Node addon.                                               |
 | `clap`            | 4.6    | CLI.                                                      |

@@ -37,7 +37,7 @@ fn shrink_box(ratio: Option<f32>) -> (f32, f32) {
             taffy::Style {
                 display: taffy::Display::Flex,
                 flex_direction: taffy::FlexDirection::Column,
-                align_items: Some(taffy::AlignItems::FLEX_START),
+                align_items: taffy::AlignItems::FLEX_START,
                 ..taffy::Style::default()
             },
             &[box_node],
