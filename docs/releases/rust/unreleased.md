@@ -16,6 +16,8 @@
 
 - The `net` feature no longer builds `aws-lc-rs` and `aws-lc-sys`. The `rustls` requirement above took `rustls`'s default features, which select the aws-lc-rs provider and turn on `prefer-post-quantum`, while `ureq` speaks TLS through ring; the requirement now asks for no features, so ring is the only provider compiled.
 
+- **`rustls-webpki` is required at `^0.103.16` and `webpki-roots` at `^1.0.10`** under the `net` feature, closing `RUSTSEC-2026-0382`, certificate verification that could accept a distrusted intermediate, and `RUSTSEC-2026-0381`, bundled roots that let distrusted emSign intermediates be trusted. `rustls` requires `^0.103.14` and `ureq` requires `^1.0.0`, both of which admit the affected versions for a consumer. Neither crate is imported; both requirements exist to raise those floors.
+
 ### Fixed
 
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**

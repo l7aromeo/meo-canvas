@@ -67,6 +67,12 @@ ureq = "3.4"
 # features, which would build aws-lc-rs beside the ring `ureq` speaks through.
 # Retires when `ureq` requires `0.23.46` or newer.
 rustls = { version = "^0.23.46", default-features = false }
+# Floors of the same kind: `rustls`'s `^0.103.14` admits `RUSTSEC-2026-0382`,
+# and `ureq`'s `^1.0.0` for webpki-roots admits `RUSTSEC-2026-0381`. No
+# features, so each adds only the version. Each retires when its dependent
+# requires the fixed version.
+rustls-webpki = { version = "^0.103.16", default-features = false }
+webpki-roots = { version = "^1.0.10", default-features = false }
 thiserror = "2.0"
 # Benchmarks are an instrument, not a gate, so none is in the `ci` chain: a
 # number that varies with the machine cannot fail a build honestly.
