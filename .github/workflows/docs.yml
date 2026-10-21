@@ -91,9 +91,9 @@ jobs:
             *)                 TAG="" ;;
           esac
           # `npm-vX.Y.Z[-pre]`, or the unprefixed `vX.Y.Z` of the 68 older npm
-          # tags, which `workflow_dispatch` backfills. `rust-v*` has no
-          # JavaScript reference and must not match. `tools/release-tags.mjs`
-          # runs a tag of each shape through this exact line.
+          # tags, which `workflow_dispatch` backfills. A crate tag, `crates-v*`
+          # or the earlier `rust-v*`, has no JavaScript reference and must not
+          # match. `tools/release-tags.mjs` runs each shape through this line.
           if [ -n "$TAG" ] && ! printf '%s' "$TAG" | grep -Eq '^(npm-)?v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
               echo "::error::'$TAG' is not an npm release tag (expected npm-vX.Y.Z, npm-vX.Y.Z-pre, or the pre-rename vX.Y.Z)"
@@ -269,7 +269,7 @@ jobs:
           # The directory is the version without its channel prefix: the sort
           # below and `site-index.mjs` parse names as `^v(\d+)\.(\d+)\.(\d+)`,
           # so `npm-v...` would deploy unlisted and never advance `latest/`.
-          # `rust-v*` never reaches this; docs.rs publishes that reference.
+          # A crate tag never reaches this; docs.rs publishes that reference.
           dir="v${VERSION}"
           rm -rf "site/${dir}"
           cp -r incoming "site/${dir}"

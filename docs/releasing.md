@@ -14,7 +14,10 @@ maintainer's decision. What an agent may and may not run is listed under
 The npm package is **`meo-canvas`**, unscoped, continuing v9's npm lineage. The
 cargo crate is `meo-canvas` too and versions independently, from `0.1.0`.
 **The two numbers are not comparable and are never synchronised for tidiness.**
-Tags carry the channel: `npm-v*` and `rust-v*`.
+Tags carry the channel: `npm-v*` and `crates-v*`. The crate tags through
+`rust-v0.1.4` carry the channel's earlier prefix and are not rewritten, so the
+release before the first `crates-v` one is `rust-v0.1.4`; `release-tags-check`
+refuses a `rust-v` prefix in `crates-io.yml`.
 
 Release notes are hand-written per channel at
 `docs/releases/{npm,crates}/<version>.md`, against the previous release _of that

@@ -590,7 +590,7 @@ release_repo := "l7aromeo/meo-canvas"
 
 # The branch a release is cut from. Nothing here publishes the frozen `v9`
 # branch: npm lineages differ by version and dist-tag, and release channels by
-# tag prefix, `npm-v*` against `rust-v*`, which `release-tags-check` pins.
+# tag prefix, `npm-v*` against `crates-v*`, which `release-tags-check` pins.
 release_branch := "main"
 
 # Rehearse a release without publishing: the whole workflow short of the

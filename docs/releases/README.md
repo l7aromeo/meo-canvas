@@ -4,6 +4,7 @@ One file per release, named by version, under the channel that publishes it:
 
     docs/releases/npm/10.0.0-alpha.6.md     ->  tag npm-v10.0.0-alpha.6
     docs/releases/crates/0.1.0.md           ->  tag rust-v0.1.0
+    docs/releases/crates/<version>.md       ->  tag crates-v<version>
 
 The release workflow reads the file for the version it is publishing and
 refuses to release without one. There is no fallback to `git log`, and adding
@@ -91,7 +92,8 @@ previous commit. The two channels cut from one trunk, so the commits between
 two crate releases include every npm-side change and every gate edit; a page
 listing all of them tells a crate consumer nothing. Ninety-two non-merge
 commits stood between the last two npm releases and roughly twenty of them
-meant anything to someone installing the package.
+meant anything to someone installing the package. The crate release before the
+first `crates-v` tag is `rust-v0.1.4`, under the channel's earlier prefix.
 
 The file is the body of the release page. The workflow adds the install line
 above it, the prerelease note where one applies, and the link to the API
