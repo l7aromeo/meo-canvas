@@ -23,14 +23,34 @@ const pattern = (() => {
   return found[1]
 })()
 
-/** The prefix a workflow builds its tag from, e.g. `npm-v` out of `git_tag="npm-v${VERSION}"`. */
+/** A shell keyword that can stand before an assignment and still make it one. */
+const ASSIGN = String.raw`^\s*(?:(?:export|declare|typeset|local|readonly)(?:\s+-\S+)*\s+)?`
+
+/**
+ * The prefix a workflow builds its tags from, e.g. `npm-v` out of `git_tag="npm-v${VERSION}"`.
+ * Every assignment is read, since `release.yml` tags in two steps: the first match alone
+ * would let a second line tag under another prefix, or a shape this cannot read, unseen.
+ */
 const prefixOf = (file, source) => {
-  const found = source.match(/git_tag="([A-Za-z-]*)v\$\{/)
-  if (!found) {
+  const assignments = source.match(new RegExp(`${ASSIGN}git_tag=.*$`, 'gm')) ?? []
+  if (assignments.length === 0) {
     fail(`${file} no longer assigns git_tag="<prefix>v\${...}"; this check reads that line`)
     return undefined
   }
-  return `${found[1]}v`
+  const prefixes = new Set()
+  for (const line of assignments) {
+    const found = line.match(new RegExp(`${ASSIGN}git_tag="([A-Za-z-]*)v\\$\\{[A-Za-z_]+\\}"$`))
+    if (!found) {
+      fail(`${file} assigns ${line.trim()}, which this check cannot read as git_tag="<prefix>v\${...}"`)
+      return undefined
+    }
+    prefixes.add(`${found[1]}v`)
+  }
+  if (prefixes.size > 1) {
+    fail(`${file} builds tags under ${[...prefixes].join(' and ')}; one workflow tags one channel`)
+    return undefined
+  }
+  return [...prefixes][0]
 }
 
 /** The prefix `crates-io.yml` tags a crate release with. */
@@ -155,7 +175,14 @@ if (pattern && npm && crates) {
     ['crates-io.yml', 'docs/releases/crates/'],
   ]) {
     const source = workflow(file)
-    if (!source.includes(dir)) fail(`${file} no longer reads its notes from ${dir}`)
+    // Every assignment, not a substring: a second `notes_source` elsewhere, or the
+    // directory named only in a comment, would satisfy `includes`.
+    const sources = [...source.matchAll(new RegExp(`${ASSIGN}notes_source=(.*)$`, 'gm'))].map(found => found[1])
+    if (sources.length === 0) fail(`${file} no longer assigns notes_source; this check reads that line`)
+    for (const value of sources) {
+      // `..` would climb out of the directory the prefix names.
+      if (!value.startsWith(`"${dir}`) || value.includes('..')) fail(`${file} reads notes from ${value}, not from ${dir}`)
+    }
     if (/git log --no-merges/.test(source)) {
       fail(`${file} generates release notes from the log again; notes are written by hand and a missing file must stop the release`)
     }
