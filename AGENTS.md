@@ -380,7 +380,7 @@ set.** [`docs/design.md`](docs/design.md) has the shapes and the lists.
 
 **Nothing is released without an explicit instruction**, and the version is the
 maintainer's decision. Every pull request fills
-`docs/releases/{npm,rust}/unreleased.md` in the commit that makes the change,
+`docs/releases/{npm,crates}/unreleased.md` in the commit that makes the change,
 under the channel or channels it reaches; a change that reaches neither says so
 in the pull request rather than inventing an entry.
 [`docs/releases/README.md`](docs/releases/README.md) is the authority on the
