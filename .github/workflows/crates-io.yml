@@ -133,7 +133,7 @@ jobs:
           # in `release.yml`: the log between two crate releases carries every
           # npm change too. No fallback to the log, which would make this unable
           # to fail.
-          notes_source="docs/releases/rust/${version}.md"
+          notes_source="docs/releases/crates/${version}.md"
           if [ ! -s "${notes_source}" ]; then
             echo "::error::${notes_source} is missing or empty. Release notes are written by hand, per channel and per version, against the previous release of that channel. Write it, commit it, and run this again."
             exit 1

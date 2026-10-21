@@ -17,8 +17,8 @@ cargo crate is `meo-canvas` too and versions independently, from `0.1.0`.
 Tags carry the channel: `npm-v*` and `rust-v*`.
 
 Release notes are hand-written per channel at
-`docs/releases/{npm,rust}/<version>.md`, against the previous release _of that
-channel_. They accumulate in `docs/releases/{npm,rust}/unreleased.md`, written
+`docs/releases/{npm,crates}/<version>.md`, against the previous release _of that
+channel_. They accumulate in `docs/releases/{npm,crates}/unreleased.md`, written
 in the commit that makes the change, and the release renames that file to the
 version. `just release-npm` and `just release-crate` refuse to dispatch when the
 version's note is missing. [`releases/README.md`](releases/README.md) is the

@@ -140,7 +140,7 @@ if (pattern && npm && rust) {
   // directory is refused by `git add` and the release cannot proceed.
   for (const [file, dir] of [
     ['release.yml', 'docs/releases/npm/'],
-    ['crates-io.yml', 'docs/releases/rust/'],
+    ['crates-io.yml', 'docs/releases/crates/'],
   ]) {
     const source = workflow(file)
     if (!source.includes(dir)) fail(`${file} no longer reads its notes from ${dir}`)

@@ -157,10 +157,10 @@ If you add a capability to one surface, the honest question is what the other on
 ## Release notes
 
 **Every pull request fills one.** The two channels each keep an accumulating
-note — `docs/releases/npm/unreleased.md` and `docs/releases/rust/unreleased.md`
-— and the entry lands in the same commit as the change it describes. Cutting a
-release renames that file to the version it ships under, so nobody has to know
-the version while writing the entry.
+note — `docs/releases/npm/unreleased.md` and
+`docs/releases/crates/unreleased.md` — and the entry lands in the same commit as
+the change it describes. Cutting a release renames that file to the version it
+ships under, so nobody has to know the version while writing the entry.
 
 **At the start of a cycle the file is empty, and that is not a mistake.**
 `just cut-notes <channel>` renames the last one away and leaves an empty file

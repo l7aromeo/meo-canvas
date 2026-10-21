@@ -61,7 +61,7 @@
 # scratch file stays refused.
 !/docs/releases/README.md
 !/docs/releases/npm/*.md
-!/docs/releases/rust/*.md
+!/docs/releases/crates/*.md
 
 # -- Crates -----------------------------------------------------------------
 # Each crate carries its own README because `clippy::cargo` requires the

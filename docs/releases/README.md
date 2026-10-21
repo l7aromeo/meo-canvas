@@ -3,7 +3,7 @@
 One file per release, named by version, under the channel that publishes it:
 
     docs/releases/npm/10.0.0-alpha.6.md     ->  tag npm-v10.0.0-alpha.6
-    docs/releases/rust/0.1.0.md             ->  tag rust-v0.1.0
+    docs/releases/crates/0.1.0.md           ->  tag rust-v0.1.0
 
 The release workflow reads the file for the version it is publishing and
 refuses to release without one. There is no fallback to `git log`, and adding
@@ -16,10 +16,10 @@ or not anyone had written anything.
 under is not known then.** So each channel has an `unreleased.md` that
 accumulates entries, and cutting a release renames it:
 
-    docs/releases/npm/unreleased.md   ->  docs/releases/npm/<version>.md
-    docs/releases/rust/unreleased.md  ->  docs/releases/rust/<version>.md
+    docs/releases/npm/unreleased.md     ->  docs/releases/npm/<version>.md
+    docs/releases/crates/unreleased.md  ->  docs/releases/crates/<version>.md
 
-`just cut-notes npm` and `just cut-notes rust` do it, reading the version from
+`just cut-notes npm` and `just cut-notes crates` do it, reading the version from
 the same manifest the release recipe reads rather than taking it as an
 argument — a typed version is a second source that can disagree, and the
 disagreement surfaces as the workflow refusing a note that exists under a name
