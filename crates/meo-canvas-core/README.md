@@ -51,7 +51,8 @@ RHEL/Alma/Rocky fontconfig freetype           (build: fontconfig-devel freetype-
 you get is `unable to find library -lfreetype`, which points at freetype rather
 than at the missing prober.
 
-`cmake` and `nasm` are also needed at build time, for libaom.
+`cmake` is also needed at build time, for libaom, and on x86_64 an assembler:
+`yasm`, or `nasm` older than 3, whose help text libaom 3.11 cannot read.
 
 macOS and Windows need none of this: Skia uses CoreText and DirectWrite there.
 

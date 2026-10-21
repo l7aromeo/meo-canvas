@@ -75,15 +75,15 @@ jobs:
           key: crates-io
           save-if: false
 
-      # `cargo publish` builds each crate in `target/package/`, so this needs
-      # the addon build's libraries: cmake and nasm for libaom, and
-      # `pkg-config`, without which `skia-bindings` fails at `-lfreetype`. Build
-      # packages only; the crate README names the runtime ones.
+      # `cargo publish` builds each crate in `target/package/`, so this needs the
+      # addon build's libraries: cmake and yasm for libaom, which refuses nasm 3,
+      # and `pkg-config`, without which `skia-bindings` fails at `-lfreetype`.
+      # Build packages only; the crate README names the runtime ones.
       - name: Install what the verification build needs
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            cmake nasm \
+            cmake yasm \
             pkg-config libfontconfig1-dev libfreetype-dev
 
       # Always runs, including on a real publish. `--workspace` verifies every

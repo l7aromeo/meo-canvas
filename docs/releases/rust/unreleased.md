@@ -10,6 +10,8 @@
 
 - A frame index past either end of an animated image is refused as `Error::FrameOutOfRange`, naming the index as written and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
 
+- Building from source on x86_64 needs `yasm`, or `nasm` older than 3, for libaom: libaom 3.11 refuses the nasm 3.01 that Ubuntu 26.04 ships, with "Unsupported nasm: multipass optimization not supported". `cmake` is still needed as before.
+
 ### Fixed
 
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**

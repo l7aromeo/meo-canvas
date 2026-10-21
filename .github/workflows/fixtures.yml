@@ -80,17 +80,20 @@ jobs:
           save-if: false
 
       # The same two the CI job installs, and for the same reasons: libaom
-      # assembles its hot paths on x86, and Skia links the system font
-      # libraries on Linux.
+      # assembles its hot paths on x86, with yasm on Linux since it refuses
+      # Ubuntu 26.04's nasm 3, and Skia links the system font libraries.
       - name: Install what the build needs
+        # [WORKAROUND] Windows pins NASM 2.16.03, as ci.yml does and for its
+        # reason (b:448994065), until `njaard/libavif-rs#121` ships libaom 3.13.2;
+        # `crates/meo-canvas-core/tests/libaom_nasm_pin.rs` asserts it.
         run: |
           case "${{ runner.os }}" in
             Linux)
               sudo apt-get update
-              sudo apt-get install -y cmake nasm pkg-config libfontconfig1-dev libfreetype-dev
+              sudo apt-get install -y cmake yasm pkg-config libfontconfig1-dev libfreetype-dev
               ;;
             Windows)
-              choco install nasm --no-progress -y
+              choco install nasm --version=2.16.3 --no-progress -y
               echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
               ;;
           esac
