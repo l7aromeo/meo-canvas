@@ -68,7 +68,10 @@ then fails at load, which reads as a broken crate rather than a missing library.
 `pkg-config` is the one to get right: Skia is built without `embed-freetype`, so
 `rust-skia` probes pkg-config and **falls back to bare library names when the
 probe fails, silently** — the error names freetype rather than the missing
-prober. `cmake` and `nasm` are also needed at build time, for libaom.
+prober.
+
+`cmake` is also needed at build time, for libaom, and on x86_64 an assembler:
+`yasm`, or `nasm` older than 3, whose help text libaom 3.11 cannot read.
 
 macOS and Windows need none of this: Skia uses CoreText and DirectWrite there.
 

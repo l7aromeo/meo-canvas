@@ -62,10 +62,17 @@ clap = { version = "4.6", features = ["derive"] }
 # futures among its required dependencies, where reqwest requires `tokio`,
 # `hyper` and `tower` even for its `blocking` feature.
 ureq = "3.4"
-# A floor, not a use: nothing imports `rustls`, but `ureq`'s `^0.23` admits
-# versions with `RUSTSEC-2026-0285`, and only the manifest reaches a consumer.
-# Retires when `ureq` itself requires `0.23.45` or newer.
-rustls = ">=0.23.45"
+# A floor, not a use: `ureq`'s `^0.23.22` admits the versions `RUSTSEC-2026-0285`
+# and `-0346` to `-0349` name. A caret, to raise `ureq`'s 0.23 copy; no default
+# features, which would build aws-lc-rs beside the ring `ureq` speaks through.
+# Retires when `ureq` requires `0.23.46` or newer.
+rustls = { version = "^0.23.46", default-features = false }
+# Floors of the same kind: `rustls`'s `^0.103.14` admits `RUSTSEC-2026-0382`,
+# and `ureq`'s `^1.0.0` for webpki-roots admits `RUSTSEC-2026-0381`. No
+# features, so each adds only the version. Each retires when its dependent
+# requires the fixed version.
+rustls-webpki = { version = "^0.103.16", default-features = false }
+webpki-roots = { version = "^1.0.10", default-features = false }
 thiserror = "2.0"
 # Benchmarks are an instrument, not a gate, so none is in the `ci` chain: a
 # number that varies with the machine cannot fail a build honestly.

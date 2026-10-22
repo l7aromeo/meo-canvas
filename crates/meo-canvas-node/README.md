@@ -25,8 +25,8 @@ just addon
 ## System libraries
 
 This crate links Skia, so building it on Linux needs freetype and fontconfig
-development packages plus `pkg-config`, and `cmake` and `nasm` for libaom — the
-same set [`meo-canvas-core`] documents.
+development packages plus `pkg-config`, and `cmake` and, on x86_64, `yasm` or a
+`nasm` older than 3 for libaom — the same set [`meo-canvas-core`] documents.
 
 The binary the npm package _ships_ needs none of them: it is built in a
 container that links the font libraries statically, so an installed

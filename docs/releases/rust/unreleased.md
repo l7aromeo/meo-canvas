@@ -10,6 +10,14 @@
 
 - A frame index past either end of an animated image is refused as `Error::FrameOutOfRange`, naming the index as written and the frame count ("node N asks for frame F of an image with M frames"), rather than as `Error::UndecodableImage`.
 
+- Building from source on x86_64 needs `yasm`, or `nasm` older than 3, for libaom: libaom 3.11 refuses the nasm 3.01 that Ubuntu 26.04 ships, with "Unsupported nasm: multipass optimization not supported". `cmake` is still needed as before.
+
+- **`rustls` is required at `^0.23.46`** under the optional `net` feature, closing four client-side advisories: an unauthenticated ServerHello downgrading later connections to classical key exchange (`RUSTSEC-2026-0349`), `Debug` output of a client session value exposing its secrets (`-0346`), buffered data sent after an Encrypted Client Hello rejection (`-0347`), and certificate decompression allocating up to 1 GiB before authentication under rustls's `brotli` feature (`-0348`). `ureq` requires `^0.23.22`, so a consumer could resolve an affected version even though this repository's lockfile could not. The requirement was `>=0.23.45`, which a 0.24 release would have satisfied without raising the copy `ureq` uses.
+
+- The `net` feature no longer builds `aws-lc-rs` and `aws-lc-sys`. The `rustls` requirement above took `rustls`'s default features, which select the aws-lc-rs provider and turn on `prefer-post-quantum`, while `ureq` speaks TLS through ring; the requirement now asks for no features, so ring is the only provider compiled.
+
+- **`rustls-webpki` is required at `^0.103.16` and `webpki-roots` at `^1.0.10`** under the `net` feature, closing `RUSTSEC-2026-0382`, certificate verification that could accept a distrusted intermediate, and `RUSTSEC-2026-0381`, bundled roots that let distrusted emSign intermediates be trusted. `rustls` requires `^0.103.14` and `ureq` requires `^1.0.0`, both of which admit the affected versions for a consumer. Neither crate is imported; both requirements exist to raise those floors.
+
 ### Fixed
 
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**

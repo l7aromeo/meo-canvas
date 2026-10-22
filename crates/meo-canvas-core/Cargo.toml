@@ -29,7 +29,7 @@ vulkan = ["meo-skia-canvas/vulkan"]
 # consumer who never names a URL links no HTTP stack; off, a `Url` is refused.
 # Fixed bounds, 5 s to connect and 60 s and 32 MiB per image, are argued on
 # `resolve`'s constants; a caller wanting others passes `ImageSource::Bytes`.
-net = ["dep:ureq", "dep:rustls"]
+net = ["dep:ureq", "dep:rustls", "dep:rustls-webpki", "dep:webpki-roots"]
 
 [dependencies]
 base64 = { workspace = true }
@@ -45,10 +45,15 @@ thiserror = { workspace = true }
 # `futures`, `async`, `mio` or `smol`.
 ureq = { workspace = true, optional = true }
 # Declared to raise a floor, never imported: `ureq` speaks TLS through `rustls`
-# and requires `^0.23`, which a consumer can resolve below `0.23.45`, the fix
-# for `RUSTSEC-2026-0285`. Retires when `ureq` itself requires `0.23.45` or
-# newer.
+# and requires `^0.23.22`, which a consumer can resolve below `0.23.46`, the
+# fix for `RUSTSEC-2026-0346` to `-0349`. Retires when `ureq` itself requires
+# `0.23.46` or newer.
 rustls = { workspace = true, optional = true }
+# The same for the certificate verifier `rustls` requires and the root store
+# `ureq` requires; the root `Cargo.toml` names the advisories and when each
+# retires.
+rustls-webpki = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 
 [[bench]]
 name = "render"
@@ -57,10 +62,11 @@ harness = false
 [lints]
 workspace = true
 
-# `rustls` is declared only to raise a floor and is never imported, so
-# cargo-machete would report it without this entry.
+# `rustls`, `rustls-webpki` and `webpki-roots` are declared only to raise
+# floors and are never imported, so cargo-machete would report them without
+# this entry.
 [package.metadata.cargo-machete]
-ignored = ["rustls"]
+ignored = ["rustls", "rustls-webpki", "webpki-roots"]
 
 [dev-dependencies]
 # Decoders, not encoders: an encode test asserting on byte length proves

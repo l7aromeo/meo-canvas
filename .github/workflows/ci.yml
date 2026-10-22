@@ -142,9 +142,9 @@ jobs:
         with:
           node-version: lts/*
 
-      # Ubuntu's archive only: cmake and nasm for libaom's x86 assembly, and
-      # pkg-config with the fontconfig and freetype headers `rust-skia` probes
-      # for. The runner's vendor lists go first, since one bad index fails
+      # Ubuntu's archive only: cmake, yasm for libaom's x86 assembly (libaom 3.11
+      # refuses Ubuntu 26.04's nasm 3), and pkg-config with the font headers
+      # `rust-skia` probes for. Vendor lists go first: one bad index fails
       # `apt-get update` wholesale (`dl.google.com`, 2026-09-09).
       - name: Install what libaom needs
         if: runner.os == 'Linux'
@@ -156,7 +156,7 @@ jobs:
             /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -r rm -f
           sudo apt-get update
           sudo apt-get install -y \
-            cmake nasm \
+            cmake yasm \
             pkg-config libfontconfig1-dev libfreetype-dev
 
       # libaom's requirement only; cmake is on the image, nasm is not. No font
@@ -164,8 +164,12 @@ jobs:
       # `win32-x64` has no `floors` in `TARGETS`.
       - name: Install what libaom needs
         if: runner.os == 'Windows'
+        # [WORKAROUND] libaom 3.11 refuses every nasm 3 (b:448994065), so NASM is
+        # pinned to 2.16.03 until `njaard/libavif-rs#121` ships libaom 3.13.2 in
+        # libaom-sys, which `crates/meo-canvas-core/tests/libaom_nasm_pin.rs`
+        # asserts.
         run: |
-          choco install nasm --no-progress -y
+          choco install nasm --version=2.16.3 --no-progress -y
           echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
 
       # `just ci` runs the examples, and the JavaScript half of them runs under
