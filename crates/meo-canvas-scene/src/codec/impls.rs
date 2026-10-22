@@ -658,7 +658,7 @@ impl Wire for LayoutStyle {
             gap: (Length::read(input)?, Length::read(input)?),
             overflow: (Wire::read(input)?, Wire::read(input)?),
             box_sizing: Wire::read(input)?,
-            direction: Wire::read(input)?,
+            direction: Option::read(input)?,
             grid_template_columns: input.list()?,
             grid_template_rows: input.list()?,
             grid_auto_rows: Option::read(input)?,

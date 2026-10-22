@@ -430,6 +430,7 @@ fn walk(
                     node,
                     rect,
                     layout.content(id).unwrap_or(rect),
+                    layout.direction(id),
                     None,
                 )?;
 
@@ -473,6 +474,7 @@ fn walk(
                     node,
                     rect,
                     layout.content(id).unwrap_or(rect),
+                    layout.direction(id),
                     root,
                 )?;
 
@@ -685,7 +687,8 @@ const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
 
 /// Paints a node's own box and kind under its own `overflow`, in a save of its
 /// own, so the clip is gone before this context's participants paint. `canvas`
-/// is the page root's surface, which its background layers cover instead.
+/// is the page root's surface, which its background layers cover instead, and
+/// `direction` the node's resolved one from [`LayoutResult::direction`].
 #[expect(
     clippy::too_many_arguments,
     reason = "each is a distinct input of one node's paint; a struct would \
@@ -699,6 +702,7 @@ fn paint_own_content(
     node: &Node,
     rect: Rect,
     content: Rect,
+    direction: Direction,
     canvas: Option<Rect>,
 ) -> Result<(), Error> {
     context.save();
@@ -735,6 +739,7 @@ fn paint_own_content(
                 .and_then(|()| {
                     paint_kind(
                         context, resolved, measurer, id, node, rect, content,
+                        direction,
                     )
                 })
         });
@@ -950,6 +955,11 @@ fn raster_of(
 
 /// Draws whatever the node's kind is.
 #[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct input of one node's paint, passed on from \
+              `paint_own_content`, which has them all"
+)]
+#[expect(
     clippy::match_same_arms,
     reason = "`Box` draws nothing because a box with no paint is nothing to \
               draw; the `#[non_exhaustive]` arm draws nothing because it has \
@@ -963,10 +973,13 @@ fn paint_kind(
     node: &Node,
     rect: Rect,
     content: Rect,
+    direction: Direction,
 ) -> Result<(), Error> {
     match &node.kind {
         NodeKind::Box => Ok(()),
-        NodeKind::Text { .. } => draw_text(context, measurer, id, node, rect),
+        NodeKind::Text { .. } => {
+            draw_text(context, measurer, id, node, rect, direction)
+        }
         NodeKind::Image { fit, position, .. } => {
             // The arm an unresolved image takes, returning under `Ignore`: a
             // decoded image reaches no new branch, and the placeholder's cost
@@ -1092,13 +1105,15 @@ const fn physical(align: TextAlign, direction: Direction) -> TextAlign {
 
 /// Draws a text node line box by line box, in its content box, inside the
 /// border and the padding. Re-wrapped at the width layout settled, which is not
-/// always the last width it asked about; the shaping is cached.
+/// always the last width it asked about; the shaping is cached. `direction` is
+/// the node's resolved one, which `start` and `end` align against.
 fn draw_text(
     context: &mut Context2D,
     measurer: &mut SceneMeasurer<'_>,
     id: NodeId,
     node: &Node,
     rect: Rect,
+    direction: Direction,
 ) -> Result<(), Error> {
     let Some(style) = measurer.resolved().text(id).cloned() else {
         return Ok(());
@@ -1151,13 +1166,12 @@ fn draw_text(
             // **Justification skips the last line**, which is CSS's rule:
             // stretching a line that ends a paragraph spaces out a few words
             // across the whole measure.
-            let justify = matches!(
-                physical(style.align, node.layout.direction),
-                TextAlign::Justify
-            ) && index != last
-                && width < content.size.width;
+            let justify =
+                matches!(physical(style.align, direction), TextAlign::Justify)
+                    && index != last
+                    && width < content.size.width;
             let mut x = content.origin.x
-                + match physical(style.align, node.layout.direction) {
+                + match physical(style.align, direction) {
                     TextAlign::Start | TextAlign::Left | TextAlign::Justify => {
                         0.0
                     }
@@ -5257,8 +5271,8 @@ mod tests {
 
     #[test]
     fn a_grid_item_takes_its_z_index_without_being_positioned() {
-        // Grid §6.2, the counterpart to Flexbox §5.4 the first test covers
-        // through the default `Display::Flex` root.
+        // Grid §6.2, the counterpart to Flexbox §5.4 that
+        // `children_draw_in_z_order_then_document_order` covers on a flex root.
         let mut scene = Scene::new(Size::new(10.0, 10.0));
         if let Some(root) = scene.get_mut(NodeId::ROOT) {
             root.layout.display = Display::Grid;

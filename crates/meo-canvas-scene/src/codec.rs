@@ -81,7 +81,7 @@
 //!             opt<enum>(justify_content) opt<enum>(align_items)
 //!             opt<enum>(align_self) opt<enum>(align_content)
 //!             length length (gap row, column) enum enum (overflow x, y)
-//!             enum(box_sizing) enum(direction)
+//!             enum(box_sizing) opt<enum>(direction)
 //!             list<track>(columns) list<track>(rows)
 //!             opt<track>(auto_rows) opt<track>(auto_columns) enum(auto_flow)
 //!             place(grid_column) place(grid_row)
@@ -159,7 +159,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 8;
+pub const VERSION: u16 = 9;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -535,7 +535,7 @@ mod tests {
             gap: (Length::Points(6.0), Length::Percent(0.02)),
             overflow: (Overflow::Hidden, Overflow::Scroll),
             box_sizing: BoxSizing::ContentBox,
-            direction: Direction::Rtl,
+            direction: Some(Direction::Rtl),
             grid_template_columns: vec![
                 TrackSize::Fraction(1.0),
                 TrackSize::Points(120.0),

@@ -262,17 +262,16 @@ pub struct GridPlacement {
 /// own trees use; following CSS makes the bare case agree with the named ones
 /// instead of inheriting an exception.
 ///
-/// The third, [`Display::Flex`], is **Yoga's default and not CSS's** -- CSS's
-/// initial `display` is `inline`, which this crate has no node for. It is kept
-/// because a scene is a tree of boxes rather than a run of inline content, so
-/// there is nothing for `inline` to mean here.
+/// The third, [`Display::Block`], is what Chrome gives a `div` rather than
+/// CSS's initial `inline`, which this crate has no node for: a scene is a tree
+/// of boxes, not a run of inline content. taffy's own default is `Flex`.
 ///
 /// What that costs a reader is worth stating, because the shape of the tree
-/// depends on it: a container with no `display` lays its children out as flex
-/// items, so a text child shrink-wraps to its content where a web author's
-/// `div` would fill the line. Measured, a text node under a default parent
-/// draws the same ink at every `textAlign`, and only under [`Display::Block`]
-/// does alignment move it. Reach for `Block` to get the familiar behaviour.
+/// depends on it: the factories on both surfaces name [`Display::Flex`] on
+/// every container, so a tree built through them is flex and one assembled
+/// from bare `Node` values is block. Under a flex parent a text child
+/// shrink-wraps to its content and its `text_align` moves nothing; under a
+/// block parent it fills the line and alignment places it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutStyle {
     /// Layout mode for this node's children.
@@ -333,8 +332,9 @@ pub struct LayoutStyle {
     pub overflow: (Overflow, Overflow),
     /// Whether `size` includes padding and border.
     pub box_sizing: BoxSizing,
-    /// Inline direction.
-    pub direction: Direction,
+    /// Inline direction, or `None` to take the parent's, as CSS's `direction`
+    /// inherits. A page root stating none is [`Direction::Ltr`].
+    pub direction: Option<Direction>,
     /// Column tracks, when [`Display::Grid`].
     pub grid_template_columns: Vec<TrackSize>,
     /// Row tracks, when [`Display::Grid`].
@@ -376,7 +376,7 @@ impl Default for LayoutStyle {
             gap: (Length::ZERO, Length::ZERO),
             overflow: (Overflow::Visible, Overflow::Visible),
             box_sizing: BoxSizing::BorderBox,
-            direction: Direction::Ltr,
+            direction: None,
             grid_template_columns: Vec::new(),
             grid_template_rows: Vec::new(),
             grid_auto_rows: None,
@@ -442,7 +442,9 @@ mod tests {
         assert!((style.flex_shrink - 1.0).abs() < f32::EPSILON);
         assert!((style.flex_grow - 0.0).abs() < f32::EPSILON);
         assert_eq!(style.box_sizing, BoxSizing::BorderBox);
-        assert_eq!(style.direction, Direction::Ltr);
+        // Absent, not `Ltr`: an unstated direction inherits, which an explicit
+        // `Ltr` under an `rtl` parent does not.
+        assert_eq!(style.direction, None);
         assert_eq!(style.flex_basis, Dimension::Auto);
         assert_eq!(style.gap, (Length::ZERO, Length::ZERO));
         assert_eq!(style.overflow, (Overflow::Visible, Overflow::Visible));

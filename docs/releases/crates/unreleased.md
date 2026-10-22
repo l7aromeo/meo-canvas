@@ -6,7 +6,7 @@
 
 - **Breaking.** `Style::frame`, the `frame` setter and `NodeKind::Image::frame` take an `i32` rather than a `u32`, so that a negative index can count from the end. An integer literal compiles unchanged; a `u32` value needs converting, for example with `i32::try_from`.
 
-- **Breaking.** The scene file format is version 8, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 8"). Re-encode the scene with this release.
+- **Breaking.** The scene file format is version 9, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 9"). Re-encode the scene with this release.
 
 - The page root's background colour fills the whole canvas beneath every effect the root carries, as the root element's does in Chrome: a root with `opacity` below 1, a `mask` or a `border_radius` draws its colour opaque and out to the canvas's corners, with its content, gradient and image over it. Its `filter` applies to the whole canvas; its border and shadows stay on its box.
 
@@ -21,6 +21,10 @@
 - **`rustls-webpki` is required at `^0.103.16` and `webpki-roots` at `^1.0.10`** under the `net` feature, closing `RUSTSEC-2026-0382`, certificate verification that could accept a distrusted intermediate, and `RUSTSEC-2026-0381`, bundled roots that let distrusted emSign intermediates be trusted. `rustls` requires `^0.103.14` and `ureq` requires `^1.0.0`, both of which admit the affected versions for a consumer. Neither crate is imported; both requirements exist to raise those floors.
 
 - Crate releases are tagged `crates-v<version>` from this release on, so its GitHub release page is `releases/tag/crates-v<version>`. Earlier releases keep their `rust-v` tags and pages.
+
+- **Breaking.** `LayoutStyle::direction` is an `Option<Direction>`, `None` by default: an unset direction inherits from the nearest ancestor that states one, which an explicit `Direction::Ltr` under an `rtl` parent does not. Code that set it writes `Some(Direction::Rtl)`; code that read it reads `LayoutResult::direction(node)` for the direction a node was laid out in.
+
+- **Breaking.** `layout::to_taffy_style` takes the node's resolved `Direction` as a third argument, since its `LayoutStyle` alone cannot say what an unset direction inherits.
 
 ### Fixed
 
@@ -51,3 +55,5 @@
   `meo-canvas: warning: node=… nodes=… failure=… url=… detail=…`, with
   `status=…` after `failure=status`; the exit code stays 0. The CLI README
   documents the fields.
+
+- **A box that states no `direction` takes its parent's, as it does in Chrome** (`l7aromeo/meo-canvas#165`). Under an `rtl` page a grid with no direction of its own ran its tracks from the left, a flex row put its first item at the left, a block's child under a box stating no direction sat at the left edge, and a line's `TextAlign::Start` and `TextAlign::End` aligned as under `ltr`. Each now follows the nearest ancestor that states a direction, along the scene's tree even for a box placed against another one, and an explicit direction still overrides it.
