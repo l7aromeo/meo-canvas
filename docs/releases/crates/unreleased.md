@@ -40,6 +40,8 @@
 
 - An `Image` grid item under the default alignment draws at its intrinsic size, as Chrome does, rather than stretched to fill its cell. `.align_items(Align::Stretch)` still stretches it, its width following its ratio.
 
+- A `Transform`'s translation is applied after its rotation and scale, as CSS applies `translate` after `rotate` and `scale`, rather than being rotated and scaled with the box. A box translated 20px and scaled 2 moves 20px, not 40px, and a 20px box at the page's top-left corner, translated 20px and turned 90° about that corner, covers x 0 to 19 rather than leaving the canvas. A transform with only a translation, or none, draws as before.
+
 - The CLI README's usage line omitted the `render` subcommand, so the command it showed was rejected with "unrecognized subcommand".
 
 - **`meo-canvas` exited 0 with nothing on stderr when an image URL could not be
