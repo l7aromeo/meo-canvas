@@ -1,0 +1,16 @@
+# Chrome, through `just conformance`: how many lines a box a pixel either side of a line breaks into.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Text is 20px Fixture, line-height 1.2; "paragraph" is "one two three four five six seven eight".
+# A stated width is a block at `left`; `auto` is a flex row item as wide as its content.
+# Written by packages/meo-canvas/tools/conformance/wrapwidth.mjs.
+#
+# `width` and `height` are the box from `getBoundingClientRect`; `lines` counts the
+# distinct line tops of a range over the text.
+#
+# case	text	left	stated	width	height	lines	note
+"paragraph at 137"	paragraph	30	137px	137.000	72.000	3	control: narrower than its widest line, so a third line
+"paragraph at 137.2"	paragraph	30	137.2px	137.188	48.000	2	the defect: a hair wider than its widest line, two lines
+"paragraph at 137.6"	paragraph	30	137.6px	137.594	48.000	2	control: two lines however the box rounds
+"label in a flex row"	"seven eight"	0	auto	82.141	24.000	1	its own width, which a whole-pixel box rounds down
+"label in a flex row at 0.4"	"seven eight"	0.4	auto	82.141	24.000	1	control: the same label where the box rounds up
+"label at 82"	"seven eight"	0	82px	82.000	48.000	2	a box really narrower than the label, by less than a pixel, breaks it

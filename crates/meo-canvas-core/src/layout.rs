@@ -89,6 +89,11 @@ pub struct LayoutResult {
     /// Each node's inline direction: its own, or the nearest ancestor's that
     /// states one. Resolved once here so layout and paint read one answer.
     pub directions: HashMap<NodeId, Direction>,
+    /// Each leaf's content width before taffy rounded its rectangle, which for
+    /// text is the width it was laid out at. Paint wraps at this rather than
+    /// at the rounded box, which is up to a pixel off either way and, when
+    /// narrower, breaks a line layout did not.
+    pub wrap_widths: HashMap<NodeId, f32>,
 }
 
 impl LayoutResult {
@@ -145,6 +150,13 @@ impl LayoutResult {
             .get(&node)
             .copied()
             .unwrap_or(Direction::Ltr)
+    }
+
+    /// The width `node`'s content was laid out at, unrounded, or `None` for a
+    /// node with children or one that was not laid out.
+    #[must_use]
+    pub fn wrap_width(&self, node: NodeId) -> Option<f32> {
+        self.wrap_widths.get(&node).copied()
     }
 }
 
@@ -285,9 +297,17 @@ where
     baselines.clear();
     solve_once(&mut tree, root, available, measure, &mut baselines)?;
 
-    let mut rects = HashMap::with_capacity(to_scene.len());
-    let mut insets = HashMap::with_capacity(to_scene.len());
-    collect(&tree, root, &to_scene, 0.0, 0.0, &mut rects, &mut insets)?;
+    let mut collected = Collected {
+        rects: HashMap::with_capacity(to_scene.len()),
+        insets: HashMap::with_capacity(to_scene.len()),
+        wrap_widths: HashMap::new(),
+    };
+    collect(&tree, root, &to_scene, 0.0, 0.0, &mut collected)?;
+    let Collected {
+        mut rects,
+        insets,
+        wrap_widths,
+    } = collected;
     bottom_align_reversed_wraps(scene, page, &insets, &mut rects);
 
     Ok(LayoutResult {
@@ -295,6 +315,7 @@ where
         insets,
         baselines,
         directions,
+        wrap_widths,
     })
 }
 
@@ -1484,6 +1505,13 @@ where
     Ok(created)
 }
 
+/// What [`collect`] reads off the solved tree, per scene node.
+struct Collected {
+    rects: HashMap<NodeId, Rect>,
+    insets: HashMap<NodeId, Sides<f32>>,
+    wrap_widths: HashMap<NodeId, f32>,
+}
+
 /// Walks the solved tree, summing taffy's parent-relative locations into
 /// absolute rectangles, the form paint wants and taffy's rounding assumed.
 fn collect(
@@ -1492,8 +1520,7 @@ fn collect(
     to_scene: &HashMap<taffy::NodeId, NodeId>,
     parent_x: f32,
     parent_y: f32,
-    rects: &mut HashMap<NodeId, Rect>,
-    insets: &mut HashMap<NodeId, Sides<f32>>,
+    collected: &mut Collected,
 ) -> Result<(), Error> {
     let layout = tree
         .layout(node)
@@ -1502,8 +1529,12 @@ fn collect(
     let x = parent_x + layout.location.x;
     let y = parent_y + layout.location.y;
 
+    let children = tree
+        .children(node)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+
     if let Some(&scene_node) = to_scene.get(&node) {
-        rects.insert(
+        collected.rects.insert(
             scene_node,
             Rect {
                 origin: meo_canvas_scene::Point { x, y },
@@ -1514,7 +1545,7 @@ fn collect(
         // resolved. A percentage padding has a containing block behind it and
         // taffy has just used it; asking again here would be a second
         // implementation of that rule.
-        insets.insert(
+        collected.insets.insert(
             scene_node,
             Sides {
                 left: layout.border.left + layout.padding.left,
@@ -1523,13 +1554,22 @@ fn collect(
                 bottom: layout.border.bottom + layout.padding.bottom,
             },
         );
+        // Only a leaf is measured, so only a leaf has a width its content was
+        // laid out at; a container's children carry their own.
+        if children.is_empty() {
+            let unrounded = tree.unrounded_layout(node);
+            let inset = unrounded.border.left
+                + unrounded.border.right
+                + unrounded.padding.left
+                + unrounded.padding.right;
+            collected
+                .wrap_widths
+                .insert(scene_node, (unrounded.size.width - inset).max(0.0));
+        }
     }
 
-    let children = tree
-        .children(node)
-        .map_err(|error| Error::Layout(error.to_string()))?;
     for child in children {
-        collect(tree, child, to_scene, x, y, rects, insets)?;
+        collect(tree, child, to_scene, x, y, collected)?;
     }
 
     Ok(())

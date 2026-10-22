@@ -431,6 +431,7 @@ fn walk(
                     rect,
                     layout.content(id).unwrap_or(rect),
                     layout.direction(id),
+                    layout.wrap_width(id),
                     None,
                 )?;
 
@@ -475,6 +476,7 @@ fn walk(
                     rect,
                     layout.content(id).unwrap_or(rect),
                     layout.direction(id),
+                    layout.wrap_width(id),
                     root,
                 )?;
 
@@ -687,8 +689,8 @@ const fn stacks_by_z_index(parent: &Node, child: &Node) -> bool {
 
 /// Paints a node's own box and kind under its own `overflow`, in a save of its
 /// own, so the clip is gone before this context's participants paint. `canvas`
-/// is the page root's surface, which its background layers cover instead, and
-/// `direction` the node's resolved one from [`LayoutResult::direction`].
+/// is the page root's surface, which its background layers cover instead;
+/// `direction` and `wrap` are the node's, from [`LayoutResult`].
 #[expect(
     clippy::too_many_arguments,
     reason = "each is a distinct input of one node's paint; a struct would \
@@ -703,6 +705,7 @@ fn paint_own_content(
     rect: Rect,
     content: Rect,
     direction: Direction,
+    wrap: Option<f32>,
     canvas: Option<Rect>,
 ) -> Result<(), Error> {
     context.save();
@@ -739,7 +742,7 @@ fn paint_own_content(
                 .and_then(|()| {
                     paint_kind(
                         context, resolved, measurer, id, node, rect, content,
-                        direction,
+                        direction, wrap,
                     )
                 })
         });
@@ -974,11 +977,12 @@ fn paint_kind(
     rect: Rect,
     content: Rect,
     direction: Direction,
+    wrap: Option<f32>,
 ) -> Result<(), Error> {
     match &node.kind {
         NodeKind::Box => Ok(()),
         NodeKind::Text { .. } => {
-            draw_text(context, measurer, id, node, rect, direction)
+            draw_text(context, measurer, id, node, rect, direction, wrap)
         }
         NodeKind::Image { fit, position, .. } => {
             // The arm an unresolved image takes, returning under `Ignore`: a
@@ -1103,10 +1107,10 @@ const fn physical(align: TextAlign, direction: Direction) -> TextAlign {
     }
 }
 
-/// Draws a text node line box by line box, in its content box, inside the
-/// border and the padding. Re-wrapped at the width layout settled, which is not
-/// always the last width it asked about; the shaping is cached. `direction` is
-/// the node's resolved one, which `start` and `end` align against.
+/// Draws a text node line box by line box in its content box, wrapped at
+/// `wrap`, the unrounded width layout settled, which is up to a pixel off the
+/// rounded box the lines are placed and aligned in. `start` and `end` align
+/// against `direction`; the shaping is cached.
 fn draw_text(
     context: &mut Context2D,
     measurer: &mut SceneMeasurer<'_>,
@@ -1114,6 +1118,7 @@ fn draw_text(
     node: &Node,
     rect: Rect,
     direction: Direction,
+    wrap: Option<f32>,
 ) -> Result<(), Error> {
     let Some(style) = measurer.resolved().text(id).cloned() else {
         return Ok(());
@@ -1123,7 +1128,10 @@ fn draw_text(
         return Ok(());
     }
 
-    let Some(block) = measurer.block(id, content.size.width) else {
+    // `chrome_wrap_width`: a box rounded down from 137.2 to 137 still breaks
+    // where layout broke it, onto two lines rather than three.
+    let Some(block) = measurer.block(id, wrap.unwrap_or(content.size.width))
+    else {
         return Ok(());
     };
     if block.lines.is_empty() {

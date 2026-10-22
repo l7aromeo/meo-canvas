@@ -296,9 +296,9 @@ impl<'resolved> SceneMeasurer<'resolved> {
         })
     }
 
-    /// Lays a text node's content out at `width`, for the paint pass. Re-done
-    /// rather than remembered: the width layout settles on is not always the
-    /// last one it asked about.
+    /// Lays a text node's content out at `width`, for the paint pass, which
+    /// passes the unrounded width layout settled. Re-done rather than
+    /// remembered: that width is not always the last one layout asked about.
     pub(crate) fn block(&mut self, node: NodeId, width: f32) -> Option<Block> {
         self.laid(node, width, Truncate::Yes)
     }
@@ -331,33 +331,14 @@ impl<'resolved> SceneMeasurer<'resolved> {
             Truncate::Yes => paragraph,
             Truncate::No => &untruncated,
         };
-        let laid = lines::layout(
+        Some(lines::layout(
             &mut self.text,
             style,
             segments,
             width,
             paragraph,
             Metrics::of(style),
-        );
-
-        // A box rounded down from this paragraph's own width must not break it:
-        // taffy rounds to whole pixels, so `Max HP` at `43.43` gets `43`. Where
-        // one more pixel fits, lay it out loose. `truncated` counts too, since
-        // `HP` at `12.49` cannot break and reaches the marker directly.
-        if (laid.wrapped_lines > 1 || laid.truncated) && width.is_finite() {
-            let loose = lines::layout(
-                &mut self.text,
-                style,
-                segments,
-                f32::INFINITY,
-                paragraph,
-                Metrics::of(style),
-            );
-            if loose.width - width < 1.0 {
-                return Some(loose);
-            }
-        }
-        Some(laid)
+        ))
     }
 
     /// The width of one inter-word space in a node's own face, which the
@@ -630,7 +611,12 @@ mod tests {
     use meo_canvas_scene::{
         Length, Scene, Size,
         node::{ImageSource, Node, NodeId, NodeKind},
-        style::{paint::ObjectFit, text::Spacing},
+        style::{
+            Dimension,
+            layout::{Align, Display},
+            paint::ObjectFit,
+            text::Spacing,
+        },
     };
 
     use super::{
@@ -658,48 +644,77 @@ mod tests {
         (scene, leaf)
     }
 
-    /// The rescue undoes a break one more pixel would have prevented, since
-    /// taffy rounds a rect as `round(x + w) - round(x)`, and leaves a real one.
-    /// Both rows, because a rescue that reached every paragraph would pass the
-    /// first alone.
+    /// A box taffy rounds below its text's own width still holds the text on
+    /// one line, because paint wraps at the width layout measured, and a box
+    /// that really is narrower still breaks it. Both rows, because a wrap
+    /// width that reached every paragraph would pass the first alone.
     #[test]
-    fn a_break_within_a_pixel_of_fitting_is_undone_and_a_real_one_is_not() {
-        let (scene, leaf) = text_scene("ab cd");
+    fn a_box_rounded_below_its_text_keeps_one_line_and_a_narrower_one_breaks() {
+        let (mut scene, leaf) = text_scene("ab cd");
         let fonts = test_fonts();
-        let resolved = Resolved::new(&scene, &fonts)
-            .unwrap_or_else(|error| unreachable!("{error}"));
-        let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
-            .unwrap_or_else(|error| unreachable!("{error}"));
+        let natural = {
+            let resolved = Resolved::new(&scene, &fonts)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            measurer
+                .measure(
+                    leaf,
+                    (None, None),
+                    (Available::MaxContent, Available::MaxContent),
+                )
+                .size
+                .width
+        };
+        // A flex row, so the leaf is as wide as its text, placed where taffy's
+        // `round(x + w) - round(x)` rounds that width down whatever its
+        // fraction: the row can fail only if the box really is short.
+        let fraction = natural.fract();
+        let at = if fraction < 0.5 {
+            0.0
+        } else {
+            (1.0 - fraction).mul_add(0.5, 0.5)
+        };
+        if let Some(root) = scene.get_mut(NodeId::ROOT) {
+            root.layout.display = Display::Flex;
+            root.layout.align_items = Some(Align::FlexStart);
+        }
+        if let Some(node) = scene.get_mut(leaf) {
+            node.layout.margin.left = Dimension::Points(at);
+        }
 
-        let natural = measurer
-            .measure(
-                leaf,
-                (None, None),
-                (Available::MaxContent, Available::MaxContent),
-            )
-            .size
-            .width;
+        let lines = |scene: &Scene| {
+            let resolved = Resolved::new(scene, &fonts)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let solved =
+                crate::layout::solve(scene, NodeId::ROOT, &mut measurer)
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+            let rounded = solved.get(leaf).map_or(0.0, |rect| rect.size.width);
+            let wrap = solved
+                .wrap_width(leaf)
+                .unwrap_or_else(|| unreachable!("a leaf has a wrap width"));
+            let block = measurer
+                .block(leaf, wrap)
+                .unwrap_or_else(|| unreachable!("the leaf is text"));
+            (rounded, block.lines.len())
+        };
 
-        // A hair under its own width: the rounding case, and the whole
-        // paragraph comes back on one line.
-        let pinched = measurer
-            .block(leaf, natural - 0.5)
-            .unwrap_or_else(|| unreachable!("the leaf is text"));
-        assert_eq!(
-            pinched.lines.len(),
-            1,
-            "a box half a pixel short is a rounded box, not a narrower one"
-        );
-
-        // Genuinely narrower, by more than the guard allows: the break stands.
-        let narrow = measurer
-            .block(leaf, natural / 2.0)
-            .unwrap_or_else(|| unreachable!("the leaf is text"));
+        let (rounded, count) = lines(&scene);
         assert!(
-            narrow.lines.len() > 1,
-            "a box half the width of the text really is too narrow, and the \
-             rescue must not reach that far"
+            rounded < natural,
+            "the box is {rounded} for text {natural} wide, so it was not \
+             rounded down and this row tests nothing"
         );
+        assert_eq!(count, 1, "a rounded box is not a narrower one");
+
+        // Genuinely narrower, by half: the break stands.
+        if let Some(node) = scene.get_mut(leaf) {
+            node.layout.size.0 = Dimension::Points(natural / 2.0);
+        }
+        let (_, count) = lines(&scene);
+        assert!(count > 1, "a box half the text's width is too narrow");
     }
 
     #[test]

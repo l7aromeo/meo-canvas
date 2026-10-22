@@ -7,7 +7,8 @@ import { Box, Root, Text } from './index.js'
  * What text draws through the addon, where only a render reaches the arena boundary.
  * `ellipsis` is read against another render rather than a pinned picture: `true`
  * must draw exactly what the literal marker draws, and `false` what leaving it out
- * draws. A wrapped item's width is read against Chrome's.
+ * draws. A wrapped item's width, and the lines a box rounded to a whole pixel
+ * draws, are read against Chrome's.
  */
 
 /** The test font, so a line breaks at the same place on every machine. */
@@ -120,5 +121,49 @@ describe('a wrapping text item in a flex column', () => {
       }
     }
     expect([left, top, right - left + 1, bottom - top + 1]).toEqual([30, 0, 150, 48])
+  })
+})
+
+describe('a text box rounded to a whole pixel', () => {
+  // `chrome_wrap_width.rs` pins the rows against Chrome; this is the one proving the
+  // npm surface draws the same. Chrome 153: 137.2 wide is two lines, 48 tall.
+  it('breaks where its layout broke it, not where the rounded box would', async () => {
+    const canvas = await Root({
+      width: 300,
+      height: 120,
+      display: 'block',
+      backgroundColor: '#ffffff',
+      fonts: [{ family: 'Fixture', paths: [FONT] }],
+      children: Box({
+        display: 'block',
+        margin: { left: 30 },
+        children: Text('one two three four five six seven eight', {
+          width: 137.2,
+          fontFamily: 'Fixture',
+          fontSize: 20,
+          lineHeight: 1.2,
+          color: '#000000',
+          backgroundColor: '#cc0000',
+        }),
+      }),
+    })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    // The box from its background alone and the lines from the glyphs' own ink,
+    // one band of inked rows per line, so a line drawn outside the box is a line.
+    let [top, bottom] = [Infinity, -1]
+    const inked: boolean[] = []
+    for (let y = 0; y < 120; y += 1) {
+      let row = false
+      for (let x = 0; x < 300; x += 1) {
+        const at = (y * 300 + x) * 4
+        const [r, g, b] = [raw[at] ?? 0, raw[at + 1] ?? 0, raw[at + 2] ?? 0]
+        if (r === 0xcc && g === 0 && b === 0) [top, bottom] = [Math.min(top, y), Math.max(bottom, y)]
+        row ||= r < 100 && g < 100 && b < 100
+      }
+      inked.push(row)
+    }
+    const lines = inked.filter((row, y) => row && !(inked[y - 1] ?? false)).length
+    expect([bottom - top + 1, lines]).toEqual([48, 2])
   })
 })
