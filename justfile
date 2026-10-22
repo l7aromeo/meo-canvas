@@ -553,9 +553,9 @@ cut-notes channel:
     set -euo pipefail
 
     case "{{ channel }}" in
-        npm)  version=$(node -p "require('./packages/meo-canvas/package.json').version") ;;
-        rust) version=$(cargo metadata --format-version 1 --no-deps --manifest-path crates/meo-canvas/Cargo.toml | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).packages.find(p => p.name === 'meo-canvas').version") ;;
-        *)    echo "error: channel is npm or rust, not {{ channel }}" >&2; exit 1 ;;
+        npm)    version=$(node -p "require('./packages/meo-canvas/package.json').version") ;;
+        crates) version=$(cargo metadata --format-version 1 --no-deps --manifest-path crates/meo-canvas/Cargo.toml | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).packages.find(p => p.name === 'meo-canvas').version") ;;
+        *)      echo "error: channel is npm or crates, not {{ channel }}" >&2; exit 1 ;;
     esac
 
     dir="docs/releases/{{ channel }}"
@@ -590,7 +590,7 @@ release_repo := "l7aromeo/meo-canvas"
 
 # The branch a release is cut from. Nothing here publishes the frozen `v9`
 # branch: npm lineages differ by version and dist-tag, and release channels by
-# tag prefix, `npm-v*` against `rust-v*`, which `release-tags-check` pins.
+# tag prefix, `npm-v*` against `crates-v*`, which `release-tags-check` pins.
 release_branch := "main"
 
 # Rehearse a release without publishing: the whole workflow short of the
@@ -709,10 +709,10 @@ _release_crate dry:
 
     # The note the workflow demands, checked before dispatch, for the reason the
     # npm recipe gives.
-    notes="docs/releases/rust/${version}.md"
+    notes="docs/releases/crates/${version}.md"
     if [[ ! -f "${notes}" ]]; then
         echo "error: ${notes} does not exist; the release workflow reads it and refuses without it" >&2
-        echo "       run \`just cut-notes rust\` and commit what it stages" >&2
+        echo "       run \`just cut-notes crates\` and commit what it stages" >&2
         exit 1
     fi
     # An empty note is the same failure wearing a different sign: the workflow

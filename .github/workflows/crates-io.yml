@@ -24,7 +24,7 @@ permissions:
 
 # One publish at a time, never cancelled. The group omits the ref, since two
 # dispatches at different refs publish the same version and push the same
-# `rust-v<version>` tag. Cancelling mid-publish leaves crates.io and the
+# `crates-v<version>` tag. Cancelling mid-publish leaves crates.io and the
 # repository disagreeing, and crates.io has no unpublish.
 concurrency:
   group: ${{ github.workflow }}
@@ -111,9 +111,9 @@ jobs:
         run: cargo publish --workspace
 
       # Tag after the registry accepts everything: a tag pushed before a failed
-      # publish marks a version that can never be reissued. `rust-v`, apart from
-      # `npm-v`, because the lineages version independently and `docs.yml` picks
-      # tags with a JavaScript reference by prefix.
+      # publish marks a version that can never be reissued. `crates-v`, apart
+      # from `npm-v`, because the lineages version independently and `docs.yml`
+      # picks tags with a JavaScript reference by prefix.
       - name: Tag the commit and open a release
         if: ${{ !inputs.dry_run }}
         env:
@@ -127,13 +127,13 @@ jobs:
           version=$(cargo metadata --format-version 1 --no-deps \
             | jq -r '.packages[] | select(.name == "meo-canvas") | .version')
           test -n "$version" || { echo "::error::could not read the crate version"; exit 1; }
-          git_tag="rust-v${version}"
+          git_tag="crates-v${version}"
 
           # Hand-written per version, and a missing file stops the release, as
           # in `release.yml`: the log between two crate releases carries every
           # npm change too. No fallback to the log, which would make this unable
           # to fail.
-          notes_source="docs/releases/rust/${version}.md"
+          notes_source="docs/releases/crates/${version}.md"
           if [ ! -s "${notes_source}" ]; then
             echo "::error::${notes_source} is missing or empty. Release notes are written by hand, per channel and per version, against the previous release of that channel. Write it, commit it, and run this again."
             exit 1

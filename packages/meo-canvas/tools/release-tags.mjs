@@ -23,19 +23,51 @@ const pattern = (() => {
   return found[1]
 })()
 
-/** The prefix a workflow builds its tag from, e.g. `npm-v` out of `git_tag="npm-v${VERSION}"`. */
+/** A shell keyword that can stand before an assignment and still make it one. */
+const ASSIGN = String.raw`^\s*(?:(?:export|declare|typeset|local|readonly)(?:\s+-\S+)*\s+)?`
+
+/**
+ * The prefix a workflow builds its tags from, e.g. `npm-v` out of `git_tag="npm-v${VERSION}"`.
+ * Every assignment is read, since `release.yml` tags in two steps: the first match alone
+ * would let a second line tag under another prefix, or a shape this cannot read, unseen.
+ */
 const prefixOf = (file, source) => {
-  const found = source.match(/git_tag="([A-Za-z-]*)v\$\{/)
-  if (!found) {
+  const assignments = source.match(new RegExp(`${ASSIGN}git_tag=.*$`, 'gm')) ?? []
+  if (assignments.length === 0) {
     fail(`${file} no longer assigns git_tag="<prefix>v\${...}"; this check reads that line`)
     return undefined
   }
-  return `${found[1]}v`
+  const prefixes = new Set()
+  for (const line of assignments) {
+    const found = line.match(new RegExp(`${ASSIGN}git_tag="([A-Za-z-]*)v\\$\\{[A-Za-z_]+\\}"$`))
+    if (!found) {
+      fail(`${file} assigns ${line.trim()}, which this check cannot read as git_tag="<prefix>v\${...}"`)
+      return undefined
+    }
+    prefixes.add(`${found[1]}v`)
+  }
+  if (prefixes.size > 1) {
+    fail(`${file} builds tags under ${[...prefixes].join(' and ')}; one workflow tags one channel`)
+    return undefined
+  }
+  return [...prefixes][0]
 }
+
+/** The prefix `crates-io.yml` tags a crate release with. */
+const CRATE_PREFIX = 'crates-v'
+/** The prefix before it: published crate tags keep it, and no new tag may take it. */
+const RETIRED_CRATE_PREFIX = 'rust-v'
+/** The last crate tag spelled the retired way; the lineage continues from it. */
+const LAST_RETIRED_CRATE_TAG = 'rust-v0.1.4'
 
 let checked = 0
 const npm = prefixOf('release.yml', workflow('release.yml'))
-const rust = prefixOf('crates-io.yml', workflow('crates-io.yml'))
+const crates = prefixOf('crates-io.yml', workflow('crates-io.yml'))
+if (crates === RETIRED_CRATE_PREFIX) {
+  fail(`crates-io.yml builds ${crates} tags; ${LAST_RETIRED_CRATE_TAG} is the last of that spelling, and the crate lineage continues as ${CRATE_PREFIX}`)
+} else if (crates && crates !== CRATE_PREFIX) {
+  fail(`crates-io.yml builds ${crates} tags; the crate prefix is ${CRATE_PREFIX}`)
+}
 
 /** Does `site-index.mjs`'s own directory pattern accept this name? */
 const indexParses = (() => {
@@ -59,17 +91,17 @@ const accepts = tag => {
   }
 }
 
-if (pattern && npm && rust) {
-  if (npm === rust) fail(`both channels build a ${npm} tag; the namespaces have to differ`)
+if (pattern && npm && crates) {
+  if (npm === crates) fail(`both channels build a ${npm} tag; the namespaces have to differ`)
 
   // Derived from the prefixes above, so a rename moves these with it.
   const expected = [
     [`${npm}10.0.0`, true, 'an npm release'],
     [`${npm}10.0.0-alpha.6`, true, 'an npm prerelease'],
     ['v10.0.0-alpha.5', true, 'the pre-rename npm spelling, which workflow_dispatch backfills'],
-    [`${rust}0.1.0`, false, 'a crate release, which has no JavaScript reference'],
-    [`${rust}0.1.0-rc.1`, false, 'a crate prerelease'],
-    ['crates-v0.1.0', false, 'the pre-rename crate spelling'],
+    [`${crates}0.1.0`, false, 'a crate release, which has no JavaScript reference'],
+    [`${crates}0.1.0-rc.1`, false, 'a crate prerelease'],
+    [LAST_RETIRED_CRATE_TAG, false, 'a crate tag of the retired spelling'],
     [`${npm}10`, false, 'not a version'],
     [`${npm}10.0.0 `, false, 'trailing space'],
     [`x${npm}10.0.0`, false, 'not anchored at the start'],
@@ -130,8 +162,8 @@ if (pattern && npm && rust) {
     // A crate tag never reaches the derivation, because the filter refuses it
     // first. Asserted as a pair so widening the filter fails here rather than
     // publishing a JavaScript reference for a crate version.
-    if (accepts(`${rust}0.1.0-alpha.1`)) {
-      fail(`docs.yml accepts ${rust}0.1.0-alpha.1, which would derive a version and deploy a reference for a crate release`)
+    if (accepts(`${crates}0.1.0-alpha.1`)) {
+      fail(`docs.yml accepts ${crates}0.1.0-alpha.1, which would derive a version and deploy a reference for a crate release`)
     }
   }
 
@@ -140,10 +172,17 @@ if (pattern && npm && rust) {
   // directory is refused by `git add` and the release cannot proceed.
   for (const [file, dir] of [
     ['release.yml', 'docs/releases/npm/'],
-    ['crates-io.yml', 'docs/releases/rust/'],
+    ['crates-io.yml', 'docs/releases/crates/'],
   ]) {
     const source = workflow(file)
-    if (!source.includes(dir)) fail(`${file} no longer reads its notes from ${dir}`)
+    // Every assignment, not a substring: a second `notes_source` elsewhere, or the
+    // directory named only in a comment, would satisfy `includes`.
+    const sources = [...source.matchAll(new RegExp(`${ASSIGN}notes_source=(.*)$`, 'gm'))].map(found => found[1])
+    if (sources.length === 0) fail(`${file} no longer assigns notes_source; this check reads that line`)
+    for (const value of sources) {
+      // `..` would climb out of the directory the prefix names.
+      if (!value.startsWith(`"${dir}`) || value.includes('..')) fail(`${file} reads notes from ${value}, not from ${dir}`)
+    }
     if (/git log --no-merges/.test(source)) {
       fail(`${file} generates release notes from the log again; notes are written by hand and a missing file must stop the release`)
     }
@@ -163,4 +202,4 @@ if (problems.length > 0) {
   process.exit(1)
 }
 
-process.stdout.write(`release tags: ${npm}* has a reference, ${rust}* does not; ${checked} shapes checked\n`)
+process.stdout.write(`release tags: ${npm}* has a reference, ${crates}* does not; ${checked} shapes checked\n`)

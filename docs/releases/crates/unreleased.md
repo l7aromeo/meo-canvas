@@ -20,6 +20,8 @@
 
 - **`rustls-webpki` is required at `^0.103.16` and `webpki-roots` at `^1.0.10`** under the `net` feature, closing `RUSTSEC-2026-0382`, certificate verification that could accept a distrusted intermediate, and `RUSTSEC-2026-0381`, bundled roots that let distrusted emSign intermediates be trusted. `rustls` requires `^0.103.14` and `ureq` requires `^1.0.0`, both of which admit the affected versions for a consumer. Neither crate is imported; both requirements exist to raise those floors.
 
+- Crate releases are tagged `crates-v<version>` from this release on, so its GitHub release page is `releases/tag/crates-v<version>`. Earlier releases keep their `rust-v` tags and pages.
+
 ### Fixed
 
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**
