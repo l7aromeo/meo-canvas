@@ -1,0 +1,14 @@
+# Chrome, through `just conformance`. Where a transformed box inks.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# 100x100 white page, a 20x20 #2850dc block at its 20px padding.
+# Each row agrees as the individual properties and as one `transform` list.
+# Written by packages/meo-canvas/tools/conformance/transformorder.mjs.
+# The ink columns are inclusive pixel indices.
+# case	translate x	translate y	rotate	scale x	scale y	origin x	origin y	left	top	right	bottom
+"none"	0px	0px	0	1	1	0px	0px	20	20	39	39
+"translate alone"	20px	0px	0	1	1	0px	0px	40	20	59	39
+"translate, rotate"	20px	0px	90	1	1	0px	0px	20	20	39	39
+"translate both, rotate"	20px	10px	90	1	1	0px	0px	20	30	39	49
+"translate, scale"	20px	0px	0	2	2	0px	0px	40	20	79	59
+"percentage translate, scale"	50%	25%	0	2	2	0px	0px	30	25	69	64
+"all three about an origin"	10px	-5px	90	2	1	25%	50%	25	15	44	54

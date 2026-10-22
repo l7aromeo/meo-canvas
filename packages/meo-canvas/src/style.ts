@@ -456,7 +456,9 @@ export type Gradient =
  *
  * CSS's transform split into fields — `translateX` rather than a `translate(…)`
  * string — so a caller composing one from data need not build a string for a
- * renderer to parse back.
+ * renderer to parse back. Composed as CSS composes `translate`, `rotate` and
+ * `scale`: the node is scaled, then turned, about its origin, then moved, so the
+ * move is neither scaled nor turned.
  */
 export interface Transform {
   /** Horizontal movement. */

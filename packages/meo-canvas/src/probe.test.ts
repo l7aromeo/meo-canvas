@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { Box } from './node.js'
 import type { ContainerProps } from './node.js'
 import { Root } from './root.js'
+import type { Transform } from './style.js'
 
 /** Colours these scenes are drawn in, so a run reads as a name. */
 const RED = '220,40,40'
@@ -243,32 +244,29 @@ describe('we match', () => {
 
     expect(await row(scene, 100, 20, 10)).toBe(correct)
   })
-})
 
-describe('we differ', () => {
-  it('923594e composes a transform in the wrong order', async () => {
-    // PINNED DEFECT: `translateX(20px) rotate(90deg)` about the top-left. CSS
-    // applies a list right to left, landing the box at 0..20; this translates then
-    // rotates, sending it off the canvas. Controls: the translate alone lands at
-    // 20..39 and the rotation alone off-canvas, so the origin is honoured.
-    const scene: ContainerProps = {
+  it('923594e composes a transform in CSS order', async () => {
+    // A translate is applied last, neither turned nor scaled: Chrome lands
+    // `translate: 20px 0; rotate: 90deg` about the top-left at 0..19 and a
+    // translate of 20 at scale 2 at 20..59, where a translate turned and scaled
+    // with the box goes off the canvas and to 40..59.
+    const scene = (transform: Transform): ContainerProps => ({
       width: 60,
       height: 60,
       backgroundColor: '#ffffff',
-      children: Box({
-        width: 20,
-        height: 20,
-        backgroundColor: '#2850dc',
-        transform: { translateX: 20, rotate: 90, originX: 0, originY: 0 },
-      }),
-    }
-    const correct = `0-19:${BLUE} 20-59:${WHITE}`
+      children: Box({ width: 20, height: 20, backgroundColor: '#2850dc', transform }),
+    })
 
-    // Change this to `toBe(correct)` when the composition order is CSS's.
-    expect(await row(scene, 60, 60, 10)).not.toBe(correct)
-    expect(await row(scene, 60, 60, 10), 'the box is nowhere on the canvas').toBe(`0-59:${WHITE}`)
+    const rotated = scene({ translateX: 20, rotate: 90, originX: 0, originY: 0 })
+    expect(await row(rotated, 60, 60, 10)).toBe(`0-19:${BLUE} 20-59:${WHITE}`)
+    const scaled = scene({ translateX: 20, scale: 2, originX: 0, originY: 0 })
+    expect(await row(scaled, 60, 60, 30)).toBe(`0-19:${WHITE} 20-59:${BLUE}`)
+    const moved = scene({ translateX: 20, originX: 0, originY: 0 })
+    expect(await row(moved, 60, 60, 10), 'the translate alone').toBe(`0-19:${WHITE} 20-39:${BLUE} 40-59:${WHITE}`)
   })
+})
 
+describe('we differ', () => {
   it("fd81f7e runs a grid's tracks from the left whatever the direction", async () => {
     // **PINNED DEFECT.** Under `direction: rtl` the inline axis reverses, so
     // the first track belongs at the right. The grid box itself does move —

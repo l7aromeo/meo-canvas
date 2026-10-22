@@ -19,9 +19,11 @@ use crate::{
 
 /// A 2D transform applied to the node and its subtree.
 ///
-/// Applied about [`Transform::origin`], which is a fraction of the node's own
-/// box rather than an absolute point, so a transform written once behaves the
-/// same on a box of any size.
+/// Composed as CSS composes `translate`, `rotate` and `scale`: the node is
+/// scaled, then rotated, about [`Transform::origin`], then translated, so the
+/// translation is neither scaled nor turned. The origin and a percentage
+/// translation resolve against the node's own box, so a transform written once
+/// behaves the same on a box of any size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
     /// Horizontal translation.
@@ -38,7 +40,8 @@ pub struct Transform {
     pub scale_x: f32,
     /// Vertical scale factor.
     pub scale_y: f32,
-    /// The point the transform is applied about, as a fraction of the box.
+    /// The point the node is rotated and scaled about, from its box's top-left
+    /// corner.
     pub origin: (Length, Length),
 }
 

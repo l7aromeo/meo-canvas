@@ -1400,7 +1400,10 @@ fn resolve_length(length: Length, reference: f32) -> f32 {
     }
 }
 
-/// Applies a node's transform about its own origin point.
+/// Applies a node's transform in CSS's order: the box is scaled, then rotated,
+/// about its origin point, then translated, so the move is neither scaled nor
+/// turned.
+/// `chrome_transform_order` pins it against Chrome.
 fn apply_transform(
     context: &mut Context2D,
     transform: Option<&Transform>,
@@ -1409,25 +1412,25 @@ fn apply_transform(
     let Some(transform) = transform else {
         return;
     };
-    // The origin is a fraction of the node's own box, so a transform written
-    // once behaves the same on a box of any size. Translating to it, applying,
-    // and translating back is what makes the rotation and scale act about that
-    // point rather than about the surface origin.
+    // The origin and the translate resolve against the node's own box, so a
+    // transform written once behaves the same on a box of any size. Each call
+    // acts on the point before the calls above it, so the translate, issued
+    // first, moves the point after it is scaled and turned about the origin.
     let origin_x =
         rect.origin.x + resolve_length(transform.origin.0, rect.size.width);
     let origin_y =
         rect.origin.y + resolve_length(transform.origin.1, rect.size.height);
 
+    context.translate(
+        resolve_length(transform.translate_x, rect.size.width),
+        resolve_length(transform.translate_y, rect.size.height),
+    );
     context.translate(origin_x, origin_y);
     context.rotate(
         transform.rotate_degrees / DEGREES_PER_TURN * core::f32::consts::TAU,
     );
     context.scale(transform.scale_x, transform.scale_y);
     context.translate(-origin_x, -origin_y);
-    context.translate(
-        resolve_length(transform.translate_x, rect.size.width),
-        resolve_length(transform.translate_y, rect.size.height),
-    );
 }
 
 /// Adds the node's box, rounded if it has radii, as the current path.
