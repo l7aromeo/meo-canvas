@@ -587,6 +587,25 @@ describe('an image source that cannot be resolved', () => {
   })
 })
 
+describe("the page root's background", () => {
+  // The Rust suite pins the rules against Chrome (`chrome_root_background.rs`);
+  // this is the one row proving the npm surface reaches the same paint.
+  it('covers the canvas when the root sits at a margin', async () => {
+    const canvas = await Root({
+      width: 100,
+      height: 100,
+      margin: 20,
+      backgroundColor: '#cc0000',
+      children: Box({ width: 10, height: 10, backgroundColor: '#0000cc' }),
+    })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    const at = (x: number, y: number): string => [...raw.subarray((y * 100 + x) * 4, (y * 100 + x) * 4 + 4)].join(',')
+    expect(at(5, 5)).toBe('204,0,0,255')
+    expect(at(25, 25)).toBe('0,0,204,255')
+  })
+})
+
 describe('an image frame', () => {
   /** Two frames of flat colour, the animated source the crate's own tests draw from. */
   const gif = readFileSync(new URL('../../../crates/meo-canvas/tests/assets/two-frames.gif', import.meta.url))

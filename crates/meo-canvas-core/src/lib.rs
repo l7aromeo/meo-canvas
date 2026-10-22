@@ -47,7 +47,7 @@
 //! [`layout`] owns its taffy tree and never lets it escape, because
 //! `taffy::TaffyTree` is `!Send` and `!Sync` on every supported target --
 //! `CompactLengthInner` stores each length as a tagged `*const ()`
-//! (`taffy-0.13.0/src/style/compact_length.rs:62`), which poisons the auto
+//! (`taffy-0.15.0/src/style/compact_length.rs:76`), which poisons the auto
 //! traits for `Style` and everything holding one. A [`Scene`] is `Send`, so
 //! parallelism happens between renders: each render builds, uses and drops its
 //! own tree on one thread.
@@ -501,8 +501,9 @@ impl Default for Renderer {
 
 /// The size to begin a page at: a page root's own definite size, which lets ICO
 /// pages differ, and otherwise `scene.size`. Not solved, since solving needs
-/// the page; the height is the exception, the solved one under
-/// [`Scene::content_height`], with `scene.size.height` its floor.
+/// the page; the height is the exception, the solved one plus the root's
+/// vertical margins under [`Scene::content_height`], `scene.size.height` its
+/// floor.
 fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
     let stated = |dimension, fallback| match dimension {
         Dimension::Points(value) => value,
@@ -513,7 +514,10 @@ fn page_size(scene: &Scene, page: NodeId, solved: &LayoutResult) -> Size {
         height: if scene.content_height && root.layout.size.1 == Dimension::Auto
         {
             solved.get(page).map_or(scene.size.height, |rect| {
-                rect.size.height.max(scene.size.height)
+                let edge = |edge| layout::root_margin(edge, scene.size.width);
+                let margins = &root.layout.margin;
+                (rect.size.height + edge(margins.top) + edge(margins.bottom))
+                    .max(scene.size.height)
             })
         } else {
             stated(root.layout.size.1, scene.size.height)

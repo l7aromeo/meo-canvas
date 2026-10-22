@@ -86,6 +86,22 @@ circular. The Rust surface says so by chaining: `Root::new(w).height(h)`.
 `content_height.rs` reads the **encoded PNG's own header**, because layout could
 resolve any height and still be painted onto a sheet of the stated size.
 
+### The page root is `<html>` in a canvas-sized viewport
+
+A stated root size is the canvas, which is what lets ICO pages differ. An
+unsized root fills the canvas less its own margins, as Chrome's `<html>` does:
+a percentage margin resolves against the canvas width on either axis, `auto`
+counts as none, an inset moves the root without resizing it, and a page as
+tall as its content is as tall as the root's margin box.
+
+**Its background covers the canvas, painted twice**, which is what Chrome
+does: a base of its colour that no effect of the root's touches, then every
+layer again over the whole canvas inside the root's filter, opacity and mask,
+positioned against the root's box, so a gradient or an image tiles from there.
+The root's blend mode is ignored, having nothing beneath to blend with. Its
+border and shadows stay on its box. `chrome_root_background.rs` pins each rule
+and names what it has not measured.
+
 ### Where state lives
 
 `Renderer` owns everything a render needs that is not the scene: registered
@@ -364,11 +380,14 @@ other case hidden. Four results carry the design:
   children tie. An implementation treating flex items as positioned gets that
   cell wrong.
 
-`PositionType` carries three variants where taffy carries two. `Static` is
-discriminant `2`, appended, because the discriminants are published in both
-wire formats, and it is the `Default`. It is the only variant that does not
-stack, and `inset` does not apply to it, so `to_taffy_inset` drops it: a static
-child given `top: 30px` sits at its flow position in block, flex and grid alike.
+`PositionType`'s `Static` is discriminant `2`, appended, because the
+discriminants are published in both wire formats, and it is the `Default`. It
+reaches taffy as `Relative`: `build` places every out-of-flow box under its
+containing block itself, because taffy's `Style` makes only a positioned box
+one and a transformed static box is one too. It is the only variant that does
+not stack, and `inset` does not apply to it, so `to_taffy_inset` drops it: a
+static child given `top: 30px` sits at its flow position in block, flex and grid
+alike.
 `Fixed` and `Sticky` stack as positioned variants; they differ from `Relative`
 in where they resolve, not in when they paint.
 
@@ -484,7 +503,7 @@ by construction, and the crate ships them together.
 | crate             |        |                                                           |
 | ----------------- | ------ | --------------------------------------------------------- |
 | `meo-skia-canvas` | 0.16.3 | Skia, text shaping, encoding. `default-features = false`. |
-| `taffy`           | 0.14   | Flexbox, CSS grid, block layout. Without `calc`.          |
+| `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.          |
 | `csscolorparser`  | 0.8    | CSS colour syntax. Channels are `f32`; see design notes.  |
 | `neon`            | 1.1    | Node addon.                                               |
 | `clap`            | 4.6    | CLI.                                                      |
