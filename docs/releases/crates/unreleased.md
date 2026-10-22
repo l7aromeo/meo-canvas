@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- A text item that wraps is as wide as the space it is offered, as in Chrome, rather than as wide as its widest line, wherever it is not stretched: in a flex column under `Align::FlexStart` or `Align::Center`, and in a container sized to its content, such as an absolutely positioned box with only a `max_width`. In a 200-wide column with 50 of horizontal margin it was 137 wide where Chrome gives 150. Right- and centre-aligned lines move with the box, and an item cut to one line by `max_lines` is the full 150 rather than 134. Stretched items, rows and blocks were already right.
+
 - **`--features net` builds of `meo-canvas-cli` still refused URL images.**
   The feature compiled an HTTP client the binary never called and left
   fetching off in `meo-canvas-core`, so every `ImageSource::Url` failed as

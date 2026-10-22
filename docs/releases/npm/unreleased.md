@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- A text item that wraps is as wide as the space it is offered, as in Chrome, rather than as wide as its widest line, wherever it is not stretched: in a column under `alignItems: 'flex-start'` or `'center'`, and in a container sized to its content, such as an absolutely positioned box with only a `maxWidth`. In a 200-wide column with 50 of horizontal margin it was 137 wide where Chrome gives 150. Right- and centre-aligned lines move with the box, and an item cut to one line by `maxLines` is the full 150 rather than 134. Stretched items, rows and blocks were already right.
 - An image URL whose host does not resolve is reported in `canvas.warnings` as `failure: 'host-not-found'` (do not retry) rather than `'transport'` (retry). A lookup that could not finish, because the resolver was unreachable or said to try again, stays `'transport'`.
 - An SVG image given `frame: 1` or later draws, as a still raster does, rather than being refused.
 - The page root's `margin` and `position` place it as Chrome places `<html>`, rather than being ignored: an unsized root fills the canvas less its margins, a percentage resolving against the canvas width on either axis, `'auto'` counting as no margin and a negative margin growing it; a `position` offset moves it without resizing it; and a page as tall as its content counts the root's vertical margins. Its background still covers the whole canvas, its gradient and image tiling from the root's box. A stated `width` and `height` are still the canvas size.

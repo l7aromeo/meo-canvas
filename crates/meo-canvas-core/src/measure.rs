@@ -175,6 +175,11 @@ pub trait Measure {
     /// that is `Some` is not for the measurer to choose, and the returned size
     /// on that axis is expected to match. `available` describes the space on
     /// each axis for the axes that are still open.
+    ///
+    /// On an open axis offered [`Available::Definite`], the returned extent is
+    /// taken as the box's own wherever layout does not stretch it, so it is
+    /// fit-content: content that wraps answers the width offered, not the
+    /// widest line it wrapped to, as a browser sizes a `flex-start` item.
     fn measure(
         &mut self,
         node: NodeId,
@@ -405,15 +410,21 @@ impl<'resolved> SceneMeasurer<'resolved> {
         let Some(loose) = self.laid(node, f32::INFINITY, truncate) else {
             return MeasuredLeaf::EMPTY;
         };
-        let block = if budget < loose.width {
-            self.laid(node, budget, truncate).unwrap_or(loose)
+        let (block, width) = if budget < loose.width {
+            let block = self.laid(node, budget, truncate).unwrap_or(loose);
+            // Fit-content, not the widest line: taffy takes this as the box's
+            // width wherever it does not stretch it, and only a word wider than
+            // the budget widens it. `chrome_flex_column_text`: 150, not 137.
+            let width = budget.max(block.width);
+            (block, width)
         } else {
-            loose
+            let width = loose.width;
+            (loose, width)
         };
 
         MeasuredLeaf {
             size: Size::new(
-                known.0.unwrap_or(block.width),
+                known.0.unwrap_or(width),
                 known.1.unwrap_or(block.height),
             ),
             // The first line's own baseline, which is what places its glyphs.
