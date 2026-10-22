@@ -7,7 +7,7 @@
 export const MAGIC = 1296649810
 
 /** The revision a writer of this table emits. */
-export const VERSION = 6
+export const VERSION = 7
 
 /**
  * Bits one mask slot holds.
@@ -57,7 +57,7 @@ export const LAYOUT: readonly ArenaProperty[] = [
   { index: 19, name: "gap", caller: "gap", type: "(Length, Length)" },
   { index: 20, name: "overflow", caller: "overflow", type: "( meo_canvas_scene::style::layout::Overflow, meo_canvas_scene::style::layout::Overflow )" },
   { index: 21, name: "box_sizing", caller: "boxSizing", type: "meo_canvas_scene::style::layout::BoxSizing" },
-  { index: 22, name: "direction", caller: "direction", type: "meo_canvas_scene::style::layout::Direction" },
+  { index: 22, name: "direction", caller: "direction", type: "Option<meo_canvas_scene::style::layout::Direction>" },
   { index: 23, name: "grid_template_columns", caller: "gridTemplateColumns", type: "Vec<meo_canvas_scene::style::layout::TrackSize>" },
   { index: 24, name: "grid_template_rows", caller: "gridTemplateRows", type: "Vec<meo_canvas_scene::style::layout::TrackSize>" },
   { index: 25, name: "grid_auto_rows", caller: "gridAutoRows", type: "Option<meo_canvas_scene::style::layout::TrackSize>" },

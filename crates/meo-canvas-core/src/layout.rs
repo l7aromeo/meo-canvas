@@ -86,6 +86,9 @@ pub struct LayoutResult {
     /// everything else, so a baseline that is not caught here is a second
     /// shaping pass at paint time.
     pub baselines: HashMap<NodeId, f32>,
+    /// Each node's inline direction: its own, or the nearest ancestor's that
+    /// states one. Resolved once here so layout and paint read one answer.
+    pub directions: HashMap<NodeId, Direction>,
 }
 
 impl LayoutResult {
@@ -133,6 +136,38 @@ impl LayoutResult {
     pub fn baseline(&self, node: NodeId) -> Option<f32> {
         self.baselines.get(&node).copied()
     }
+
+    /// The inline direction `node` was laid out in, or [`Direction::Ltr`] for
+    /// one this layout never reached, which is a page root's default.
+    #[must_use]
+    pub fn direction(&self, node: NodeId) -> Direction {
+        self.directions
+            .get(&node)
+            .copied()
+            .unwrap_or(Direction::Ltr)
+    }
+}
+
+/// Every node's inline direction under `page`: its own, or the nearest
+/// ancestor's that states one, with a page root stating none taking
+/// [`Direction::Ltr`]. Walks the scene's tree rather than taffy's, since CSS
+/// inherits along the document even where a box is placed elsewhere.
+fn directions(scene: &Scene, page: NodeId) -> HashMap<NodeId, Direction> {
+    let mut resolved = HashMap::new();
+    let mut pending = vec![(page, Direction::Ltr)];
+    while let Some((id, inherited)) = pending.pop() {
+        let Some(node) = scene.get(id) else {
+            continue;
+        };
+        let own = node.layout.direction.unwrap_or(inherited);
+        // A node met twice has two parents, which `Scene::validate` refuses;
+        // `solve` can be called without it, so the walk stops rather than loop.
+        if resolved.insert(id, own).is_some() {
+            continue;
+        }
+        pending.extend(node.children.iter().map(|&child| (child, own)));
+    }
+    resolved
 }
 
 /// Builds a taffy tree for one page, solves it, and discards the tree.
@@ -178,6 +213,7 @@ where
     // Fixed boxes no transform captured. They belong to the page, which is the
     // viewport they resolve against.
     let mut viewport = Vec::new();
+    let directions = directions(scene, page);
     let root = build(
         scene,
         page,
@@ -194,6 +230,7 @@ where
                 own: !scene.content_height,
             },
             parent: None,
+            directions: &directions,
             measure,
         },
     )?;
@@ -201,7 +238,7 @@ where
         tree.add_child(root, node)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
-    pin_page_root(scene, page, root, &mut tree)?;
+    pin_page_root(scene, page, root, &mut tree, &directions)?;
 
     // A content height is solved, so the height axis is offered `MaxContent`:
     // text breaks against the width, which must be known first, and the height
@@ -257,6 +294,7 @@ where
         rects,
         insets,
         baselines,
+        directions,
     })
 }
 
@@ -341,6 +379,8 @@ struct FromAbove<'above, M: ?Sized> {
     /// its `display`: a block parent stretches an `auto` width and a flex
     /// one does not.
     parent: Option<&'above meo_canvas_scene::node::Node>,
+    /// Every node's resolved inline direction, from [`directions`].
+    directions: &'above HashMap<NodeId, Direction>,
     /// The measurer this solve is running with.
     ///
     /// Here so a leaf's intrinsic size can be asked for while its style is
@@ -516,12 +556,15 @@ fn pin_page_root(
     page: NodeId,
     root: taffy::NodeId,
     tree: &mut taffy::TaffyTree<NodeId>,
+    directions: &HashMap<NodeId, Direction>,
 ) -> Result<(), Error> {
     let source = scene.get(page).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", page.get()))
     })?;
 
-    let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    let direction = directions.get(&page).copied().unwrap_or(Direction::Ltr);
+    let mut style =
+        to_taffy_style(&source.layout, source.paint.border_style, direction);
     style.item_is_replaced = is_replaced(source);
     let edge = |dimension| root_margin(dimension, scene.size.width);
     let margins = &source.layout.margin;
@@ -1311,13 +1354,16 @@ where
     let FromAbove {
         heights,
         parent,
+        directions,
         measure,
     } = above;
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
 
-    let mut style = to_taffy_style(&source.layout, source.paint.border_style);
+    let direction = directions.get(&node).copied().unwrap_or(Direction::Ltr);
+    let mut style =
+        to_taffy_style(&source.layout, source.paint.border_style, direction);
     style.item_is_replaced = is_replaced(source);
     intrinsic_sizes_it(&mut style, node, source, parent, measure);
     // A block-axis percentage against an indefinite containing block resolves
@@ -1366,6 +1412,7 @@ where
                         own: heights.own,
                     },
                     parent: Some(source),
+                    directions,
                     measure: &mut *measure,
                 },
             )?);
@@ -1392,6 +1439,7 @@ where
                     ),
                 },
                 parent: Some(source),
+                directions,
                 measure: &mut *measure,
             },
         )?;
@@ -1499,16 +1547,19 @@ const fn to_available(space: taffy::AvailableSpace) -> Available {
 /// Maps a scene node's layout style onto taffy's.
 ///
 /// Every field the scene carries is written, none is left to taffy's default.
-/// See the module documentation for why.
+/// See the module documentation for why. `direction` is the node's resolved
+/// inline direction, since an unstated one inherits and `layout` alone cannot
+/// say from what: [`LayoutResult::direction`] is that answer for a solved node.
 #[must_use]
 pub fn to_taffy_style(
     layout: &LayoutStyle,
     border_style: BorderStyle,
+    direction: Direction,
 ) -> taffy::Style {
     taffy::Style {
         display: to_display(layout.display),
         box_sizing: to_box_sizing(layout.box_sizing),
-        direction: to_direction(layout.direction),
+        direction: to_direction(direction),
         overflow: taffy::Point {
             x: to_overflow(layout.overflow.0),
             y: to_overflow(layout.overflow.1),
@@ -2716,14 +2767,17 @@ mod tests {
         };
 
         assert_eq!(
-            super::to_taffy_style(&style, BorderStyle::Solid).inset,
+            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr)
+                .inset,
             taffy::Rect::auto(),
             "a static inset is dropped"
         );
 
         style.position_type = PositionType::Relative;
         assert_eq!(
-            super::to_taffy_style(&style, BorderStyle::Solid).inset.top,
+            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr)
+                .inset
+                .top,
             taffy::LengthPercentageAuto::length(30.0),
             "a relative inset is not"
         );
@@ -3208,7 +3262,8 @@ mod tests {
             ..LayoutStyle::default()
         };
 
-        let style = super::to_taffy_style(&layout, BorderStyle::Solid);
+        let style =
+            super::to_taffy_style(&layout, BorderStyle::Solid, Direction::Ltr);
 
         assert_eq!(style.gap.width, taffy::LengthPercentage::length(9.0));
         assert_eq!(style.gap.height, taffy::LengthPercentage::length(4.0));
@@ -3327,7 +3382,11 @@ mod tests {
             // `Solid`, because `used_border` zeroes a `None` border whatever
             // its width, and this would pass without the non-finite guard it
             // pins.
-            let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
+            let taffy = super::to_taffy_style(
+                &style,
+                BorderStyle::Solid,
+                Direction::Ltr,
+            );
 
             assert_eq!(taffy.size.width, taffy::Dimension::auto(), "{value}");
             assert_eq!(
@@ -3374,7 +3433,8 @@ mod tests {
             margin: Sides::all(Dimension::Points(f32::NEG_INFINITY)),
             ..LayoutStyle::default()
         };
-        let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
+        let taffy =
+            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr);
 
         assert_ne!(taffy.size.width, taffy::Dimension::auto());
         assert_ne!(taffy.flex_basis, taffy::Dimension::auto());
@@ -3408,7 +3468,8 @@ mod tests {
         };
         // `Solid` because this test says nothing about borders and a style
         // that zeroed them would make that silence look like a result.
-        let taffy = super::to_taffy_style(&style, BorderStyle::Solid);
+        let taffy =
+            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr);
 
         assert_eq!(
             taffy.margin.left,
@@ -3425,7 +3486,8 @@ mod tests {
             inset: Sides::all(Some(Length::Points(f32::NAN))),
             ..LayoutStyle::default()
         };
-        let taffy = super::to_taffy_style(&broken, BorderStyle::Solid);
+        let taffy =
+            super::to_taffy_style(&broken, BorderStyle::Solid, Direction::Ltr);
 
         assert_eq!(taffy.margin.left, taffy::LengthPercentageAuto::length(0.0));
         assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::auto());
@@ -3436,8 +3498,11 @@ mod tests {
         // The scene's `LayoutStyle::default()` is CSS's: block, a row direction
         // and a shrink of 1. This fails if the mapping leans on
         // `taffy::Style::default()`, whose display is `Flex`.
-        let style =
-            super::to_taffy_style(&LayoutStyle::default(), BorderStyle::Solid);
+        let style = super::to_taffy_style(
+            &LayoutStyle::default(),
+            BorderStyle::Solid,
+            Direction::Ltr,
+        );
 
         assert_eq!(style.display, taffy::Display::Block);
         assert_eq!(style.flex_direction, taffy::FlexDirection::Row);

@@ -344,6 +344,12 @@ establishes no stacking context and the second does -- so `z_index` is
 `flex_shrink: 1.0`, so a bare `Node` behaves like a bare `<div>`. Yoga's raw
 defaults are a column direction and `flex-shrink: 0`.
 
+**An unset `direction` is absent, not `Ltr`.** CSS's `direction` inherits, so
+layout resolves it once per page from the nearest ancestor that states one,
+along the scene's tree rather than the containing-block chain, and a page root
+stating none is `ltr`. Layout and paint both read that answer from
+`LayoutResult::direction`.
+
 **Every factory on both surfaces overrides it.** `Box::new`, `Row::new` and
 `Column::new` in `element.rs` name `Display::Flex`, and so does npm's `Box` in
 `node.ts`, because a container that inherited `block` would silently stop

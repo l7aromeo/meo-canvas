@@ -264,14 +264,10 @@ describe('we match', () => {
     const moved = scene({ translateX: 20, originX: 0, originY: 0 })
     expect(await row(moved, 60, 60, 10), 'the translate alone').toBe(`0-19:${WHITE} 20-39:${BLUE} 40-59:${WHITE}`)
   })
-})
 
-describe('we differ', () => {
-  it("fd81f7e runs a grid's tracks from the left whatever the direction", async () => {
-    // **PINNED DEFECT.** Under `direction: rtl` the inline axis reverses, so
-    // the first track belongs at the right. The grid box itself does move —
-    // it sits at x=40..99 rather than 20..79 — so the direction reaches the
-    // layout; it is the track order inside it that does not.
+  it("fd81f7e runs a grid's tracks from the direction it inherits", async () => {
+    // `direction: rtl` on the grid's parent and nothing on the grid: the first
+    // track sits at the right, as Chrome puts it (`direction-inherit.tsv`).
     const scene: ContainerProps = {
       width: 100,
       height: 20,
@@ -287,8 +283,6 @@ describe('we differ', () => {
       }),
     }
 
-    // Change this to the commented form when the tracks follow the direction.
-    expect(await row(scene, 100, 20, 10)).toBe(`0-39:${WHITE} 40-69:${RED} 70-99:${BLUE}`)
-    // expect(await row(scene, 100, 20, 10)).toBe(`0-39:${WHITE} 40-69:${BLUE} 70-99:${RED}`)
+    expect(await row(scene, 100, 20, 10)).toBe(`0-39:${WHITE} 40-69:${BLUE} 70-99:${RED}`)
   })
 })

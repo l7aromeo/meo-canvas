@@ -1,0 +1,31 @@
+# Chrome, through `just conformance`: whether `direction` reaches a box that does not state one.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Box cases: a 100x20 page holding a 60x20 box 20px in from its left,
+# with two 30px slots -- grid tracks or fixed-width flex items -- red then blue.
+# Block cases: a 30x20 block child of the same page, directly or through a block.
+# Text cases: a 300x60 page holding one line "abc" of Fixture at 32px.
+# Written by packages/meo-canvas/tools/conformance/directioninherit.mjs.
+#
+# `first,second` is each slot child's left edge from the page, in document
+# order; `left` is the block child's left edge; `left,width` is the inked
+# columns of the line. A direction is on the page, on the box, on both or on
+# neither, as the case says.
+#
+# case	measure	value	note
+grid under an rtl page	first,second	70,40	the defect: the grid states nothing and inherits rtl
+grid under an rtl grandparent	first,second	70,40	the same, through a block that states nothing
+grid stating rtl	first,second	50,20	control: its own rtl, which already matched
+grid and page both rtl	first,second	70,40	control: stated twice
+grid with no direction anywhere	first,second	20,50	control: the root default is ltr
+grid stating ltr under an rtl page	first,second	40,70	an explicit value overrides the inherited one
+absolute grid in an rtl block on an ltr page	first,second	50,20	inherits from its parent, not from the page it is placed against
+flex row under an rtl page	first,second	70,40	the defect in a flex row: items start at the right
+flex row stating rtl	first,second	50,20	control: its own rtl
+flex row with no direction anywhere	first,second	20,50	control: ltr
+block child under an rtl page	left	70	control: the page places its own child, which already matched
+block child under an rtl grandparent	left	70	the defect: the block between states nothing and inherits rtl
+block child with no direction anywhere	left	0	control: ltr
+start under an rtl page	left,width	260,39	the defect in paint: inherited rtl puts `start` at the right
+end under an rtl page	left,width	1,40	and `end` at the left
+start with no direction anywhere	left,width	1,40	control: `start` is the left under the root default
+start stating ltr under an rtl page	left,width	1,40	an explicit value overrides the inherited one

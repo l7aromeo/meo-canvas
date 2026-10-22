@@ -192,7 +192,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 6.0;
+pub const VERSION: f64 = 7.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -781,7 +781,7 @@ arena_group! {
             meo_canvas_scene::style::layout::Overflow
         ),
         21 => box_sizing as "boxSizing": meo_canvas_scene::style::layout::BoxSizing,
-        22 => direction as "direction": meo_canvas_scene::style::layout::Direction,
+        22 => direction as "direction": Option<meo_canvas_scene::style::layout::Direction>,
         23 => grid_template_columns as "gridTemplateColumns": Vec<meo_canvas_scene::style::layout::TrackSize>,
         24 => grid_template_rows as "gridTemplateRows": Vec<meo_canvas_scene::style::layout::TrackSize>,
         25 => grid_auto_rows as "gridAutoRows": Option<meo_canvas_scene::style::layout::TrackSize>,

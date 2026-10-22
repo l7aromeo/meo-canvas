@@ -129,7 +129,8 @@ pub struct Style {
     pub overflow: Option<(Overflow, Overflow)>,
     /// Whether `width` and `height` include padding and border.
     pub box_sizing: Option<BoxSizing>,
-    /// Inline direction, which decides which edge is the start.
+    /// Inline direction, which decides which edge is the start. `None` takes
+    /// the parent's, as CSS's `direction` inherits.
     pub direction: Option<Direction>,
     /// Column tracks of a grid.
     pub grid_template_columns: Option<Vec<TrackSize>>,
@@ -1307,7 +1308,7 @@ impl Style {
             layout.box_sizing = value;
         }
         if let Some(value) = self.direction {
-            layout.direction = value;
+            layout.direction = Some(value);
         }
         if let Some(value) = self.grid_template_columns {
             layout.grid_template_columns = value;

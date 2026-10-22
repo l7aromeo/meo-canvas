@@ -86,7 +86,7 @@ fn inked(direction: Direction, align: TextAlign) -> (i64, i64) {
     let mut node = Node::text("abc");
     node.layout = LayoutStyle {
         size: (Dimension::Points(CELL.0), Dimension::Auto),
-        direction,
+        direction: Some(direction),
         ..LayoutStyle::default()
     };
     // **On the node's own text style, which is what a caller writes.** The

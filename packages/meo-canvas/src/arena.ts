@@ -1176,7 +1176,12 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     },
   },
   { index: 21, rust: 'box_sizing', keys: ['boxSizing'], write: (out, style) => out.enum(variant(BOX_SIZING, style.boxSizing as string, 'boxSizing')) },
-  { index: 22, rust: 'direction', keys: ['direction'], write: (out, style) => out.enum(variant(DIRECTION, style.direction as string, 'direction')) },
+  {
+    index: 22,
+    rust: 'direction',
+    keys: ['direction'],
+    write: (out, style) => out.optional(style.direction, value => out.enum(variant(DIRECTION, value, 'direction'))),
+  },
   {
     index: 23,
     rust: 'grid_template_columns',

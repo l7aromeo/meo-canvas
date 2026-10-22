@@ -635,7 +635,10 @@ export interface Style {
   readonly overflow?: Overflow
   /** Whether `width` and `height` include padding and border. */
   readonly boxSizing?: BoxSizing
-  /** Inline direction, which decides which edge is the start. */
+  /**
+   * Inline direction, which decides which edge is the start. Absent takes the parent's,
+   * as CSS's `direction` inherits, and a page that states none is `ltr`.
+   */
   readonly direction?: Direction
   /**
    * The grid's column tracks, under CSS's name so a design ports without
