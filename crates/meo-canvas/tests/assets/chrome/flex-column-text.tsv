@@ -1,0 +1,30 @@
+# Chrome, through `just conformance`. A wrapping text item's width, per container.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# A container, 200px or at most that, holding one item: `one two three four five six seven eight`,
+# 20px Fixture, line-height 1.2, black on #cc0000.
+# Written by packages/meo-canvas/tools/conformance/flexcolumntext.mjs.
+#
+# `x y w h` is the item's border box from `getBoundingClientRect`, relative to
+# the container. `lines` and `widest` are the line boxes the text broke into,
+# from a range over it: a row whose `widest` equals its `w` cannot tell
+# fit-content from the widest line, and every row here keeps them apart.
+# `ink` is the first and last column of glyph, black text over the box, where
+# a red channel under 100 counts: where the lines sit inside it.
+#
+# container	margin	x	y	w	h	lines	widest	ink	note
+column flex-start	0 20 0 30	30	0	150	48	2	137.094	30,166	the defect: fit-content on the cross axis
+column flex-start	none	0	0	200	48	2	188.594	1,187	the defect: fit-content on the cross axis
+column flex-start, text right	0 20 0 30	30	0	150	48	2	137.094	43,179	the line sits against the right edge of the fit-content box
+column flex-start, text right	none	0	0	200	48	2	188.594	12,199	the line sits against the right edge of the fit-content box
+column center	0 20 0 30	30	0	150	48	2	137.094	30,166	fit-content too, then centred
+column center	none	0	0	200	48	2	188.594	1,187	fit-content too, then centred
+column stretch	0 20 0 30	30	0	150	48	2	137.094	30,166	control: stretched, so the measurement never sizes it
+column stretch	none	0	0	200	48	2	188.594	1,187	control: stretched, so the measurement never sizes it
+row flex-start	0 20 0 30	30	0	150	48	2	137.094	30,166	control: sized on the main axis by the flex algorithm
+row flex-start	none	0	0	200	48	2	188.594	1,187	control: sized on the main axis by the flex algorithm
+block	0 20 0 30	30	0	150	48	2	137.094	30,166	control: a block fills the line
+block	none	0	0	200	48	2	188.594	1,187	control: a block fills the line
+grid	0 20 0 30	30	0	150	48	2	137.094	30,166	control: `justify-items` is normal, which stretches; the scene has no `justify-items`
+grid	none	0	0	200	48	2	188.594	1,187	control: `justify-items` is normal, which stretches; the scene has no `justify-items`
+absolute shrink-to-fit	0 20 0 30	30	0	150	48	2	137.094	30,166	the container is fit-content itself, and its block child fills it
+absolute shrink-to-fit	none	0	0	200	48	2	188.594	1,187	the container is fit-content itself, and its block child fills it

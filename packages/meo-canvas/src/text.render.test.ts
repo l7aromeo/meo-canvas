@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 
-import { Root, Text } from './index.js'
+import { Box, Root, Text } from './index.js'
 
 /**
- * What `ellipsis` actually draws: only a render reaches the arena boundary, and each
- * case is read against another render rather than a pinned picture. `true` must draw
- * exactly what the literal marker draws, and `false` what leaving it out draws.
+ * What text draws through the addon, where only a render reaches the arena boundary.
+ * `ellipsis` is read against another render rather than a pinned picture: `true`
+ * must draw exactly what the literal marker draws, and `false` what leaving it out
+ * draws. A wrapped item's width is read against Chrome's.
  */
 
 /** The test font, so a line breaks at the same place on every machine. */
@@ -79,5 +80,45 @@ describe('what each spelling of `ellipsis` draws', () => {
     // reads the value rather than the type, so a change to either is caught.
     const bytes = await ink({})
     expect(Buffer.isBuffer(bytes)).toBe(true)
+  })
+})
+
+describe('a wrapping text item in a flex column', () => {
+  // `chrome_flex_column_text.rs` pins every container against Chrome; this is the
+  // one row proving the npm surface reaches the same width. Chrome 153: 30, 0, 150, 48.
+  // The box is the background's exact colour, so black glyphs past it never count.
+  it('is as wide as the space on offer, not its widest line', async () => {
+    const canvas = await Root({
+      width: 300,
+      height: 200,
+      display: 'block',
+      backgroundColor: '#ffffff',
+      fonts: [{ family: 'Fixture', paths: [FONT] }],
+      children: Box({
+        width: 200,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        children: Text('one two three four five six seven eight', {
+          fontFamily: 'Fixture',
+          fontSize: 20,
+          lineHeight: 1.2,
+          margin: { top: 0, right: 20, bottom: 0, left: 30 },
+          color: '#000000',
+          backgroundColor: '#cc0000',
+        }),
+      }),
+    })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    let [left, top, right, bottom] = [Infinity, Infinity, -1, -1]
+    for (let y = 0; y < 200; y += 1) {
+      for (let x = 0; x < 300; x += 1) {
+        const at = (y * 300 + x) * 4
+        if (raw[at] !== 0xcc || raw[at + 1] !== 0 || raw[at + 2] !== 0) continue
+        ;[left, top, right, bottom] = [Math.min(left, x), Math.min(top, y), Math.max(right, x), Math.max(bottom, y)]
+      }
+    }
+    expect([left, top, right - left + 1, bottom - top + 1]).toEqual([30, 0, 150, 48])
   })
 })
