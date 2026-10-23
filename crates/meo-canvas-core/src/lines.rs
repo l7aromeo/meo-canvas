@@ -541,13 +541,9 @@ pub struct Block {
     pub height: f32,
     /// How many lines the **wrap** produced, before `max_lines` dropped any.
     ///
-    /// `lines.len()` cannot answer this and that is the whole reason the field
-    /// exists. A paragraph with `max_lines: 1` that broke into two comes back
-    /// as one line carrying a marker, which is indistinguishable by any later
-    /// test from a paragraph that never broke -- and
-    /// [`crate::measure::SceneMeasurer`] has a rescue that needs exactly that
-    /// distinction, because a break caused by a box rounded down from the
-    /// text's own width is an artefact rather than a break.
+    /// `lines.len()` cannot answer this: a paragraph with `max_lines: 1` that
+    /// broke into two comes back as one line carrying a marker, which is
+    /// indistinguishable by any later test from a paragraph that never broke.
     ///
     /// Recorded here, where the untruncated wrap is still in hand, rather than
     /// reconstructed afterwards by wrapping a second time.
@@ -557,9 +553,7 @@ pub struct Block {
     /// Both triggers set it, and they are different failures: `max_lines`
     /// dropping lines, and a single line too wide to break -- an unbreakable
     /// word does not raise `wrapped_lines` above one, so that field alone
-    /// cannot see the second. The rescue in [`crate::measure`] needs both,
-    /// because a box rounded down from the text's own width produces either
-    /// depending only on whether the text has a space in it.
+    /// cannot see the second.
     pub truncated: bool,
 }
 
@@ -1681,7 +1675,7 @@ mod tests {
         assert!(!wrapped.truncated);
 
         // Wrapped and truncated: one line survives, and `lines.len()` is now 1
-        // -- which is exactly the reading that made the rescue skip this case.
+        // -- which is why `wrapped_lines` is a field of its own.
         let clamped = layout(
             &mut measurer,
             &base,
