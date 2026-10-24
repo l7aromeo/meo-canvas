@@ -121,18 +121,40 @@ jobs:
       # `rustfmt.toml` uses nightly-only options, and llvm-tools-preview for
       # `coverage`, since `--branch` needs `-Z coverage-options=branch`. Beside
       # the pinned stable; its date is `fmt_toolchain`, read above.
+      # `fixtures.yml` and `encode-hashes.yml` install it too, for the cache key.
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.nightly }}
           components: rustfmt, llvm-tools-preview
 
+      # rust-cache hashes every installed toolchain into its key, and the image's
+      # own `stable` moves on its own schedule (1.99.0 in one Windows run, 1.99.1
+      # in the next). Only what the repository pins stays, so the three workflows
+      # sharing this cache compute one key.
+      - name: Keep only the pinned toolchains
+        env:
+          CHANNEL: ${{ steps.toolchain.outputs.channel }}
+          NIGHTLY: ${{ steps.toolchain.outputs.nightly }}
+        run: |
+          # Empty, either pattern would match nothing and remove the pinned one.
+          test -n "$CHANNEL" && test -n "$NIGHTLY" || { echo "::error::no pinned toolchain was read"; exit 1; }
+          for toolchain in $(rustup toolchain list --quiet); do
+            case "$toolchain" in
+              "${CHANNEL}"-* | "${NIGHTLY}"-*) ;;
+              *) rustup toolchain uninstall "$toolchain" ;;
+            esac
+          done
+
       # Caches ~/.cargo, with the tools below, and target/. Saves only on
       # `main`: pull request copies died unread and pushed past GitHub's 10 GB
       # limit, where eviction cold-starts a random leg at 3-4x its warm time.
       # The action exports `CARGO_INCREMENTAL=0` itself.
+      # `shared-key` drops the job id, so `fixtures.yml` and `encode-hashes.yml`
+      # restore these entries; `<os>-ci` spells the key the job id gave them. The
+      # rest of the key hashes every installed toolchain and the `CARGO*` env.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: ${{ matrix.os }}
+          shared-key: ${{ matrix.os }}-ci
           cache-bin: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
