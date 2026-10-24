@@ -73,6 +73,9 @@
 //! sides<T> := T T T T                                        -- top right bottom left
 //! corners  := f32 f32 f32 f32                                -- tl tr br bl
 //! place    := opt<i16>(start) opt<u16>(span)
+//! jself    := u8(0) | u8(1) | u8(2) | u8(3)                  -- Normal | Stretch | Baseline | LastBaseline
+//!           | u8(4) enum(position) opt<enum>(overflow)       -- Position
+//! jitems   := jself | u8(5) enum(legacy)                     -- ... | Legacy
 //!
 //! layout   := enum(display) enum(position_type) sides<opt<length>>(inset)
 //!             dim dim (size) dim dim (min) dim dim (max) opt<f32>(aspect_ratio)
@@ -85,6 +88,7 @@
 //!             list<track>(columns) list<track>(rows)
 //!             opt<track>(auto_rows) opt<track>(auto_columns) enum(auto_flow)
 //!             place(grid_column) place(grid_row)
+//!             opt<jitems>(justify_items) opt<jself>(justify_self)
 //!
 //! paint    := color(background) opt<gradient> opt<bgimage>
 //!             sides<opt<color>>(border_color) color(border_color_all)
@@ -159,7 +163,7 @@ pub const MAGIC: [u8; 4] = *b"MCSC";
 /// [`decode`] refuses anything else. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 9;
+pub const VERSION: u16 = 10;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -433,8 +437,9 @@ mod tests {
             },
             layout::{
                 Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-                GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
-                PositionType, TrackSize,
+                GridAutoFlow, GridPlacement, Justify, JustifyItems,
+                JustifySelf, LayoutStyle, LegacyPosition, Overflow,
+                OverflowPosition, PositionType, SelfPosition, TrackSize,
             },
             paint::{
                 BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
@@ -532,6 +537,8 @@ mod tests {
             align_items: Some(Align::Baseline),
             align_self: Some(Align::Stretch),
             align_content: Some(Align::SpaceAround),
+            justify_items: Some(JustifyItems::Legacy(LegacyPosition::Center)),
+            justify_self: Some(JustifySelf::safe(SelfPosition::End)),
             gap: (Length::Points(6.0), Length::Percent(0.02)),
             overflow: (Overflow::Hidden, Overflow::Scroll),
             box_sizing: BoxSizing::ContentBox,
@@ -1087,6 +1094,9 @@ mod tests {
             BoxSizing,
             Direction,
             GridAutoFlow,
+            SelfPosition,
+            OverflowPosition,
+            LegacyPosition,
             BorderStyle,
             BlendMode,
             GradientKind,
@@ -1126,6 +1136,60 @@ mod tests {
         round_trip(&FontWeight::BOLD);
         round_trip(&GridPlacement::spanning(1, 2));
         round_trip(&Color::rgba(1, 2, 3, 4));
+    }
+
+    #[test]
+    fn every_justify_value_round_trips_and_refuses_a_tag_past_its_own() {
+        let positions = SelfPosition::ALL.iter().flat_map(|&position| {
+            [
+                None,
+                Some(OverflowPosition::Safe),
+                Some(OverflowPosition::Unsafe),
+            ]
+            .map(|overflow| (position, overflow))
+        });
+        for (position, overflow) in positions {
+            round_trip(&JustifySelf::Position { position, overflow });
+            round_trip(&JustifyItems::Position { position, overflow });
+        }
+        for value in [
+            JustifySelf::Normal,
+            JustifySelf::Stretch,
+            JustifySelf::Baseline,
+            JustifySelf::LastBaseline,
+        ] {
+            round_trip(&value);
+        }
+        for value in [
+            JustifyItems::Normal,
+            JustifyItems::Stretch,
+            JustifyItems::Baseline,
+            JustifyItems::LastBaseline,
+        ] {
+            round_trip(&value);
+        }
+        for &position in LegacyPosition::ALL {
+            round_trip(&JustifyItems::Legacy(position));
+        }
+        // Tag 5 is `legacy`, which `justify-self` does not take.
+        assert_eq!(
+            read_one::<JustifySelf>(&[5, 0]),
+            Err(CodecError::UnknownTag { offset: 0, tag: 5 }),
+        );
+        assert_eq!(
+            read_one::<JustifyItems>(&[6]),
+            Err(CodecError::UnknownTag { offset: 0, tag: 6 }),
+        );
+        // The same value is the same bytes in either property.
+        let encode = |write: &dyn Fn(&mut Writer<'_>)| {
+            let mut bytes = Vec::new();
+            write(&mut Writer::new(&mut bytes));
+            bytes
+        };
+        assert_eq!(
+            encode(&|out| JustifySelf::safe(SelfPosition::Left).write(out)),
+            encode(&|out| JustifyItems::safe(SelfPosition::Left).write(out)),
+        );
     }
 
     #[test]

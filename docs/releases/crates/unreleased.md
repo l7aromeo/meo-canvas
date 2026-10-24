@@ -2,11 +2,13 @@
 
 - `frame` takes a negative index, counting from the end: `.frame(-1)` draws the last frame of an animated image and `.frame(-2)` the one before it. A source with one frame ignores a negative index as it does a positive one.
 
+- `justify_items` and `justify_self` place a grid item or a block child along the inline axis with every value CSS gives them (`l7aromeo/meo-canvas#171`), on `Style` and `LayoutStyle`, as the `JustifyItems` and `JustifySelf` enums over `SelfPosition`, `OverflowPosition` and `LegacyPosition`: `normal`, `stretch`, `baseline` and `last baseline`, the nine positions `center`, `start`, `end`, `self-start`, `self-end`, `flex-start`, `flex-end`, `left` and `right`, each with or without `safe` or `unsafe`, and on `justify_items` `legacy left`, `legacy right` and `legacy center`. `justify_self: None` is CSS's `auto` and `justify_items: None` its initial `legacy`, which takes an ancestor's `legacy` position through boxes stating nothing. A grid column's items asking for `baseline` or `last baseline` align their left border edges at its start or end, as Chrome does, and a flex item ignores both properties. `anchor-center` has no variant, since a scene has no anchor positioning. `LayoutResult::inherited` reports what each node took from its ancestors.
+
 ### Changed
 
 - **Breaking.** `Style::frame`, the `frame` setter and `NodeKind::Image::frame` take an `i32` rather than a `u32`, so that a negative index can count from the end. An integer literal compiles unchanged; a `u32` value needs converting, for example with `i32::try_from`.
 
-- **Breaking.** The scene file format is version 9, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 9"). Re-encode the scene with this release.
+- **Breaking.** The scene file format is version 10, and a `.mcs` file written by 0.1.x is refused with `CodecError::UnsupportedVersion` ("scene format version 7, expected 10"). Re-encode the scene with this release.
 
 - The page root's background colour fills the whole canvas beneath every effect the root carries, as the root element's does in Chrome: a root with `opacity` below 1, a `mask` or a `border_radius` draws its colour opaque and out to the canvas's corners, with its content, gradient and image over it. Its `filter` applies to the whole canvas; its border and shadows stay on its box.
 
@@ -24,7 +26,9 @@
 
 - **Breaking.** `LayoutStyle::direction` is an `Option<Direction>`, `None` by default: an unset direction inherits from the nearest ancestor that states one, which an explicit `Direction::Ltr` under an `rtl` parent does not. Code that set it writes `Some(Direction::Rtl)`; code that read it reads `LayoutResult::direction(node)` for the direction a node was laid out in.
 
-- **Breaking.** `layout::to_taffy_style` takes the node's resolved `Direction` as a third argument, since its `LayoutStyle` alone cannot say what an unset direction inherits.
+- **Breaking.** `layout::to_taffy_style` takes a `layout::Inherited` as a third argument, built with `Inherited::new(direction)`: the node's resolved direction, its alignment container's, and the `legacy` an unset `justify_items` takes, none of which its `LayoutStyle` alone can say. `LayoutResult::inherited` is that value for a solved node.
+
+- **Breaking.** `Style` and `LayoutStyle` gain the public fields `justify_items` and `justify_self`. Both structs are exhaustive by design, so a struct literal naming every field without `..` no longer compiles; add the two fields, or close the literal with `..Style::default()` or `..LayoutStyle::default()`.
 
 ### Fixed
 

@@ -28,7 +28,7 @@
 //! with the scene only for as long as the two happened to choose the same
 //! value, and would change behaviour on a taffy upgrade with nothing in this
 //! repository to show for it. The fields taffy has that the scene does not --
-//! `float`, `clear`, `justify_items`, `text_align`, named grid lines -- come
+//! `float`, `clear`, `text_align`, named grid lines -- come
 //! from `Style::default()` through the struct-update syntax, because the scene
 //! cannot express them and there is nothing to translate.
 
@@ -41,8 +41,9 @@ use meo_canvas_scene::{
         Dimension, Length,
         layout::{
             Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-            GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
-            PositionType, TrackSize,
+            GridAutoFlow, GridPlacement, Justify, JustifyItems, JustifySelf,
+            LayoutStyle, LegacyPosition, Overflow, OverflowPosition,
+            PositionType, SelfPosition, TrackSize,
         },
         paint::BorderStyle,
     },
@@ -89,6 +90,9 @@ pub struct LayoutResult {
     /// Each node's inline direction: its own, or the nearest ancestor's that
     /// states one. Resolved once here so layout and paint read one answer.
     pub directions: HashMap<NodeId, Direction>,
+    /// What each node's style takes from its ancestors, which
+    /// [`to_taffy_style`] needs beside the node's own style.
+    pub inherited: HashMap<NodeId, Inherited>,
     /// Each leaf's content width before taffy rounded its rectangle, which for
     /// text is the width it was laid out at. Paint wraps at this rather than
     /// at the rounded box, which is up to a pixel off either way and, when
@@ -152,12 +156,159 @@ impl LayoutResult {
             .unwrap_or(Direction::Ltr)
     }
 
+    /// What `node` took from its ancestors when it was laid out, or what a
+    /// page root takes for one this layout never reached.
+    #[must_use]
+    pub fn inherited(&self, node: NodeId) -> Inherited {
+        self.inherited.get(&node).copied().unwrap_or_default()
+    }
+
     /// The width `node`'s content was laid out at, unrounded, or `None` for a
     /// node with children or one that was not laid out.
     #[must_use]
     pub fn wrap_width(&self, node: NodeId) -> Option<f32> {
         self.wrap_widths.get(&node).copied()
     }
+}
+
+/// What a node's taffy style takes from its ancestors, which its
+/// [`LayoutStyle`] alone cannot say. [`LayoutResult::inherited`] is the answer
+/// for a solved node.
+///
+/// `#[non_exhaustive]` so that the next inherited property is a field rather
+/// than another argument to [`to_taffy_style`]; build one with
+/// [`Inherited::new`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Inherited {
+    /// The node's inline direction: its own, or the nearest ancestor's that
+    /// states one.
+    pub direction: Direction,
+    /// The direction of the box the node aligns in, which `left` and `right`
+    /// in its `justify_self` resolve against: its parent's in flow, its
+    /// containing block's out of flow, as taffy attaches it.
+    pub parent_direction: Direction,
+    /// The `legacy` position an unset `justify_items` takes: the nearest
+    /// ancestor's [`JustifyItems::Legacy`], unless an ancestor between states
+    /// a value of its own.
+    pub legacy: Option<LegacyPosition>,
+}
+
+/// A page root's: `ltr`, with nothing above it.
+impl Default for Inherited {
+    fn default() -> Self {
+        Self::new(Direction::Ltr)
+    }
+}
+
+impl Inherited {
+    /// A node laid out in `direction`, in a container laid out in the same
+    /// one, with no `legacy` above it.
+    #[must_use]
+    pub const fn new(direction: Direction) -> Self {
+        Self {
+            direction,
+            parent_direction: direction,
+            legacy: None,
+        }
+    }
+
+    /// The same, in an alignment container laid out in `direction`.
+    #[must_use]
+    pub const fn with_parent_direction(self, direction: Direction) -> Self {
+        Self {
+            parent_direction: direction,
+            ..self
+        }
+    }
+
+    /// The same, with `legacy` handed down from above.
+    #[must_use]
+    pub const fn with_legacy(self, legacy: Option<LegacyPosition>) -> Self {
+        Self { legacy, ..self }
+    }
+}
+
+/// The `legacy` position `justify_items` hands to a child: its own
+/// [`JustifyItems::Legacy`], what it took itself when it states nothing, and
+/// none when it states anything else (`justify-items.tsv`, `legacy
+/// right>normal`).
+const fn handed_on(
+    own: Option<JustifyItems>,
+    inherited: Option<LegacyPosition>,
+) -> Option<LegacyPosition> {
+    match own {
+        None => inherited,
+        Some(JustifyItems::Legacy(position)) => Some(position),
+        Some(_) => None,
+    }
+}
+
+/// What every node under `page` inherits, along the scene's tree as in
+/// [`directions`]. An out-of-flow box aligns in its containing block, as
+/// [`build`] attaches it: the nearest positioned or transformed ancestor for an
+/// absolute box, the nearest transformed one for a fixed box, else the page.
+fn inherit(
+    scene: &Scene,
+    page: NodeId,
+    directions: &HashMap<NodeId, Direction>,
+) -> HashMap<NodeId, Inherited> {
+    /// Directions of the boxes a child of this node could be aligned in.
+    #[derive(Clone, Copy)]
+    struct Above {
+        parent: Direction,
+        containing: Direction,
+        transformed: Direction,
+        legacy: Option<LegacyPosition>,
+    }
+    let page_direction =
+        directions.get(&page).copied().unwrap_or(Direction::Ltr);
+    let mut resolved = HashMap::new();
+    let mut pending = vec![(
+        page,
+        Above {
+            parent: page_direction,
+            containing: page_direction,
+            transformed: page_direction,
+            legacy: None,
+        },
+    )];
+    while let Some((id, above)) = pending.pop() {
+        let Some(node) = scene.get(id) else {
+            continue;
+        };
+        let direction = directions.get(&id).copied().unwrap_or(Direction::Ltr);
+        let parent_direction = match node.layout.position_type {
+            PositionType::Absolute => above.containing,
+            PositionType::Fixed => above.transformed,
+            PositionType::Static
+            | PositionType::Relative
+            | PositionType::Sticky => above.parent,
+        };
+        let own = Inherited::new(direction)
+            .with_parent_direction(parent_direction)
+            .with_legacy(above.legacy);
+        // Two parents, as in `directions`.
+        if resolved.insert(id, own).is_some() {
+            continue;
+        }
+        let below = Above {
+            parent: direction,
+            containing: if is_containing_block(node) {
+                direction
+            } else {
+                above.containing
+            },
+            transformed: if node.effects.transform.is_some() {
+                direction
+            } else {
+                above.transformed
+            },
+            legacy: handed_on(node.layout.justify_items, above.legacy),
+        };
+        pending.extend(node.children.iter().map(|&child| (child, below)));
+    }
+    resolved
 }
 
 /// Every node's inline direction under `page`: its own, or the nearest
@@ -226,6 +377,7 @@ where
     // viewport they resolve against.
     let mut viewport = Vec::new();
     let directions = directions(scene, page);
+    let inherited = inherit(scene, page, &directions);
     let root = build(
         scene,
         page,
@@ -242,7 +394,7 @@ where
                 own: !scene.content_height,
             },
             parent: None,
-            directions: &directions,
+            inherited: &inherited,
             measure,
         },
     )?;
@@ -250,7 +402,7 @@ where
         tree.add_child(root, node)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
-    pin_page_root(scene, page, root, &mut tree, &directions)?;
+    pin_page_root(scene, page, root, &mut tree, &inherited)?;
 
     // A content height is solved, so the height axis is offered `MaxContent`:
     // text breaks against the width, which must be known first, and the height
@@ -308,6 +460,14 @@ where
         insets,
         wrap_widths,
     } = collected;
+    align_grid_baselines(
+        scene,
+        &tree,
+        root,
+        &to_scene,
+        &directions,
+        &mut rects,
+    );
     bottom_align_reversed_wraps(scene, page, &insets, &mut rects);
 
     Ok(LayoutResult {
@@ -315,8 +475,169 @@ where
         insets,
         baselines,
         directions,
+        inherited,
         wrap_widths,
     })
+}
+
+/// Which baseline a grid item shares with its column along the inline axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum BaselineGroup {
+    /// `baseline`: the group is placed at the start.
+    First,
+    /// `last baseline`: the group is placed at the end.
+    Last,
+}
+
+/// The group a child joins by its own `justify_self`, or by its parent's
+/// `justify_items` when it states none. `legacy` never names a baseline, so
+/// the parent's own value is enough.
+const fn baseline_group(
+    own: Option<JustifySelf>,
+    parent: Option<JustifyItems>,
+) -> Option<BaselineGroup> {
+    match (own, parent) {
+        (Some(JustifySelf::Baseline), _)
+        | (None, Some(JustifyItems::Baseline)) => Some(BaselineGroup::First),
+        (Some(JustifySelf::LastBaseline), _)
+        | (None, Some(JustifyItems::LastBaseline)) => Some(BaselineGroup::Last),
+        _ => None,
+    }
+}
+
+/// One in-flow grid item of a baseline group, in its container's coordinates.
+struct GroupMember {
+    node: taffy::NodeId,
+    /// The left edge of its border box, which is where a horizontal box's
+    /// inline-axis baseline is synthesized.
+    x: f32,
+    /// Its margin to the left of that edge.
+    before: f32,
+    /// Its border box and right margin, to the right of that edge.
+    after: f32,
+}
+
+/// Aligns a grid column's `baseline` and `last baseline` items on their border
+/// boxes' left edges, at its start or end (`chrome_justify_baseline`). taffy
+/// 0.15 places `Baseline` at the start in the inline axis and has no `last
+/// baseline`; re-check against that test when upgrading it.
+fn align_grid_baselines(
+    scene: &Scene,
+    tree: &taffy::TaffyTree<NodeId>,
+    root: taffy::NodeId,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    directions: &HashMap<NodeId, Direction>,
+    rects: &mut HashMap<NodeId, Rect>,
+) {
+    let mut pending = vec![root];
+    while let Some(container) = pending.pop() {
+        let Ok(children) = tree.children(container) else {
+            continue;
+        };
+        pending.extend(children.iter().copied());
+        // A box that was a grid in an earlier solve keeps its detailed info.
+        if !tree
+            .style(container)
+            .is_ok_and(|style| style.display == taffy::Display::Grid)
+        {
+            continue;
+        }
+        let taffy::DetailedLayoutInfo::Grid(info) =
+            tree.detailed_layout_info(container)
+        else {
+            continue;
+        };
+        let Some((container_id, container_node)) = to_scene
+            .get(&container)
+            .and_then(|&id| scene.get(id).map(|node| (id, node)))
+        else {
+            continue;
+        };
+        let direction = directions
+            .get(&container_id)
+            .copied()
+            .unwrap_or(Direction::Ltr);
+
+        // `info.items` is the in-flow children, in order.
+        let in_flow = children.iter().copied().filter(|&child| {
+            tree.style(child)
+                .is_ok_and(|style| style.position != taffy::Position::Absolute)
+        });
+        let mut groups: HashMap<(usize, BaselineGroup), Vec<GroupMember>> =
+            HashMap::new();
+        for (child, item) in in_flow.zip(&info.items) {
+            let Some(node) = to_scene.get(&child).and_then(|&id| scene.get(id))
+            else {
+                continue;
+            };
+            let Some(group) = baseline_group(
+                node.layout.justify_self,
+                container_node.layout.justify_items,
+            ) else {
+                continue;
+            };
+            // Lines count from one and a track lies between two, so line `n`
+            // starts track `n - 1` and ends track `n - 2`.
+            let track = match group {
+                BaselineGroup::First => item.column_start.checked_sub(1),
+                BaselineGroup::Last => item.column_end.checked_sub(2),
+            };
+            let (Some(track), Ok(layout)) = (track, tree.layout(child)) else {
+                continue;
+            };
+            groups.entry((usize::from(track), group)).or_default().push(
+                GroupMember {
+                    node: child,
+                    x: layout.location.x,
+                    before: layout.margin.left,
+                    after: layout.size.width + layout.margin.right,
+                },
+            );
+        }
+
+        for ((track, group), members) in groups {
+            let Some(edges) = info.columns.positions.get(track) else {
+                continue;
+            };
+            let (left, right) =
+                (edges.start.min(edges.end), edges.start.max(edges.end));
+            let flush_left = (group == BaselineGroup::First)
+                == (direction == Direction::Ltr);
+            let baseline = if flush_left {
+                left + members.iter().map(|m| m.before).fold(0.0, f32::max)
+            } else {
+                right - members.iter().map(|m| m.after).fold(0.0, f32::max)
+            };
+            for member in members {
+                let shift = (baseline - member.x).round();
+                if shift != 0.0 {
+                    shift_subtree(tree, member.node, to_scene, rects, shift);
+                }
+            }
+        }
+    }
+}
+
+/// Moves a taffy node and everything positioned against it `shift` along x,
+/// since the rectangles are absolute.
+fn shift_subtree(
+    tree: &taffy::TaffyTree<NodeId>,
+    node: taffy::NodeId,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    rects: &mut HashMap<NodeId, Rect>,
+    shift: f32,
+) {
+    let mut pending = vec![node];
+    while let Some(moving) = pending.pop() {
+        if let Some(rect) =
+            to_scene.get(&moving).and_then(|id| rects.get_mut(id))
+        {
+            rect.origin.x += shift;
+        }
+        if let Ok(children) = tree.children(moving) {
+            pending.extend(children);
+        }
+    }
 }
 
 /// Moves an overflowing `wrap-reverse` line stack to the bottom of its box, as
@@ -400,8 +721,8 @@ struct FromAbove<'above, M: ?Sized> {
     /// its `display`: a block parent stretches an `auto` width and a flex
     /// one does not.
     parent: Option<&'above meo_canvas_scene::node::Node>,
-    /// Every node's resolved inline direction, from [`directions`].
-    directions: &'above HashMap<NodeId, Direction>,
+    /// What every node inherits, from [`inherit`].
+    inherited: &'above HashMap<NodeId, Inherited>,
     /// The measurer this solve is running with.
     ///
     /// Here so a leaf's intrinsic size can be asked for while its style is
@@ -474,13 +795,14 @@ const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
 
 /// Gives taffy a replaced element's intrinsic ratio, so its block algorithm
 /// derives the height (`l7aromeo/meo-canvas#94`), and with both axes `auto`
-/// under a block parent its intrinsic width, which block flow would stretch:
-/// 60x40, not 200x133. An author's ratio wins.
+/// under a block parent its intrinsic width, 60x40 rather than block flow's
+/// 200x133, unless it resolves to `stretch`. An author's ratio wins.
 fn intrinsic_sizes_it<M>(
     style: &mut taffy::Style,
     node: NodeId,
     source: &meo_canvas_scene::node::Node,
     parent: Option<&meo_canvas_scene::node::Node>,
+    parent_items: Option<JustifyItems>,
     measure: &mut M,
 ) where
     M: Measure + ?Sized,
@@ -508,7 +830,15 @@ fn intrinsic_sizes_it<M>(
     if style.aspect_ratio.is_none() {
         style.aspect_ratio = Some(ratio);
     }
+    // An explicit `stretch` widens it as Chrome does (`justify-items.tsv`), so
+    // the pin holds for every other value.
+    let stretched =
+        source.layout.justify_self.map_or(
+            matches!(parent_items, Some(JustifyItems::Stretch)),
+            |own| matches!(own, JustifySelf::Stretch),
+        );
     if !out_of_flow(source)
+        && !stretched
         && parent.is_some_and(|parent| parent.layout.display == Display::Block)
         && matches!(source.layout.size.0, Dimension::Auto)
         && matches!(source.layout.size.1, Dimension::Auto)
@@ -577,15 +907,15 @@ fn pin_page_root(
     page: NodeId,
     root: taffy::NodeId,
     tree: &mut taffy::TaffyTree<NodeId>,
-    directions: &HashMap<NodeId, Direction>,
+    inherited: &HashMap<NodeId, Inherited>,
 ) -> Result<(), Error> {
     let source = scene.get(page).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", page.get()))
     })?;
 
-    let direction = directions.get(&page).copied().unwrap_or(Direction::Ltr);
+    let own = inherited.get(&page).copied().unwrap_or_default();
     let mut style =
-        to_taffy_style(&source.layout, source.paint.border_style, direction);
+        to_taffy_style(&source.layout, source.paint.border_style, own);
     style.item_is_replaced = is_replaced(source);
     let edge = |dimension| root_margin(dimension, scene.size.width);
     let margins = &source.layout.margin;
@@ -1375,18 +1705,19 @@ where
     let FromAbove {
         heights,
         parent,
-        directions,
+        inherited,
         measure,
     } = above;
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
 
-    let direction = directions.get(&node).copied().unwrap_or(Direction::Ltr);
+    let own = inherited.get(&node).copied().unwrap_or_default();
     let mut style =
-        to_taffy_style(&source.layout, source.paint.border_style, direction);
+        to_taffy_style(&source.layout, source.paint.border_style, own);
     style.item_is_replaced = is_replaced(source);
-    intrinsic_sizes_it(&mut style, node, source, parent, measure);
+    let parent_items = state_auto(&mut style, source, parent, own);
+    intrinsic_sizes_it(&mut style, node, source, parent, parent_items, measure);
     // A block-axis percentage against an indefinite containing block resolves
     // to `auto`, which taffy does not do. Out of flow the containing block is
     // not the flex parent and is settled first, so it stands
@@ -1433,7 +1764,7 @@ where
                         own: heights.own,
                     },
                     parent: Some(source),
-                    directions,
+                    inherited,
                     measure: &mut *measure,
                 },
             )?);
@@ -1460,7 +1791,7 @@ where
                     ),
                 },
                 parent: Some(source),
-                directions,
+                inherited,
                 measure: &mut *measure,
             },
         )?;
@@ -1503,6 +1834,36 @@ where
 
     to_scene.insert(created, node);
     Ok(created)
+}
+
+/// The parent's `justify_items` as this node's `auto` takes it, `legacy`
+/// resolved. An out-of-flow node's `justify_self` is stated here, `auto`
+/// included: taffy would take `auto` from the containing block rather than the
+/// parent CSS takes it from.
+fn state_auto(
+    style: &mut taffy::Style,
+    source: &meo_canvas_scene::node::Node,
+    parent: Option<&meo_canvas_scene::node::Node>,
+    own: Inherited,
+) -> Option<JustifyItems> {
+    let parent_items = parent.map(|parent| {
+        parent_justify_items(parent.layout.justify_items, own.legacy)
+    });
+    if out_of_flow(source) {
+        // Chrome treats `left` and `right` as `start` and `end` for an absolute
+        // child of a block container alone (`chrome_justify_items`).
+        let container =
+            if parent.is_some_and(|p| p.layout.display == Display::Block) {
+                Direction::Ltr
+            } else {
+                own.parent_direction
+            };
+        style.justify_self = source.layout.justify_self.map_or_else(
+            || parent_items.map(|items| out_of_flow_auto(items, container)),
+            |justify| Some(to_justify_self(justify, true, container)),
+        );
+    }
+    parent_items
 }
 
 /// What [`collect`] reads off the solved tree, per scene node.
@@ -1587,19 +1948,26 @@ const fn to_available(space: taffy::AvailableSpace) -> Available {
 /// Maps a scene node's layout style onto taffy's.
 ///
 /// Every field the scene carries is written, none is left to taffy's default.
-/// See the module documentation for why. `direction` is the node's resolved
-/// inline direction, since an unstated one inherits and `layout` alone cannot
-/// say from what: [`LayoutResult::direction`] is that answer for a solved node.
+/// See the module documentation for why. `inherited` is what the node takes
+/// from its ancestors -- its direction, its alignment container's, and the
+/// `legacy` an unset `justify_items` takes -- which `layout` alone cannot say:
+/// [`LayoutResult::inherited`] is that answer for a solved node.
+///
+/// A `justify_self` of `None` is left for taffy to take from the box the node
+/// is attached to, which for a node in flow is its parent. `baseline` and
+/// `last baseline` reach taffy as its `Baseline`, which places a block child
+/// and a grid item at the start; the solver then aligns a grid column's
+/// baseline groups itself, out of flow `last baseline` is `end`.
 #[must_use]
 pub fn to_taffy_style(
     layout: &LayoutStyle,
     border_style: BorderStyle,
-    direction: Direction,
+    inherited: Inherited,
 ) -> taffy::Style {
     taffy::Style {
         display: to_display(layout.display),
         box_sizing: to_box_sizing(layout.box_sizing),
-        direction: to_direction(direction),
+        direction: to_direction(inherited.direction),
         overflow: taffy::Point {
             x: to_overflow(layout.overflow.0),
             y: to_overflow(layout.overflow.1),
@@ -1657,6 +2025,8 @@ pub fn to_taffy_style(
         justify_content: layout
             .justify_content
             .map_or(taffy::JustifyContent::NORMAL, to_justify),
+        justify_items: to_justify_items(layout.justify_items, inherited),
+        justify_self: justify_self_of(layout, inherited.parent_direction),
 
         // The scene spells `gap` `(row, column)`, as CSS does, and taffy
         // `(width, height)`: swapped at the crossing, the one place that has to
@@ -1707,9 +2077,8 @@ pub fn to_taffy_style(
         grid_row: to_placement(layout.grid_row),
 
         // taffy carries these and the scene does not, so there is nothing to
-        // translate: `float`, `clear`, `justify_items`, `justify_self`,
-        // `text_align`, `scrollbar_width`, the named-line grid vectors, and the
-        // table markers.
+        // translate: `float`, `clear`, `text_align`, `scrollbar_width`, the
+        // named-line grid vectors, and the table markers.
         ..taffy::Style::default()
     }
 }
@@ -1835,6 +2204,157 @@ const fn to_align_content(align: Align) -> taffy::AlignContent {
         Align::SpaceBetween => taffy::AlignContent::SPACE_BETWEEN,
         Align::SpaceAround => taffy::AlignContent::SPACE_AROUND,
         Align::SpaceEvenly => taffy::AlignContent::SPACE_EVENLY,
+    }
+}
+
+#[expect(
+    clippy::match_same_arms,
+    reason = "the `start` arm and the `#[non_exhaustive]` arm agree today and \
+              mean different things: one is the position CSS names, the other \
+              one this build has never heard of."
+)]
+/// A `<self-position>` in taffy's keywords. taffy has no physical one, so
+/// `left` and `right` become `start` or `end` by `container`, the direction of
+/// the box they align in; the logical ones taffy resolves itself, `self-start`
+/// and `self-end` against the item's own direction.
+const fn to_self_position(
+    position: SelfPosition,
+    overflow: Option<OverflowPosition>,
+    container: Direction,
+) -> taffy::AlignItems {
+    let keyword = match (position, container) {
+        (SelfPosition::Center, _) => taffy::AlignItems::CENTER,
+        (SelfPosition::Start, _)
+        | (SelfPosition::Left, Direction::Ltr)
+        | (SelfPosition::Right, Direction::Rtl) => taffy::AlignItems::START,
+        (SelfPosition::End, _)
+        | (SelfPosition::Right, Direction::Ltr)
+        | (SelfPosition::Left, Direction::Rtl) => taffy::AlignItems::END,
+        (SelfPosition::SelfStart, _) => taffy::AlignItems::SELF_START,
+        (SelfPosition::SelfEnd, _) => taffy::AlignItems::SELF_END,
+        (SelfPosition::FlexStart, _) => taffy::AlignItems::FLEX_START,
+        (SelfPosition::FlexEnd, _) => taffy::AlignItems::FLEX_END,
+        // `SelfPosition` is `#[non_exhaustive]`; a position this build does not
+        // know is placed at the start, where nothing is moved.
+        _ => taffy::AlignItems::START,
+    };
+    keyword.with_safety(match overflow {
+        Some(OverflowPosition::Safe) => taffy::AlignmentSafety::Safe,
+        Some(OverflowPosition::Unsafe) => taffy::AlignmentSafety::Unsafe,
+        // Neither keyword, or one this build does not know: CSS's default,
+        // which taffy treats as `unsafe` as Chrome does.
+        _ => taffy::AlignmentSafety::Default,
+    })
+}
+
+/// `legacy left`, `legacy right` or `legacy center` as the position it names.
+const fn to_legacy(
+    position: LegacyPosition,
+    container: Direction,
+) -> taffy::AlignItems {
+    let position = match position {
+        LegacyPosition::Left => SelfPosition::Left,
+        LegacyPosition::Right => SelfPosition::Right,
+        // `LegacyPosition` is `#[non_exhaustive]`; `center` is the one left.
+        _ => SelfPosition::Center,
+    };
+    to_self_position(position, None, container)
+}
+
+/// A node's `justify_items`, for its children. `None` is CSS's `legacy`, which
+/// takes `legacy` from above and is otherwise `normal`. `left` and `right`
+/// resolve against the node's own direction, its children's container.
+const fn to_justify_items(
+    justify: Option<JustifyItems>,
+    inherited: Inherited,
+) -> taffy::JustifyItems {
+    let direction = inherited.direction;
+    match justify {
+        None => match inherited.legacy {
+            Some(position) => to_legacy(position, direction),
+            None => taffy::JustifyItems::NORMAL,
+        },
+        Some(JustifyItems::Stretch) => taffy::JustifyItems::STRETCH,
+        Some(JustifyItems::Baseline | JustifyItems::LastBaseline) => {
+            taffy::JustifyItems::BASELINE
+        }
+        Some(JustifyItems::Position { position, overflow }) => {
+            to_self_position(position, overflow, direction)
+        }
+        Some(JustifyItems::Legacy(position)) => to_legacy(position, direction),
+        // `Normal`, and a value this build does not know: the layout mode's
+        // default.
+        Some(_) => taffy::JustifyItems::NORMAL,
+    }
+}
+
+/// [`to_justify_self`] for `layout`'s own value, `None` being `auto`.
+fn justify_self_of(
+    layout: &LayoutStyle,
+    container: Direction,
+) -> Option<taffy::JustifySelf> {
+    let out_of_flow = matches!(
+        layout.position_type,
+        PositionType::Absolute | PositionType::Fixed
+    );
+    layout
+        .justify_self
+        .map(|justify| to_justify_self(justify, out_of_flow, container))
+}
+
+/// A node's own `justify_self`. Out of flow there is no baseline to share, so
+/// `baseline` is `start` and `last baseline` `end`, as in Chrome
+/// (`justify-items.tsv`, the `absolute` rows).
+const fn to_justify_self(
+    justify: JustifySelf,
+    out_of_flow: bool,
+    container: Direction,
+) -> taffy::JustifySelf {
+    match justify {
+        JustifySelf::Stretch => taffy::JustifySelf::STRETCH,
+        JustifySelf::Baseline if out_of_flow => taffy::JustifySelf::START,
+        JustifySelf::LastBaseline if out_of_flow => taffy::JustifySelf::END,
+        JustifySelf::Baseline | JustifySelf::LastBaseline => {
+            taffy::JustifySelf::BASELINE
+        }
+        JustifySelf::Position { position, overflow } => {
+            to_self_position(position, overflow, container)
+        }
+        // `Normal`, and a value this build does not know.
+        _ => taffy::JustifySelf::NORMAL,
+    }
+}
+
+/// The parent's `justify_items` as a child's `auto` takes it, with an unset
+/// one resolved through `legacy`, the child's own: what the parent hands on is
+/// what it took when it states nothing.
+const fn parent_justify_items(
+    parent: Option<JustifyItems>,
+    legacy: Option<LegacyPosition>,
+) -> JustifyItems {
+    match (parent, legacy) {
+        (Some(items), _) => items,
+        (None, Some(position)) => JustifyItems::Legacy(position),
+        (None, None) => JustifyItems::Normal,
+    }
+}
+
+/// `auto` out of flow: the parent's `justify_items`, as [`to_justify_self`]
+/// would place the same value stated on the node.
+const fn out_of_flow_auto(
+    items: JustifyItems,
+    container: Direction,
+) -> taffy::JustifySelf {
+    match items {
+        JustifyItems::Stretch => taffy::JustifySelf::STRETCH,
+        JustifyItems::Baseline => taffy::JustifySelf::START,
+        JustifyItems::LastBaseline => taffy::JustifySelf::END,
+        JustifyItems::Position { position, overflow } => {
+            to_self_position(position, overflow, container)
+        }
+        JustifyItems::Legacy(position) => to_legacy(position, container),
+        // `Normal`, and a value this build does not know.
+        _ => taffy::JustifySelf::NORMAL,
     }
 }
 
@@ -2149,8 +2669,9 @@ mod tests {
             Dimension, Length,
             layout::{
                 Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-                GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
-                PositionType, TrackSize,
+                GridAutoFlow, GridPlacement, Justify, JustifyItems,
+                JustifySelf, LayoutStyle, LegacyPosition, Overflow,
+                OverflowPosition, PositionType, SelfPosition, TrackSize,
             },
             paint::BorderStyle,
         },
@@ -2238,6 +2759,55 @@ mod tests {
     fn solved(scene: &Scene, page: NodeId) -> LayoutResult {
         solve(scene, page, &mut Fixed::new(0.0, 0.0))
             .unwrap_or_else(|error| unreachable!("{error}"))
+    }
+
+    /// `legacy` reaches a descendant through boxes stating nothing and stops
+    /// at one stating anything, and an absolute box aligns in its containing
+    /// block's direction rather than its parent's (`justify-items.tsv`).
+    #[test]
+    fn legacy_and_the_parent_direction_come_from_where_css_takes_them() {
+        let (mut scene, page) = scene_with_page(300.0, 200.0);
+        let push = |scene: &mut Scene, parent| {
+            scene
+                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .unwrap_or_else(|error| unreachable!("{error}"))
+        };
+        let outer = push(&mut scene, page);
+        let plain = push(&mut scene, outer);
+        let inner = push(&mut scene, plain);
+        let stops = push(&mut scene, outer);
+        let below = push(&mut scene, stops);
+        let rtl = push(&mut scene, page);
+        let between = push(&mut scene, rtl);
+        let absolute = push(&mut scene, between);
+        if let Some(node) = scene.get_mut(outer) {
+            node.layout.justify_items =
+                Some(JustifyItems::Legacy(LegacyPosition::Right));
+        }
+        if let Some(node) = scene.get_mut(stops) {
+            node.layout.justify_items = Some(JustifyItems::Normal);
+        }
+        if let Some(node) = scene.get_mut(rtl) {
+            node.layout.direction = Some(Direction::Rtl);
+            node.layout.position_type = PositionType::Relative;
+        }
+        if let Some(node) = scene.get_mut(between) {
+            node.layout.direction = Some(Direction::Ltr);
+        }
+        if let Some(node) = scene.get_mut(absolute) {
+            node.layout.position_type = PositionType::Absolute;
+        }
+        let solved = solved(&scene, page);
+        let right = Some(LegacyPosition::Right);
+        assert_eq!(solved.inherited(outer).legacy, None);
+        assert_eq!(solved.inherited(plain).legacy, right);
+        assert_eq!(solved.inherited(inner).legacy, right);
+        assert_eq!(solved.inherited(stops).legacy, right);
+        assert_eq!(solved.inherited(below).legacy, None);
+        // In flow, the parent's; out of flow, the positioned `rtl` box's.
+        assert_eq!(solved.inherited(between).parent_direction, Direction::Rtl);
+        assert_eq!(solved.inherited(absolute).direction, Direction::Ltr);
+        assert_eq!(solved.inherited(absolute).parent_direction, Direction::Rtl,);
     }
 
     /// A growing child's negative margin reaches the container's own height,
@@ -2774,6 +3344,86 @@ mod tests {
         maps_injectively(Direction::ALL, super::to_direction);
         maps_injectively(GridAutoFlow::ALL, super::to_grid_auto_flow);
         maps_injectively(Justify::ALL, super::to_justify);
+        let logical: Vec<SelfPosition> = SelfPosition::ALL
+            .iter()
+            .copied()
+            .filter(|position| {
+                !matches!(position, SelfPosition::Left | SelfPosition::Right)
+            })
+            .collect();
+        maps_injectively(&logical, |position| {
+            super::to_self_position(position, None, Direction::Ltr)
+        });
+    }
+
+    #[test]
+    fn left_and_right_are_the_container_s_start_or_end_and_keep_their_safety() {
+        let place = |position, direction| {
+            super::to_self_position(
+                position,
+                Some(OverflowPosition::Safe),
+                direction,
+            )
+        };
+        let start = taffy::AlignItems::SAFE_START;
+        let end = taffy::AlignItems::SAFE_END;
+        assert_eq!(place(SelfPosition::Left, Direction::Ltr), start);
+        assert_eq!(place(SelfPosition::Left, Direction::Rtl), end);
+        assert_eq!(place(SelfPosition::Right, Direction::Ltr), end);
+        assert_eq!(place(SelfPosition::Right, Direction::Rtl), start);
+        assert_eq!(
+            super::to_self_position(
+                SelfPosition::Center,
+                Some(OverflowPosition::Unsafe),
+                Direction::Ltr,
+            ),
+            taffy::AlignItems::CENTER
+                .with_safety(taffy::AlignmentSafety::Unsafe),
+        );
+    }
+
+    #[test]
+    fn an_unset_justify_items_is_legacy_from_above_or_normal() {
+        let items = |own, legacy| {
+            super::to_justify_items(
+                own,
+                super::Inherited::new(Direction::Rtl).with_legacy(legacy),
+            )
+        };
+        assert_eq!(items(None, None), taffy::JustifyItems::NORMAL);
+        // Physical under `rtl`: `right` is the start.
+        assert_eq!(
+            items(None, Some(LegacyPosition::Right)),
+            taffy::JustifyItems::START,
+        );
+        assert_eq!(
+            items(Some(JustifyItems::Normal), Some(LegacyPosition::Right)),
+            taffy::JustifyItems::NORMAL,
+        );
+        assert_eq!(
+            items(Some(JustifyItems::Legacy(LegacyPosition::Center)), None),
+            taffy::JustifyItems::CENTER,
+        );
+    }
+
+    #[test]
+    fn out_of_flow_baselines_fall_back_to_start_and_end() {
+        let own = |justify, out_of_flow| {
+            super::to_justify_self(justify, out_of_flow, Direction::Ltr)
+        };
+        assert_eq!(own(JustifySelf::Baseline, true), taffy::JustifySelf::START);
+        assert_eq!(
+            own(JustifySelf::LastBaseline, true),
+            taffy::JustifySelf::END,
+        );
+        assert_eq!(
+            own(JustifySelf::LastBaseline, false),
+            taffy::JustifySelf::BASELINE,
+        );
+        assert_eq!(
+            super::out_of_flow_auto(JustifyItems::LastBaseline, Direction::Ltr),
+            taffy::JustifySelf::END,
+        );
     }
 
     #[test]
@@ -2807,17 +3457,25 @@ mod tests {
         };
 
         assert_eq!(
-            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr)
-                .inset,
+            super::to_taffy_style(
+                &style,
+                BorderStyle::Solid,
+                super::Inherited::default()
+            )
+            .inset,
             taffy::Rect::auto(),
             "a static inset is dropped"
         );
 
         style.position_type = PositionType::Relative;
         assert_eq!(
-            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr)
-                .inset
-                .top,
+            super::to_taffy_style(
+                &style,
+                BorderStyle::Solid,
+                super::Inherited::default()
+            )
+            .inset
+            .top,
             taffy::LengthPercentageAuto::length(30.0),
             "a relative inset is not"
         );
@@ -3302,8 +3960,11 @@ mod tests {
             ..LayoutStyle::default()
         };
 
-        let style =
-            super::to_taffy_style(&layout, BorderStyle::Solid, Direction::Ltr);
+        let style = super::to_taffy_style(
+            &layout,
+            BorderStyle::Solid,
+            super::Inherited::default(),
+        );
 
         assert_eq!(style.gap.width, taffy::LengthPercentage::length(9.0));
         assert_eq!(style.gap.height, taffy::LengthPercentage::length(4.0));
@@ -3425,7 +4086,7 @@ mod tests {
             let taffy = super::to_taffy_style(
                 &style,
                 BorderStyle::Solid,
-                Direction::Ltr,
+                super::Inherited::new(Direction::Ltr),
             );
 
             assert_eq!(taffy.size.width, taffy::Dimension::auto(), "{value}");
@@ -3473,8 +4134,11 @@ mod tests {
             margin: Sides::all(Dimension::Points(f32::NEG_INFINITY)),
             ..LayoutStyle::default()
         };
-        let taffy =
-            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr);
+        let taffy = super::to_taffy_style(
+            &style,
+            BorderStyle::Solid,
+            super::Inherited::default(),
+        );
 
         assert_ne!(taffy.size.width, taffy::Dimension::auto());
         assert_ne!(taffy.flex_basis, taffy::Dimension::auto());
@@ -3508,8 +4172,11 @@ mod tests {
         };
         // `Solid` because this test says nothing about borders and a style
         // that zeroed them would make that silence look like a result.
-        let taffy =
-            super::to_taffy_style(&style, BorderStyle::Solid, Direction::Ltr);
+        let taffy = super::to_taffy_style(
+            &style,
+            BorderStyle::Solid,
+            super::Inherited::default(),
+        );
 
         assert_eq!(
             taffy.margin.left,
@@ -3526,8 +4193,11 @@ mod tests {
             inset: Sides::all(Some(Length::Points(f32::NAN))),
             ..LayoutStyle::default()
         };
-        let taffy =
-            super::to_taffy_style(&broken, BorderStyle::Solid, Direction::Ltr);
+        let taffy = super::to_taffy_style(
+            &broken,
+            BorderStyle::Solid,
+            super::Inherited::default(),
+        );
 
         assert_eq!(taffy.margin.left, taffy::LengthPercentageAuto::length(0.0));
         assert_eq!(taffy.inset.top, taffy::LengthPercentageAuto::auto());
@@ -3541,7 +4211,7 @@ mod tests {
         let style = super::to_taffy_style(
             &LayoutStyle::default(),
             BorderStyle::Solid,
-            Direction::Ltr,
+            super::Inherited::new(Direction::Ltr),
         );
 
         assert_eq!(style.display, taffy::Display::Block);
