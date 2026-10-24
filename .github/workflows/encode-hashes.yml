@@ -68,10 +68,37 @@ jobs:
         with:
           save-if: 'false'
 
+      # Pinned as `ci.yml` pins it: `just addon` below is a recipe, and a `just`
+      # release could change it without a commit here.
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.58.0'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
+
+      # What `ci.yml`'s job installs, and for its reasons: the addon and the Rust
+      # test link libaom, assembled by yasm, and Skia, which probes for the font
+      # headers through pkg-config. Vendor lists go first, as there.
+      - name: Install what libaom needs
+        if: runner.os == 'Linux'
+        run: |
+          sudo grep -rlE 'dl\.google\.com|packages\.microsoft\.com' \
+            /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -r rm -f
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake yasm \
+            pkg-config libfontconfig1-dev libfreetype-dev
+
+      # libaom's requirement only; Skia uses DirectWrite on Windows.
+      - name: Install what libaom needs
+        if: runner.os == 'Windows'
+        # [WORKAROUND] libaom 3.11 refuses every nasm 3 (b:448994065), so NASM is
+        # pinned to 2.16.03 as in `ci.yml`, until libaom-sys bundles libaom
+        # 3.13.2; `crates/meo-canvas-core/tests/libaom_nasm_pin.rs` asserts it.
+        run: |
+          choco install nasm --version=2.16.3 --no-progress -y
+          echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.4.1'
