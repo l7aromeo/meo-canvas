@@ -1,12 +1,14 @@
 // What Chrome keeps when a line does not fit, as a string: a word rule keeps
-// `Flower of…` where a character rule keeps `Flower of Par…`. Measured with
-// `measureText`, since Chrome does not expose the string `text-overflow` drew.
+// `Flower of…` where a character rule keeps `Flower of Par…`. Chrome does not
+// expose the string `text-overflow` drew, so its render is matched byte for byte
+// against every candidate drawn plainly, and exactly one must match.
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { FONT, open, table } from './browser.mjs'
+import { FONT, open, settle, table } from './browser.mjs'
+import { read } from './png.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DESTINATION = resolve(HERE, '../../../../crates/meo-canvas/tests/assets/chrome/ellipsis.tsv')
@@ -28,57 +30,110 @@ const CASES = [
   { text: 'Flower of Paradise', size: 22, width: 90 },
 ]
 
+/** The page every render is clipped from, room for any candidate's overflow. */
+const PAGE = { width: 400, height: 60 }
+
+/**
+ * Every string `text-overflow` could have drawn: the text whole, and each prefix,
+ * a trailing space included, with the marker after it.
+ */
+function candidates(text) {
+  const characters = [...text]
+  return [text, ...characters.map((_, index) => characters.slice(0, index).join('') + MARKER)]
+}
+
+/** One line at the page's origin, and the pixels of its `width`-wide clip. */
+async function render(page, { text, size, width }, truncate) {
+  await page.evaluate(
+    ({ text, size, width, truncate, family }) => {
+      const clamp = truncate ? `width:${width}px;overflow:hidden;text-overflow:ellipsis;` : ''
+      document.body.innerHTML = ''
+      const line = document.createElement('div')
+      line.style.cssText = `position:absolute;left:0;top:0;white-space:nowrap;font:${size}px "${family}";line-height:1.5;color:#000;${clamp}`
+      line.textContent = text
+      document.body.append(line)
+    },
+    { text, size, width, truncate, family: FONT.family },
+  )
+  await settle(page)
+  return read(await page.screenshot({ clip: { x: 0, y: 0, width, height: Math.ceil(size * 1.5) } }))
+}
+
+/** Whether two clips are the same pixels. */
+function same(left, right) {
+  return left.bytes.length === right.bytes.length && left.bytes.every((byte, index) => byte === right.bytes[index])
+}
+
+/** The first column at which two clips of one size differ, or `-`. */
+function firstDifference(left, right) {
+  const stride = left.width * left.channels
+  for (let x = 0; x < left.width; x += 1) {
+    for (let at = x * left.channels; at < left.bytes.length; at += stride) {
+      for (let channel = 0; channel < 3; channel += 1) {
+        if (left.bytes[at + channel] !== right.bytes[at + channel]) return x
+      }
+    }
+  }
+  return '-'
+}
+
 const browser = await open()
 try {
-  const rows = await browser.page.evaluate(
-    ({ cases, family, marker }) => {
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')
+  await browser.page.setViewportSize(PAGE)
+  const rows = []
+  for (const item of CASES) {
+    const truncated = await render(browser.page, item, true)
+    const matches = []
+    for (const candidate of candidates(item.text)) {
+      if (same(truncated, await render(browser.page, { ...item, text: candidate }, false))) matches.push(candidate)
+    }
+    if (matches.length !== 1) {
+      throw new Error(`${JSON.stringify(item.text)} at ${item.size}px in ${item.width}: ${matches.length} matches, ${JSON.stringify(matches)}`)
+    }
+    const [drawn] = matches
 
-      return cases.map(({ text, size, width }) => {
-        context.font = `${size}px "${family}"`
-        const whole = context.measureText(text).width
-        const ellipsis = context.measureText(marker).width
-
-        // The longest prefix whose width, plus the marker's, fits. Walked one
-        // character at a time rather than by word: what is being measured is
-        // where Chrome's own metrics say the line has to stop, and a word rule
-        // is one of the answers under test rather than part of the ruler.
-        let kept = ''
-        if (whole > width) {
-          for (const character of text) {
-            const candidate = kept + character
-            if (context.measureText(candidate).width + ellipsis > width) break
-            kept = candidate
-          }
-        }
-
-        const drawn = whole <= width ? text : kept + marker
-        return [
-          // The whole string, quoted. An abbreviated one reads better and is
-          // useless to a walker: the column is data, not a caption.
-          JSON.stringify(text),
-          size,
-          width,
-          whole.toFixed(2),
-          JSON.stringify(drawn),
-          context.measureText(drawn).width.toFixed(2),
-        ].join('\t')
-      })
-    },
-    { cases: CASES, family: FONT.family, marker: MARKER },
-  )
+    // The marker's ink edge: where the drawn string first parts from its prefix alone.
+    let marker = '-'
+    if (drawn.endsWith(MARKER)) {
+      marker = firstDifference(truncated, await render(browser.page, { ...item, text: drawn.slice(0, -MARKER.length) }, false))
+    }
+    const widths = await browser.page.evaluate(
+      ({ texts, size, family }) =>
+        texts.map(text => {
+          const span = document.createElement('span')
+          span.style.cssText = `font:${size}px "${family}";white-space:pre`
+          span.textContent = text
+          document.body.append(span)
+          const width = span.getBoundingClientRect().width
+          span.remove()
+          return width
+        }),
+      { texts: [item.text, drawn], size: item.size, family: FONT.family },
+    )
+    rows.push(
+      [
+        // The whole string, quoted: the column is data for a walker, not a caption.
+        JSON.stringify(item.text),
+        item.size,
+        item.width,
+        widths[0].toFixed(2),
+        JSON.stringify(drawn),
+        widths[1].toFixed(2),
+        matches.length,
+        marker,
+      ].join('\t'),
+    )
+  }
 
   const header = [
     '# Chrome, through `just conformance`. What a line keeps when it does not fit.',
     '#',
-    "# Measured with `measureText` on the repository's own face, which the page",
-    '# asserts has loaded rather than assuming it. `text-overflow: ellipsis` is not',
-    '# used: Chrome does not expose the string it drew, and the string is the whole',
-    '# question -- a word-boundary rule and a character rule disagree about content,',
-    '# not about width.',
+    "# A `text-overflow: ellipsis` line on the repository's own face, matched byte for",
+    '# byte against the text whole and every prefix plus the marker, drawn plainly in',
+    '# the same clip; exactly one matches. Widths are `white-space: pre` spans; the',
+    "# marker's ink edge is the first column where the line parts from its prefix alone.",
     '#',
-    '# text\tsize\twidth\tfull width\tdrawn\tdrawn width',
+    '# text\tsize\twidth\tfull width\tdrawn\tdrawn width\tmatches\tmarker ink from',
   ]
   const written = table([...header, ...rows])
   if (process.env['WRITE'] === '1') {

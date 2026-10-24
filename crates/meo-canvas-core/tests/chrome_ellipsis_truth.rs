@@ -1,7 +1,7 @@
 //! What a line keeps when it does not fit, against Chrome: a word rule and a
-//! character rule differ in content, not width, so rows record the string.
-//! Chrome does not expose the drawn string, so the harness finds the longest
-//! prefix that fits with the marker, by `measureText`.
+//! character rule differ in content, not width, so rows record the string, the
+//! one candidate whose plain render matches Chrome's `text-overflow` line byte
+//! for byte. `CHROME` must equal `ellipsis.tsv`, which the harness writes.
 
 use meo_canvas_core::{
     lines::{Line, Metrics, RunStyle, TextMeasurer, layout, line_width},
@@ -28,9 +28,9 @@ struct Row {
     drawn: &'static str,
 }
 
-/// Chrome's answers, verbatim. A word with no space is cut mid-word, since no
-/// line follows it; a space before the marker is kept when it fits -- `Flower
-/// of …` at 22px in 90.
+/// Chrome's answers, as `ellipsis.tsv` records them. A word with no space is
+/// cut mid-word, since no line follows it; a space before the marker is kept
+/// when it fits -- `Flower of …` at 22px in 90.
 const CHROME: [Row; 6] = [
     Row {
         text: "Flower of Paradise",
@@ -149,4 +149,44 @@ fn a_clamped_line_keeps_what_chrome_keeps() {
             row.width
         );
     }
+}
+
+/// Chrome's rows, which `chrome_tables_are_read` requires be read.
+const TABLE: &str =
+    include_str!("../../meo-canvas/tests/assets/chrome/ellipsis.tsv");
+
+/// `CHROME` against `ellipsis.tsv`, in both directions: a row whose drawn
+/// string moved fails, and so does a row `CHROME` does not carry.
+#[test]
+fn chrome_is_the_ellipsis_table() {
+    let table: Vec<(String, f32, f32, String)> = TABLE
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| {
+            let cells: Vec<&str> = line.split('\t').collect();
+            let number = |cell: &str| {
+                cell.parse::<f32>()
+                    .unwrap_or_else(|_| unreachable!("{cell} is not a number"))
+            };
+            let unquote = |cell: &str| cell.trim_matches('"').to_owned();
+            (
+                unquote(cells[0]),
+                number(cells[1]),
+                number(cells[2]),
+                unquote(cells[4]),
+            )
+        })
+        .collect();
+    let ours: Vec<(String, f32, f32, String)> = CHROME
+        .iter()
+        .map(|row| {
+            (
+                row.text.to_owned(),
+                row.size,
+                row.width,
+                row.drawn.to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(ours, table, "CHROME and ellipsis.tsv disagree");
 }
