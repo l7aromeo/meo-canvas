@@ -85,7 +85,8 @@ const CASES = [
   ['pin-min-width no grow', `${COLUMN};align-items:center`, 'aspect-ratio:1;min-width:300px', '', 'the minimum without the growth'],
   ['min-width slack', `${COLUMN};align-items:center`, `${ITEM};min-width:100px`, '', 'control: a minimum under the derivation changes nothing'],
   ['pin-quiet-empty', `${COLUMN};align-items:center`, ITEM, '', 'width/ratio < height: this takes it, not the pin'],
-  // Deliberately not compensated, and a divergence deliberately pinned.
+  // A stretched item whose ratio overflows its line, and a cross maximum that
+  // binds the width without moving the height.
   ['stretched ratio', `${COLUMN};align-items:stretch`, ITEM, '', 'the derivation overflows its line, and three engines let it'],
   ['max-width binds', `${COLUMN};align-items:center`, `${ITEM};max-width:100px`, '', 'a maximum binding the cross axis does not transfer back here'],
   // **The pin arm's own row.** A row container puts the maximum on the cross
@@ -99,9 +100,8 @@ const CASES = [
     '',
     'a cross maximum in a row container, where the pin writes the main axis',
   ],
-  // The far end of the divergence: this renderer's height is the maximum where
-  // Chrome keeps 248, so the error is `248 - max`. The near end is not a row, since
-  // it passes only because its error is under the table's slack.
+  // `max-width binds` at its far end: Chrome keeps 248 tall at a maximum of 1, so
+  // a renderer that carried the maximum over to the height misses by 247.
   [
     'max-width binds amplified',
     `${COLUMN};align-items:center`,
