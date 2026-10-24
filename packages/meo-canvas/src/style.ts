@@ -11,6 +11,8 @@ import type {
   GridAutoFlow,
   BoxSizing,
   Direction,
+  JustifyItems,
+  JustifySelf,
   Display,
   FlexDirection,
   FlexWrap,
@@ -261,6 +263,8 @@ export const STYLE_KEYS = [
   'gridColumn',
   'gridRow',
   'gridArea',
+  'justifyItems',
+  'justifySelf',
   'backgroundColor',
   'borderColor',
   'borderStyle',
@@ -617,6 +621,14 @@ export interface Style {
   readonly alignSelf?: Align
   /** Cross-axis distribution of wrapped lines. */
   readonly alignContent?: Align
+  /**
+   * Inline-axis placement of grid items and block children. Absent is CSS's initial
+   * `legacy`: an ancestor's `legacy left`, `legacy right` or `legacy center` if one
+   * reaches this node, and otherwise `normal`.
+   */
+  readonly justifyItems?: JustifyItems
+  /** This node's own inline-axis placement. Absent is CSS's `auto`, the parent's `justifyItems`. */
+  readonly justifySelf?: JustifySelf
   /**
    * Space between children. One value for both axes, or each named.
    *

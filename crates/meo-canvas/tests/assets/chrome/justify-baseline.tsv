@@ -1,0 +1,63 @@
+# Chrome, through `just conformance`: where grid items sharing a column sit under baseline and last baseline.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# A 200-wide grid with the columns `tracks` names in pixels and `items` as its justify-items, `-` for unset.
+# Each child is `box:W` (a block W wide) or `img:W` (a Wx10 SVG), 10 tall, with `ml`, `mr`, `bl` and `br` its
+# left and right margins and borders in pixels, `col` and `row` its grid lines, `abs` for absolutely positioned,
+# and `self` its justify-self. `dir` is stated on the grid.
+# Written by packages/meo-canvas/tools/conformance/justifybaseline.mjs.
+#
+# x and w list each child's border box from getBoundingClientRect, in document order, x from the grid.
+#
+# dir	tracks	items	children	x	w
+ltr	200	-	box:60 self=baseline; box:107 self=baseline	0.000 0.000	60.000 107.000
+ltr	200	-	img:60 self=baseline; img:100 self=baseline	0.000 0.000	60.000 100.000
+ltr	200	-	box:60 ml=10 mr=5 self=baseline; box:100 bl=3 br=9 self=baseline	10.000 10.000	60.000 112.000
+ltr	200	-	box:60 self=baseline; box:100 self=start	0.000 0.000	60.000 100.000
+ltr	200	-	box:60 self=baseline; box:100 self=baseline; box:30 ml=20 self=baseline	20.000 20.000 20.000	60.000 100.000 30.000
+ltr	200	baseline	box:60; box:100	0.000 0.000	60.000 100.000
+ltr	200	baseline	box:60; box:100 self=normal	0.000 0.000	60.000 100.000
+ltr	200	-	box:60 self=baseline; box:100 abs self=baseline	0.000 0.000	60.000 100.000
+ltr	200	-	box:60 ml=50 self=baseline; box:180 self=baseline	50.000 50.000	60.000 180.000
+ltr	100 100	-	box:60 self=baseline; box:30 self=baseline; box:40 self=baseline	0.000 100.000 0.000	60.000 30.000 40.000
+ltr	100 100	-	box:60 col=1 / 3 self=baseline; box:30 col=1 row=2 self=baseline	0.000 0.000	60.000 30.000
+ltr	100 100	-	box:60 col=1 / 3 self=baseline; box:30 col=2 row=2 self=baseline	0.000 100.000	60.000 30.000
+ltr	100 100	-	box:80 col=1 self=baseline; box:50 col=1 self=baseline; box:20 col=2 self=baseline	0.000 0.000 100.000	80.000 50.000 20.000
+ltr	200	-	box:60 self=last baseline; box:107 self=last baseline	93.000 93.000	60.000 107.000
+ltr	200	-	img:60 self=last baseline; img:100 self=last baseline	100.000 100.000	60.000 100.000
+ltr	200	-	box:60 ml=10 mr=5 self=last baseline; box:100 bl=3 br=9 self=last baseline	88.000 88.000	60.000 112.000
+ltr	200	-	box:60 self=last baseline; box:100 self=start	140.000 0.000	60.000 100.000
+ltr	200	-	box:60 self=last baseline; box:100 self=last baseline; box:30 ml=20 self=last baseline	100.000 100.000 100.000	60.000 100.000 30.000
+ltr	200	last baseline	box:60; box:100	100.000 100.000	60.000 100.000
+ltr	200	last baseline	box:60; box:100 self=normal	140.000 0.000	60.000 100.000
+ltr	200	-	box:60 self=last baseline; box:100 abs self=last baseline	140.000 100.000	60.000 100.000
+ltr	200	-	box:60 ml=50 self=last baseline; box:180 self=last baseline	20.000 20.000	60.000 180.000
+ltr	100 100	-	box:60 self=last baseline; box:30 self=last baseline; box:40 self=last baseline	40.000 170.000 40.000	60.000 30.000 40.000
+ltr	100 100	-	box:60 col=1 / 3 self=last baseline; box:30 col=1 row=2 self=last baseline	140.000 70.000	60.000 30.000
+ltr	100 100	-	box:60 col=1 / 3 self=last baseline; box:30 col=2 row=2 self=last baseline	140.000 140.000	60.000 30.000
+ltr	100 100	-	box:80 col=1 self=last baseline; box:50 col=1 self=last baseline; box:20 col=2 self=last baseline	20.000 20.000 180.000	80.000 50.000 20.000
+rtl	200	-	box:60 self=baseline; box:107 self=baseline	93.000 93.000	60.000 107.000
+rtl	200	-	img:60 self=baseline; img:100 self=baseline	100.000 100.000	60.000 100.000
+rtl	200	-	box:60 ml=10 mr=5 self=baseline; box:100 bl=3 br=9 self=baseline	88.000 88.000	60.000 112.000
+rtl	200	-	box:60 self=baseline; box:100 self=start	140.000 100.000	60.000 100.000
+rtl	200	-	box:60 self=baseline; box:100 self=baseline; box:30 ml=20 self=baseline	100.000 100.000 100.000	60.000 100.000 30.000
+rtl	200	baseline	box:60; box:100	100.000 100.000	60.000 100.000
+rtl	200	baseline	box:60; box:100 self=normal	140.000 100.000	60.000 100.000
+rtl	200	-	box:60 self=baseline; box:100 abs self=baseline	140.000 100.000	60.000 100.000
+rtl	200	-	box:60 ml=50 self=baseline; box:180 self=baseline	20.000 20.000	60.000 180.000
+rtl	100 100	-	box:60 self=baseline; box:30 self=baseline; box:40 self=baseline	140.000 70.000 140.000	60.000 30.000 40.000
+rtl	100 100	-	box:60 col=1 / 3 self=baseline; box:30 col=1 row=2 self=baseline	140.000 140.000	60.000 30.000
+rtl	100 100	-	box:60 col=1 / 3 self=baseline; box:30 col=2 row=2 self=baseline	140.000 70.000	60.000 30.000
+rtl	100 100	-	box:80 col=1 self=baseline; box:50 col=1 self=baseline; box:20 col=2 self=baseline	120.000 120.000 80.000	80.000 50.000 20.000
+rtl	200	-	box:60 self=last baseline; box:107 self=last baseline	0.000 0.000	60.000 107.000
+rtl	200	-	img:60 self=last baseline; img:100 self=last baseline	0.000 0.000	60.000 100.000
+rtl	200	-	box:60 ml=10 mr=5 self=last baseline; box:100 bl=3 br=9 self=last baseline	10.000 10.000	60.000 112.000
+rtl	200	-	box:60 self=last baseline; box:100 self=start	0.000 100.000	60.000 100.000
+rtl	200	-	box:60 self=last baseline; box:100 self=last baseline; box:30 ml=20 self=last baseline	20.000 20.000 20.000	60.000 100.000 30.000
+rtl	200	last baseline	box:60; box:100	0.000 0.000	60.000 100.000
+rtl	200	last baseline	box:60; box:100 self=normal	0.000 100.000	60.000 100.000
+rtl	200	-	box:60 self=last baseline; box:100 abs self=last baseline	0.000 0.000	60.000 100.000
+rtl	200	-	box:60 ml=50 self=last baseline; box:180 self=last baseline	50.000 50.000	60.000 180.000
+rtl	100 100	-	box:60 self=last baseline; box:30 self=last baseline; box:40 self=last baseline	100.000 0.000 100.000	60.000 30.000 40.000
+rtl	100 100	-	box:60 col=1 / 3 self=last baseline; box:30 col=1 row=2 self=last baseline	0.000 100.000	60.000 30.000
+rtl	100 100	-	box:60 col=1 / 3 self=last baseline; box:30 col=2 row=2 self=last baseline	0.000 0.000	60.000 30.000
+rtl	100 100	-	box:80 col=1 self=last baseline; box:50 col=1 self=last baseline; box:20 col=2 self=last baseline	100.000 100.000 0.000	80.000 50.000 20.000

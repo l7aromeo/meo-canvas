@@ -17,8 +17,9 @@ use meo_canvas_scene::{
         effect::{BoxShadow, FillRule, Mask, MaskShape, TextShadow, Transform},
         layout::{
             Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-            GridAutoFlow, GridPlacement, Justify, Overflow, PositionType,
-            TrackSize,
+            GridAutoFlow, GridPlacement, Justify, JustifyItems, JustifySelf,
+            LegacyPosition, Overflow, OverflowPosition, PositionType,
+            SelfPosition, TrackSize,
         },
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
@@ -95,13 +96,16 @@ json_enum!(
     GradientKind,
     GridAutoFlow,
     Justify,
+    LegacyPosition,
     LineCap,
     LineJoin,
     MaskShape,
     ObjectFit,
     Overflow,
+    OverflowPosition,
     PaintOrder,
     PositionType,
+    SelfPosition,
     TextAlign,
     TextDecoration,
     VerticalAlign,
@@ -266,6 +270,38 @@ impl ToJson for FontWeight {
 json_struct!(Color { r, g, b, a });
 json_struct!(GradientStop { offset, color });
 json_struct!(GridPlacement { start, span });
+
+/// The keyword alone for the fieldless variants, and a tagged object for the
+/// two that carry one, as [`BackgroundSize`] is written.
+impl ToJson for JustifySelf {
+    fn to_json(&self) -> String {
+        match self {
+            Self::Position { position, overflow } => format!(
+                "{{\"tag\":\"position\",\"position\":{},\"overflow\":{}}}",
+                position.to_json(),
+                overflow.to_json()
+            ),
+            other => format!("\"{other:?}\""),
+        }
+    }
+}
+
+impl ToJson for JustifyItems {
+    fn to_json(&self) -> String {
+        match self {
+            Self::Position { position, overflow } => format!(
+                "{{\"tag\":\"position\",\"position\":{},\"overflow\":{}}}",
+                position.to_json(),
+                overflow.to_json()
+            ),
+            Self::Legacy(position) => format!(
+                "{{\"tag\":\"legacy\",\"position\":{}}}",
+                position.to_json()
+            ),
+            other => format!("\"{other:?}\""),
+        }
+    }
+}
 json_struct!(TextStroke { width, color });
 json_struct!(Gradient { geometry, stops });
 

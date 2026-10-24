@@ -1,0 +1,1092 @@
+# Chrome, through `just conformance`: where justify-items and justify-self place one item on the inline axis.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# A 200x100 relative container, `grid` with one 200px column, `block` or `flex`, holding one item.
+# `box` is a block holding content `width` wide (a block child is itself that wide); `img` is a `width`x20 SVG.
+# `dir` is stated on the page and inherited; `itemdir` is the item's own direction, `-` for inherited; an absolute
+# item has no insets. `outer` is a chain of 200-wide block wrappers between the page and the container,
+# outermost first and joined by `>`, each naming its justify-items or `-` for unset. `-` elsewhere is unset.
+# Written by packages/meo-canvas/tools/conformance/justifyitems.mjs.
+#
+# x, w and h are the item from getBoundingClientRect, x from the container.
+#
+# container	dir	outer	items	self	item	width	position	itemdir	x	w	h
+grid	ltr	-	-	auto	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	-	auto	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	auto	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	-	auto	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	normal	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	-	normal	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	normal	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	-	normal	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	stretch	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	-	stretch	img	60	static	-	0.000	200.000	66.656
+grid	rtl	-	-	stretch	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	-	stretch	img	60	static	-	0.000	200.000	66.656
+grid	ltr	-	-	baseline	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	baseline	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	baseline	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	baseline	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	first baseline	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	first baseline	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	first baseline	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	first baseline	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	last baseline	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	last baseline	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	last baseline	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	last baseline	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	center	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	-	center	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	-	center	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	-	center	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	-	start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	self-start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	self-start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	self-start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	self-start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	self-end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	self-end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	self-end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	self-end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	flex-start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	flex-start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	flex-start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	flex-start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	flex-end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	flex-end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	flex-end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	flex-end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	left	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	left	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	left	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	left	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	right	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	right	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	right	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	right	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	safe center	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	-	safe center	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	-	safe center	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	-	safe center	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	-	unsafe center	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	-	unsafe center	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	-	unsafe center	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	-	unsafe center	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	-	safe start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	safe start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	safe start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	safe start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	unsafe start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	unsafe start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	unsafe start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	unsafe start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	safe end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	safe end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	safe end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	safe end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	unsafe end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	unsafe end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	unsafe end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	unsafe end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	safe self-start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	safe self-start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	safe self-start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	safe self-start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	unsafe self-start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	unsafe self-start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	unsafe self-start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	unsafe self-start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	safe self-end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	safe self-end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	safe self-end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	safe self-end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	unsafe self-end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	unsafe self-end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	unsafe self-end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	unsafe self-end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	safe flex-start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	safe flex-start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	safe flex-start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	safe flex-start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	unsafe flex-start	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	unsafe flex-start	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	unsafe flex-start	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	unsafe flex-start	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	safe flex-end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	safe flex-end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	safe flex-end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	safe flex-end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	unsafe flex-end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	unsafe flex-end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	unsafe flex-end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	unsafe flex-end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	safe left	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	safe left	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	safe left	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	safe left	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	unsafe left	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	-	unsafe left	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	-	unsafe left	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	-	unsafe left	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	-	safe right	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	safe right	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	safe right	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	safe right	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	-	unsafe right	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	-	unsafe right	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	-	unsafe right	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	-	unsafe right	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	normal	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	normal	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	stretch	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	stretch	-	img	60	static	-	0.000	200.000	66.656
+grid	rtl	-	stretch	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	stretch	-	img	60	static	-	0.000	200.000	66.656
+grid	ltr	-	baseline	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	baseline	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	baseline	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	baseline	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	first baseline	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	first baseline	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	first baseline	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	first baseline	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	last baseline	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	last baseline	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	last baseline	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	last baseline	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	center	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	center	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	center	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	center	-	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	self-start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	self-start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	self-start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	self-start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	self-end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	self-end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	self-end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	self-end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	flex-start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	flex-start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	flex-start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	flex-start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	flex-end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	flex-end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	flex-end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	flex-end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	right	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	right	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	right	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	right	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	safe center	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	safe center	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	safe center	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	safe center	-	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	unsafe center	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	unsafe center	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	unsafe center	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	unsafe center	-	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	safe start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	safe start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	safe start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	safe start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	unsafe start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	unsafe start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	unsafe start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	unsafe start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	safe end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	safe end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	safe end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	safe end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	unsafe end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	unsafe end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	unsafe end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	unsafe end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	safe self-start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	safe self-start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	safe self-start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	safe self-start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	unsafe self-start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	unsafe self-start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	unsafe self-start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	unsafe self-start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	safe self-end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	safe self-end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	safe self-end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	safe self-end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	unsafe self-end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	unsafe self-end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	unsafe self-end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	unsafe self-end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	safe flex-start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	safe flex-start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	safe flex-start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	safe flex-start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	unsafe flex-start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	unsafe flex-start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	unsafe flex-start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	unsafe flex-start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	safe flex-end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	safe flex-end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	safe flex-end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	safe flex-end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	unsafe flex-end	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	unsafe flex-end	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	unsafe flex-end	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	unsafe flex-end	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	safe left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	safe left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	safe left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	safe left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	unsafe left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	unsafe left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	unsafe left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	unsafe left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	safe right	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	safe right	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	safe right	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	safe right	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	unsafe right	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	unsafe right	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	unsafe right	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	unsafe right	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	legacy	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	legacy	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	legacy	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	legacy left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	legacy left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	legacy left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	legacy left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	legacy right	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	legacy right	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	legacy right	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	legacy right	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	legacy center	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	legacy center	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	legacy center	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	legacy center	-	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	left legacy	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	left legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	left legacy	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	left legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	start	normal	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	start	normal	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	start	normal	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	start	normal	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	start	auto	box	60	static	-	0.000	60.000	100.000
+grid	ltr	-	start	auto	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	start	auto	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	start	auto	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	start	stretch	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	start	stretch	img	60	static	-	0.000	200.000	66.656
+grid	rtl	-	start	stretch	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	start	stretch	img	60	static	-	0.000	200.000	66.656
+grid	ltr	-	start	end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	start	end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	start	end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	start	end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	center	normal	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	center	normal	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	center	normal	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	center	normal	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	center	auto	box	60	static	-	70.000	60.000	100.000
+grid	ltr	-	center	auto	img	60	static	-	70.000	60.000	20.000
+grid	rtl	-	center	auto	box	60	static	-	70.000	60.000	100.000
+grid	rtl	-	center	auto	img	60	static	-	70.000	60.000	20.000
+grid	ltr	-	center	stretch	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	center	stretch	img	60	static	-	0.000	200.000	66.656
+grid	rtl	-	center	stretch	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	center	stretch	img	60	static	-	0.000	200.000	66.656
+grid	ltr	-	center	end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	center	end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	center	end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	center	end	img	60	static	-	0.000	60.000	20.000
+grid	ltr	-	legacy right	normal	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	legacy right	normal	img	60	static	-	0.000	60.000	20.000
+grid	rtl	-	legacy right	normal	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	legacy right	normal	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	legacy right	auto	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	legacy right	auto	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	legacy right	auto	box	60	static	-	140.000	60.000	100.000
+grid	rtl	-	legacy right	auto	img	60	static	-	140.000	60.000	20.000
+grid	ltr	-	legacy right	stretch	box	60	static	-	0.000	200.000	100.000
+grid	ltr	-	legacy right	stretch	img	60	static	-	0.000	200.000	66.656
+grid	rtl	-	legacy right	stretch	box	60	static	-	0.000	200.000	100.000
+grid	rtl	-	legacy right	stretch	img	60	static	-	0.000	200.000	66.656
+grid	ltr	-	legacy right	end	box	60	static	-	140.000	60.000	100.000
+grid	ltr	-	legacy right	end	img	60	static	-	140.000	60.000	20.000
+grid	rtl	-	legacy right	end	box	60	static	-	0.000	60.000	100.000
+grid	rtl	-	legacy right	end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	auto	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	auto	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	auto	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	auto	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	normal	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	normal	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	normal	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	normal	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	stretch	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	stretch	img	60	static	-	0.000	200.000	66.656
+block	rtl	-	-	stretch	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	stretch	img	60	static	-	0.000	200.000	66.656
+block	ltr	-	-	baseline	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	baseline	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	baseline	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	baseline	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	first baseline	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	first baseline	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	first baseline	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	first baseline	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	last baseline	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	last baseline	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	last baseline	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	last baseline	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	center	box	60	static	-	70.000	60.000	20.000
+block	ltr	-	-	center	img	60	static	-	70.000	60.000	20.000
+block	rtl	-	-	center	box	60	static	-	70.000	60.000	20.000
+block	rtl	-	-	center	img	60	static	-	70.000	60.000	20.000
+block	ltr	-	-	start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	self-start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	self-start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	self-start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	self-start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	self-end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	self-end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	self-end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	self-end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	flex-start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	flex-start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	flex-start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	flex-start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	flex-end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	flex-end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	flex-end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	flex-end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	left	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	left	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	left	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	left	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	right	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	right	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	right	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	right	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe center	box	60	static	-	70.000	60.000	20.000
+block	ltr	-	-	safe center	img	60	static	-	70.000	60.000	20.000
+block	rtl	-	-	safe center	box	60	static	-	70.000	60.000	20.000
+block	rtl	-	-	safe center	img	60	static	-	70.000	60.000	20.000
+block	ltr	-	-	unsafe center	box	60	static	-	70.000	60.000	20.000
+block	ltr	-	-	unsafe center	img	60	static	-	70.000	60.000	20.000
+block	rtl	-	-	unsafe center	box	60	static	-	70.000	60.000	20.000
+block	rtl	-	-	unsafe center	img	60	static	-	70.000	60.000	20.000
+block	ltr	-	-	safe start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe self-start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe self-start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe self-start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe self-start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe self-start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe self-start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe self-start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe self-start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe self-end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe self-end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe self-end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe self-end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe self-end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe self-end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe self-end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe self-end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe flex-start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe flex-start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe flex-start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe flex-start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe flex-start	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe flex-start	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe flex-start	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe flex-start	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe flex-end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe flex-end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe flex-end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe flex-end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe flex-end	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe flex-end	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe flex-end	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe flex-end	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe left	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe left	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe left	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	safe left	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe left	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe left	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe left	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe left	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	-	safe right	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	safe right	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe right	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	safe right	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe right	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe right	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe right	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe right	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	center	-	box	60	static	-	70.000	60.000	20.000
+block	ltr	-	center	-	img	60	static	-	70.000	60.000	20.000
+block	rtl	-	center	-	box	60	static	-	70.000	60.000	20.000
+block	rtl	-	center	-	img	60	static	-	70.000	60.000	20.000
+block	ltr	-	end	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	end	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	end	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	end	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	left	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	left	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	left	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	-	left	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	-	right	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	right	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	right	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	right	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	stretch	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	stretch	-	img	60	static	-	0.000	200.000	66.656
+block	rtl	-	stretch	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	stretch	-	img	60	static	-	0.000	200.000	66.656
+block	ltr	-	last baseline	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	-	last baseline	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	-	last baseline	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	last baseline	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	-	legacy center	-	box	60	static	-	70.000	60.000	20.000
+block	ltr	-	legacy center	-	img	60	static	-	70.000	60.000	20.000
+block	rtl	-	legacy center	-	box	60	static	-	70.000	60.000	20.000
+block	rtl	-	legacy center	-	img	60	static	-	70.000	60.000	20.000
+block	ltr	-	legacy right	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	-	legacy right	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	-	legacy right	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	-	legacy right	-	img	60	static	-	140.000	60.000	20.000
+flex	ltr	-	-	center	box	60	static	-	0.000	60.000	100.000
+flex	ltr	-	-	center	img	60	static	-	0.000	300.000	100.000
+flex	rtl	-	-	center	box	60	static	-	140.000	60.000	100.000
+flex	rtl	-	-	center	img	60	static	-	-100.000	300.000	100.000
+flex	ltr	-	-	right	box	60	static	-	0.000	60.000	100.000
+flex	ltr	-	-	right	img	60	static	-	0.000	300.000	100.000
+flex	rtl	-	-	right	box	60	static	-	140.000	60.000	100.000
+flex	rtl	-	-	right	img	60	static	-	-100.000	300.000	100.000
+flex	ltr	-	-	end	box	60	static	-	0.000	60.000	100.000
+flex	ltr	-	-	end	img	60	static	-	0.000	300.000	100.000
+flex	rtl	-	-	end	box	60	static	-	140.000	60.000	100.000
+flex	rtl	-	-	end	img	60	static	-	-100.000	300.000	100.000
+flex	ltr	-	center	-	box	60	static	-	0.000	60.000	100.000
+flex	ltr	-	center	-	img	60	static	-	0.000	300.000	100.000
+flex	rtl	-	center	-	box	60	static	-	140.000	60.000	100.000
+flex	rtl	-	center	-	img	60	static	-	-100.000	300.000	100.000
+flex	ltr	-	legacy right	-	box	60	static	-	0.000	60.000	100.000
+flex	ltr	-	legacy right	-	img	60	static	-	0.000	300.000	100.000
+flex	rtl	-	legacy right	-	box	60	static	-	140.000	60.000	100.000
+flex	rtl	-	legacy right	-	img	60	static	-	-100.000	300.000	100.000
+grid	ltr	-	-	start	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	start	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	start	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	start	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	center	box	260	static	-	-30.000	260.000	100.000
+grid	ltr	-	-	center	img	260	static	-	-30.000	260.000	20.000
+grid	rtl	-	-	center	box	260	static	-	-30.000	260.000	100.000
+grid	rtl	-	-	center	img	260	static	-	-30.000	260.000	20.000
+grid	ltr	-	-	end	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	end	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	end	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	end	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	self-end	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	self-end	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	self-end	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	self-end	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	left	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	left	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	left	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	left	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	right	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	right	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	right	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	right	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	stretch	box	260	static	-	0.000	200.000	100.000
+grid	ltr	-	-	stretch	img	260	static	-	0.000	200.000	15.375
+grid	rtl	-	-	stretch	box	260	static	-	0.000	200.000	100.000
+grid	rtl	-	-	stretch	img	260	static	-	0.000	200.000	15.375
+grid	ltr	-	-	last baseline	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	last baseline	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	last baseline	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	last baseline	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	safe center	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe center	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe center	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe center	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe center	box	260	static	-	-30.000	260.000	100.000
+grid	ltr	-	-	unsafe center	img	260	static	-	-30.000	260.000	20.000
+grid	rtl	-	-	unsafe center	box	260	static	-	-30.000	260.000	100.000
+grid	rtl	-	-	unsafe center	img	260	static	-	-30.000	260.000	20.000
+grid	ltr	-	-	safe start	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe start	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe start	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe start	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe start	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	unsafe start	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	unsafe start	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	unsafe start	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	safe end	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe end	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe end	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe end	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe end	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	unsafe end	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	unsafe end	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	unsafe end	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	safe self-start	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe self-start	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe self-start	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe self-start	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe self-start	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	unsafe self-start	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	unsafe self-start	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	unsafe self-start	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	safe self-end	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe self-end	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe self-end	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe self-end	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe self-end	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	unsafe self-end	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	unsafe self-end	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	unsafe self-end	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	safe left	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe left	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe left	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe left	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe left	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	unsafe left	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	unsafe left	box	260	static	-	0.000	260.000	100.000
+grid	rtl	-	-	unsafe left	img	260	static	-	0.000	260.000	20.000
+grid	ltr	-	-	safe right	box	260	static	-	0.000	260.000	100.000
+grid	ltr	-	-	safe right	img	260	static	-	0.000	260.000	20.000
+grid	rtl	-	-	safe right	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	safe right	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe right	box	260	static	-	-60.000	260.000	100.000
+grid	ltr	-	-	unsafe right	img	260	static	-	-60.000	260.000	20.000
+grid	rtl	-	-	unsafe right	box	260	static	-	-60.000	260.000	100.000
+grid	rtl	-	-	unsafe right	img	260	static	-	-60.000	260.000	20.000
+block	ltr	-	-	center	box	260	static	-	-30.000	260.000	20.000
+block	ltr	-	-	center	img	260	static	-	-30.000	260.000	20.000
+block	rtl	-	-	center	box	260	static	-	-30.000	260.000	20.000
+block	rtl	-	-	center	img	260	static	-	-30.000	260.000	20.000
+block	ltr	-	-	end	box	260	static	-	-60.000	260.000	20.000
+block	ltr	-	-	end	img	260	static	-	-60.000	260.000	20.000
+block	rtl	-	-	end	box	260	static	-	0.000	260.000	20.000
+block	rtl	-	-	end	img	260	static	-	0.000	260.000	20.000
+block	ltr	-	-	safe center	box	260	static	-	0.000	260.000	20.000
+block	ltr	-	-	safe center	img	260	static	-	0.000	260.000	20.000
+block	rtl	-	-	safe center	box	260	static	-	-60.000	260.000	20.000
+block	rtl	-	-	safe center	img	260	static	-	-60.000	260.000	20.000
+block	ltr	-	-	unsafe center	box	260	static	-	-30.000	260.000	20.000
+block	ltr	-	-	unsafe center	img	260	static	-	-30.000	260.000	20.000
+block	rtl	-	-	unsafe center	box	260	static	-	-30.000	260.000	20.000
+block	rtl	-	-	unsafe center	img	260	static	-	-30.000	260.000	20.000
+block	ltr	-	-	safe end	box	260	static	-	0.000	260.000	20.000
+block	ltr	-	-	safe end	img	260	static	-	0.000	260.000	20.000
+block	rtl	-	-	safe end	box	260	static	-	-60.000	260.000	20.000
+block	rtl	-	-	safe end	img	260	static	-	-60.000	260.000	20.000
+block	ltr	-	-	right	box	260	static	-	-60.000	260.000	20.000
+block	ltr	-	-	right	img	260	static	-	-60.000	260.000	20.000
+block	rtl	-	-	right	box	260	static	-	-60.000	260.000	20.000
+block	rtl	-	-	right	img	260	static	-	-60.000	260.000	20.000
+block	ltr	-	-	safe right	box	260	static	-	0.000	260.000	20.000
+block	ltr	-	-	safe right	img	260	static	-	0.000	260.000	20.000
+block	rtl	-	-	safe right	box	260	static	-	-60.000	260.000	20.000
+block	rtl	-	-	safe right	img	260	static	-	-60.000	260.000	20.000
+grid	ltr	-	-	-	box	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	-	img	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	-	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	-	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	-	box	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	-	img	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	-	box	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	-	img	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	center	box	60	absolute	-	70.000	60.000	20.000
+grid	ltr	-	-	center	img	60	absolute	-	70.000	60.000	20.000
+grid	rtl	-	-	center	box	60	absolute	-	70.000	60.000	20.000
+grid	rtl	-	-	center	img	60	absolute	-	70.000	60.000	20.000
+block	ltr	-	-	center	box	60	absolute	-	70.000	60.000	20.000
+block	ltr	-	-	center	img	60	absolute	-	70.000	60.000	20.000
+block	rtl	-	-	center	box	60	absolute	-	70.000	60.000	20.000
+block	rtl	-	-	center	img	60	absolute	-	70.000	60.000	20.000
+grid	ltr	-	-	end	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	end	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	end	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	end	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	end	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	end	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	end	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	end	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	left	box	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	left	img	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	left	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	left	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	left	box	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	left	img	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	left	box	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	left	img	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	right	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	right	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	right	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	right	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	right	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	right	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	right	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	right	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	stretch	box	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	stretch	img	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	stretch	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	stretch	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	stretch	box	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	stretch	img	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	stretch	box	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	stretch	img	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	baseline	box	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	baseline	img	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	baseline	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	baseline	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	baseline	box	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	baseline	img	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	baseline	box	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	baseline	img	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	last baseline	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	last baseline	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	last baseline	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	last baseline	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	last baseline	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	last baseline	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	last baseline	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	last baseline	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	safe center	box	60	absolute	-	70.000	60.000	20.000
+grid	ltr	-	-	safe center	img	60	absolute	-	70.000	60.000	20.000
+grid	rtl	-	-	safe center	box	60	absolute	-	70.000	60.000	20.000
+grid	rtl	-	-	safe center	img	60	absolute	-	70.000	60.000	20.000
+block	ltr	-	-	safe center	box	60	absolute	-	70.000	60.000	20.000
+block	ltr	-	-	safe center	img	60	absolute	-	70.000	60.000	20.000
+block	rtl	-	-	safe center	box	60	absolute	-	70.000	60.000	20.000
+block	rtl	-	-	safe center	img	60	absolute	-	70.000	60.000	20.000
+grid	ltr	-	-	unsafe end	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	-	unsafe end	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	-	unsafe end	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	-	unsafe end	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	-	unsafe end	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	-	unsafe end	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	-	unsafe end	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	-	unsafe end	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	center	box	260	absolute	-	-30.000	260.000	20.000
+grid	ltr	-	-	center	img	260	absolute	-	-30.000	260.000	20.000
+grid	rtl	-	-	center	box	260	absolute	-	-30.000	260.000	20.000
+grid	rtl	-	-	center	img	260	absolute	-	-30.000	260.000	20.000
+grid	ltr	-	-	safe center	box	260	absolute	-	0.000	260.000	20.000
+grid	ltr	-	-	safe center	img	260	absolute	-	0.000	260.000	20.000
+grid	rtl	-	-	safe center	box	260	absolute	-	-60.000	260.000	20.000
+grid	rtl	-	-	safe center	img	260	absolute	-	-60.000	260.000	20.000
+grid	ltr	-	-	unsafe center	box	260	absolute	-	-30.000	260.000	20.000
+grid	ltr	-	-	unsafe center	img	260	absolute	-	-30.000	260.000	20.000
+grid	rtl	-	-	unsafe center	box	260	absolute	-	-30.000	260.000	20.000
+grid	rtl	-	-	unsafe center	img	260	absolute	-	-30.000	260.000	20.000
+grid	ltr	-	-	end	box	260	absolute	-	-60.000	260.000	20.000
+grid	ltr	-	-	end	img	260	absolute	-	-60.000	260.000	20.000
+grid	rtl	-	-	end	box	260	absolute	-	0.000	260.000	20.000
+grid	rtl	-	-	end	img	260	absolute	-	0.000	260.000	20.000
+grid	ltr	-	-	safe end	box	260	absolute	-	0.000	260.000	20.000
+grid	ltr	-	-	safe end	img	260	absolute	-	0.000	260.000	20.000
+grid	rtl	-	-	safe end	box	260	absolute	-	-60.000	260.000	20.000
+grid	rtl	-	-	safe end	img	260	absolute	-	-60.000	260.000	20.000
+grid	ltr	-	center	-	box	60	absolute	-	70.000	60.000	20.000
+grid	ltr	-	center	-	img	60	absolute	-	70.000	60.000	20.000
+grid	rtl	-	center	-	box	60	absolute	-	70.000	60.000	20.000
+grid	rtl	-	center	-	img	60	absolute	-	70.000	60.000	20.000
+block	ltr	-	center	-	box	60	absolute	-	70.000	60.000	20.000
+block	ltr	-	center	-	img	60	absolute	-	70.000	60.000	20.000
+block	rtl	-	center	-	box	60	absolute	-	70.000	60.000	20.000
+block	rtl	-	center	-	img	60	absolute	-	70.000	60.000	20.000
+grid	ltr	-	end	-	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	end	-	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	end	-	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	end	-	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	end	-	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	end	-	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	end	-	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	end	-	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	left	-	box	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	left	-	img	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	left	-	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	left	-	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	left	-	box	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	left	-	img	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	left	-	box	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	left	-	img	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	right	-	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	right	-	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	right	-	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	right	-	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	right	-	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	right	-	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	right	-	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	right	-	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	baseline	-	box	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	baseline	-	img	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	baseline	-	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	baseline	-	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	baseline	-	box	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	baseline	-	img	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	baseline	-	box	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	baseline	-	img	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	last baseline	-	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	last baseline	-	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	last baseline	-	box	60	absolute	-	0.000	60.000	20.000
+grid	rtl	-	last baseline	-	img	60	absolute	-	0.000	60.000	20.000
+block	ltr	-	last baseline	-	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	last baseline	-	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	last baseline	-	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	last baseline	-	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	legacy right	-	box	60	absolute	-	140.000	60.000	20.000
+grid	ltr	-	legacy right	-	img	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	legacy right	-	box	60	absolute	-	140.000	60.000	20.000
+grid	rtl	-	legacy right	-	img	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	legacy right	-	box	60	absolute	-	140.000	60.000	20.000
+block	ltr	-	legacy right	-	img	60	absolute	-	140.000	60.000	20.000
+block	rtl	-	legacy right	-	box	60	absolute	-	0.000	60.000	20.000
+block	rtl	-	legacy right	-	img	60	absolute	-	0.000	60.000	20.000
+grid	ltr	-	-	self-start	box	60	static	rtl	140.000	60.000	100.000
+grid	ltr	-	-	self-start	img	60	static	rtl	140.000	60.000	20.000
+grid	rtl	-	-	self-start	box	60	static	ltr	0.000	60.000	100.000
+grid	rtl	-	-	self-start	img	60	static	ltr	0.000	60.000	20.000
+block	ltr	-	-	self-start	box	60	static	rtl	140.000	60.000	20.000
+block	ltr	-	-	self-start	img	60	static	rtl	140.000	60.000	20.000
+block	rtl	-	-	self-start	box	60	static	ltr	0.000	60.000	20.000
+block	rtl	-	-	self-start	img	60	static	ltr	0.000	60.000	20.000
+grid	ltr	-	-	self-end	box	60	static	rtl	0.000	60.000	100.000
+grid	ltr	-	-	self-end	img	60	static	rtl	0.000	60.000	20.000
+grid	rtl	-	-	self-end	box	60	static	ltr	140.000	60.000	100.000
+grid	rtl	-	-	self-end	img	60	static	ltr	140.000	60.000	20.000
+block	ltr	-	-	self-end	box	60	static	rtl	0.000	60.000	20.000
+block	ltr	-	-	self-end	img	60	static	rtl	0.000	60.000	20.000
+block	rtl	-	-	self-end	box	60	static	ltr	140.000	60.000	20.000
+block	rtl	-	-	self-end	img	60	static	ltr	140.000	60.000	20.000
+grid	ltr	-	-	start	box	60	static	rtl	0.000	60.000	100.000
+grid	ltr	-	-	start	img	60	static	rtl	0.000	60.000	20.000
+grid	rtl	-	-	start	box	60	static	ltr	140.000	60.000	100.000
+grid	rtl	-	-	start	img	60	static	ltr	140.000	60.000	20.000
+block	ltr	-	-	start	box	60	static	rtl	0.000	60.000	20.000
+block	ltr	-	-	start	img	60	static	rtl	0.000	60.000	20.000
+block	rtl	-	-	start	box	60	static	ltr	140.000	60.000	20.000
+block	rtl	-	-	start	img	60	static	ltr	140.000	60.000	20.000
+grid	ltr	-	-	end	box	60	static	rtl	140.000	60.000	100.000
+grid	ltr	-	-	end	img	60	static	rtl	140.000	60.000	20.000
+grid	rtl	-	-	end	box	60	static	ltr	0.000	60.000	100.000
+grid	rtl	-	-	end	img	60	static	ltr	0.000	60.000	20.000
+block	ltr	-	-	end	box	60	static	rtl	140.000	60.000	20.000
+block	ltr	-	-	end	img	60	static	rtl	140.000	60.000	20.000
+block	rtl	-	-	end	box	60	static	ltr	0.000	60.000	20.000
+block	rtl	-	-	end	img	60	static	ltr	0.000	60.000	20.000
+grid	ltr	-	-	left	box	60	static	rtl	0.000	60.000	100.000
+grid	ltr	-	-	left	img	60	static	rtl	0.000	60.000	20.000
+grid	rtl	-	-	left	box	60	static	ltr	0.000	60.000	100.000
+grid	rtl	-	-	left	img	60	static	ltr	0.000	60.000	20.000
+block	ltr	-	-	left	box	60	static	rtl	0.000	60.000	20.000
+block	ltr	-	-	left	img	60	static	rtl	0.000	60.000	20.000
+block	rtl	-	-	left	box	60	static	ltr	0.000	60.000	20.000
+block	rtl	-	-	left	img	60	static	ltr	0.000	60.000	20.000
+grid	ltr	-	-	right	box	60	static	rtl	140.000	60.000	100.000
+grid	ltr	-	-	right	img	60	static	rtl	140.000	60.000	20.000
+grid	rtl	-	-	right	box	60	static	ltr	140.000	60.000	100.000
+grid	rtl	-	-	right	img	60	static	ltr	140.000	60.000	20.000
+block	ltr	-	-	right	box	60	static	rtl	140.000	60.000	20.000
+block	ltr	-	-	right	img	60	static	rtl	140.000	60.000	20.000
+block	rtl	-	-	right	box	60	static	ltr	140.000	60.000	20.000
+block	rtl	-	-	right	img	60	static	ltr	140.000	60.000	20.000
+grid	ltr	-	-	safe self-end	box	60	static	rtl	0.000	60.000	100.000
+grid	ltr	-	-	safe self-end	img	60	static	rtl	0.000	60.000	20.000
+grid	rtl	-	-	safe self-end	box	60	static	ltr	140.000	60.000	100.000
+grid	rtl	-	-	safe self-end	img	60	static	ltr	140.000	60.000	20.000
+block	ltr	-	-	safe self-end	box	60	static	rtl	0.000	60.000	20.000
+block	ltr	-	-	safe self-end	img	60	static	rtl	0.000	60.000	20.000
+block	rtl	-	-	safe self-end	box	60	static	ltr	140.000	60.000	20.000
+block	rtl	-	-	safe self-end	img	60	static	ltr	140.000	60.000	20.000
+grid	ltr	legacy left	-	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy left	-	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	-	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	-	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	legacy left	legacy	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy left	legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy left	legacy	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	legacy left	legacy	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	legacy	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	legacy	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	legacy	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	legacy left	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	legacy left	normal	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy left	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	legacy left	normal	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy left	normal	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	normal	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	normal	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy left	normal	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy left	start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy left	start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy left	start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy left	start	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy left	start	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	start	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	start	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy left	start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy left	left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy left	left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy left	left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	legacy left	left	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	left	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy left	left	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	left	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	legacy left	left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	legacy right	-	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	legacy right	-	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	legacy right	-	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy right	-	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right	-	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right	-	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right	-	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right	-	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right	legacy	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	legacy right	legacy	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	legacy right	legacy	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy right	legacy	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right	legacy	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right	legacy	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right	legacy	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right	legacy	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	legacy right	normal	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy right	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	legacy right	normal	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right	normal	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right	normal	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right	normal	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right	normal	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right	start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy right	start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy right	start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy right	start	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right	start	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right	start	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right	start	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right	start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right	left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy right	left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy right	left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	legacy right	left	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right	left	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right	left	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right	left	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right	left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	legacy center	-	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	legacy center	-	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	legacy center	-	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	legacy center	-	-	img	60	static	-	70.000	60.000	20.000
+block	ltr	legacy center	-	-	box	60	static	-	70.000	60.000	20.000
+block	ltr	legacy center	-	-	img	60	static	-	70.000	60.000	20.000
+block	rtl	legacy center	-	-	box	60	static	-	70.000	60.000	20.000
+block	rtl	legacy center	-	-	img	60	static	-	70.000	60.000	20.000
+grid	ltr	legacy center	legacy	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	legacy center	legacy	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	legacy center	legacy	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	legacy center	legacy	-	img	60	static	-	70.000	60.000	20.000
+block	ltr	legacy center	legacy	-	box	60	static	-	70.000	60.000	20.000
+block	ltr	legacy center	legacy	-	img	60	static	-	70.000	60.000	20.000
+block	rtl	legacy center	legacy	-	box	60	static	-	70.000	60.000	20.000
+block	rtl	legacy center	legacy	-	img	60	static	-	70.000	60.000	20.000
+grid	ltr	legacy center	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	legacy center	normal	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy center	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	legacy center	normal	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy center	normal	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy center	normal	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy center	normal	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy center	normal	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy center	start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy center	start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy center	start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy center	start	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy center	start	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy center	start	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy center	start	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy center	start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy center	left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy center	left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy center	left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	legacy center	left	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	legacy center	left	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy center	left	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy center	left	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	legacy center	left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	center	-	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	center	-	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	center	-	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	center	-	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	center	-	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	center	-	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	center	-	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	center	-	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	center	legacy	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	center	legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	center	legacy	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	center	legacy	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	center	legacy	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	center	legacy	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	center	legacy	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	center	legacy	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	center	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	center	normal	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	center	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	center	normal	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	center	normal	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	center	normal	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	center	normal	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	center	normal	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	center	start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	center	start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	center	start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	center	start	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	center	start	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	center	start	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	center	start	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	center	start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	center	left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	center	left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	center	left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	center	left	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	center	left	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	center	left	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	center	left	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	center	left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	normal	-	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	normal	-	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	normal	-	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	normal	-	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	normal	-	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	normal	-	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	normal	-	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	normal	-	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	normal	legacy	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	normal	legacy	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	normal	legacy	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	normal	legacy	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	normal	legacy	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	normal	legacy	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	normal	legacy	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	normal	legacy	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	normal	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	normal	normal	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	normal	normal	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	normal	normal	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	normal	normal	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	normal	normal	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	normal	normal	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	normal	normal	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	normal	start	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	normal	start	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	normal	start	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	normal	start	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	normal	start	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	normal	start	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	normal	start	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	normal	start	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	normal	left	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	normal	left	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	normal	left	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	normal	left	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	normal	left	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	normal	left	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	normal	left	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	normal	left	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	legacy right>-	-	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	legacy right>-	-	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	legacy right>-	-	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy right>-	-	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right>-	-	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right>-	-	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right>-	-	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right>-	-	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right>normal	-	-	box	60	static	-	0.000	200.000	100.000
+grid	ltr	legacy right>normal	-	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy right>normal	-	-	box	60	static	-	0.000	200.000	100.000
+grid	rtl	legacy right>normal	-	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right>normal	-	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right>normal	-	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right>normal	-	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right>normal	-	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right>legacy	-	-	box	60	static	-	140.000	60.000	100.000
+grid	ltr	legacy right>legacy	-	-	img	60	static	-	140.000	60.000	20.000
+grid	rtl	legacy right>legacy	-	-	box	60	static	-	140.000	60.000	100.000
+grid	rtl	legacy right>legacy	-	-	img	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right>legacy	-	-	box	60	static	-	140.000	60.000	20.000
+block	ltr	legacy right>legacy	-	-	img	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right>legacy	-	-	box	60	static	-	140.000	60.000	20.000
+block	rtl	legacy right>legacy	-	-	img	60	static	-	140.000	60.000	20.000
+grid	ltr	legacy right>legacy left	-	-	box	60	static	-	0.000	60.000	100.000
+grid	ltr	legacy right>legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+grid	rtl	legacy right>legacy left	-	-	box	60	static	-	0.000	60.000	100.000
+grid	rtl	legacy right>legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right>legacy left	-	-	box	60	static	-	0.000	60.000	20.000
+block	ltr	legacy right>legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right>legacy left	-	-	box	60	static	-	0.000	60.000	20.000
+block	rtl	legacy right>legacy left	-	-	img	60	static	-	0.000	60.000	20.000
+grid	ltr	legacy center>-	-	-	box	60	static	-	70.000	60.000	100.000
+grid	ltr	legacy center>-	-	-	img	60	static	-	70.000	60.000	20.000
+grid	rtl	legacy center>-	-	-	box	60	static	-	70.000	60.000	100.000
+grid	rtl	legacy center>-	-	-	img	60	static	-	70.000	60.000	20.000
+block	ltr	legacy center>-	-	-	box	60	static	-	70.000	60.000	20.000
+block	ltr	legacy center>-	-	-	img	60	static	-	70.000	60.000	20.000
+block	rtl	legacy center>-	-	-	box	60	static	-	70.000	60.000	20.000
+block	rtl	legacy center>-	-	-	img	60	static	-	70.000	60.000	20.000

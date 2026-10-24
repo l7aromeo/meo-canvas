@@ -38,6 +38,50 @@ export type Justify = 'flex-start' | 'flex-end' | 'center' | 'space-between' | '
 export type Align = 'flex-start' | 'flex-end' | 'center' | 'stretch' | 'baseline' | 'space-between' | 'space-around' | 'space-evenly'
 
 /**
+ * CSS's `<self-position>` with `left` and `right`: where `justifySelf` and
+ * `justifyItems` put a box on the inline axis. `start` and `end` follow the alignment
+ * container's direction, `self-start` and `self-end` the box's own, and `left` and
+ * `right` neither.
+ */
+export type SelfPosition = 'center' | 'start' | 'end' | 'self-start' | 'self-end' | 'flex-start' | 'flex-end' | 'left' | 'right'
+
+/**
+ * CSS's `<overflow-position>`: `safe` falls back to `start` when the box is wider than
+ * its container, `unsafe` keeps the position. Neither is CSS's default, which places
+ * the box as `unsafe` does.
+ */
+export type OverflowPosition = 'safe' | 'unsafe'
+
+/** CSS's `<baseline-position>`. `baseline` and `first baseline` are one value. */
+export type BaselinePosition = 'baseline' | 'first baseline' | 'last baseline'
+
+/**
+ * CSS's `justify-self`, spelled as CSS spells it. A grid item and a block child take it
+ * and a flex item ignores it, as in Chrome. `'auto'` is the same as leaving it out: the
+ * parent's `justifyItems`. A grid item asking for a baseline aligns its left border edge
+ * with the other items of its column asking for the same one, at the column's start for
+ * `baseline` and its end for `last baseline`. `'anchor-center'` is refused: anchor
+ * positioning has no counterpart in a scene.
+ */
+export type JustifySelf = 'auto' | 'normal' | 'stretch' | BaselinePosition | SelfPosition | `${OverflowPosition} ${SelfPosition}`
+
+/**
+ * CSS's `justify-items`, spelled as CSS spells it: what each child whose `justifySelf`
+ * is `'auto'` takes. `'legacy'` is the same as leaving it out, CSS's initial value: a
+ * node takes a `legacy left`, `legacy right` or `legacy center` from the nearest
+ * ancestor stating one, through ancestors stating nothing, and is otherwise `normal`.
+ */
+export type JustifyItems =
+  | 'normal'
+  | 'stretch'
+  | BaselinePosition
+  | SelfPosition
+  | `${OverflowPosition} ${SelfPosition}`
+  | 'legacy'
+  | `legacy ${'left' | 'right' | 'center'}`
+  | `${'left' | 'right' | 'center'} legacy`
+
+/**
  * Whether a node is placed by the flow, by its own offsets, or not at all.
  *
  * `'static'` is CSS's default and takes no offsets — a node with `position`

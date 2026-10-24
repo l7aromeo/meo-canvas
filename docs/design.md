@@ -350,6 +350,13 @@ along the scene's tree rather than the containing-block chain, and a page root
 stating none is `ltr`. Layout and paint both read that answer from
 `LayoutResult::direction`.
 
+**An unset `justify_items` is CSS's initial `legacy`, not `normal`.** It takes a
+`legacy left`, `legacy right` or `legacy center` from the nearest ancestor
+stating one, through boxes stating nothing, and stops at any box stating a value
+of its own. Layout resolves it in the same walk as `direction` and reports it,
+with the direction of each box's alignment container, as
+`LayoutResult::inherited`.
+
 **Every factory on both surfaces overrides it.** `Box::new`, `Row::new` and
 `Column::new` in `element.rs` name `Display::Flex`, and so does npm's `Box` in
 `node.ts`, because a container that inherited `block` would silently stop

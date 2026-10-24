@@ -42,6 +42,8 @@ taffy = { version = "0.15", default-features = false, features = [
     "std",
     "taffy_tree",
     "content_size",
+    # The tracks each grid item spans, which the inline-axis baseline pass reads.
+    "detailed_layout_info",
 ] }
 
 # Decodes a `data:` image source. `ureq` already brings it under `net`; naming
