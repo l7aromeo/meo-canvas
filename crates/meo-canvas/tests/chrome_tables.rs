@@ -1388,7 +1388,7 @@ const GRID_INK: [Color; 6] = [
     Color::rgb(30, 170, 180),
 ];
 
-/// Which flows we place differently from Chrome today.
+/// Which flows we place differently from Chrome: empty.
 const KNOWN_GRID: &[&str] = &[];
 
 /// Where each item lands for one auto-placement flow. The second item spans

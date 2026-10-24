@@ -374,7 +374,8 @@ fn rows_that_control() -> Vec<(&'static str, Case)> {
     ]
 }
 
-/// The rows that sit on a threshold, and the two that stay divergent.
+/// The rows that sit on a threshold: the pin, the tolerance, an item
+/// stretched past its line, and a cross maximum that does not transfer back.
 fn rows_at_a_boundary() -> Vec<(&'static str, Case)> {
     vec![
         (

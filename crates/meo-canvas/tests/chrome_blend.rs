@@ -326,7 +326,7 @@ fn expected(mode: &str, backdrop: (u8, u8, u8)) -> (f64, f64, f64) {
 /// expose a fractional error.
 const TOLERANCE: f64 = 1.0;
 
-/// Which modes we blend differently from the formula today.
+/// Which modes we blend differently from the formula: empty.
 const KNOWN_BLEND: &[&str] = &[];
 
 #[test]
