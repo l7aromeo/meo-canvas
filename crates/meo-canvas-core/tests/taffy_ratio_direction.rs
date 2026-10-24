@@ -3,7 +3,7 @@
 //! 29.98 x 35.28. Asserts taffy's numbers, so a fix fails here and the
 //! `[WORKAROUND]` in `layout.rs` can go. `DioxusLabs/taffy#804`.
 
-use meo_canvas_core::layout::to_taffy_style;
+use meo_canvas_core::layout::{Inherited, to_taffy_style};
 use meo_canvas_scene::style::{
     layout::{Direction, LayoutStyle},
     paint::BorderStyle,
@@ -21,7 +21,7 @@ fn shrink_box(ratio: Option<f32>) -> (f32, f32) {
             ..LayoutStyle::default()
         },
         BorderStyle::Solid,
-        Direction::Ltr,
+        Inherited::new(Direction::Ltr),
     );
     let mut tree: taffy::TaffyTree<()> = taffy::TaffyTree::new();
     let child = tree
@@ -129,7 +129,7 @@ fn a_content_derived_floor_is_transferred_into_the_width() {
             ..LayoutStyle::default()
         },
         BorderStyle::Solid,
-        Direction::Ltr,
+        Inherited::new(Direction::Ltr),
     );
     style.min_size.height = taffy::LengthPercentageAuto::length(300.0);
     let box_node = tree
@@ -193,7 +193,7 @@ fn a_ratio_caps_a_definite_width_box_with_no_author_minimum() {
             ..LayoutStyle::default()
         },
         BorderStyle::Solid,
-        Direction::Ltr,
+        Inherited::new(Direction::Ltr),
     );
     let box_node = tree
         .new_with_children(style, &[child])
@@ -253,7 +253,7 @@ fn clearing_the_ratio_reports_the_content_height_at_that_width() {
     let style = to_taffy_style(
         &LayoutStyle::default(),
         BorderStyle::Solid,
-        Direction::Ltr,
+        Inherited::new(Direction::Ltr),
     );
     let box_node = tree
         .new_with_children(style, &[child])

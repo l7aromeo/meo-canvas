@@ -174,7 +174,8 @@ pub use meo_canvas_scene::style::{
     effect::FillRule,
     layout::{
         Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-        GridAutoFlow, GridPlacement, Justify, Overflow, PositionType,
+        GridAutoFlow, GridPlacement, Justify, JustifyItems, JustifySelf,
+        LegacyPosition, Overflow, OverflowPosition, PositionType, SelfPosition,
         TrackSize,
     },
     paint::{
@@ -222,8 +223,9 @@ pub mod scene {
             },
             layout::{
                 Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-                GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
-                PositionType, TrackSize,
+                GridAutoFlow, GridPlacement, Justify, JustifyItems,
+                JustifySelf, LayoutStyle, LegacyPosition, Overflow,
+                OverflowPosition, PositionType, SelfPosition, TrackSize,
             },
             paint::{
                 BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,

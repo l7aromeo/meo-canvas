@@ -11,8 +11,9 @@ use meo_canvas_scene::{
         effect::{BoxShadow, FillRule, Mask, MaskShape, TextShadow, Transform},
         layout::{
             Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-            GridAutoFlow, GridPlacement, Justify, Overflow, PositionType,
-            TrackSize,
+            GridAutoFlow, GridPlacement, Justify, JustifyItems, JustifySelf,
+            LegacyPosition, Overflow, OverflowPosition, PositionType,
+            SelfPosition, TrackSize,
         },
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
@@ -68,6 +69,7 @@ arena_enum!(
     GradientKind,
     GridAutoFlow,
     Justify,
+    LegacyPosition,
     LineCap,
     LineJoin,
     MaskShape,
@@ -75,8 +77,10 @@ arena_enum!(
     ObjectFit,
     OnImageError,
     Overflow,
+    OverflowPosition,
     PaintOrder,
     PositionType,
+    SelfPosition,
     TextAlign,
     TextDecoration,
     VerticalAlign,
@@ -134,6 +138,99 @@ impl ArenaValue for Spacing {
                 what: "Spacing",
                 found: f64::from(found),
             }),
+        }
+    }
+}
+
+/// One `justify-self` or `justify-items` value, before its variant is chosen:
+/// four slots, the byte codec's tag, a keyword, and an overflow flag and
+/// keyword, each written even where unused, as a `Dimension`'s value is, so the
+/// width is fixed.
+struct Justification {
+    tag: u32,
+    /// Where the tag was, for the error naming it.
+    tag_slot: usize,
+    keyword: u8,
+    keyword_slot: usize,
+    overflow: Option<OverflowPosition>,
+}
+
+impl ArenaValue for Justification {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let tag_slot = input.offset();
+        let tag = input.tag()?;
+        let keyword_slot = input.offset();
+        let keyword = input.bounded_integer(f64::from(u8::MAX))? as u8;
+        let present = bool::read(input)?;
+        let overflow = OverflowPosition::read(input)?;
+        Ok(Self {
+            tag,
+            tag_slot,
+            keyword,
+            keyword_slot,
+            overflow: present.then_some(overflow),
+        })
+    }
+}
+
+impl Justification {
+    /// The `<self-position>` its keyword names.
+    fn position(&self) -> Result<SelfPosition, ArenaError> {
+        SelfPosition::from_wire(self.keyword).ok_or_else(|| {
+            ArenaError::UnknownTag {
+                slot: self.keyword_slot,
+                what: "SelfPosition",
+                found: f64::from(self.keyword),
+            }
+        })
+    }
+
+    fn unknown(&self, what: &'static str) -> ArenaError {
+        ArenaError::UnknownTag {
+            slot: self.tag_slot,
+            what,
+            found: f64::from(self.tag),
+        }
+    }
+}
+
+impl ArenaValue for JustifySelf {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let read = Justification::read(input)?;
+        match read.tag {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Stretch),
+            2 => Ok(Self::Baseline),
+            3 => Ok(Self::LastBaseline),
+            4 => Ok(Self::Position {
+                position: read.position()?,
+                overflow: read.overflow,
+            }),
+            _ => Err(read.unknown("JustifySelf")),
+        }
+    }
+}
+
+impl ArenaValue for JustifyItems {
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let read = Justification::read(input)?;
+        match read.tag {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Stretch),
+            2 => Ok(Self::Baseline),
+            3 => Ok(Self::LastBaseline),
+            4 => Ok(Self::Position {
+                position: read.position()?,
+                overflow: read.overflow,
+            }),
+            5 => LegacyPosition::from_wire(read.keyword)
+                .map(Self::Legacy)
+                .ok_or_else(|| ArenaError::UnknownTag {
+                    slot: read.keyword_slot,
+                    what: "LegacyPosition",
+                    found: f64::from(read.keyword),
+                }),
+            _ => Err(read.unknown("JustifyItems")),
         }
     }
 }

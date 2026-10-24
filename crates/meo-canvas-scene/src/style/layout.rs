@@ -207,6 +207,194 @@ wire_enum! {
 }
 
 wire_enum! {
+    /// CSS's `<self-position>`, with `left` and `right`: where
+    /// [`JustifySelf::Position`] and [`JustifyItems::Position`] put a box on
+    /// the inline axis.
+    ///
+    /// `start` and `end` follow the alignment container's direction,
+    /// `self-start` and `self-end` the box's own, and `left` and `right`
+    /// neither. `flex-start` and `flex-end` are `start` and `end` outside a
+    /// flex container, which ignores both properties.
+    #[non_exhaustive]
+    pub enum SelfPosition {
+        /// Centred in the alignment container.
+        Center = 0,
+        /// At the container's inline start: the left edge under `ltr`, the
+        /// right under `rtl`.
+        Start = 1,
+        /// At the container's inline end.
+        End = 2,
+        /// At the inline start of the box's own direction.
+        SelfStart = 3,
+        /// At the inline end of the box's own direction.
+        SelfEnd = 4,
+        /// As [`SelfPosition::Start`] wherever these properties apply.
+        FlexStart = 5,
+        /// As [`SelfPosition::End`] wherever these properties apply.
+        FlexEnd = 6,
+        /// At the left edge, whatever the direction.
+        Left = 7,
+        /// At the right edge, whatever the direction.
+        Right = 8,
+    }
+}
+
+wire_enum! {
+    /// CSS's `<overflow-position>`: what a positioned box does when it is
+    /// wider than its alignment container.
+    ///
+    /// Stating neither is CSS's default, which for self-alignment places the
+    /// box as [`OverflowPosition::Unsafe`] does, as Chrome does for an
+    /// absolutely positioned box as well.
+    #[non_exhaustive]
+    pub enum OverflowPosition {
+        /// Falls back to `start` when the box overflows, so its start edge
+        /// stays inside the container.
+        Safe = 0,
+        /// Keeps the position asked for, overflowing on both sides if need be.
+        Unsafe = 1,
+    }
+}
+
+wire_enum! {
+    /// The keyword after `legacy` in `justify-items`.
+    #[non_exhaustive]
+    pub enum LegacyPosition {
+        /// At the left edge.
+        Left = 0,
+        /// At the right edge.
+        Right = 1,
+        /// Centred.
+        Center = 2,
+    }
+}
+
+/// CSS's `justify-self`: where this box sits on the inline axis of its
+/// alignment container, overriding the container's `justify-items`.
+///
+/// `auto` is the absence of a value, `LayoutStyle::justify_self` being
+/// `None`. A grid item and a block child take it, and a flex item ignores it,
+/// as in Chrome. `anchor-center` has no variant: anchor positioning has no
+/// counterpart in a scene.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum JustifySelf {
+    /// The layout mode's default: a box without a width stretches, and a box
+    /// with one or an image is placed at the start.
+    Normal,
+    /// Fills the alignment container, an image included, unless a width is
+    /// stated.
+    Stretch,
+    /// CSS's `baseline` and `first baseline`. A grid item aligns its left
+    /// border edge with the other items of its column that ask for it, the
+    /// group placed at the start; elsewhere it is `start`.
+    Baseline,
+    /// CSS's `last baseline`: as [`JustifySelf::Baseline`], the group placed at
+    /// the end. Outside a grid's flow it is `end` for an absolutely
+    /// positioned box and `start` for a block child.
+    LastBaseline,
+    /// A `<self-position>`, with or without an `<overflow-position>`.
+    Position {
+        /// Where the box goes.
+        position: SelfPosition,
+        /// What happens when it is wider than its container. `None` states
+        /// neither keyword.
+        overflow: Option<OverflowPosition>,
+    },
+}
+
+/// CSS's `justify-items`: where this box's grid items and block children sit
+/// on the inline axis, for each whose `justify-self` is `auto`.
+///
+/// `LayoutStyle::justify_items` being `None` is CSS's initial `legacy`: a
+/// box takes a `legacy left`, `legacy right` or `legacy center` from the
+/// nearest ancestor stating one, through ancestors that state nothing, and is
+/// otherwise [`JustifyItems::Normal`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum JustifyItems {
+    /// As [`JustifySelf::Normal`] for each child.
+    Normal,
+    /// As [`JustifySelf::Stretch`] for each child.
+    Stretch,
+    /// As [`JustifySelf::Baseline`] for each child.
+    Baseline,
+    /// As [`JustifySelf::LastBaseline`] for each child.
+    LastBaseline,
+    /// As [`JustifySelf::Position`] for each child.
+    Position {
+        /// Where each child goes.
+        position: SelfPosition,
+        /// What happens when a child is wider than its container.
+        overflow: Option<OverflowPosition>,
+    },
+    /// CSS's `legacy left`, `legacy right` or `legacy center`: the position
+    /// for this box's children, handed on to descendants whose
+    /// `justify_items` is `None`.
+    Legacy(LegacyPosition),
+}
+
+impl JustifySelf {
+    /// `safe` with `position`: placed there unless the box overflows, then at
+    /// the start.
+    #[must_use]
+    pub const fn safe(position: SelfPosition) -> Self {
+        Self::Position {
+            position,
+            overflow: Some(OverflowPosition::Safe),
+        }
+    }
+
+    /// `unsafe` with `position`: placed there even when the box overflows.
+    #[must_use]
+    pub const fn unsafe_position(position: SelfPosition) -> Self {
+        Self::Position {
+            position,
+            overflow: Some(OverflowPosition::Unsafe),
+        }
+    }
+}
+
+impl JustifyItems {
+    /// `safe` with `position`: placed there unless a child overflows, then at
+    /// the start.
+    #[must_use]
+    pub const fn safe(position: SelfPosition) -> Self {
+        Self::Position {
+            position,
+            overflow: Some(OverflowPosition::Safe),
+        }
+    }
+
+    /// `unsafe` with `position`: placed there even when a child overflows.
+    #[must_use]
+    pub const fn unsafe_position(position: SelfPosition) -> Self {
+        Self::Position {
+            position,
+            overflow: Some(OverflowPosition::Unsafe),
+        }
+    }
+}
+
+impl From<SelfPosition> for JustifySelf {
+    fn from(position: SelfPosition) -> Self {
+        Self::Position {
+            position,
+            overflow: None,
+        }
+    }
+}
+
+impl From<SelfPosition> for JustifyItems {
+    fn from(position: SelfPosition) -> Self {
+        Self::Position {
+            position,
+            overflow: None,
+        }
+    }
+}
+
+wire_enum! {
     /// The order the grid's auto-placement algorithm fills tracks in.
     pub enum GridAutoFlow {
         /// Fill a row, then move to the next.
@@ -326,6 +514,13 @@ pub struct LayoutStyle {
     pub align_self: Option<Align>,
     /// Cross-axis distribution of wrapped lines.
     pub align_content: Option<Align>,
+    /// Inline-axis placement of this node's grid items and block children,
+    /// or `None` for CSS's initial `legacy`, which takes an ancestor's
+    /// [`JustifyItems::Legacy`] and is otherwise `normal`.
+    pub justify_items: Option<JustifyItems>,
+    /// Inline-axis placement of this node, overriding its parent's
+    /// `justify_items`, or `None` for CSS's `auto`, which takes the parent's.
+    pub justify_self: Option<JustifySelf>,
     /// Space between children as `(row, column)`.
     pub gap: (Length, Length),
     /// Clipping behaviour, per axis as `(x, y)`.
@@ -373,6 +568,8 @@ impl Default for LayoutStyle {
             align_items: None,
             align_self: None,
             align_content: None,
+            justify_items: None,
+            justify_self: None,
             gap: (Length::ZERO, Length::ZERO),
             overflow: (Overflow::Visible, Overflow::Visible),
             box_sizing: BoxSizing::BorderBox,
@@ -424,10 +621,33 @@ mod tests {
         };
         let _ = witness(&TrackSize::Auto);
     }
+
+    #[test]
+    fn every_justify_value_is_named_here_so_a_new_one_cannot_be_ignored_elsewhere()
+     {
+        // As for `TrackSize`: `meo-canvas-core` maps these with a wildcard arm.
+        use super::{JustifyItems, JustifySelf};
+        let own = |value: &JustifySelf| match value {
+            JustifySelf::Normal => "normal",
+            JustifySelf::Stretch => "stretch",
+            JustifySelf::Baseline => "baseline",
+            JustifySelf::LastBaseline => "last baseline",
+            JustifySelf::Position { .. } => "position",
+        };
+        let children = |value: &JustifyItems| match value {
+            JustifyItems::Normal => "normal",
+            JustifyItems::Stretch => "stretch",
+            JustifyItems::Baseline => "baseline",
+            JustifyItems::LastBaseline => "last baseline",
+            JustifyItems::Position { .. } => "position",
+            JustifyItems::Legacy(_) => "legacy",
+        };
+        let _ = (own(&JustifySelf::Normal), children(&JustifyItems::Normal));
+    }
     use super::{
         Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-        GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
-        PositionType, TrackSize,
+        GridAutoFlow, GridPlacement, Justify, LayoutStyle, LegacyPosition,
+        Overflow, OverflowPosition, PositionType, SelfPosition, TrackSize,
     };
     use crate::style::{Dimension, Length};
 
@@ -445,6 +665,8 @@ mod tests {
         // Absent, not `Ltr`: an unstated direction inherits, which an explicit
         // `Ltr` under an `rtl` parent does not.
         assert_eq!(style.direction, None);
+        assert_eq!(style.justify_items, None);
+        assert_eq!(style.justify_self, None);
         assert_eq!(style.flex_basis, Dimension::Auto);
         assert_eq!(style.gap, (Length::ZERO, Length::ZERO));
         assert_eq!(style.overflow, (Overflow::Visible, Overflow::Visible));
@@ -483,5 +705,8 @@ mod tests {
         assert_eq!(BoxSizing::ALL.len(), 2);
         assert_eq!(Direction::ALL.len(), 2);
         assert_eq!(GridAutoFlow::ALL.len(), 4);
+        assert_eq!(SelfPosition::ALL.len(), 9);
+        assert_eq!(OverflowPosition::ALL.len(), 2);
+        assert_eq!(LegacyPosition::ALL.len(), 3);
     }
 }
