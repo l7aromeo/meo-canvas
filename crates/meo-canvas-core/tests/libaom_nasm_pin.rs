@@ -1,7 +1,7 @@
 //! Pins the libaom that refuses every nasm 3, which is why the Windows
-//! workflows install NASM 2.16.03 (`ci.yml`, `fixtures.yml`). b:448994065 is
-//! fixed in libaom 3.13.2; the day libaom-sys bundles it, the first test fails
-//! and the pin can go.
+//! workflows install NASM 2.16.03 (`ci.yml`, `fixtures.yml`,
+//! `encode-hashes.yml`). b:448994065 is fixed in libaom 3.13.2; the day
+//! libaom-sys bundles it, the first test fails and the pin can go.
 
 use std::process::Command;
 
@@ -54,9 +54,9 @@ fn the_bundled_libaom_still_refuses_nasm_3() {
     assert!(
         bundled < READS_NASM_3,
         "libaom-sys now bundles libaom {}.{}.{}, which detects nasm 3: unpin \
-         `choco install nasm --version=2.16.3` in .github/workflows/ci.yml and \
-         .github/workflows/fixtures.yml, drop their [WORKAROUND] comments, and \
-         delete this probe",
+         `choco install nasm --version=2.16.3` in .github/workflows/ci.yml, \
+         .github/workflows/fixtures.yml and .github/workflows/encode-hashes.yml, \
+         drop their [WORKAROUND] comments, and delete this probe",
         bundled.0,
         bundled.1,
         bundled.2
