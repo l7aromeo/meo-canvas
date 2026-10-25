@@ -2,6 +2,8 @@
 
 - `frame` takes a negative index, counting from the end: `frame: -1` draws the last frame of an animated image and `-2` the one before it. A source with one frame ignores a negative index as it does a positive one.
 
+- `justifyItems` and `justifySelf` place a grid item or a block child along the inline axis with every value CSS gives them, spelled as CSS spells them (`l7aromeo/meo-canvas#171`): `'normal'`, `'stretch'`, `'baseline'`, `'first baseline'`, `'last baseline'`, the positions `'center'`, `'start'`, `'end'`, `'self-start'`, `'self-end'`, `'flex-start'`, `'flex-end'`, `'left'` and `'right'`, each also after `'safe '` or `'unsafe '`, `'auto'` on `justifySelf`, and `'legacy'` and `'legacy left'`, `'legacy right'` and `'legacy center'`, in either order (`'left legacy'`, `'right legacy'`, `'center legacy'`), on `justifyItems`. Absent is CSS's `auto` and initial `legacy`, which takes an ancestor's `legacy` position through nodes stating nothing. A grid column's items asking for `'baseline'` or `'last baseline'` align their left border edges at its start or end, as Chrome does, and a flex item ignores both properties. `'anchor-center'` is refused with a `TypeError`, since a scene has no anchor positioning, and so is any other spelling, naming the property and what it takes.
+
 ### Changed
 
 - A chart given a negative value throws `[canvas] a chart cannot draw a negative value (got N)`; the message no longer compares the refusal with the previous major version.

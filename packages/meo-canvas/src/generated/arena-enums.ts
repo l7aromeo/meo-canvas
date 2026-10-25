@@ -211,6 +211,13 @@ export const JUSTIFY = {
   SpaceEvenly: 5,
 } as const
 
+/** `meo_canvas_scene::style::layout::LegacyPosition`. */
+export const LEGACY_POSITION = {
+  Left: 0,
+  Right: 1,
+  Center: 2,
+} as const
+
 /** `meo_canvas_scene::node::LineCap`. */
 export const LINE_CAP = {
   Butt: 0,
@@ -262,6 +269,12 @@ export const OVERFLOW = {
   Scroll: 2,
 } as const
 
+/** `meo_canvas_scene::style::layout::OverflowPosition`. */
+export const OVERFLOW_POSITION = {
+  Safe: 0,
+  Unsafe: 1,
+} as const
+
 /** `meo_canvas_scene::style::PaintOrder`. */
 export const PAINT_ORDER = {
   Fill: 0,
@@ -275,6 +288,19 @@ export const POSITION_TYPE = {
   Static: 2,
   Fixed: 3,
   Sticky: 4,
+} as const
+
+/** `meo_canvas_scene::style::layout::SelfPosition`. */
+export const SELF_POSITION = {
+  Center: 0,
+  Start: 1,
+  End: 2,
+  SelfStart: 3,
+  SelfEnd: 4,
+  FlexStart: 5,
+  FlexEnd: 6,
+  Left: 7,
+  Right: 8,
 } as const
 
 /** `meo_canvas_scene::style::text::TextAlign`. */
@@ -321,6 +347,7 @@ export const ENUMS: Readonly<Record<string, ArenaEnum>> = {
   GradientKind: { path: 'meo_canvas_scene::style::paint', variants: GRADIENT_KIND },
   GridAutoFlow: { path: 'meo_canvas_scene::style::layout', variants: GRID_AUTO_FLOW },
   Justify: { path: 'meo_canvas_scene::style::layout', variants: JUSTIFY },
+  LegacyPosition: { path: 'meo_canvas_scene::style::layout', variants: LEGACY_POSITION },
   LineCap: { path: 'meo_canvas_scene::node', variants: LINE_CAP },
   LineJoin: { path: 'meo_canvas_scene::node', variants: LINE_JOIN },
   MaskShape: { path: 'meo_canvas_scene::style::effect', variants: MASK_SHAPE },
@@ -328,8 +355,10 @@ export const ENUMS: Readonly<Record<string, ArenaEnum>> = {
   ObjectFit: { path: 'meo_canvas_scene::style::paint', variants: OBJECT_FIT },
   OnImageError: { path: 'meo_canvas_scene::surface', variants: ON_IMAGE_ERROR },
   Overflow: { path: 'meo_canvas_scene::style::layout', variants: OVERFLOW },
+  OverflowPosition: { path: 'meo_canvas_scene::style::layout', variants: OVERFLOW_POSITION },
   PaintOrder: { path: 'meo_canvas_scene::style', variants: PAINT_ORDER },
   PositionType: { path: 'meo_canvas_scene::style::layout', variants: POSITION_TYPE },
+  SelfPosition: { path: 'meo_canvas_scene::style::layout', variants: SELF_POSITION },
   TextAlign: { path: 'meo_canvas_scene::style::text', variants: TEXT_ALIGN },
   TextDecoration: { path: 'meo_canvas_scene::style::text', variants: TEXT_DECORATION },
   VerticalAlign: { path: 'meo_canvas_scene::style::text', variants: VERTICAL_ALIGN },

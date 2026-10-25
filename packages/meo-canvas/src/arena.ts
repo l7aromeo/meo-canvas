@@ -22,13 +22,16 @@ import {
   MASK_SHAPE,
   GRID_AUTO_FLOW,
   JUSTIFY,
+  LEGACY_POSITION,
   LINE_CAP,
   LINE_JOIN,
   NODE_TAG,
   OBJECT_FIT,
   OVERFLOW,
+  OVERFLOW_POSITION,
   PAINT_ORDER,
   POSITION_TYPE,
+  SELF_POSITION,
   TEXT_ALIGN,
   TEXT_DECORATION,
   VERTICAL_ALIGN,
@@ -36,7 +39,7 @@ import {
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION } from './generated/arena-tables.js'
 import { ON_IMAGE_ERROR } from './generated/arena-enums.js'
 import { COLOR_SPACE, COLOR_TYPE } from './generated/arena-enums.js'
-import type { ColorSpace, ColorType, OnImageError, TrackSize } from './index.js'
+import type { ColorSpace, ColorType, JustifyItems, JustifySelf, OnImageError, SelfPosition, TrackSize } from './index.js'
 import type { ImageSource, PathPaint, PathProps, SceneNode } from './node.js'
 import type {
   BackgroundImage,
@@ -641,6 +644,103 @@ function writeDimension(out: ArenaWriter, value: Dimension, what: string): void 
   out.f32(percent)
 }
 
+/**
+ * The tag each kind of `justifySelf` and `justifyItems` value is written as: the byte
+ * codec's, which numbers the two properties alike.
+ */
+const JUSTIFY_TAG = { normal: 0, stretch: 1, baseline: 2, lastBaseline: 3, position: 4, legacy: 5 } as const
+
+/** Each `<self-position>` keyword, as the scene numbers it. */
+const SELF_POSITIONS = {
+  center: SELF_POSITION.Center,
+  start: SELF_POSITION.Start,
+  end: SELF_POSITION.End,
+  'self-start': SELF_POSITION.SelfStart,
+  'self-end': SELF_POSITION.SelfEnd,
+  'flex-start': SELF_POSITION.FlexStart,
+  'flex-end': SELF_POSITION.FlexEnd,
+  left: SELF_POSITION.Left,
+  right: SELF_POSITION.Right,
+} as const satisfies Record<SelfPosition, number>
+
+/** The keywords `legacy` takes, as the scene numbers them. */
+const LEGACY_POSITIONS: Readonly<Record<string, number>> = {
+  left: LEGACY_POSITION.Left,
+  right: LEGACY_POSITION.Right,
+  center: LEGACY_POSITION.Center,
+}
+
+/** The `<overflow-position>` keywords, as the scene numbers them. */
+const OVERFLOW_POSITIONS: Readonly<Record<string, number>> = {
+  safe: OVERFLOW_POSITION.Safe,
+  unsafe: OVERFLOW_POSITION.Unsafe,
+}
+
+/** Looks a keyword up in a table of its own, so that `'toString'` is not one. */
+function keyword(table: Readonly<Record<string, number>>, word: string | undefined): number | undefined {
+  return word !== undefined && Object.hasOwn(table, word) ? table[word] : undefined
+}
+
+/**
+ * Writes a `justifySelf` or `justifyItems` value as CSS spells it: four slots, the tag,
+ * a keyword, and an `<overflow-position>`'s presence flag and keyword, each written
+ * even where the value has no use for it, so the width is fixed as a `Dimension`'s is.
+ * `'auto'` and `'legacy'` never arrive here, each being the property left out.
+ */
+function writeJustify(out: ArenaWriter, value: JustifySelf | JustifyItems, what: 'justifySelf' | 'justifyItems'): void {
+  const fixed = (tag: number, position = 0, overflow?: number): void => {
+    out.enum(tag)
+    out.enum(position)
+    out.bool(overflow !== undefined)
+    out.enum(overflow ?? 0)
+  }
+  const spelled = value as unknown
+  switch (spelled) {
+    case 'normal':
+      fixed(JUSTIFY_TAG.normal)
+      return
+    case 'stretch':
+      fixed(JUSTIFY_TAG.stretch)
+      return
+    case 'baseline':
+    case 'first baseline':
+      fixed(JUSTIFY_TAG.baseline)
+      return
+    case 'last baseline':
+      fixed(JUSTIFY_TAG.lastBaseline)
+      return
+  }
+  const words = typeof spelled === 'string' ? spelled.split(' ') : []
+  // Rule 2: a keyword `justify-self` has and this surface refuses, with the
+  // reason. Chrome parses `safe anchor-center` too and drops the `safe`.
+  const [first, second] = words
+  const anchored = words.length === 1 ? first === 'anchor-center' : second === 'anchor-center' && keyword(OVERFLOW_POSITIONS, first) !== undefined
+  if (what === 'justifySelf' && anchored) {
+    throw new TypeError(
+      `justifySelf is ${JSON.stringify(spelled)}, which a scene refuses: anchor positioning does not exist in a scene, so there is no anchor to centre on`,
+    )
+  }
+  if (what === 'justifyItems' && words.length === 2 && words.includes('legacy')) {
+    const position = keyword(LEGACY_POSITIONS, words[0] === 'legacy' ? words[1] : words[0])
+    if (position !== undefined) {
+      fixed(JUSTIFY_TAG.legacy, position)
+      return
+    }
+  }
+  // A position alone, or an overflow keyword and then a position.
+  const overflow = words.length === 2 ? keyword(OVERFLOW_POSITIONS, first) : undefined
+  const position = words.length === 1 ? keyword(SELF_POSITIONS, first) : overflow === undefined ? undefined : keyword(SELF_POSITIONS, second)
+  if (position !== undefined) {
+    fixed(JUSTIFY_TAG.position, position, overflow)
+    return
+  }
+
+  const legacy = what === 'justifyItems' ? ", 'legacy', or 'legacy' with 'left', 'right' or 'center'" : ''
+  throw new TypeError(
+    `${what} is ${JSON.stringify(spelled)}; it takes ${what === 'justifySelf' ? "'auto', " : ''}'normal', 'stretch', 'baseline', 'first baseline', 'last baseline', a position (${Object.keys(SELF_POSITIONS).join(', ')}), 'safe' or 'unsafe' and a position${legacy}`,
+  )
+}
+
 /** Writes a grid track size: a tag, then the value. */
 function writeTrack(out: ArenaWriter, value: TrackSize, what: string): void {
   measured(value, what, "a number, 'auto', '…px', '…%' or '…fr'")
@@ -1226,6 +1326,20 @@ const LAYOUT_PROPERTIES: readonly Property[] = [
     keys: ['gridRow', 'gridArea'],
     present: style => placement(style, 'row') !== undefined,
     write: (out, style) => writePlacement(out, placement(style, 'row')),
+  },
+  {
+    index: 30,
+    rust: 'justify_items',
+    keys: ['justifyItems'],
+    // `'legacy'` is CSS's initial value, which an absent one already is.
+    write: (out, style) => out.optional(style.justifyItems === 'legacy' ? undefined : style.justifyItems, value => writeJustify(out, value, 'justifyItems')),
+  },
+  {
+    index: 31,
+    rust: 'justify_self',
+    keys: ['justifySelf'],
+    // `'auto'` is the parent's `justifyItems`, which an absent one already is.
+    write: (out, style) => out.optional(style.justifySelf === 'auto' ? undefined : style.justifySelf, value => writeJustify(out, value, 'justifySelf')),
   },
 ]
 

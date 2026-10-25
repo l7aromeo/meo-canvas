@@ -33,7 +33,7 @@ export interface ArenaProperty {
   readonly type: string
 }
 
-/** `meo_canvas_scene::style::layout::LayoutStyle`, 30 properties in 1 mask slot. */
+/** `meo_canvas_scene::style::layout::LayoutStyle`, 32 properties in 1 mask slot. */
 export const LAYOUT: readonly ArenaProperty[] = [
   { index: 0, name: "display", caller: "display", type: "meo_canvas_scene::style::layout::Display" },
   { index: 1, name: "position_type", caller: "positionType", type: "meo_canvas_scene::style::layout::PositionType" },
@@ -65,6 +65,8 @@ export const LAYOUT: readonly ArenaProperty[] = [
   { index: 27, name: "grid_auto_flow", caller: "gridAutoFlow", type: "meo_canvas_scene::style::layout::GridAutoFlow" },
   { index: 28, name: "grid_column", caller: "gridColumn", type: "meo_canvas_scene::style::layout::GridPlacement" },
   { index: 29, name: "grid_row", caller: "gridRow", type: "meo_canvas_scene::style::layout::GridPlacement" },
+  { index: 30, name: "justify_items", caller: "justifyItems", type: "Option<meo_canvas_scene::style::layout::JustifyItems>" },
+  { index: 31, name: "justify_self", caller: "justifySelf", type: "Option<meo_canvas_scene::style::layout::JustifySelf>" },
 ]
 
 /** Mask slots `layout` occupies. */

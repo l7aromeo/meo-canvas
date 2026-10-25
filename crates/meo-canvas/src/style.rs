@@ -46,8 +46,8 @@ use meo_canvas_scene::{
         effect::{BoxShadow, Effects, Mask, TextShadow, Transform},
         layout::{
             Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-            GridAutoFlow, GridPlacement, Justify, LayoutStyle, Overflow,
-            PositionType, TrackSize,
+            GridAutoFlow, GridPlacement, Justify, JustifyItems, JustifySelf,
+            LayoutStyle, Overflow, PositionType, TrackSize,
         },
         paint::{
             BackgroundImage, BlendMode, BorderStyle, Color, Gradient,
@@ -123,6 +123,13 @@ pub struct Style {
     pub align_self: Option<Align>,
     /// Cross-axis distribution of wrapped lines.
     pub align_content: Option<Align>,
+    /// Inline-axis placement of grid items and block children. `None` is
+    /// CSS's initial `legacy`: an ancestor's [`JustifyItems::Legacy`] if one
+    /// reaches this node, and otherwise `normal`.
+    pub justify_items: Option<JustifyItems>,
+    /// This node's own inline-axis placement. `None` is CSS's `auto`, which
+    /// takes the parent's `justify_items`.
+    pub justify_self: Option<JustifySelf>,
     /// Space between children, as `(row, column)` after CSS's shorthand.
     pub gap: Option<(Length, Length)>,
     /// Clipping behaviour, per axis as `(x, y)`.
@@ -488,6 +495,12 @@ properties! {
         /// Cross-axis distribution of wrapped lines.
     plain align_content: align_content, Align;
 
+        /// Inline-axis placement of grid items and block children.
+    plain justify_items: justify_items, JustifyItems;
+
+        /// This node's own inline-axis placement, overriding its parent's.
+    plain justify_self: justify_self, JustifySelf;
+
         /// Whether `width` and `height` include padding and border.
     plain box_sizing: box_sizing, BoxSizing;
 
@@ -820,6 +833,8 @@ impl Style {
             align_items,
             align_self,
             align_content,
+            justify_items,
+            justify_self,
             gap,
             overflow,
             box_sizing,
@@ -890,6 +905,8 @@ impl Style {
         self.align_items = align_items.or(self.align_items);
         self.align_self = align_self.or(self.align_self);
         self.align_content = align_content.or(self.align_content);
+        self.justify_items = justify_items.or(self.justify_items);
+        self.justify_self = justify_self.or(self.justify_self);
         self.gap = gap.or(self.gap);
         self.overflow = overflow.or(self.overflow);
         self.box_sizing = box_sizing.or(self.box_sizing);
@@ -971,6 +988,8 @@ impl Style {
             align_items: None,
             align_self: None,
             align_content: None,
+            justify_items: None,
+            justify_self: None,
             gap: None,
             overflow: None,
             box_sizing: None,
@@ -1298,6 +1317,8 @@ impl Style {
         layout.align_items = self.align_items;
         layout.align_self = self.align_self;
         layout.align_content = self.align_content;
+        layout.justify_items = self.justify_items;
+        layout.justify_self = self.justify_self;
         if let Some(value) = self.gap {
             layout.gap = value;
         }

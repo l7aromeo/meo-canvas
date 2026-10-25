@@ -16,7 +16,9 @@ use crate::{
             BoxShadow, Effects, FillRule, Mask, MaskShape, TextShadow,
             Transform,
         },
-        layout::{GridPlacement, LayoutStyle, TrackSize},
+        layout::{
+            GridPlacement, JustifyItems, JustifySelf, LayoutStyle, TrackSize,
+        },
         paint::{
             BackgroundImage, BackgroundSize, Color, Gradient, GradientGeometry,
             GradientKind, GradientStop, LinearDirection, PaintStyle,
@@ -398,6 +400,76 @@ impl Wire for GridPlacement {
     }
 }
 
+// `JustifySelf` and `JustifyItems` share their tags, so that the bytes for a
+// value spelled the same in both properties are the same. `JustifyItems`
+// alone writes tag 5.
+impl Wire for JustifySelf {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::Normal => out.u8(TAG_FIRST),
+            Self::Stretch => out.u8(1),
+            Self::Baseline => out.u8(2),
+            Self::LastBaseline => out.u8(3),
+            Self::Position { position, overflow } => {
+                out.u8(4);
+                position.write(out);
+                overflow.write(out);
+            }
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            TAG_FIRST => Ok(Self::Normal),
+            1 => Ok(Self::Stretch),
+            2 => Ok(Self::Baseline),
+            3 => Ok(Self::LastBaseline),
+            4 => Ok(Self::Position {
+                position: Wire::read(input)?,
+                overflow: Option::read(input)?,
+            }),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
+    }
+}
+
+impl Wire for JustifyItems {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::Normal => out.u8(TAG_FIRST),
+            Self::Stretch => out.u8(1),
+            Self::Baseline => out.u8(2),
+            Self::LastBaseline => out.u8(3),
+            Self::Position { position, overflow } => {
+                out.u8(4);
+                position.write(out);
+                overflow.write(out);
+            }
+            Self::Legacy(position) => {
+                out.u8(5);
+                position.write(out);
+            }
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            TAG_FIRST => Ok(Self::Normal),
+            1 => Ok(Self::Stretch),
+            2 => Ok(Self::Baseline),
+            3 => Ok(Self::LastBaseline),
+            4 => Ok(Self::Position {
+                position: Wire::read(input)?,
+                overflow: Option::read(input)?,
+            }),
+            5 => Ok(Self::Legacy(Wire::read(input)?)),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
+    }
+}
+
 impl Wire for ImageSource {
     fn write(&self, out: &mut Writer<'_>) {
         match self {
@@ -632,6 +704,8 @@ impl Wire for LayoutStyle {
         self.grid_auto_flow.write(out);
         self.grid_column.write(out);
         self.grid_row.write(out);
+        self.justify_items.write(out);
+        self.justify_self.write(out);
     }
 
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
@@ -666,6 +740,8 @@ impl Wire for LayoutStyle {
             grid_auto_flow: Wire::read(input)?,
             grid_column: GridPlacement::read(input)?,
             grid_row: GridPlacement::read(input)?,
+            justify_items: Option::read(input)?,
+            justify_self: Option::read(input)?,
         })
     }
 }

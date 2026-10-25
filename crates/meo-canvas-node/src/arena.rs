@@ -789,6 +789,8 @@ arena_group! {
         27 => grid_auto_flow as "gridAutoFlow": meo_canvas_scene::style::layout::GridAutoFlow,
         28 => grid_column as "gridColumn": meo_canvas_scene::style::layout::GridPlacement,
         29 => grid_row as "gridRow": meo_canvas_scene::style::layout::GridPlacement,
+        30 => justify_items as "justifyItems": Option<meo_canvas_scene::style::layout::JustifyItems>,
+        31 => justify_self as "justifySelf": Option<meo_canvas_scene::style::layout::JustifySelf>,
     }
 }
 
@@ -1303,7 +1305,7 @@ mod tests {
             assert!(count > 0, "{name} declares nothing");
         }
         // The tables are the format; a change to one is a format change.
-        assert_eq!(layout::COUNT, 30);
+        assert_eq!(layout::COUNT, 32);
         assert_eq!(paint::COUNT, 11);
         assert_eq!(text::COUNT, 15);
         assert_eq!(effects::COUNT, 6);

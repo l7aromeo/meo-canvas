@@ -8,7 +8,7 @@ import { ArenaWriter, PROPERTY_TABLES, encodeScene, mergeHttpOptions, requestKey
 import { ENUMS, NODE_TAG } from './generated/arena-enums.js'
 import { EFFECTS, LAYOUT, MAGIC, MASK_BITS, PAINT, TEXT, VERSION, type ArenaProperty } from './generated/arena-tables.js'
 import { Box, Image, Path, RichText, Text, type SceneNode } from './node.js'
-import type { PositionType } from './index.js'
+import type { JustifyItems, JustifySelf, PositionType, SelfPosition } from './index.js'
 import type { BackgroundImage, Gradient, GradientDirection, Style } from './style.js'
 
 /**
@@ -173,12 +173,35 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
     if (tag === 'gradient') return { tag, value: read(input, 'Gradient') }
     throw new RangeError('Mask has no such tag')
   },
+  JustifySelf: input => justification(input, 'JustifySelf'),
+  JustifyItems: input => justification(input, 'JustifyItems'),
   PathPaint: input => {
     const tag = ['solid', 'gradient'][slot(input)]
     if (tag === 'solid') return { tag, value: color(input) }
     if (tag === 'gradient') return { tag, value: read(input, 'Gradient') }
     throw new RangeError('PathPaint has no such tag')
   },
+}
+
+/** The name of the variant `value` is in the wire enum `name`. */
+function variantOf(name: string, value: number): string | undefined {
+  return Object.entries(ENUMS[name]?.variants ?? {}).find(([, discriminant]) => discriminant === value)?.[0]
+}
+
+/**
+ * A `justify-self` or `justify-items` value: four slots, the tag, a keyword and an
+ * overflow flag and keyword, shaped as the fixture writes it.
+ */
+function justification(input: Cursor, name: 'JustifySelf' | 'JustifyItems'): unknown {
+  const tag = slot(input)
+  const keyword = slot(input)
+  const present = slot(input) === 1
+  const overflow = slot(input)
+  const fieldless = ['Normal', 'Stretch', 'Baseline', 'LastBaseline'][tag]
+  if (fieldless !== undefined) return fieldless
+  if (tag === 4) return { tag: 'position', position: variantOf('SelfPosition', keyword), overflow: present ? variantOf('OverflowPosition', overflow) : null }
+  if (tag === 5 && name === 'JustifyItems') return { tag: 'legacy', position: variantOf('LegacyPosition', keyword) }
+  throw new RangeError(`${name} has no tag ${tag}`)
 }
 
 /** The last segment of a Rust path, which is the type's own name. */
@@ -525,6 +548,8 @@ const PROBES: Readonly<Record<string, Style>> = {
   grid_template_rows: { gridTemplateRows: [0.25] },
   inset: { position: '25%' },
   justify_content: { justifyContent: 'flex-end' },
+  justify_items: { justifyItems: 'stretch' },
+  justify_self: { justifySelf: 'stretch' },
   letter_spacing: { letterSpacing: 0.25 },
   line_gap: { lineGap: 0.25 },
   // The generator's probe for this slot is a LENGTH, so the JavaScript one
@@ -1726,10 +1751,13 @@ const KEYWORDS: readonly (readonly [string, readonly string[]])[] = [
   ['GridAutoFlow', ['row', 'column', 'row-dense', 'column-dense']],
   ['MaskShape', ['circle', 'ellipse']],
   ['Justify', ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly']],
+  ['LegacyPosition', ['left', 'right', 'center']],
   ['ObjectFit', ['fill', 'contain', 'cover', 'none', 'scale-down']],
   ['Overflow', ['visible', 'hidden', 'scroll']],
+  ['OverflowPosition', ['safe', 'unsafe']],
   ['PaintOrder', ['fill', 'stroke']],
   ['PositionType', ['static', 'relative', 'absolute', 'fixed', 'sticky']],
+  ['SelfPosition', ['center', 'start', 'end', 'self-start', 'self-end', 'flex-start', 'flex-end', 'left', 'right']],
   ['TextAlign', ['start', 'end', 'left', 'center', 'right', 'justify']],
   ['TextDecoration', ['none', 'underline', 'overline', 'line-through']],
   ['VerticalAlign', ['top', 'middle', 'bottom']],
@@ -1757,6 +1785,55 @@ describe('the keywords this surface offers', () => {
       // upstream's aliases, so `'rgba'` and `'RGBA8888'` are both `Uint8`.
       expect([...new Set(reached)].sort(), `${name}`).toEqual(variants.slice().sort())
     }
+  })
+})
+
+describe('justifySelf and justifyItems, spelled as CSS spells them', () => {
+  const positions: readonly SelfPosition[] = ['center', 'start', 'end', 'self-start', 'self-end', 'flex-start', 'flex-end', 'left', 'right']
+  const shared = [
+    'normal',
+    'stretch',
+    'baseline',
+    'first baseline',
+    'last baseline',
+    ...positions,
+    ...positions.flatMap(position => [`safe ${position}`, `unsafe ${position}`] as const),
+  ] as const
+
+  it('take every value CSS gives them, each written differently', () => {
+    const selves = new Map(shared.map(value => [value, throughTheAddon({ justifySelf: value })]))
+    const items = new Map(
+      [...shared, 'legacy left', 'legacy right', 'legacy center'].map(value => [value, throughTheAddon({ justifyItems: value as JustifyItems })]),
+    )
+    // `first baseline` is `baseline`; every other spelling is a value of its own.
+    expect(new Set(selves.values()).size).toBe(selves.size - 1)
+    expect(new Set(items.values()).size).toBe(items.size - 1)
+  })
+
+  it('write the spellings CSS treats as one value the same', () => {
+    expect(throughTheAddon({ justifySelf: 'auto' })).toBe(throughTheAddon({}))
+    expect(throughTheAddon({ justifyItems: 'legacy' })).toBe(throughTheAddon({}))
+    expect(throughTheAddon({ justifySelf: 'first baseline' })).toBe(throughTheAddon({ justifySelf: 'baseline' }))
+    expect(throughTheAddon({ justifyItems: 'right legacy' })).toBe(throughTheAddon({ justifyItems: 'legacy right' }))
+  })
+
+  it('refuse anchor-center, with or without an overflow keyword, naming why', () => {
+    for (const value of ['anchor-center', 'safe anchor-center', 'unsafe anchor-center']) {
+      expect(() => throughTheAddon({ justifySelf: value as JustifySelf }), value).toThrow(
+        new TypeError(`justifySelf is "${value}", which a scene refuses: anchor positioning does not exist in a scene, so there is no anchor to centre on`),
+      )
+    }
+  })
+
+  it('refuse what CSS refuses, naming the property', () => {
+    // `legacy` is a value of the other property, and so not of this one.
+    for (const value of ['safe stretch', 'safe baseline', 'legacy', 'legacy left', 'auto start', 'safe', 'center safe', 'safe  center']) {
+      expect(() => throughTheAddon({ justifySelf: value as JustifySelf }), value).toThrow(/^justifySelf is ".*"; it takes 'auto', 'normal'/)
+    }
+    for (const value of ['auto', 'anchor-center', 'legacy start', 'legacy safe left', 'legacy legacy', 'safe stretch', 'Center']) {
+      expect(() => throughTheAddon({ justifyItems: value as JustifyItems }), value).toThrow(/^justifyItems is ".*"; it takes 'normal'.*'legacy'/)
+    }
+    expect(() => throughTheAddon({ justifySelf: 1 as unknown as JustifySelf })).toThrow('justifySelf is 1;')
   })
 })
 

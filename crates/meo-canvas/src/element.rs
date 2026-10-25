@@ -983,7 +983,9 @@ mod tests {
             effect::{FillRule, Mask, MaskShape},
             layout::{
                 Align, BoxSizing, Direction, Display, FlexDirection, FlexWrap,
-                GridAutoFlow, Justify, Overflow, PositionType,
+                GridAutoFlow, Justify, JustifyItems, JustifySelf,
+                LegacyPosition, Overflow, OverflowPosition, PositionType,
+                SelfPosition,
             },
             paint::{
                 BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle,
@@ -1257,6 +1259,11 @@ mod tests {
             align_items: Some(Align::FlexStart),
             align_self: Some(Align::FlexStart),
             align_content: Some(Align::FlexStart),
+            justify_items: Some(JustifyItems::Legacy(LegacyPosition::Right)),
+            justify_self: Some(JustifySelf::Position {
+                position: SelfPosition::SelfEnd,
+                overflow: Some(OverflowPosition::Safe),
+            }),
             gap: Some(<_>::default()),
             overflow: Some((Overflow::Visible, Overflow::Visible)),
             box_sizing: Some(BoxSizing::BorderBox),
