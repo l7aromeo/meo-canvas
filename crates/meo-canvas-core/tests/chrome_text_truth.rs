@@ -1,7 +1,7 @@
-//! This renderer's text numbers against Chrome's, on the same face at 16px. The
-//! expectations are constants, not read from a file a regeneration could
-//! rewrite. They pin that the strut is the face rather than the string, and
-//! that letter spacing is one unit per character, as Chrome applies it.
+//! Text numbers against Chrome's HTML layout on one face at 16px. Each is a
+//! constant equal to its row of `text-truth.tsv`, so a re-measure that moves
+//! one fails until it is edited. They pin that the strut is the face, not the
+//! string, and that letter spacing is one unit per character.
 
 use meo_canvas_core::{
     lines::{METRICS_STRING, Metrics, RunStyle, TextMeasurer, layout},
@@ -18,13 +18,13 @@ const FONT: (&str, &str) =
 /// The em size every number here was measured at.
 const SIZE: f32 = 16.0;
 
-/// Chrome's `fontBoundingBoxAscent` at [`SIZE`], whole because Chrome rounds
-/// it. This face reports 19.088, and using that would make each line box 23.712
-/// against Chrome's 24, drifting nearly 3px of baseline by the tenth line.
+/// Chrome's baseline below the top of a `line-height: normal` box at [`SIZE`],
+/// whole. This face reports 19.088, and using that would make each line box
+/// 23.712 against Chrome's 24, drifting nearly 3px of baseline by the tenth
+/// line.
 const CHROME_ASCENT: f32 = 19.0;
 
-/// Chrome's `fontBoundingBoxDescent` at [`SIZE`], rounded by Chrome as the
-/// ascent is.
+/// The rest of that box below the baseline, whole as the ascent is.
 const CHROME_DESCENT: f32 = 5.0;
 
 /// Chrome's `line-height: normal` box at [`SIZE`], exactly the sum of the two
@@ -33,15 +33,15 @@ const CHROME_DESCENT: f32 = 5.0;
 const CHROME_LINE_BOX: f32 = 24.0;
 
 /// Chrome's width for [`SIXTEEN`] with no letter spacing.
-const CHROME_PLAIN: f32 = 102.736;
+const CHROME_PLAIN: f32 = 102.750;
 
 /// Chrome's width for [`SIXTEEN`] at 2px letter spacing.
 ///
 /// Exactly [`CHROME_PLAIN`] plus 32: sixteen characters, sixteen units.
-const CHROME_SPACED: f32 = 134.736;
+const CHROME_SPACED: f32 = 134.750;
 
 /// Chrome's width for a single space at [`SIZE`].
-const CHROME_SPACE: f32 = 3.664;
+const CHROME_SPACE: f32 = 3.672;
 
 /// The letter spacing the width pair was measured at.
 const SPACING: f32 = 2.0;
@@ -50,9 +50,8 @@ const SPACING: f32 = 2.0;
 /// an answer that cannot be confused with a per-run one.
 const SIXTEEN: &str = "abcdefghijklmnop";
 
-/// How far from Chrome a width may fall: a tenth of a pixel. Both shape the
-/// same advances and round differently at the end, by under 0.07 on a 100px
-/// run.
+/// How far from Chrome a width may fall: a tenth of a pixel. The sixteen-letter
+/// run measures 0.08 under Chrome's, spaced or not.
 const WIDTH_SLACK: f32 = 0.1;
 
 /// A resolved style in the fixture face, with the fonts registered.
@@ -256,10 +255,9 @@ fn a_multiple_and_a_length_are_the_same_line_box() {
     assert!((natural.lines[0].height - CHROME_LINE_BOXES[0].1).abs() < 0.01);
 }
 
-/// `(string, Chrome's width)`. Multi-word strings are Chrome's whole-string
-/// `measureText`; this crate sums words and a measured space, which Chrome
-/// confirms is equal because it does not shape across a gap (103.248 both
-/// ways).
+/// `(string, Chrome's width)`, a `white-space: pre` span's. This crate sums
+/// words and a measured space, which Chrome gives as equal to within the
+/// [`SNAP`] each span's width falls on; `text-truth.tsv` carries both.
 const CHROME_WIDTHS: [(&str, f32); 7] = [
     ("a", 6.828),
     ("Hxgp quick", 64.203),
@@ -277,7 +275,7 @@ const CHROME_WIDTHS: [(&str, f32); 7] = [
 const DEFICIT_CEILING: f32 = 0.1;
 
 /// Every width here is a shade under Chrome's: about 0.004 per glyph (a space
-/// is 3.660 against 3.664) plus a per-string part (`"a"` is 0.018 short).
+/// is 3.660 against 3.672) plus a per-string part (`"a"` is 0.018 short).
 /// Recorded, not fixed: it has one sign, moves no wrap point, and belongs to
 /// the backend's glyph advance rather than to line assembly.
 #[test]
@@ -308,4 +306,112 @@ fn our_widths_run_a_known_shade_under_chromes() {
              {deficit} where {DEFICIT_CEILING} is the recorded ceiling"
         );
     }
+}
+
+/// Chrome's measurements, which `chrome_tables_are_read` requires be read.
+const TABLE: &str =
+    include_str!("../../meo-canvas/tests/assets/chrome/text-truth.tsv");
+
+/// The grid Chrome lays a span's width out on, a 64th of a pixel: why a run
+/// summed from its words can fall a few of them from the whole.
+const SNAP: f32 = 1.0 / 64.0;
+
+/// How close a constant is to its row: the table's three decimals.
+const PRINTED: f32 = 0.000_5;
+
+/// Every constant here against its row of `text-truth.tsv`, in both directions:
+/// a constant whose row moved fails, and so does a row no constant reads.
+#[test]
+fn every_constant_is_its_row_of_text_truth_tsv() {
+    let rows: Vec<Vec<&str>> = TABLE
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| line.split('\t').collect())
+        .collect();
+    let number = |cell: &str| {
+        cell.parse::<f32>()
+            .unwrap_or_else(|_| unreachable!("{cell} is not a number"))
+    };
+    let mut read = vec![false; rows.len()];
+    let mut row = |kind: &str, key: &str, argument: &str| {
+        let quoted = format!("{key:?}");
+        let at = rows
+            .iter()
+            .position(|cells| {
+                cells[0] == kind
+                    && (cells[1] == quoted || cells[1] == key)
+                    && (cells[2] == argument
+                        || cells[2] == format!("{argument:?}"))
+            })
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "text-truth.tsv has no {kind} row {key} {argument}"
+                )
+            });
+        read[at] = true;
+        (number(rows[at][3]), rows[at][4])
+    };
+    let close = |ours: f32, chrome: f32| (ours - chrome).abs() < PRINTED;
+
+    let mut wrong = Vec::new();
+    for (text, spacing, constant) in [
+        (SIXTEEN, "0", CHROME_PLAIN),
+        (SIXTEEN, "2", CHROME_SPACED),
+        (" ", "0", CHROME_SPACE),
+    ] {
+        let (chrome, _) = row("width", text, spacing);
+        if !close(constant, chrome) {
+            wrong.push(format!(
+                "{text:?} at {spacing}: {constant}, row {chrome}"
+            ));
+        }
+    }
+    for (text, constant) in CHROME_WIDTHS {
+        let (chrome, parts) = row("width", text, "0");
+        if !close(constant, chrome) {
+            wrong.push(format!("{text:?}: {constant}, row {chrome}"));
+        }
+        if parts != "-" {
+            let spans = text.split(' ').count() * 2 - 1;
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "a span count of a few words"
+            )]
+            let bound = SNAP * spans as f32;
+            if (number(parts) - chrome).abs() > bound {
+                wrong.push(format!(
+                    "{text:?}: its parts sum to {parts}, beyond {bound} of {chrome}"
+                ));
+            }
+        }
+    }
+    for text in ["Ag|``", "x", "ABCDEFG", "gjpqy"] {
+        let (chrome_box, baseline) = row("line", "normal", text);
+        let baseline = number(baseline);
+        if !(close(chrome_box, CHROME_LINE_BOX)
+            && close(baseline, CHROME_ASCENT)
+            && close(chrome_box - baseline, CHROME_DESCENT))
+        {
+            wrong.push(format!("{text:?}: a {chrome_box} box at {baseline}"));
+        }
+    }
+    for (multiple, box_height, baseline) in CHROME_LINE_BOXES {
+        let key =
+            multiple.map_or_else(|| "normal".to_owned(), |m| m.to_string());
+        let (chrome_box, chrome_baseline) = row("line", &key, "Hxgp");
+        if !(close(box_height, chrome_box)
+            && close(baseline, number(chrome_baseline)))
+        {
+            wrong.push(format!(
+                "line-height {key}: ({box_height}, {baseline}), row \
+                 ({chrome_box}, {chrome_baseline})"
+            ));
+        }
+    }
+    let unread = read.iter().filter(|read| !**read).count();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    assert_eq!(
+        unread, 0,
+        "{unread} row(s) of text-truth.tsv no constant reads"
+    );
 }

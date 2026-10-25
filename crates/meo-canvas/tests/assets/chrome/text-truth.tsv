@@ -1,0 +1,28 @@
+# Chrome, through `just conformance`: text widths and line boxes at 16px Fixture, from HTML elements.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Written by packages/meo-canvas/tools/conformance/texttruth.mjs.
+#
+# `width` rows: the text, its letter spacing, a `white-space: pre` span's width, and the
+# sum of its words and spaces measured apart (`-` for one word).
+# `line` rows: the line height, the text, the bare line box's height, and the baseline
+# from its top, read from a zero-height inline-block.
+#
+# kind	key	argument	value	second
+width	"abcdefghijklmnop"	0	102.750	-
+width	"abcdefghijklmnop"	2	134.750	-
+width	" "	0	3.672	-
+width	"a"	0	6.828	-
+width	"Hxgp quick"	0	64.203	64.203
+width	"brown fox"	0	56.609	56.641
+width	"jumps over"	0	63.219	63.250
+width	"the lazy dog"	0	69.250	69.297
+width	"Hxgpquickbrown"	0	95.922	-
+width	"Hxgp quick brown"	0	103.250	103.281
+line	normal	"Ag|``"	24.000	19.000
+line	normal	"x"	24.000	19.000
+line	normal	"ABCDEFG"	24.000	19.000
+line	normal	"gjpqy"	24.000	19.000
+line	normal	"Hxgp"	24.000	19.000
+line	1	"Hxgp"	16.000	15.000
+line	2	"Hxgp"	32.000	23.000
+line	0.5	"Hxgp"	8.000	11.000

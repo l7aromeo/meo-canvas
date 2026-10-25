@@ -136,7 +136,7 @@ fn drawn(
     )
 }
 
-/// Which rules we answer differently from Chrome today.
+/// Which rules we answer differently from Chrome: empty.
 const KNOWN_FIT: &[&str] = &[];
 
 /// Refuses a table that could not fail, before anything is compared against it:
