@@ -56,16 +56,44 @@ jobs:
           channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
           test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          nightly=$(sed -n 's/^fmt_toolchain := "\(.*\)"$/\1/p' justfile)
+          test -n "$nightly" || { echo "::error::the justfile named no fmt_toolchain"; exit 1; }
+          echo "nightly=$nightly" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
-      # Restores, never saves -- the reasoning is `fixtures.yml`'s and applies
-      # unchanged: every cache this could write is scoped to a branch that is
-      # deleted with its pull request.
+      # Unused here, installed for the cache key, as in `fixtures.yml`.
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.nightly }}
+
+      # rust-cache hashes every installed toolchain into its key, and the image's
+      # own `stable` moves on its own schedule (1.99.0 in one Windows run, 1.99.1
+      # in the next). Only what the repository pins stays, so the three workflows
+      # sharing this cache compute one key.
+      - name: Keep only the pinned toolchains
+        env:
+          CHANNEL: ${{ steps.toolchain.outputs.channel }}
+          NIGHTLY: ${{ steps.toolchain.outputs.nightly }}
+        run: |
+          # Empty, either pattern would match nothing and remove the pinned one.
+          test -n "$CHANNEL" && test -n "$NIGHTLY" || { echo "::error::no pinned toolchain was read"; exit 1; }
+          # On its own line, where a failing rustup fails the step; inside the
+          # `for` it would run the loop zero times and leave the image's stable.
+          installed=$(rustup toolchain list --quiet)
+          for toolchain in $installed; do
+            case "$toolchain" in
+              "${CHANNEL}"-* | "${NIGHTLY}"-*) ;;
+              *) rustup toolchain uninstall "$toolchain" ;;
+            esac
+          done
+
+      # `ci.yml`'s entries, restored and never saved, as in `fixtures.yml`.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          shared-key: ${{ inputs.os || matrix.os }}-ci
           save-if: 'false'
 
       # Pinned as `ci.yml` pins it: `just addon` below is a recipe, and a `just`

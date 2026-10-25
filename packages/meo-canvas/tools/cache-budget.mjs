@@ -11,8 +11,8 @@ const MIB = 1024 ** 2
 
 /**
  * The working set at which this asks for attention: GitHub's 10 GB limit less the
- * largest entry when it was set, 2215 MiB for ubuntu. That entry is now 2712 MiB,
- * so the margin is narrower than this derivation assumed.
+ * largest entry when it was set, 2215 MiB for ubuntu. Entries resize with every
+ * save, so today's margin is read from the cache list, not from this number.
  */
 const FLOOR_BYTES = 7.5 * GIB
 

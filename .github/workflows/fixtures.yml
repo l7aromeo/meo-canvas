@@ -56,8 +56,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # No `setup-just`: the steps call `cargo` directly, reproducing the bare
-      # `cargo test` whose comparison CI reports, and read the toolchain with
-      # grep.
+      # `cargo test` whose comparison CI reports, and read the toolchains with
+      # grep and sed.
 
       - name: Read the pinned toolchain
         id: toolchain
@@ -65,18 +65,47 @@ jobs:
           channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
           test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          nightly=$(sed -n 's/^fmt_toolchain := "\(.*\)"$/\1/p' justfile)
+          test -n "$nightly" || { echo "::error::the justfile named no fmt_toolchain"; exit 1; }
+          echo "nightly=$nightly" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
-      # Restores, never saves: a `fixtures/**` branch dies with its pull
-      # request, so its cache could never be read. `ci.yml`'s entries are out of
-      # reach as well, since rust-cache appends the job id (`ci` there, `accept`
-      # here); sharing needs `add-job-id-key: false` in both.
+      # Unused here: rust-cache hashes every installed toolchain into its key,
+      # and `ci.yml` installs this nightly, so without it the key below differs
+      # from the entries it is meant to restore.
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: ${{ steps.toolchain.outputs.nightly }}
+
+      # rust-cache hashes every installed toolchain into its key, and the image's
+      # own `stable` moves on its own schedule (1.99.0 in one Windows run, 1.99.1
+      # in the next). Only what the repository pins stays, so the three workflows
+      # sharing this cache compute one key.
+      - name: Keep only the pinned toolchains
+        env:
+          CHANNEL: ${{ steps.toolchain.outputs.channel }}
+          NIGHTLY: ${{ steps.toolchain.outputs.nightly }}
+        run: |
+          # Empty, either pattern would match nothing and remove the pinned one.
+          test -n "$CHANNEL" && test -n "$NIGHTLY" || { echo "::error::no pinned toolchain was read"; exit 1; }
+          # On its own line, where a failing rustup fails the step; inside the
+          # `for` it would run the loop zero times and leave the image's stable.
+          installed=$(rustup toolchain list --quiet)
+          for toolchain in $installed; do
+            case "$toolchain" in
+              "${CHANNEL}"-* | "${NIGHTLY}"-*) ;;
+              *) rustup toolchain uninstall "$toolchain" ;;
+            esac
+          done
+
+      # `ci.yml`'s entries on `main`, under the key it saves them with. Restores,
+      # never saves: a `fixtures/**` branch dies with its pull request.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: fixtures-${{ inputs.os || matrix.os }}
+          shared-key: ${{ inputs.os || matrix.os }}-ci
           save-if: false
 
       # The same two the CI job installs, and for the same reasons: libaom
