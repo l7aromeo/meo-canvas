@@ -521,8 +521,8 @@ by construction, and the crate ships them together.
 | `neon`            | 1.1    | Node addon.                                               |
 | `clap`            | 4.6    | CLI.                                                      |
 | `thiserror`       | 2.0    | Error types.                                              |
-| `ureq`            | 3.4    | Remote images, behind the optional `net` feature.         |
-| `rustls`          | 0.23   | A floor, not a use -- see `Cargo.toml`. Under `net`.      |
+| `ureq`            | 3.5    | Remote images, behind the optional `net` feature.         |
+| `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.      |
 | `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.    |
 
 | tool       |       |                                                                |
