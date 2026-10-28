@@ -128,7 +128,7 @@ jobs:
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "toolchain $channel"
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
@@ -136,7 +136,7 @@ jobs:
       # gained on six of seven legs (6285s to 4777s), but these entries were
       # 5.09 GiB, more than the CI working set they evicted. Sharing CI's cache
       # needs `add-job-id-key: false` in both files.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: release-${{ matrix.suffix }}
           cache-bin: true

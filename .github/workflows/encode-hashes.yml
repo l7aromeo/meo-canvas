@@ -60,12 +60,12 @@ jobs:
           test -n "$nightly" || { echo "::error::the justfile named no fmt_toolchain"; exit 1; }
           echo "nightly=$nightly" >> "$GITHUB_OUTPUT"
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
       # Unused here, installed for the cache key, as in `fixtures.yml`.
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ steps.toolchain.outputs.nightly }}
 
@@ -91,7 +91,7 @@ jobs:
           done
 
       # `ci.yml`'s entries, restored and never saved, as in `fixtures.yml`.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ${{ inputs.os || matrix.os }}-ci
           save-if: 'false'
