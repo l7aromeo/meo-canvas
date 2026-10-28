@@ -203,7 +203,7 @@ try {
     '# The number is the OUTER box on the axis named: 1024 means the content',
     '# dictated it, 200 means the item collapsed and the sibling set it.',
     '#',
-    '# `l7aromeo/meo-canvas#145`. Reproduced in taffy 0.15.0 alone, so the',
+    '# `l7aromeo/meo-canvas#145`. Reproduced in taffy 0.15.1 alone, so the',
     '# divergence is upstream rather than in this repository’s conversion.',
     '#',
     '# **`overflow` deletes the minimum half, and this codebase has now been',

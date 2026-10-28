@@ -4,7 +4,7 @@
 //! The taffy tree is built here, used here and dropped here. It never appears
 //! in a public signature and never crosses a thread, because it cannot: every
 //! length taffy stores is a tagged `*const ()`
-//! (`taffy-0.15.0/src/style/compact_length.rs:76`), which makes `taffy::Style`,
+//! (`taffy-0.15.1/src/style/compact_length.rs:76`), which makes `taffy::Style`,
 //! and therefore `TaffyTree`, `!Send` and `!Sync` regardless of feature
 //! selection -- a build with `calc` removed fails `assert_send` identically.
 //! Confining the tree to one function is what keeps that fact from spreading

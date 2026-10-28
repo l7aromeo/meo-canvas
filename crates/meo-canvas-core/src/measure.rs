@@ -10,14 +10,14 @@
 //!
 //! [`MeasuredLeaf`] carries a `first_baseline`, and it is read twice.
 //! [`crate::layout`] puts it in the `LayoutOutput` it hands taffy
-//! (`taffy-0.15.0/src/tree/taffy_tree.rs:974`), which is what
+//! (`taffy-0.15.1/src/tree/taffy_tree.rs:978`), which is what
 //! `align-items: baseline` reads, and keeps it in
 //! [`crate::layout::LayoutResult`] for the paint pass, which is what lets
 //! glyphs sit correctly inside a box placed by some other rule.
 //!
 //! The first of those is worth stating exactly, because the failure it avoids
 //! is visible rather than subtle: taffy reads a *missing* baseline as the
-//! node's own height (`taffy-0.15.0/src/compute/flexbox.rs:2054`), so a row of
+//! node's own height (`taffy-0.15.1/src/compute/flexbox.rs:2115`), so a row of
 //! measured text with no baseline reported lines up on the bottom edges of the
 //! runs, and the largest text then sits highest — the trend inverted, not
 //! merely offset.
