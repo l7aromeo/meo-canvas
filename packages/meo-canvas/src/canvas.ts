@@ -23,9 +23,21 @@ export type { Format }
  * still image asked for something that did not happen.
  */
 export interface EncodeOptions {
-  /** Lossy quality from `0` to `1`, read by JPEG, WebP and AVIF. */
+  /**
+   * Lossy quality from `0` to `1`, read by JPEG, WebP and AVIF.
+   *
+   * WebP at `1` is lossless: meo-skia-canvas documents `ImageFormat::Webp` as lossy
+   * or lossless depending on the quality. AVIF at `1` is its finest lossy
+   * quantizer, not lossless.
+   */
   readonly quality?: number
-  /** Encode WebP without loss. */
+  /**
+   * Encode AVIF without loss, ignoring `quality`.
+   *
+   * Passed to meo-skia-canvas's `EncodeOptions::lossless`, which AVIF alone reads.
+   * Every other format refuses `true`, WebP included; a lossless WebP is
+   * `quality: 1`.
+   */
   readonly lossless?: boolean
   /** The colour transparency is flattened against, for a format with no alpha. */
   readonly matte?: string

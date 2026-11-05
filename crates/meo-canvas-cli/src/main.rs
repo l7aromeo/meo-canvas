@@ -78,11 +78,13 @@ struct RenderArgs {
     #[arg(long = "font", value_name = "FAMILY=PATH")]
     fonts: Vec<String>,
 
-    /// Lossy quality from 0.0 to 1.0, read by JPEG, WebP and AVIF.
+    /// Lossy quality from 0.0 to 1.0, read by JPEG, WebP and AVIF. WebP at 1.0
+    /// is lossless; AVIF at 1.0 is not.
     #[arg(long)]
     quality: Option<f32>,
 
-    /// Encode WebP without loss.
+    /// Encode AVIF without loss. Other formats refuse it; a lossless WebP is
+    /// --quality 1.
     #[arg(long)]
     lossless: bool,
 

@@ -251,8 +251,17 @@ pub struct EncodedImage {
 #[derive(Debug, Clone, Default)]
 pub struct EncodeOptions {
     /// Lossy quality from `0.0` to `1.0`, read by JPEG, WebP and AVIF.
+    ///
+    /// WebP at `1.0` is lossless: `meo-skia-canvas` documents
+    /// `ImageFormat::Webp` as lossy or lossless depending on the quality.
+    /// AVIF at `1.0` is its finest lossy quantizer, not lossless.
     pub quality: Option<f32>,
-    /// Whether a WebP encode is lossless.
+    /// Whether an AVIF encode is lossless.
+    ///
+    /// Passed to `meo-skia-canvas`'s `EncodeOptions::lossless`, which AVIF
+    /// alone reads and which ignores [`quality`](Self::quality) when set.
+    /// Every other format refuses `Some(true)`, WebP included; a lossless WebP
+    /// is a quality of `1.0`.
     pub lossless: Option<bool>,
     /// The colour transparency is flattened against by a format with no alpha
     /// channel, as a packed `0xRRGGBB`.
