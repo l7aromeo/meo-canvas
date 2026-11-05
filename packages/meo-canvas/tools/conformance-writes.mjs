@@ -16,14 +16,14 @@ const TOOLS = join(HERE, 'conformance')
  * equality: a bound cannot see a tool added without winding it, and still a scan
  * matching nothing gives 0, which fails too.
  */
-const GUARDED_WRITES = 33
+const GUARDED_WRITES = 34
 
 /**
  * How many stamped `.tsv` tables the assets directory holds, as an equality for
  * the same reason. Equal to [`GUARDED_WRITES`] by coincidence: the two diverge
  * once a tool writes something that is not a table.
  */
-const STAMPED_TABLES = 33
+const STAMPED_TABLES = 34
 
 /** The `node:fs` exports that put bytes somewhere. */
 const MUTATORS = new Set([
