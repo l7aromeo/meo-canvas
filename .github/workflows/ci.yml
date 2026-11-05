@@ -92,6 +92,18 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
+      # Linux builds debug, coverage and `net` trees and ran out of disk at `just
+      # net-check` (42116583895: "No space left on device", then ld's bus error).
+      # No step calls these image tools; rust, node, bun, just and cmake live
+      # outside them.
+      - name: Free the disk the image's unused tools take
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
+            /usr/share/swift "${RUNNER_TOOL_CACHE:?}/CodeQL"
+          df -h /
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Before the toolchain steps, which read a justfile variable through
@@ -246,3 +258,9 @@ jobs:
       - name: Does an ordinary addon survive worker threads?
         if: runner.os == 'Windows'
         run: just threads-probe
+
+      # The headroom a Linux run ends with, failed or not, so a squeeze shows
+      # before it fails a run.
+      - name: Disk left at the end
+        if: always() && runner.os == 'Linux'
+        run: df -h /
