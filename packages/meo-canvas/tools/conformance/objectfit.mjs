@@ -24,6 +24,15 @@ const BOXES = [
   { width: 72, height: 72 },
   { width: 6, height: 6 },
   { width: 100, height: 200 },
+  // Where a fit lands between pixels: Chrome fits in the box as laid out and
+  // snaps the picture's edges, a half up. 300.4x100.6 is fractional; 333x150 and
+  // 101x150 leave an odd free space, so `contain` and `none` sit at .5.
+  { width: 300.4, height: 100.6 },
+  { width: 333, height: 150 },
+  { width: 101, height: 150 },
+  // `none` at x -0.5, where a half rounding up and one rounding away from zero
+  // keep different columns: cyan is cut at 0, magenta at -1.
+  { width: 7, height: 6 },
 ]
 
 /** What the box is painted with, so the picture's own extent can be found. */
@@ -53,12 +62,16 @@ try {
     const source = `data:${KIND.type};base64,${picture.toString('base64')}`
 
     for (const BOX of BOXES) {
-      await browser.page.setViewportSize(BOX)
+      // Whole pixels for the viewport and the shot; the page is the cell's
+      // colour, so a fractional cell's last column reads as cell, not picture.
+      const SHOT = { width: Math.ceil(BOX.width), height: Math.ceil(BOX.height) }
+      await browser.page.setViewportSize(SHOT)
 
       for (const fit of FITS) {
         await browser.page.evaluate(
           ({ box, source, fit }) => {
             document.body.innerHTML = ''
+            document.body.style.background = '#f0f0f0'
             const cell = document.createElement('div')
             cell.style.cssText = `position:absolute;left:0;top:0;width:${box.width}px;height:${box.height}px;background:#f0f0f0;overflow:hidden;`
             const image = document.createElement('img')
@@ -73,10 +86,10 @@ try {
         // decode measures an empty box and reports every fit as drawing nothing.
         await settle(browser.page)
 
-        const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...BOX } }))
+        const shot = read(await browser.page.screenshot({ clip: { x: 0, y: 0, ...SHOT } }))
         let box = null
-        for (let y = 0; y < BOX.height; y += 1) {
-          for (let x = 0; x < BOX.width; x += 1) {
+        for (let y = 0; y < SHOT.height; y += 1) {
+          for (let x = 0; x < SHOT.width; x += 1) {
             const [r, g, b] = pixel(shot, x, y)
             if (r === CELL[0] && g === CELL[1] && b === CELL[2]) continue
             box = box === null ? [x, y, x, y] : [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)]
@@ -84,8 +97,8 @@ try {
         }
 
         const has = ink => {
-          for (let y = 0; y < BOX.height; y += 1) {
-            for (let x = 0; x < BOX.width; x += 1) {
+          for (let y = 0; y < SHOT.height; y += 1) {
+            for (let x = 0; x < SHOT.width; x += 1) {
               const [r, g, b] = pixel(shot, x, y)
               if (r === ink[0] && g === ink[1] && b === ink[2]) return true
             }
@@ -142,6 +155,15 @@ try {
     '# `none`** -- the same rule by definition, not by coincidence. The boxes below',
     '# eight wide are where the two separate: `none` crops, `scale-down` shrinks.',
     '# A table with only the 72 rows cannot fail for `scale-down` at all.',
+    '#',
+    '# **The last three boxes are where a fit lands between pixels.** Chrome fits',
+    '# the picture in the box as laid out, 300.4x100.6 rather than the 300x101 it',
+    '# paints, and then snaps each edge of the picture to a whole pixel, a half',
+    '# rounding up: in 333x150 `contain` is 300 wide at 16.5 and inks from 17. A',
+    '# renderer that fits the rounded box, or draws at the half, inks a column off.',
+    '# The page is the cell colour, so a fractional cell has no edge of its own.',
+    '# 7x6 puts `none` at x -0.5: snapped up to 0 the cyan column falls off the',
+    '# right edge, and a rounding away from zero would cut the magenta one instead.',
     '#',
     '# fit\tw\th\trect\tmagenta\tcyan\tsource',
   ]

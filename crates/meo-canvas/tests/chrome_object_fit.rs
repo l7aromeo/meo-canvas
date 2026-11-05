@@ -66,11 +66,17 @@ fn drawn(
     let mut canvas = Root::new(width)
         .height(height)
         .position_type(PositionType::Relative)
-        .background_color(hex_rgb(0xff_ff_ff))
+        // The cell's colour, as the table's page is, so a fractional cell's
+        // last column reads as cell rather than picture.
+        .background_color(hex_rgb(0xf0_f0_f0))
         .align_items(Align::Center)
         .children(
+            // Flex rather than the table's block cell: both state the
+            // picture's size, which a flex cell keeps, while block
+            // flow lays a picture shorter than its ratio at the
+            // ratio's height, a defect of its own.
             Box::new()
-                .display(Display::Block)
+                .display(Display::Flex)
                 .position_type(PositionType::Relative)
                 .size(px(width), px(height))
                 .overflow(Overflow::Hidden)
@@ -90,12 +96,13 @@ fn drawn(
         unreachable!("the canvas did not encode: {error}")
     });
 
+    // The canvas is the cell rounded up, as the table's shot is.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "a cell side the table states, four to two hundred"
+        reason = "a cell side the table states, four to three hundred and one"
     )]
-    let (side, down) = (width as usize, height as usize);
+    let (side, down) = (width.ceil() as usize, height.ceil() as usize);
     let mut bounds: Option<(usize, usize, usize, usize)> = None;
     let mut magenta = false;
     let mut cyan = false;
@@ -136,8 +143,8 @@ fn drawn(
     )
 }
 
-/// Which rules we answer differently from Chrome: empty.
-const KNOWN_FIT: &[&str] = &[];
+/// The rows we answer differently from Chrome, by rule, source and cell: none.
+const KNOWN_FIT: &[(&str, &str, (f32, f32))] = &[];
 
 /// Refuses a table that could not fail, before anything is compared against it:
 /// four checks on whether it can report a defect.
@@ -247,17 +254,16 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
             }
         };
         let (rect, magenta, cyan) = drawn(fit, row.cell, source);
-        let known = KNOWN_FIT.contains(&row.fit.as_str());
+        let known = KNOWN_FIT.iter().any(|(fit, source, cell)| {
+            *fit == row.fit
+                && *source == row.source
+                && same_box(*cell, row.cell)
+        });
 
-        // A pixel of tolerance on the rectangle: a bounding box read from ink
-        // is what the picture covers, and a layout rectangle is where it was
-        // put.
-        let apart = rect
-            .iter()
-            .zip(row.rect.iter())
-            .any(|(ours, theirs)| ours.abs_diff(*theirs) > 1)
-            || magenta != row.magenta
-            || cyan != row.cyan;
+        // Exact: a picture's edges, and a document's drawing within it, are
+        // snapped to whole pixels, so its ink box is the rectangle Chrome's is.
+        let apart =
+            rect != row.rect || magenta != row.magenta || cyan != row.cyan;
 
         if apart && !known {
             wrong.push(format!(
@@ -267,8 +273,8 @@ fn object_fit_puts_a_picture_where_chrome_puts_it() {
         }
         if !apart && known {
             wrong.push(format!(
-                "{}: now agrees with Chrome. That is a fix -- delete the row from KNOWN_FIT",
-                row.fit
+                "{} at {:?} as {}: now agrees with Chrome. That is a fix -- delete the row from KNOWN_FIT",
+                row.fit, row.cell, row.source
             ));
         }
     }

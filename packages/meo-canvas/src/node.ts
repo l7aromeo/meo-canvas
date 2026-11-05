@@ -612,7 +612,8 @@ export type PathProps = Style & {
    * `[minX, minY, width, height]`.
    *
    * **Absent means absolute coordinates.** With a box, the path is scaled and
-   * centred into the node's resolved size under SVG's default
+   * centred into the node's content box, inside its padding and border and at
+   * its size before rounding, as Chrome maps an `<svg>`'s `viewBox`, under SVG's default
    * `preserveAspectRatio`, `xMidYMid meet`, so it fits without distorting. This is
    * what lets a path follow a percentage-sized box, which `d` alone cannot.
    *

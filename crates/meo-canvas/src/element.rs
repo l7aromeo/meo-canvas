@@ -816,8 +816,10 @@ impl Element {
     /// The coordinate space this path's `d` is written in, as SVG's
     /// `viewBox`: `(min_x, min_y, width, height)`.
     ///
-    /// **The node must have a size**, since the drawing is scaled into it and
-    /// a path node has no intrinsic one. Without a box the `d` is absolute.
+    /// The drawing is scaled into the node's content box, inside its padding
+    /// and border and at its size before rounding, as Chrome maps an
+    /// `<svg>`'s `viewBox`. **The node must have a size**, since a path node
+    /// has no intrinsic one. Without a box the `d` is absolute.
     ///
     /// ```
     /// use meo_canvas::Path;

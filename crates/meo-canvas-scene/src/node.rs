@@ -373,10 +373,12 @@ pub enum NodeKind {
         /// `(min_x, min_y, width, height)`.
         ///
         /// **`None` means the path draws in absolute local coordinates.** With
-        /// a box, the path is scaled and centred into the node's resolved size
-        /// under SVG's default `preserveAspectRatio` — `xMidYMid meet` — so it
-        /// fits without distorting. That is what lets a path fill a
-        /// percentage-sized node, since `d` itself is absolute.
+        /// a box, the path is scaled and centred into the node's content box,
+        /// inside its padding and border and at its size before rounding, as
+        /// an `<svg>`'s `viewBox` is in Chrome, under SVG's default
+        /// `preserveAspectRatio` — `xMidYMid meet` — so it fits without
+        /// distorting. That is what lets a path fill a percentage-sized node,
+        /// since `d` itself is absolute.
         ///
         /// **Equivalent to SVG's `viewBox` with
         /// `vector-effect: non-scaling-stroke`.** The drawing scales; the pen
