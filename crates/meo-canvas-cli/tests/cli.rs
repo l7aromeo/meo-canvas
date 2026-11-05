@@ -19,6 +19,7 @@ const EXIT_IO: i32 = 3;
 const EXIT_MALFORMED_SCENE: i32 = 4;
 const EXIT_FONT: i32 = 5;
 const EXIT_SOURCE_UNOBTAINABLE: i32 = 6;
+const EXIT_RENDER: i32 = 7;
 
 /// A directory of this test run's own, so two tests cannot collide on a name.
 fn scratch(name: &str) -> PathBuf {
@@ -99,6 +100,46 @@ fn the_format_comes_from_the_output_extension() {
         std::fs::read(&out).unwrap_or_else(|error| unreachable!("{error}"));
     assert_eq!(&bytes[0..4], b"RIFF");
     assert_eq!(&bytes[8..12], b"WEBP");
+}
+
+#[test]
+fn quality_one_writes_a_vp8l_webp() {
+    let dir = scratch("quality-one");
+    let scene = write_scene(&dir);
+    let out = dir.join("out.webp");
+
+    let (code, stderr) = run(&[
+        "render",
+        &scene.to_string_lossy(),
+        "-o",
+        &out.to_string_lossy(),
+        "--quality",
+        "1",
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    // `VP8L` is the lossless bitstream's chunk; a lossy one is `VP8 `.
+    let bytes =
+        std::fs::read(&out).unwrap_or_else(|error| unreachable!("{error}"));
+    assert!(bytes.windows(4).any(|tag| tag == b"VP8L"), "no VP8L chunk");
+    assert!(!bytes.windows(4).any(|tag| tag == b"VP8 "), "a lossy chunk");
+}
+
+#[test]
+fn lossless_on_a_webp_exits_seven_with_the_encoders_reason() {
+    let dir = scratch("lossless-webp");
+    let scene = write_scene(&dir);
+
+    let (code, stderr) = run(&[
+        "render",
+        &scene.to_string_lossy(),
+        "-o",
+        &dir.join("out.webp").to_string_lossy(),
+        "--lossless",
+    ]);
+
+    assert_eq!(code, EXIT_RENDER, "{stderr}");
+    assert!(stderr.contains("no lossless form"), "{stderr}");
 }
 
 #[test]
