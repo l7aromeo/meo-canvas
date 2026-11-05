@@ -1,7 +1,7 @@
 // What a definite width does to a replaced element's `auto` height
 // (`l7aromeo/meo-canvas#94`): CSS 2.2 §10.3.2 and §10.6.2 take it from the 60x40
-// ratio. Flex rows stretch to the line and are controls that must not move, as are
-// the absolute rows; `div` and `text` rows fill their container.
+// ratio. Flex and absolute rows with no minimum or maximum height are controls,
+// as are `div` and `text` rows, which fill their container.
 import { writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,6 +48,89 @@ const CASES = [
   // derived height clamps it, and a minimum above that maximum wins over it.
   ['block w200 max60', 'img', 'block', 'auto', 'static', '200px', 'auto', 'a maximum below the derived 133.33 clamps it', 'max-height:60px'],
   ['block w200 max60 min80', 'img', 'block', 'auto', 'static', '200px', 'auto', 'a minimum above the maximum wins', 'min-height:80px;max-height:60px'],
+  // A minimum height whose ratio width, 240, is wider than the declared width:
+  // the width stays declared in every container, and the height is the minimum.
+  ['block w200 min160', 'img', 'block', 'auto', 'static', '200px', 'auto', 'the minimum does not widen a declared width', 'min-height:160px'],
+  ['block w50% min160', 'img', 'block', 'auto', 'static', '50%', 'auto', 'nor a percentage width', 'min-height:160px'],
+  [
+    'block w200 min160 padded',
+    'img',
+    'block',
+    'auto',
+    'static',
+    '200px',
+    'auto',
+    'the content box is 200, the minimum its height',
+    'min-height:160px;padding:10px;box-sizing:content-box',
+  ],
+  [
+    'block w200 min160 padded border-box',
+    'img',
+    'block',
+    'auto',
+    'static',
+    '200px',
+    'auto',
+    'the border box is 200 by 160',
+    'min-height:160px;padding:10px;box-sizing:border-box',
+  ],
+  [
+    'block w auto min160',
+    'img',
+    'block',
+    'auto',
+    'static',
+    'auto',
+    'auto',
+    'control: an auto width does take the minimum through the ratio',
+    'min-height:160px',
+  ],
+  ['block w100 min20', 'img', 'block', 'auto', 'static', '100px', 'auto', 'control: a minimum below the derived height does nothing', 'min-height:20px'],
+  [
+    'block w200 min-width250 min160',
+    'img',
+    'block',
+    'auto',
+    'static',
+    '200px',
+    'auto',
+    'control: a declared minimum width still wins',
+    'min-width:250px;min-height:160px',
+  ],
+  ['flex w200 min160', 'img', 'flex', 'auto', 'static', '200px', 'auto', 'a flex item keeps its declared width too', 'min-height:160px'],
+  ['flex w50% min160', 'img', 'flex', 'auto', 'static', '50%', 'auto', 'and a percentage one', 'min-height:160px'],
+  ['flex start w200 min160', 'img', 'flex;align-items:flex-start', 'auto', 'static', '200px', 'auto', 'unstretched, the same', 'min-height:160px'],
+  ['flex w auto min160', 'img', 'flex', 'auto', 'static', 'auto', 'auto', 'control: an auto main size takes the minimum through the ratio', 'min-height:160px'],
+  ['column w200 min160', 'img', 'flex;flex-direction:column', 'auto', 'static', '200px', 'auto', 'a declared cross size keeps its width', 'min-height:160px'],
+  ['column w50% min160', 'img', 'flex;flex-direction:column', 'auto', 'static', '50%', 'auto', 'and a percentage one', 'min-height:160px'],
+  ['grid w200 min160', 'img', 'grid', 'auto', 'static', '200px', 'auto', 'control: a grid item keeps it', 'min-height:160px'],
+  ['grid w50% min160', 'img', 'grid', 'auto', 'static', '50%', 'auto', 'a percentage of its 200-wide grid area', 'min-height:160px'],
+  ['abs block w200 min160', 'img', 'block', 'auto', 'absolute', '200px', 'auto', 'an out-of-flow box keeps it', 'min-height:160px'],
+  ['flex w200 min160%', 'img', 'flex', '100px', 'static', '200px', 'auto', 'a percentage minimum of a definite height, 160', 'min-height:160%'],
+  // A box with the art's ratio, stretched in a row too narrow for it: below the
+  // declared width the transferred minimum leaves it free to shrink.
+  [
+    'flex ratio div w300 min50',
+    'div',
+    'flex',
+    '100px',
+    'static',
+    '300px',
+    'auto',
+    'control: a minimum transferring to 75 still shrinks to 200',
+    'aspect-ratio:1.5;min-height:50px',
+  ],
+  [
+    'flex ratio div w300 min110',
+    'div',
+    'flex',
+    '100px',
+    'static',
+    '300px',
+    'auto',
+    'control: and to 165, the height the minimum',
+    'aspect-ratio:1.5;min-height:110px',
+  ],
 
   ['abs block w200', 'img', 'block', '40px', 'absolute', '200px', 'auto', 'control: out of flow, correct today'],
   ['abs block w auto', 'img', 'block', '40px', 'absolute', 'auto', 'auto', 'control: out of flow with neither axis definite'],
@@ -135,7 +218,12 @@ try {
     '# The container’s `display` is the axis this table exists for: a flex item',
     '# with an auto cross size stretches to the line, so 200x40 is correct in a',
     '# flex container and wrong in block flow. Every flex row and every absolute',
-    '# row is a control that must not move.',
+    '# row with neither a minimum nor a maximum height is a control that must',
+    '# not move.',
+    '#',
+    '# A minimum height whose ratio width is wider than a declared width leaves',
+    '# that width, in every container: the ratio transfers it into an automatic',
+    '# width alone.',
     '#',
     '# `div` and `text` are the contrast: a non-replaced box fills its container',
     '# and must keep filling it.',

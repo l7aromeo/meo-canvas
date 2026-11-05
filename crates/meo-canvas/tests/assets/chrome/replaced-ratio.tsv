@@ -9,7 +9,12 @@
 # The container’s `display` is the axis this table exists for: a flex item
 # with an auto cross size stretches to the line, so 200x40 is correct in a
 # flex container and wrong in block flow. Every flex row and every absolute
-# row is a control that must not move.
+# row with neither a minimum nor a maximum height is a control that must
+# not move.
+#
+# A minimum height whose ratio width is wider than a declared width leaves
+# that width, in every container: the ratio transfers it into an automatic
+# width alone.
 #
 # `div` and `text` are the contrast: a non-replaced box fills its container
 # and must keep filling it.
@@ -54,6 +59,25 @@ block w200 h150	0.00	0.00	200.00	150.00	block/auto	static 200px 150px	control: a
 flex w200 h60	0.00	0.00	200.00	60.00	flex/auto	static 200px 60px	control: a flex container sizes the item itself
 block w200 max60	0.00	0.00	200.00	60.00	block/auto	static 200px auto max-height:60px	a maximum below the derived 133.33 clamps it
 block w200 max60 min80	0.00	0.00	200.00	80.00	block/auto	static 200px auto min-height:80px;max-height:60px	a minimum above the maximum wins
+block w200 min160	0.00	0.00	200.00	160.00	block/auto	static 200px auto min-height:160px	the minimum does not widen a declared width
+block w50% min160	0.00	0.00	100.00	160.00	block/auto	static 50% auto min-height:160px	nor a percentage width
+block w200 min160 padded	0.00	0.00	220.00	180.00	block/auto	static 200px auto min-height:160px;padding:10px;box-sizing:content-box	the content box is 200, the minimum its height
+block w200 min160 padded border-box	0.00	0.00	200.00	160.00	block/auto	static 200px auto min-height:160px;padding:10px;box-sizing:border-box	the border box is 200 by 160
+block w auto min160	0.00	0.00	240.00	160.00	block/auto	static auto auto min-height:160px	control: an auto width does take the minimum through the ratio
+block w100 min20	0.00	0.00	100.00	66.66	block/auto	static 100px auto min-height:20px	control: a minimum below the derived height does nothing
+block w200 min-width250 min160	0.00	0.00	250.00	166.66	block/auto	static 200px auto min-width:250px;min-height:160px	control: a declared minimum width still wins
+flex w200 min160	0.00	0.00	200.00	160.00	flex/auto	static 200px auto min-height:160px	a flex item keeps its declared width too
+flex w50% min160	0.00	0.00	100.00	160.00	flex/auto	static 50% auto min-height:160px	and a percentage one
+flex start w200 min160	0.00	0.00	200.00	160.00	flex;align-items:flex-start/auto	static 200px auto min-height:160px	unstretched, the same
+flex w auto min160	0.00	0.00	240.00	160.00	flex/auto	static auto auto min-height:160px	control: an auto main size takes the minimum through the ratio
+column w200 min160	0.00	0.00	200.00	160.00	flex;flex-direction:column/auto	static 200px auto min-height:160px	a declared cross size keeps its width
+column w50% min160	0.00	0.00	100.00	160.00	flex;flex-direction:column/auto	static 50% auto min-height:160px	and a percentage one
+grid w200 min160	0.00	0.00	200.00	160.00	grid/auto	static 200px auto min-height:160px	control: a grid item keeps it
+grid w50% min160	0.00	0.00	100.00	160.00	grid/auto	static 50% auto min-height:160px	a percentage of its 200-wide grid area
+abs block w200 min160	0.00	0.00	200.00	160.00	block/auto	absolute 200px auto min-height:160px	an out-of-flow box keeps it
+flex w200 min160%	0.00	0.00	200.00	160.00	flex/100px	static 200px auto min-height:160%	a percentage minimum of a definite height, 160
+flex ratio div w300 min50	0.00	0.00	200.00	100.00	flex/100px	static 300px auto aspect-ratio:1.5;min-height:50px	control: a minimum transferring to 75 still shrinks to 200
+flex ratio div w300 min110	0.00	0.00	200.00	110.00	flex/100px	static 300px auto aspect-ratio:1.5;min-height:110px	control: and to 165, the height the minimum
 abs block w200	0.00	0.00	200.00	133.33	block/40px	absolute 200px auto	control: out of flow, correct today
 abs block w auto	0.00	0.00	60.00	40.00	block/40px	absolute auto auto	control: out of flow with neither axis definite
 abs flex w200	0.00	0.00	200.00	133.33	flex/40px	absolute 200px auto	control: an out-of-flow child is not a flex item

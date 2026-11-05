@@ -450,21 +450,7 @@ where
     // taffy doing what it is asked. No solve precedes this line.
     tree.disable_rounding();
     collapse_definite_bases(&mut tree, root)?;
-    // [WORKAROUND] the ratios come off before the first solve, so it reports a
-    // fit-content inline size, and go back on in `compensate_ratio_direction`,
-    // which names the defect and its probe.
-    let candidates = ratio_direction_candidates(scene, &tree, &to_scene);
-    clear_ratios(&mut tree, &candidates)?;
-    solve_once(&mut tree, root, available, measure, &mut baselines)?;
-    compensate_ratio_direction(
-        &mut tree,
-        &candidates,
-        root,
-        available,
-        measure,
-        &mut baselines,
-    )?;
-    clamp_ratio_heights(
+    compensate(
         &mut tree,
         scene,
         &to_scene,
@@ -1101,6 +1087,53 @@ where
     output
 }
 
+/// The unrounded solves: a first one with the direction candidates' ratios
+/// off, then the compensations, each solving again when it has work.
+/// `keep_declared_widths` goes first because the next reads the candidates'
+/// sizes from the latest solve, which then has every declared width kept.
+fn compensate<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    scene: &Scene,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    // [WORKAROUND] the ratios come off before the first solve, so it reports a
+    // fit-content inline size, and go back on in `compensate_ratio_direction`,
+    // which names the defect and its probe.
+    let candidates = ratio_direction_candidates(scene, tree, to_scene);
+    clear_ratios(tree, &candidates)?;
+    solve_once(tree, root, available, measure, baselines)?;
+    keep_declared_widths(
+        tree,
+        scene,
+        to_scene,
+        root,
+        (available, measure),
+        baselines,
+    )?;
+    compensate_ratio_direction(
+        tree,
+        &candidates,
+        root,
+        available,
+        measure,
+        baselines,
+    )?;
+    clamp_ratio_heights(
+        tree,
+        scene,
+        to_scene,
+        root,
+        (available, measure),
+        baselines,
+    )
+}
+
 /// One solve of the whole page.
 fn solve_once<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
@@ -1433,6 +1466,104 @@ where
     }
     baselines.clear();
     solve_once(tree, root, available, measure, baselines)
+}
+
+// [WORKAROUND] taffy 0.15.1 transfers a minimum height through the ratio into
+// a minimum width over a declared one: 240x160 for 200 wide under a minimum of
+// 160 at 3:2, in block, flex or out of flow. `l7aromeo/meo-canvas#192`, probed
+// by `crates/meo-canvas-core/tests/taffy_ratio_min_transfer.rs`.
+/// Gives each ratio box whose minimum height transfers past its declared width
+/// that width as its minimum, so nothing transfers, then solves once more. In a
+/// flex row that is §4.5's minimum, the smaller of the declared size and the
+/// content's; below the width the transfer is left, or no item could shrink.
+fn keep_declared_widths<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    scene: &Scene,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut pins: Vec<(taffy::NodeId, taffy::LengthPercentageAuto)> =
+        Vec::new();
+    for (id, node) in to_scene {
+        let Some(source) = scene.get(*node) else {
+            continue;
+        };
+        // The author's width, not one `intrinsic_sizes_it` wrote for an image
+        // that states none: that one takes the minimum, `block w auto min160`.
+        let declared = sized(source.layout.size.0);
+        if matches!(declared, Dimension::Auto)
+            || !matches!(source.layout.min_size.0, Dimension::Auto)
+        {
+            continue;
+        }
+        let style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        let Some(ratio) = style.aspect_ratio else {
+            continue;
+        };
+        // Percentages against the parent's content box, a flex item's basis.
+        // A narrower grid area could miss a pin, but taffy did not widen a 50%
+        // item in a 100px column below it; a wider padding box only adds one.
+        let basis = parent_content_size(tree, *id);
+        let Some(floor) = style
+            .min_size
+            .height
+            .resolve_to_option(basis.height, |_, _| 0.0)
+        else {
+            continue;
+        };
+        let width = match declared {
+            Dimension::Points(points) => snapped(points),
+            Dimension::Percent(fraction) => fraction * basis.width,
+            Dimension::Auto => continue,
+        };
+        if floor * ratio > width {
+            pins.push((*id, to_auto_length(declared)));
+        }
+    }
+
+    if pins.is_empty() {
+        return Ok(());
+    }
+    for (id, minimum) in &pins {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.min_size.width = *minimum;
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
+}
+
+/// The parent's content box, which a percentage on this node resolves against
+/// on both axes. Zero without a parent.
+fn parent_content_size(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+) -> taffy::Size<f32> {
+    let Some(parent) = tree.parent(id) else {
+        return taffy::Size::ZERO;
+    };
+    taffy::Size {
+        width: content_inline_size(tree, parent),
+        height: tree.layout(parent).map_or(0.0, |solved| {
+            solved.size.height
+                - solved.padding.top
+                - solved.padding.bottom
+                - solved.border.top
+                - solved.border.bottom
+                - solved.scrollbar_size.height
+        }),
+    }
 }
 
 /// The inline size a percentage on this node resolves against: the parent's
