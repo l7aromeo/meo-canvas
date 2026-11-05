@@ -1555,16 +1555,16 @@ fn inner_radii(node: &Node, rect: Rect, content: Rect) -> Corners<f32> {
 
 /// Draws the mark for a picture that never arrived: a frame, a wash and a short
 /// centred diagonal in one mid grey at three alphas, which reads on light and
-/// dark cards. Chrome paints the frame alone; the stroke is bounded to 1..=2.5.
+/// dark cards, its stroke bounded to 1..=2.5. Chrome paints its 16px icon
+/// instead, in a 1px frame where the box is larger than the icon.
 fn draw_missing(
     context: &mut Context2D,
     radii: Corners<f32>,
     content: Rect,
 ) -> Result<(), Error> {
-    // Chrome draws nothing in a box with no area, and neither does this: an
-    // `auto` axis with no picture to size it contributes zero, so a collapsed
-    // node has nowhere to put a mark and drawing one would invent an extent
-    // layout did not give it.
+    // A box with no area, which only a stated zero gives a failed image, has
+    // nowhere to put a mark, and drawing one would invent an extent layout did
+    // not give it.
     if content.size.width <= 0.0 || content.size.height <= 0.0 {
         return Ok(());
     }

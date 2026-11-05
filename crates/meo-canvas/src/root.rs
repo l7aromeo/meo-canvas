@@ -367,8 +367,11 @@ impl Root {
     /// What to do when an image source cannot be resolved.
     ///
     /// Defaults to [`OnImageError::Placeholder`]: a URL that cannot be fetched
-    /// or decoded draws a neutral mark, the layout is unchanged, and the
-    /// failure is recorded on [`Canvas::warnings`]. A
+    /// or decoded draws a neutral mark, and the failure is recorded on
+    /// [`Canvas::warnings`]. The image takes the box Chrome gives a broken
+    /// `<img>` with no `alt` under every setting: an `auto` axis that nothing
+    /// stretches is 16 pixels, and a block-level or stretched one fills its
+    /// container. A
     /// [`Path`](meo_canvas_scene::node::ImageSource::Path) or
     /// [`Bytes`](meo_canvas_scene::node::ImageSource::Bytes) source fails the
     /// render whatever this says -- the caller is holding that input and can

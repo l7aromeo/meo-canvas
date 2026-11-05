@@ -274,10 +274,11 @@ wire_enum! {
     pub enum OnImageError {
         /// Draw a neutral mark in the box and let the render finish.
         ///
-        /// The box keeps whatever extent it was given: an explicit width or
-        /// height is honoured and an `auto` axis contributes zero, which is
-        /// what Chrome does with a broken `<img>`. A box that comes out `0x0`
-        /// is drawn as nothing, also as Chrome does.
+        /// The box is the one Chrome gives a broken `<img>` with no `alt`: an
+        /// explicit width or height is honoured, an `auto` axis that nothing
+        /// stretches is 16 pixels, the broken-image icon, and a block-level or
+        /// stretched one fills its container. Every policy lays the image out
+        /// in that box; this one draws in it.
         #[default]
         Placeholder = 0,
         /// Fail the whole render, for a caller whose sources come from a

@@ -1,0 +1,65 @@
+# Chrome, through `just conformance`: the box of an <img> with no alt whose source fails, by container and size.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# A 300-wide container; grid (one 300px column) and absolute ones are 200 tall.
+# `failed` answers HTTP 522; `loaded` is a 64x32 SVG, the control. width and height are CSS px, `-` for auto.
+# Written by packages/meo-canvas/tools/conformance/failedimage.mjs.
+#
+# w and h are the image from getBoundingClientRect.
+#
+# source	container	width	height	w	h
+failed	block	-	-	300.000	16.000
+failed	block	100	-	100.000	16.000
+failed	block	-	60	300.000	60.000
+failed	block	80	40	80.000	40.000
+failed	flex column	-	-	16.000	16.000
+failed	flex column	100	-	100.000	16.000
+failed	flex column	-	60	16.000	60.000
+failed	flex column	80	40	80.000	40.000
+failed	flex column stretch	-	-	300.000	16.000
+failed	flex column stretch	100	-	100.000	16.000
+failed	flex column stretch	-	60	300.000	60.000
+failed	flex column stretch	80	40	80.000	40.000
+failed	flex row	-	-	16.000	16.000
+failed	flex row	100	-	100.000	16.000
+failed	flex row	-	60	16.000	60.000
+failed	flex row	80	40	80.000	40.000
+failed	grid	-	-	300.000	200.000
+failed	grid	100	-	100.000	200.000
+failed	grid	-	60	300.000	60.000
+failed	grid	80	40	80.000	40.000
+failed	absolute	-	-	16.000	16.000
+failed	absolute	100	-	100.000	16.000
+failed	absolute	-	60	16.000	60.000
+failed	absolute	80	40	80.000	40.000
+failed	absolute insets	-	-	280.000	16.000
+failed	absolute insets	100	-	100.000	16.000
+failed	absolute insets	-	60	280.000	60.000
+failed	absolute insets	80	40	80.000	40.000
+loaded	block	-	-	64.000	32.000
+loaded	block	100	-	100.000	50.000
+loaded	block	-	60	120.000	60.000
+loaded	block	80	40	80.000	40.000
+loaded	flex column	-	-	64.000	32.000
+loaded	flex column	100	-	100.000	50.000
+loaded	flex column	-	60	120.000	60.000
+loaded	flex column	80	40	80.000	40.000
+loaded	flex column stretch	-	-	300.000	150.000
+loaded	flex column stretch	100	-	100.000	50.000
+loaded	flex column stretch	-	60	300.000	60.000
+loaded	flex column stretch	80	40	80.000	40.000
+loaded	flex row	-	-	64.000	32.000
+loaded	flex row	100	-	100.000	50.000
+loaded	flex row	-	60	120.000	60.000
+loaded	flex row	80	40	80.000	40.000
+loaded	grid	-	-	64.000	32.000
+loaded	grid	100	-	100.000	50.000
+loaded	grid	-	60	120.000	60.000
+loaded	grid	80	40	80.000	40.000
+loaded	absolute	-	-	64.000	32.000
+loaded	absolute	100	-	100.000	50.000
+loaded	absolute	-	60	120.000	60.000
+loaded	absolute	80	40	80.000	40.000
+loaded	absolute insets	-	-	64.000	32.000
+loaded	absolute insets	100	-	100.000	50.000
+loaded	absolute insets	-	60	120.000	60.000
+loaded	absolute insets	80	40	80.000	40.000
