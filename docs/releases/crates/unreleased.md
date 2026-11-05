@@ -4,6 +4,8 @@
 
 - `justify_items` and `justify_self` place a grid item or a block child along the inline axis with every value CSS gives them, on `Style` and `LayoutStyle`, as the `JustifyItems` and `JustifySelf` enums over `SelfPosition`, `OverflowPosition` and `LegacyPosition`: `normal`, `stretch`, `baseline` (one variant for CSS's `baseline` and `first baseline`) and `last baseline`, the nine positions `center`, `start`, `end`, `self-start`, `self-end`, `flex-start`, `flex-end`, `left` and `right`, each with or without `safe` or `unsafe`, and on `justify_items` `legacy left`, `legacy right` and `legacy center`. `justify_self: None` is CSS's `auto` and `justify_items: None` its initial `legacy`, which takes an ancestor's `legacy` position through boxes stating nothing. A grid column's items asking for `baseline` or `last baseline` align their left border edges at its start or end, as Chrome does, and a flex item ignores both properties. `anchor-center` has no variant, since a scene has no anchor positioning. `LayoutResult::inherited` reports what each node took from its ancestors (`l7aromeo/meo-canvas#171`).
 
+- `Measure::has_picture`, a provided method a measurer answers for an image leaf: whether its source decoded. Layout lays an image without a picture out as Chrome lays out a broken `<img>` with no `alt`, a box around a 16px icon rather than a replaced element. It defaults to `true`, so a measurer that loads no images keeps every image's layout as it was (`l7aromeo/meo-canvas#183`).
+
 ### Changed
 
 - **Breaking.** `Style::frame`, the `frame` setter and `NodeKind::Image::frame` take an `i32` rather than a `u32`, so that a negative index can count from the end. An integer literal compiles unchanged; a `u32` value needs converting, for example with `i32::try_from`.
@@ -25,6 +27,8 @@
 - **Breaking.** `layout::to_taffy_style` takes a `layout::Inherited` as a third argument, built with `Inherited::new(direction)`: the node's resolved direction, its alignment container's, and the `legacy` an unset `justify_items` takes, none of which its `LayoutStyle` alone can say. `LayoutResult::inherited` is that value for a solved node. It returns taffy 0.15's `Style`, since `meo-canvas-core` depends on `taffy` `0.15` rather than `0.14`, so a caller handing the result to its own taffy tree moves to taffy 0.15, where `align_items`, `justify_items`, `align_content` and `justify_content` are no longer `Option`s and `normal` is `AlignItems::NORMAL` rather than `None`.
 
 - **Breaking.** `Style` and `LayoutStyle` gain the public fields `justify_items` and `justify_self`. Both structs are exhaustive by design, so a struct literal naming every field without `..` no longer compiles; add the two fields, or close the literal with `..Style::default()` or `..LayoutStyle::default()`.
+
+- An image whose source cannot be fetched or decoded takes the box Chrome gives a broken `<img>` with no `alt`, rather than collapsing on every axis it does not size. With only a width it was that wide and 0 tall, so its placeholder drew nothing; an `auto` axis nothing stretches is 16 instead, so `Image::url(…)` given `.width(px(100.0))` is 100x16, and as a block child or a stretched grid or flex item it fills its container (300x16 in a 300-wide block, the whole cell in a grid) as Chrome's does. It is laid out in that box under every `OnImageError`, and an image with both sizes stated is unchanged (`l7aromeo/meo-canvas#183`).
 
 ### Fixed
 

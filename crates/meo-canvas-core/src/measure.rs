@@ -186,7 +186,27 @@ pub trait Measure {
         known: (Option<f32>, Option<f32>),
         available: (Available, Available),
     ) -> MeasuredLeaf;
+
+    /// Whether the image leaf `node` has a picture: a source that decoded.
+    ///
+    /// One that did not lays out as Chrome lays out a broken `<img>` with no
+    /// `alt`: a box around its 16px broken-image icon rather than a replaced
+    /// element, so it fills a block container's width and a grid cell, and
+    /// stretches between insets, where a picture keeps its intrinsic size.
+    ///
+    /// Defaults to `true`, so a measurer that loads no images answers for
+    /// every image as loaded.
+    fn has_picture(&mut self, node: NodeId) -> bool {
+        let _ = node;
+        true
+    }
 }
+
+/// An `auto` axis of an image whose source did not decode: Chrome 153's
+/// broken-image icon, 16px, for an `<img>` with no `alt` answering HTTP 522 or
+/// aborted (`failed-image.tsv`). With `alt=""` Chrome gives 0; an `Image` has
+/// no `alt`, so this is the box it matches.
+pub(crate) const BROKEN_IMAGE_ICON: f32 = 16.0;
 
 /// Everything a solve needs to answer size questions about one scene's leaves.
 ///
@@ -256,6 +276,15 @@ impl core::fmt::Debug for SceneMeasurer<'_> {
 }
 
 impl<'resolved> SceneMeasurer<'resolved> {
+    /// Whether `node` is an image, which a leaf with no decoded picture and no
+    /// text then is: one whose source did not decode.
+    fn is_image(&self, node: NodeId) -> bool {
+        self.resolved
+            .scene()
+            .get(node)
+            .is_some_and(|node| matches!(node.kind, NodeKind::Image { .. }))
+    }
+
     /// Shapes every text node in the scene and returns a measurer for it.
     ///
     /// This is the pass that can fail. Everything after it -- every call taffy
@@ -440,6 +469,14 @@ impl Measure for SceneMeasurer<'_> {
             self.measure_text(node, known, available)
         } else if let Some(image) = self.resolved.image(node) {
             MeasuredLeaf::sized(fit_intrinsic(image.intrinsic_size(), known))
+        } else if self.is_image(node) {
+            // A source that did not decode: the icon's box on each open axis,
+            // with no ratio between them, since Chrome's has none (100x16 at a
+            // 100px width).
+            MeasuredLeaf::sized(Size::new(
+                known.0.unwrap_or(BROKEN_IMAGE_ICON),
+                known.1.unwrap_or(BROKEN_IMAGE_ICON),
+            ))
         } else {
             // A node this measurer was never prepared for. The trait says
             // `EMPTY` rather than a panic, because a mismatch between the tree
@@ -449,6 +486,10 @@ impl Measure for SceneMeasurer<'_> {
 
         self.answers.insert(question, answer);
         answer
+    }
+
+    fn has_picture(&mut self, node: NodeId) -> bool {
+        self.resolved.image(node).is_some()
     }
 }
 
@@ -862,48 +903,24 @@ mod tests {
         );
     }
 
-    /// Chrome's broken `<img>`, with Playwright aborting the load: auto 0x0,
-    /// `width:100px` 100x0, `height:60px` 0x60, attributes 80x40, where a
-    /// loaded one measured 64x32. Per axis: zero on an `auto` axis, every
-    /// explicit extent kept.
+    /// A zero intrinsic height never reaches the ratio arm, where 0/0 is NaN
+    /// and every later comparison silently false: the guard is
+    /// `intrinsic.height > 0.0`. A failed image's size is not this function's:
+    /// see `chrome_failed_image`.
     #[test]
-    fn a_source_that_never_decoded_measures_as_chrome_measures_it() {
-        // No bitmap arrived, so there is no intrinsic size to fit.
+    fn a_zero_intrinsic_size_never_reaches_the_ratio() {
         let none = Size::ZERO;
-
-        assert_eq!(
-            fit_intrinsic(none, (None, None)),
-            Size::new(0.0, 0.0),
-            "auto on both axes should collapse, as Chrome does"
-        );
-        assert_eq!(
-            fit_intrinsic(none, (Some(100.0), None)),
-            Size::new(100.0, 0.0),
-            "an explicit width should survive and the auto height collapse"
-        );
-        assert_eq!(
-            fit_intrinsic(none, (None, Some(60.0))),
-            Size::new(0.0, 60.0),
-            "an explicit height should survive and the auto width collapse"
-        );
-        assert_eq!(
-            fit_intrinsic(none, (Some(80.0), Some(40.0))),
-            Size::new(80.0, 40.0),
-            "both stated should be honoured untouched"
-        );
-
-        // A zero intrinsic height must not reach the ratio arm, where 0/0 is
-        // NaN and every later comparison is silently false. The guard is
-        // `intrinsic.height > 0.0`; this asserts its consequence.
-        for size in [
-            fit_intrinsic(none, (Some(100.0), None)),
-            fit_intrinsic(none, (None, Some(60.0))),
-            fit_intrinsic(none, (None, None)),
+        for (known, want) in [
+            ((Some(100.0), None), Size::new(100.0, 0.0)),
+            ((None, Some(60.0)), Size::new(0.0, 60.0)),
+            ((None, None), Size::ZERO),
         ] {
+            let size = fit_intrinsic(none, known);
             assert!(
                 size.width.is_finite() && size.height.is_finite(),
                 "a zero intrinsic size produced {size:?}"
             );
+            assert_eq!(size, want);
         }
     }
 

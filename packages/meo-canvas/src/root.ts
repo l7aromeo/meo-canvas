@@ -301,8 +301,11 @@ export type RootProps = Style & {
    * What to do when an image source cannot be resolved.
    *
    * Defaults to `'placeholder'`: a URL that cannot be fetched or decoded draws
-   * a neutral mark, the layout is unchanged, and the failure is recorded on
-   * {@link Canvas.warnings}. A `src` that is a path or a buffer fails the
+   * a neutral mark, and the failure is recorded on {@link Canvas.warnings}. The
+   * image takes the box Chrome gives a broken `<img>` with no `alt` under every
+   * setting: an `auto` axis that nothing stretches is 16 pixels, and a
+   * block-level or stretched one fills its container. A `src` that is a path
+   * or a buffer fails the
    * render whatever this says — the caller holds that input and can check it
    * before rendering, where a fetch's outcome does not exist until the render
    * runs.

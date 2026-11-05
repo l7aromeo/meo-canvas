@@ -402,7 +402,7 @@ where
         tree.add_child(root, node)
             .map_err(|error| Error::Layout(error.to_string()))?;
     }
-    pin_page_root(scene, page, root, &mut tree, &inherited)?;
+    pin_page_root(scene, page, root, &mut tree, &inherited, measure)?;
 
     // A content height is solved, so the height axis is offered `MaxContent`:
     // text breaks against the width, which must be known first, and the height
@@ -763,13 +763,28 @@ fn child_height_is_definite(
     }
 }
 
-/// Whether this node is replaced in CSS's sense: a childless `Image`, and what
-/// taffy's `item_is_replaced` is set from, so insets and `normal` grid
-/// alignment leave its `auto` size intrinsic. Childless, matching the measurer;
-/// Chrome cannot arbitrate, an `<img>` having no children.
+/// Whether this node is replaced in CSS's sense: a childless `Image`, which
+/// with a picture ([`lays_out_replaced`]) is what taffy's `item_is_replaced` is
+/// set from, so insets and `normal` grid alignment leave its `auto` size
+/// intrinsic. Childless, matching the measurer; an `<img>` has no children.
 const fn is_replaced(node: &meo_canvas_scene::node::Node) -> bool {
     node.children.is_empty()
         && matches!(node.kind, meo_canvas_scene::node::NodeKind::Image { .. })
+}
+
+/// Whether this node lays out as a replaced element: [`is_replaced`], and with
+/// a picture to lay out. An image whose source did not decode is a box around
+/// a broken-image icon instead, as Chrome lays out an `<img>` with no `alt`
+/// (`chrome_failed_image`), and fills or stretches where a picture would not.
+fn lays_out_replaced<M>(
+    id: NodeId,
+    node: &meo_canvas_scene::node::Node,
+    measure: &mut M,
+) -> bool
+where
+    M: Measure + ?Sized,
+{
+    is_replaced(node) && measure.has_picture(id)
 }
 
 /// Whether this box is taken out of the flow.
@@ -807,7 +822,9 @@ fn intrinsic_sizes_it<M>(
 ) where
     M: Measure + ?Sized,
 {
-    if !is_replaced(source) {
+    // A failed image's icon box carries no ratio to give taffy: Chrome gives it
+    // 100x16 at a 100px width, not 100x100.
+    if !lays_out_replaced(node, source, measure) {
         return;
     }
     // Asked of the measurer, which with neither axis known answers with the
@@ -902,13 +919,17 @@ fn flex_settles_it(
 /// leaves to content: a page is the canvas, so percentages and centring beneath
 /// it resolve against the surface, and a margined root sits inside it as
 /// Chrome's `<html>` does. An explicit size on the root is honoured.
-fn pin_page_root(
+fn pin_page_root<M>(
     scene: &Scene,
     page: NodeId,
     root: taffy::NodeId,
     tree: &mut taffy::TaffyTree<NodeId>,
     inherited: &HashMap<NodeId, Inherited>,
-) -> Result<(), Error> {
+    measure: &mut M,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
     let source = scene.get(page).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", page.get()))
     })?;
@@ -916,7 +937,7 @@ fn pin_page_root(
     let own = inherited.get(&page).copied().unwrap_or_default();
     let mut style =
         to_taffy_style(&source.layout, source.paint.border_style, own);
-    style.item_is_replaced = is_replaced(source);
+    style.item_is_replaced = lays_out_replaced(page, source, measure);
     let edge = |dimension| root_margin(dimension, scene.size.width);
     let margins = &source.layout.margin;
     let width = scene.size.width - edge(margins.left) - edge(margins.right);
@@ -1715,7 +1736,7 @@ where
     let own = inherited.get(&node).copied().unwrap_or_default();
     let mut style =
         to_taffy_style(&source.layout, source.paint.border_style, own);
-    style.item_is_replaced = is_replaced(source);
+    style.item_is_replaced = lays_out_replaced(node, source, measure);
     let parent_items = state_auto(&mut style, source, parent, own);
     intrinsic_sizes_it(&mut style, node, source, parent, parent_items, measure);
     // A block-axis percentage against an indefinite containing block resolves
@@ -2664,7 +2685,7 @@ mod tests {
 
     use meo_canvas_scene::{
         Point, Scene, Sides, Size,
-        node::{Node, NodeId},
+        node::{ImageSource, Node, NodeId, NodeKind},
         style::{
             Dimension, Length,
             layout::{
@@ -2673,7 +2694,7 @@ mod tests {
                 JustifySelf, LayoutStyle, LegacyPosition, Overflow,
                 OverflowPosition, PositionType, SelfPosition, TrackSize,
             },
-            paint::BorderStyle,
+            paint::{BorderStyle, ObjectFit},
         },
     };
 
@@ -2761,6 +2782,63 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"))
     }
 
+    /// A measurer answering as [`Fixed`] does, for a scene whose every image
+    /// failed to decode.
+    struct NoPictures(Fixed);
+
+    impl Measure for NoPictures {
+        fn measure(
+            &mut self,
+            node: NodeId,
+            known: (Option<f32>, Option<f32>),
+            available: (Available, Available),
+        ) -> MeasuredLeaf {
+            self.0.measure(node, known, available)
+        }
+
+        fn has_picture(&mut self, _node: NodeId) -> bool {
+            false
+        }
+    }
+
+    /// One image in a 300-wide block page, and its laid-out size.
+    fn image_in_a_block(measure: &mut dyn Measure) -> Size {
+        let (mut scene, page) = scene_with_page(300.0, 300.0);
+        if let Some(node) = scene.get_mut(page) {
+            node.layout.display = Display::Block;
+        }
+        let image = scene
+            .push(
+                page,
+                Node::new(NodeKind::Image {
+                    source: ImageSource::url("https://origin.invalid/a.png"),
+                    frame: None,
+                    fit: ObjectFit::Fill,
+                    position: (Length::ZERO, Length::ZERO),
+                }),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let layout = solve(&scene, page, measure)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        layout
+            .get(image)
+            .unwrap_or_else(|| unreachable!("the image was laid out"))
+            .size
+    }
+
+    /// A measurer leaving `has_picture` alone keeps a 16x16 image leaf in a
+    /// block at 16x16, as a picture. Answering `false`, the leaf fills the
+    /// block's width (`chrome_failed_image`); reading its 16x16 as a 1:1 ratio
+    /// would pin it at 16x16.
+    #[test]
+    fn has_picture_decides_whether_an_image_lays_out_replaced() {
+        let picture = image_in_a_block(&mut Fixed::new(16.0, 16.0));
+        assert_eq!(picture, Size::new(16.0, 16.0));
+
+        let failed = image_in_a_block(&mut NoPictures(Fixed::new(16.0, 16.0)));
+        assert_eq!(failed, Size::new(300.0, 16.0));
+    }
+
     /// `legacy` reaches a descendant through boxes stating nothing and stops
     /// at one stating anything, and an absolute box aligns in its containing
     /// block's direction rather than its parent's (`justify-items.tsv`).
@@ -2769,7 +2847,7 @@ mod tests {
         let (mut scene, page) = scene_with_page(300.0, 200.0);
         let push = |scene: &mut Scene, parent| {
             scene
-                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(parent, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"))
         };
         let outer = push(&mut scene, page);
@@ -2824,7 +2902,7 @@ mod tests {
             node.layout.flex_direction = FlexDirection::Column;
         }
         let container = scene
-            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(page, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(container) {
             node.layout.display = Display::Flex;
@@ -2832,7 +2910,7 @@ mod tests {
             node.layout.size = (Dimension::Points(903.0), Dimension::Auto);
         }
         let child = scene
-            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(container, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(child) {
             node.layout.size =
@@ -2844,7 +2922,7 @@ mod tests {
         // A second child at `-10` beside `-24` tells a sum from a `min`: Chrome
         // gives 366 and a fold with `f32::min` 376.
         let second = scene
-            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(container, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(second) {
             node.layout.size =
@@ -2886,7 +2964,7 @@ mod tests {
             node.layout.flex_direction = FlexDirection::Column;
         }
         let container = scene
-            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(page, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(container) {
             node.layout.display = Display::Flex;
@@ -2894,7 +2972,7 @@ mod tests {
             node.layout.size = (Dimension::Points(903.0), Dimension::Auto);
         }
         let child = scene
-            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(container, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(child) {
             node.layout.size =
@@ -2924,7 +3002,7 @@ mod tests {
             node.layout.flex_direction = FlexDirection::Column;
         }
         let container = scene
-            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(page, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(container) {
             node.layout.display = Display::Flex;
@@ -2941,7 +3019,7 @@ mod tests {
             }
         }
         let child = scene
-            .push(container, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(container, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(child) {
             node.layout.size =
@@ -2971,14 +3049,14 @@ mod tests {
                 node.layout.flex_direction = FlexDirection::Column;
             }
             let parent = scene
-                .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(page, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(parent) {
                 node.layout.display = Display::Flex;
                 node.layout.flex_direction = FlexDirection::Column;
             }
             let strip = scene
-                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(parent, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(strip) {
                 node.layout.display = Display::Flex;
@@ -2986,7 +3064,7 @@ mod tests {
                 node.layout.margin.top = Dimension::Points(-32.0);
             }
             let grid = scene
-                .push(strip, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(strip, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(grid) {
                 node.layout.display = Display::Grid;
@@ -2994,7 +3072,7 @@ mod tests {
                     vec![TrackSize::Points(100.0)];
             }
             let item = scene
-                .push(grid, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(grid, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(item) {
                 node.layout.display = Display::Flex;
@@ -3002,7 +3080,7 @@ mod tests {
                 node.layout.overflow = (overflow, overflow);
             }
             let content = scene
-                .push(item, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(item, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(content) {
                 node.layout.size =
@@ -3025,7 +3103,7 @@ mod tests {
     fn a_box_as_wide_as_the_ceiling_still_fills_its_container() {
         let (mut scene, page) = scene_with_page(200.0, 100.0);
         let child = scene
-            .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+            .push(page, Node::new(NodeKind::Box))
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(child) {
             node.layout.size =
@@ -3992,8 +4070,8 @@ mod tests {
     /// door.
     #[test]
     fn a_ratio_this_renderer_will_not_use_settles_nothing() {
-        let parent = Node::new(meo_canvas_scene::node::NodeKind::Box);
-        let mut child = Node::new(meo_canvas_scene::node::NodeKind::Box);
+        let parent = Node::new(NodeKind::Box);
+        let mut child = Node::new(NodeKind::Box);
         child.layout.size = (Dimension::Points(30.0), Dimension::Auto);
 
         for bad in [-2.0, 0.0, f32::NAN, f32::INFINITY] {
@@ -4018,7 +4096,7 @@ mod tests {
         fn probe(parent_height: Dimension) -> f32 {
             let (mut scene, page) = scene_with_page(400.0, 400.0);
             let parent = scene
-                .push(page, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(page, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(parent) {
                 node.layout.size = (Dimension::Points(200.0), parent_height);
@@ -4029,7 +4107,7 @@ mod tests {
                 node.layout.align_self = Some(Align::FlexStart);
             }
             let child = scene
-                .push(parent, Node::new(meo_canvas_scene::node::NodeKind::Box))
+                .push(parent, Node::new(NodeKind::Box))
                 .unwrap_or_else(|error| unreachable!("{error}"));
             if let Some(node) = scene.get_mut(child) {
                 node.layout.size =
