@@ -98,6 +98,11 @@ pub struct LayoutResult {
     /// at the rounded box, which is up to a pixel off either way and, when
     /// narrower, breaks a line layout did not.
     pub wrap_widths: HashMap<NodeId, f32>,
+    /// Each node's content box before taffy rounded it, its origin relative to
+    /// the node's rounded rectangle, so a later whole-pixel shift of that
+    /// rectangle carries it. Recorded beside every rectangle; read through
+    /// [`LayoutResult::unrounded_content`].
+    pub(crate) unrounded_content: HashMap<NodeId, Rect>,
 }
 
 impl LayoutResult {
@@ -168,6 +173,23 @@ impl LayoutResult {
     #[must_use]
     pub fn wrap_width(&self, node: NodeId) -> Option<f32> {
         self.wrap_widths.get(&node).copied()
+    }
+
+    /// `node`'s content box before rounding, in absolute coordinates: what a
+    /// fitted picture and a path's `viewBox` are computed against, as Chrome
+    /// computes them in unrounded layout units. `None` exactly when
+    /// [`LayoutResult::get`] is, since `collect` records one beside every
+    /// rectangle.
+    pub(crate) fn unrounded_content(&self, node: NodeId) -> Option<Rect> {
+        let rect = self.get(node)?;
+        let relative = self.unrounded_content.get(&node)?;
+        Some(Rect {
+            origin: meo_canvas_scene::Point {
+                x: rect.origin.x + relative.origin.x,
+                y: rect.origin.y + relative.origin.y,
+            },
+            size: relative.size,
+        })
     }
 }
 
@@ -453,12 +475,14 @@ where
         rects: HashMap::with_capacity(to_scene.len()),
         insets: HashMap::with_capacity(to_scene.len()),
         wrap_widths: HashMap::new(),
+        unrounded_content: HashMap::with_capacity(to_scene.len()),
     };
-    collect(&tree, root, &to_scene, 0.0, 0.0, &mut collected)?;
+    collect(&tree, root, &to_scene, Origins::default(), &mut collected)?;
     let Collected {
         mut rects,
         insets,
         wrap_widths,
+        unrounded_content,
     } = collected;
     align_grid_baselines(
         scene,
@@ -477,6 +501,7 @@ where
         directions,
         inherited,
         wrap_widths,
+        unrounded_content,
     })
 }
 
@@ -1892,6 +1917,14 @@ struct Collected {
     rects: HashMap<NodeId, Rect>,
     insets: HashMap<NodeId, Sides<f32>>,
     wrap_widths: HashMap<NodeId, f32>,
+    unrounded_content: HashMap<NodeId, Rect>,
+}
+
+/// A parent's absolute position, as taffy rounded it and before it did.
+#[derive(Debug, Clone, Copy, Default)]
+struct Origins {
+    rounded: (f32, f32),
+    unrounded: (f32, f32),
 }
 
 /// Walks the solved tree, summing taffy's parent-relative locations into
@@ -1900,16 +1933,23 @@ fn collect(
     tree: &taffy::TaffyTree<NodeId>,
     node: taffy::NodeId,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
-    parent_x: f32,
-    parent_y: f32,
+    parent: Origins,
     collected: &mut Collected,
 ) -> Result<(), Error> {
     let layout = tree
         .layout(node)
         .map_err(|error| Error::Layout(error.to_string()))?;
+    let unrounded = tree.unrounded_layout(node);
 
-    let x = parent_x + layout.location.x;
-    let y = parent_y + layout.location.y;
+    let x = parent.rounded.0 + layout.location.x;
+    let y = parent.rounded.1 + layout.location.y;
+    let here = Origins {
+        rounded: (x, y),
+        unrounded: (
+            parent.unrounded.0 + unrounded.location.x,
+            parent.unrounded.1 + unrounded.location.y,
+        ),
+    };
 
     let children = tree
         .children(node)
@@ -1936,10 +1976,32 @@ fn collect(
                 bottom: layout.border.bottom + layout.padding.bottom,
             },
         );
+        // Every node, so a picture or a path with children of its own still
+        // has the box its fit is computed against.
+        let (left, top) = (
+            unrounded.border.left + unrounded.padding.left,
+            unrounded.border.top + unrounded.padding.top,
+        );
+        let (right, bottom) = (
+            unrounded.border.right + unrounded.padding.right,
+            unrounded.border.bottom + unrounded.padding.bottom,
+        );
+        collected.unrounded_content.insert(
+            scene_node,
+            Rect {
+                origin: meo_canvas_scene::Point {
+                    x: here.unrounded.0 + left - x,
+                    y: here.unrounded.1 + top - y,
+                },
+                size: Size::new(
+                    (unrounded.size.width - left - right).max(0.0),
+                    (unrounded.size.height - top - bottom).max(0.0),
+                ),
+            },
+        );
         // Only a leaf is measured, so only a leaf has a width its content was
         // laid out at; a container's children carry their own.
         if children.is_empty() {
-            let unrounded = tree.unrounded_layout(node);
             let inset = unrounded.border.left
                 + unrounded.border.right
                 + unrounded.padding.left
@@ -1951,7 +2013,7 @@ fn collect(
     }
 
     for child in children {
-        collect(tree, child, to_scene, x, y, collected)?;
+        collect(tree, child, to_scene, here, collected)?;
     }
 
     Ok(())

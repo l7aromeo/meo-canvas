@@ -515,6 +515,13 @@ impl DecodedImage {
             .map_err(|_| Error::UndecodableImage(node))
     }
 
+    /// Whether this is a parsed document rather than pixels: a document lays
+    /// itself out under its own `preserveAspectRatio` inside the box it is
+    /// drawn into, where a bitmap is stretched to fill it.
+    pub(crate) const fn is_document(&self) -> bool {
+        matches!(self.kind, Kind::Vector(_))
+    }
+
     /// The image's own size in pixels, which is what an `Auto` box takes.
     #[must_use]
     pub fn intrinsic_size(&self) -> Size {

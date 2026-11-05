@@ -1,7 +1,7 @@
 # Chrome, through `just conformance`. Where each object-fit rule puts a picture.
 # Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
 #
-# An <img> on a #f0f0f0 cell at 72x72, 6x6, 100x200, from
+# An <img> on a #f0f0f0 cell at 72x72, 6x6, 100x200, 300.4x100.6, 333x150, 101x150, 7x6, from
 # `crates/meo-canvas/tests/assets/fit-marks.png` — eight by four, magenta at its
 # own x=0 and cyan at x=7. Those two columns are what separate `fill` from
 # `cover`: both fill the box and differ only in what they CUT, so a symmetric
@@ -42,6 +42,15 @@
 # eight wide are where the two separate: `none` crops, `scale-down` shrinks.
 # A table with only the 72 rows cannot fail for `scale-down` at all.
 #
+# **The last three boxes are where a fit lands between pixels.** Chrome fits
+# the picture in the box as laid out, 300.4x100.6 rather than the 300x101 it
+# paints, and then snaps each edge of the picture to a whole pixel, a half
+# rounding up: in 333x150 `contain` is 300 wide at 16.5 and inks from 17. A
+# renderer that fits the rounded box, or draws at the half, inks a column off.
+# The page is the cell colour, so a fractional cell has no edge of its own.
+# 7x6 puts `none` at x -0.5: snapped up to 0 the cyan column falls off the
+# right edge, and a rounding away from zero would cut the magenta one instead.
+#
 # fit	w	h	rect	magenta	cyan	source
 fill	72	72	0,0,72,72	magenta	cyan	raster
 contain	72	72	0,18,72,36	magenta	cyan	raster
@@ -58,6 +67,26 @@ contain	100	200	0,75,100,50	magenta	cyan	raster
 cover	100	200	0,0,100,200	-	-	raster
 none	100	200	46,98,8,4	magenta	cyan	raster
 scale-down	100	200	46,98,8,4	magenta	cyan	raster
+fill	300.4	100.6	0,0,300,101	magenta	cyan	raster
+contain	300.4	100.6	50,0,201,101	magenta	cyan	raster
+cover	300.4	100.6	0,0,300,101	magenta	cyan	raster
+none	300.4	100.6	146,48,8,4	magenta	cyan	raster
+scale-down	300.4	100.6	146,48,8,4	magenta	cyan	raster
+fill	333	150	0,0,333,150	magenta	cyan	raster
+contain	333	150	17,0,300,150	magenta	cyan	raster
+cover	333	150	0,0,333,150	magenta	cyan	raster
+none	333	150	163,73,8,4	magenta	cyan	raster
+scale-down	333	150	163,73,8,4	magenta	cyan	raster
+fill	101	150	0,0,101,150	magenta	cyan	raster
+contain	101	150	0,50,101,50	magenta	cyan	raster
+cover	101	150	0,0,101,150	-	-	raster
+none	101	150	47,73,8,4	magenta	cyan	raster
+scale-down	101	150	47,73,8,4	magenta	cyan	raster
+fill	7	6	0,0,7,6	magenta	cyan	raster
+contain	7	6	0,1,7,4	magenta	cyan	raster
+cover	7	6	0,0,7,6	-	-	raster
+none	7	6	0,1,7,4	magenta	-	raster
+scale-down	7	6	0,1,7,4	magenta	cyan	raster
 fill	72	72	0,18,72,36	magenta	cyan	svg
 contain	72	72	0,18,72,36	magenta	cyan	svg
 cover	72	72	0,0,72,72	-	-	svg
@@ -73,3 +102,23 @@ contain	100	200	0,75,100,50	magenta	cyan	svg
 cover	100	200	0,0,100,200	-	-	svg
 none	100	200	46,98,8,4	magenta	cyan	svg
 scale-down	100	200	46,98,8,4	magenta	cyan	svg
+fill	300.4	100.6	50,0,200,101	magenta	cyan	svg
+contain	300.4	100.6	50,0,201,101	magenta	cyan	svg
+cover	300.4	100.6	0,0,300,101	magenta	cyan	svg
+none	300.4	100.6	146,48,8,4	magenta	cyan	svg
+scale-down	300.4	100.6	146,48,8,4	magenta	cyan	svg
+fill	333	150	17,0,300,150	magenta	cyan	svg
+contain	333	150	17,0,300,150	magenta	cyan	svg
+cover	333	150	0,0,333,150	magenta	cyan	svg
+none	333	150	163,73,8,4	magenta	cyan	svg
+scale-down	333	150	163,73,8,4	magenta	cyan	svg
+fill	101	150	0,50,101,50	magenta	cyan	svg
+contain	101	150	0,50,101,50	magenta	cyan	svg
+cover	101	150	0,0,101,150	-	-	svg
+none	101	150	47,73,8,4	magenta	cyan	svg
+scale-down	101	150	47,73,8,4	magenta	cyan	svg
+fill	7	6	0,1,7,4	magenta	cyan	svg
+contain	7	6	0,1,7,4	magenta	cyan	svg
+cover	7	6	0,0,7,6	-	-	svg
+none	7	6	0,1,7,4	magenta	-	svg
+scale-down	7	6	0,1,7,4	magenta	cyan	svg

@@ -430,6 +430,7 @@ fn walk(
                     node,
                     rect,
                     layout.content(id).unwrap_or(rect),
+                    unrounded_content(layout, id),
                     layout.direction(id),
                     layout.wrap_width(id),
                     None,
@@ -475,6 +476,7 @@ fn walk(
                     node,
                     rect,
                     layout.content(id).unwrap_or(rect),
+                    unrounded_content(layout, id),
                     layout.direction(id),
                     layout.wrap_width(id),
                     root,
@@ -704,6 +706,7 @@ fn paint_own_content(
     node: &Node,
     rect: Rect,
     content: Rect,
+    unrounded: Rect,
     direction: Direction,
     wrap: Option<f32>,
     canvas: Option<Rect>,
@@ -742,7 +745,7 @@ fn paint_own_content(
                 .and_then(|()| {
                     paint_kind(
                         context, resolved, measurer, id, node, rect, content,
-                        direction, wrap,
+                        unrounded, direction, wrap,
                     )
                 })
         });
@@ -976,6 +979,7 @@ fn paint_kind(
     node: &Node,
     rect: Rect,
     content: Rect,
+    unrounded: Rect,
     direction: Direction,
     wrap: Option<f32>,
 ) -> Result<(), Error> {
@@ -1004,7 +1008,8 @@ fn paint_kind(
             // content: Chrome keeps `cover` and `none` inside the box
             // (`object-fit-overflow.tsv`), an 80x80 `<img>` with an 8px border
             // at `68,68,64,64`. See `clip_to_rounded`.
-            let placed = fit_image(intrinsic, content, *fit, *position);
+            let placed =
+                placed_picture(decoded, intrinsic, unrounded, *fit, *position);
             // Rasterised at the size drawn, which keeps a vector source sharp,
             // and in the node's own colour: an SVG loaded as an image resolves
             // `currentColor` in its own document, falling back to black.
@@ -1049,7 +1054,9 @@ fn paint_kind(
             let path = view_box.map_or_else(
                 || drawn.offset(rect.origin.x, rect.origin.y),
                 |view| {
-                    drawn.transform(view_box_transform(view, rect, *stretch))
+                    drawn.transform(view_box_transform(
+                        view, unrounded, *stretch,
+                    ))
                 },
             );
 
@@ -1412,6 +1419,74 @@ fn fit_image(
 
 fn scaled(size: Size, factor: f32) -> Size {
     Size::new(size.width * factor, size.height * factor)
+}
+
+/// A fitted picture's rectangle with each edge on a whole CSS pixel, a half
+/// rounding up, as Chrome snaps an `<img>`'s destination: `none` at -0.5 draws
+/// at 0, and `cover` of a 2.1:1 picture in a 2.1:1 box of 350x166.66 is the
+/// box. `chrome_object_fit.rs` and `fitted_content.rs` pin both.
+fn snapped(rect: Rect) -> Rect {
+    let snap = |edge: f32| (edge + 0.5).floor();
+    let (left, top) = (snap(rect.origin.x), snap(rect.origin.y));
+    let right = snap(rect.origin.x + rect.size.width);
+    let bottom = snap(rect.origin.y + rect.size.height);
+    Rect::new(
+        meo_canvas_scene::Point::new(left, top),
+        Size::new(right - left, bottom - top),
+    )
+}
+
+/// Where a picture is drawn: fitted in the box as laid out, then snapped, as
+/// Chrome does; see [`snapped`]. A document lays its drawing out in that
+/// viewport under its own `xMidYMid meet`; Chrome places it in the unsnapped
+/// viewport, carries it into the snapped one and snaps it there.
+fn placed_picture(
+    decoded: &DecodedImage,
+    intrinsic: Size,
+    unrounded: Rect,
+    fit: ObjectFit,
+    position: (Length, Length),
+) -> Rect {
+    let viewport = fit_image(intrinsic, unrounded, fit, position);
+    if decoded.is_document() {
+        let drawing =
+            fit_image(intrinsic, viewport, ObjectFit::Contain, CENTRED);
+        snapped(carried(drawing, viewport, snapped(viewport)))
+    } else {
+        snapped(viewport)
+    }
+}
+
+/// `object-position: 50% 50%`, where `xMidYMid` puts a document's drawing.
+const CENTRED: (Length, Length) = (Length::Percent(0.5), Length::Percent(0.5));
+
+/// `rect` moved from the frame `from` into the frame `to`, scaled with it; an
+/// empty `from` leaves it where it is.
+fn carried(rect: Rect, from: Rect, to: Rect) -> Rect {
+    if from.size.width <= 0.0 || from.size.height <= 0.0 {
+        return rect;
+    }
+    let scale = (
+        to.size.width / from.size.width,
+        to.size.height / from.size.height,
+    );
+    Rect::new(
+        meo_canvas_scene::Point::new(
+            (rect.origin.x - from.origin.x).mul_add(scale.0, to.origin.x),
+            (rect.origin.y - from.origin.y).mul_add(scale.1, to.origin.y),
+        ),
+        Size::new(rect.size.width * scale.0, rect.size.height * scale.1),
+    )
+}
+
+/// `id`'s content box before rounding. Only a node with a rectangle is
+/// painted, and layout records this box beside every rectangle.
+fn unrounded_content(layout: &LayoutResult, id: NodeId) -> Rect {
+    layout.unrounded_content(id).unwrap_or_else(|| {
+        unreachable!(
+            "layout records an unrounded content box beside every rectangle"
+        )
+    })
 }
 
 /// A length against the extent it is a fraction of.
@@ -3626,9 +3701,10 @@ fn draw_backdrop(
     result
 }
 
-/// The transform fitting a path's `viewBox` into its box: SVG's default
+/// The transform fitting a path's `viewBox` into its content box as laid out,
+/// unrounded, as Chrome maps an `<svg>`'s (`view-box.tsv`): SVG's default
 /// `xMidYMid meet`, the smaller scale with the remainder split evenly. A
-/// degenerate extent places the path unscaled at the node's origin.
+/// degenerate extent places the path unscaled at the box's origin.
 fn view_box_transform(
     view: (f32, f32, f32, f32),
     rect: Rect,
