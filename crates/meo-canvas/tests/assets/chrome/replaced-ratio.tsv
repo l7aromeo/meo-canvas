@@ -48,6 +48,12 @@ flex w50%	0.00	0.00	100.00	40.00	flex/40px	static 50% auto	control: the same, an
 flex w auto	0.00	0.00	60.00	40.00	flex/40px	static auto auto	control: shrink-to-fit on the main axis, stretched on the cross
 flex w auto h80	0.00	0.00	120.00	80.00	flex/40px	static auto 80px	control: a declared cross size stops the stretch and the ratio applies
 flex tall auto w200	0.00	0.00	200.00	133.33	flex/auto	static 200px auto	control: with nothing to stretch to, the ratio settles it
+block w200 h60	0.00	0.00	200.00	60.00	block/auto	static 200px 60px	both declared: neither is derived, though 200 wide alone gives 133.33
+block w50% h60	0.00	0.00	100.00	60.00	block/auto	static 50% 60px	the same with a percentage width, which resolves in block flow
+block w200 h150	0.00	0.00	200.00	150.00	block/auto	static 200px 150px	control: a declared height above the derived one was always kept
+flex w200 h60	0.00	0.00	200.00	60.00	flex/auto	static 200px 60px	control: a flex container sizes the item itself
+block w200 max60	0.00	0.00	200.00	60.00	block/auto	static 200px auto max-height:60px	a maximum below the derived 133.33 clamps it
+block w200 max60 min80	0.00	0.00	200.00	80.00	block/auto	static 200px auto min-height:80px;max-height:60px	a minimum above the maximum wins
 abs block w200	0.00	0.00	200.00	133.33	block/40px	absolute 200px auto	control: out of flow, correct today
 abs block w auto	0.00	0.00	60.00	40.00	block/40px	absolute auto auto	control: out of flow with neither axis definite
 abs flex w200	0.00	0.00	200.00	133.33	flex/40px	absolute 200px auto	control: an out-of-flow child is not a flex item

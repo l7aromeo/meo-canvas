@@ -88,6 +88,8 @@ struct Case {
     absolute: bool,
     width: Dimension,
     height: Dimension,
+    /// The element's minimum and maximum height.
+    clamp: (Dimension, Dimension),
     kind: Kind,
 }
 
@@ -115,6 +117,8 @@ fn painted(case: &Case) -> (u32, u32) {
         Kind::Box => Node::new(NodeKind::Box),
     };
     element.layout.size = (case.width, case.height);
+    element.layout.min_size.1 = case.clamp.0;
+    element.layout.max_size.1 = case.clamp.1;
     element.paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
     if case.absolute {
         element.layout.position_type = PositionType::Absolute;
@@ -174,6 +178,7 @@ const fn replaced(
         absolute: false,
         width,
         height,
+        clamp: (Dimension::Auto, Dimension::Auto),
         kind: Kind::Replaced,
     }
 }
@@ -227,6 +232,70 @@ fn a_declared_height_derives_the_width() {
             Dimension::Points(BLOCK.1),
             Dimension::Auto,
             Dimension::Points(80.0),
+        ),
+    );
+}
+
+#[test]
+fn two_declared_sizes_are_both_kept() {
+    // `l7aromeo/meo-canvas#189`: a declared height below the derived one held
+    // nonetheless, 200x133 for a declared 200x60, in block flow alone.
+    for (key, width) in [
+        ("block w200 h60", Dimension::Points(200.0)),
+        ("block w50% h60", Dimension::Percent(0.5)),
+    ] {
+        agrees(
+            key,
+            &replaced(
+                Display::Block,
+                Dimension::Auto,
+                width,
+                Dimension::Points(60.0),
+            ),
+        );
+    }
+    agrees(
+        "block w200 h150",
+        &replaced(
+            Display::Block,
+            Dimension::Auto,
+            Dimension::Points(200.0),
+            Dimension::Points(150.0),
+        ),
+    );
+    agrees(
+        "flex w200 h60",
+        &replaced(
+            Display::Flex,
+            Dimension::Auto,
+            Dimension::Points(200.0),
+            Dimension::Points(60.0),
+        ),
+    );
+}
+
+#[test]
+fn a_maximum_height_clamps_the_derived_one() {
+    // `l7aromeo/meo-canvas#189`: the derived 133.33 held over a maximum of 60
+    // in block flow, as over a declared height.
+    let clamped = |display, clamp| Case {
+        clamp,
+        ..replaced(
+            display,
+            Dimension::Auto,
+            Dimension::Points(200.0),
+            Dimension::Auto,
+        )
+    };
+    agrees(
+        "block w200 max60",
+        &clamped(Display::Block, (Dimension::Auto, Dimension::Points(60.0))),
+    );
+    agrees(
+        "block w200 max60 min80",
+        &clamped(
+            Display::Block,
+            (Dimension::Points(80.0), Dimension::Points(60.0)),
         ),
     );
 }
@@ -308,6 +377,7 @@ fn an_out_of_flow_replaced_element_is_unchanged() {
                 absolute: true,
                 width,
                 height: Dimension::Auto,
+                clamp: (Dimension::Auto, Dimension::Auto),
                 kind: Kind::Replaced,
             },
         );
@@ -328,6 +398,7 @@ fn a_non_replaced_box_still_fills_its_container() {
                 absolute: false,
                 width,
                 height: Dimension::Points(20.0),
+                clamp: (Dimension::Auto, Dimension::Auto),
                 kind: Kind::Box,
             },
         );

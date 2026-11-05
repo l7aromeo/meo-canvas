@@ -60,6 +60,8 @@
 
 - A `Path` with a `view_box` is fitted into its content box, inside its padding and border, as Chrome maps an `<svg>`'s `viewBox`, and at the box's size before rounding. With 7px of padding and a 3px border it drew across the whole box, 8px outside Chrome's drawing at the sides and the top; in a box 166.67 tall it was scaled as though 167, which moved a point ten times the `view_box`'s height down by 3.4px (`l7aromeo/meo-canvas#185`).
 
+- An `Image` in block flow keeps a declared height, and a `max_height`, below the height its picture's aspect ratio would give its width, as Chrome does: one 200 wide over 60x40 art with `height(px(60.0))` or `max_height(px(60.0))` was laid out 133 tall, the ratio's height, where Chrome gives 60. A `min_height` above that maximum still wins over it. A flex container was already right, and so was a declared height above the ratio's. The same held for any node without children that has an `aspect_ratio`, in block flow (`l7aromeo/meo-canvas#189`).
+
 ### Security
 
 - **`ureq` is required at 3.5** under the optional `net` feature, and requires `rustls` at `0.23.46` itself, closing four client-side advisories: an unauthenticated ServerHello downgrading later connections to classical key exchange (`RUSTSEC-2026-0349`), `Debug` output of a client session value exposing its secrets (`-0346`), buffered data sent after an Encrypted Client Hello rejection (`-0347`), and certificate decompression allocating up to 1 GiB before authentication under rustls's `brotli` feature (`-0348`). 0.1.4 required `ureq` 3.4, which requires `rustls` at `^0.23.22`, so a consumer could resolve an affected version even though this repository's lockfile could not.
