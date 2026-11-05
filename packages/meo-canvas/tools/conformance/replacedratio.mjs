@@ -40,6 +40,15 @@ const CASES = [
   ['flex w auto h80', 'img', 'flex', '40px', 'static', 'auto', '80px', 'control: a declared cross size stops the stretch and the ratio applies'],
   ['flex tall auto w200', 'img', 'flex', 'auto', 'static', '200px', 'auto', 'control: with nothing to stretch to, the ratio settles it'],
 
+  ['block w200 h60', 'img', 'block', 'auto', 'static', '200px', '60px', 'both declared: neither is derived, though 200 wide alone gives 133.33'],
+  ['block w50% h60', 'img', 'block', 'auto', 'static', '50%', '60px', 'the same with a percentage width, which resolves in block flow'],
+  ['block w200 h150', 'img', 'block', 'auto', 'static', '200px', '150px', 'control: a declared height above the derived one was always kept'],
+  ['flex w200 h60', 'img', 'flex', 'auto', 'static', '200px', '60px', 'control: a flex container sizes the item itself'],
+  // An optional ninth field is more CSS for the element: a maximum below the
+  // derived height clamps it, and a minimum above that maximum wins over it.
+  ['block w200 max60', 'img', 'block', 'auto', 'static', '200px', 'auto', 'a maximum below the derived 133.33 clamps it', 'max-height:60px'],
+  ['block w200 max60 min80', 'img', 'block', 'auto', 'static', '200px', 'auto', 'a minimum above the maximum wins', 'min-height:80px;max-height:60px'],
+
   ['abs block w200', 'img', 'block', '40px', 'absolute', '200px', 'auto', 'control: out of flow, correct today'],
   ['abs block w auto', 'img', 'block', '40px', 'absolute', 'auto', 'auto', 'control: out of flow with neither axis definite'],
   ['abs flex w200', 'img', 'flex', '40px', 'absolute', '200px', 'auto', 'control: an out-of-flow child is not a flex item'],
@@ -61,9 +70,9 @@ try {
   await browser.page.setViewportSize({ width: 400, height: 400 })
   const rows = []
 
-  for (const [key, tag, display, tall, position, width, height, note] of CASES) {
+  for (const [key, tag, display, tall, position, width, height, note, extra = ''] of CASES) {
     await browser.page.evaluate(
-      ({ block, src, tag, display, tall, position, width, height }) => {
+      ({ block, src, tag, display, tall, position, width, height, extra }) => {
         document.body.innerHTML = ''
         const parent = document.createElement('div')
         parent.style.cssText = `position:relative;display:${display};width:${block.width}px;height:${tall};background:#eee;`
@@ -77,13 +86,13 @@ try {
         // `display: block` on the element itself, because every node in this
         // renderer's scene is a block-level box and an `<img>` is inline-level
         // in a browser. The header says what measuring it both ways found.
-        element.style.cssText = `display:block;background:#00c;position:${position};width:${width};height:${height};${
+        element.style.cssText = `display:block;background:#00c;position:${position};width:${width};height:${height};${extra};${
           position === 'absolute' ? 'top:0;left:0;' : ''
         }`
         parent.append(element)
         document.body.append(parent)
       },
-      { block: BLOCK, src: SRC, tag, display, tall, position, width, height },
+      { block: BLOCK, src: SRC, tag, display, tall, position, width, height, extra },
     )
     // The decode has to finish before the intrinsic size exists at all: an
     // undecoded `<img>` measures 0x0, which would read as "Chrome does not
@@ -102,9 +111,16 @@ try {
       return { x: rect.left - parent.left, y: rect.top - parent.top, width: rect.width, height: rect.height }
     })
     rows.push(
-      [key, box.x.toFixed(2), box.y.toFixed(2), box.width.toFixed(2), box.height.toFixed(2), `${display}/${tall}`, `${position} ${width} ${height}`, note].join(
-        '\t',
-      ),
+      [
+        key,
+        box.x.toFixed(2),
+        box.y.toFixed(2),
+        box.width.toFixed(2),
+        box.height.toFixed(2),
+        `${display}/${tall}`,
+        `${position} ${width} ${height}${extra === '' ? '' : ` ${extra}`}`,
+        note,
+      ].join('\t'),
     )
   }
 

@@ -464,6 +464,14 @@ where
         measure,
         &mut baselines,
     )?;
+    clamp_ratio_heights(
+        &mut tree,
+        scene,
+        &to_scene,
+        root,
+        (available, measure),
+        &mut baselines,
+    )?;
 
     // One extra rounded pass rather than re-enabling rounding before whichever
     // compensation solves last, which would make their order load-bearing.
@@ -869,7 +877,8 @@ fn intrinsic_sizes_it<M>(
     if !usable_ratio(ratio) {
         return;
     }
-    if style.aspect_ratio.is_none() {
+    // [WORKAROUND] see `both_sizes_declared`.
+    if style.aspect_ratio.is_none() && !both_sizes_declared(&source.layout) {
         style.aspect_ratio = Some(ratio);
     }
     // An explicit `stretch` widens it as Chrome does (`justify-items.tsv`), so
@@ -903,6 +912,17 @@ fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
 /// and above their accumulated error; no absolute value serves up to
 /// `FINITE_CEILING`, as `l7aromeo/meo-canvas#142` records.
 const DERIVED_TOLERANCE: f32 = 0.01;
+
+// [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` floors a leaf's height at
+// `width / ratio` even when it is declared, 333x167 for a declared 333x150 in
+// block flow; a ratio has no say once both sizes are, so none is passed.
+// `l7aromeo/meo-canvas#189`; retires when `taffy_leaf_ratio_floor.rs` fails.
+/// Whether both sizes are declared lengths, a width also as a percentage, which
+/// block flow resolves: the case CSS gives an `aspect-ratio` no effect in.
+const fn both_sizes_declared(layout: &LayoutStyle) -> bool {
+    matches!(layout.size.1, Dimension::Points(_))
+        && matches!(layout.size.0, Dimension::Points(_) | Dimension::Percent(_))
+}
 
 /// Whether a declared ratio is one: positive and finite, or Chrome lays the box
 /// out as though none were declared (120x50 under `0`, `-2` or
@@ -1323,6 +1343,96 @@ where
     floor_ratio_heights(
         tree, candidates, &cleared, &pins, root, available, measure, baselines,
     )
+}
+
+// [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` floors a leaf's height at
+// `width / ratio` after its min and max apply, so a maximum below that is lost
+// as a declared height is, 200x133 under `max-height: 60`.
+// `l7aromeo/meo-canvas#189`; retires when `taffy_leaf_ratio_floor.rs` fails.
+/// Pins each ratio leaf laid out above its declared maximum height at that
+/// maximum, or at its minimum where that is larger, as CSS clamps it, and at
+/// the width it was solved at, with the ratio off so neither the floor raises
+/// the height again nor the height re-derives the width; then solves once more.
+fn clamp_ratio_heights<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    scene: &Scene,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut pins: Vec<(taffy::NodeId, f32, f32)> = Vec::new();
+    let mut walk = vec![root];
+    while let Some(id) = walk.pop() {
+        let children = tree
+            .children(id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        if !children.is_empty() {
+            walk.extend(children);
+            continue;
+        }
+        let style = tree
+            .style(id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        let Some(source) = to_scene.get(&id).and_then(|node| scene.get(*node))
+        else {
+            continue;
+        };
+        let Dimension::Points(ceiling) = source.layout.max_size.1 else {
+            continue;
+        };
+        if style.aspect_ratio.is_none() {
+            continue;
+        }
+        let floor = match source.layout.min_size.1 {
+            Dimension::Points(floor) => snapped(floor),
+            Dimension::Auto | Dimension::Percent(_) => 0.0,
+        };
+        let target = snapped(ceiling).max(floor);
+        let solved = tree
+            .layout(id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        // The declared bound in the box the layout reports, its border box.
+        let inset = (
+            solved.padding.left
+                + solved.padding.right
+                + solved.border.left
+                + solved.border.right,
+            solved.padding.top
+                + solved.padding.bottom
+                + solved.border.top
+                + solved.border.bottom,
+        );
+        let (bound, width) = match source.layout.box_sizing {
+            BoxSizing::BorderBox => (target, solved.size.width),
+            BoxSizing::ContentBox => {
+                (target + inset.1, solved.size.width - inset.0)
+            }
+        };
+        if solved.size.height > bound + DERIVED_TOLERANCE {
+            pins.push((id, width, target));
+        }
+    }
+
+    if pins.is_empty() {
+        return Ok(());
+    }
+    for (id, width, height) in &pins {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.size.width = taffy::Dimension::length(*width);
+        style.size.height = taffy::Dimension::length(*height);
+        style.aspect_ratio = None;
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
 }
 
 /// The inline size a percentage on this node resolves against: the parent's
@@ -2070,7 +2180,10 @@ pub fn to_taffy_style(
             width: to_auto_length(sized(layout.max_size.0)),
             height: to_auto_length(sized(layout.max_size.1)),
         },
-        aspect_ratio: layout.aspect_ratio.filter(|ratio| usable_ratio(*ratio)),
+        // [WORKAROUND] see `both_sizes_declared`.
+        aspect_ratio: layout.aspect_ratio.filter(|ratio| {
+            usable_ratio(*ratio) && !both_sizes_declared(layout)
+        }),
 
         margin: taffy::Rect {
             left: to_auto_length(margin(layout.margin.left)),
