@@ -92,8 +92,10 @@ struct Case {
     height: Dimension,
     /// The element's minimum and maximum height.
     clamp: (Dimension, Dimension),
-    /// The element's minimum width.
-    min_width: Dimension,
+    /// The element's minimum and maximum width.
+    width_clamp: (Dimension, Dimension),
+    /// The element's `flex-grow`.
+    grow: f32,
     /// The container's direction and `align-items`, CSS's initial values
     /// unless the row's container says otherwise.
     flow: (FlexDirection, Option<Align>),
@@ -135,8 +137,9 @@ fn painted(case: &Case) -> (u32, u32) {
         }
     };
     element.layout.size = (case.width, case.height);
-    element.layout.min_size = (case.min_width, case.clamp.0);
-    element.layout.max_size.1 = case.clamp.1;
+    element.layout.min_size = (case.width_clamp.0, case.clamp.0);
+    element.layout.max_size = (case.width_clamp.1, case.clamp.1);
+    element.layout.flex_grow = case.grow;
     let (padding, box_sizing) = case.padding;
     element.layout.padding.left = Length::Points(padding);
     element.layout.padding.right = Length::Points(padding);
@@ -203,7 +206,8 @@ const fn replaced(
         width,
         height,
         clamp: (Dimension::Auto, Dimension::Auto),
-        min_width: Dimension::Auto,
+        width_clamp: (Dimension::Auto, Dimension::Auto),
+        grow: 0.0,
         flow: (FlexDirection::Row, None),
         padding: (0.0, BoxSizing::ContentBox),
         kind: Kind::Replaced,
@@ -413,7 +417,7 @@ fn a_minimum_height_still_sizes_what_it_did() {
     agrees(
         "block w200 min-width250 min160",
         &Case {
-            min_width: Dimension::Points(250.0),
+            width_clamp: (Dimension::Points(250.0), Dimension::Auto),
             ..floored(Display::Block, points, false)
         },
     );
@@ -450,6 +454,121 @@ fn a_minimum_height_still_sizes_what_it_did() {
             },
         );
     }
+}
+
+/// A replaced element under a maximum height of 60, which is 90 wide through
+/// the ratio, in a container of content height.
+const fn capped(display: Display, width: Dimension) -> Case {
+    Case {
+        clamp: (Dimension::Auto, Dimension::Points(60.0)),
+        ..replaced(display, Dimension::Auto, width, Dimension::Auto)
+    }
+}
+
+#[test]
+fn a_maximum_height_does_not_narrow_a_declared_width() {
+    // `l7aromeo/meo-canvas#193`: that was the width, 90x60 for a declared 200
+    // in every container but block flow, which `l7aromeo/meo-canvas#189` put
+    // right for an image.
+    let (points, percent) = (Dimension::Points(200.0), Dimension::Percent(0.5));
+    for (key, display, width) in [
+        ("flex w200 max60", Display::Flex, points),
+        ("flex w50% max60", Display::Flex, percent),
+        ("grid w200 max60", Display::Grid, points),
+    ] {
+        agrees(key, &capped(display, width));
+    }
+    agrees(
+        "abs block w200 max60",
+        &Case {
+            absolute: true,
+            ..capped(Display::Block, points)
+        },
+    );
+    for (key, flow) in [
+        (
+            "flex start w200 max60",
+            (FlexDirection::Row, Some(Align::FlexStart)),
+        ),
+        ("column w200 max60", (FlexDirection::Column, None)),
+        (
+            "column start w200 max60",
+            (FlexDirection::Column, Some(Align::FlexStart)),
+        ),
+    ] {
+        agrees(
+            key,
+            &Case {
+                flow,
+                ..capped(Display::Flex, points)
+            },
+        );
+    }
+    agrees(
+        "flex w200 max60 min80",
+        &Case {
+            clamp: (Dimension::Points(80.0), Dimension::Points(60.0)),
+            ..capped(Display::Flex, points)
+        },
+    );
+    // Grown past its declared width: no maximum width holds it there.
+    agrees(
+        "flex grow w100 max60",
+        &Case {
+            grow: 1.0,
+            ..capped(Display::Flex, Dimension::Points(100.0))
+        },
+    );
+    for (key, display) in [
+        ("block ratio div w200 max60", Display::Block),
+        ("flex ratio div w200 max60", Display::Flex),
+    ] {
+        agrees(
+            key,
+            &Case {
+                kind: Kind::Ratio,
+                ..capped(display, points)
+            },
+        );
+    }
+}
+
+#[test]
+fn a_maximum_height_leaves_what_it_did() {
+    // An auto width takes the maximum through the ratio, a declared maximum
+    // width still wins, and a percentage maximum of an auto height is none,
+    // so the ratio's 133.33 stands.
+    let under = (Dimension::Auto, Dimension::Points(20.0));
+    agrees(
+        "flex start w auto max20",
+        &Case {
+            clamp: under,
+            flow: (FlexDirection::Row, Some(Align::FlexStart)),
+            ..capped(Display::Flex, Dimension::Auto)
+        },
+    );
+    agrees(
+        "abs block w auto max20",
+        &Case {
+            clamp: under,
+            absolute: true,
+            ..capped(Display::Block, Dimension::Auto)
+        },
+    );
+    agrees(
+        "flex w200 max-width150 max60",
+        &Case {
+            width_clamp: (Dimension::Auto, Dimension::Points(150.0)),
+            ..capped(Display::Flex, Dimension::Points(200.0))
+        },
+    );
+    agrees(
+        "flex w200 max200%",
+        &Case {
+            clamp: (Dimension::Auto, Dimension::Percent(2.0)),
+            ..capped(Display::Flex, Dimension::Points(200.0))
+        },
+    );
 }
 
 #[test]
@@ -530,7 +649,8 @@ fn an_out_of_flow_replaced_element_is_unchanged() {
                 width,
                 height: Dimension::Auto,
                 clamp: (Dimension::Auto, Dimension::Auto),
-                min_width: Dimension::Auto,
+                width_clamp: (Dimension::Auto, Dimension::Auto),
+                grow: 0.0,
                 flow: (FlexDirection::Row, None),
                 padding: (0.0, BoxSizing::ContentBox),
                 kind: Kind::Replaced,
@@ -554,7 +674,8 @@ fn a_non_replaced_box_still_fills_its_container() {
                 width,
                 height: Dimension::Points(20.0),
                 clamp: (Dimension::Auto, Dimension::Auto),
-                min_width: Dimension::Auto,
+                width_clamp: (Dimension::Auto, Dimension::Auto),
+                grow: 0.0,
                 flow: (FlexDirection::Row, None),
                 padding: (0.0, BoxSizing::ContentBox),
                 kind: Kind::Box,

@@ -1973,6 +1973,50 @@ where
     solve_once(tree, root, available, measure, baselines)
 }
 
+/// A block-axis percentage against an indefinite containing block resolves to
+/// `auto`, which taffy does not do. Out of flow the containing block is not the
+/// flex parent and is settled first, so it stands (`absolute-percentage.tsv`).
+const fn drop_indefinite_percentages(
+    style: &mut taffy::Style,
+    source: &meo_canvas_scene::node::Node,
+    definite_parent: bool,
+) {
+    if definite_parent || out_of_flow(source) {
+        return;
+    }
+    if matches!(source.layout.size.1, Dimension::Percent(_)) {
+        style.size.height = taffy::Dimension::auto();
+    }
+    if matches!(source.layout.min_size.1, Dimension::Percent(_)) {
+        style.min_size.height = taffy::LengthPercentageAuto::auto();
+    }
+    if matches!(source.layout.max_size.1, Dimension::Percent(_)) {
+        style.max_size.height = taffy::LengthPercentageAuto::auto();
+    }
+}
+
+// [WORKAROUND] taffy 0.15.1 transfers a maximum height through the ratio into
+// a maximum width under a declared one: 90x60 for 200 wide under a maximum of
+// 60 at 3:2, anywhere but a replaced block. `l7aromeo/meo-canvas#193`, probed
+// by `crates/meo-canvas-core/tests/taffy_ratio_max_transfer.rs`.
+/// Gives a ratio box with a declared width, a maximum height and no maximum
+/// width the largest maximum width, which leaves taffy nothing to transfer, as
+/// CSS transfers into an automatic width alone. Not the declared width, which
+/// would hold a growing flex item at it, `flex grow w100 max60`.
+fn unbound_declared_width(
+    style: &mut taffy::Style,
+    source: &meo_canvas_scene::node::Node,
+) {
+    if style.aspect_ratio.is_some()
+        && !matches!(sized(source.layout.size.0), Dimension::Auto)
+        && matches!(sized(source.layout.max_size.0), Dimension::Auto)
+        && !style.max_size.height.is_auto()
+    {
+        style.max_size.width =
+            taffy::LengthPercentageAuto::length(FINITE_CEILING);
+    }
+}
+
 /// Builds the taffy tree for a subtree, leaving out `Display::None`, with each
 /// out-of-flow box under its containing block, since taffy's `Style` cannot
 /// make a transform one: `Absolute` under the nearest positioned or transformed
@@ -2005,21 +2049,8 @@ where
     style.item_is_replaced = lays_out_replaced(node, source, measure);
     let parent_items = state_auto(&mut style, source, parent, own);
     intrinsic_sizes_it(&mut style, node, source, parent, parent_items, measure);
-    // A block-axis percentage against an indefinite containing block resolves
-    // to `auto`, which taffy does not do. Out of flow the containing block is
-    // not the flex parent and is settled first, so it stands
-    // (`absolute-percentage.tsv`).
-    if !heights.parent && !out_of_flow(source) {
-        if matches!(source.layout.size.1, Dimension::Percent(_)) {
-            style.size.height = taffy::Dimension::auto();
-        }
-        if matches!(source.layout.min_size.1, Dimension::Percent(_)) {
-            style.min_size.height = taffy::LengthPercentageAuto::auto();
-        }
-        if matches!(source.layout.max_size.1, Dimension::Percent(_)) {
-            style.max_size.height = taffy::LengthPercentageAuto::auto();
-        }
-    }
+    drop_indefinite_percentages(&mut style, source, heights.parent);
+    unbound_declared_width(&mut style, source);
 
     let mut children: Vec<taffy::NodeId> = Vec::new();
     // Absolute descendants from anywhere beneath here that have not yet met a
