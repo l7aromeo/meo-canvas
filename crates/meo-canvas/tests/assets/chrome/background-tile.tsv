@@ -1,0 +1,28 @@
+# Chrome, through `just conformance`. Where background tiles land.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# A 420x220 white page, the box at 10,10 on white, the picture
+# `crates/meo-canvas/tests/assets/split-tile.png`: 40x20, its left half red and
+# its right half blue.
+# Written by packages/meo-canvas/tools/conformance/backgroundtile.mjs.
+#
+# Positions are box pixels: the half-coverage crossings of ink and of red
+# along the row `row` and the column `column`, both inside the first tile.
+# On an axis it does not repeat along, Chrome rounds the tile, a half up,
+# or the part of it the box shows where the tile crosses the box edge; on
+# an axis it repeats along, the tile keeps its fractional size and phase.
+# name	width	height	size	position	repeat	row	column	ink x	red x	ink y	red y
+"percent"	300	100	50% 25%	50% 50%	no-repeat	50	77	75,225	75,150.106	38,63	38,63
+"percent odd"	350	167	50% 25%	50% 50%	no-repeat	83	90	88,263	88,175.51	63,105	63,105
+"percent fractional box"	300.4	100.6	50% 25%	50% 50%	no-repeat	50	77	75,225	75,150.106	38,63	38,63
+"pixels"	300	100	40.4px 20.3px	10.3px 10.6px	no-repeat	20	12	10,50	10,30	11,31	11,31
+"pixel half"	300	100	40px 20px	10.5px 10.5px	no-repeat	20	13	11,51	11,31	11,31	11,31
+"negative half"	300	100	40px 20px	-10.5px -10.5px	no-repeat	4	2	0,30	0,9.776	0,10	0,10
+"negative percent"	300	100	41px 21px	-10% -10%	no-repeat	6	2	0,15		0,13	
+"contain"	333	150	contain	50% 50%	no-repeat	74	19	17,317	17,167.177	0,150	0,150
+"cover"	333	150	cover	50% 50%	no-repeat	74	2	0,333	0,166.531	0,150	0,150
+"repeat-x pixels"	300	100	33.3px 20px	0px 0px	repeat-x	9	2	0,300	0,16.763,33.171,50,66.683,83.119,99.984,116.583,133.072,149.946,166.466,183.031,199.904,216.356,233,249.853,266.268,283	0,20	0,20
+"repeat-x percent"	301	100	11% auto	0% 50%	repeat-x	50	2	0,301	0,16.615,33.014,49.784,66.096,82.899,99.208,115.98,132.367,149,165.602,182.01,198.776,215.088,231.89,248.197,264.975,281.356,298,301	42,59	42,59
+"repeat-x phase"	300	100	33.3px 20px	50% 0px	repeat-x	9	2	0,300	0.047,16.923,33.398,50.01,66.875,83.302,100,116.818,133.229,150,166.754,183.164,200,216.672,233.11,249.98,266.569,283.064	0,20	0,20
+"repeat both"	300	100	33.3px 20.3px	10.3px 10.6px	repeat	49	2	0,300	10.224,27,43.698,60.168,77,93.615,110.069,126.969,143.496,160.033,176.928,193.392,210,226.887,243.297,260,276.832,293.229	0,100	
+"space"	300	100	40px 20px	0px 0px	space	49	2	0,40,43.241,83.366,86.741,126.723,129.996,169.989,173.224,213.35,216.723,256.709,259.988,299.839	0,20.007,43.241,63.241,86.741,106.618,129.996,149.99,173.224,193.229,216.723,236.593,259.988,279.979	0,100	0,100
+"round"	300	100	33.3px 20.3px	0px 0px	round	49	2	0,300	0,16.836,33.224,50,66.832,83.229,100,116.776,133.224,150,166.771,183.229,200,216.776,233.224,250,266.771,283.168	0,100	0,100

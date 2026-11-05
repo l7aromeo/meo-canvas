@@ -1788,19 +1788,42 @@ fn draw_background_image(
         None => (columns, rows),
     };
 
+    // Where the box shows the background along each axis, in box pixels.
+    let shown = area.map_or(
+        ((0.0, rect.size.width), (0.0, rect.size.height)),
+        |area| {
+            (
+                (
+                    area.origin.x - rect.origin.x,
+                    area.origin.x + area.size.width - rect.origin.x,
+                ),
+                (
+                    area.origin.y - rect.origin.y,
+                    area.origin.y + area.size.height - rect.origin.y,
+                ),
+            )
+        },
+    );
+    let across = columns.spans(across, intrinsic.width, shown.0);
+    let down = rows.spans(down, intrinsic.height, shown.1);
+
     context.save();
     let result = (|context: &mut Context2D| {
         if area.is_none() {
             clip_to_box(context, paint, rect)?;
         }
-        for left in &columns.offsets {
-            for top in &rows.offsets {
-                context.draw_image_sized(
+        for column in &across {
+            for row in &down {
+                context.draw_image_region(
                     image,
-                    rect.origin.x + left,
-                    rect.origin.y + top,
-                    columns.extent,
-                    rows.extent,
+                    column.source,
+                    row.source,
+                    column.source_length,
+                    row.source_length,
+                    rect.origin.x + column.at,
+                    rect.origin.y + row.at,
+                    column.length,
+                    row.length,
                 );
             }
         }
@@ -1808,6 +1831,15 @@ fn draw_background_image(
     })(context);
     context.restore();
     result
+}
+
+/// One tile's extent along one axis: where it is drawn, from the box's edge,
+/// and which part of the picture it draws.
+struct Span {
+    at: f32,
+    length: f32,
+    source: f32,
+    source_length: f32,
 }
 
 /// The most tiles one axis of a background lays out. A tile far below a pixel
@@ -1824,6 +1856,51 @@ struct TileRun {
 }
 
 impl TileRun {
+    /// The tiles as drawn along an axis of a picture `intrinsic` long, the box
+    /// showing `shown`. Along an axis that repeats they keep their fractional
+    /// size and phase, as in Chrome; along one that does not, the part the box
+    /// shows has its position and its length each rounded to a whole pixel, a
+    /// half up, and draws the part of the picture it covered: 62.625 and 41.75
+    /// draw at 63 for 42, not to 104 (`background-tile.tsv`).
+    fn spans(
+        &self,
+        repeats: bool,
+        intrinsic: f32,
+        shown: (f32, f32),
+    ) -> Vec<Span> {
+        if repeats {
+            return self
+                .offsets
+                .iter()
+                .map(|&at| Span {
+                    at,
+                    length: self.extent,
+                    source: 0.0,
+                    source_length: intrinsic,
+                })
+                .collect();
+        }
+        let snap = |edge: f32| (edge + 0.5).floor();
+        self.offsets
+            .iter()
+            .filter_map(|&at| {
+                let (start, end) =
+                    (at.max(shown.0), (at + self.extent).min(shown.1));
+                let length = snap(end - start);
+                if length <= 0.0 || self.extent <= 0.0 {
+                    return None;
+                }
+                let scale = intrinsic / self.extent;
+                Some(Span {
+                    at: snap(start),
+                    length,
+                    source: (start - at) * scale,
+                    source_length: (end - start) * scale,
+                })
+            })
+            .collect()
+    }
+
     /// The run continued at its own period over `start..end`, offsets from the
     /// box's edge: how a repeating root image covers the canvas around the box
     /// it is positioned against. A run that does not repeat is returned as is.
@@ -1915,12 +1992,12 @@ fn resolve_dimension(dimension: Dimension, reference: f32) -> Option<f32> {
 }
 
 /// Where the first tile's near edge sits: a percentage is a share of the slack,
-/// so `100%` puts the far edges together. Truncated to a whole pixel, as v9's
-/// `tileOrigin` is: half a pixel of origin is another row of anti-aliasing.
+/// so `100%` puts the far edges together. Left fractional: an axis that repeats
+/// keeps it so, and one that does not is snapped where it is drawn.
 fn tile_origin(position: Length, extent: f32, tile: f32) -> f32 {
     match position {
         Length::Points(points) => points,
-        Length::Percent(fraction) => (fraction * (extent - tile)).trunc(),
+        Length::Percent(fraction) => fraction * (extent - tile),
     }
 }
 
