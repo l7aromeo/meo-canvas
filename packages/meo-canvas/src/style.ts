@@ -426,6 +426,13 @@ export type GradientRamp =
  * has no direction and a linear one has no centre, so neither can be given a
  * value nothing looks at.
  *
+ * Stops that are not opaque mix as a browser mixes them. As a node's
+ * `gradient` or a `mask`, that is CSS's way, with the alpha multiplied in, so a
+ * stop at alpha 0 adds no colour and `'#101014'` to `'transparent'` fades
+ * without darkening. As a `Path`'s `fill` or `stroke`, it is SVG's way, straight,
+ * so a stop at alpha 0 keeps its own colour and `'transparent'` is a
+ * transparent black.
+ *
  * ```ts
  * import type { Gradient } from 'meo-canvas'
  *

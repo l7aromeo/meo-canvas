@@ -285,6 +285,13 @@ impl Default for GradientGeometry {
 }
 
 /// A gradient fill.
+///
+/// Stops that are not opaque mix as a browser mixes them. As a node's
+/// `gradient` or a [`Mask`](crate::style::effect::Mask), that is CSS's way,
+/// with the alpha multiplied in, so a stop at alpha 0 adds no colour and red to
+/// [`Color::TRANSPARENT`] stays red as it fades. As a path's fill or stroke, it
+/// is SVG's way, straight, so a stop at alpha 0 keeps its own colour and
+/// [`Color::TRANSPARENT`] is a transparent black.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Gradient {
     /// The shape, and the geometry that shape reads.
