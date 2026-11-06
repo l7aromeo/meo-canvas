@@ -22,8 +22,21 @@ const FAMILY = 'MeoReregisterProbe'
 /** On the GPU the pixels move every third registration here, so twelve crosses three moves. */
 const RENDERS = 12
 
+/**
+ * Where a GPU engine is expected. The raster backend draws the same pixels however often a
+ * face is registered, so elsewhere a render that comes up on the CPU would check nothing.
+ */
+const GPU_PLATFORM = 'darwin'
+
 describe('naming the same fonts on every render', () => {
-  it('draws the same pixels each time', async () => {
+  it('draws the same pixels each time on the GPU engine', async ({ skip }) => {
+    // Printed as well as passed to `skip`: vitest's CI output names neither a skipped
+    // test's note nor a passing test, and a console line it always shows.
+    if (process.platform !== GPU_PLATFORM) {
+      const reason = `a GPU engine is expected only on macOS, not ${process.platform}, and on the CPU this checks nothing`
+      console.info(`skipped: ${reason}`)
+      skip(reason)
+    }
     const hashes: string[] = []
     for (let render = 0; render < RENDERS; render++) {
       const canvas = await Root({
@@ -36,12 +49,9 @@ describe('naming the same fonts on every render', () => {
         fonts: [{ family: FAMILY, paths: [FACE] }],
         children: Text('N.T.E', { fontFamily: FAMILY, fontSize: 96, fontWeight: 900, fontStyle: 'italic', letterSpacing: -2, color: '#3A4FD8' }),
       })
-      // Vacuous without a GPU: the raster backend draws the same pixels however
-      // often the face was registered.
-      if (canvas.engine !== 'gpu') {
-        canvas.release()
-        return
-      }
+      const engine = canvas.engine
+      if (engine !== 'gpu') canvas.release()
+      expect(engine, `render ${render} came up on the ${engine} engine, where this checks nothing; macOS is expected to give the GPU`).toBe('gpu')
       hashes.push(
         createHash('sha256')
           .update(await canvas.toBuffer('raw'))
@@ -49,6 +59,7 @@ describe('naming the same fonts on every render', () => {
       )
       canvas.release()
     }
+    console.info(`ran ${RENDERS} renders on the gpu engine`)
     expect(hashes.filter(hash => hash !== hashes[0])).toEqual([])
   })
 })
