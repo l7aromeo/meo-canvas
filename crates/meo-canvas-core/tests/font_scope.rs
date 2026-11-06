@@ -60,7 +60,7 @@ fn a_registration_outlives_the_registry_that_made_it() {
     );
 
     // **The two accessors disagree, on purpose.** `has` answers "can this be
-    // drawn in this process" and `registered` answers "what did I register".
+    // drawn on this thread" and `registered` answers "what did I register".
     // A caller asking both of a fresh registry sees an inconsistent library
     // and is looking at two correct answers to two different questions.
     assert!(after.has(FAMILY) && after.registered().is_empty());

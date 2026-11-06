@@ -346,7 +346,7 @@ impl RunStyle {
 /// after Roboto exists.
 pub struct TextMeasurer {
     /// A one-pixel canvas, which is where a measuring context comes from. The
-    /// font library is process-wide, so this sees every registered face.
+    /// font library is the thread's, so this sees every face registered on it.
     canvas: Canvas,
     /// Answers, keyed by the font and the string.
     answers: HashMap<(FontKey, u32, String), Measurement>,

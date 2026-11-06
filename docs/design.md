@@ -105,10 +105,12 @@ and names what it has not measured.
 ### Where state lives
 
 `Renderer` owns everything a render needs that is not the scene: registered
-fonts and whatever caches the passes keep. **Nothing in this crate is global.**
-Two `Renderer`s on two threads share no state and cannot contend. The one
-process-wide state is outside this crate: `meo-skia-canvas` keeps a font
-registry. This crate adds no second global.
+fonts and whatever caches the passes keep. **Nothing in this crate is
+process-wide.** Two `Renderer`s on two threads share no state and cannot
+contend. The registry that outlives a `Renderer` is outside this crate:
+`meo-skia-canvas` keeps one per thread. Beside it this crate keeps one
+per-thread record, of the face bytes registered on that thread, so that the
+same bytes are not registered twice (`l7aromeo/meo-canvas#203`).
 
 `Renderer::render` returns a `RenderedCanvas`, and encoding is a separate call
 on it, so two formats of one picture cost one resolve, measure, layout and paint
@@ -524,6 +526,7 @@ by construction, and the crate ships them together.
 | `ureq`            | 3.5    | Remote images, behind the optional `net` feature.         |
 | `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.      |
 | `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.    |
+| `skia-safe`       | 0.153  | Test only. Held at `meo-skia-canvas`'s, not 0.157.        |
 
 | tool       |       |                                                                |
 | ---------- | ----- | -------------------------------------------------------------- |

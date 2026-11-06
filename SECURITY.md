@@ -95,6 +95,6 @@ This library takes untrusted input in more places than most, so it is worth bein
   `content-length`. A caller who passes an `AbortSignal` keeps it — the deadline is composed with
   theirs — and a caller wanting a different policy fetches the bytes and passes them inline, which
   is the escape on both surfaces.
-- A font registered by one render affecting a later one in the same process. This is real, it is
+- A font registered by one render affecting a later one on the same thread. This is real, it is
   documented on `FontRegistration`, and it is a property of the registry below this project rather
   than a defect here — but a service that registers per request should read that note.

@@ -67,16 +67,25 @@
 //! `register_bytes` take `&self`. Registering is not a mutation of this value,
 //! because this value is not what changes.
 //!
-//! Everything else here is scoped as it looks. Nothing in this module is a
-//! `static`, the caches are owned per resolve, and two renders on two threads
-//! share nothing and contend for nothing **except the font registry**.
+//! **Naming the same files on every render registers them once.** Bytes this
+//! thread already registered under a family are read and compared, not handed
+//! to `meo-skia-canvas` again, which would add a typeface each time: memory
+//! would grow with every render, and the GPU would draw large glyphs a level
+//! apart at their edges from one render to the next
+//! (`l7aromeo/meo-skia-canvas#612`, `l7aromeo/meo-skia-canvas#611`).
+//!
+//! Everything else here is scoped as it looks. The one `static` in this module
+//! is the thread's record of the faces it registered, which mirrors the
+//! registry rather than adding one; the caches are owned per resolve, and two
+//! renders on two threads share nothing and contend for nothing **except the
+//! font registry**.
 
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, hash_map::Entry},
     path::Path,
     rc::Rc,
-    sync::OnceLock,
+    sync::{Mutex, OnceLock, PoisonError},
 };
 
 use base64::{
@@ -100,6 +109,27 @@ use meo_skia_canvas::image::Svg;
 
 use crate::{Error, FetchFailure, ImageWarning};
 
+thread_local! {
+    // [WORKAROUND] meo-skia-canvas adds a typeface per registration, identical
+    // bytes too (`l7aromeo/meo-skia-canvas#612`, `l7aromeo/meo-skia-canvas#611`),
+    // tracked as `l7aromeo/meo-canvas#203`. Retires when it adds none, which
+    // `crates/meo-canvas-core/tests/meo_skia_canvas_reregister.rs` asserts.
+    /// The faces registered on this thread, by family, compared byte for byte
+    /// so that bytes registered again are not handed to meo-skia-canvas twice.
+    static REGISTERED_FACES: RefCell<HashMap<String, Vec<Box<[u8]>>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Whether this thread has registered exactly `bytes` under `family`.
+fn registered_on_this_thread(family: &str, bytes: &[u8]) -> bool {
+    REGISTERED_FACES.with(|faces| {
+        faces
+            .borrow()
+            .get(family)
+            .is_some_and(|known| known.iter().any(|face| **face == *bytes))
+    })
+}
+
 /// The fonts a render can draw with.
 ///
 /// Wraps `meo-skia-canvas`'s registry rather than re-exporting it, because no
@@ -113,6 +143,10 @@ use crate::{Error, FetchFailure, ImageWarning};
 #[derive(Default)]
 pub struct Fonts {
     library: meo_skia_canvas::FontLibrary,
+    /// The families this registry registered, in registration order: kept
+    /// here rather than read from `library`, which never sees a face this
+    /// thread already registered.
+    families: Mutex<Vec<String>>,
     /// The families the platform already has, read once: enumerating them
     /// walks the system's font directories, and the answer cannot change
     /// while the process runs.
@@ -143,6 +177,10 @@ impl Fonts {
     /// The name need not match the one inside the file. Call it more than once
     /// with the same name to give a family several weights.
     ///
+    /// A file whose bytes this thread already registered under `family` is
+    /// read and compared, and not registered again, so naming the same files on
+    /// every render costs a read of each.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::FontRegister`] if the file cannot be read or its bytes
@@ -152,15 +190,27 @@ impl Fonts {
         family: &str,
         path: impl AsRef<Path>,
     ) -> Result<(), Error> {
-        self.library
-            .register_font_from_path(family, path)
-            .map_err(|source| Error::FontRegister {
-                family: family.to_owned(),
-                detail: source.to_string(),
-            })
+        let path = path.as_ref();
+        // [WORKAROUND] see `REGISTERED_FACES`: read here to compare the bytes.
+        // An unreadable file goes to meo-skia-canvas, whose error it reports.
+        let Ok(bytes) = std::fs::read(path) else {
+            return self
+                .library
+                .register_font_from_path(family, path)
+                .map(|()| self.note(family))
+                .map_err(|source| Error::FontRegister {
+                    family: family.to_owned(),
+                    detail: source.to_string(),
+                });
+        };
+        self.register_bytes(family, &bytes)
     }
 
     /// Registers a face from bytes the caller already holds.
+    ///
+    /// Bytes this thread already registered under `family` are not registered
+    /// again. The first registration keeps a copy of them to compare against,
+    /// for as long as the thread runs.
     ///
     /// # Errors
     ///
@@ -171,12 +221,33 @@ impl Fonts {
         family: &str,
         bytes: &[u8],
     ) -> Result<(), Error> {
-        self.library
-            .register_font_from_data(family, bytes)
-            .map_err(|source| Error::FontRegister {
-                family: family.to_owned(),
-                detail: source.to_string(),
-            })
+        // [WORKAROUND] see `REGISTERED_FACES`.
+        if !registered_on_this_thread(family, bytes) {
+            self.library
+                .register_font_from_data(family, bytes)
+                .map_err(|source| Error::FontRegister {
+                    family: family.to_owned(),
+                    detail: source.to_string(),
+                })?;
+            REGISTERED_FACES.with(|faces| {
+                faces
+                    .borrow_mut()
+                    .entry(family.to_owned())
+                    .or_default()
+                    .push(bytes.into());
+            });
+        }
+        self.note(family);
+        Ok(())
+    }
+
+    /// Records `family` as registered here, once, in registration order.
+    fn note(&self, family: &str) {
+        let mut families =
+            self.families.lock().unwrap_or_else(PoisonError::into_inner);
+        if !families.iter().any(|known| known == family) {
+            families.push(family.to_owned());
+        }
     }
 
     /// Whether a family can be drawn with **anywhere on this thread**.
@@ -196,7 +267,7 @@ impl Fonts {
     /// caller holds, and the registry underneath it is the thread's.
     #[must_use]
     pub fn has(&self, family: &str) -> bool {
-        if family.is_empty() || self.library.has_font(family) {
+        if family.is_empty() || self.registered().iter().any(|f| f == family) {
             return true;
         }
         self.installed()
@@ -214,7 +285,10 @@ impl Fonts {
     /// already available from `has`.
     #[must_use]
     pub fn registered(&self) -> Vec<String> {
-        self.library.families()
+        self.families
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// The registry the measure pass builds its text engine from.
