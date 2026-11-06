@@ -155,17 +155,19 @@ const canvas = await Root({
 canvas.release()
 ```
 
-**Registration is process-wide and permanent.** A family registered by one
-render is registered for every render after it, nothing unregisters anything,
-and giving different files under the same name changes what that name draws from
-then on. A render that names a family it never registered does not fail — it
-uses whatever an earlier render left behind, which means the failure is not an
-error in a log but the wrong typeface in a picture nobody looks at twice.
+**Registration lasts the thread that made it, and cannot be undone.** A family
+registered by one render is registered for every render after it on that thread,
+for as long as that thread runs; nothing unregisters anything, and giving
+different files under the same name changes what that name draws from then on. A
+render that names a family it never registered does not fail — it uses whatever
+an earlier render left behind, which means the failure is not an error in a log
+but the wrong typeface in a picture nobody looks at twice.
 
 So faces belong at start-up rather than per request. A server that registers one
 tenant's face per request is a server where the next request renders in the
-previous tenant's font. Registering the same list on every render is fine, and
-costs nothing beyond reading the files; varying it is the hazard.
+previous tenant's font. Naming the same list on every render is fine: a file
+whose bytes were already registered under that family on the thread is read and
+compared, not registered again. Varying the list is the hazard.
 
 Worker threads each keep their own registry, so each has to register its own
 faces and each is affected only by itself. Two renders already in flight keep

@@ -8,9 +8,9 @@ import { describe, expect, it } from 'vitest'
 import { Root, Text } from './index.js'
 
 /**
- * That registering a font changes the process rather than the render, as
+ * That registering a font changes the thread rather than the render, as
  * {@link FontRegistration} tells a caller and `font_scope.rs` pins from Rust. One
- * test rather than four, since the assertions are about order in this process and
+ * test rather than four, since the assertions are about order on this thread and
  * vitest may reorder tests; its own file keeps the registration out of other suites.
  */
 

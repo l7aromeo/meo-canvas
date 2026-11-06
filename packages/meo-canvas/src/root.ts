@@ -109,10 +109,10 @@ function tooLarge(url: string): TypeError {
 /**
  * A font family, and the files that make it up.
  *
- * # Registering a family changes the process, and cannot be undone
+ * # Registering a family changes the thread, and cannot be undone
  *
  * **A family registered by one render is registered for every render after it,
- * on that thread, until the process exits.** Nothing unregisters anything,
+ * on that thread, for as long as the thread runs.** Nothing unregisters anything,
  * passing different files under the same name replaces what that name draws
  * from then on, and a render that names a family it never registered will use
  * whatever an earlier one left behind rather than failing.
@@ -129,9 +129,12 @@ function tooLarge(url: string): TypeError {
  * canvas.release()
  * ```
  *
- * Registering the same list on every render is fine and costs nothing beyond
- * the file read — it is *varying* it that is the hazard. Faces belong at
- * start-up, named once, and every render after that names the same ones.
+ * Naming the same list on every render is the pattern to follow. A file whose
+ * bytes this thread already registered under that family is read and compared,
+ * not registered again, so memory does not grow with the number of renders and
+ * the GPU draws every render with the same face. It is *varying* the list that
+ * is the hazard. Faces belong at start-up, named once, and every render after
+ * that names the same ones.
  *
  * Each worker thread is its own process for this purpose: they do not share a
  * registry, so each has to register its own faces, and each is contaminated
@@ -264,7 +267,7 @@ export type RootProps = Style & {
   /**
    * Font families to register before this render.
    *
-   * **Not only for this render.** Registration is process-wide and permanent —
+   * **Not only for this render.** Registration lasts the thread and cannot be undone —
    * see {@link FontRegistration} for what that costs a server. Name the same
    * list every time.
    */
@@ -354,7 +357,7 @@ export type RootProps = Style & {
  *
  * Fonts stay here because a renderer outlives any one scene: a server registers
  * its families once and draws a thousand pictures with them. **That reads as a
- * scope and is not one** — the registry is the process's, so registering once
+ * scope and is not one** — the registry is the thread's, so registering once
  * is the pattern to follow rather than a constraint the API enforces. See
  * {@link FontRegistration}.
  */

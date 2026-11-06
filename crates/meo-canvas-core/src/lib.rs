@@ -573,6 +573,10 @@ impl Renderer {
     /// mutates behind a lock is how two threads begin contending on a type
     /// whose whole purpose is that they do not.
     ///
+    /// A file whose bytes this thread already registered under `family` is
+    /// read and compared, and not registered again: see
+    /// [`Fonts::register_path`].
+    ///
     /// # Errors
     ///
     /// Returns [`Error::FontRegister`] if the file cannot be read or its bytes
