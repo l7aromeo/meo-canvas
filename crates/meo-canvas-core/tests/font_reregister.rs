@@ -50,8 +50,16 @@ fn scene() -> Scene {
     scene
 }
 
+// The raster backend draws the same pixels however often a face is
+// registered, so this checks something only on the GPU engine: macOS with the
+// `metal` feature has one, and anywhere else it is skipped by name.
 #[test]
-fn registering_a_registered_face_again_draws_the_same_pixels() {
+#[cfg_attr(
+    not(all(target_os = "macos", feature = "metal")),
+    ignore = "a GPU engine is expected only on macOS with the `metal` feature, and on the CPU this checks nothing"
+)]
+fn registering_a_registered_face_again_draws_the_same_pixels_on_the_gpu_engine()
+{
     let mut first: Option<Vec<u8>> = None;
     let mut differing = Vec::new();
     for render in 0..RENDERS {
@@ -63,11 +71,13 @@ fn registering_a_registered_face_again_draws_the_same_pixels() {
         let mut canvas = renderer
             .render(&scene())
             .unwrap_or_else(|error| unreachable!("{error}"));
-        // Vacuous without a GPU: the raster backend draws the same pixels
-        // however often the face was registered.
-        if canvas.engine() != "gpu" {
-            return;
-        }
+        assert_eq!(
+            canvas.engine(),
+            "gpu",
+            "render {render} came up on the {} engine, where this checks \
+             nothing; macOS with `metal` is expected to give the GPU",
+            canvas.engine()
+        );
         let raw = canvas
             .to_buffer(ImageFormat::Raw, &EncodeOptions::default())
             .unwrap_or_else(|error| unreachable!("{error}"));
