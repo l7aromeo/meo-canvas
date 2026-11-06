@@ -43,8 +43,8 @@ use meo_canvas_scene::{
     },
 };
 use meo_skia_canvas::{
-    Affine, BlendMode as SkiaBlendMode, Canvas, CanvasOptions, Context2D,
-    FillRule as SkiaFillRule, GradientInterpolation,
+    Affine, AlphaInterpolation, BlendMode as SkiaBlendMode, Canvas,
+    CanvasOptions, Context2D, FillRule as SkiaFillRule, GradientInterpolation,
     GradientStop as SkiaGradientStop, Image as SkiaImage, Path2D, PathBuilder,
     PatternRepeat, PixelColorSpace, PixelDepth, PixelExportOptions, Point,
     RgbaLinear, Shader, StrokeCap, StrokeJoin, TextAlign as SkiaTextAlign,
@@ -845,7 +845,7 @@ fn paint_box(
     }
 
     if let Some(gradient) = paint.gradient.as_ref().filter(|_| own_background) {
-        let (shader, squash) = build_gradient(gradient, rect)?;
+        let (shader, squash) = build_gradient(gradient, rect, Mixing::Css)?;
         context.set_fill_shader(&shader);
         fill_with_gradient(context, squash, rect, |context| {
             box_path(context, paint.border_radius, rect)
@@ -904,7 +904,7 @@ fn paint_canvas_layers(
     {
         let mut tile = Canvas::new(rect.size.width, rect.size.height);
         let at = Rect::new(meo_canvas_scene::Point::new(0.0, 0.0), rect.size);
-        let (shader, squash) = build_gradient(gradient, at)?;
+        let (shader, squash) = build_gradient(gradient, at, Mixing::Css)?;
         let drawing = tile.context();
         drawing.set_fill_shader(&shader);
         fill_with_gradient(drawing, squash, at, |context| {
@@ -2856,13 +2856,17 @@ fn perimeter(paint: &PaintStyle, rect: Rect) -> f32 {
 /// The ramp rotated round the sweep by `turns`: CSS starts a conic sweep at
 /// twelve o'clock and a canvas at three, and Skia clamps outside its range, so
 /// the stops move. A stop at each end carries the ramp's colour there.
-fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
+fn turned(
+    stops: &[SkiaGradientStop],
+    turns: f32,
+    mixing: Mixing,
+) -> Vec<SkiaGradientStop> {
     if stops.is_empty() {
         return Vec::new();
     }
     // The position in the original ramp that becomes the new origin.
     let origin = (-turns).rem_euclid(1.0);
-    let seam = seam_color(stops, turns);
+    let seam = seam_color(stops, turns, mixing);
 
     // Walked from the new origin rather than shifted in place: stops at `0` and
     // `1` are one point on a circle, and shifting both mirrors the picture.
@@ -2893,7 +2897,11 @@ fn turned(stops: &[SkiaGradientStop], turns: f32) -> Vec<SkiaGradientStop> {
 /// The ramp's colour where the rotation wraps it, mixed in the encoded space
 /// the ramp is drawn in. Panics on an empty `stops`, which `conic_shader`
 /// refuses before the call; the debug assertion catches a second caller.
-fn seam_color(stops: &[SkiaGradientStop], turns: f32) -> RgbaLinear {
+fn seam_color(
+    stops: &[SkiaGradientStop],
+    turns: f32,
+    mixing: Mixing,
+) -> RgbaLinear {
     debug_assert!(
         !stops.is_empty(),
         "seam_color needs at least one stop; the caller checks `is_empty` \
@@ -2916,14 +2924,43 @@ fn seam_color(stops: &[SkiaGradientStop], turns: f32) -> RgbaLinear {
         return before.color;
     }
     let t = (at - before.position) / span;
+    let alpha = (after.color.a - before.color.a).mul_add(t, before.color.a);
+    // Mixed as the ramp is, in the encoded space: each stop's channel straight
+    // and encoded, weighted by its alpha when premultiplied. A stop at alpha 0
+    // stores its straight hue (`stop_color`).
+    let weight = |color: RgbaLinear| match mixing {
+        Mixing::Css => color.a,
+        Mixing::Svg => 1.0,
+    };
+    let straight = |color: RgbaLinear, channel: f32| {
+        let unmultiplied = if color.a > 0.0 {
+            channel / color.a
+        } else {
+            channel
+        };
+        to_encoded(unmultiplied) * weight(color)
+    };
+    let mixed_weight = match mixing {
+        Mixing::Css => alpha,
+        Mixing::Svg => 1.0,
+    };
     let blend = |a: f32, b: f32| {
-        encoded((to_encoded(b) - to_encoded(a)).mul_add(t, to_encoded(a)))
+        let mixed = (straight(after.color, b) - straight(before.color, a))
+            .mul_add(t, straight(before.color, a));
+        let hue = if mixed_weight > 0.0 {
+            encoded(mixed / mixed_weight)
+        } else {
+            0.0
+        };
+        // Premultiplied as `RgbaLinear` is, except at alpha 0, where the hue
+        // stays as `RgbaLinear::fading_out` keeps it.
+        if alpha > 0.0 { hue * alpha } else { hue }
     };
     RgbaLinear {
         r: blend(before.color.r, after.color.r),
         g: blend(before.color.g, after.color.g),
         b: blend(before.color.b, after.color.b),
-        a: (after.color.a - before.color.a).mul_add(t, before.color.a),
+        a: alpha,
     }
 }
 
@@ -3464,7 +3501,7 @@ fn set_paint(
             }
         }
         PathPaint::Gradient(gradient) => {
-            let (shader, squash) = build_gradient(gradient, rect)?;
+            let (shader, squash) = build_gradient(gradient, rect, Mixing::Svg)?;
             if fill {
                 context.set_fill_shader(&shader);
                 return Ok(squash);
@@ -3503,19 +3540,52 @@ struct Squash {
     vertical: f32,
 }
 
+/// How a gradient mixes stops that are not opaque, by what it stands in for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mixing {
+    /// A CSS gradient: premultiplied, CSS Images 4 "Color Stop Lists", so a
+    /// stop at alpha 0 adds no colour (`gradient-alpha.tsv`).
+    Css,
+    /// An SVG gradient, which Chrome mixes straight: a stop at alpha 0 keeps
+    /// its own colour, and `transparent` is a transparent black.
+    Svg,
+}
+
+impl Mixing {
+    const fn alpha(self) -> AlphaInterpolation {
+        match self {
+            Self::Css => AlphaInterpolation::Premultiplied,
+            Self::Svg => AlphaInterpolation::Unpremultiplied,
+        }
+    }
+}
+
+/// A stop's colour as the gradient reads it: at alpha 0 it keeps its hue,
+/// which straight mixing interpolates toward and premultiplied mixing ignores.
+fn stop_color(color: Color) -> RgbaLinear {
+    if color.a == 0 {
+        RgbaLinear::from_srgb8(color.r, color.g, color.b, 1.0).fading_out()
+    } else {
+        to_skia_color(color)
+    }
+}
+
 /// Builds a shader for a gradient placed against a node's box.
 fn build_gradient(
     gradient: &Gradient,
     rect: Rect,
+    mixing: Mixing,
 ) -> Result<(Shader, Option<Squash>), Error> {
     let stops: Vec<SkiaGradientStop> = gradient
         .stops
         .iter()
         .map(|stop| SkiaGradientStop {
             position: stop.offset,
-            color: to_skia_color(stop.color),
+            color: stop_color(stop.color),
         })
         .collect();
+    let interpolation =
+        GradientInterpolation::default().with_alpha(mixing.alpha());
 
     // A point given as a fraction of the box, placed in the box.
     // Named `place` rather than `at`, which is now a field name in the
@@ -3539,12 +3609,7 @@ fn build_gradient(
                     (place(start), place(end))
                 }
             };
-            Shader::linear_gradient(
-                start,
-                end,
-                &stops,
-                GradientInterpolation::default(),
-            )
+            Shader::linear_gradient(start, end, &stops, interpolation)
         }
         GradientGeometry::Radial { at } => {
             let centre = place(at);
@@ -3556,12 +3621,7 @@ fn build_gradient(
                 centre,
                 vertical: vertical / horizontal,
             });
-            Shader::radial_gradient(
-                centre,
-                horizontal,
-                &stops,
-                GradientInterpolation::default(),
-            )
+            Shader::radial_gradient(centre, horizontal, &stops, interpolation)
         }
         GradientGeometry::Conic { at, from } => {
             // CSS starts a conic sweep at twelve o'clock and a canvas at three,
@@ -3575,8 +3635,9 @@ fn build_gradient(
                 &turned(
                     &stops,
                     (from - QUARTER_TURN_DEGREES) / DEGREES_PER_TURN,
+                    mixing,
                 ),
-                GradientInterpolation::default(),
+                interpolation,
             )
         }
     };
@@ -4104,7 +4165,7 @@ fn draw_mask(
             Ok(())
         }
         Mask::Gradient(gradient) => {
-            let (shader, squash) = build_gradient(gradient, rect)?;
+            let (shader, squash) = build_gradient(gradient, rect, Mixing::Css)?;
             context.set_fill_shader(&shader);
             fill_with_gradient(context, squash, rect, |context| {
                 context.begin_path();
