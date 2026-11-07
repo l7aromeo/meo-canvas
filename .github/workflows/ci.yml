@@ -23,6 +23,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Line tables only: full DWARF filled Linux's disk, 72G debug plus 40G coverage
+  # (l7aromeo/meo-canvas#214). Backtraces keep file and line; llvm-cov reads its
+  # own mapping sections, not DWARF. `fixtures.yml` and `encode-hashes.yml` match
+  # it, since the cache key hashes every `CARGO*` variable.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 # Every `run:` block here is bash. On `windows-latest` the default is
 # PowerShell, and `Read the pinned toolchains` below is `grep | cut` -- which is
@@ -92,17 +97,35 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      # Linux builds debug, coverage and `net` trees and ran out of disk at `just
-      # net-check` (42116583895: "No space left on device", then ld's bus error).
-      # No step calls these image tools; rust, node, bun, just and cmake live
-      # outside them.
+      # Linux builds debug, coverage and `net` trees, each compiling Skia on a
+      # cache miss, and filled the disk (42116583895, and 42363804075 at 145G of
+      # 145G). No step calls these tools. Python stays for `python3`, which Skia's
+      # build and `coverage` run; node stays for setup-node.
       - name: Free the disk the image's unused tools take
         if: runner.os == 'Linux'
         run: |
           df -h /
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup \
-            /usr/share/swift "${RUNNER_TOOL_CACHE:?}/CodeQL"
+          unused=(/usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
+            /usr/share/swift /usr/lib/jvm /usr/local/share/powershell /opt/microsoft
+            /opt/google /usr/local/julia* /usr/lib/google-cloud-sdk /usr/local/aws-cli
+            /usr/share/miniconda "${RUNNER_TOOL_CACHE:?}"/{CodeQL,go,PyPy,Ruby})
+          for path in "${unused[@]}"; do
+            if [ -e "$path" ]; then sudo du -sh "$path"; else echo "absent: $path"; fi
+          done
+          sudo rm -rf "${unused[@]}"
+          if command -v docker > /dev/null; then docker image prune -af; fi
           df -h /
+
+      # Skia picks its SIMD path from the CPU at run time, so a Linux golden that
+      # differs between runs is read against the machine that drew it.
+      - name: The CPU this runner draws on
+        if: runner.os == 'Linux'
+        run: |
+          grep -m1 '^model name' /proc/cpuinfo
+          flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
+          for flag in avx2 avx512f avx_vnni avx512_vnni; do
+            case "$flags" in *" $flag "*) echo "$flag: yes" ;; *) echo "$flag: no" ;; esac
+          done
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -259,8 +282,22 @@ jobs:
         if: runner.os == 'Windows'
         run: just threads-probe
 
-      # The headroom a Linux run ends with, failed or not, so a squeeze shows
-      # before it fails a run.
+      # What a failing fixture wrote, `actual.png` and `diff.png` beside each,
+      # so a pixel difference on a runner can be looked at rather than rerun.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fixtures-diff-${{ matrix.os }}
+          path: target/fixtures/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # The headroom a Linux run ends with, failed or not, and what the target
+      # trees and each Skia build take, so a squeeze shows before it fails a run.
       - name: Disk left at the end
         if: always() && runner.os == 'Linux'
-        run: df -h /
+        run: |
+          df -h /
+          shopt -s nullglob
+          trees=(target/*/ target/*/build/skia-bindings{-*,/*}/out target/*/*/build/skia-bindings{-*,/*}/out)
+          if [ ${#trees[@]} -gt 0 ]; then du -sh "${trees[@]}"; fi
