@@ -1,0 +1,41 @@
+# Chrome, through `just conformance`. Two colours mixed partway through an animation.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Written by packages/meo-canvas/tools/conformance/colormix.mjs.
+#
+# Each row is `background-color` held at progress `t` between `from` and `to`, linear,
+# as a paused `@keyframes` with a negative delay or as a `transition` paused and seeked,
+# drawn over a white page and over a black one and read from screenshot pixels. Chrome
+# mixes with the alpha multiplied in (CSS Color 4, "Interpolating with Alpha"), so a
+# transparent end adds no colour: `rgba(255, 0, 0, 0)` to blue is blue fading in.
+#
+# kind	from	to	t	white r	g	b	black r	g	b
+animation	"rgba(255, 0, 0, 0)"	"rgb(255, 0, 0)"	0.25	255	191	191	64	0	0
+animation	"rgba(255, 0, 0, 0)"	"rgb(255, 0, 0)"	0.5	255	127	127	128	0	0
+animation	"rgba(255, 0, 0, 0)"	"rgb(255, 0, 0)"	0.75	255	64	64	191	0	0
+animation	"rgba(255, 0, 0, 0)"	"rgb(0, 0, 255)"	0.25	191	191	255	0	0	64
+animation	"rgba(255, 0, 0, 0)"	"rgb(0, 0, 255)"	0.5	127	127	255	0	0	128
+animation	"rgba(255, 0, 0, 0)"	"rgb(0, 0, 255)"	0.75	64	64	255	0	0	191
+animation	"rgb(255, 0, 0)"	"rgba(0, 0, 255, 0.2)"	0.25	242	51	64	191	0	13
+animation	"rgb(255, 0, 0)"	"rgba(0, 0, 255, 0.2)"	0.5	230	102	128	128	0	26
+animation	"rgb(255, 0, 0)"	"rgba(0, 0, 255, 0.2)"	0.75	217	153	191	64	0	38
+animation	"transparent"	"rgb(0, 0, 255)"	0.25	191	191	255	0	0	64
+animation	"transparent"	"rgb(0, 0, 255)"	0.5	127	127	255	0	0	128
+animation	"transparent"	"rgb(0, 0, 255)"	0.75	64	64	255	0	0	191
+animation	"rgb(255, 0, 0)"	"rgb(0, 0, 255)"	0.25	191	0	64	191	0	64
+animation	"rgb(255, 0, 0)"	"rgb(0, 0, 255)"	0.5	128	0	128	128	0	128
+animation	"rgb(255, 0, 0)"	"rgb(0, 0, 255)"	0.75	64	0	191	64	0	191
+transition	"rgba(255, 0, 0, 0)"	"rgb(255, 0, 0)"	0.25	255	191	191	64	0	0
+transition	"rgba(255, 0, 0, 0)"	"rgb(255, 0, 0)"	0.5	255	127	127	128	0	0
+transition	"rgba(255, 0, 0, 0)"	"rgb(255, 0, 0)"	0.75	255	64	64	191	0	0
+transition	"rgba(255, 0, 0, 0)"	"rgb(0, 0, 255)"	0.25	191	191	255	0	0	64
+transition	"rgba(255, 0, 0, 0)"	"rgb(0, 0, 255)"	0.5	127	127	255	0	0	128
+transition	"rgba(255, 0, 0, 0)"	"rgb(0, 0, 255)"	0.75	64	64	255	0	0	191
+transition	"rgb(255, 0, 0)"	"rgba(0, 0, 255, 0.2)"	0.25	242	51	64	191	0	13
+transition	"rgb(255, 0, 0)"	"rgba(0, 0, 255, 0.2)"	0.5	230	102	128	128	0	26
+transition	"rgb(255, 0, 0)"	"rgba(0, 0, 255, 0.2)"	0.75	217	153	191	64	0	38
+transition	"transparent"	"rgb(0, 0, 255)"	0.25	191	191	255	0	0	64
+transition	"transparent"	"rgb(0, 0, 255)"	0.5	127	127	255	0	0	128
+transition	"transparent"	"rgb(0, 0, 255)"	0.75	64	64	255	0	0	191
+transition	"rgb(255, 0, 0)"	"rgb(0, 0, 255)"	0.25	191	0	64	191	0	64
+transition	"rgb(255, 0, 0)"	"rgb(0, 0, 255)"	0.5	128	0	128	128	0	128
+transition	"rgb(255, 0, 0)"	"rgb(0, 0, 255)"	0.75	64	0	191	64	0	191
