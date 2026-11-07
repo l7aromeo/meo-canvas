@@ -1,4 +1,4 @@
-//! Pins an inherited meo-skia-canvas 0.16.3 defect: bytes registered again
+//! Pins an inherited meo-skia-canvas 0.17.0 defect: bytes registered again
 //! under the same family add another typeface, so the next draw builds glyph
 //! strikes of its own. A fix fails here, and `REGISTERED_FACES` in `resolve.rs`
 //! can go. `l7aromeo/meo-skia-canvas#612`, tracked as

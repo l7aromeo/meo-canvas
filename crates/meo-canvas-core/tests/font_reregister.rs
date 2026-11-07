@@ -20,8 +20,8 @@ const FONT: &str = concat!(
 const FAMILY: &str = "MeoReregisterProbe";
 
 /// How many renders, each registering the face again. On the GPU the pixels
-/// move every third registration of Oswald at 96px and scale 2.4 (four
-/// classes in twelve, meo-skia-canvas 0.16.3), so twelve crosses three moves.
+/// of Oswald at 96px and scale 2.4 move from the fourth registration on
+/// (renders 3 to 11, from zero, differ from the first; meo-skia-canvas 0.17.0).
 const RENDERS: usize = 12;
 
 /// Large glyphs at a device scale: 96px at 2.4 moves, 48px at 2.4 does not.
