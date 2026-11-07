@@ -5,8 +5,8 @@
 //! and the lines from the text's own ink, so text outside the box is not box.
 
 use meo_canvas::{
-    Align, Box, Display, Element, Format, LineHeight, Renderer, Root, Styled,
-    Text, hex_rgb, left, px,
+    Align, Box, BoxSizing, Display, Element, FlexDirection, Format, LineHeight,
+    Renderer, Root, Styled, Text, all, hex_rgb, left, px,
 };
 
 /// Chrome's answers, which `chrome_tables_are_read` requires be read.
@@ -24,6 +24,9 @@ const PARAGRAPH: &str = "one two three four five six seven eight";
 /// The page: room below the box for a line that should not be there.
 const PAGE: (usize, usize) = (300, 120);
 
+/// The width of the flex column a `column` row's text is stretched across.
+const COLUMN: f32 = 157.0;
+
 /// The box's background, which no glyph is drawn in.
 const PAPER: [u8; 3] = [0xcc, 0x00, 0x00];
 
@@ -34,6 +37,10 @@ struct Row {
     left: f32,
     stated: Option<f32>,
     chrome: (f32, f32, usize),
+    /// What holds the text: `block`, `row` or `column`.
+    holder: String,
+    /// The text box's padding on every side, and whether its width holds it.
+    padding: (f32, BoxSizing),
 }
 
 fn rows() -> Vec<Row> {
@@ -42,8 +49,19 @@ fn rows() -> Vec<Row> {
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
         .map(|line| {
             let cells: Vec<&str> = line.split('\t').collect();
-            let [name, text, left, stated, width, height, lines, ..] =
-                cells.as_slice()
+            let [
+                name,
+                text,
+                left,
+                stated,
+                width,
+                height,
+                lines,
+                _note,
+                holder,
+                padding,
+                sizing,
+            ] = cells.as_slice()
             else {
                 unreachable!("a malformed row: {line}")
             };
@@ -67,6 +85,15 @@ fn rows() -> Vec<Row> {
                         unreachable!("{lines} is not a count")
                     }),
                 ),
+                holder: (*holder).to_owned(),
+                padding: (
+                    number(padding),
+                    match *sizing {
+                        "content-box" => BoxSizing::ContentBox,
+                        "border-box" => BoxSizing::BorderBox,
+                        other => unreachable!("{other} is not a box-sizing"),
+                    },
+                ),
             }
         })
         .collect()
@@ -87,18 +114,23 @@ fn rendered(row: &Row) -> ((usize, usize), usize) {
         .font_size(20.0)
         .line_height(LineHeight::Number(1.2))
         .color(hex_rgb(0x00_00_00))
-        .background_color(hex_rgb(0xcc_00_00));
-    // A stated width sits in a block; its own width is a flex row's item.
-    let (holder, text): (Element, Element) = match row.stated {
-        Some(width) => {
-            (Box::new().display(Display::Block), text.width(px(width)))
-        }
-        None => (
-            Box::new()
-                .display(Display::Flex)
-                .align_items(Align::FlexStart),
-            text,
-        ),
+        .background_color(hex_rgb(0xcc_00_00))
+        .padding(all(px(row.padding.0)))
+        .box_sizing(row.padding.1);
+    let text: Element = match row.stated {
+        Some(width) => text.width(px(width)),
+        None => text,
+    };
+    let holder: Element = match row.holder.as_str() {
+        "block" => Box::new().display(Display::Block),
+        "row" => Box::new()
+            .display(Display::Flex)
+            .align_items(Align::FlexStart),
+        "column" => Box::new()
+            .display(Display::Flex)
+            .flex_direction(FlexDirection::Column)
+            .width(px(COLUMN)),
+        other => unreachable!("{other} is not a holder"),
     };
     #[expect(
         clippy::cast_precision_loss,
@@ -142,7 +174,7 @@ fn rendered(row: &Row) -> ((usize, usize), usize) {
 #[test]
 fn a_text_box_breaks_where_its_layout_broke_it() {
     let rows = rows();
-    assert_eq!(rows.len(), 6, "wrap-width.tsv holds {} rows", rows.len());
+    assert_eq!(rows.len(), 8, "wrap-width.tsv holds {} rows", rows.len());
     let mut wrong = Vec::new();
     for row in &rows {
         let ((width, height), lines) = rendered(row);

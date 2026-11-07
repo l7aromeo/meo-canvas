@@ -915,6 +915,87 @@ fn a_flex_column_shrinks_a_declared_height() {
 }
 
 #[test]
+fn a_picture_keeps_its_ratio_in_the_content_box() {
+    // `l7aromeo/meo-canvas#217`: padding counted in the ratio in a flex
+    // container, 80x73 for Chrome's 80x60, and a border-box width gave its
+    // whole box the ratio, 100x67 for 100x73.33.
+    let (auto, px) = (Dimension::Auto, Dimension::Points);
+    let padded = |display, width, (padding, box_sizing)| Case {
+        padding: (padding, box_sizing),
+        ..replaced(display, auto, width, auto)
+    };
+    let (content, border) =
+        ((10.0, BoxSizing::ContentBox), (10.0, BoxSizing::BorderBox));
+    let (flex, block) = (Display::Flex, Display::Block);
+    let wrong = apart([
+        ("flex w auto padded", padded(flex, auto, content)),
+        (
+            "flex start w auto padded",
+            Case {
+                flow: (FlexDirection::Row, Some(Align::FlexStart)),
+                ..padded(flex, auto, content)
+            },
+        ),
+        ("block w auto padded", padded(block, auto, content)),
+        ("flex w auto padded border-box", padded(flex, auto, border)),
+        (
+            "block w auto padded border-box",
+            padded(block, auto, border),
+        ),
+        ("flex w100 padded", padded(flex, px(100.0), content)),
+        ("block w100 padded", padded(block, px(100.0), content)),
+        (
+            "flex w100 padded border-box",
+            padded(flex, px(100.0), border),
+        ),
+        (
+            "block w100 padded border-box",
+            padded(block, px(100.0), border),
+        ),
+        (
+            "block w50% padded border-box",
+            padded(block, Dimension::Percent(0.5), border),
+        ),
+        (
+            "column w auto padded",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..padded(flex, auto, content)
+            },
+        ),
+        (
+            "flex w auto max60 padded",
+            Case {
+                clamp: (auto, px(60.0)),
+                ..padded(flex, auto, content)
+            },
+        ),
+        (
+            "flex w auto max60 padded border-box",
+            Case {
+                clamp: (auto, px(60.0)),
+                ..padded(flex, auto, (5.0, BoxSizing::BorderBox))
+            },
+        ),
+        (
+            "ratio div w100 padded border-box",
+            Case {
+                kind: Kind::Ratio,
+                ..padded(block, px(100.0), border)
+            },
+        ),
+        (
+            "ratio div w100 padded",
+            Case {
+                kind: Kind::Ratio,
+                ..padded(block, px(100.0), content)
+            },
+        ),
+    ]);
+    assert!(wrong.is_empty(), "{wrong}");
+}
+
+#[test]
 fn neither_axis_definite_is_the_intrinsic_size() {
     agrees(
         "block w auto",
