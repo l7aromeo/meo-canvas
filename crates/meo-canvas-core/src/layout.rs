@@ -400,7 +400,7 @@ where
     let mut viewport = Vec::new();
     let directions = directions(scene, page);
     let inherited = inherit(scene, page, &directions);
-    let mut naturals = HashMap::new();
+    let mut ratio_boxes = HashMap::new();
     let root = build(
         scene,
         page,
@@ -419,7 +419,7 @@ where
             parent: None,
             inherited: &inherited,
             measure,
-            naturals: &mut naturals,
+            ratio_boxes: &mut ratio_boxes,
         },
     )?;
     for node in viewport.into_iter().chain(orphans) {
@@ -456,7 +456,7 @@ where
         &mut tree,
         scene,
         &to_scene,
-        &naturals,
+        &ratio_boxes,
         root,
         (available, measure),
         &mut baselines,
@@ -751,19 +751,17 @@ struct FromAbove<'above, M: ?Sized> {
     /// Here so a leaf's intrinsic size can be asked for while its style is
     /// being built, which is before taffy has asked anything.
     measure: &'above mut M,
-    /// What [`intrinsic_sizes_it`] learned of each picture, for the passes
-    /// after the first solve.
-    naturals: &'above mut HashMap<NodeId, Natural>,
+    /// Each box with a ratio, for the passes after the first solve.
+    ratio_boxes: &'above mut HashMap<NodeId, RatioBox>,
 }
 
-/// A picture's natural size, and what decides which pass after the first
-/// solve corrects it.
+/// What decides which pass after the first solve corrects a box with a ratio.
 #[derive(Debug, Clone, Copy)]
-struct Natural {
-    /// The picture's size, at [`LAYOUT_SCALE`].
-    size: taffy::Size<f32>,
-    /// Whether its width was given as a declared one, which
-    /// [`bound_natural_sizes`] bounds.
+struct RatioBox {
+    /// Its picture's size, at [`LAYOUT_SCALE`], where it has one.
+    natural: Option<taffy::Size<f32>>,
+    /// Whether [`intrinsic_sizes_it`] gave it its natural width as a declared
+    /// one, which [`bound_natural_sizes`] bounds.
     pinned: bool,
     /// Whether its containing block's height is definite; where it is not,
     /// [`base_on_natural_sizes`] may have work.
@@ -1122,7 +1120,7 @@ fn compensate<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
     scene: &Scene,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
-    naturals: &HashMap<NodeId, Natural>,
+    ratio_boxes: &HashMap<NodeId, RatioBox>,
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
     baselines: &mut HashMap<NodeId, f32>,
@@ -1146,7 +1144,21 @@ where
     )?;
     base_on_natural_sizes(
         tree,
-        (to_scene, naturals),
+        (to_scene, ratio_boxes),
+        root,
+        (available, measure),
+        baselines,
+    )?;
+    floor_flexed_minimums(
+        tree,
+        (to_scene, ratio_boxes),
+        root,
+        (available, measure),
+        baselines,
+    )?;
+    derive_flexed_cross_sizes(
+        tree,
+        (to_scene, ratio_boxes),
         root,
         (available, measure),
         baselines,
@@ -1162,7 +1174,7 @@ where
     // Before the clamp, which pins a natural width it would leave unbounded.
     bound_natural_sizes(
         tree,
-        (to_scene, naturals),
+        (to_scene, ratio_boxes),
         root,
         (available, measure),
         baselines,
@@ -1430,9 +1442,9 @@ where
 /// taffy measures neither at that height, then solves again.
 fn base_on_natural_sizes<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
-    (to_scene, naturals): (
+    (to_scene, ratio_boxes): (
         &HashMap<taffy::NodeId, NodeId>,
-        &HashMap<NodeId, Natural>,
+        &HashMap<NodeId, RatioBox>,
     ),
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
@@ -1443,10 +1455,12 @@ where
 {
     let mut pins: Vec<(taffy::NodeId, f32, Option<f32>)> = Vec::new();
     for (id, node) in to_scene {
-        if let Some(natural) =
-            naturals.get(node).filter(|n| !n.definite_parent_height)
+        if let Some(natural) = ratio_boxes
+            .get(node)
+            .filter(|b| !b.definite_parent_height)
+            .and_then(|b| b.natural)
             && let Some((basis, minimum)) =
-                natural_basis(tree, *id, natural.size.width)?
+                natural_basis(tree, *id, natural.width)?
         {
             pins.push((*id, basis, minimum));
         }
@@ -1546,13 +1560,11 @@ fn natural_basis(
         return Ok(None);
     }
     let min_height =
-        content(style.min_size.height, basis.height, outside.height)
-            .unwrap_or(0.0);
-    // The content size suggestion: the natural width, clamped by the height's
-    // bounds through the ratio, the minimum winning, then by the maximum width.
-    let suggestion = natural
-        .min(max_height.map_or(f32::INFINITY, |height| height * ratio))
-        .max(min_height * ratio)
+        content(style.min_size.height, basis.height, outside.height);
+    let suggestion =
+        content_suggestion(natural, (min_height, max_height), |height| {
+            height * ratio
+        })
         .min(max_width.unwrap_or(f32::INFINITY));
     let minimum = style
         .min_size
@@ -1560,6 +1572,350 @@ fn natural_basis(
         .is_auto()
         .then_some(suggestion + outside.width);
     Ok(Some((natural + outside.width, minimum)))
+}
+
+/// A flex item with a ratio, a declared main size, an `auto` cross size and an
+/// `auto` basis: whether its line is a row, and whether it is stretched.
+fn declared_flex_item(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+) -> Result<Option<(bool, bool)>, Error> {
+    let Some(parent) = tree.parent(id) else {
+        return Ok(None);
+    };
+    let container = tree
+        .style(parent)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let style = tree
+        .style(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let row = matches!(
+        container.flex_direction,
+        taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+    );
+    let (main, cross) = if row {
+        (style.size.width, style.size.height)
+    } else {
+        (style.size.height, style.size.width)
+    };
+    if container.display != taffy::Display::Flex
+        || style.position == taffy::Position::Absolute
+        || style.aspect_ratio.is_none()
+        || main.is_auto()
+        || !cross.is_auto()
+        || !style.flex_basis.is_auto()
+    {
+        return Ok(None);
+    }
+    let (start, end) = if row {
+        (style.margin.top, style.margin.bottom)
+    } else {
+        (style.margin.left, style.margin.right)
+    };
+    let stretched = style
+        .align_self
+        .unwrap_or(container.align_items)
+        .is_stretch_or_normal()
+        && !start.is_auto()
+        && !end.is_auto();
+    Ok(Some((row, stretched)))
+}
+
+/// Flexbox §4.5's content size suggestion for a picture: its `natural` main
+/// size, clamped by its cross bounds, a minimum then a maximum, taken
+/// `through` the ratio, the minimum winning.
+fn content_suggestion(
+    natural: f32,
+    (min_cross, max_cross): (Option<f32>, Option<f32>),
+    through: impl Fn(f32) -> f32,
+) -> f32 {
+    natural
+        .min(max_cross.map_or(f32::INFINITY, &through))
+        .max(min_cross.map_or(0.0, &through))
+}
+
+/// A box's padding and border on each axis, and the part of them its style's
+/// sizes include: all of it under `border-box`, none under `content-box`.
+fn insets(
+    style: &taffy::Style,
+    solved: &taffy::Layout,
+) -> (taffy::Size<f32>, taffy::Size<f32>) {
+    let inset = taffy::Size {
+        width: solved.padding.left
+            + solved.padding.right
+            + solved.border.left
+            + solved.border.right,
+        height: solved.padding.top
+            + solved.padding.bottom
+            + solved.border.top
+            + solved.border.bottom,
+    };
+    let outside = match style.box_sizing {
+        taffy::BoxSizing::BorderBox => inset,
+        taffy::BoxSizing::ContentBox => taffy::Size::ZERO,
+    };
+    (inset, outside)
+}
+
+/// A bound in the content box, against `basis`, less what of it is
+/// `outside` that box; `None` where it is `auto`.
+fn content_bound(
+    bound: taffy::LengthPercentageAuto,
+    basis: f32,
+    outside: f32,
+) -> Option<f32> {
+    bound
+        .resolve_to_option(basis, |_, _| 0.0)
+        .map(|length| (length - outside).max(0.0))
+}
+
+// [WORKAROUND] taffy 0.15.1 `src/compute/flexbox.rs` measures the automatic
+// minimum of a flex item with a ratio and a declared main size at the cross
+// size that size gives, so it is that size: 60x40 art declared 300 wide stays
+// 300 in a 200 row, Chrome 200. `l7aromeo/meo-canvas#196`, probed by
+// `crates/meo-canvas-core/tests/taffy_flex_declared_ratio.rs`.
+/// Gives each such item the minimum [`automatic_minimum`] gives, then solves
+/// again.
+fn floor_flexed_minimums<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    (to_scene, ratio_boxes): (
+        &HashMap<taffy::NodeId, NodeId>,
+        &HashMap<NodeId, RatioBox>,
+    ),
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut pins: Vec<(taffy::NodeId, bool, f32)> = Vec::new();
+    for (id, node) in to_scene {
+        if let Some(ratio_box) = ratio_boxes.get(node)
+            && let Some((row, minimum)) =
+                automatic_minimum(tree, *id, ratio_box)?
+        {
+            pins.push((*id, row, minimum));
+        }
+    }
+
+    if pins.is_empty() {
+        return Ok(());
+    }
+    for (id, row, minimum) in &pins {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        let minimum = taffy::LengthPercentageAuto::length(*minimum);
+        if *row {
+            style.min_size.width = minimum;
+        } else {
+            style.min_size.height = minimum;
+        }
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
+}
+
+/// Flexbox §4.5's automatic minimum for a [`declared_flex_item`] whose main
+/// minimum is `auto`, in the box its style sizes, and whether its line is a
+/// row: the smaller of its declared size and its content size suggestion.
+fn automatic_minimum(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    ratio_box: &RatioBox,
+) -> Result<Option<(bool, f32)>, Error> {
+    let Some((row, stretched)) = declared_flex_item(tree, id)? else {
+        return Ok(None);
+    };
+    let style = tree
+        .style(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let Some(ratio) = style.aspect_ratio else {
+        return Ok(None);
+    };
+    let swap = |size: taffy::Size<f32>| {
+        if row {
+            (size.width, size.height)
+        } else {
+            (size.height, size.width)
+        }
+    };
+    let (min_main, overflow_main) = if row {
+        (style.min_size.width, style.overflow.x)
+    } else {
+        (style.min_size.height, style.overflow.y)
+    };
+    if !min_main.is_auto() || overflow_main != taffy::Overflow::Visible {
+        return Ok(None);
+    }
+    let solved = tree
+        .layout(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let (inset, outside) = insets(style, solved);
+    let ((main_basis, cross_basis), (main_out, cross_out)) =
+        (swap(parent_content_size(tree, id)), swap(outside));
+    let (bounds_main, bounds_cross) = if row {
+        (
+            (style.size.width, style.max_size.width),
+            (style.min_size.height, style.max_size.height),
+        )
+    } else {
+        (
+            (style.size.height, style.max_size.height),
+            (style.min_size.width, style.max_size.width),
+        )
+    };
+    // The ratio is width over height: a cross size gives a main one through it.
+    let through = |cross: f32| if row { cross * ratio } else { cross / ratio };
+    // A stretched item in a definite line has a definite cross size, which a
+    // column's line, the parent's width, always is here.
+    let suggestion = if stretched && (!row || ratio_box.definite_parent_height)
+    {
+        through(swap(solved.size).1 - swap(inset).1)
+    } else if let Some(natural) = ratio_box.natural {
+        let cross = (
+            content_bound(bounds_cross.0, cross_basis, cross_out),
+            content_bound(bounds_cross.1, cross_basis, cross_out),
+        );
+        content_suggestion(swap(natural).0, cross, through)
+    } else {
+        return Ok(None);
+    };
+    let declared = match bounds_main.0.expand() {
+        taffy::ExpandedDimension::Length(length) => length,
+        taffy::ExpandedDimension::Percent(fraction) => fraction * main_basis,
+        _ => return Ok(None),
+    } - main_out;
+    let max_main = content_bound(bounds_main.1, main_basis, main_out);
+    let minimum = suggestion
+        .min(declared)
+        .min(max_main.unwrap_or(f32::INFINITY));
+    Ok(Some((row, minimum.max(0.0) + main_out)))
+}
+
+// [WORKAROUND] taffy 0.15.1 `src/compute/flexbox.rs` keeps the cross size a
+// flex item's declared main size gives through its ratio once it is flexed:
+// 60x40 art declared 300 wide is 200x200 shrunk to a 200 row, Chrome
+// 200x133.33. `l7aromeo/meo-canvas#196`, probed by
+// `crates/meo-canvas-core/tests/taffy_flex_declared_ratio.rs`.
+/// Pins each such item at its flexed main size, flexing no further, and at the
+/// cross size that gives through the ratio, then solves again.
+fn derive_flexed_cross_sizes<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    (to_scene, ratio_boxes): (
+        &HashMap<taffy::NodeId, NodeId>,
+        &HashMap<NodeId, RatioBox>,
+    ),
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut pins: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
+    for (id, node) in to_scene {
+        if let Some(ratio_box) = ratio_boxes.get(node)
+            && let Some(size) = flexed_size(tree, *id, ratio_box)?
+        {
+            pins.push((*id, size));
+        }
+    }
+
+    if pins.is_empty() {
+        return Ok(());
+    }
+    for (id, size) in &pins {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.size.width = taffy::Dimension::length(size.width);
+        style.size.height = taffy::Dimension::length(size.height);
+        style.aspect_ratio = None;
+        style.flex_grow = 0.0;
+        style.flex_shrink = 0.0;
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
+}
+
+/// The size [`derive_flexed_cross_sizes`] pins a [`declared_flex_item`] at, in
+/// the box its style sizes, or `None` where the solve already gave it that
+/// cross size or a definite line stretches it.
+fn flexed_size(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    ratio_box: &RatioBox,
+) -> Result<Option<taffy::Size<f32>>, Error> {
+    let Some((row, stretched)) = declared_flex_item(tree, id)? else {
+        return Ok(None);
+    };
+    // As in `automatic_minimum`: a column's line, the parent's width, is
+    // definite here.
+    if stretched && (!row || ratio_box.definite_parent_height) {
+        return Ok(None);
+    }
+    let style = tree
+        .style(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let Some(ratio) = style.aspect_ratio else {
+        return Ok(None);
+    };
+    let solved = tree
+        .layout(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let (inset, outside) = insets(style, solved);
+    let basis = parent_content_size(tree, id);
+    let content = taffy::Size {
+        width: solved.size.width - inset.width,
+        height: solved.size.height - inset.height,
+    };
+    // The cross size the flexed main size gives through the ratio, width over
+    // height, within the cross bounds, the minimum winning.
+    let (main, cross, bounds, cross_basis, cross_out) = if row {
+        let bounds = (style.min_size.height, style.max_size.height);
+        (
+            content.width,
+            content.height,
+            bounds,
+            basis.height,
+            outside.height,
+        )
+    } else {
+        let bounds = (style.min_size.width, style.max_size.width);
+        (
+            content.height,
+            content.width,
+            bounds,
+            basis.width,
+            outside.width,
+        )
+    };
+    let derived = if row { main / ratio } else { main * ratio }
+        .min(
+            content_bound(bounds.1, cross_basis, cross_out)
+                .unwrap_or(f32::INFINITY),
+        )
+        .max(content_bound(bounds.0, cross_basis, cross_out).unwrap_or(0.0));
+    if (derived - cross).abs() <= DERIVED_TOLERANCE {
+        return Ok(None);
+    }
+    let (width, height) = if row {
+        (content.width, derived)
+    } else {
+        (derived, content.height)
+    };
+    Ok(Some(taffy::Size {
+        width: width + outside.width,
+        height: height + outside.height,
+    }))
 }
 
 // [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` bounds a leaf's ratio by
@@ -1572,9 +1928,9 @@ fn natural_basis(
 /// every `block w auto` row of `replaced-ratio.tsv`.
 fn bound_natural_sizes<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
-    (to_scene, naturals): (
+    (to_scene, ratio_boxes): (
         &HashMap<taffy::NodeId, NodeId>,
-        &HashMap<NodeId, Natural>,
+        &HashMap<NodeId, RatioBox>,
     ),
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
@@ -1585,8 +1941,11 @@ where
 {
     let mut pins: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
     for (id, node) in to_scene {
-        if let Some(natural) = naturals.get(node).filter(|n| n.pinned)
-            && let Some(size) = natural_pin(tree, *id, natural.size.width)?
+        if let Some(natural) = ratio_boxes
+            .get(node)
+            .filter(|b| b.pinned)
+            .and_then(|b| b.natural)
+            && let Some(size) = natural_pin(tree, *id, natural.width)?
         {
             pins.push((*id, size));
         }
@@ -2394,7 +2753,7 @@ where
         heights,
         inherited,
         measure,
-        naturals,
+        ratio_boxes,
         ..
     } = above;
 
@@ -2430,7 +2789,7 @@ where
                     parent: Some(source),
                     inherited,
                     measure: &mut *measure,
-                    naturals: &mut *naturals,
+                    ratio_boxes: &mut *ratio_boxes,
                 },
             )?);
             continue;
@@ -2458,7 +2817,7 @@ where
                 parent: Some(source),
                 inherited,
                 measure: &mut *measure,
-                naturals: &mut *naturals,
+                ratio_boxes: &mut *ratio_boxes,
             },
         )?;
         match child_source.layout.position_type {
@@ -2517,21 +2876,21 @@ where
         to_taffy_style(&source.layout, source.paint.border_style, own);
     style.item_is_replaced = lays_out_replaced(node, source, above.measure);
     let parent_items = state_auto(&mut style, source, above.parent, own);
-    if let Some((size, pinned)) = intrinsic_sizes_it(
+    let natural = intrinsic_sizes_it(
         &mut style,
         node,
         source,
         above.parent,
         parent_items,
         above.measure,
-    ) {
-        let definite_parent_height = above.heights.parent;
-        above.naturals.insert(
+    );
+    if style.aspect_ratio.is_some() {
+        above.ratio_boxes.insert(
             node,
-            Natural {
-                size,
-                pinned,
-                definite_parent_height,
+            RatioBox {
+                natural: natural.map(|(size, _)| size),
+                pinned: natural.is_some_and(|(_, pinned)| pinned),
+                definite_parent_height: above.heights.parent,
             },
         );
     }
