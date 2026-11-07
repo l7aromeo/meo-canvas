@@ -751,9 +751,23 @@ struct FromAbove<'above, M: ?Sized> {
     /// Here so a leaf's intrinsic size can be asked for while its style is
     /// being built, which is before taffy has asked anything.
     measure: &'above mut M,
-    /// Each replaced box [`intrinsic_sizes_it`] gave its natural width, with
-    /// that width, for [`bound_natural_sizes`] after the first solve.
-    naturals: &'above mut HashMap<NodeId, f32>,
+    /// What [`intrinsic_sizes_it`] learned of each picture, for the passes
+    /// after the first solve.
+    naturals: &'above mut HashMap<NodeId, Natural>,
+}
+
+/// A picture's natural size, and what decides which pass after the first
+/// solve corrects it.
+#[derive(Debug, Clone, Copy)]
+struct Natural {
+    /// The picture's size, at [`LAYOUT_SCALE`].
+    size: taffy::Size<f32>,
+    /// Whether its width was given as a declared one, which
+    /// [`bound_natural_sizes`] bounds.
+    pinned: bool,
+    /// Whether its containing block's height is definite; where it is not,
+    /// [`base_on_natural_sizes`] may have work.
+    definite_parent_height: bool,
 }
 
 /// Two answers, one level apart: `parent` is what this node's own percentages
@@ -837,7 +851,7 @@ const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
 /// Gives taffy a replaced element's intrinsic ratio, an author's winning, so
 /// its block algorithm derives the height (`l7aromeo/meo-canvas#94`), and with
 /// both axes `auto` under a block parent its intrinsic width unless it resolves
-/// to `stretch`, returned for [`bound_natural_sizes`] to bound.
+/// to `stretch`. Returns the intrinsic size, and whether it gave that width.
 fn intrinsic_sizes_it<M>(
     style: &mut taffy::Style,
     node: NodeId,
@@ -845,7 +859,7 @@ fn intrinsic_sizes_it<M>(
     parent: Option<&meo_canvas_scene::node::Node>,
     parent_items: Option<JustifyItems>,
     measure: &mut M,
-) -> Option<f32>
+) -> Option<(taffy::Size<f32>, bool)>
 where
     M: Measure + ?Sized,
 {
@@ -882,17 +896,19 @@ where
             matches!(parent_items, Some(JustifyItems::Stretch)),
             |own| matches!(own, JustifySelf::Stretch),
         );
-    if !out_of_flow(source)
+    let size = taffy::Size {
+        width: intrinsic.width * LAYOUT_SCALE,
+        height: intrinsic.height * LAYOUT_SCALE,
+    };
+    let pinned = !out_of_flow(source)
         && !stretched
         && parent.is_some_and(|parent| parent.layout.display == Display::Block)
         && matches!(source.layout.size.0, Dimension::Auto)
-        && matches!(source.layout.size.1, Dimension::Auto)
-    {
-        let width = intrinsic.width * LAYOUT_SCALE;
-        style.size.width = taffy::Dimension::length(width);
-        return Some(width);
+        && matches!(source.layout.size.1, Dimension::Auto);
+    if pinned {
+        style.size.width = taffy::Dimension::length(size.width);
     }
-    None
+    Some((size, pinned))
 }
 
 /// Whether a ratio derives this box's height from its width, which need not be
@@ -1099,13 +1115,14 @@ where
 
 /// The unrounded solves: a first one with the direction candidates' ratios
 /// off, then the compensations, each solving again when it has work.
-/// `keep_declared_widths` goes first because the next reads the candidates'
-/// sizes from the latest solve, which then has every declared width kept.
+/// `keep_declared_widths` goes first because `compensate_ratio_direction` reads
+/// the candidates' sizes from the latest solve, which then has every declared
+/// width kept.
 fn compensate<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
     scene: &Scene,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
-    naturals: &HashMap<NodeId, f32>,
+    naturals: &HashMap<NodeId, Natural>,
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
     baselines: &mut HashMap<NodeId, f32>,
@@ -1123,6 +1140,13 @@ where
         tree,
         scene,
         to_scene,
+        root,
+        (available, measure),
+        baselines,
+    )?;
+    base_on_natural_sizes(
+        tree,
+        (to_scene, naturals),
         root,
         (available, measure),
         baselines,
@@ -1397,6 +1421,147 @@ where
     )
 }
 
+// [WORKAROUND] taffy 0.15.1 `src/compute/flexbox.rs` measures a stretched
+// item in a row of indefinite height at its maximum height, or one its maximum
+// width transfers: 60x40 art under `max-height: 60` is 90x60, Chrome 60x40.
+// `l7aromeo/meo-canvas#197`, probed by
+// `crates/meo-canvas-core/tests/taffy_flex_stretch_max.rs`.
+/// Gives each such picture the basis and minimum [`natural_basis`] gives, so
+/// taffy measures neither at that height, then solves again.
+fn base_on_natural_sizes<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    (to_scene, naturals): (
+        &HashMap<taffy::NodeId, NodeId>,
+        &HashMap<NodeId, Natural>,
+    ),
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut pins: Vec<(taffy::NodeId, f32, Option<f32>)> = Vec::new();
+    for (id, node) in to_scene {
+        if let Some(natural) =
+            naturals.get(node).filter(|n| !n.definite_parent_height)
+            && let Some((basis, minimum)) =
+                natural_basis(tree, *id, natural.size.width)?
+        {
+            pins.push((*id, basis, minimum));
+        }
+    }
+
+    if pins.is_empty() {
+        return Ok(());
+    }
+    for (id, basis, minimum) in &pins {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.flex_basis = taffy::Dimension::length(*basis);
+        if let Some(minimum) = minimum {
+            style.min_size.width =
+                taffy::LengthPercentageAuto::length(*minimum);
+        }
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
+}
+
+/// Chrome's flex basis for a stretched picture with both sizes `auto` in a flex
+/// row, its `natural` width, and where its minimum width is `auto` §4.5's
+/// automatic minimum, in the box its style sizes; `None` where it has no
+/// maximum for taffy to measure it at.
+fn natural_basis(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    natural: f32,
+) -> Result<Option<(f32, Option<f32>)>, Error> {
+    let Some(parent) = tree.parent(id) else {
+        return Ok(None);
+    };
+    let container = tree
+        .style(parent)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let style = tree
+        .style(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let Some(ratio) = style.aspect_ratio else {
+        return Ok(None);
+    };
+    let row = matches!(
+        container.flex_direction,
+        taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+    );
+    // Stretched as taffy decides it: `normal` stretches, and an `auto` margin
+    // on the cross axis stops it.
+    let stretched = style
+        .align_self
+        .unwrap_or(container.align_items)
+        .is_stretch_or_normal()
+        && !style.margin.top.is_auto()
+        && !style.margin.bottom.is_auto();
+    if container.display != taffy::Display::Flex
+        || !row
+        || !stretched
+        || style.position == taffy::Position::Absolute
+        || !style.size.width.is_auto()
+        || !style.size.height.is_auto()
+        || !style.flex_basis.is_auto()
+    {
+        return Ok(None);
+    }
+    let solved = tree
+        .layout(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    // The bounds are in the box the style sizes; the arithmetic is in content.
+    let outside = match style.box_sizing {
+        taffy::BoxSizing::BorderBox => taffy::Size {
+            width: solved.padding.left
+                + solved.padding.right
+                + solved.border.left
+                + solved.border.right,
+            height: solved.padding.top
+                + solved.padding.bottom
+                + solved.border.top
+                + solved.border.bottom,
+        },
+        taffy::BoxSizing::ContentBox => taffy::Size::ZERO,
+    };
+    let basis = parent_content_size(tree, id);
+    let content =
+        |bound: taffy::LengthPercentageAuto, basis: f32, outside: f32| {
+            bound
+                .resolve_to_option(basis, |_, _| 0.0)
+                .map(|length| (length - outside).max(0.0))
+        };
+    let max_width = content(style.max_size.width, basis.width, outside.width);
+    let max_height =
+        content(style.max_size.height, basis.height, outside.height);
+    if max_width.is_none() && max_height.is_none() {
+        return Ok(None);
+    }
+    let min_height =
+        content(style.min_size.height, basis.height, outside.height)
+            .unwrap_or(0.0);
+    // The content size suggestion: the natural width, clamped by the height's
+    // bounds through the ratio, the minimum winning, then by the maximum width.
+    let suggestion = natural
+        .min(max_height.map_or(f32::INFINITY, |height| height * ratio))
+        .max(min_height * ratio)
+        .min(max_width.unwrap_or(f32::INFINITY));
+    let minimum = style
+        .min_size
+        .width
+        .is_auto()
+        .then_some(suggestion + outside.width);
+    Ok(Some((natural + outside.width, minimum)))
+}
+
 // [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` bounds a leaf's ratio by
 // its minimum alone: 60x40 art is 60x40 under `max-height: 20`, 30x40 under
 // `max-width: 30`, Chrome 30x20. `l7aromeo/meo-canvas#198`, probed by
@@ -1409,7 +1574,7 @@ fn bound_natural_sizes<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
     (to_scene, naturals): (
         &HashMap<taffy::NodeId, NodeId>,
-        &HashMap<NodeId, f32>,
+        &HashMap<NodeId, Natural>,
     ),
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
@@ -1420,8 +1585,8 @@ where
 {
     let mut pins: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
     for (id, node) in to_scene {
-        if let Some(&natural) = naturals.get(node)
-            && let Some(size) = natural_pin(tree, *id, natural)?
+        if let Some(natural) = naturals.get(node).filter(|n| n.pinned)
+            && let Some(size) = natural_pin(tree, *id, natural.size.width)?
         {
             pins.push((*id, size));
         }
@@ -2352,7 +2517,7 @@ where
         to_taffy_style(&source.layout, source.paint.border_style, own);
     style.item_is_replaced = lays_out_replaced(node, source, above.measure);
     let parent_items = state_auto(&mut style, source, above.parent, own);
-    if let Some(width) = intrinsic_sizes_it(
+    if let Some((size, pinned)) = intrinsic_sizes_it(
         &mut style,
         node,
         source,
@@ -2360,7 +2525,15 @@ where
         parent_items,
         above.measure,
     ) {
-        above.naturals.insert(node, width);
+        let definite_parent_height = above.heights.parent;
+        above.naturals.insert(
+            node,
+            Natural {
+                size,
+                pinned,
+                definite_parent_height,
+            },
+        );
     }
     drop_indefinite_percentages(&mut style, source, above.heights.parent);
     unbound_declared_width(&mut style, source);
