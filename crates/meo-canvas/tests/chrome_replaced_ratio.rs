@@ -571,6 +571,132 @@ fn a_maximum_height_leaves_what_it_did() {
     );
 }
 
+/// An image in block flow with both sizes `auto`, under `width_clamp` and
+/// `clamp`, each a minimum then a maximum.
+const fn natural(
+    width_clamp: (Dimension, Dimension),
+    clamp: (Dimension, Dimension),
+) -> Case {
+    Case {
+        clamp,
+        width_clamp,
+        ..replaced(
+            Display::Block,
+            Dimension::Auto,
+            Dimension::Auto,
+            Dimension::Auto,
+        )
+    }
+}
+
+/// Every case laid out apart from its Chrome row, one line each, so a failure
+/// names them all rather than the first.
+fn apart(cases: impl IntoIterator<Item = (&'static str, Case)>) -> String {
+    cases
+        .into_iter()
+        .filter_map(|(key, case)| {
+            let (ours, chrome) = (painted(&case), chrome(key));
+            (ours != chrome)
+                .then(|| format!("{key}: ours {ours:?}, chrome {chrome:?}"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn an_automatic_width_in_block_flow_takes_a_bound_through_the_ratio() {
+    // `l7aromeo/meo-canvas#198`: the natural width held under every bound but
+    // a minimum, 60x20 for Chrome's 30x20 under a maximum height of 20.
+    let (auto, px, percent) =
+        (Dimension::Auto, Dimension::Points, Dimension::Percent);
+    let padded = |padding, box_sizing| Case {
+        padding: (padding, box_sizing),
+        ..natural((auto, auto), (auto, px(20.0)))
+    };
+    let wrong = apart([
+        (
+            "block w auto max20",
+            natural((auto, auto), (auto, px(20.0))),
+        ),
+        (
+            "block w auto max60",
+            natural((auto, auto), (auto, px(60.0))),
+        ),
+        (
+            "block w auto max-width30",
+            natural((auto, px(30.0)), (auto, auto)),
+        ),
+        (
+            "block w auto max-width10%",
+            natural((auto, percent(0.1)), (auto, auto)),
+        ),
+        (
+            "block w auto min-width90",
+            natural((px(90.0), auto), (auto, auto)),
+        ),
+        (
+            "block w auto max200%",
+            natural((auto, auto), (auto, percent(2.0))),
+        ),
+        (
+            "block w auto max20 padded",
+            padded(10.0, BoxSizing::ContentBox),
+        ),
+        (
+            "block w auto max20 padded border-box",
+            padded(5.0, BoxSizing::BorderBox),
+        ),
+    ]);
+    assert!(wrong.is_empty(), "{wrong}");
+}
+
+#[test]
+fn two_bounds_on_an_automatic_width_follow_the_table() {
+    // CSS 2.2 §10.4's table, which Chrome follows: the ratio gives way only
+    // where the two bounds disagree. `l7aromeo/meo-canvas#198`: seven of these
+    // nine were laid out apart from Chrome.
+    let (auto, px) = (Dimension::Auto, Dimension::Points);
+    let wrong = apart([
+        (
+            "block w auto max20 min30",
+            natural((auto, auto), (px(30.0), px(20.0))),
+        ),
+        (
+            "block w auto max-width30 min30",
+            natural((auto, px(30.0)), (px(30.0), auto)),
+        ),
+        (
+            "block w auto max20 min-width50",
+            natural((px(50.0), auto), (auto, px(20.0))),
+        ),
+        (
+            "block w auto min-width90 max20",
+            natural((px(90.0), auto), (auto, px(20.0))),
+        ),
+        (
+            "block w auto max-width30 min60",
+            natural((auto, px(30.0)), (px(60.0), auto)),
+        ),
+        (
+            "block w auto max-width40 max20",
+            natural((auto, px(40.0)), (auto, px(20.0))),
+        ),
+        (
+            "block w auto max-width20 max30",
+            natural((auto, px(20.0)), (auto, px(30.0))),
+        ),
+        (
+            "block w auto min-width90 min50",
+            natural((px(90.0), auto), (px(50.0), auto)),
+        ),
+        (
+            "block w auto min-width70 min80",
+            natural((px(70.0), auto), (px(80.0), auto)),
+        ),
+    ]);
+    assert!(wrong.is_empty(), "{wrong}");
+}
+
 #[test]
 fn neither_axis_definite_is_the_intrinsic_size() {
     agrees(
