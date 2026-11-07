@@ -132,3 +132,10 @@ todo = "deny"
 dbg_macro = "deny"
 print_stdout = "warn"
 str_to_string = "warn"
+
+# Dependencies keep full debuginfo where `ci.yml` gives this workspace line
+# tables, as the Linux goldens were drawn with them built (l7aromeo/meo-canvas#214).
+# A package override outranks `CARGO_PROFILE_DEV_DEBUG`; locally a no-op, since
+# `dev` is full already.
+[profile.dev.package."*"]
+debug = true

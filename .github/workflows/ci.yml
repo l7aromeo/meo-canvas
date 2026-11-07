@@ -23,10 +23,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Line tables only: full DWARF filled Linux's disk, 72G debug plus 40G coverage
-  # (l7aromeo/meo-canvas#214). Backtraces keep file and line; llvm-cov reads its
-  # own mapping sections, not DWARF. `fixtures.yml` and `encode-hashes.yml` match
-  # it, since the cache key hashes every `CARGO*` variable.
+  # Line tables for this workspace, whose test executables filled Linux's disk at
+  # 72G debug plus 40G coverage (l7aromeo/meo-canvas#214); Cargo.toml keeps the
+  # dependencies' full. llvm-cov reads its own sections, not DWARF. `fixtures.yml`
+  # and `encode-hashes.yml` match it: the cache key hashes every `CARGO*` variable.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 # Every `run:` block here is bash. On `windows-latest` the default is
