@@ -125,9 +125,67 @@ fn quality_one_writes_a_vp8l_webp() {
     assert!(!bytes.windows(4).any(|tag| tag == b"VP8 "), "a lossy chunk");
 }
 
+/// The WebP `render` writes with `flags` after the paths, as its bytes.
+fn webp_with(name: &str, flags: &[&str]) -> Vec<u8> {
+    let dir = scratch(name);
+    let scene = write_scene(&dir);
+    let out = dir.join("out.webp");
+    let (scene, out_path) = (scene.to_string_lossy(), out.to_string_lossy());
+    let mut args = vec!["render", &scene, "-o", &out_path];
+    args.extend_from_slice(flags);
+    let (code, stderr) = run(&args);
+    assert_eq!(code, 0, "{flags:?}: {stderr}");
+    std::fs::read(&out).unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+/// Whether `bytes` carries a chunk tagged `tag`.
+fn has(bytes: &[u8], tag: [u8; 4]) -> bool {
+    bytes.windows(4).any(|window| window == tag)
+}
+
 #[test]
-fn lossless_on_a_webp_exits_seven_with_the_encoders_reason() {
-    let dir = scratch("lossless-webp");
+fn lossless_on_a_webp_writes_vp8l_and_false_writes_vp8() {
+    for flags in [&["--lossless"][..], &["--lossless=true"]] {
+        let bytes = webp_with("lossless-true", flags);
+        assert!(has(&bytes, *b"VP8L") && !has(&bytes, *b"VP8 "), "{flags:?}");
+    }
+    for flags in [
+        &["--lossless=false"][..],
+        &["--lossless=false", "--quality", "1"],
+    ] {
+        let bytes = webp_with("lossless-false", flags);
+        assert!(has(&bytes, *b"VP8 ") && !has(&bytes, *b"VP8L"), "{flags:?}");
+    }
+    let unset = webp_with("lossless-unset", &[]);
+    assert!(
+        has(&unset, *b"VP8 ") && !has(&unset, *b"VP8L"),
+        "no --lossless"
+    );
+}
+
+#[test]
+fn a_bare_lossless_before_the_scene_takes_no_value_from_it() {
+    let dir = scratch("lossless-first");
+    let scene = write_scene(&dir);
+    let out = dir.join("out.webp");
+
+    let (code, stderr) = run(&[
+        "render",
+        "--lossless",
+        &scene.to_string_lossy(),
+        "-o",
+        &out.to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    let bytes =
+        std::fs::read(&out).unwrap_or_else(|error| unreachable!("{error}"));
+    assert!(has(&bytes, *b"VP8L"), "no VP8L chunk");
+}
+
+#[test]
+fn lossless_beside_a_quality_below_one_exits_seven_with_the_encoders_reason() {
+    let dir = scratch("lossless-low-quality");
     let scene = write_scene(&dir);
 
     let (code, stderr) = run(&[
@@ -136,10 +194,12 @@ fn lossless_on_a_webp_exits_seven_with_the_encoders_reason() {
         "-o",
         &dir.join("out.webp").to_string_lossy(),
         "--lossless",
+        "--quality",
+        "0.5",
     ]);
 
     assert_eq!(code, EXIT_RENDER, "{stderr}");
-    assert!(stderr.contains("no lossless form"), "{stderr}");
+    assert!(stderr.contains("asks for a lossy file"), "{stderr}");
 }
 
 #[test]
@@ -514,4 +574,34 @@ fn with_net_a_dead_url_under_the_default_policy_warns_and_exits_zero() {
     let lines = warning_lines(&stderr);
     assert_eq!(lines.len(), 1, "{stderr}");
     assert!(lines[0].contains(&format!("url={url} ")), "{stderr}");
+}
+
+#[test]
+fn a_refused_filter_renders_and_prints_one_diagnostic_line() {
+    let dir = scratch("refused-filter");
+    let mut scene = Scene::new(Size::new(6.0, 3.0));
+    scene.nodes[0].effects.filter = Some("blur(4 px)".to_owned());
+    let path = dir.join("scene.mcs");
+    std::fs::write(&path, meo_canvas_scene::codec::encode(&scene))
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+    let (code, stderr) = run(&[
+        "render",
+        &path.to_string_lossy(),
+        "-o",
+        &dir.join("out.png").to_string_lossy(),
+    ]);
+
+    assert_eq!(code, 0, "{stderr}");
+    let lines: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("meo-canvas: diagnostic: "))
+        .collect();
+    assert_eq!(lines.len(), 1, "{stderr}");
+    assert!(
+        lines[0].starts_with(
+            "meo-canvas: diagnostic: path=filter detail=node 0: \"blur(4 px)\""
+        ),
+        "{stderr}"
+    );
 }

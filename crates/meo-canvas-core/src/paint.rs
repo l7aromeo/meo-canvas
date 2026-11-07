@@ -58,7 +58,7 @@ use crate::{
     layout::{LayoutResult, is_containing_block, used_border},
     lines::{Line, Metrics, Run, RunStyle, line_width},
     measure::SceneMeasurer,
-    resolve::{DecodedImage, Resolved, ResolvedText},
+    resolve::{DecodedImage, DroppedFilters, Resolved, ResolvedText},
 };
 
 /// Opacity at or above which a node needs no isolation layer: exactly one.
@@ -421,7 +421,9 @@ fn walk(
                     clip_to_box(context, &owed.paint, rect)?;
                 }
 
-                let layers = enter_node(context, node, rect, device, false)?;
+                let chains = resolved.dropped().chains(id, node);
+                let layers =
+                    enter_node(context, node, chains, rect, device, false)?;
                 paint_own_content(
                     context,
                     resolved,
@@ -444,9 +446,11 @@ fn walk(
                 // none was reached by its own context's walk, which already
                 // collected everything beneath it; gathering again here would
                 // paint that subtree a second time.
-                if establishes_stacking_context(node) {
+                if establishes_stacking_context(id, node, resolved.dropped()) {
                     for participant in
-                        participants(scene, id, node).into_iter().rev()
+                        participants(scene, resolved.dropped(), id, node)
+                            .into_iter()
+                            .rev()
                     {
                         stack.push(participant);
                     }
@@ -466,8 +470,10 @@ fn walk(
                 // cover it, and its blend mode has nothing beneath to blend
                 // with.
                 let root = (id == page).then_some(canvas);
+                let (chains, page_root) =
+                    (resolved.dropped().chains(id, node), root.is_some());
                 let layers =
-                    enter_node(context, node, rect, device, root.is_some())?;
+                    enter_node(context, node, chains, rect, device, page_root)?;
                 paint_own_content(
                     context,
                     resolved,
@@ -491,7 +497,9 @@ fn walk(
                 // A participant that does establish one is entered here and
                 // gathers its own.
                 for participant in
-                    participants(scene, id, node).into_iter().rev()
+                    participants(scene, resolved.dropped(), id, node)
+                        .into_iter()
+                        .rev()
                 {
                     stack.push(participant);
                 }
@@ -507,6 +515,7 @@ fn walk(
 /// of a plain `<div>` paints behind the div.
 fn participants(
     scene: &meo_canvas_scene::Scene,
+    dropped: &DroppedFilters,
     root: NodeId,
     node: &Node,
 ) -> Vec<Step> {
@@ -610,7 +619,7 @@ fn participants(
         // Descend only through nodes with no context of their own. One that
         // has a context is a single participant here and gathers its own
         // descendants when it is entered.
-        if !establishes_stacking_context(source) {
+        if !establishes_stacking_context(id, source, dropped) {
             let clipper = clips_its_children(source);
             for child in source.children.iter().rev() {
                 let mut inherited = clips.clone();
@@ -670,15 +679,19 @@ const fn clips_its_children(node: &Node) -> bool {
 /// `z_index`, `opacity` below one, a blend, a mask, a transform or a filter.
 /// Not `overflow`: Chrome hides a `z-index: -1` child under `hidden` as under
 /// none.
-fn establishes_stacking_context(node: &Node) -> bool {
+fn establishes_stacking_context(
+    id: NodeId,
+    node: &Node,
+    dropped: &DroppedFilters,
+) -> bool {
     let positioned = !matches!(node.layout.position_type, PositionType::Static);
     (positioned && node.paint.z_index.is_some())
         || node.paint.opacity < OPAQUE
         || node.paint.blend_mode != BlendMode::Normal
         || node.effects.mask.is_some()
         || node.effects.transform.is_some()
-        || node.effects.filter.is_some()
-        || node.effects.backdrop_filter.is_some()
+        || dropped.filter(id, node).is_some()
+        || dropped.backdrop(id, node).is_some()
 }
 
 /// Whether `child`'s `z_index` places it in `parent`'s stack: positioned, or an
@@ -774,9 +787,13 @@ fn draw_outer_shadows(
 ///
 /// Returns how many layers were opened, so the matching `Leave` closes exactly
 /// those.
+///
+/// `chains` are the node's filter and backdrop filter, less any chain resolve
+/// dropped as one `meo-skia-canvas` refuses.
 fn enter_node(
     context: &mut Context2D,
     node: &Node,
+    (filter, backdrop): (Option<&str>, Option<&str>),
     rect: Rect,
     device: Size,
     page_root: bool,
@@ -786,7 +803,7 @@ fn enter_node(
     // Before the node's own filter is set and before its group opens: the
     // backdrop is what is **already** on the canvas, so it has to be read and
     // put back while that is still all there is.
-    draw_backdrop(context, node, rect, device)?;
+    draw_backdrop(context, node, backdrop, rect, device)?;
 
     // The node's own `overflow` is not applied here: descendants arrive as
     // participants carrying the clips they owe, and wrapping them here would
@@ -803,7 +820,9 @@ fn enter_node(
         || blend != BlendMode::Normal
         || node.effects.mask.is_some();
 
-    if let Some(filter) = node.effects.filter.as_deref() {
+    // Resolve dropped every chain `meo-skia-canvas` refuses, so a failure here
+    // is a broken invariant rather than a caller's mistake.
+    if let Some(filter) = filter {
         context
             .set_filter_css(filter)
             .map_err(|error| in_property("filter", &error))?;
@@ -3758,10 +3777,11 @@ const fn to_skia_blend(mode: BlendMode) -> SkiaBlendMode {
 fn draw_backdrop(
     context: &mut Context2D,
     node: &Node,
+    css: Option<&str>,
     rect: Rect,
     device: Size,
 ) -> Result<(), Error> {
-    let Some(css) = node.effects.backdrop_filter.as_deref() else {
+    let Some(css) = css else {
         return Ok(());
     };
 
@@ -4946,16 +4966,20 @@ mod tests {
         let node = scene
             .get(root)
             .unwrap_or_else(|| unreachable!("the root is in the scene"));
-        participants(scene, root, node)
-            .into_iter()
-            .map(|step| match step {
-                super::Step::EnterClipped { id, .. }
-                | super::Step::Enter(id) => id,
-                super::Step::Leave { .. } => {
-                    unreachable!("participants yields no leave")
-                }
-            })
-            .collect()
+        participants(
+            scene,
+            &crate::resolve::DroppedFilters::default(),
+            root,
+            node,
+        )
+        .into_iter()
+        .map(|step| match step {
+            super::Step::EnterClipped { id, .. } | super::Step::Enter(id) => id,
+            super::Step::Leave { .. } => {
+                unreachable!("participants yields no leave")
+            }
+        })
+        .collect()
     }
 
     fn box_rect(width: f32, height: f32) -> Rect {
@@ -5382,15 +5406,20 @@ mod tests {
         let root = scene
             .get(NodeId::ROOT)
             .unwrap_or_else(|| unreachable!("a new scene has a root"));
-        let owed: Vec<Vec<NodeId>> = participants(&scene, NodeId::ROOT, root)
-            .into_iter()
-            .filter_map(|step| match step {
-                super::Step::EnterClipped { id, clips } if id == child => {
-                    Some(clips)
-                }
-                _ => None,
-            })
-            .collect();
+        let owed: Vec<Vec<NodeId>> = participants(
+            &scene,
+            &crate::resolve::DroppedFilters::default(),
+            NodeId::ROOT,
+            root,
+        )
+        .into_iter()
+        .filter_map(|step| match step {
+            super::Step::EnterClipped { id, clips } if id == child => {
+                Some(clips)
+            }
+            _ => None,
+        })
+        .collect();
 
         assert_eq!(
             owed,
@@ -5423,15 +5452,20 @@ mod tests {
             let root = scene
                 .get(NodeId::ROOT)
                 .unwrap_or_else(|| unreachable!("a new scene has a root"));
-            participants(&scene, NodeId::ROOT, root)
-                .into_iter()
-                .find_map(|step| match step {
-                    super::Step::EnterClipped { id, clips } if id == child => {
-                        Some(clips)
-                    }
-                    _ => None,
-                })
-                .unwrap_or_else(|| unreachable!("the child is a participant"))
+            participants(
+                &scene,
+                &crate::resolve::DroppedFilters::default(),
+                NodeId::ROOT,
+                root,
+            )
+            .into_iter()
+            .find_map(|step| match step {
+                super::Step::EnterClipped { id, clips } if id == child => {
+                    Some(clips)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| unreachable!("the child is a participant"))
         };
 
         assert!(

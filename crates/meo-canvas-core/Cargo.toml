@@ -72,4 +72,4 @@ criterion = { workspace = true }
 png = "0.18.1"
 # The `l7aromeo/meo-skia-canvas#612` probe counts glyph strikes in Skia's cache.
 # The version `meo-skia-canvas` builds, so it unifies rather than adding a Skia.
-skia-safe = { version = "0.153.3", default-features = false }
+skia-safe = { version = "0.156.0", default-features = false }

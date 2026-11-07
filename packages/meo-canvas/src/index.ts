@@ -257,7 +257,8 @@ export interface Diagnostic {
    *
    * A path rather than a property name, because a value nested inside another
    * has no single name that would find it — `<color=zzz>` for markup,
-   * `segments[0].fontSize` for a run.
+   * `segments[0].fontSize` for a run. A filter chain is named by its CSS
+   * property, `filter` or `backdrop-filter`, and its `detail` names the node.
    */
   readonly path: string
   /** What was wrong with it, and what was done instead. */
