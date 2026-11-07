@@ -9,7 +9,9 @@ use meo_canvas_scene::{
     node::{ImageSource, Node, NodeId, NodeKind},
     style::{
         Dimension, Length,
-        layout::{Align, BoxSizing, Display, FlexDirection, PositionType},
+        layout::{
+            Align, BoxSizing, Display, FlexDirection, FlexWrap, PositionType,
+        },
         paint::{Color, ObjectFit},
     },
 };
@@ -99,6 +101,8 @@ struct Case {
     /// The container's direction and `align-items`, CSS's initial values
     /// unless the row's container says otherwise.
     flow: (FlexDirection, Option<Align>),
+    /// The container's `flex-wrap`.
+    wrap: FlexWrap,
     /// The element's padding on every side, and the box its sizes measure.
     padding: (f32, BoxSizing),
     kind: Kind,
@@ -117,6 +121,7 @@ fn painted(case: &Case) -> (u32, u32) {
         container.layout.flex_direction,
         container.layout.align_items,
     ) = case.flow;
+    container.layout.flex_wrap = case.wrap;
     container.layout.position_type = PositionType::Relative;
     let container = scene
         .push(NodeId::ROOT, container)
@@ -209,6 +214,7 @@ const fn replaced(
         width_clamp: (Dimension::Auto, Dimension::Auto),
         grow: 0.0,
         flow: (FlexDirection::Row, None),
+        wrap: FlexWrap::NoWrap,
         padding: (0.0, BoxSizing::ContentBox),
         kind: Kind::Replaced,
     }
@@ -698,6 +704,89 @@ fn two_bounds_on_an_automatic_width_follow_the_table() {
 }
 
 #[test]
+fn a_stretched_flex_item_is_not_sized_from_its_maximum() {
+    // `l7aromeo/meo-canvas#197`: the item's maximum height, or one its maximum
+    // width transfers, sized it in a line of indefinite height, 90x60 where
+    // Chrome keeps the natural 60x40.
+    let (auto, px) = (Dimension::Auto, Dimension::Points);
+    let flex = |width_clamp, clamp| Case {
+        clamp,
+        width_clamp,
+        ..replaced(Display::Flex, auto, auto, auto)
+    };
+    let wrong = apart([
+        ("flex w auto max60", flex((auto, auto), (auto, px(60.0)))),
+        (
+            "flex w auto max-width90",
+            flex((auto, px(90.0)), (auto, auto)),
+        ),
+        (
+            "flex w auto max60 min50",
+            flex((auto, auto), (px(50.0), px(60.0))),
+        ),
+        (
+            "flex wrap w auto max60",
+            Case {
+                wrap: FlexWrap::Wrap,
+                ..flex((auto, auto), (auto, px(60.0)))
+            },
+        ),
+        (
+            "flex w auto max-width30",
+            flex((auto, px(30.0)), (auto, auto)),
+        ),
+        (
+            "flex w auto max-width25%",
+            flex((auto, Dimension::Percent(0.25)), (auto, auto)),
+        ),
+        ("flex w auto max20", flex((auto, auto), (auto, px(20.0)))),
+        (
+            "flex start w auto max60",
+            Case {
+                flow: (FlexDirection::Row, Some(Align::FlexStart)),
+                ..flex((auto, auto), (auto, px(60.0)))
+            },
+        ),
+        (
+            "flex w auto max60 tall100",
+            Case {
+                tall: px(100.0),
+                ..flex((auto, auto), (auto, px(60.0)))
+            },
+        ),
+        (
+            "column w auto max-width90",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..flex((auto, px(90.0)), (auto, auto))
+            },
+        ),
+        (
+            "column w auto max-width120",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..flex((auto, px(120.0)), (auto, auto))
+            },
+        ),
+        (
+            "column w auto max-width30",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..flex((auto, px(30.0)), (auto, auto))
+            },
+        ),
+        (
+            "column w auto max-width120 min0",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..flex((auto, px(120.0)), (px(0.0), auto))
+            },
+        ),
+    ]);
+    assert!(wrong.is_empty(), "{wrong}");
+}
+
+#[test]
 fn neither_axis_definite_is_the_intrinsic_size() {
     agrees(
         "block w auto",
@@ -778,6 +867,7 @@ fn an_out_of_flow_replaced_element_is_unchanged() {
                 width_clamp: (Dimension::Auto, Dimension::Auto),
                 grow: 0.0,
                 flow: (FlexDirection::Row, None),
+                wrap: FlexWrap::NoWrap,
                 padding: (0.0, BoxSizing::ContentBox),
                 kind: Kind::Replaced,
             },
@@ -803,6 +893,7 @@ fn a_non_replaced_box_still_fills_its_container() {
                 width_clamp: (Dimension::Auto, Dimension::Auto),
                 grow: 0.0,
                 flow: (FlexDirection::Row, None),
+                wrap: FlexWrap::NoWrap,
                 padding: (0.0, BoxSizing::ContentBox),
                 kind: Kind::Box,
             },

@@ -23,6 +23,10 @@
 # through the ratio, as CSS 2.2 §10.4’s table gives it: the `block w auto`
 # rows with a bound. The ratio gives way only where two bounds disagree.
 #
+# A stretched flex item in a row of indefinite height starts from its
+# natural size too, which a maximum it does not reach leaves alone: the
+# `flex w auto` rows with a bound. A row of definite height stretches it.
+#
 # `div` and `text` are the contrast: a non-replaced box fills its container
 # and must keep filling it.
 #
@@ -98,6 +102,19 @@ block ratio div w200 max60	0.00	0.00	200.00	60.00	block/auto	static 200px auto a
 flex ratio div w200 max60	0.00	0.00	200.00	60.00	flex/auto	static 200px auto aspect-ratio:1.5;max-height:60px	and as a flex item
 flex start w auto max20	0.00	0.00	30.00	20.00	flex;align-items:flex-start/auto	static auto auto max-height:20px	control: an auto width does take the maximum through the ratio
 abs block w auto max20	0.00	0.00	30.00	20.00	block/auto	absolute auto auto max-height:20px	control: and out of flow
+flex w auto max60	0.00	0.00	60.00	40.00	flex/auto	static auto auto max-height:60px	a stretched item: a maximum above the natural height does nothing
+flex w auto max20	0.00	0.00	30.00	20.00	flex/auto	static auto auto max-height:20px	control: a maximum below it narrows the width through the ratio
+flex w auto max-width90	0.00	0.00	60.00	40.00	flex/auto	static auto auto max-width:90px	a maximum width above the natural width does nothing
+flex w auto max60 min50	0.00	0.00	75.00	50.00	flex/auto	static auto auto min-height:50px;max-height:60px	a minimum above the natural height, under a maximum above it
+flex wrap w auto max60	0.00	0.00	60.00	40.00	flex;flex-wrap:wrap/auto	static auto auto max-height:60px	the same in a wrapping container
+flex w auto max-width30	0.00	0.00	30.00	20.00	flex/auto	static auto auto max-width:30px	a maximum width below the natural width, the height following
+flex w auto max-width25%	0.00	0.00	50.00	33.33	flex/auto	static auto auto max-width:25%	a percentage maximum width, of the 200-wide container
+flex start w auto max60	0.00	0.00	60.00	40.00	flex;align-items:flex-start/auto	static auto auto max-height:60px	control: unstretched, the natural size
+flex w auto max60 tall100	0.00	0.00	90.00	60.00	flex/100px	static auto auto max-height:60px	control: a definite line stretches the item to the maximum
+column w auto max-width90	0.00	0.00	90.00	60.00	flex;flex-direction:column/auto	static auto auto max-width:90px	control: a column stretches to the definite width, clamped
+column w auto max-width120	0.00	0.00	120.00	80.00	flex;flex-direction:column/auto	static auto auto max-width:120px	control: and the height follows the stretched width, not the natural one
+column w auto max-width30	0.00	0.00	30.00	20.00	flex;flex-direction:column/auto	static auto auto max-width:30px	control: and below the natural width, the height with it
+column w auto max-width120 min0	0.00	0.00	120.00	80.00	flex;flex-direction:column/auto	static auto auto max-width:120px;min-height:0	control: with no automatic minimum, the height still follows the width
 block w auto max20	0.00	0.00	30.00	20.00	block/auto	static auto auto max-height:20px	a maximum below the natural height narrows the width through the ratio
 block w auto max60	0.00	0.00	60.00	40.00	block/auto	static auto auto max-height:60px	control: a maximum above the natural height does nothing
 block w auto max-width30	0.00	0.00	30.00	20.00	block/auto	static auto auto max-width:30px	a maximum width below the natural width shortens the height through the ratio
