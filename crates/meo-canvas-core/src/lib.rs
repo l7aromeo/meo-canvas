@@ -573,9 +573,8 @@ impl Renderer {
     /// mutates behind a lock is how two threads begin contending on a type
     /// whose whole purpose is that they do not.
     ///
-    /// A file whose bytes this thread already registered under `family` is
-    /// read and compared, and not registered again: see
-    /// [`Fonts::register_path`].
+    /// A file whose bytes this thread already holds under `family` adds no
+    /// face: see [`Fonts::register_path`].
     ///
     /// # Errors
     ///
@@ -665,12 +664,16 @@ impl Renderer {
         let surface = surface.ok_or_else(|| {
             Error::Layout("a validated scene produced no page".to_owned())
         })?;
+        // Copied, before the warnings are moved out: empty on every render
+        // where every value was usable, and an empty `Vec` copies nothing.
+        let diagnostics = resolved.diagnostics().to_vec();
         Ok(RenderedCanvas {
             surface,
             // Moved out of the resolve tables rather than copied: the vector
             // is empty on every render where nothing failed, and an empty
             // `Vec` owns no allocation to move.
             warnings: resolved.into_warnings(),
+            diagnostics,
         })
     }
 
@@ -703,6 +706,7 @@ impl Renderer {
 pub struct RenderedCanvas {
     surface: Surface,
     warnings: Vec<ImageWarning>,
+    diagnostics: Vec<diagnostic::Diagnostic>,
 }
 
 impl RenderedCanvas {
@@ -720,6 +724,18 @@ impl RenderedCanvas {
     #[must_use]
     pub fn warnings(&self) -> &[ImageWarning] {
         &self.warnings
+    }
+
+    /// Every value in the scene the render went on without, in node order: a
+    /// `filter` or `backdrop_filter` chain `meo-skia-canvas` refuses, which is
+    /// dropped as Chrome drops an invalid declaration.
+    ///
+    /// Beside [`warnings`](Self::warnings) and not merged with them: a warning
+    /// says a source could not be reached, a diagnostic that the caller's own
+    /// value could not be used. Empty is the ordinary answer.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[diagnostic::Diagnostic] {
+        &self.diagnostics
     }
 
     /// Encodes the painted pages in one format.

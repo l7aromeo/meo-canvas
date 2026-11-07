@@ -56,6 +56,11 @@ jobs:
           channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
           test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          # Every cargo call here builds meo-skia-canvas's `patched-skia`, which
+          # refuses a build without the archives the justfile names.
+          url=$(sed -n 's/^export SKIA_BINARIES_URL := "\(.*\)"$/\1/p' justfile)
+          test -n "$url" || { echo "::error::the justfile named no SKIA_BINARIES_URL"; exit 1; }
+          echo "SKIA_BINARIES_URL=$url" >> "$GITHUB_ENV"
           nightly=$(sed -n 's/^fmt_toolchain := "\(.*\)"$/\1/p' justfile)
           test -n "$nightly" || { echo "::error::the justfile named no fmt_toolchain"; exit 1; }
           echo "nightly=$nightly" >> "$GITHUB_OUTPUT"

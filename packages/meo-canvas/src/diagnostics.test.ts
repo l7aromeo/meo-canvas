@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { Root } from './root.js'
-import { Text } from './node.js'
+import { Box, Text } from './node.js'
 
 /**
  * Markup a caller wrote that the renderer could not use, through a real render: the
@@ -69,12 +69,68 @@ describe('markup the renderer could not use', () => {
   })
 
   it('leaves the offset off a report that did not come from markup', async () => {
-    // Nothing raises one yet — every diagnostic today is a markup tag — so
-    // this pins the shape rather than a producer: the property is optional
-    // and absent, never `null`, so `'offset' in d` and `d.offset !== undefined`
+    // A refused filter chain is the report that does not: the property is
+    // absent, never `null`, so `'offset' in d` and `d.offset !== undefined`
     // cannot disagree.
-    const { found } = await render('<color=zzz>abc</color>')
+    const canvas = await Root({ width: 8, height: 8, children: Box({ width: 4, height: 4, filter: 'blur(4 px)' }) })
+    const found = canvas.diagnostics
+    canvas.release()
     expect(found).toHaveLength(1)
-    expect(found[0]).not.toHaveProperty('offset', null)
+    expect(found[0]).not.toHaveProperty('offset')
+  })
+})
+
+/**
+ * A filter chain the renderer refuses is dropped, as Chrome drops an invalid
+ * declaration, and reported: the render goes on as though it were not set. The
+ * chains are ones meo-skia-canvas 0.17 refuses as Chrome 153 does.
+ */
+describe('a filter the renderer refuses', () => {
+  const REFUSED = ['blur(4 px)', 'blur(-1px)', '']
+
+  /** A red box over a blue child at `zIndex: -1`, which a stacking context would show. */
+  const draw = async (style: { filter?: string; backdropFilter?: string }) => {
+    const canvas = await Root({
+      width: 60,
+      height: 40,
+      display: 'block',
+      backgroundColor: '#ffffff',
+      gpu: false,
+      children: Box({
+        positionType: 'relative',
+        width: 40,
+        height: 30,
+        backgroundColor: '#dc2828',
+        ...style,
+        children: Box({ positionType: 'absolute', position: { top: 5, left: 5 }, width: 20, height: 20, backgroundColor: '#2850dc', zIndex: -1 }),
+      }),
+    })
+    const raw = Buffer.from(await canvas.toBuffer('raw'))
+    const found = canvas.diagnostics
+    canvas.release()
+    return { raw, found }
+  }
+
+  it('is drawn as no filter is, and reported under its property', async () => {
+    const plain = await draw({})
+    expect(plain.found).toEqual([])
+    for (const chain of REFUSED) {
+      for (const [key, path] of [
+        ['filter', 'filter'],
+        ['backdropFilter', 'backdrop-filter'],
+      ] as const) {
+        const { raw, found } = await draw({ [key]: chain })
+        expect(found.map(one => one.path)).toEqual([path])
+        expect(found[0]?.detail).toContain(JSON.stringify(chain))
+        expect(raw.equals(plain.raw)).toBe(true)
+      }
+    }
+  })
+
+  it('keeps a chain it draws', async () => {
+    const plain = await draw({})
+    const blurred = await draw({ filter: 'blur(2px)' })
+    expect(blurred.found).toEqual([])
+    expect(blurred.raw.equals(plain.raw)).toBe(false)
   })
 })

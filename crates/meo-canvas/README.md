@@ -16,6 +16,19 @@ no Skia or taffy types anywhere, and no async runtime imposed on the caller.
 cargo add meo-canvas
 ```
 
+**And one line in `.cargo/config.toml`**, beside your `Cargo.toml`:
+
+```toml
+[env]
+SKIA_BINARIES_URL = "https://github.com/l7aromeo/meo-skia-canvas/releases/download/skia-binaries-0.156.0-3f566dd7198c/skia-binaries-{key}.tar.gz"
+```
+
+This crate links meo-skia-canvas's patched Skia, the one the npm package draws
+with, so the two surfaces draw the same pixels. That Skia is downloaded from the
+archives the line names, and a build without it stops and prints the line. The
+line names meo-skia-canvas's patch set, and a release that changes it says so
+under Breaking.
+
 ## A picture
 
 ```rust
@@ -84,20 +97,19 @@ fetch for themselves passes `ImageSource::Bytes` and needs none of this.
 
 ## System libraries
 
-Unlike the npm package, which ships a binary with freetype and fontconfig
-linked statically, a crate is built on the machine that uses it and links the
-system copies. On Linux that means:
+Unlike the npm package, which ships a binary with fontconfig linked
+statically, a crate is built on the machine that uses it and links the system
+copy. FreeType is inside the downloaded Skia. On Linux that means:
 
 ```text
-Debian/Ubuntu   libfontconfig1 libfreetype6   (build: libfontconfig1-dev libfreetype-dev pkg-config)
-RHEL/Alma/Rocky fontconfig freetype           (build: fontconfig-devel freetype-devel pkg-config)
+Debian/Ubuntu   libfontconfig1   (build: libfontconfig1-dev pkg-config)
+RHEL/Alma/Rocky fontconfig       (build: fontconfig-devel pkg-config)
 ```
 
-`pkg-config` is the one to get right. Skia is built here without
-`embed-freetype`, so `rust-skia` probes pkg-config for both libraries and
-**falls back to bare library names when the probe fails, silently** — the error
-you get is `unable to find library -lfreetype`, which points at freetype rather
-than at the missing prober.
+`pkg-config` is the one to get right. `rust-skia` probes it for fontconfig and
+**falls back to a bare library name when the probe fails, silently** — the error
+you get is `unable to find library -lfontconfig`, which points at fontconfig
+rather than at the missing prober.
 
 `cmake` is also needed at build time, for libaom, and on x86_64 an assembler:
 `yasm`, or `nasm` older than 3, whose help text libaom 3.11 cannot read.

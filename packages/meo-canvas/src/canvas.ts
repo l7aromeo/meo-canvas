@@ -24,19 +24,21 @@ export type { Format }
  */
 export interface EncodeOptions {
   /**
-   * Lossy quality from `0` to `1`, read by JPEG, WebP and AVIF.
+   * Lossy quality from `0` to `1`, read by JPEG, WebP and AVIF. Left out, each
+   * format takes its own default.
    *
-   * WebP at `1` is lossless: meo-skia-canvas documents `ImageFormat::Webp` as lossy
-   * or lossless depending on the quality. AVIF at `1` is its finest lossy
-   * quantizer, not lossless.
+   * A WebP at `1`, with `lossless` left out, is lossless. AVIF at `1` is its finest
+   * lossy quantizer, not lossless.
    */
   readonly quality?: number
   /**
-   * Encode AVIF without loss, ignoring `quality`.
+   * Whether a WebP or AVIF encode is lossless. Left out, each format follows its own
+   * rule, which for WebP is the `quality`: lossless at `1`.
    *
-   * Passed to meo-skia-canvas's `EncodeOptions::lossless`, which AVIF alone reads.
-   * Every other format refuses `true`, WebP included; a lossless WebP is
-   * `quality: 1`.
+   * `true` writes a lossless WebP, still or animated, and a lossless AVIF; beside a
+   * `quality` below `1` it is refused, and so it is for every other format. `false`
+   * writes a lossy WebP at any quality, its finest at `1`. Passed to
+   * meo-skia-canvas's `EncodeOptions::lossless` as it is.
    */
   readonly lossless?: boolean
   /** The colour transparency is flattened against, for a format with no alpha. */
@@ -414,7 +416,9 @@ export class Canvas {
   }
 
   /**
-   * What this render's input said that could not be used.
+   * What this render's input said that could not be used: a markup tag, or a
+   * `filter` or `backdropFilter` chain the renderer refuses, which is drawn as
+   * though it were not set, as Chrome drops an invalid declaration.
    *
    * **Separate from {@link Canvas.warnings}, and the distinction is the
    * point.** A warning says the world did not answer — a fetch that failed. A

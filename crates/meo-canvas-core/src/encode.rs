@@ -250,18 +250,21 @@ pub struct EncodedImage {
 /// asked for something that did not happen.
 #[derive(Debug, Clone, Default)]
 pub struct EncodeOptions {
-    /// Lossy quality from `0.0` to `1.0`, read by JPEG, WebP and AVIF.
+    /// Lossy quality from `0.0` to `1.0`, read by JPEG, WebP and AVIF. `None`
+    /// is each format's own default.
     ///
-    /// WebP at `1.0` is lossless: `meo-skia-canvas` documents
-    /// `ImageFormat::Webp` as lossy or lossless depending on the quality.
+    /// A WebP at `1.0`, with [`lossless`](Self::lossless) unset, is lossless.
     /// AVIF at `1.0` is its finest lossy quantizer, not lossless.
     pub quality: Option<f32>,
-    /// Whether an AVIF encode is lossless.
+    /// Whether a WebP or AVIF encode is lossless. `None` is each format's own
+    /// rule, which for WebP is the [`quality`](Self::quality): lossless at
+    /// `1.0`.
     ///
-    /// Passed to `meo-skia-canvas`'s `EncodeOptions::lossless`, which AVIF
-    /// alone reads and which ignores [`quality`](Self::quality) when set.
-    /// Every other format refuses `Some(true)`, WebP included; a lossless WebP
-    /// is a quality of `1.0`.
+    /// `Some(true)` writes a lossless WebP, still or animated, and a lossless
+    /// AVIF; beside a quality below `1.0` it is refused, and so it is for
+    /// every other format. `Some(false)` writes a lossy WebP at any
+    /// quality, its finest at `1.0`. Passed to `meo-skia-canvas`'s
+    /// `EncodeOptions::lossless` as it is.
     pub lossless: Option<bool>,
     /// The colour transparency is flattened against by a format with no alpha
     /// channel, as a packed `0xRRGGBB`.
@@ -395,14 +398,11 @@ const fn to_skia_format(
 fn to_skia_options(
     options: &EncodeOptions,
 ) -> meo_skia_canvas::export::EncodeOptions {
-    let mut lowered = meo_skia_canvas::export::EncodeOptions::default();
-
-    if let Some(quality) = options.quality {
-        lowered.quality = quality;
-    }
-    if let Some(lossless) = options.lossless {
-        lowered.lossless = lossless;
-    }
+    let mut lowered = meo_skia_canvas::export::EncodeOptions {
+        quality: options.quality,
+        lossless: options.lossless,
+        ..Default::default()
+    };
     if let Some(matte) = options.matte {
         // Packed `0xRRGGBB`, opaque: a matte is what transparency is flattened
         // against, so a translucent one would leave some of it unflattened.
@@ -809,7 +809,7 @@ mod tests {
         let untouched = meo_skia_canvas::export::EncodeOptions::default();
 
         assert_eq!(lowered.fps, untouched.fps);
-        assert_eq!(lowered.quality.to_bits(), untouched.quality.to_bits());
+        assert_eq!(lowered.quality, untouched.quality);
         assert_eq!(lowered.lossless, untouched.lossless);
         assert!(lowered.matte.is_none());
     }

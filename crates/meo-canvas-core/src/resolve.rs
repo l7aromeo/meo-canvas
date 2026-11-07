@@ -1,11 +1,15 @@
 //! Turns a scene's external references into things the later passes can use.
 //!
-//! Three jobs, all of which have to finish before taffy is asked anything.
+//! Four jobs, all of which have to finish before taffy is asked anything.
 //! Fonts are registered, so a family a node names can be found. Images are read
 //! and decoded, because an image sized `Auto` on both axes takes its extent
 //! from the decoded bitmap and that extent is a layout input. Text styles are
 //! folded down the tree, so a text node carries the family its container set
-//! rather than a chain of ancestors to walk at measure time.
+//! rather than a chain of ancestors to walk at measure time. Filter chains are
+//! checked, and one `meo-skia-canvas` refuses is dropped with a [`Diagnostic`],
+//! as Chrome drops an invalid declaration: here rather than in a builder, so a
+//! scene read from disk is treated as one built in Rust or JavaScript, and
+//! before paint, since a dropped filter establishes no stacking context.
 //!
 //! This pass reads local files and accepts bytes the caller already holds.
 //! **Whether it also fetches is a build-time decision**: with the `net` feature
@@ -67,25 +71,16 @@
 //! `register_bytes` take `&self`. Registering is not a mutation of this value,
 //! because this value is not what changes.
 //!
-//! **Naming the same files on every render registers them once.** Bytes this
-//! thread already registered under a family are read and compared, not handed
-//! to `meo-skia-canvas` again, which would add a typeface each time: memory
-//! would grow with every render, and the GPU would draw large glyphs a level
-//! apart at their edges from one render to the next
-//! (`l7aromeo/meo-skia-canvas#612`, `l7aromeo/meo-skia-canvas#611`).
-//!
-//! Everything else here is scoped as it looks. The one `static` in this module
-//! is the thread's record of the faces it registered, which mirrors the
-//! registry rather than adding one; the caches are owned per resolve, and two
-//! renders on two threads share nothing and contend for nothing **except the
-//! font registry**.
+//! Everything else here is scoped as it looks. Nothing in this module is a
+//! `static`, the caches are owned per resolve, and two renders on two threads
+//! share nothing and contend for nothing **except the font registry**.
 
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, hash_map::Entry},
     path::Path,
     rc::Rc,
-    sync::{Mutex, OnceLock, PoisonError},
+    sync::OnceLock,
 };
 
 use base64::{
@@ -94,7 +89,7 @@ use base64::{
 };
 use meo_canvas_scene::{
     OnImageError, Scene, Size,
-    node::{HttpOptions, ImageSource, NodeId, NodeKind},
+    node::{HttpOptions, ImageSource, Node, NodeId, NodeKind},
     style::{
         PaintOrder,
         effect::Mask,
@@ -107,28 +102,7 @@ use meo_canvas_scene::{
 };
 use meo_skia_canvas::image::Svg;
 
-use crate::{Error, FetchFailure, ImageWarning};
-
-thread_local! {
-    // [WORKAROUND] meo-skia-canvas adds a typeface per registration, identical
-    // bytes too (`l7aromeo/meo-skia-canvas#612`, `l7aromeo/meo-skia-canvas#611`),
-    // tracked as `l7aromeo/meo-canvas#203`. Retires when it adds none, which
-    // `crates/meo-canvas-core/tests/meo_skia_canvas_reregister.rs` asserts.
-    /// The faces registered on this thread, by family, compared byte for byte
-    /// so that bytes registered again are not handed to meo-skia-canvas twice.
-    static REGISTERED_FACES: RefCell<HashMap<String, Vec<Box<[u8]>>>> =
-        RefCell::new(HashMap::new());
-}
-
-/// Whether this thread has registered exactly `bytes` under `family`.
-fn registered_on_this_thread(family: &str, bytes: &[u8]) -> bool {
-    REGISTERED_FACES.with(|faces| {
-        faces
-            .borrow()
-            .get(family)
-            .is_some_and(|known| known.iter().any(|face| **face == *bytes))
-    })
-}
+use crate::{Error, FetchFailure, ImageWarning, diagnostic::Diagnostic};
 
 /// The fonts a render can draw with.
 ///
@@ -143,10 +117,6 @@ fn registered_on_this_thread(family: &str, bytes: &[u8]) -> bool {
 #[derive(Default)]
 pub struct Fonts {
     library: meo_skia_canvas::FontLibrary,
-    /// The families this registry registered, in registration order: kept
-    /// here rather than read from `library`, which never sees a face this
-    /// thread already registered.
-    families: Mutex<Vec<String>>,
     /// The families the platform already has, read once: enumerating them
     /// walks the system's font directories, and the answer cannot change
     /// while the process runs.
@@ -177,9 +147,8 @@ impl Fonts {
     /// The name need not match the one inside the file. Call it more than once
     /// with the same name to give a family several weights.
     ///
-    /// A file whose bytes this thread already registered under `family` is
-    /// read and compared, and not registered again, so naming the same files on
-    /// every render costs a read of each.
+    /// A file whose bytes this thread already holds under `family` adds no
+    /// face, so naming the same files on every render costs a read of each.
     ///
     /// # Errors
     ///
@@ -190,27 +159,17 @@ impl Fonts {
         family: &str,
         path: impl AsRef<Path>,
     ) -> Result<(), Error> {
-        let path = path.as_ref();
-        // [WORKAROUND] see `REGISTERED_FACES`: read here to compare the bytes.
-        // An unreadable file goes to meo-skia-canvas, whose error it reports.
-        let Ok(bytes) = std::fs::read(path) else {
-            return self
-                .library
-                .register_font_from_path(family, path)
-                .map(|()| self.note(family))
-                .map_err(|source| Error::FontRegister {
-                    family: family.to_owned(),
-                    detail: source.to_string(),
-                });
-        };
-        self.register_bytes(family, &bytes)
+        self.library
+            .register_font_from_path(family, path)
+            .map_err(|source| Error::FontRegister {
+                family: family.to_owned(),
+                detail: source.to_string(),
+            })
     }
 
     /// Registers a face from bytes the caller already holds.
     ///
-    /// Bytes this thread already registered under `family` are not registered
-    /// again. The first registration keeps a copy of them to compare against,
-    /// for as long as the thread runs.
+    /// Bytes this thread already holds under `family` add no face.
     ///
     /// # Errors
     ///
@@ -221,33 +180,12 @@ impl Fonts {
         family: &str,
         bytes: &[u8],
     ) -> Result<(), Error> {
-        // [WORKAROUND] see `REGISTERED_FACES`.
-        if !registered_on_this_thread(family, bytes) {
-            self.library
-                .register_font_from_data(family, bytes)
-                .map_err(|source| Error::FontRegister {
-                    family: family.to_owned(),
-                    detail: source.to_string(),
-                })?;
-            REGISTERED_FACES.with(|faces| {
-                faces
-                    .borrow_mut()
-                    .entry(family.to_owned())
-                    .or_default()
-                    .push(bytes.into());
-            });
-        }
-        self.note(family);
-        Ok(())
-    }
-
-    /// Records `family` as registered here, once, in registration order.
-    fn note(&self, family: &str) {
-        let mut families =
-            self.families.lock().unwrap_or_else(PoisonError::into_inner);
-        if !families.iter().any(|known| known == family) {
-            families.push(family.to_owned());
-        }
+        self.library
+            .register_font_from_data(family, bytes)
+            .map_err(|source| Error::FontRegister {
+                family: family.to_owned(),
+                detail: source.to_string(),
+            })
     }
 
     /// Whether a family can be drawn with **anywhere on this thread**.
@@ -267,7 +205,7 @@ impl Fonts {
     /// caller holds, and the registry underneath it is the thread's.
     #[must_use]
     pub fn has(&self, family: &str) -> bool {
-        if family.is_empty() || self.registered().iter().any(|f| f == family) {
+        if family.is_empty() || self.library.has_font(family) {
             return true;
         }
         self.installed()
@@ -285,10 +223,7 @@ impl Fonts {
     /// already available from `has`.
     #[must_use]
     pub fn registered(&self) -> Vec<String> {
-        self.families
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.library.families()
     }
 
     /// The registry the measure pass builds its text engine from.
@@ -608,6 +543,72 @@ impl DecodedImage {
     }
 }
 
+/// The nodes whose `filter` or `backdrop_filter` resolve dropped, because
+/// `meo-skia-canvas` refuses the chain.
+///
+/// Dropped as Chrome drops an invalid declaration: the node is drawn as though
+/// the property were not set, which includes establishing no stacking context
+/// on its account.
+#[derive(Debug, Default)]
+pub struct DroppedFilters {
+    filter: HashSet<NodeId>,
+    backdrop: HashSet<NodeId>,
+}
+
+impl DroppedFilters {
+    /// `node`'s filter chain, unless it was dropped.
+    #[must_use]
+    pub fn filter<'node>(
+        &self,
+        id: NodeId,
+        node: &'node Node,
+    ) -> Option<&'node str> {
+        node.effects
+            .filter
+            .as_deref()
+            .filter(|_| !self.filter.contains(&id))
+    }
+
+    /// `node`'s filter and backdrop filter chains, each unless it was dropped.
+    #[must_use]
+    pub fn chains<'node>(
+        &self,
+        id: NodeId,
+        node: &'node Node,
+    ) -> (Option<&'node str>, Option<&'node str>) {
+        (self.filter(id, node), self.backdrop(id, node))
+    }
+
+    /// `node`'s backdrop filter chain, unless it was dropped.
+    #[must_use]
+    pub fn backdrop<'node>(
+        &self,
+        id: NodeId,
+        node: &'node Node,
+    ) -> Option<&'node str> {
+        node.effects
+            .backdrop_filter
+            .as_deref()
+            .filter(|_| !self.backdrop.contains(&id))
+    }
+}
+
+/// Why `meo-skia-canvas` refuses `css` as a filter chain, or `None` when it
+/// draws it.
+///
+/// Asked of a one-pixel raster canvas, since the parser is reachable only
+/// through a context. Its answer does not depend on the canvas: what a chain's
+/// units resolve against changes the numbers, never whether it parses.
+fn filter_refusal(css: &str) -> Option<String> {
+    let mut canvas = meo_skia_canvas::Canvas::new(1.0, 1.0);
+    canvas.set_gpu(false);
+    canvas
+        .context()
+        .set_filter_css(css)
+        .err()
+        .map(|error| error.to_string())
+}
+
 /// A scene whose images are decoded and whose text styles are resolved.
 ///
 /// Holds those beside the scene rather than inside it, so the scene stays the
@@ -619,6 +620,11 @@ pub struct Resolved<'scene> {
     /// Empty on every render where nothing failed, and `Vec::new` does not
     /// allocate, so the ordinary case costs nothing.
     warnings: Vec<ImageWarning>,
+    /// Every value the caller wrote that the render goes on without, in node
+    /// order.
+    diagnostics: Vec<Diagnostic>,
+    /// The filter chains among those values.
+    dropped: DroppedFilters,
     /// The scene these tables belong to.
     pub scene: &'scene Scene,
     images: HashMap<NodeId, DecodedImage>,
@@ -640,6 +646,8 @@ impl<'scene> Resolved<'scene> {
     pub fn new(scene: &'scene Scene, fonts: &Fonts) -> Result<Self, Error> {
         let mut resolved = Self {
             warnings: Vec::new(),
+            diagnostics: Vec::new(),
+            dropped: DroppedFilters::default(),
             scene,
             images: HashMap::new(),
             backgrounds: HashMap::new(),
@@ -690,8 +698,60 @@ impl<'scene> Resolved<'scene> {
             }
         }
 
+        resolved.check_filters();
         resolved.resolve_text(fonts)?;
         Ok(resolved)
+    }
+
+    /// Drops each `filter` and `backdrop_filter` `meo-skia-canvas` refuses,
+    /// with a diagnostic, asking once per distinct chain.
+    fn check_filters(&mut self) {
+        let mut asked: HashMap<&'scene str, Option<String>> = HashMap::new();
+        for (index, node) in self.scene.nodes.iter().enumerate() {
+            // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
+            let id = NodeId::new(index as u32);
+            let chains = [
+                ("filter", node.effects.filter.as_deref()),
+                ("backdrop-filter", node.effects.backdrop_filter.as_deref()),
+            ];
+            for (property, chain) in chains {
+                let Some(css) = chain else { continue };
+                let Some(reason) = asked
+                    .entry(css)
+                    .or_insert_with(|| filter_refusal(css))
+                    .clone()
+                else {
+                    continue;
+                };
+                let dropped = match property {
+                    "filter" => &mut self.dropped.filter,
+                    _ => &mut self.dropped.backdrop,
+                };
+                dropped.insert(id);
+                self.diagnostics.push(Diagnostic::new(
+                    property,
+                    format!(
+                        "node {}: {css:?} is not a filter chain the renderer \
+                         draws ({reason}), so the node is drawn without it",
+                        id.get()
+                    ),
+                ));
+            }
+        }
+    }
+
+    /// Every value the caller wrote that the render goes on without, in node
+    /// order: today, a `filter` or `backdrop_filter` chain that
+    /// `meo-skia-canvas` refuses.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Which filter chains were dropped, for the passes that read them.
+    #[must_use]
+    pub const fn dropped(&self) -> &DroppedFilters {
+        &self.dropped
     }
 
     /// Takes the warnings out, leaving the tables behind.

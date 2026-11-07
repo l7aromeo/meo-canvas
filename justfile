@@ -11,6 +11,12 @@ fmt_toolchain := "nightly-2026-08-10"
 # no features at all.
 host_features := if os() == "macos" { "metal" } else { "vulkan" }
 
+# The patched Skia meo-skia-canvas's `patched-skia` feature links, which a build
+# without this line refuses. It names meo-skia-canvas's patch set, and changes
+# with a release of it that changes the patches; workflows calling cargo
+# directly read it from here.
+export SKIA_BINARIES_URL := "https://github.com/l7aromeo/meo-skia-canvas/releases/download/skia-binaries-0.156.0-3f566dd7198c/skia-binaries-{key}.tar.gz"
+
 # What a cdylib is called on this platform, and what Node wants it called.
 #
 # Node loads a native addon only under `.node`, and cargo names a cdylib by the
@@ -399,6 +405,7 @@ addon-container suffix:
         -v "$PWD":/src -w /src \
         -v "$HOME/.cargo/registry":/root/.cargo/registry \
         -e CARGO_TARGET_DIR=/src/target/container/{{ suffix }} \
+        -e SKIA_BINARIES_URL \
         "$tag" \
         cargo build --locked --release -p meo-canvas-node --features vulkan
 
@@ -500,6 +507,7 @@ fixtures-linux name="":
         -v "$PWD":/src -w /src \
         -v "$HOME/.cargo/registry":/root/.cargo/registry \
         -e CARGO_TARGET_DIR=/src/target/container/fixtures-linux \
+        -e SKIA_BINARIES_URL \
         "${accept[@]}" \
         "$tag" \
         cargo test -p meo-canvas-core --features vulkan --test fixtures -- --nocapture
@@ -761,7 +769,7 @@ example: build-js addon
 
 # The conformance tools in measuring order, written out: `browser.mjs` and
 # `png.mjs` share the directory and measure nothing.
-conformance_tools := "ellipsis colormix gradients gradientalpha flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain transformorder directioninherit flexcolumntext wrapwidth texttruth justifyitems justifybaseline failedimage viewbox backgroundtile"
+conformance_tools := "ellipsis colormix gradients gradientalpha flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain transformorder directioninherit flexcolumntext wrapwidth texttruth justifyitems justifybaseline failedimage viewbox backgroundtile filterstacking"
 
 # Not in `ci`: a re-measurement is a diff someone reads, not a suite going red
 # on whichever machine updated Chrome first. Named, one tool rewrites one table.

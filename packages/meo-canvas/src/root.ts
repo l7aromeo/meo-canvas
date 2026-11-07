@@ -130,9 +130,9 @@ function tooLarge(url: string): TypeError {
  * ```
  *
  * Naming the same list on every render is the pattern to follow. A file whose
- * bytes this thread already registered under that family is read and compared,
- * not registered again, so memory does not grow with the number of renders and
- * the GPU draws every render with the same face. It is *varying* the list that
+ * bytes this thread already holds under that family adds no face, so memory
+ * does not grow with the number of renders and the GPU draws every render with
+ * the same face. It is *varying* the list that
  * is the hazard. Faces belong at start-up, named once, and every render after
  * that names the same ones.
  *

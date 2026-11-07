@@ -4,10 +4,11 @@ import { Box, Image } from './node.js'
 import { Root } from './root.js'
 
 /**
- * What `EncodeOptions` documents of meo-skia-canvas, which reads them: WebP at
- * `quality: 1` is VP8L and decodes to the drawn pixels, still and animated, and
- * `lossless` is AVIF's and refused for WebP. A change upstream fails here. The
- * Rust side is `webp_lossless.rs`; the CLI is `cli.rs`.
+ * What `EncodeOptions` documents of meo-skia-canvas, which reads them: a WebP is
+ * VP8L and decodes to the drawn pixels under `lossless: true` or, with `lossless`
+ * left out, at `quality: 1`, still and animated; `lossless: false` is lossy at any
+ * quality. A change upstream fails here. The Rust side is `webp_lossless.rs`; the
+ * CLI is `cli.rs`.
  */
 describe('lossless WebP', () => {
   const WIDTH = 64
@@ -75,9 +76,39 @@ describe('lossless WebP', () => {
     expect(tags).not.toContain('VP8 ')
   })
 
-  it("refuses lossless for WebP with the encoder's reason", async () => {
+  it('writes lossless: true as VP8L that decodes to the drawn pixels, still and animated', async () => {
     const canvas = await Root({ width: WIDTH, height: HEIGHT, children: page(0) })
-    await expect(canvas.toBuffer('webp', { lossless: true })).rejects.toThrow(/no lossless form/)
+    const drawn = Buffer.from(await canvas.toBuffer('raw'))
+    const webp = Buffer.from(await canvas.toBuffer('webp', { lossless: true }))
+    canvas.release()
+    expect(chunks(webp)).toContain('VP8L')
+    expect(chunks(webp)).not.toContain('VP8 ')
+    expect((await decoded(webp)).equals(drawn)).toBe(true)
+
+    const sequence = await Root({ width: WIDTH, height: HEIGHT, pages: 3, children: ({ index }) => page(index) })
+    const tags = chunks(Buffer.from(await sequence.toBuffer('webp', { lossless: true })))
+    sequence.release()
+    expect(tags.filter(tag => tag === 'VP8L')).toHaveLength(3)
+    expect(tags).not.toContain('VP8 ')
+  })
+
+  it('writes lossless: false as lossy VP8, even at quality 1', async () => {
+    const canvas = await Root({ width: WIDTH, height: HEIGHT, children: page(0) })
+    const drawn = Buffer.from(await canvas.toBuffer('raw'))
+    for (const options of [{ lossless: false }, { lossless: false, quality: 1 }]) {
+      const webp = Buffer.from(await canvas.toBuffer('webp', options))
+      expect(chunks(webp)).toContain('VP8 ')
+      expect(chunks(webp)).not.toContain('VP8L')
+      expect((await decoded(webp)).equals(drawn)).toBe(false)
+    }
+    canvas.release()
+  })
+
+  it("refuses lossless beside a quality below 1 with the encoder's reason", async () => {
+    const canvas = await Root({ width: WIDTH, height: HEIGHT, children: page(0) })
+    for (const format of ['webp', 'avif'] as const) {
+      await expect(canvas.toBuffer(format, { lossless: true, quality: 0.5 })).rejects.toThrow(/asks for a lossy file/)
+    }
     canvas.release()
   })
 
