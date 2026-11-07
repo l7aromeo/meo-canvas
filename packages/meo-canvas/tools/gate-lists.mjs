@@ -14,7 +14,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
  * sees a deletion. Not derived from the lists, which could not notice one; a firing
  * floor prints the length it measured, so the lengths are not restated here.
  */
-const FLOORS = { portable: 13, native: 11 }
+const FLOORS = { portable: 14, native: 11 }
 
 const recipes = JSON.parse(execFileSync('just', ['--dump', '--dump-format', 'json'], { cwd: ROOT, encoding: 'utf8' })).recipes
 

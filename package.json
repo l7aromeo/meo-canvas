@@ -1,7 +1,7 @@
 {
   "name": "meo-canvas-workspace",
   "private": true,
-  "packageManager": "bun@1.4.1",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
@@ -10,15 +10,19 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@types/node": "^26.5.1",
-    "@vitest/coverage-v8": "^5.0.0",
-    "eslint": "^10.10.0",
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
-    "globals": "17.12.0",
-    "playwright": "^1.63.0",
-    "prettier": "^3.9.6",
+    "globals": "17.14.0",
+    "playwright": "^1.65.0",
+    "prettier": "^3.9.10",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.70.0",
-    "vitest": "^5.0.0"
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
+  },
+  "//": "overrides: minimatch is forced to 11 for GHSA-g3hv-75wg-m249 until eslint, @eslint/config-array and @typescript-eslint/typescript-estree accept 11 themselves; `just override-probes` says when. See docs/design.md, Dependencies.",
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }
