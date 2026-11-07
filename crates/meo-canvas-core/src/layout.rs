@@ -760,9 +760,12 @@ struct FromAbove<'above, M: ?Sized> {
 struct RatioBox {
     /// Its picture's size, at [`LAYOUT_SCALE`], where it has one.
     natural: Option<taffy::Size<f32>>,
-    /// Whether [`intrinsic_sizes_it`] gave it its natural width as a declared
-    /// one, which [`bound_natural_sizes`] bounds.
-    pinned: bool,
+    /// Whether it is an in-flow, unstretched block child with both sizes
+    /// `auto`, which [`bound_natural_sizes`] bounds.
+    auto_in_block: bool,
+    /// Whether its ratio is its picture's rather than one the author gave,
+    /// which CSS applies to the content box whatever the `box-sizing`.
+    picture_ratio: bool,
     /// Whether its containing block's height is definite; where it is not,
     /// [`base_on_natural_sizes`] may have work.
     definite_parent_height: bool,
@@ -847,9 +850,9 @@ const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
 }
 
 /// Gives taffy a replaced element's intrinsic ratio, an author's winning, so
-/// its block algorithm derives the height (`l7aromeo/meo-canvas#94`), and with
-/// both axes `auto` under a block parent its intrinsic width unless it resolves
-/// to `stretch`. Returns the intrinsic size, and whether it gave that width.
+/// its block algorithm derives the height (`l7aromeo/meo-canvas#94`). Returns
+/// the intrinsic size, and whether it is an in-flow block child with both axes
+/// `auto` that does not resolve to `stretch`, as [`bound_natural_sizes`] needs.
 fn intrinsic_sizes_it<M>(
     style: &mut taffy::Style,
     node: NodeId,
@@ -887,8 +890,8 @@ where
     if style.aspect_ratio.is_none() && !both_sizes_declared(&source.layout) {
         style.aspect_ratio = Some(ratio);
     }
-    // An explicit `stretch` widens it as Chrome does (`justify-items.tsv`), so
-    // the pin holds for every other value.
+    // An explicit `stretch` widens it as Chrome does (`justify-items.tsv`),
+    // which leaves it no natural width for its bounds to act on.
     let stretched =
         source.layout.justify_self.map_or(
             matches!(parent_items, Some(JustifyItems::Stretch)),
@@ -898,15 +901,12 @@ where
         width: intrinsic.width * LAYOUT_SCALE,
         height: intrinsic.height * LAYOUT_SCALE,
     };
-    let pinned = !out_of_flow(source)
+    let auto_in_block = !out_of_flow(source)
         && !stretched
         && parent.is_some_and(|parent| parent.layout.display == Display::Block)
         && matches!(source.layout.size.0, Dimension::Auto)
         && matches!(source.layout.size.1, Dimension::Auto);
-    if pinned {
-        style.size.width = taffy::Dimension::length(size.width);
-    }
-    Some((size, pinned))
+    Some((size, auto_in_block))
 }
 
 /// Whether a ratio derives this box's height from its width, which need not be
@@ -1063,6 +1063,7 @@ where
     // ratio and clamps, as every other leaf gets. Its `calc` resolver answers
     // zero: `calc` is off, so nothing reaches it.
     let mut first_baseline = None;
+    let inset = content_inset(style, inputs.parent_size.width);
     let mut output = taffy::compute_leaf_layout(
         inputs,
         style,
@@ -1072,9 +1073,19 @@ where
                 return taffy::Size::ZERO;
             };
 
+            // [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` passes a known
+            // size as the border box, so it is narrowed as the space is: 60x40
+            // art 80 wide with 10px of padding was 80x73, Chrome 80x60. Probed
+            // by `crates/meo-canvas-core/tests/taffy_ratio_box_sizing.rs`.
+            let content = |length: Option<f32>, inset: f32| {
+                length.map(|length| (length - inset).max(0.0))
+            };
             let measured = measure.measure(
                 node,
-                (known.width, known.height),
+                (
+                    content(known.width, inset.width),
+                    content(known.height, inset.height),
+                ),
                 (to_available(space.width), to_available(space.height)),
             );
 
@@ -1111,6 +1122,37 @@ where
     output
 }
 
+/// What a leaf's border box holds besides its content on each axis: padding,
+/// border and a scrollbar gutter, percentages resolving against the containing
+/// block's inline size, as `compute_leaf_layout` narrows the available space.
+fn content_inset(
+    style: &taffy::Style,
+    parent: Option<f32>,
+) -> taffy::Size<f32> {
+    let side = |length: taffy::LengthPercentage| {
+        length.resolve_or_zero(parent, |_, _| 0.0)
+    };
+    let gutter = |overflow: taffy::Overflow| {
+        if overflow == taffy::Overflow::Scroll {
+            style.scrollbar_width
+        } else {
+            0.0
+        }
+    };
+    taffy::Size {
+        width: side(style.padding.left)
+            + side(style.padding.right)
+            + side(style.border.left)
+            + side(style.border.right)
+            + gutter(style.overflow.y),
+        height: side(style.padding.top)
+            + side(style.padding.bottom)
+            + side(style.border.top)
+            + side(style.border.bottom)
+            + gutter(style.overflow.x),
+    }
+}
+
 /// The unrounded solves: a first one with the direction candidates' ratios
 /// off, then the compensations, each solving again when it has work.
 /// `keep_declared_widths` goes first because `compensate_ratio_direction` reads
@@ -1134,9 +1176,16 @@ where
     let candidates = ratio_direction_candidates(scene, tree, to_scene);
     clear_ratios(tree, &candidates)?;
     solve_once(tree, root, available, measure, baselines)?;
+    // First, so every pass after it reads a picture's sizes in its content box.
+    size_pictures_by_content(
+        tree,
+        (to_scene, ratio_boxes),
+        root,
+        (available, measure),
+        baselines,
+    )?;
     keep_declared_widths(
         tree,
-        scene,
         to_scene,
         root,
         (available, measure),
@@ -1179,14 +1228,7 @@ where
         (available, measure),
         baselines,
     )?;
-    clamp_ratio_heights(
-        tree,
-        scene,
-        to_scene,
-        root,
-        (available, measure),
-        baselines,
-    )
+    clamp_ratio_heights(tree, to_scene, root, (available, measure), baselines)
 }
 
 /// One solve of the whole page.
@@ -1574,6 +1616,111 @@ fn natural_basis(
     Ok(Some((natural + outside.width, minimum)))
 }
 
+// [WORKAROUND] taffy 0.15.1 applies an `aspect_ratio` to the box `box_sizing`
+// names, the border box under `border-box`, where CSS applies a picture's own
+// ratio to its content box: 60x40 art declared 100 wide with 10px of padding
+// is 100x67, Chrome 100x73.33. `l7aromeo/meo-canvas#217`, probed by
+// `crates/meo-canvas-core/tests/taffy_ratio_box_sizing.rs`.
+/// Turns each picture sized by its border box, with a ratio of its own and an
+/// inset, to `content-box`, its lengths less the inset and its percentages
+/// resolved against the parent's content box, then solves again.
+fn size_pictures_by_content<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    (to_scene, ratio_boxes): (
+        &HashMap<taffy::NodeId, NodeId>,
+        &HashMap<NodeId, RatioBox>,
+    ),
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut restyled: Vec<(taffy::NodeId, taffy::Style)> = Vec::new();
+    for (id, node) in to_scene {
+        let Some(ratio_box) = ratio_boxes.get(node) else {
+            continue;
+        };
+        let style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        if !ratio_box.picture_ratio
+            || style.box_sizing != taffy::BoxSizing::BorderBox
+        {
+            continue;
+        }
+        let solved = tree
+            .layout(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+        let (inset, _) = insets(style, solved);
+        if inset.width <= 0.0 && inset.height <= 0.0 {
+            continue;
+        }
+        let basis = parent_content_size(tree, *id);
+        let content =
+            |bound: taffy::LengthPercentageAuto, basis: f32, inset| {
+                content_bound(bound, basis, inset).map_or(
+                    taffy::LengthPercentageAuto::auto(),
+                    taffy::LengthPercentageAuto::length,
+                )
+            };
+        let declared = |size: taffy::Dimension, basis: f32, inset: f32| {
+            match size.expand() {
+                taffy::ExpandedDimension::Length(length) => {
+                    taffy::Dimension::length((length - inset).max(0.0))
+                }
+                taffy::ExpandedDimension::Percent(fraction) => {
+                    taffy::Dimension::length(
+                        fraction.mul_add(basis, -inset).max(0.0),
+                    )
+                }
+                _ => size,
+            }
+        };
+        let mut style = style.clone();
+        style.size = taffy::Size {
+            width: declared(style.size.width, basis.width, inset.width),
+            height: declared(style.size.height, basis.height, inset.height),
+        };
+        style.min_size = taffy::Size {
+            width: content(style.min_size.width, basis.width, inset.width),
+            height: content(style.min_size.height, basis.height, inset.height),
+        };
+        style.max_size = taffy::Size {
+            width: content(style.max_size.width, basis.width, inset.width),
+            height: content(style.max_size.height, basis.height, inset.height),
+        };
+        if let Some(parent) = tree.parent(*id) {
+            let row = matches!(
+                tree.style(parent)
+                    .map_err(|error| Error::Layout(error.to_string()))?
+                    .flex_direction,
+                taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+            );
+            let (main_basis, main_inset) = if row {
+                (basis.width, inset.width)
+            } else {
+                (basis.height, inset.height)
+            };
+            style.flex_basis =
+                declared(style.flex_basis, main_basis, main_inset);
+        }
+        style.box_sizing = taffy::BoxSizing::ContentBox;
+        restyled.push((*id, style));
+    }
+
+    if restyled.is_empty() {
+        return Ok(());
+    }
+    for (id, style) in restyled {
+        tree.set_style(id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
+}
+
 /// A flex item with a ratio, a declared main size, an `auto` cross size and an
 /// `auto` basis: whether its line is a row, and whether it is stretched.
 fn declared_flex_item(
@@ -1632,6 +1779,14 @@ fn content_suggestion(
     natural
         .min(max_cross.map_or(f32::INFINITY, &through))
         .max(min_cross.map_or(0.0, &through))
+}
+
+/// A bound's length where it is one, and `None` for a percentage or `auto`.
+fn length_of(bound: taffy::LengthPercentageAuto) -> Option<f32> {
+    match bound.expand() {
+        taffy::ExpandedLengthPercentageAuto::Length(length) => Some(length),
+        _ => None,
+    }
 }
 
 /// A box's padding and border on each axis, and the part of them its style's
@@ -1922,7 +2077,7 @@ fn flexed_size(
 // its minimum alone: 60x40 art is 60x40 under `max-height: 20`, 30x40 under
 // `max-width: 30`, Chrome 30x20. `l7aromeo/meo-canvas#198`, probed by
 // `crates/meo-canvas-core/tests/taffy_leaf_ratio_bounds.rs`.
-/// Pins each box [`intrinsic_sizes_it`] gave its natural width at the size
+/// Pins each picture in block flow with both sizes `auto` at the size
 /// [`natural_bounded`] gives it, bounds against the parent's content box from
 /// the solve before, ratio off, and solves again. Chrome follows that table on
 /// every `block w auto` row of `replaced-ratio.tsv`.
@@ -1943,7 +2098,7 @@ where
     for (id, node) in to_scene {
         if let Some(natural) = ratio_boxes
             .get(node)
-            .filter(|b| b.pinned)
+            .filter(|b| b.auto_in_block)
             .and_then(|b| b.natural)
             && let Some(size) = natural_pin(tree, *id, natural.width)?
         {
@@ -2100,7 +2255,6 @@ fn natural_bounded(
 /// the height again nor the height re-derives the width; then solves once more.
 fn clamp_ratio_heights<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
-    scene: &Scene,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
@@ -2122,21 +2276,16 @@ where
         let style = tree
             .style(id)
             .map_err(|error| Error::Layout(error.to_string()))?;
-        let Some(source) = to_scene.get(&id).and_then(|node| scene.get(*node))
-        else {
-            continue;
-        };
-        let Dimension::Points(ceiling) = source.layout.max_size.1 else {
-            continue;
-        };
-        if style.aspect_ratio.is_none() {
+        // The bounds as taffy holds them, which for a picture
+        // `size_pictures_by_content` turned are in its content box.
+        if !to_scene.contains_key(&id) || style.aspect_ratio.is_none() {
             continue;
         }
-        let floor = match source.layout.min_size.1 {
-            Dimension::Points(floor) => snapped(floor),
-            Dimension::Auto | Dimension::Percent(_) => 0.0,
+        let Some(ceiling) = length_of(style.max_size.height) else {
+            continue;
         };
-        let target = snapped(ceiling).max(floor);
+        let floor = length_of(style.min_size.height).unwrap_or(0.0);
+        let target = ceiling.max(floor);
         let solved = tree
             .layout(id)
             .map_err(|error| Error::Layout(error.to_string()))?;
@@ -2151,9 +2300,9 @@ where
                 + solved.border.top
                 + solved.border.bottom,
         );
-        let (bound, width) = match source.layout.box_sizing {
-            BoxSizing::BorderBox => (target, solved.size.width),
-            BoxSizing::ContentBox => {
+        let (bound, width) = match style.box_sizing {
+            taffy::BoxSizing::BorderBox => (target, solved.size.width),
+            taffy::BoxSizing::ContentBox => {
                 (target + inset.1, solved.size.width - inset.0)
             }
         };
@@ -2190,7 +2339,6 @@ where
 /// content's; below the width the transfer is left, or no item could shrink.
 fn keep_declared_widths<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
-    scene: &Scene,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
@@ -2201,21 +2349,16 @@ where
 {
     let mut pins: Vec<(taffy::NodeId, taffy::LengthPercentageAuto)> =
         Vec::new();
-    for (id, node) in to_scene {
-        let Some(source) = scene.get(*node) else {
-            continue;
-        };
-        // The author's width, not one `intrinsic_sizes_it` wrote for an image
-        // that states none: that one takes the minimum, `block w auto min160`.
-        let declared = sized(source.layout.size.0);
-        if matches!(declared, Dimension::Auto)
-            || !matches!(source.layout.min_size.0, Dimension::Auto)
-        {
-            continue;
-        }
+    for id in to_scene.keys() {
         let style = tree
             .style(*id)
             .map_err(|error| Error::Layout(error.to_string()))?;
+        // The declared width as taffy holds it, which for a picture
+        // `size_pictures_by_content` turned is its content box.
+        let declared = style.size.width;
+        if declared.is_auto() || !style.min_size.width.is_auto() {
+            continue;
+        }
         let Some(ratio) = style.aspect_ratio else {
             continue;
         };
@@ -2230,13 +2373,18 @@ where
         else {
             continue;
         };
-        let width = match declared {
-            Dimension::Points(points) => snapped(points),
-            Dimension::Percent(fraction) => fraction * basis.width,
-            Dimension::Auto => continue,
+        let (width, minimum) = match declared.expand() {
+            taffy::ExpandedDimension::Length(length) => {
+                (length, taffy::LengthPercentageAuto::length(length))
+            }
+            taffy::ExpandedDimension::Percent(fraction) => (
+                fraction * basis.width,
+                taffy::LengthPercentageAuto::percent(fraction),
+            ),
+            _ => continue,
         };
         if floor * ratio > width {
-            pins.push((*id, to_auto_length(declared)));
+            pins.push((*id, minimum));
         }
     }
 
@@ -2876,6 +3024,7 @@ where
         to_taffy_style(&source.layout, source.paint.border_style, own);
     style.item_is_replaced = lays_out_replaced(node, source, above.measure);
     let parent_items = state_auto(&mut style, source, above.parent, own);
+    let authored = style.aspect_ratio.is_some();
     let natural = intrinsic_sizes_it(
         &mut style,
         node,
@@ -2889,7 +3038,8 @@ where
             node,
             RatioBox {
                 natural: natural.map(|(size, _)| size),
-                pinned: natural.is_some_and(|(_, pinned)| pinned),
+                auto_in_block: natural.is_some_and(|(_, auto)| auto),
+                picture_ratio: !authored && natural.is_some(),
                 definite_parent_height: above.heights.parent,
             },
         );

@@ -28,7 +28,28 @@ const CASES = [
   { name: 'label in a flex row', text: 'seven eight', left: 0, width: 'auto', note: 'its own width, which a whole-pixel box rounds down' },
   { name: 'label in a flex row at 0.4', text: 'seven eight', left: 0.4, width: 'auto', note: 'control: the same label where the box rounds up' },
   { name: 'label at 82', text: 'seven eight', left: 0, width: '82px', note: 'a box really narrower than the label, by less than a pixel, breaks it' },
+  {
+    name: 'padded paragraph in a column',
+    text: PARAGRAPH,
+    left: 0,
+    width: 'auto',
+    holder: 'column',
+    padding: 10,
+    note: 'stretched to a 157 column, its content box is 137 wide and breaks it into three lines',
+  },
+  {
+    name: 'padded paragraph at 157 border-box',
+    text: PARAGRAPH,
+    left: 0,
+    width: '157px',
+    padding: 10,
+    sizing: 'border-box',
+    note: 'control: the same content box in a block',
+  },
 ]
+
+/** The width of the column the `column` holder is, which its item stretches to. */
+const COLUMN = 157
 
 const browser = await open()
 try {
@@ -36,12 +57,17 @@ try {
   const rows = []
   for (const item of CASES) {
     await browser.page.evaluate(
-      ({ item, family }) => {
-        const text = `font:20px "${family}";line-height:1.2;width:${item.width};flex:none`
-        const holder = item.width === 'auto' ? 'display:flex;align-items:flex-start' : 'display:block'
+      ({ item, family, column }) => {
+        const text = `font:20px "${family}";line-height:1.2;width:${item.width};flex:none;padding:${item.padding ?? 0}px;box-sizing:${item.sizing ?? 'content-box'}`
+        const holder =
+          item.holder === 'column'
+            ? `display:flex;flex-direction:column;width:${column}px`
+            : item.width === 'auto'
+              ? 'display:flex;align-items:flex-start'
+              : 'display:block'
         document.body.innerHTML = `<div style="${holder};margin-left:${item.left}px"><div id=t style='${text}'>${item.text}</div></div>`
       },
-      { item, family: FONT.family },
+      { item, family: FONT.family, column: COLUMN },
     )
     await settle(browser.page)
     const measured = await browser.page.evaluate(() => {
@@ -62,6 +88,9 @@ try {
         measured.height.toFixed(3),
         measured.lines,
         item.note,
+        item.holder ?? (item.width === 'auto' ? 'row' : 'block'),
+        item.padding ?? 0,
+        item.sizing ?? 'content-box',
       ].join('\t'),
     )
   }
@@ -69,13 +98,16 @@ try {
   const lines = [
     '# Chrome, through `just conformance`: how many lines a box a pixel either side of a line breaks into.',
     `# Text is 20px ${FONT.family}, line-height 1.2; "paragraph" is "${PARAGRAPH}".`,
-    '# A stated width is a block at `left`; `auto` is a flex row item as wide as its content.',
+    '# A stated width is a block at `left`; `auto` is a flex row item as wide as its content,',
+    `# or with \`column\` as its holder an item stretched across a ${COLUMN}px flex column.`,
     '# Written by packages/meo-canvas/tools/conformance/wrapwidth.mjs.',
     '#',
     '# `width` and `height` are the box from `getBoundingClientRect`; `lines` counts the',
     '# distinct line tops of a range over the text.',
     '#',
-    '# case\ttext\tleft\tstated\twidth\theight\tlines\tnote',
+    '# `padding` is on every side of the text box, which `sizing` says its width includes or not.',
+    '#',
+    '# case\ttext\tleft\tstated\twidth\theight\tlines\tnote\tholder\tpadding\tsizing',
     ...rows,
   ]
   const written = table(lines)

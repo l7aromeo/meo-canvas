@@ -1,5 +1,5 @@
 # What a definite width does to a replaced element’s `auto` height.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Container 200 wide, art 60x40 as an SVG data URL.
 # Written by packages/meo-canvas/tools/conformance/replacedratio.mjs.
 #
@@ -30,6 +30,10 @@
 # A flex item declared wider than its row shrinks to it, no further than
 # its automatic minimum, and its height follows the shrunk width: the
 # `w300` rows. A column shrinks a declared height the same way.
+#
+# A picture keeps its own ratio in its content box whatever its
+# box-sizing, padding adding outside it: the `padded` rows. An aspect-ratio
+# the author gives applies to the box box-sizing names: the `ratio div` rows.
 #
 # `div` and `text` are the contrast: a non-replaced box fills its container
 # and must keep filling it.
@@ -111,6 +115,21 @@ flex w300 max100	0.00	0.00	200.00	100.00	flex/auto	static 300px auto max-height:
 column h150 tall100	0.00	0.00	200.00	133.33	flex;flex-direction:column/100px	static auto 150px	a column shrinks a declared height only to its automatic minimum, the stretched width through the ratio
 column h150 tall140	0.00	0.00	200.00	140.00	flex;flex-direction:column/140px	static auto 150px	and to its line where that is above the minimum
 column start h150 tall100	0.00	0.00	150.00	100.00	flex;flex-direction:column;align-items:flex-start/100px	static auto 150px	unstretched, the width follows the shrunk height
+flex w auto padded	0.00	0.00	80.00	60.00	flex/auto	static auto auto padding:10px;box-sizing:content-box	the ratio holds in the content box; padding adds outside it
+flex start w auto padded	0.00	0.00	80.00	60.00	flex;align-items:flex-start/auto	static auto auto padding:10px;box-sizing:content-box	unstretched, the same
+block w auto padded	0.00	0.00	80.00	60.00	block/auto	static auto auto padding:10px;box-sizing:content-box	and in block flow
+flex w auto padded border-box	0.00	0.00	80.00	60.00	flex/auto	static auto auto padding:10px;box-sizing:border-box	an auto size is the content box whatever the box-sizing
+block w auto padded border-box	0.00	0.00	80.00	60.00	block/auto	static auto auto padding:10px;box-sizing:border-box	and in block flow
+flex w100 padded	0.00	0.00	120.00	86.66	flex/auto	static 100px auto padding:10px;box-sizing:content-box	a declared content width derives the content height
+block w100 padded	0.00	0.00	120.00	86.66	block/auto	static 100px auto padding:10px;box-sizing:content-box	and in block flow
+flex w100 padded border-box	0.00	0.00	100.00	73.33	flex/auto	static 100px auto padding:10px;box-sizing:border-box	a declared border-box width leaves a content box the ratio applies to
+block w100 padded border-box	0.00	0.00	100.00	73.33	block/auto	static 100px auto padding:10px;box-sizing:border-box	and in block flow
+block w50% padded border-box	0.00	0.00	100.00	73.33	block/auto	static 50% auto padding:10px;box-sizing:border-box	and through a percentage of the container
+column w auto padded	0.00	0.00	200.00	140.00	flex;flex-direction:column/auto	static auto auto padding:10px;box-sizing:content-box	a column stretches the border box to the width, the content box keeps the ratio
+flex w auto max60 padded	0.00	0.00	80.00	60.00	flex/auto	static auto auto max-height:60px;padding:10px;box-sizing:content-box	a maximum above the natural height leaves the padded natural size
+flex w auto max60 padded border-box	0.00	0.00	70.00	50.00	flex/auto	static auto auto max-height:60px;padding:5px;box-sizing:border-box	and a border-box maximum the natural size does not reach
+ratio div w100 padded border-box	0.00	0.00	100.00	66.66	block/auto	static 100px auto aspect-ratio:1.5;padding:10px;box-sizing:border-box	control: an author aspect-ratio applies to the box box-sizing names
+ratio div w100 padded	0.00	0.00	120.00	86.66	block/auto	static 100px auto aspect-ratio:1.5;padding:10px;box-sizing:content-box	control: and under content-box, to the content box
 flex w200 max60	0.00	0.00	200.00	60.00	flex/auto	static 200px auto max-height:60px	the maximum does not narrow a declared width
 flex w50% max60	0.00	0.00	100.00	60.00	flex/auto	static 50% auto max-height:60px	nor a percentage width
 flex start w200 max60	0.00	0.00	200.00	60.00	flex;align-items:flex-start/auto	static 200px auto max-height:60px	unstretched, the same

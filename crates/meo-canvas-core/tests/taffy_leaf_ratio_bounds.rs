@@ -131,8 +131,7 @@ fn a_maximum_does_not_reach_the_other_axis_through_the_ratio() {
             taffy,
             "{bound}: taffy bounds an auto-sized replaced leaf through its \
              ratio now, Chrome's 30x20: delete the [WORKAROUND] \
-             `bound_natural_sizes` in layout.rs once the leaf reaches taffy \
-             with an auto width"
+             `bound_natural_sizes` in layout.rs"
         );
     }
 }
