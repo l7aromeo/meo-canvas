@@ -60,12 +60,11 @@ neon = "1.1"
 # `meo-skia-canvas`, so naming it adds an edge rather than a crate.
 rayon = "1.11"
 clap = { version = "4.6", features = ["derive"] }
-# The HTTP client that does not choose the consumer's runtime: no tokio and no
-# futures among its required dependencies, where reqwest requires `tokio`,
-# `hyper` and `tower` even for its `blocking` feature.
-# 3.5, whose own `rustls` and `webpki-roots` requirements exclude the versions
-# `RUSTSEC-2026-0346` to `-0349` and `-0381` name.
-ureq = "3.5"
+# An HTTP client with no async runtime among its requirements; reqwest's
+# `blocking` still requires `tokio`, `hyper` and `tower`. 3.5's `rustls` and
+# `webpki-roots` floors exclude `RUSTSEC-2026-0346` to `-0349` and `-0381`, and
+# 3.5.1 fixes connection reuse, transfer encoding and a macOS timeout failure.
+ureq = "3.5.1"
 # A floor, not a use: `rustls` 0.23.46's `^0.103.14` admits `RUSTSEC-2026-0382`.
 # A caret, to raise the 0.103 copy `rustls` uses; no features, so it adds only
 # the version. Retires when `rustls` requires the fixed version.
