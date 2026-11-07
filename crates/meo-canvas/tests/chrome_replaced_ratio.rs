@@ -98,6 +98,8 @@ struct Case {
     width_clamp: (Dimension, Dimension),
     /// The element's `flex-grow`.
     grow: f32,
+    /// The element's `flex-shrink`.
+    shrink: f32,
     /// The container's direction and `align-items`, CSS's initial values
     /// unless the row's container says otherwise.
     flow: (FlexDirection, Option<Align>),
@@ -145,6 +147,7 @@ fn painted(case: &Case) -> (u32, u32) {
     element.layout.min_size = (case.width_clamp.0, case.clamp.0);
     element.layout.max_size = (case.width_clamp.1, case.clamp.1);
     element.layout.flex_grow = case.grow;
+    element.layout.flex_shrink = case.shrink;
     let (padding, box_sizing) = case.padding;
     element.layout.padding.left = Length::Points(padding);
     element.layout.padding.right = Length::Points(padding);
@@ -213,6 +216,7 @@ const fn replaced(
         clamp: (Dimension::Auto, Dimension::Auto),
         width_clamp: (Dimension::Auto, Dimension::Auto),
         grow: 0.0,
+        shrink: 1.0,
         flow: (FlexDirection::Row, None),
         wrap: FlexWrap::NoWrap,
         padding: (0.0, BoxSizing::ContentBox),
@@ -787,6 +791,130 @@ fn a_stretched_flex_item_is_not_sized_from_its_maximum() {
 }
 
 #[test]
+fn a_flex_item_wider_than_its_line_shrinks_to_it() {
+    // `l7aromeo/meo-canvas#196`: an image held its declared width, 300x200
+    // where Chrome shrinks it to 200x133.33, and a box with the ratio shrank
+    // but kept the height of its declared width.
+    let (auto, px) = (Dimension::Auto, Dimension::Points);
+    let wide = |width| replaced(Display::Flex, auto, width, auto);
+    let floored = |floor| Case {
+        clamp: (px(floor), auto),
+        ..wide(px(300.0))
+    };
+    let wrong = apart([
+        ("flex w300", wide(px(300.0))),
+        ("flex w150%", wide(Dimension::Percent(1.5))),
+        ("flex w300 min20", floored(20.0)),
+        ("flex w300 min100", floored(100.0)),
+        ("flex w300 min160", floored(160.0)),
+        (
+            "flex start w300",
+            Case {
+                flow: (FlexDirection::Row, Some(Align::FlexStart)),
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex w300 min-width0",
+            Case {
+                width_clamp: (px(0.0), auto),
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex ratio div w300",
+            Case {
+                kind: Kind::Ratio,
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex w300 shrink0",
+            Case {
+                shrink: 0.0,
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex w300 tall100",
+            Case {
+                tall: px(100.0),
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex start w300 tall100",
+            Case {
+                tall: px(100.0),
+                flow: (FlexDirection::Row, Some(Align::FlexStart)),
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex w300 tall300",
+            Case {
+                tall: px(300.0),
+                ..wide(px(300.0))
+            },
+        ),
+        (
+            "flex w300 max-width100 min160",
+            Case {
+                width_clamp: (auto, px(100.0)),
+                ..floored(160.0)
+            },
+        ),
+        (
+            "flex w300 min160 min-width0",
+            Case {
+                width_clamp: (px(0.0), auto),
+                ..floored(160.0)
+            },
+        ),
+        (
+            "flex w300 max100",
+            Case {
+                clamp: (auto, px(100.0)),
+                ..wide(px(300.0))
+            },
+        ),
+    ]);
+    assert!(wrong.is_empty(), "{wrong}");
+}
+
+#[test]
+fn a_flex_column_shrinks_a_declared_height() {
+    // `l7aromeo/meo-canvas#196` in the other direction: the automatic minimum
+    // was the declared height, and unstretched, the width stayed the one the
+    // declared height gives.
+    let (auto, px) = (Dimension::Auto, Dimension::Points);
+    let wrong = apart([
+        (
+            "column h150 tall100",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..replaced(Display::Flex, px(100.0), auto, px(150.0))
+            },
+        ),
+        (
+            "column h150 tall140",
+            Case {
+                flow: (FlexDirection::Column, None),
+                ..replaced(Display::Flex, px(140.0), auto, px(150.0))
+            },
+        ),
+        (
+            "column start h150 tall100",
+            Case {
+                flow: (FlexDirection::Column, Some(Align::FlexStart)),
+                ..replaced(Display::Flex, px(100.0), auto, px(150.0))
+            },
+        ),
+    ]);
+    assert!(wrong.is_empty(), "{wrong}");
+}
+
+#[test]
 fn neither_axis_definite_is_the_intrinsic_size() {
     agrees(
         "block w auto",
@@ -866,6 +994,7 @@ fn an_out_of_flow_replaced_element_is_unchanged() {
                 clamp: (Dimension::Auto, Dimension::Auto),
                 width_clamp: (Dimension::Auto, Dimension::Auto),
                 grow: 0.0,
+                shrink: 1.0,
                 flow: (FlexDirection::Row, None),
                 wrap: FlexWrap::NoWrap,
                 padding: (0.0, BoxSizing::ContentBox),
@@ -892,6 +1021,7 @@ fn a_non_replaced_box_still_fills_its_container() {
                 clamp: (Dimension::Auto, Dimension::Auto),
                 width_clamp: (Dimension::Auto, Dimension::Auto),
                 grow: 0.0,
+                shrink: 1.0,
                 flow: (FlexDirection::Row, None),
                 wrap: FlexWrap::NoWrap,
                 padding: (0.0, BoxSizing::ContentBox),

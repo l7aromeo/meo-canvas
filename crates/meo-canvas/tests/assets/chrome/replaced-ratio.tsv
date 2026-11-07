@@ -27,6 +27,10 @@
 # natural size too, which a maximum it does not reach leaves alone: the
 # `flex w auto` rows with a bound. A row of definite height stretches it.
 #
+# A flex item declared wider than its row shrinks to it, no further than
+# its automatic minimum, and its height follows the shrunk width: the
+# `w300` rows. A column shrinks a declared height the same way.
+#
 # `div` and `text` are the contrast: a non-replaced box fills its container
 # and must keep filling it.
 #
@@ -89,6 +93,24 @@ abs block w200 min160	0.00	0.00	200.00	160.00	block/auto	absolute 200px auto min
 flex w200 min160%	0.00	0.00	200.00	160.00	flex/100px	static 200px auto min-height:160%	a percentage minimum of a definite height, 160
 flex ratio div w300 min50	0.00	0.00	200.00	100.00	flex/100px	static 300px auto aspect-ratio:1.5;min-height:50px	control: a minimum transferring to 75 still shrinks to 200
 flex ratio div w300 min110	0.00	0.00	200.00	110.00	flex/100px	static 300px auto aspect-ratio:1.5;min-height:110px	control: and to 165, the height the minimum
+flex w300	0.00	0.00	200.00	133.33	flex/auto	static 300px auto	an item wider than its line shrinks to it, and its height follows
+flex w150%	0.00	0.00	200.00	133.33	flex/auto	static 150% auto	and through a percentage width
+flex w300 min20	0.00	0.00	200.00	133.33	flex/auto	static 300px auto min-height:20px	a minimum height below the shrunk one does nothing
+flex w300 min100	0.00	0.00	200.00	133.33	flex/auto	static 300px auto min-height:100px	nor one below it that the declared width exceeds
+flex w300 min160	0.00	0.00	240.00	160.00	flex/auto	static 300px auto min-height:160px	a minimum height whose ratio width exceeds the line holds the item at it
+flex start w300	0.00	0.00	200.00	133.33	flex;align-items:flex-start/auto	static 300px auto	unstretched, the same
+flex w300 min-width0	0.00	0.00	200.00	133.33	flex/auto	static 300px auto min-width:0	a zero minimum width, the same
+flex w300 shrink0	0.00	0.00	300.00	200.00	flex/auto	static 300px auto flex-shrink:0	control: an item that may not shrink keeps its width
+flex ratio div w300	0.00	0.00	200.00	133.33	flex/auto	static 300px auto aspect-ratio:1.5	a box with the ratio shrinks the same
+flex w300 tall100	0.00	0.00	200.00	100.00	flex/100px	static 300px auto	control: a definite line stretches the shrunk item to it
+flex start w300 tall100	0.00	0.00	200.00	133.33	flex;align-items:flex-start/100px	static 300px auto	unstretched in a definite line, the height still follows the shrunk width
+flex w300 min160 min-width0	0.00	0.00	200.00	160.00	flex/auto	static 300px auto min-width:0;min-height:160px	a zero minimum width lets it shrink, and the minimum height holds against the ratio
+flex w300 tall300	0.00	0.00	300.00	300.00	flex/300px	static 300px auto	stretched in a line taller than the ratio gives, the minimum is the declared width
+flex w300 max-width100 min160	0.00	0.00	100.00	160.00	flex/auto	static 300px auto max-width:100px;min-height:160px	a maximum width below the minimum height through the ratio bounds the minimum
+flex w300 max100	0.00	0.00	200.00	100.00	flex/auto	static 300px auto max-height:100px	a maximum height below the one the shrunk width gives bounds it
+column h150 tall100	0.00	0.00	200.00	133.33	flex;flex-direction:column/100px	static auto 150px	a column shrinks a declared height only to its automatic minimum, the stretched width through the ratio
+column h150 tall140	0.00	0.00	200.00	140.00	flex;flex-direction:column/140px	static auto 150px	and to its line where that is above the minimum
+column start h150 tall100	0.00	0.00	150.00	100.00	flex;flex-direction:column;align-items:flex-start/100px	static auto 150px	unstretched, the width follows the shrunk height
 flex w200 max60	0.00	0.00	200.00	60.00	flex/auto	static 200px auto max-height:60px	the maximum does not narrow a declared width
 flex w50% max60	0.00	0.00	100.00	60.00	flex/auto	static 50% auto max-height:60px	nor a percentage width
 flex start w200 max60	0.00	0.00	200.00	60.00	flex;align-items:flex-start/auto	static 200px auto max-height:60px	unstretched, the same
