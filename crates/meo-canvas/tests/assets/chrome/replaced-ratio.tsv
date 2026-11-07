@@ -19,6 +19,10 @@
 # A maximum height whose ratio width is narrower than a declared width
 # leaves that width too, and a growing flex item grows past it.
 #
+# With neither size declared, a minimum or a maximum acts on both axes
+# through the ratio, as CSS 2.2 §10.4’s table gives it: the `block w auto`
+# rows with a bound. The ratio gives way only where two bounds disagree.
+#
 # `div` and `text` are the contrast: a non-replaced box fills its container
 # and must keep filling it.
 #
@@ -94,6 +98,23 @@ block ratio div w200 max60	0.00	0.00	200.00	60.00	block/auto	static 200px auto a
 flex ratio div w200 max60	0.00	0.00	200.00	60.00	flex/auto	static 200px auto aspect-ratio:1.5;max-height:60px	and as a flex item
 flex start w auto max20	0.00	0.00	30.00	20.00	flex;align-items:flex-start/auto	static auto auto max-height:20px	control: an auto width does take the maximum through the ratio
 abs block w auto max20	0.00	0.00	30.00	20.00	block/auto	absolute auto auto max-height:20px	control: and out of flow
+block w auto max20	0.00	0.00	30.00	20.00	block/auto	static auto auto max-height:20px	a maximum below the natural height narrows the width through the ratio
+block w auto max60	0.00	0.00	60.00	40.00	block/auto	static auto auto max-height:60px	control: a maximum above the natural height does nothing
+block w auto max-width30	0.00	0.00	30.00	20.00	block/auto	static auto auto max-width:30px	a maximum width below the natural width shortens the height through the ratio
+block w auto max-width10%	0.00	0.00	19.98	13.33	block/auto	static auto auto max-width:10%	a percentage maximum width, of the 200-wide container
+block w auto min-width90	0.00	0.00	90.00	60.00	block/auto	static auto auto min-width:90px	a minimum width above the natural width heightens it through the ratio
+block w auto max20 min30	0.00	0.00	45.00	30.00	block/auto	static auto auto min-height:30px;max-height:20px	a minimum above the maximum wins, and the width follows it
+block w auto max-width30 min30	0.00	0.00	30.00	30.00	block/auto	static auto auto max-width:30px;min-height:30px	a maximum width and a minimum height that disagree: both hold, unproportioned
+block w auto max20 min-width50	0.00	0.00	50.00	20.00	block/auto	static auto auto min-width:50px;max-height:20px	a minimum width and a maximum height that disagree: both hold, unproportioned
+block w auto max20 padded	0.00	0.00	50.00	40.00	block/auto	static auto auto max-height:20px;padding:10px;box-sizing:content-box	the maximum bounds the content box; padding adds outside it
+block w auto max20 padded border-box	0.00	0.00	25.00	20.00	block/auto	static auto auto max-height:20px;padding:5px;box-sizing:border-box	the maximum bounds the border box, so the content is what is left
+block w auto max200%	0.00	0.00	60.00	40.00	block/auto	static auto auto max-height:200%	control: a percentage of an auto height is no maximum
+block w auto min-width90 max20	0.00	0.00	90.00	20.00	block/auto	static auto auto min-width:90px;max-height:20px	a minimum width above the natural one and a maximum height below it: both hold
+block w auto max-width30 min60	0.00	0.00	30.00	60.00	block/auto	static auto auto max-width:30px;min-height:60px	a maximum width below the natural one and a minimum height above it: both hold
+block w auto max-width40 max20	0.00	0.00	30.00	20.00	block/auto	static auto auto max-width:40px;max-height:20px	two maxima: the height binds harder, and the width follows it
+block w auto max-width20 max30	0.00	0.00	19.98	13.33	block/auto	static auto auto max-width:20px;max-height:30px	two maxima: the width binds harder, and the height follows it
+block w auto min-width90 min50	0.00	0.00	90.00	60.00	block/auto	static auto auto min-width:90px;min-height:50px	two minima: the width binds harder, and the height follows it
+block w auto min-width70 min80	0.00	0.00	120.00	80.00	block/auto	static auto auto min-width:70px;min-height:80px	two minima: the height binds harder, and the width follows it
 flex w200 max-width150 max60	0.00	0.00	150.00	60.00	flex/auto	static 200px auto max-width:150px;max-height:60px	control: a declared maximum width still wins
 flex w200 max200%	0.00	0.00	200.00	133.33	flex/auto	static 200px auto max-height:200%	control: a percentage of an auto height is no maximum
 abs block w200	0.00	0.00	200.00	133.33	block/40px	absolute 200px auto	control: out of flow, correct today

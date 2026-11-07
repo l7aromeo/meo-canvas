@@ -400,6 +400,7 @@ where
     let mut viewport = Vec::new();
     let directions = directions(scene, page);
     let inherited = inherit(scene, page, &directions);
+    let mut naturals = HashMap::new();
     let root = build(
         scene,
         page,
@@ -418,6 +419,7 @@ where
             parent: None,
             inherited: &inherited,
             measure,
+            naturals: &mut naturals,
         },
     )?;
     for node in viewport.into_iter().chain(orphans) {
@@ -454,6 +456,7 @@ where
         &mut tree,
         scene,
         &to_scene,
+        &naturals,
         root,
         (available, measure),
         &mut baselines,
@@ -732,7 +735,8 @@ fn bottom_align_reversed_wraps(
 }
 
 /// What a node needs from the walk above it, as one argument: `build` recurses,
-/// and the parent, the two heights and the measurer travel together.
+/// and the parent, the two heights, the measurer and the natural widths travel
+/// together.
 struct FromAbove<'above, M: ?Sized> {
     /// Which heights are definite, one level apart. See [`Definite`].
     heights: Definite,
@@ -747,6 +751,9 @@ struct FromAbove<'above, M: ?Sized> {
     /// Here so a leaf's intrinsic size can be asked for while its style is
     /// being built, which is before taffy has asked anything.
     measure: &'above mut M,
+    /// Each replaced box [`intrinsic_sizes_it`] gave its natural width, with
+    /// that width, for [`bound_natural_sizes`] after the first solve.
+    naturals: &'above mut HashMap<NodeId, f32>,
 }
 
 /// Two answers, one level apart: `parent` is what this node's own percentages
@@ -827,10 +834,10 @@ const fn insets_settle_it(node: &meo_canvas_scene::node::Node) -> bool {
         && node.layout.inset.bottom.is_some()
 }
 
-/// Gives taffy a replaced element's intrinsic ratio, so its block algorithm
-/// derives the height (`l7aromeo/meo-canvas#94`), and with both axes `auto`
-/// under a block parent its intrinsic width, 60x40 rather than block flow's
-/// 200x133, unless it resolves to `stretch`. An author's ratio wins.
+/// Gives taffy a replaced element's intrinsic ratio, an author's winning, so
+/// its block algorithm derives the height (`l7aromeo/meo-canvas#94`), and with
+/// both axes `auto` under a block parent its intrinsic width unless it resolves
+/// to `stretch`, returned for [`bound_natural_sizes`] to bound.
 fn intrinsic_sizes_it<M>(
     style: &mut taffy::Style,
     node: NodeId,
@@ -838,13 +845,14 @@ fn intrinsic_sizes_it<M>(
     parent: Option<&meo_canvas_scene::node::Node>,
     parent_items: Option<JustifyItems>,
     measure: &mut M,
-) where
+) -> Option<f32>
+where
     M: Measure + ?Sized,
 {
     // A failed image's icon box carries no ratio to give taffy: Chrome gives it
     // 100x16 at a 100px width, not 100x100.
     if !lays_out_replaced(node, source, measure) {
-        return;
+        return None;
     }
     // Asked of the measurer, which with neither axis known answers with the
     // intrinsic size (`fit_intrinsic`'s last arm), rather than of the image by
@@ -857,11 +865,11 @@ fn intrinsic_sizes_it<M>(
         )
         .size;
     if intrinsic.width <= 0.0 || intrinsic.height <= 0.0 {
-        return;
+        return None;
     }
     let ratio = intrinsic.width / intrinsic.height;
     if !usable_ratio(ratio) {
-        return;
+        return None;
     }
     // [WORKAROUND] see `both_sizes_declared`.
     if style.aspect_ratio.is_none() && !both_sizes_declared(&source.layout) {
@@ -880,9 +888,11 @@ fn intrinsic_sizes_it<M>(
         && matches!(source.layout.size.0, Dimension::Auto)
         && matches!(source.layout.size.1, Dimension::Auto)
     {
-        style.size.width =
-            taffy::Dimension::length(intrinsic.width * LAYOUT_SCALE);
+        let width = intrinsic.width * LAYOUT_SCALE;
+        style.size.width = taffy::Dimension::length(width);
+        return Some(width);
     }
+    None
 }
 
 /// Whether a ratio derives this box's height from its width, which need not be
@@ -1095,6 +1105,7 @@ fn compensate<M>(
     tree: &mut taffy::TaffyTree<NodeId>,
     scene: &Scene,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
+    naturals: &HashMap<NodeId, f32>,
     root: taffy::NodeId,
     (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
     baselines: &mut HashMap<NodeId, f32>,
@@ -1122,6 +1133,14 @@ where
         root,
         available,
         measure,
+        baselines,
+    )?;
+    // Before the clamp, which pins a natural width it would leave unbounded.
+    bound_natural_sizes(
+        tree,
+        (to_scene, naturals),
+        root,
+        (available, measure),
         baselines,
     )?;
     clamp_ratio_heights(
@@ -1376,6 +1395,175 @@ where
     floor_ratio_heights(
         tree, candidates, &cleared, &pins, root, available, measure, baselines,
     )
+}
+
+// [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` bounds a leaf's ratio by
+// its minimum alone: 60x40 art is 60x40 under `max-height: 20`, 30x40 under
+// `max-width: 30`, Chrome 30x20. `l7aromeo/meo-canvas#198`, probed by
+// `crates/meo-canvas-core/tests/taffy_leaf_ratio_bounds.rs`.
+/// Pins each box [`intrinsic_sizes_it`] gave its natural width at the size
+/// [`natural_bounded`] gives it, bounds against the parent's content box from
+/// the solve before, ratio off, and solves again. Chrome follows that table on
+/// every `block w auto` row of `replaced-ratio.tsv`.
+fn bound_natural_sizes<M>(
+    tree: &mut taffy::TaffyTree<NodeId>,
+    (to_scene, naturals): (
+        &HashMap<taffy::NodeId, NodeId>,
+        &HashMap<NodeId, f32>,
+    ),
+    root: taffy::NodeId,
+    (available, measure): (taffy::Size<taffy::AvailableSpace>, &mut M),
+    baselines: &mut HashMap<NodeId, f32>,
+) -> Result<(), Error>
+where
+    M: Measure + ?Sized,
+{
+    let mut pins: Vec<(taffy::NodeId, taffy::Size<f32>)> = Vec::new();
+    for (id, node) in to_scene {
+        if let Some(&natural) = naturals.get(node)
+            && let Some(size) = natural_pin(tree, *id, natural)?
+        {
+            pins.push((*id, size));
+        }
+    }
+
+    if pins.is_empty() {
+        return Ok(());
+    }
+    for (id, size) in &pins {
+        let mut style = tree
+            .style(*id)
+            .map_err(|error| Error::Layout(error.to_string()))?
+            .clone();
+        style.size.width = taffy::Dimension::length(size.width);
+        style.size.height = taffy::Dimension::length(size.height);
+        style.aspect_ratio = None;
+        tree.set_style(*id, style)
+            .map_err(|error| Error::Layout(error.to_string()))?;
+    }
+    baselines.clear();
+    solve_once(tree, root, available, measure, baselines)
+}
+
+/// The size [`bound_natural_sizes`] pins `id` at, in the box its style sizes,
+/// or `None` where the solve already gave it the table's answer.
+fn natural_pin(
+    tree: &taffy::TaffyTree<NodeId>,
+    id: taffy::NodeId,
+    natural: f32,
+) -> Result<Option<taffy::Size<f32>>, Error> {
+    let style = tree
+        .style(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    // An author's ratio, where one was given, rather than the picture's.
+    let Some(ratio) = style.aspect_ratio else {
+        return Ok(None);
+    };
+    let bounds = [
+        style.min_size.width,
+        style.min_size.height,
+        style.max_size.width,
+        style.max_size.height,
+    ];
+    if bounds.iter().all(|bound| bound.is_auto()) {
+        return Ok(None);
+    }
+    let solved = tree
+        .layout(id)
+        .map_err(|error| Error::Layout(error.to_string()))?;
+    let inset = taffy::Size {
+        width: solved.padding.left
+            + solved.padding.right
+            + solved.border.left
+            + solved.border.right,
+        height: solved.padding.top
+            + solved.padding.bottom
+            + solved.border.top
+            + solved.border.bottom,
+    };
+    // The table is in content boxes; a border-box bound gives up the
+    // padding and border to become one.
+    let outside = match style.box_sizing {
+        taffy::BoxSizing::BorderBox => inset,
+        taffy::BoxSizing::ContentBox => taffy::Size::ZERO,
+    };
+    let basis = parent_content_size(tree, id);
+    let content =
+        |bound: taffy::LengthPercentageAuto, basis: f32, outside: f32| {
+            bound
+                .resolve_to_option(basis, |_, _| 0.0)
+                .map(|length| (length - outside).max(0.0))
+        };
+    let size = natural_bounded(
+        taffy::Size {
+            width: natural,
+            height: natural / ratio,
+        },
+        taffy::Size {
+            width: content(style.min_size.width, basis.width, outside.width)
+                .unwrap_or(0.0),
+            height: content(
+                style.min_size.height,
+                basis.height,
+                outside.height,
+            )
+            .unwrap_or(0.0),
+        },
+        taffy::Size {
+            width: content(style.max_size.width, basis.width, outside.width)
+                .unwrap_or(f32::INFINITY),
+            height: content(
+                style.max_size.height,
+                basis.height,
+                outside.height,
+            )
+            .unwrap_or(f32::INFINITY),
+        },
+    );
+    let current = (
+        solved.size.width - inset.width,
+        solved.size.height - inset.height,
+    );
+    let moved = (size.width - current.0).abs() > DERIVED_TOLERANCE
+        || (size.height - current.1).abs() > DERIVED_TOLERANCE;
+    Ok(moved.then_some(taffy::Size {
+        width: size.width + outside.width,
+        height: size.height + outside.height,
+    }))
+}
+
+/// CSS 2.2 §10.4's table: a replaced box's `natural` size, both sizes `auto`,
+/// under content-box bounds, each maximum raised to its minimum first. One axis
+/// too small and the other too large needs no arm: the first axis's clamps the
+/// second.
+fn natural_bounded(
+    natural: taffy::Size<f32>,
+    min: taffy::Size<f32>,
+    max: taffy::Size<f32>,
+) -> taffy::Size<f32> {
+    let max = taffy::Size {
+        width: max.width.max(min.width),
+        height: max.height.max(min.height),
+    };
+    let (w, h) = (natural.width, natural.height);
+    let (wide, narrow) = (w > max.width, w < min.width);
+    let (tall, short) = (h > max.height, h < min.height);
+    let (width, height) = match (wide, narrow, tall, short) {
+        (true, _, true, _) if max.width / w <= max.height / h => {
+            (max.width, min.height.max(max.width * h / w))
+        }
+        (true, _, true, _) => (min.width.max(max.height * w / h), max.height),
+        (_, true, _, true) if min.width / w <= min.height / h => {
+            (max.width.min(min.height * w / h), min.height)
+        }
+        (_, true, _, true) => (min.width, max.height.min(min.width * h / w)),
+        (true, ..) => (max.width, min.height.max(max.width * h / w)),
+        (_, true, ..) => (min.width, max.height.min(min.width * h / w)),
+        (.., true, _) => (min.width.max(max.height * w / h), max.height),
+        (.., true) => (max.width.min(min.height * w / h), min.height),
+        _ => (w, h),
+    };
+    taffy::Size { width, height }
 }
 
 // [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` floors a leaf's height at
@@ -2028,29 +2216,22 @@ fn build<M>(
     to_scene: &mut HashMap<taffy::NodeId, NodeId>,
     orphans: &mut Vec<taffy::NodeId>,
     captive: &mut Vec<taffy::NodeId>,
-    above: FromAbove<'_, M>,
+    mut above: FromAbove<'_, M>,
 ) -> Result<taffy::NodeId, Error>
 where
     M: Measure + ?Sized,
 {
-    let FromAbove {
-        heights,
-        parent,
-        inherited,
-        measure,
-    } = above;
     let source = scene.get(node).ok_or_else(|| {
         Error::Layout(format!("node {} is not in the scene", node.get()))
     })?;
-
-    let own = inherited.get(&node).copied().unwrap_or_default();
-    let mut style =
-        to_taffy_style(&source.layout, source.paint.border_style, own);
-    style.item_is_replaced = lays_out_replaced(node, source, measure);
-    let parent_items = state_auto(&mut style, source, parent, own);
-    intrinsic_sizes_it(&mut style, node, source, parent, parent_items, measure);
-    drop_indefinite_percentages(&mut style, source, heights.parent);
-    unbound_declared_width(&mut style, source);
+    let style = node_style(node, source, &mut above);
+    let FromAbove {
+        heights,
+        inherited,
+        measure,
+        naturals,
+        ..
+    } = above;
 
     let mut children: Vec<taffy::NodeId> = Vec::new();
     // Absolute descendants from anywhere beneath here that have not yet met a
@@ -2084,6 +2265,7 @@ where
                     parent: Some(source),
                     inherited,
                     measure: &mut *measure,
+                    naturals: &mut *naturals,
                 },
             )?);
             continue;
@@ -2111,6 +2293,7 @@ where
                 parent: Some(source),
                 inherited,
                 measure: &mut *measure,
+                naturals: &mut *naturals,
             },
         )?;
         match child_source.layout.position_type {
@@ -2152,6 +2335,36 @@ where
 
     to_scene.insert(created, node);
     Ok(created)
+}
+
+/// The taffy style [`build`] gives `node`: its own, with what its parent and
+/// its picture settle, and the percentages that cannot resolve dropped.
+fn node_style<M>(
+    node: NodeId,
+    source: &meo_canvas_scene::node::Node,
+    above: &mut FromAbove<'_, M>,
+) -> taffy::Style
+where
+    M: Measure + ?Sized,
+{
+    let own = above.inherited.get(&node).copied().unwrap_or_default();
+    let mut style =
+        to_taffy_style(&source.layout, source.paint.border_style, own);
+    style.item_is_replaced = lays_out_replaced(node, source, above.measure);
+    let parent_items = state_auto(&mut style, source, above.parent, own);
+    if let Some(width) = intrinsic_sizes_it(
+        &mut style,
+        node,
+        source,
+        above.parent,
+        parent_items,
+        above.measure,
+    ) {
+        above.naturals.insert(node, width);
+    }
+    drop_indefinite_percentages(&mut style, source, above.heights.parent);
+    unbound_declared_width(&mut style, source);
+    style
 }
 
 /// The parent's `justify_items` as this node's `auto` takes it, `legacy`
