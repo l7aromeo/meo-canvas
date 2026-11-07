@@ -530,13 +530,22 @@ by construction, and the crate ships them together.
 
 | tool       |       |                                                                |
 | ---------- | ----- | -------------------------------------------------------------- |
-| bun        | 1.4.1 | Package manager and the JavaScript examples' runtime.          |
+| bun        | 1.4.4 | Package manager and the JavaScript examples' runtime.          |
 | typescript | 6.0.3 | Not 7, which neither typescript-eslint nor TypeDoc loads.      |
 | eslint     | 10    | typescript-eslint 8, `eslint-config-prettier` last.            |
 | prettier   | 3.9   | Whole tree; `.prettierignore` names the machine-written files. |
 | vitest     | 5     | Tests and the JavaScript coverage floor.                       |
 | typedoc    | 0.28  | Its own package, so it pins the TypeScript it loads.           |
-| playwright | 1.63  | Drives Chrome for the conformance tables.                      |
+| playwright | 1.65  | Drives Chrome for the conformance tables.                      |
+
+**The root forces minimatch to 11** through `overrides` in `package.json`, for
+GHSA-g3hv-75wg-m249, a denial of service fixed in 11.0.1. eslint,
+`@eslint/config-array` and `@typescript-eslint/typescript-estree` each declare
+`^10`, and ESLint lints the same files with the same results under 11. The
+override goes once all three accept 11 themselves, which
+`just override-probes` reports by failing. The reference tool stays on 10:
+TypeDoc 0.28.20 calls `Minimatch#matchOne`, which 11 makes private, so its
+`bun audit` reports the advisory until TypeDoc accepts 11.
 
 **`taffy::TaffyTree` is neither `Send` nor `Sync`**: taffy represents every
 length as a tagged pointer, so `Style` itself holds a `*const ()`. A tree is

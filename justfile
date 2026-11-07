@@ -100,7 +100,7 @@ ci:
 # asserts. They run once, not per host; `typecheck` alone was 221s of a 959s
 # Windows run.
 [doc("The half of `ci` that reads the tree and runs no cargo, once per run.")]
-portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-js private-docs issue-refs fixture-notes workaround-probes conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
+portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-js private-docs issue-refs fixture-notes workaround-probes override-probes conformance-writes doc-examples-check arena-tables-check arena-enums-check platform-packages-check layout-check
 
 # The checks that compile, link or run the addon, per host. `addon` precedes
 # `test-js`, and `test-js` precedes `test`, so a red Rust suite cannot hide the
@@ -980,6 +980,12 @@ issue-refs:
 [doc("Fail if a [WORKAROUND] site has lost its probe.")]
 workaround-probes:
     node packages/meo-canvas/tools/workaround-probes.mjs
+
+# An `overrides` entry outlives its reason in silence: the dependents move to the
+# forced major, and the pin stays until someone notices.
+[doc("Fail once a package.json override is no longer needed or not obeyed.")]
+override-probes:
+    node packages/meo-canvas/tools/override-probes.mjs
 
 # `fixtures.rs` compares bytes and never opens a note, so this reads that the
 # three fields are there and say something; whether they are true is not
