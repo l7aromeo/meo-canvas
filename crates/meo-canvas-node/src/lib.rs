@@ -460,7 +460,7 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     let (slots, values) = arguments(&mut cx)?;
     let renderer = paint_options(&mut cx, 2)?;
 
-    let (scene, diagnostics) = match arena::decode(&slots, &values) {
+    let (scene, mut diagnostics) = match arena::decode(&slots, &values) {
         Ok(decoded) => decoded,
         Err(error) => return cx.throw_error(chained(&error)),
     };
@@ -468,6 +468,9 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
         Ok(canvas) => canvas,
         Err(error) => return cx.throw_error(chained(&error)),
     };
+    // The markup's, raised while the scene was decoded, then the render's: a
+    // filter chain it dropped.
+    diagnostics.extend_from_slice(canvas.diagnostics());
 
     let surface = cx.empty_object();
 

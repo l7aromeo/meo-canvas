@@ -222,7 +222,7 @@ impl RunStyle {
     #[must_use]
     pub fn to_font(&self) -> Font {
         Font {
-            families: vec![self.family.clone()],
+            families: vec![self.family.as_str().into()],
             size: self.size,
             weight: self.weight,
             // 0.16 replaces the boolean with the three slants CSS has. The

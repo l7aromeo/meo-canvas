@@ -270,14 +270,16 @@ const CHROME_WIDTHS: [(&str, f32); 7] = [
 
 /// The most any of those may fall short before this stops being a rounding.
 ///
-/// A tenth of a pixel. The measured deficit is 0.018 to 0.060, and the point
-/// of the bound is that it cannot grow quietly.
-const DEFICIT_CEILING: f32 = 0.1;
+/// One [`SNAP`], the grid Chrome lays a span's width out on: a deficit under it
+/// is below what Chrome's own widths can resolve. The measured deficit is 0.001
+/// to 0.012, on meo-skia-canvas 0.17, and the point of the bound is that it
+/// cannot grow quietly.
+const DEFICIT_CEILING: f32 = SNAP;
 
-/// Every width here is a shade under Chrome's: about 0.004 per glyph (a space
-/// is 3.660 against 3.672) plus a per-string part (`"a"` is 0.018 short).
-/// Recorded, not fixed: it has one sign, moves no wrap point, and belongs to
-/// the backend's glyph advance rather than to line assembly.
+/// Every width here is a shade under Chrome's, by less than a 64th: `"a"` is
+/// 0.012 short and a space 3.664 against 3.672. Recorded, not fixed: it has one
+/// sign, moves no wrap point, and belongs to the backend's glyph advance rather
+/// than to line assembly.
 #[test]
 fn our_widths_run_a_known_shade_under_chromes() {
     let (_fonts, base) = fixture_style();

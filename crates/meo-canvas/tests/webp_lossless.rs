@@ -1,7 +1,8 @@
 //! What `EncodeOptions` documents of `meo-skia-canvas`, which reads them: a
-//! WebP at quality 1.0 is VP8L and decodes to the drawn pixels, still and
-//! animated, `lossless` is AVIF's and refused for WebP. A change upstream fails
-//! here. The JavaScript side is `webp-lossless.test.ts`; the CLI is `cli.rs`.
+//! WebP is VP8L and decodes to the drawn pixels under `lossless: Some(true)`
+//! or, with `lossless` unset, at quality 1.0, still and animated; `Some(false)`
+//! is lossy at any quality. A change upstream fails here. The JavaScript side
+//! is `webp-lossless.test.ts`; the CLI is `cli.rs`.
 use std::fmt::Debug;
 
 use meo_canvas::{
@@ -162,13 +163,92 @@ fn every_frame_of_a_full_quality_animation_is_vp8l() {
     assert_eq!(count(&tags, VP8), 0, "{tags:?}");
 }
 
+fn lossy() -> EncodeOptions {
+    EncodeOptions {
+        lossless: Some(false),
+        ..EncodeOptions::default()
+    }
+}
+
 #[test]
-fn lossless_is_refused_for_webp_with_the_encoders_reason() {
-    let Err(error) = still().to_buffer_with(Format::Webp, &lossless()) else {
-        unreachable!("WebP took lossless");
+fn lossless_true_on_a_webp_is_vp8l_and_decodes_to_the_drawn_pixels() {
+    let mut canvas = still();
+    let drawn = must(canvas.to_buffer(Format::Raw), "raw");
+    let webp = must(
+        canvas.to_buffer_with(Format::Webp, &lossless()),
+        "lossless WebP encodes",
+    );
+    let tags = chunks(&webp);
+    assert_eq!(count(&tags, VP8L), 1, "{tags:?}");
+    assert_eq!(count(&tags, VP8), 0, "{tags:?}");
+    assert!(decoded(&webp) == drawn, "the decode is not the drawing");
+}
+
+#[test]
+fn every_frame_of_a_lossless_animation_is_vp8l() {
+    let mut canvas = must(
+        Root::new(SIZE.0)
+            .height(SIZE.1)
+            .display(Display::Block)
+            .pages(3)
+            .page_builder(|info: PageInfo| page(info.index))
+            .render(&Renderer::new()),
+        "the sequence renders",
+    );
+    let tags = chunks(&must(
+        canvas.to_buffer_with(Format::Webp, &lossless()),
+        "lossless animated WebP encodes",
+    ));
+    assert_eq!(count(&tags, ANMF), 3, "{tags:?}");
+    assert_eq!(count(&tags, VP8L), 3, "a frame is not VP8L: {tags:?}");
+    assert_eq!(count(&tags, VP8), 0, "{tags:?}");
+}
+
+#[test]
+fn lossless_false_on_a_webp_is_lossy_even_at_full_quality() {
+    let mut canvas = still();
+    let drawn = must(canvas.to_buffer(Format::Raw), "raw");
+    let forced = EncodeOptions {
+        quality: Some(1.0),
+        ..lossy()
     };
-    let message = error.to_string();
-    assert!(message.contains("no lossless form"), "{message}");
+    for options in [lossy(), forced] {
+        let webp = must(
+            canvas.to_buffer_with(Format::Webp, &options),
+            "lossy WebP encodes",
+        );
+        let tags = chunks(&webp);
+        assert_eq!(count(&tags, VP8), 1, "{options:?}: {tags:?}");
+        assert_eq!(count(&tags, VP8L), 0, "{options:?}: {tags:?}");
+        assert!(decoded(&webp) != drawn, "{options:?} decoded exactly");
+    }
+}
+
+#[test]
+fn lossless_unset_on_a_webp_follows_the_quality() {
+    let mut canvas = still();
+    let default = chunks(&must(canvas.to_buffer(Format::Webp), "default WebP"));
+    assert_eq!(count(&default, VP8), 1, "{default:?}");
+    let full = chunks(&must(
+        canvas.to_buffer_with(Format::Webp, &full_quality()),
+        "full-quality WebP",
+    ));
+    assert_eq!(count(&full, VP8L), 1, "{full:?}");
+}
+
+#[test]
+fn lossless_beside_a_quality_below_one_is_refused() {
+    let options = EncodeOptions {
+        quality: Some(0.5),
+        ..lossless()
+    };
+    for format in [Format::Webp, Format::Avif] {
+        let Err(error) = still().to_buffer_with(format, &options) else {
+            unreachable!("{format:?} took lossless at quality 0.5");
+        };
+        let message = error.to_string();
+        assert!(message.contains("asks for a lossy file"), "{message}");
+    }
 }
 
 #[test]
