@@ -32,6 +32,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # As `ci.yml` sets it, whose cache this restores: the key hashes `CARGO*`.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 # Every `run:` here is bash, and `windows-latest` defaults to PowerShell.
 defaults:
@@ -53,6 +55,18 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      # Skia picks its SIMD path from the CPU at run time and the patched Skia
+      # draws the same bytes on each, so a golden is checked against the machine
+      # that drew it.
+      - name: The CPU this runner draws on
+        if: runner.os == 'Linux'
+        run: |
+          grep -m1 '^model name' /proc/cpuinfo
+          flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
+          for flag in avx2 avx512f avx_vnni avx512_vnni; do
+            case "$flags" in *" $flag "*) echo "$flag: yes" ;; *) echo "$flag: no" ;; esac
+          done
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # No `setup-just`: the steps call `cargo` directly, reproducing the bare

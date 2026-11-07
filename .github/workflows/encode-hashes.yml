@@ -30,6 +30,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # As `ci.yml` sets it, whose cache this restores: the key hashes `CARGO*`.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 defaults:
   run:
