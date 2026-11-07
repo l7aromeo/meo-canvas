@@ -465,6 +465,14 @@ describe('colour', () => {
     expect(formatColor(mixColor(black, white, 1.25))).toBe('color(srgb 1.25 1.25 1.25)')
   })
 
+  it('mixes two transparent ends straight, so their hues stay continuous', () => {
+    // Nothing paints at alpha 0 and a premultiplied mix has no hue to divide
+    // out, so the hue is mixed straight rather than becoming black.
+    const red = { r: 255, g: 0, b: 0, a: 0 }
+    const blue = { r: 0, g: 0, b: 255, a: 0 }
+    expect(mixColor(red, blue, 0.5)).toEqual({ r: 127.5, g: 0, b: 127.5, a: 0 })
+  })
+
   it('mix and a track carry a colour the same way they carry a number', () => {
     const red = { r: 255, g: 0, b: 0, a: 1 }
     const blue = { r: 0, g: 0, b: 255, a: 1 }

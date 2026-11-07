@@ -9,7 +9,7 @@
 "#000000"	"#ffffff"	1.25	diverges	#ffffff	v1 clamps t; we do not, deliberately
 "#ff0000"	"rgba(0, 0, 255, 0.5)"	-0.25	diverges	#ff0000	v1 clamps t; we do not, deliberately
 "#ff0000"	"rgba(0, 0, 255, 0.5)"	0	value	#ff0000	-
-"#ff0000"	"rgba(0, 0, 255, 0.5)"	0.5	diverges	rgba(128, 0, 128, 0.751)	v1 alpha is 8-bit quantised; ours rgba(128, 0, 128, 0.75)
+"#ff0000"	"rgba(0, 0, 255, 0.5)"	0.5	diverges	rgba(128, 0, 128, 0.751)	v1 alpha is 8-bit quantised and mixes straight; ours rgba(170, 0, 85, 0.75)
 "#ff0000"	"rgba(0, 0, 255, 0.5)"	1	diverges	rgba(0, 0, 255, 0.502)	v1 alpha is 8-bit quantised; ours rgba(0, 0, 255, 0.5)
 "#ff0000"	"rgba(0, 0, 255, 0.5)"	1.25	diverges	rgba(0, 0, 255, 0.502)	v1 clamps t; we do not, deliberately
 "rebeccapurple"	"#f2aa4c"	-0.25	diverges	#663399	v1 clamps t; we do not, deliberately

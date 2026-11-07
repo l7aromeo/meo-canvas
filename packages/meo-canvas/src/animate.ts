@@ -812,8 +812,12 @@ export function formatColor(input: Rgba): string {
 }
 
 /**
- * Blends two colours in sRGB with a straight alpha, which is what the
- * compositing model expects.
+ * Blends two colours in sRGB with the alpha multiplied in, as Chrome mixes a
+ * colour animation: a transparent end adds no colour of its own, so
+ * `rgba(255, 0, 0, 0)` to blue is blue fading in rather than passing through
+ * purple. Where the mixed alpha is zero the colour has no hue to recover and none
+ * paints, so the channels are mixed straight, keeping two transparent ends'
+ * hues continuous.
  *
  * **Takes {@link Rgba}, not strings.** One colour parser serves both surfaces and
  * lives in `meo-canvas-core`, so the string boundary is {@link parseColor} rather
@@ -827,10 +831,7 @@ export function formatColor(input: Rgba): string {
  */
 export function mixColor(from: Rgba, to: Rgba, t: number): Rgba {
   const [start, end] = [colour(from, '`from`', 'mixColor'), colour(to, '`to`', 'mixColor')]
-  return {
-    r: start.r + (end.r - start.r) * t,
-    g: start.g + (end.g - start.g) * t,
-    b: start.b + (end.b - start.b) * t,
-    a: start.a + (end.a - start.a) * t,
-  }
+  const a = start.a + (end.a - start.a) * t
+  const channel = (first: number, last: number): number => (a === 0 ? first + (last - first) * t : (first * start.a + (last * end.a - first * start.a) * t) / a)
+  return { r: channel(start.r, end.r), g: channel(start.g, end.g), b: channel(start.b, end.b), a }
 }

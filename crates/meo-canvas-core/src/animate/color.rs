@@ -54,16 +54,33 @@ impl Rgba {
     }
 }
 
-/// Blends two colours, straight alpha, in sRGB. `t` is not clamped, so an
-/// overshooting curve carries the colour out of the gamut until paint.
+/// Blends two colours in sRGB with the alpha multiplied in, as Chrome mixes a
+/// colour animation.
+///
+/// CSS Color 4, "Interpolating with Alpha", measured in `color-mix.tsv`: a
+/// transparent end adds no colour of its own, so `rgba(255, 0, 0, 0)` to blue
+/// is blue fading in. `t` is not clamped, so an overshooting curve carries the
+/// colour out of the gamut until paint.
+///
+/// Where the mixed alpha is zero the colour has no hue to recover and none
+/// paints, so the channels are mixed straight, which keeps two transparent
+/// ends' hues continuous rather than collapsing them to black.
 #[must_use]
 pub fn mix(from: Rgba, to: Rgba, t: f64) -> Rgba {
     let between = |a: f64, b: f64| a + (b - a) * t;
+    let a = between(from.a, to.a);
+    let channel = |start: f64, end: f64| {
+        if a == 0.0 {
+            between(start, end)
+        } else {
+            between(start * from.a, end * to.a) / a
+        }
+    };
     Rgba {
-        r: between(from.r, to.r),
-        g: between(from.g, to.g),
-        b: between(from.b, to.b),
-        a: between(from.a, to.a),
+        r: channel(from.r, to.r),
+        g: channel(from.g, to.g),
+        b: channel(from.b, to.b),
+        a,
     }
 }
 
@@ -114,6 +131,34 @@ mod tests {
         assert_eq!(half, GREY);
         assert!(half.in_gamut());
         assert_eq!(half.to_color().r, 128);
+    }
+
+    #[test]
+    fn two_transparent_ends_mix_their_hues_straight() {
+        // Nothing paints at alpha 0 and a premultiplied mix has no hue to
+        // divide out, so the hue is mixed straight rather than becoming black.
+        let red = Rgba {
+            r: 255.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+        let blue = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 255.0,
+            a: 0.0,
+        };
+        let half = mix(red, blue, 0.5);
+        assert_eq!(
+            half,
+            Rgba {
+                r: 127.5,
+                g: 0.0,
+                b: 127.5,
+                a: 0.0
+            }
+        );
     }
 
     #[test]
