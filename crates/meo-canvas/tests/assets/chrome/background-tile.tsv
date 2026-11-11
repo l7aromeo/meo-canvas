@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. Where background tiles land.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # A 420x220 white page, the box at 10,10 on white, the picture
 # `crates/meo-canvas/tests/assets/split-tile.png`: 40x20, its left half red and
 # its right half blue.

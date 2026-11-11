@@ -202,7 +202,7 @@ pub trait Measure {
     }
 }
 
-/// An `auto` axis of an image whose source did not decode: Chrome 153's
+/// An `auto` axis of an image whose source did not decode: Chrome 158's
 /// broken-image icon, 16px, for an `<img>` with no `alt` answering HTTP 522 or
 /// aborted (`failed-image.tsv`). With `alt=""` Chrome gives 0; an `Image` has
 /// no `alt`, so this is the box it matches.

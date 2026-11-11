@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. A wrapping text item's width, per container.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # A container, 200px or at most that, holding one item: `one two three four five six seven eight`,
 # 20px Fixture, line-height 1.2, black on #cc0000.
 # Written by packages/meo-canvas/tools/conformance/flexcolumntext.mjs.

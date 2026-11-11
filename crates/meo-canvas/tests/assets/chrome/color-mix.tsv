@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. Two colours mixed partway through an animation.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Written by packages/meo-canvas/tools/conformance/colormix.mjs.
 #
 # Each row is `background-color` held at progress `t` between `from` and `to`, linear,

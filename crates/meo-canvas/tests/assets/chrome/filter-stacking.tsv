@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. Whether a filter chain stacks.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 #
 # A 40x30 relative #dc2828 parent carrying the chain, holding a
 # 20x20 #2850dc child, absolute at 5,5, `z-index: -1`. `top` is

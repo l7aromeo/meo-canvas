@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: where justify-items and justify-self place one item on the inline axis.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # A 200x100 relative container, `grid` with one 200px column, `block` or `flex`, holding one item.
 # `box` is a block holding content `width` wide (a block child is itself that wide); `img` is a `width`x20 SVG.
 # `dir` is stated on the page and inherited; `itemdir` is the item's own direction, `-` for inherited; an absolute

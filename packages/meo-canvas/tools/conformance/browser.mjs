@@ -20,7 +20,7 @@ export const FONT = {
 /**
  * The engines {@link open} launches, by the name a caller passes. Gecko shares no
  * ancestor with Blink and WebKit, so a row all three give reads CSS; a split is
- * settled from the specification, as `WEBKIT_ALONE` records for `ratio-stretch-main.tsv`.
+ * recorded and Chrome followed, as `CHROMIUM_ALONE` does for `ratio-stretch-main.tsv`.
  */
 const ENGINES = { chromium, firefox, webkit }
 

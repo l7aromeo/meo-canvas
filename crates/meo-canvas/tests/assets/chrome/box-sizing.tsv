@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. What `box-sizing` moves.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 #
 # A 200px host in each of block, flex, grid; the child is 40px tall,
 # `display: block`, with the row's sizing, width, border and padding. `outer` is

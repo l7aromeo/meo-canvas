@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. What a line keeps when it does not fit.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 #
 # A `text-overflow: ellipsis` line on the repository's own face, matched byte for
 # byte against the text whole and every prefix plus the marker, drawn plainly in

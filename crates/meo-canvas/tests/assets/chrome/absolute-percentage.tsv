@@ -1,5 +1,5 @@
 # What a percentage height resolves against when the box is out of flow.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Chrome, viewport 400x400.
 # Written by packages/meo-canvas/tools/conformance/abspositioned.mjs.
 # case	height	note

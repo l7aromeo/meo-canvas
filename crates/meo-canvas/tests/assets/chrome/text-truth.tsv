@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: text widths and line boxes at 16px Fixture, from HTML elements.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Written by packages/meo-canvas/tools/conformance/texttruth.mjs.
 #
 # `width` rows: the text, its letter spacing, a `white-space: pre` span's width, and the

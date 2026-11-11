@@ -2638,8 +2638,8 @@ fn stretched_ratio_minimum(
     }
     // The larger of the transferred and content suggestions, `main` carrying
     // the second, then §4.5's clamp by a definite maximum. `item content
-    // taller` and `escape max-height 248px` pin the two; WebKit alone differs
-    // on the clamp.
+    // taller` and `escape max-height 248px` pin the two. Chrome keeps the
+    // stretched cross size under the clamp; Firefox and WebKit do not.
     let mut minimum = transferred.max(main);
     let ceiling = match max_main.expand() {
         taffy::ExpandedLengthPercentageAuto::Length(value) => Some(value),
