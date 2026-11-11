@@ -40,6 +40,14 @@ describe('a colour makes the round trip', () => {
     expect(wide === null ? '' : formatColor(wide)).toContain('color(srgb')
   })
 
+  it('writes a converted white as hex', () => {
+    // `oklab(1 0 0)` reads a red of 255.0000000000001, past the gamut by less
+    // than the six digits `color(srgb …)` carries, so it is white.
+    const white = parseColor('oklab(1 0 0)')
+    expect(white?.r).toBeGreaterThan(255)
+    expect(white === null ? '' : formatColor(white)).toBe('#ffffff')
+  })
+
   it('answers null for something that is not a colour', () => {
     expect(parseColor('not-a-colour')).toBeNull()
     expect(isColor('not-a-colour')).toBe(false)

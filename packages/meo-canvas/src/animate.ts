@@ -747,13 +747,24 @@ export interface Rgba {
 }
 
 const CHANNEL_MAX = 255
-/** Digits kept for an out-of-gamut channel, enough that a float32 survives. */
+/**
+ * Digits kept for an out-of-gamut channel, enough that a float32 survives, and
+ * the digits the gamut is decided at, as Rust's `Rgba::in_gamut` decides it.
+ */
 const EXTENDED_PRECISION = 6
 
 const clampChannel = (value: number): number => Math.min(CHANNEL_MAX, Math.max(0, Math.round(value)))
 
-/** Whether every channel sits inside what sRGB — and so hex — can write. */
-const inGamut = ({ r, g, b }: Rgba): boolean => [r, g, b].every(c => c >= 0 && c <= CHANNEL_MAX)
+/**
+ * Whether every channel sits inside what sRGB — and so hex — can write, once
+ * rounded to the digits `color(srgb …)` would carry: a converted white such as
+ * `oklab(1 0 0)` sits a few units in the last place past 255 and is still white.
+ */
+const inGamut = ({ r, g, b }: Rgba): boolean =>
+  [r, g, b].every(c => {
+    const unit = Number((c / CHANNEL_MAX).toFixed(EXTENDED_PRECISION))
+    return unit >= 0 && unit <= 1
+  })
 
 /** The migration guide, named in the errors most likely to be a v9 call. */
 const MIGRATING = 'https://github.com/l7aromeo/meo-canvas/blob/main/MIGRATING.md'

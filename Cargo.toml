@@ -49,9 +49,6 @@ taffy = { version = "0.15", default-features = false, features = [
 # Decodes a `data:` image source. `ureq` already brings it under `net`; naming
 # it gives a build without `net` the same decoder rather than a hand-written one.
 base64 = "0.23"
-# The parser `meo-skia-canvas` uses for its own colour strings, so a colour
-# resolved here and one resolved by the backend agree by construction.
-csscolorparser = "0.8"
 
 neon = "1.1"
 # The addon's asynchronous encodes run here, not on `cx.task`: libuv's pool has

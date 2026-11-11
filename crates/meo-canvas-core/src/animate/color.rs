@@ -19,6 +19,13 @@ use meo_canvas_scene::style::paint::Color;
 /// The top of a colour channel: 255, the scale both surfaces use.
 pub const CHANNEL_MAX: f64 = 255.0;
 
+/// Decimal places of a channel on 0 to 1 that decide the gamut: the six
+/// TypeScript's `formatColor` writes into `color(srgb ...)`, so the two
+/// surfaces agree on which colours leave the gamut. Fewer would round a small
+/// real overshoot back into sRGB; no rounding would send `oklab(1 0 0)`, a red
+/// of 255.0000000000001, out of it.
+const GAMUT_DECIMALS: i32 = 6;
+
 /// A colour with room to be between two others, and outside both.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rgba {
@@ -33,15 +40,20 @@ pub struct Rgba {
 }
 
 impl Rgba {
-    /// Whether every channel sits inside what sRGB can express.
+    /// Whether every channel sits inside what sRGB can express, once rounded
+    /// to six decimal places of 0 to 1.
     ///
-    /// Alpha is not part of it: alpha outside 0..1 is meaningless rather than
-    /// out of gamut, and is clamped wherever it is used.
+    /// Rounded first because a colour converted from another space lands a
+    /// few units in the last place outside: `oklab(1 0 0)` is white. Alpha is
+    /// not part of it: alpha outside 0..1 is meaningless rather than out of
+    /// gamut, and is clamped wherever it is used.
     #[must_use]
     pub fn in_gamut(self) -> bool {
-        [self.r, self.g, self.b]
-            .iter()
-            .all(|channel| (0.0..=CHANNEL_MAX).contains(channel))
+        let scale = 10_f64.powi(GAMUT_DECIMALS);
+        [self.r, self.g, self.b].iter().all(|channel| {
+            (0.0..=1.0)
+                .contains(&((channel / CHANNEL_MAX * scale).round() / scale))
+        })
     }
 
     /// The scene colour this becomes when drawn: the only clamp, since a
@@ -172,6 +184,21 @@ mod tests {
         let quiet = Rgba { a: -0.2, ..GREY };
         assert!(quiet.in_gamut());
         assert_eq!(quiet.to_color().a, 0);
+    }
+
+    #[test]
+    fn a_converted_white_is_in_the_gamut_and_an_overshoot_is_not() {
+        // `oklab(1 0 0)` reads a red of 255.0000000000001; `formatColor`
+        // writes it as `#ffffff`, and this says the same.
+        let read = |css: &str| {
+            let [r, g, b, a] = crate::color::parse_channels(css)
+                .unwrap_or_else(|| unreachable!("{css} is a colour"));
+            Rgba { r, g, b, a }
+        };
+        let white = read("oklab(1 0 0)");
+        assert!(white.r > super::CHANNEL_MAX, "the edge this pins is gone");
+        assert!(white.in_gamut());
+        assert!(!read("color(srgb 1.25 0 0)").in_gamut());
     }
 
     #[test]
