@@ -41,8 +41,9 @@ Node.js:
 npm install meo-canvas
 ```
 
-**A bare install gives you 10.x.** This line continues the same `meo-canvas`
-package name, so `latest` moved from 9.x to 10.x when 10.0.0 shipped. To stay on
+**A bare install gives you this renderer, 10.0.0 or later.** This line continues
+the same `meo-canvas` package name, so `latest` moved from 9.x to 10.x when
+10.0.0 shipped. To stay on
 9.x, ask for it by name: `npm install meo-canvas@9`.
 
 npm resolves one directory per package name, so running both majors at once is

@@ -7,7 +7,7 @@ engine. Two public surfaces, a Rust crate and a Node addon, build the same
 `Scene` and hand it to the same core.
 
 The predecessor is **v9**: frozen at `9.0.4` on the `v9` branch, its source in
-the checkout at `../meo-canvas-old`. This renderer ships as npm 10.x and as a
+the checkout at `../meo-canvas-old`. This renderer ships on npm from 10.0.0 and as a
 crate from `0.1.0`; both numbers move, so this file calls it "this renderer".
 
 This file is the authority on how work is done here. Read it in full before a

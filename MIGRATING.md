@@ -30,7 +30,7 @@ nothing, and produce a picture that is wrong by a factor you will not guess.
 ## Installing
 
 ```bash
-npm install meo-canvas          # 10.x
+npm install meo-canvas          # 10.0.0 and later
 npm install meo-canvas@9        # stay on the previous generation
 ```
 
@@ -50,7 +50,7 @@ npm install meo-canvas-v9@npm:meo-canvas@9
 ```
 
 ```js
-import { Root } from 'meo-canvas' // 10.x
+import { Root } from 'meo-canvas' // 10.0.0 and later
 import { Root as RootV9 } from 'meo-canvas-v9' // 9.x
 ```
 

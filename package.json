@@ -18,7 +18,7 @@
     "playwright": "^1.65.0",
     "prettier": "^3.9.10",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.72.1",
+    "typescript-eslint": "^8.72.2",
     "vitest": "^5.1.0"
   },
   "//": "overrides: minimatch is forced to 11 for GHSA-g3hv-75wg-m249 until eslint, @eslint/config-array and @typescript-eslint/typescript-estree accept 11 themselves; `just override-probes` says when. See docs/design.md, Dependencies.",

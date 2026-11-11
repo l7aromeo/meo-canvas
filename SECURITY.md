@@ -4,13 +4,14 @@
 
 Fixes land on the current major. Older majors are not patched — the upgrade path is the fix.
 
-| What                                           | Where                         | Supported                    |
-| ---------------------------------------------- | ----------------------------- | ---------------------------- |
-| `meo-canvas` 10.x                              | npm, `latest`                 | yes                          |
-| `meo-canvas` 9.x                               | npm, by name (`meo-canvas@9`) | no                           |
-| `meo-canvas` < 9                               | npm                           | no                           |
-| `meo-canvas`, `-core`, `-scene`, `-cli` crates | crates.io                     | yes                          |
-| `@meo-canvas/<platform>` packages              | npm                           | with the version they pin to |
+| What                                           | Where                          | Supported                    |
+| ---------------------------------------------- | ------------------------------ | ---------------------------- |
+| `meo-canvas` 11.x                              | npm, `latest`                  | yes                          |
+| `meo-canvas` 10.x                              | npm, by name (`meo-canvas@10`) | no                           |
+| `meo-canvas` 9.x                               | npm, by name (`meo-canvas@9`)  | no                           |
+| `meo-canvas` < 9                               | npm                            | no                           |
+| `meo-canvas`, `-core`, `-scene`, `-cli` crates | crates.io                      | yes                          |
+| `@meo-canvas/<platform>` packages              | npm                            | with the version they pin to |
 
 **9.x is frozen.** It is preserved on the `v9` branch and will not be bumped again, so the row above
 follows the rule at the top of this section rather than making an exception to it: the upgrade path
