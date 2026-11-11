@@ -58,6 +58,8 @@
 
 ### Fixed
 
+- `animate::color::Rgba::to_color` turns a colour into its own bytes: it read `r`, `g` and `b` as 0 to 1 while `Rgba` holds them as 0 to 255, as `parse_channels` and every track give them, so any channel of 1 or more became 255 and `#808080` or `#3366cc` came out white. It clamps `r`, `g` and `b` to 0 to 255 and scales `a` from 0 to 1 (`l7aromeo/meo-canvas#223`).
+
 - A CSS colour string resolves to the colour Chrome paints for it, read by meo-skia-canvas's own reader, the one behind its fills and its `filter` colours, rather than by `csscolorparser`. Of 75 strings measured against Chrome, 43 came out differently before this release: `lab()` and `lch()` up to 28 a channel off (`lab(67.5345% -8.6911 -41.6019)` drew 70,173,239 for Chrome's 98,172,239); `hsl()` and `hwb()` in the space-separated syntax misread a bare number (`hsl(30 60 40)` drew white for 163,102,41); `color()` was refused in every space but `srgb`, with a percentage or `none` channel, and in the relative `color(from …)` form; `lab(50, 40, 30)`, `rgb(1 2 3 4)` and `hsl(120, 100, 50)` were drawn where Chrome refuses them; and `lab(1e30 0 0)` was black where Chrome paints white. `color()` now converts `srgb-linear`, `xyz`, `xyz-d50`, `xyz-d65`, `display-p3`, `rec2020`, `a98-rgb` and `prophoto-rgb`. This reaches `parse_color`, chart colours and markup `<color=…>` tags (`l7aromeo/meo-canvas#222`).
 
 - A `filter` or `backdrop_filter` of `none`, in any case and with comments around it, establishes no stacking context, as in Chrome: a `z_index: -1` child of such a node paints beneath the node's background rather than above it. `none` is valid, so it is not reported as a diagnostic (`l7aromeo/meo-canvas#210`).

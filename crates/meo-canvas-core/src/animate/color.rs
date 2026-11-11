@@ -57,12 +57,17 @@ impl Rgba {
     }
 
     /// The scene colour this becomes when drawn: the only clamp, since a
-    /// channel outside the gamut has nowhere to go in a byte.
+    /// channel outside the gamut has nowhere to go in a byte. `r`, `g` and `b`
+    /// are already on the byte's scale; `a` is scaled from 0 to 1.
     #[must_use]
     pub fn to_color(self) -> Color {
-        let byte =
-            |channel: f64| (channel.clamp(0.0, 1.0) * 255.0).round() as u8;
-        Color::rgba(byte(self.r), byte(self.g), byte(self.b), byte(self.a))
+        let byte = |value: f64| value.clamp(0.0, CHANNEL_MAX).round() as u8;
+        Color::rgba(
+            byte(self.r),
+            byte(self.g),
+            byte(self.b),
+            byte(self.a.clamp(0.0, 1.0) * CHANNEL_MAX),
+        )
     }
 }
 
@@ -100,11 +105,11 @@ pub fn mix(from: Rgba, to: Rgba, t: f64) -> Rgba {
 mod tests {
     use super::{Rgba, mix};
 
-    /// Mid grey, opaque, as channels rather than bytes.
+    /// Mid grey, opaque, half way between black and white on 0 to 255.
     const GREY: Rgba = Rgba {
-        r: 0.5,
-        g: 0.5,
-        b: 0.5,
+        r: 127.5,
+        g: 127.5,
+        b: 127.5,
         a: 1.0,
     };
 
@@ -134,9 +139,9 @@ mod tests {
             a: 1.0,
         };
         let white = Rgba {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
+            r: 255.0,
+            g: 255.0,
+            b: 255.0,
             a: 1.0,
         };
         let half = mix(black, white, 0.5);
@@ -199,6 +204,23 @@ mod tests {
         assert!(white.r > super::CHANNEL_MAX, "the edge this pins is gone");
         assert!(white.in_gamut());
         assert!(!read("color(srgb 1.25 0 0)").in_gamut());
+    }
+
+    #[test]
+    fn a_parsed_colour_becomes_its_own_bytes() {
+        // `Rgba` is on 0 to 255, as `parse_channels` gives it, so the bytes
+        // drawn are the bytes written: grey is not white.
+        for (css, bytes) in [
+            ("#808080", [128, 128, 128, 255]),
+            ("#3366cc", [51, 102, 204, 255]),
+            ("rgba(255, 0, 0, 0.5)", [255, 0, 0, 128]),
+            ("transparent", [0, 0, 0, 0]),
+        ] {
+            let [r, g, b, a] = crate::color::parse_channels(css)
+                .unwrap_or_else(|| unreachable!("{css} is a colour"));
+            let drawn = Rgba { r, g, b, a }.to_color();
+            assert_eq!([drawn.r, drawn.g, drawn.b, drawn.a], bytes, "{css}");
+        }
     }
 
     #[test]
