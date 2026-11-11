@@ -145,10 +145,10 @@ fn wedges(
             .name(format!("slice {index}"))
             .view_box(Some((0.0, 0.0, space, space)))
             .fill(Some(PathPaint::Solid(
-                meo_canvas_core::parse_color(&colour)
+                meo_canvas_core::color::parse_color_value(&colour)
                     .ok_or(Error::Chart("a slice colour could not be read"))?,
             )))
-            .stroke(Some(PathPaint::Solid(hex_rgb(0xff_ff_ff))))
+            .stroke(Some(PathPaint::Solid(hex_rgb(0xff_ff_ff).into())))
             .line_width(SLICE_STROKE)
             .with_style(
                 Style::new().position_type(PositionType::Absolute).position(

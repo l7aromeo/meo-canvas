@@ -23,8 +23,8 @@ use meo_canvas_scene::{
         },
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-            BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
-            GradientStop, LinearDirection, ObjectFit,
+            BorderStyle, Color, ColorValue, Gradient, GradientGeometry,
+            GradientKind, GradientStop, LinearDirection, ObjectFit,
         },
         text::{
             FontStyle, FontVariant, FontWeight, LineHeight, ParagraphStyle,
@@ -383,6 +383,18 @@ json_struct!(TextShadow {
     color
 });
 
+impl ToJson for ColorValue {
+    fn to_json(&self) -> String {
+        match self {
+            Self::Rgba(color) => {
+                format!("{{\"tag\":\"rgba\",\"value\":{}}}", color.to_json())
+            }
+            Self::Current => "{\"tag\":\"current\"}".to_owned(),
+            // As `Mask` below: `ColorValue` is `#[non_exhaustive]`.
+            _ => "{\"tag\":\"unknown\"}".to_owned(),
+        }
+    }
+}
 json_tagged!(Length {
     Self::Points(v) => "points", v;
     Self::Percent(v) => "percent", v;
@@ -675,7 +687,7 @@ fn path_cases() -> Vec<KindCase> {
         },
         stops: vec![GradientStop {
             offset: 0.5,
-            color: Color::rgba(9, 8, 7, 6),
+            color: Color::rgba(9, 8, 7, 6).into(),
         }],
     };
 
@@ -687,8 +699,8 @@ fn path_cases() -> Vec<KindCase> {
                 data: String::from("M0 0 L4 4"),
                 view_box: None,
                 stretch: false,
-                fill: Some(PathPaint::Solid(Color::rgba(1, 2, 3, 4))),
-                stroke: Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))),
+                fill: Some(PathPaint::Solid(Color::rgba(1, 2, 3, 4).into())),
+                stroke: Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8).into())),
                 line_width: 2.5,
                 fill_rule: FillRule::EvenOdd,
                 line_cap: LineCap::Round,

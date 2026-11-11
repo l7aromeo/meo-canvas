@@ -59,6 +59,41 @@ impl Color {
     }
 }
 
+/// A colour as a style states it: a colour, or CSS's `currentColor`.
+///
+/// `currentColor` is the node's own text colour after inheritance, black where
+/// no ancestor sets one, which is what Chrome paints on every colour property
+/// `current-color.tsv` measures. It is resolved per node when the scene is
+/// drawn, since one style may sit on many nodes with different text colours.
+/// `#[non_exhaustive]` because `currentColor` inside `color-mix()` or a
+/// relative colour needs a variant of its own, which waits on the colour
+/// reader taking a node colour (`l7aromeo/meo-skia-canvas#688`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ColorValue {
+    /// A colour.
+    Rgba(Color),
+    /// The node's text colour.
+    Current,
+}
+
+impl ColorValue {
+    /// This value on a node whose text colour is `current`.
+    #[must_use]
+    pub const fn resolve(self, current: Color) -> Color {
+        match self {
+            Self::Rgba(color) => color,
+            Self::Current => current,
+        }
+    }
+}
+
+impl From<Color> for ColorValue {
+    fn from(color: Color) -> Self {
+        Self::Rgba(color)
+    }
+}
+
 wire_enum! {
     /// How a border's line is drawn.
     ///
@@ -181,7 +216,7 @@ pub struct GradientStop {
     /// end.
     pub offset: f32,
     /// Colour at that position.
-    pub color: Color,
+    pub color: ColorValue,
 }
 
 /// Which way a linear gradient runs.
@@ -352,16 +387,17 @@ pub struct BackgroundImage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaintStyle {
     /// Colour painted behind everything else in the node.
-    pub background_color: Color,
+    pub background_color: ColorValue,
     /// Gradient painted over the background colour.
     pub gradient: Option<Gradient>,
     /// Image painted over the gradient.
     pub background_image: Option<BackgroundImage>,
     /// Border colour per edge. An edge left `None` takes
     /// [`PaintStyle::border_color_all`].
-    pub border_color: Sides<Option<Color>>,
-    /// Colour for edges [`PaintStyle::border_color`] leaves unset.
-    pub border_color_all: Color,
+    pub border_color: Sides<Option<ColorValue>>,
+    /// Colour for edges [`PaintStyle::border_color`] leaves unset:
+    /// `currentColor` unless set, as CSS's initial `border-color` is.
+    pub border_color_all: ColorValue,
     /// How the border's line is drawn.
     pub border_style: BorderStyle,
     /// Corner rounding in logical pixels.
@@ -412,11 +448,11 @@ pub struct PaintStyle {
 impl Default for PaintStyle {
     fn default() -> Self {
         Self {
-            background_color: Color::TRANSPARENT,
+            background_color: ColorValue::Rgba(Color::TRANSPARENT),
             gradient: None,
             background_image: None,
             border_color: Sides::all(None),
-            border_color_all: Color::BLACK,
+            border_color_all: ColorValue::Current,
             border_style: BorderStyle::None,
             border_radius: Corners::all(0.0),
             opacity: 1.0,
@@ -430,8 +466,8 @@ impl Default for PaintStyle {
 #[cfg(test)]
 mod tests {
     use super::{
-        BackgroundRepeat, BlendMode, BorderStyle, Color, GradientKind,
-        ObjectFit, PaintStyle,
+        BackgroundRepeat, BlendMode, BorderStyle, Color, ColorValue,
+        GradientKind, ObjectFit, PaintStyle,
     };
 
     #[test]
@@ -446,10 +482,13 @@ mod tests {
     #[test]
     fn paint_defaults_draw_nothing_and_composite_normally() {
         let style = PaintStyle::default();
-        assert!(style.background_color.is_invisible());
+        assert_eq!(
+            style.background_color,
+            ColorValue::Rgba(Color::TRANSPARENT)
+        );
         assert_eq!(style.blend_mode, BlendMode::Normal);
         assert_eq!(style.border_style, BorderStyle::None);
-        assert_eq!(style.border_color_all, Color::BLACK);
+        assert_eq!(style.border_color_all, ColorValue::Current);
         assert!((style.opacity - 1.0).abs() < f32::EPSILON);
         assert!(!style.dither);
         assert_eq!(style.z_index, None);

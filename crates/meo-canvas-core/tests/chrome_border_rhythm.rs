@@ -232,7 +232,7 @@ fn a_whole_side_sums_to_the_side() {
 fn dashed(size: (f32, f32), width: f32) -> (usize, Vec<u8>) {
     let mut scene = Scene::new(Size::new(size.0 + 20.0, size.1 + 20.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(255, 255, 255);
+        root.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     let id = scene
         .push(NodeId::ROOT, Node::new(NodeKind::Box))
@@ -241,8 +241,8 @@ fn dashed(size: (f32, f32), width: f32) -> (usize, Vec<u8>) {
         node.layout.size =
             (Dimension::Points(size.0), Dimension::Points(size.1));
         node.layout.border = Sides::all(width);
-        node.paint.background_color = Color::rgb(255, 255, 255);
-        node.paint.border_color_all = Color::rgb(0, 0, 0);
+        node.paint.background_color = Color::rgb(255, 255, 255).into();
+        node.paint.border_color_all = Color::rgb(0, 0, 0).into();
         node.paint.border_style = BorderStyle::Dashed;
     }
 

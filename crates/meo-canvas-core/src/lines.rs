@@ -192,7 +192,9 @@ impl RunStyle {
                 .font_variant
                 .clone()
                 .unwrap_or_else(|| base.font_variant.clone()),
-            color: style.color.unwrap_or(base.color),
+            color: style
+                .color
+                .map_or(base.color, |color| color.resolve(base.color)),
             decoration: style.text_decoration.unwrap_or(base.decoration),
             letter_spacing: spacing_pixels(
                 style.letter_spacing.unwrap_or(base.letter_spacing),

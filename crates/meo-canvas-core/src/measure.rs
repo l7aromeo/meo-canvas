@@ -591,14 +591,16 @@ fn skia_style(
         // not from `ResolvedText` — which is why nothing was reading them: the
         // scene carried them and the paragraph was built without ever being
         // shown that field.
+        // `currentColor` in a shadow is the colour of the text it shadows.
         shadows: shadows
             .iter()
-            .map(|shadow| SkiaTextShadow {
+            .map(|shadow| (shadow, shadow.color.resolve(style.color)))
+            .map(|(shadow, color)| SkiaTextShadow {
                 color: RgbaLinear::from_srgb8(
-                    shadow.color.r,
-                    shadow.color.g,
-                    shadow.color.b,
-                    f32::from(shadow.color.a) / 255.0,
+                    color.r,
+                    color.g,
+                    color.b,
+                    f32::from(color.a) / 255.0,
                 ),
                 offset_x: shadow.offset_x,
                 offset_y: shadow.offset_y,

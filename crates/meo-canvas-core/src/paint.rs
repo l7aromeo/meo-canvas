@@ -36,8 +36,8 @@ use meo_canvas_scene::{
         layout::{Direction, Display, Overflow, PositionType},
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-            BorderStyle, Color, Gradient, GradientGeometry, LinearDirection,
-            ObjectFit, PaintStyle,
+            BorderStyle, Color, ColorValue, Gradient, GradientGeometry,
+            LinearDirection, ObjectFit, PaintStyle,
         },
         text::{TextAlign, TextDecoration, VerticalAlign},
     },
@@ -343,9 +343,10 @@ pub fn draw(
     // The canvas's base: the page root's colour, outside every effect the root
     // carries, as Chrome paints it (`chrome_root_background.rs`).
     if let Some(root) = scene.get(page)
-        && !root.paint.background_color.is_invisible()
+        && let background = resolved.color(page, root.paint.background_color)
+        && !background.is_invisible()
     {
-        context.set_fill_style(to_skia_color(root.paint.background_color));
+        context.set_fill_style(to_skia_color(background));
         context.fill_rect(0.0, 0.0, canvas.size.width, canvas.size.height);
     }
     let result =
@@ -748,7 +749,13 @@ fn paint_own_content(
             )
         })
         .and_then(|()| {
-            draw_outer_shadows(context, &node.paint, &node.effects, rect)
+            draw_outer_shadows(
+                context,
+                &node.paint,
+                &node.effects,
+                rect,
+                resolved.current_color(id),
+            )
         })
         .and_then(|()| {
             if clips_its_children(node) {
@@ -774,9 +781,10 @@ fn draw_outer_shadows(
     paint: &PaintStyle,
     effects: &Effects,
     rect: Rect,
+    current: Color,
 ) -> Result<(), Error> {
     for shadow in effects.box_shadows.iter().rev().filter(|s| !s.inset) {
-        draw_box_shadow(context, paint, rect, shadow)?;
+        draw_box_shadow(context, paint, rect, shadow, current)?;
     }
     Ok(())
 }
@@ -858,13 +866,16 @@ fn paint_box(
     // They are still first in paint order, and still **clipped out of the
     // border box** rather than merely covered by it -- see `draw_box_shadow`.
 
-    if own_background && !paint.background_color.is_invisible() {
-        context.set_fill_style(to_skia_color(paint.background_color));
+    let current = resolved.current_color(id);
+    let background = paint.background_color.resolve(current);
+    if own_background && !background.is_invisible() {
+        context.set_fill_style(to_skia_color(background));
         fill_box(context, paint, rect)?;
     }
 
     if let Some(gradient) = paint.gradient.as_ref().filter(|_| own_background) {
-        let (shader, squash) = build_gradient(gradient, rect, Mixing::Css)?;
+        let (shader, squash) =
+            build_gradient(gradient, rect, Mixing::Css, current)?;
         context.set_fill_shader(&shader);
         fill_with_gradient(context, squash, rect, |context| {
             box_path(context, paint.border_radius, rect)
@@ -875,7 +886,7 @@ fn paint_box(
     // them, reversed like the outer ones: Chrome shows the first-written on
     // top.
     for shadow in node.effects.box_shadows.iter().rev().filter(|s| s.inset) {
-        draw_box_shadow(context, paint, rect, shadow)?;
+        draw_box_shadow(context, paint, rect, shadow, current)?;
     }
 
     if let Some(background) = paint.background_image.as_ref()
@@ -889,7 +900,7 @@ fn paint_box(
         draw_background_image(context, paint, background, &image, rect, None)?;
     }
 
-    draw_border(context, node, rect)?;
+    draw_border(context, node, rect, current)?;
     Ok(())
 }
 
@@ -905,8 +916,10 @@ fn paint_canvas_layers(
     rect: Rect,
     canvas: Rect,
 ) -> Result<(), Error> {
-    if !paint.background_color.is_invisible() {
-        context.set_fill_style(to_skia_color(paint.background_color));
+    let current = resolved.current_color(id);
+    let background = paint.background_color.resolve(current);
+    if !background.is_invisible() {
+        context.set_fill_style(to_skia_color(background));
         context.fill_rect(
             canvas.origin.x,
             canvas.origin.y,
@@ -923,7 +936,8 @@ fn paint_canvas_layers(
     {
         let mut tile = Canvas::new(rect.size.width, rect.size.height);
         let at = Rect::new(meo_canvas_scene::Point::new(0.0, 0.0), rect.size);
-        let (shader, squash) = build_gradient(gradient, at, Mixing::Css)?;
+        let (shader, squash) =
+            build_gradient(gradient, at, Mixing::Css, current)?;
         let drawing = tile.context();
         drawing.set_fill_shader(&shader);
         fill_with_gradient(drawing, squash, at, |context| {
@@ -1032,8 +1046,8 @@ fn paint_kind(
             // Rasterised at the size drawn, which keeps a vector source sharp,
             // and in the node's own colour: an SVG loaded as an image resolves
             // `currentColor` in its own document, falling back to black.
-            let image =
-                raster_of(resolved, decoded, id, placed.size, node.text.color)?;
+            let tint = node.text.color.map(|_| resolved.current_color(id));
+            let image = raster_of(resolved, decoded, id, placed.size, tint)?;
             context.save();
             let result = (|context: &mut Context2D| {
                 clip_to_rounded(
@@ -1068,6 +1082,7 @@ fn paint_kind(
         } => {
             let drawn = Path2D::from_svg(data, to_skia_rule(*fill_rule))
                 .map_err(|error| in_property("d", &error))?;
+            let current = resolved.current_color(id);
             // No box is the behaviour every path had before one existed:
             // absolute coordinates, shifted to where the node sits.
             let path = view_box.map_or_else(
@@ -1080,7 +1095,7 @@ fn paint_kind(
             );
 
             if let Some(fill) = fill {
-                let squash = set_paint(context, fill, rect, true)?;
+                let squash = set_paint(context, fill, rect, true, current)?;
                 let rule = to_skia_rule(*fill_rule);
                 if let Some(squash) = squash {
                     context.save();
@@ -1102,7 +1117,7 @@ fn paint_kind(
                 }
             }
             if let Some(stroke) = stroke {
-                set_paint(context, stroke, rect, false)?;
+                set_paint(context, stroke, rect, false, current)?;
                 context.set_line_width(*line_width);
                 context.set_line_dash(line_dash);
                 context.set_line_dash_offset(*line_dash_offset);
@@ -1285,7 +1300,9 @@ fn draw_run(
 
     for shadow in &node.effects.text_shadows {
         context.save();
-        context.set_shadow_color(to_skia_color(shadow.color));
+        context.set_shadow_color(to_skia_color(
+            shadow.color.resolve(run.style.color),
+        ));
         // CSS gives a blur *radius* and the backend takes a Gaussian sigma.
         // Half is the conversion every CSS engine uses.
         context.set_shadow_blur(shadow.blur / 2.0);
@@ -1315,7 +1332,8 @@ fn paint_run(
 
     context.save();
     context.set_line_width(stroke.width);
-    context.set_stroke_style(to_skia_color(stroke.color));
+    context
+        .set_stroke_style(to_skia_color(stroke.color.resolve(run.style.color)));
     context.set_line_join(StrokeJoin::Round);
     context.set_miter_limit(2.0);
     match style.paint_order {
@@ -2107,6 +2125,7 @@ fn draw_border(
     context: &mut Context2D,
     node: &Node,
     rect: Rect,
+    current: Color,
 ) -> Result<(), Error> {
     let paint = &node.paint;
     // As `content_box`: the painter draws the width layout reserved.
@@ -2145,14 +2164,16 @@ fn draw_border(
         paint.border_style,
         BorderStyle::Dashed | BorderStyle::Dotted
     ) {
-        return stroke_broken_border(context, node, rect, widths);
+        return stroke_broken_border(context, node, rect, widths, current);
     }
 
     // One ring, one fill, no clip. The same shape the edge-by-edge path
     // produces, reached without four clips when nothing distinguishes the
     // edges.
     if uniform && same_colour {
-        context.set_fill_style(to_skia_color(paint.border_color_all));
+        context.set_fill_style(to_skia_color(
+            paint.border_color_all.resolve(current),
+        ));
         let ring = ring_path(paint, rect, inner, widths)?;
         context.fill_path(&ring, SkiaFillRule::EvenOdd);
         return Ok(());
@@ -2198,7 +2219,7 @@ fn draw_border(
         );
 
         context.set_fill_style(to_skia_color(
-            colour.unwrap_or(paint.border_color_all),
+            colour.unwrap_or(paint.border_color_all).resolve(current),
         ));
         let path = ring_path(paint, rect, inner, widths);
         if let Ok(ring) = &path {
@@ -2435,6 +2456,7 @@ fn stroke_broken_border(
     node: &Node,
     rect: Rect,
     widths: Sides<f32>,
+    current: Color,
 ) -> Result<(), Error> {
     let paint = &node.paint;
     let (centre, centre_paint) = centre_line(paint, rect, widths);
@@ -2459,7 +2481,7 @@ fn stroke_broken_border(
     // Only a square corner is left undivided: on a curve the band crosses the
     // diagonal obliquely and Chrome reads partial coverage there, and
     // undividing it moved ours from `0.753` to `1.000`, further from Chrome.
-    let undivided = per_side && uniform_edges(paint, widths);
+    let undivided = per_side && uniform_edges(paint, widths, current);
 
     for (edge, (width, colour)) in [
         (widths.top, edge_colors.top),
@@ -2493,7 +2515,7 @@ fn stroke_broken_border(
 
         context.set_line_width(width);
         context.set_stroke_style(to_skia_color(
-            colour.unwrap_or(paint.border_color_all),
+            colour.unwrap_or(paint.border_color_all).resolve(current),
         ));
 
         let dotted = matches!(paint.border_style, BorderStyle::Dotted);
@@ -2551,7 +2573,11 @@ fn stroke_broken_border(
 
 /// Whether every drawn edge shares one colour and one width, the condition for
 /// leaving a corner undivided; the caller skips a zero-width edge.
-fn uniform_edges(paint: &PaintStyle, widths: Sides<f32>) -> bool {
+fn uniform_edges(
+    paint: &PaintStyle,
+    widths: Sides<f32>,
+    current: Color,
+) -> bool {
     let sides = [
         (widths.top, paint.border_color.top),
         (widths.right, paint.border_color.right),
@@ -2562,10 +2588,12 @@ fn uniform_edges(paint: &PaintStyle, widths: Sides<f32>) -> bool {
     let Some((first_width, first_colour)) = drawn.next() else {
         return true;
     };
-    let first = first_colour.unwrap_or(paint.border_color_all);
+    let colour_of = |colour: Option<ColorValue>| {
+        colour.unwrap_or(paint.border_color_all).resolve(current)
+    };
+    let first = colour_of(first_colour);
     drawn.all(|(width, colour)| {
-        width.to_bits() == first_width.to_bits()
-            && colour.unwrap_or(paint.border_color_all) == first
+        width.to_bits() == first_width.to_bits() && colour_of(colour) == first
     })
 }
 
@@ -3240,16 +3268,18 @@ fn draw_inset_box_shadow(
     paint: &PaintStyle,
     rect: Rect,
     shadow: &BoxShadow,
+    current: Color,
 ) -> Result<(), Error> {
+    let colour = shadow.color.resolve(current);
     context.save();
     let result = (|| -> Result<(), Error> {
         // Only inside the box: this is the whole of what makes it inset.
         clip_to_box(context, paint, rect)?;
 
         context.set_shadow_blur(shadow.blur);
-        context.set_shadow_color(to_skia_color(shadow.color));
+        context.set_shadow_color(to_skia_color(colour));
         context.set_shadow_offset(shadow.offset_x, shadow.offset_y);
-        context.set_fill_style(to_skia_color(shadow.color));
+        context.set_fill_style(to_skia_color(colour));
 
         // The hole: the box pulled in by the spread, then moved by the offset.
         // Pulling in is what makes a positive spread a *thicker* inset shadow,
@@ -3379,11 +3409,13 @@ fn draw_box_shadow(
     paint: &PaintStyle,
     rect: Rect,
     shadow: &BoxShadow,
+    current: Color,
 ) -> Result<(), Error> {
     if shadow.inset {
-        return draw_inset_box_shadow(context, paint, rect, shadow);
+        return draw_inset_box_shadow(context, paint, rect, shadow, current);
     }
-    if shadow.color.is_invisible() {
+    let colour = shadow.color.resolve(current);
+    if colour.is_invisible() {
         return Ok(());
     }
 
@@ -3417,7 +3449,7 @@ fn draw_box_shadow(
                     .map_err(|error| Error::Paint(error.to_string()))?;
             context.set_mask_filter(Some(&blur));
         }
-        context.set_fill_style(to_skia_color(shadow.color));
+        context.set_fill_style(to_skia_color(colour));
 
         let path = contour(shape, spread_radii(paint, spread))?;
         context.fill_path(
@@ -3510,17 +3542,20 @@ fn set_paint(
     paint: &PathPaint,
     rect: Rect,
     fill: bool,
+    current: Color,
 ) -> Result<Option<Squash>, Error> {
     match paint {
         PathPaint::Solid(color) => {
+            let color = to_skia_color(color.resolve(current));
             if fill {
-                context.set_fill_style(to_skia_color(*color));
+                context.set_fill_style(color);
             } else {
-                context.set_stroke_style(to_skia_color(*color));
+                context.set_stroke_style(color);
             }
         }
         PathPaint::Gradient(gradient) => {
-            let (shader, squash) = build_gradient(gradient, rect, Mixing::Svg)?;
+            let (shader, squash) =
+                build_gradient(gradient, rect, Mixing::Svg, current)?;
             if fill {
                 context.set_fill_shader(&shader);
                 return Ok(squash);
@@ -3594,13 +3629,14 @@ fn build_gradient(
     gradient: &Gradient,
     rect: Rect,
     mixing: Mixing,
+    current: Color,
 ) -> Result<(Shader, Option<Squash>), Error> {
     let stops: Vec<SkiaGradientStop> = gradient
         .stops
         .iter()
         .map(|stop| SkiaGradientStop {
             position: stop.offset,
-            color: stop_color(stop.color),
+            color: stop_color(stop.color.resolve(current)),
         })
         .collect();
     let interpolation =
@@ -4141,6 +4177,7 @@ fn draw_mask(
     mask: &Mask,
     rect: Rect,
 ) -> Result<(), Error> {
+    let current = resolved.current_color(id);
     // The wildcard is `Mask` being `#[non_exhaustive]`: a mask this build
     // cannot describe clips nothing, which shows the subtree whole rather than
     // hiding it. A mask that silently removed its own content would be a
@@ -4185,7 +4222,8 @@ fn draw_mask(
             Ok(())
         }
         Mask::Gradient(gradient) => {
-            let (shader, squash) = build_gradient(gradient, rect, Mixing::Css)?;
+            let (shader, squash) =
+                build_gradient(gradient, rect, Mixing::Css, current)?;
             context.set_fill_shader(&shader);
             fill_with_gradient(context, squash, rect, |context| {
                 context.begin_path();
@@ -4238,7 +4276,7 @@ mod tests {
             if let Some(node) = scene.get_mut(id) {
                 node.layout.size =
                     (Dimension::Points(40.0), Dimension::Points(30.0));
-                node.paint.background_color = Color::rgb(255, 0, 0);
+                node.paint.background_color = Color::rgb(255, 0, 0).into();
                 node.paint.border_radius = Corners::all(radius);
             }
             let mut renderer = Renderer::new();
@@ -4294,7 +4332,7 @@ mod tests {
                     (Dimension::Points(240.0), Dimension::Points(48.0));
                 node.layout.border = Sides::all(width);
                 node.paint.border_style = BorderStyle::Dotted;
-                node.paint.border_color_all = Color::rgb(0, 0, 0);
+                node.paint.border_color_all = Color::rgb(0, 0, 0).into();
             }
             let (stride, pixels) = render(&scene);
             #[expect(
@@ -4363,7 +4401,7 @@ mod tests {
                     (Dimension::Points(60.0), Dimension::Points(60.0));
                 node.layout.border = Sides::all(8.0);
                 node.paint.border_style = BorderStyle::Dotted;
-                node.paint.border_color_all = colour;
+                node.paint.border_color_all = colour.into();
             }
             let (stride, pixels) = render(&scene);
             (0..8)
@@ -4401,7 +4439,7 @@ mod tests {
                     (Dimension::Points(60.0), Dimension::Points(60.0));
                 node.layout.border = Sides::all(8.0);
                 node.paint.border_style = BorderStyle::Dotted;
-                node.paint.border_color_all = colour;
+                node.paint.border_color_all = colour.into();
             }
             read_diagonal(&scene)
         }
@@ -4419,13 +4457,13 @@ mod tests {
                 node.paint.border_style = style;
                 if two_colour {
                     node.paint.border_color = Sides {
-                        top: Some(Color::rgb(255, 0, 0)),
-                        right: Some(Color::rgb(255, 0, 0)),
-                        bottom: Some(Color::rgb(0, 0, 255)),
-                        left: Some(Color::rgb(0, 0, 255)),
+                        top: Some(Color::rgb(255, 0, 0).into()),
+                        right: Some(Color::rgb(255, 0, 0).into()),
+                        bottom: Some(Color::rgb(0, 0, 255).into()),
+                        left: Some(Color::rgb(0, 0, 255).into()),
                     };
                 } else {
-                    node.paint.border_color_all = Color::rgb(0, 0, 0);
+                    node.paint.border_color_all = Color::rgb(0, 0, 0).into();
                 }
             }
             read_diagonal(&scene)
@@ -4536,7 +4574,7 @@ mod tests {
         fn dashed_box(radius: f32, width: f32) -> (usize, Vec<u8>) {
             let mut scene = Scene::new(Size::new(240.0, 48.0));
             if let Some(root) = scene.get_mut(NodeId::ROOT) {
-                root.paint.background_color = Color::rgb(255, 255, 255);
+                root.paint.background_color = Color::rgb(255, 255, 255).into();
             }
             let id = scene
                 .push(NodeId::ROOT, Node::new(NodeKind::Box))
@@ -4545,8 +4583,8 @@ mod tests {
                 node.layout.size =
                     (Dimension::Points(240.0), Dimension::Points(48.0));
                 node.layout.border = Sides::all(width);
-                node.paint.background_color = Color::rgb(255, 255, 255);
-                node.paint.border_color_all = Color::rgb(0, 0, 0);
+                node.paint.background_color = Color::rgb(255, 255, 255).into();
+                node.paint.border_color_all = Color::rgb(0, 0, 0).into();
                 node.paint.border_style = BorderStyle::Dashed;
                 node.paint.border_radius = Corners::all(radius);
             }
@@ -4681,7 +4719,7 @@ mod tests {
                     (Dimension::Points(240.0), Dimension::Points(48.0));
                 node.layout.border = Sides::all(4.0);
                 node.paint.border_style = BorderStyle::Dashed;
-                node.paint.border_color_all = Color::rgb(0, 0, 0);
+                node.paint.border_color_all = Color::rgb(0, 0, 0).into();
                 node.paint.border_radius = Corners::all(8.0);
             }
             let (stride, pixels) = render(&scene);
@@ -4801,7 +4839,7 @@ mod tests {
                         left,
                     };
                     node.paint.border_style = BorderStyle::Dashed;
-                    node.paint.border_color_all = Color::rgb(0, 0, 0);
+                    node.paint.border_color_all = Color::rgb(0, 0, 0).into();
                 }
                 let (stride, pixels) = render(&scene);
                 let inside = |x: usize, y: usize| {
@@ -5654,7 +5692,7 @@ mod tests {
             root.paint = PaintStyle {
                 // White, so "the page" and "the box" are told apart by the
                 // box's own fill rather than by position.
-                background_color: Color::rgb(255, 255, 255),
+                background_color: Color::rgb(255, 255, 255).into(),
                 ..PaintStyle::default()
             };
         }
@@ -5673,15 +5711,15 @@ mod tests {
                 left,
             };
             node.paint = PaintStyle {
-                background_color: FILL,
+                background_color: FILL.into(),
                 border_radius: meo_canvas_scene::Corners::all(radius),
-                border_color_all: BORDER,
+                border_color_all: BORDER.into(),
                 border_style: BorderStyle::Solid,
                 border_color: meo_canvas_scene::Sides {
-                    top: Some(BORDER),
-                    right: Some(BORDER),
-                    bottom: Some(BORDER),
-                    left: Some(BORDER),
+                    top: Some(BORDER.into()),
+                    right: Some(BORDER.into()),
+                    bottom: Some(BORDER.into()),
+                    left: Some(BORDER.into()),
                 },
                 ..PaintStyle::default()
             };
@@ -5734,9 +5772,9 @@ mod tests {
             left,
         };
         let paint = PaintStyle {
-            background_color: FILL,
+            background_color: FILL.into(),
             border_radius: meo_canvas_scene::Corners::all(radius),
-            border_color_all: BORDER,
+            border_color_all: BORDER.into(),
             border_style: BorderStyle::Solid,
             ..PaintStyle::default()
         };
@@ -5870,10 +5908,11 @@ mod tests {
                     view_box: None,
                     stretch: false,
                     fill: Some(meo_canvas_scene::node::PathPaint::Solid(
-                        meo_canvas_scene::style::paint::Color::BLACK,
+                        meo_canvas_scene::style::paint::Color::BLACK.into(),
                     )),
                     stroke: Some(meo_canvas_scene::node::PathPaint::Solid(
-                        meo_canvas_scene::style::paint::Color::rgb(1, 2, 3),
+                        meo_canvas_scene::style::paint::Color::rgb(1, 2, 3)
+                            .into(),
                     )),
                     line_width: 2.0,
                     fill_rule:
@@ -5890,7 +5929,8 @@ mod tests {
             root.paint = PaintStyle {
                 background_color: meo_canvas_scene::style::paint::Color::rgb(
                     250, 250, 250,
-                ),
+                )
+                .into(),
                 opacity: 0.9,
                 blend_mode: BlendMode::Multiply,
                 border_radius: meo_canvas_scene::Corners::all(4.0),
@@ -5923,11 +5963,11 @@ mod tests {
         let stops = vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgb(255, 0, 0),
+                color: Color::rgb(255, 0, 0).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::rgba(0, 0, 255, 128),
+                color: Color::rgba(0, 0, 255, 128).into(),
             },
         ];
 
@@ -5984,9 +6024,9 @@ mod tests {
                 // Per-edge widths and colours, so the border takes the
                 // edge-by-edge path rather than the single-stroke one.
                 node.paint.border_color = Sides {
-                    top: Some(Color::BLACK),
+                    top: Some(Color::BLACK.into()),
                     right: None,
-                    bottom: Some(Color::rgb(1, 2, 3)),
+                    bottom: Some(Color::rgb(1, 2, 3).into()),
                     left: None,
                 };
                 node.layout.border = Sides {
@@ -6015,7 +6055,7 @@ mod tests {
                             offset_y: 2.0,
                             blur: 3.0,
                             spread: 1.0,
-                            color: Color::rgba(0, 0, 0, 64),
+                            color: Color::rgba(0, 0, 0, 64).into(),
                             ..BoxShadow::default()
                         },
                         // Inset is a documented no-op; running it proves the
@@ -6109,7 +6149,7 @@ mod tests {
                     view_box: None,
                     stretch: false,
                     fill: Some(meo_canvas_scene::node::PathPaint::Solid(
-                        meo_canvas_scene::style::paint::Color::BLACK,
+                        meo_canvas_scene::style::paint::Color::BLACK.into(),
                     )),
                     stroke: None,
                     line_width: 1.0,
@@ -6153,11 +6193,11 @@ mod tests {
             stops: vec![
                 GradientStop {
                     offset: 0.0,
-                    color: Color::BLACK,
+                    color: Color::BLACK.into(),
                 },
                 GradientStop {
                     offset: 1.0,
-                    color: Color::rgb(255, 255, 255),
+                    color: Color::rgb(255, 255, 255).into(),
                 },
             ],
         };

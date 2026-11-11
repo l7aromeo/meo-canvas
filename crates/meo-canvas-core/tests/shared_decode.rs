@@ -19,13 +19,13 @@ use meo_canvas_scene::{
 fn two_frames() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(8.0, 8.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(255, 0, 0);
+        root.paint.background_color = Color::rgb(255, 0, 0).into();
     }
     let second = scene
         .push_page()
         .unwrap_or_else(|error| unreachable!("the second page: {error}"));
     if let Some(page) = scene.get_mut(second) {
-        page.paint.background_color = Color::rgb(0, 0, 255);
+        page.paint.background_color = Color::rgb(0, 0, 255).into();
     }
     Renderer::new()
         .render_to_buffer(&scene, ImageFormat::Gif, &EncodeOptions::default())
@@ -37,7 +37,7 @@ fn two_nodes_sharing_a_source_keep_their_own_frames() {
     let gif = two_frames();
     let mut scene = Scene::new(Size::new(16.0, 8.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(255, 255, 255);
+        root.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     for frame in [0, 1] {
         let id = scene

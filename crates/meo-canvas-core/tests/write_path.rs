@@ -17,13 +17,13 @@ fn three_colours() -> Scene {
         Color::rgb(0, 0, 255),
     ];
 
-    scene.nodes[0].paint.background_color = colours[0];
+    scene.nodes[0].paint.background_color = colours[0].into();
     for colour in &colours[1..] {
         let page = scene
             .push_page()
             .unwrap_or_else(|error| unreachable!("{error}"));
         if let Some(node) = scene.get_mut(page) {
-            node.paint.background_color = *colour;
+            node.paint.background_color = (*colour).into();
         }
     }
     assert_eq!(scene.pages.len(), 3);

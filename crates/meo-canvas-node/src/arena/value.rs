@@ -3,10 +3,10 @@
 //! writes its length first, an `Option` a presence flag -- so the reader is a
 //! cursor, and a truncated arena is an error at the slot it ran out on.
 
-use meo_canvas_core::color::parse_color;
+use meo_canvas_core::color::parse_color_value;
 use meo_canvas_scene::{
     geometry::{Corners, Sides},
-    style::{Dimension, Length, paint::Color, text::LineHeight},
+    style::{Dimension, Length, paint::ColorValue, text::LineHeight},
 };
 
 use super::{ArenaError, Reader};
@@ -138,17 +138,17 @@ impl<T: ArenaValue> ArenaValue for Corners<T> {
     }
 }
 
-impl ArenaValue for Color {
+impl ArenaValue for ColorValue {
     /// A colour crosses as the string the caller wrote, parsed here by the
-    /// renderer's own parser, so every CSS spelling reaches it. It costs one
-    /// side entry per distinct colour and 21 to 111 ns of [`parse_color`] each,
-    /// release build.
+    /// renderer's own parser, so every CSS spelling reaches it, `currentColor`
+    /// included. It costs one side entry per distinct colour and 21 to 111 ns
+    /// of [`parse_color_value`] each, release build.
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let slot = input.offset();
         let index = input.index()?;
         let text = input.text(index, slot)?;
         let property = input.property();
-        parse_color(&text).ok_or(ArenaError::UnreadableColor {
+        parse_color_value(&text).ok_or(ArenaError::UnreadableColor {
             property,
             slot,
             found: text,

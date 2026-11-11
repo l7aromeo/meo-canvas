@@ -81,7 +81,8 @@ fn rows() -> Vec<Row> {
 fn inked(direction: Direction, align: TextAlign) -> (i64, i64) {
     let mut scene = Scene::new(Size::new(CELL.0, CELL.1));
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
-        page.paint.background_color = Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+        page.paint.background_color =
+            Color::rgb(PAPER.0, PAPER.1, PAPER.2).into();
     }
     let mut node = Node::text("abc");
     node.layout = LayoutStyle {
@@ -95,7 +96,7 @@ fn inked(direction: Direction, align: TextAlign) -> (i64, i64) {
     node.text.text_align = Some(align);
     node.text.font_family = Some(FONT.0.to_owned());
     node.text.font_size = Some(32.0);
-    node.text.color = Some(Color::rgb(0, 0, 0));
+    node.text.color = Some(Color::rgb(0, 0, 0).into());
     scene
         .push(NodeId::ROOT, node)
         .unwrap_or_else(|error| unreachable!("{error}"));

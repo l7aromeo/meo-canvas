@@ -68,7 +68,7 @@ fn realistic_scene() -> Scene {
         gap: (Length::Points(10.0), Length::ZERO),
         ..LayoutStyle::default()
     };
-    scene.nodes[0].paint.background_color = Color::rgb(255, 255, 255);
+    scene.nodes[0].paint.background_color = Color::rgb(255, 255, 255).into();
     scene.nodes[0].text = TextStyle {
         font_family: Some(FAMILY.to_owned()),
         font_size: Some(15.0),
@@ -89,7 +89,7 @@ fn realistic_scene() -> Scene {
                 ..LayoutStyle::default()
             };
             node.paint = PaintStyle {
-                background_color: Color::rgb(246, 247, 250),
+                background_color: Color::rgb(246, 247, 250).into(),
                 border_radius: Corners::all(6.0),
                 ..PaintStyle::default()
             };
@@ -111,7 +111,7 @@ fn realistic_scene() -> Scene {
             {
                 node.layout.size =
                     (Dimension::Points(40.0), Dimension::Points(18.0));
-                node.paint.background_color = Color::rgb(210, 220, 235);
+                node.paint.background_color = Color::rgb(210, 220, 235).into();
             }
         }
     }

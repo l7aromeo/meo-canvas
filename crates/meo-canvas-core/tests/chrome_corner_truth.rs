@@ -74,7 +74,7 @@ fn corner(
 ) -> (usize, Vec<u8>) {
     let mut scene = Scene::new(Size::new(size.0 + 20.0, size.1 + 20.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(PAGE.0, PAGE.1, PAGE.2);
+        root.paint.background_color = Color::rgb(PAGE.0, PAGE.1, PAGE.2).into();
     }
     let id = scene
         .push(NodeId::ROOT, Node::new(NodeKind::Box))
@@ -86,14 +86,14 @@ fn corner(
         // Explicit because `BorderStyle::None` is the default and would give
         // this scene no border at all -- and no corner to measure.
         node.paint.border_style = BorderStyle::Solid;
-        node.paint.background_color = Color::rgb(FILL.0, FILL.1, FILL.2);
+        node.paint.background_color = Color::rgb(FILL.0, FILL.1, FILL.2).into();
         node.paint.border_radius = radius;
-        node.paint.border_color_all = Color::rgb(120, 120, 120);
+        node.paint.border_color_all = Color::rgb(120, 120, 120).into();
         node.paint.border_color = Sides {
-            top: Some(Color::rgb(200, 40, 40)),
-            right: Some(Color::rgb(40, 140, 60)),
-            bottom: Some(Color::rgb(40, 60, 200)),
-            left: Some(Color::rgb(230, 170, 30)),
+            top: Some(Color::rgb(200, 40, 40).into()),
+            right: Some(Color::rgb(40, 140, 60).into()),
+            bottom: Some(Color::rgb(40, 60, 200).into()),
+            left: Some(Color::rgb(230, 170, 30).into()),
         };
     }
 

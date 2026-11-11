@@ -28,7 +28,7 @@ fn column(scale: f32) -> Vec<u8> {
     scene.scale = scale;
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
         page.layout.flex_direction = FlexDirection::Column;
-        page.paint.background_color = Color::rgb(255, 255, 255);
+        page.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     for index in 0..BOXES {
         let id = scene
@@ -38,9 +38,9 @@ fn column(scale: f32) -> Vec<u8> {
             node.layout.size =
                 (Dimension::Points(20.0), Dimension::Points(STEP));
             node.paint.background_color = if index % 2 == 0 {
-                Color::rgb(0, 0, 0)
+                Color::rgb(0, 0, 0).into()
             } else {
-                Color::rgb(255, 255, 255)
+                Color::rgb(255, 255, 255).into()
             };
         }
     }

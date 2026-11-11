@@ -43,7 +43,8 @@ const HEIGHT_TOLERANCE: f32 = 1.0;
 /// intrinsic size is one the suite can restate.
 fn art(width: f32) -> Vec<u8> {
     let mut scene = Scene::new(Size::new(width, HEIGHT));
-    scene.nodes[0].paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    scene.nodes[0].paint.background_color =
+        Color::rgb(INK.0, INK.1, INK.2).into();
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
     renderer

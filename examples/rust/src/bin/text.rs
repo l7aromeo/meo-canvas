@@ -66,14 +66,14 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
             offset_x: 2.0,
             offset_y: 2.0,
             blur: 2.0,
-            color: meo_canvas::scene::Color::rgba(20, 20, 40, 140),
+            color: meo_canvas::scene::Color::rgba(20, 20, 40, 140).into(),
         }]),
         line(WORDS)
             .font_size(20.0)
             .color(hex_rgb(0xff_ff_ff))
             .text_stroke(meo_canvas::scene::TextStroke {
                 width: 1.0,
-                color: hex_rgb(0x14_14_1e),
+                color: hex_rgb(0x14_14_1e).into(),
             }),
         // The same stroke painted over the fill rather than under it, which is
         // only legible against the line above.
@@ -82,7 +82,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
             .color(hex_rgb(0xff_ff_ff))
             .text_stroke(meo_canvas::scene::TextStroke {
                 width: 1.0,
-                color: hex_rgb(0x14_14_1e),
+                color: hex_rgb(0x14_14_1e).into(),
             })
             .paint_order(meo_canvas::scene::PaintOrder::Stroke),
         // Where a short line sits in the space its height leaves.

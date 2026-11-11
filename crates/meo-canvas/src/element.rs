@@ -34,7 +34,7 @@ use meo_canvas_scene::{
     },
     style::{
         effect::FillRule,
-        paint::{Color, ObjectFit},
+        paint::{Color, ColorValue, ObjectFit},
         text::{ParagraphStyle, TextSegment},
     },
 };
@@ -798,12 +798,16 @@ impl Element {
     /// How a path's interior is painted. `None` leaves it unfilled.
     ///
     /// ```
-    /// use meo_canvas::{Path, hex_rgb, scene::PathPaint};
+    /// use meo_canvas::{ColorValue, Path, hex_rgb, scene::PathPaint};
     ///
     /// let tick = Path::d("M2 8 L6 12 L14 3")
     ///     .fill(None)
-    ///     .stroke(Some(PathPaint::Solid(hex_rgb(0x22_cc_66))))
+    ///     .stroke(Some(PathPaint::Solid(hex_rgb(0x22_cc_66).into())))
     ///     .line_width(2.0);
+    /// // In the text colour, as an SVG `stroke="currentColor"` is.
+    /// let inked = Path::d("M2 8 L6 12 L14 3")
+    ///     .fill(None)
+    ///     .stroke(Some(PathPaint::Solid(ColorValue::Current)));
     /// ```
     #[must_use]
     pub fn fill(mut self, paint: Option<PathPaint>) -> Self {
@@ -963,7 +967,7 @@ impl Path {
             // what `d` alone has always meant.
             view_box: None,
             stretch: false,
-            fill: Some(PathPaint::Solid(Color::BLACK)),
+            fill: Some(PathPaint::Solid(ColorValue::Rgba(Color::BLACK))),
             stroke: None,
             line_width: 1.0,
             fill_rule: FillRule::NonZero,
@@ -991,7 +995,7 @@ mod tests {
             },
             paint::{
                 BackgroundImage, BackgroundRepeat, BlendMode, BorderStyle,
-                Color, Gradient, GradientGeometry, ObjectFit,
+                Color, ColorValue, Gradient, GradientGeometry, ObjectFit,
             },
             text::{
                 FontStyle, LineHeight, ParagraphStyle, TextAlign,
@@ -1030,7 +1034,7 @@ mod tests {
             ..
         }) = Path::d("M0 0 L4 4")
             .fill(None)
-            .stroke(Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))))
+            .stroke(Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8).into())))
             .line_width(2.5)
             .fill_rule(FillRule::EvenOdd)
             .line_cap(LineCap::Round)
@@ -1042,7 +1046,10 @@ mod tests {
             unreachable!("Path::d builds a path node");
         };
         assert_eq!(fill, None);
-        assert_eq!(stroke, Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8))));
+        assert_eq!(
+            stroke,
+            Some(PathPaint::Solid(Color::rgba(5, 6, 7, 8).into()))
+        );
         assert!((line_width - 2.5).abs() < f32::EPSILON);
         assert_eq!(fill_rule, FillRule::EvenOdd);
         assert_eq!(line_cap, LineCap::Round);
@@ -1122,7 +1129,9 @@ mod tests {
         // `background_color` paints a box inside the canvas instead of the
         // canvas.
         let scene = Box::new()
-            .with_style(Style::new().background_color(hex_rgb(0x10_10_14)))
+            .with_style(
+                Style::new().background_color(hex_rgb(0x10_10_14).into()),
+            )
             .into_scene(100.0, 50.0)
             .map_or_else(|error| unreachable!("{error}"), |(scene, _)| scene);
 
@@ -1132,7 +1141,7 @@ mod tests {
         let root = scene
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the page has a root"));
-        assert_eq!(root.paint.background_color, hex_rgb(0x10_10_14));
+        assert_eq!(root.paint.background_color, hex_rgb(0x10_10_14).into());
     }
 
     #[test]
@@ -1277,7 +1286,7 @@ mod tests {
             grid_auto_flow: Some(GridAutoFlow::Row),
             grid_column: Some(<_>::default()),
             grid_row: Some(<_>::default()),
-            background_color: Some(<_>::default()),
+            background_color: Some(ColorValue::Current),
             gradient: Some(Gradient {
                 geometry: GradientGeometry::Linear {
                     direction: <_>::default(),
@@ -1291,7 +1300,7 @@ mod tests {
                 position: <_>::default(),
             }),
             border_color: Some(<_>::default()),
-            border_color_all: Some(<_>::default()),
+            border_color_all: Some(ColorValue::Current),
             border_style: Some(BorderStyle::Solid),
             border_radius: Some(<_>::default()),
             opacity: Some(<_>::default()),
@@ -1305,7 +1314,7 @@ mod tests {
             font_size: Some(<_>::default()),
             font_weight: Some(<_>::default()),
             font_style: Some(FontStyle::Normal),
-            color: Some(<_>::default()),
+            color: Some(ColorValue::Current),
             text_align: Some(TextAlign::Start),
             text_decoration: Some(TextDecoration::None),
             vertical_align: Some(VerticalAlign::Top),
@@ -1317,7 +1326,7 @@ mod tests {
             word_spacing: Some(<_>::default()),
             text_stroke: Some(TextStroke {
                 width: 1.0,
-                color: <_>::default(),
+                color: ColorValue::Current,
             }),
             transform: Some(<_>::default()),
             box_shadows: Some(<_>::default()),

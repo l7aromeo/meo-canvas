@@ -55,12 +55,13 @@
 //! [`with_style`](Element::with_style) layers it onto a node:
 //!
 //! ```
-//! use meo_canvas::{Row, Style, Styled, all, hex_rgb, px};
+//! use meo_canvas::{ColorValue, Row, Style, Styled, all, hex_rgb, px};
 //!
 //! const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
 //!
-//! let dark =
-//!     Row::new().with_style(CARD.background_color(hex_rgb(0x10_10_14)));
+//! let dark = Row::new().with_style(
+//!     CARD.background_color(ColorValue::Rgba(hex_rgb(0x10_10_14))),
+//! );
 //! let light = Row::new()
 //!     .with_style(CARD)
 //!     .background_color(hex_rgb(0x1c_1c_22));
@@ -179,8 +180,8 @@ pub use meo_canvas_scene::style::{
         TrackSize,
     },
     paint::{
-        BackgroundRepeat, BlendMode, BorderStyle, Color, GradientKind,
-        ObjectFit,
+        BackgroundRepeat, BlendMode, BorderStyle, Color, ColorValue,
+        GradientKind, ObjectFit,
     },
     text::{
         FontStyle, FontVariant, FontWeight, LineHeight, TextAlign,
@@ -229,8 +230,9 @@ pub mod scene {
             },
             paint::{
                 BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-                BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
-                GradientStop, LinearDirection, ObjectFit, PaintStyle,
+                BorderStyle, Color, ColorValue, Gradient, GradientGeometry,
+                GradientKind, GradientStop, LinearDirection, ObjectFit,
+                PaintStyle,
             },
             text::{
                 DEFAULT_ELLIPSIS, FontStyle, FontVariant, FontWeight,

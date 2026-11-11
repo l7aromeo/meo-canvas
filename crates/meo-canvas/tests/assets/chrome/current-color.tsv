@@ -1,0 +1,74 @@
+# Chrome, through `just conformance`. What `currentColor` paints as, per property.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Written by packages/meo-canvas/tools/conformance/currentcolor.mjs.
+#
+# A 24px div at (10, 10) on a white 48px page, inside a parent. In context `own`
+# the div sets `color: rgb(220, 40, 40)` and its parent `color: rgb(40, 80, 220)`; in
+# `inherited` only the parent sets it; in `unset` neither does. Each declaration is
+# screenshotted, then again with each colour written in place of currentColor, and
+# again with the declaration absent: `same as` names those whose pixels are
+# identical, `own`, `parent`, `initial` (black) or `absent`, or `none`. The `path`
+# cases style a 24px square SVG path in the div, and `span color` a span holding
+# its text, rather than the div itself.
+#
+# case	context	declaration	same as
+background-color	own	"background-color: currentColor"	own
+background-color upper case	own	"background-color: CURRENTCOLOR"	own
+border-color	own	"border: 4px solid currentColor"	own
+border-color omitted	own	"border: 4px solid"	own
+box-shadow	own	"box-shadow: 4px 4px 0 currentColor"	own
+box-shadow colour omitted	own	"box-shadow: 4px 4px 0"	own
+gradient stop	own	"background-image: linear-gradient(to right, currentColor, white)"	own
+drop-shadow()	own	"filter: drop-shadow(4px 4px 0 currentColor)"	own
+drop-shadow() colour omitted	own	"filter: drop-shadow(4px 4px 0)"	own
+text-shadow	own	"text-shadow: 2px 2px 0 currentColor"	own
+text-shadow colour omitted	own	"text-shadow: 2px 2px 0"	own
+text stroke	own	"-webkit-text-stroke: 1px currentColor"	own
+text stroke colour omitted	own	"-webkit-text-stroke: 1px"	own
+text decoration colour omitted	own	"text-decoration: underline"	own
+color	own	"color: currentColor"	parent
+color-mix()	own	"background-color: color-mix(in srgb, currentColor 50%, white)"	own
+relative colour	own	"background-color: rgb(from currentColor r g b)"	own
+path fill	own	"fill: currentColor"	own
+path fill omitted	own	""	initial,absent
+span color	own	"color: currentColor"	own,absent
+background-color	inherited	"background-color: currentColor"	parent
+background-color upper case	inherited	"background-color: CURRENTCOLOR"	parent
+border-color	inherited	"border: 4px solid currentColor"	parent
+border-color omitted	inherited	"border: 4px solid"	parent
+box-shadow	inherited	"box-shadow: 4px 4px 0 currentColor"	parent
+box-shadow colour omitted	inherited	"box-shadow: 4px 4px 0"	parent
+gradient stop	inherited	"background-image: linear-gradient(to right, currentColor, white)"	parent
+drop-shadow()	inherited	"filter: drop-shadow(4px 4px 0 currentColor)"	parent
+drop-shadow() colour omitted	inherited	"filter: drop-shadow(4px 4px 0)"	parent
+text-shadow	inherited	"text-shadow: 2px 2px 0 currentColor"	parent
+text-shadow colour omitted	inherited	"text-shadow: 2px 2px 0"	parent
+text stroke	inherited	"-webkit-text-stroke: 1px currentColor"	parent
+text stroke colour omitted	inherited	"-webkit-text-stroke: 1px"	parent
+text decoration colour omitted	inherited	"text-decoration: underline"	parent
+color	inherited	"color: currentColor"	parent,absent
+color-mix()	inherited	"background-color: color-mix(in srgb, currentColor 50%, white)"	parent
+relative colour	inherited	"background-color: rgb(from currentColor r g b)"	parent
+path fill	inherited	"fill: currentColor"	parent
+path fill omitted	inherited	""	initial,absent
+span color	inherited	"color: currentColor"	parent,absent
+background-color	unset	"background-color: currentColor"	initial
+background-color upper case	unset	"background-color: CURRENTCOLOR"	initial
+border-color	unset	"border: 4px solid currentColor"	initial
+border-color omitted	unset	"border: 4px solid"	initial
+box-shadow	unset	"box-shadow: 4px 4px 0 currentColor"	initial
+box-shadow colour omitted	unset	"box-shadow: 4px 4px 0"	initial
+gradient stop	unset	"background-image: linear-gradient(to right, currentColor, white)"	initial
+drop-shadow()	unset	"filter: drop-shadow(4px 4px 0 currentColor)"	initial
+drop-shadow() colour omitted	unset	"filter: drop-shadow(4px 4px 0)"	initial
+text-shadow	unset	"text-shadow: 2px 2px 0 currentColor"	initial
+text-shadow colour omitted	unset	"text-shadow: 2px 2px 0"	initial
+text stroke	unset	"-webkit-text-stroke: 1px currentColor"	initial
+text stroke colour omitted	unset	"-webkit-text-stroke: 1px"	initial
+text decoration colour omitted	unset	"text-decoration: underline"	initial
+color	unset	"color: currentColor"	initial,absent
+color-mix()	unset	"background-color: color-mix(in srgb, currentColor 50%, white)"	initial
+relative colour	unset	"background-color: rgb(from currentColor r g b)"	initial
+path fill	unset	"fill: currentColor"	initial,absent
+path fill omitted	unset	""	initial,absent
+span color	unset	"color: currentColor"	initial,absent

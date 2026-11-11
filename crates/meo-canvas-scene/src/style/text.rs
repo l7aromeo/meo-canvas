@@ -12,7 +12,7 @@
 //! a box that set nothing must not overwrite what its own parent said.
 
 use crate::{
-    style::{PaintOrder, paint::Color},
+    style::{PaintOrder, paint::ColorValue},
     wire::wire_enum,
 };
 
@@ -266,7 +266,7 @@ pub struct TextStroke {
     /// Stroke width in logical pixels.
     pub width: f32,
     /// Stroke colour.
-    pub color: Color,
+    pub color: ColorValue,
 }
 
 /// Everything that styles glyphs, all of it inheritable.
@@ -283,8 +283,9 @@ pub struct TextStyle {
     pub font_weight: Option<FontWeight>,
     /// Upright or slanted.
     pub font_style: Option<FontStyle>,
-    /// Glyph fill colour.
-    pub color: Option<Color>,
+    /// Glyph fill colour. [`ColorValue::Current`] is the inherited colour, as
+    /// `color: currentColor` is in CSS.
+    pub color: Option<ColorValue>,
     /// Horizontal placement within the line box.
     pub text_align: Option<TextAlign>,
     /// A line through, over or under the text.

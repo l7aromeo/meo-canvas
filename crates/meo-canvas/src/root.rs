@@ -1243,7 +1243,7 @@ mod tests {
             .get(scene.pages[0])
             .unwrap_or_else(|| unreachable!("the scene has no root"));
 
-        assert_eq!(root.paint.background_color, hex_rgb(0x10_10_14));
+        assert_eq!(root.paint.background_color, hex_rgb(0x10_10_14).into());
         assert_eq!(root.children.len(), 1);
     }
 

@@ -28,11 +28,15 @@
 //! from the node and its ancestors at paint, so a tag inherits from the node it
 //! sits in without the node's style being frozen into the scene at parse time.
 
-use meo_canvas_scene::style::text::{
-    FontStyle, FontWeight, TextSegment, TextStyle,
+use meo_canvas_scene::style::{
+    paint::ColorValue,
+    text::{FontStyle, FontWeight, TextSegment, TextStyle},
 };
 
-use crate::{color::parse_color, diagnostic::Diagnostic};
+use crate::{
+    color::{parse_color, parse_color_value},
+    diagnostic::Diagnostic,
+};
 
 /// The spaces a `\t` becomes.
 ///
@@ -307,6 +311,11 @@ fn apply(
         // Colour and weight leave the enclosing value standing when the value
         // is unusable, because that is what v9 does -- measured by running it,
         // not inferred: `<color=red>a<color=notacolour>b` draws `b` red there.
+        // `currentColor` is the enclosing colour, as a span's is in Chrome, so
+        // the tag changes nothing.
+        "color"
+            if tag.value.and_then(parse_color_value)
+                == Some(ColorValue::Current) => {}
         "color" => match read(
             tag,
             parse_color,
@@ -315,7 +324,7 @@ fn apply(
             found,
         ) {
             Read::Absent => style.color = None,
-            Read::Good(color) => style.color = Some(color),
+            Read::Good(color) => style.color = Some(color.into()),
             Read::Unusable => {}
         },
         "weight" => match read(
@@ -672,7 +681,7 @@ mod tests {
     #[test]
     fn tags_nest_and_the_inner_one_restores_the_outer() {
         let segments = parse("<color=red>a<i>b</i>c</color>d");
-        let red = Some(Color::rgba(255, 0, 0, 255));
+        let red = Some(Color::rgba(255, 0, 0, 255).into());
         assert_eq!(segments.len(), 4);
         assert_eq!(segments[0].style.color, red);
         assert_eq!(segments[0].style.font_style, None);
@@ -685,7 +694,7 @@ mod tests {
 
     #[test]
     fn a_value_may_be_double_quoted_single_quoted_or_bare() {
-        let red = Some(Color::rgba(255, 0, 0, 255));
+        let red = Some(Color::rgba(255, 0, 0, 255).into());
         for input in ["<color=\"red\">x", "<color='red'>x", "<color=red>x"] {
             let segments = parse(input);
             assert_eq!(segments[0].style.color, red, "{input}");
@@ -769,6 +778,16 @@ mod tests {
             parse("<color=red>a<color=notacolour>b")[1].style.color,
             parse("<color=red>a")[0].style.color
         );
+    }
+
+    #[test]
+    fn current_color_keeps_the_enclosing_colour_without_a_report() {
+        // A span's `color: currentColor` is the colour around it in Chrome
+        // (`current-color.tsv`, `span color`); it is a colour, so not reported.
+        let (segments, found) =
+            super::parse_reporting("<color=red>a<color=CurrentColor>b");
+        assert_eq!(segments[1].style.color, segments[0].style.color);
+        assert!(found.is_empty(), "{found:?}");
     }
 
     /// Every site that discards input reports, and the deliberate ones stay
@@ -956,13 +975,13 @@ mod tests {
 
     #[test]
     fn a_colour_may_be_written_any_way_css_names_one() {
-        let opaque_red = Some(Color::rgba(255, 0, 0, 255));
+        let opaque_red = Some(Color::rgba(255, 0, 0, 255).into());
         for input in ["<color=#f00>x", "<color=\"rgb(255 0 0)\">x"] {
             assert_eq!(parse(input)[0].style.color, opaque_red, "{input}");
         }
         assert_eq!(
             parse("<color=#ff000080>x")[0].style.color,
-            Some(Color::rgba(255, 0, 0, 128))
+            Some(Color::rgba(255, 0, 0, 128).into())
         );
     }
 }

@@ -797,11 +797,11 @@ arena_group! {
 arena_group! {
     /// Everything that fills, outlines or composites the box.
     pub(crate) mod paint for meo_canvas_scene::style::paint::PaintStyle {
-        0 => background_color as "backgroundColor": meo_canvas_scene::style::paint::Color,
+        0 => background_color as "backgroundColor": meo_canvas_scene::style::paint::ColorValue,
         1 => gradient as "gradient": Option<meo_canvas_scene::style::paint::Gradient>,
         2 => background_image as "backgroundImage": Option<meo_canvas_scene::style::paint::BackgroundImage>,
-        3 => border_color as "borderColor": meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::Color>>,
-        4 => border_color_all as "borderColor": meo_canvas_scene::style::paint::Color,
+        3 => border_color as "borderColor": meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::ColorValue>>,
+        4 => border_color_all as "borderColor": meo_canvas_scene::style::paint::ColorValue,
         5 => border_style as "borderStyle": meo_canvas_scene::style::paint::BorderStyle,
         6 => border_radius as "borderRadius": meo_canvas_scene::Corners<f32>,
         7 => opacity as "opacity": f32,
@@ -818,7 +818,7 @@ arena_group! {
         1 => font_size as "fontSize": Option<f32>,
         2 => font_weight as "fontWeight": Option<meo_canvas_scene::style::text::FontWeight>,
         3 => font_style as "fontStyle": Option<meo_canvas_scene::style::text::FontStyle>,
-        4 => color as "color": Option<meo_canvas_scene::style::paint::Color>,
+        4 => color as "color": Option<meo_canvas_scene::style::paint::ColorValue>,
         5 => text_align as "textAlign": Option<meo_canvas_scene::style::text::TextAlign>,
         6 => text_decoration as "textDecoration": Option<meo_canvas_scene::style::text::TextDecoration>,
         7 => vertical_align as "verticalAlign": Option<meo_canvas_scene::style::text::VerticalAlign>,
@@ -1552,7 +1552,7 @@ mod tests {
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(
             scene.nodes[0].paint.background_color,
-            Color::rgba(0x11, 0x22, 0x33, 0x44)
+            Color::rgba(0x11, 0x22, 0x33, 0x44).into()
         );
     }
 
@@ -1614,7 +1614,8 @@ mod tests {
             let (scene, _) = decode(&slots, &values)
                 .unwrap_or_else(|error| unreachable!("{written}: {error}"));
             assert_eq!(
-                scene.nodes[0].paint.background_color, expected,
+                scene.nodes[0].paint.background_color,
+                expected.into(),
                 "{written} did not reach the scene as itself"
             );
         }
@@ -1985,7 +1986,7 @@ mod tests {
             read_one::<TextStroke>(&[1.5, 0.0], &black),
             Ok(TextStroke {
                 width: 1.5,
-                color: Color::rgba(0, 0, 0, 255)
+                color: Color::rgba(0, 0, 0, 255).into()
             })
         );
 
@@ -2212,7 +2213,7 @@ mod tests {
 
         assert_eq!(
             read_one::<PathPaint>(&[0.0, 0.0], &colours),
-            Ok(PathPaint::Solid(Color::rgba(0, 0, 0, 255)))
+            Ok(PathPaint::Solid(Color::rgba(0, 0, 0, 255).into()))
         );
         assert!(read_one::<PathPaint>(&[7.0], &none).is_err());
     }

@@ -95,11 +95,11 @@ fn drawn(geometry: GradientGeometry) -> Vec<u8> {
                     stops: vec![
                         GradientStop {
                             offset: 0.0,
-                            color: hex_rgb(0x00_00_00),
+                            color: hex_rgb(0x00_00_00).into(),
                         },
                         GradientStop {
                             offset: 1.0,
-                            color: hex_rgb(0xff_ff_ff),
+                            color: hex_rgb(0xff_ff_ff).into(),
                         },
                     ],
                 }),

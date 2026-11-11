@@ -86,12 +86,12 @@ fn scene(transform: Transform) -> Scene {
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
         root.layout.display = Display::Block;
         root.layout.padding = Sides::all(Length::Points(AT));
-        root.paint.background_color = Color::rgb(255, 255, 255);
+        root.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     let mut child = Node::new(NodeKind::Box);
     child.layout.display = Display::Block;
     child.layout.size = (Dimension::Points(SIDE), Dimension::Points(SIDE));
-    child.paint.background_color = Color::rgb(INK[0], INK[1], INK[2]);
+    child.paint.background_color = Color::rgb(INK[0], INK[1], INK[2]).into();
     child.effects.transform = Some(transform);
     scene
         .push(NodeId::ROOT, child)

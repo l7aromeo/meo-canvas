@@ -869,8 +869,11 @@ function writeCorners(out: ArenaWriter, value: Corners, what: string): void {
   out.f32(decimal(value.bottomLeft ?? 0, `${what} bottomLeft`))
 }
 
-/** Black, which is what a shadow with no colour is. */
-const SHADOW_BLACK = '#000000'
+/**
+ * The colour of a shadow or text stroke that names none: the text colour, as CSS
+ * gives one (`current-color.tsv`).
+ */
+const UNNAMED_COLOR = 'currentColor'
 
 /**
  * Writes a transform with the scene's defaults for what was not named. The wire
@@ -895,7 +898,7 @@ function writeBoxShadow(out: ArenaWriter, value: BoxShadow): void {
   out.f32(value.offsetY ?? 0)
   out.f32(value.blur ?? 0)
   out.f32(value.spread ?? 0)
-  out.text(value.color ?? SHADOW_BLACK)
+  out.text(value.color ?? UNNAMED_COLOR)
 }
 
 /** Writes one text shadow, which has no spread and no inset. */
@@ -903,7 +906,7 @@ function writeTextShadow(out: ArenaWriter, value: TextShadow): void {
   out.f32(value.offsetX ?? 0)
   out.f32(value.offsetY ?? 0)
   out.f32(value.blur ?? 0)
-  out.text(value.color ?? SHADOW_BLACK)
+  out.text(value.color ?? UNNAMED_COLOR)
 }
 
 /**
@@ -1529,9 +1532,7 @@ const TEXT_PROPERTIES: readonly Property[] = [
     write: (out, style) =>
       out.optional(style.textStroke, stroke => {
         out.f32(stroke.width ?? 0)
-        // Black rather than the text's own colour: the scene's `TextStroke` carries
-        // a colour and has no way to say "whatever the glyphs are".
-        out.text(stroke.color ?? SHADOW_BLACK)
+        out.text(stroke.color ?? UNNAMED_COLOR)
       }),
   },
 ]

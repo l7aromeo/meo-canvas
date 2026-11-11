@@ -38,11 +38,11 @@ fn ramp() -> Gradient {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: RED,
+                color: RED.into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: BLUE,
+                color: BLUE.into(),
             },
         ],
     }
@@ -55,7 +55,7 @@ fn tile() -> Vec<u8> {
     for color in [GREEN, Color::rgb(204, 204, 0)] {
         let mut half = Node::new(NodeKind::Box);
         half.layout.size = (Dimension::Points(5.0), Dimension::Points(10.0));
-        half.paint.background_color = color;
+        half.paint.background_color = color.into();
         scene
             .push(NodeId::ROOT, half)
             .unwrap_or_else(|error| unreachable!("{error}"));
@@ -111,14 +111,14 @@ fn rows() -> Vec<Row> {
             name: "plain root, the control",
             scene: {
                 let mut scene = Scene::new(Size::new(100.0, 100.0));
-                scene.nodes[0].paint.background_color = RED;
+                scene.nodes[0].paint.background_color = RED.into();
                 scene
             },
             points: all(R),
         },
         Row {
             name: "colour at a margin",
-            scene: root_with(|root| root.paint.background_color = RED),
+            scene: root_with(|root| root.paint.background_color = RED.into()),
             points: all(R),
         },
         Row {
@@ -129,14 +129,14 @@ fn rows() -> Vec<Row> {
                 root.layout.position_type = PositionType::Relative;
                 root.layout.inset.top = Some(Length::Points(20.0));
                 root.layout.inset.left = Some(Length::Points(20.0));
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
             }),
             points: all(R),
         },
         Row {
             name: "colour under a radius the canvas ignores",
             scene: root_with(|root| {
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
                 root.paint.border_radius = Corners::all(30.0);
             }),
             points: all(R),
@@ -202,7 +202,7 @@ fn rows() -> Vec<Row> {
         Row {
             name: "opacity leaves the base whole",
             scene: root_with(|root| {
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
                 root.paint.opacity = 0.5;
             }),
             points: all(R),
@@ -222,7 +222,7 @@ fn rows() -> Vec<Row> {
         Row {
             name: "a filter reaches the whole canvas",
             scene: root_with(|root| {
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
                 root.effects.filter = Some("invert(1)".to_owned());
             }),
             points: all([51, 255, 255, 255]),
@@ -230,7 +230,7 @@ fn rows() -> Vec<Row> {
         Row {
             name: "opacity and filter together",
             scene: root_with(|root| {
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
                 root.paint.opacity = 0.5;
                 root.effects.filter = Some("invert(1)".to_owned());
             }),
@@ -239,7 +239,7 @@ fn rows() -> Vec<Row> {
         Row {
             name: "a blend mode has nothing to blend with",
             scene: root_with(|root| {
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
                 root.paint.blend_mode = BlendMode::Multiply;
             }),
             points: all(R),
@@ -247,7 +247,7 @@ fn rows() -> Vec<Row> {
         Row {
             name: "a backdrop filter leaves the canvas",
             scene: root_with(|root| {
-                root.paint.background_color = RED;
+                root.paint.background_color = RED.into();
                 root.effects.backdrop_filter = Some("blur(4px)".to_owned());
             }),
             points: all(R),
@@ -263,11 +263,11 @@ fn rows() -> Vec<Row> {
                     stops: vec![
                         GradientStop {
                             offset: 0.0,
-                            color: Color::rgba(0, 0, 0, 255),
+                            color: Color::rgba(0, 0, 0, 255).into(),
                         },
                         GradientStop {
                             offset: 1.0,
-                            color: Color::rgba(0, 0, 0, 0),
+                            color: Color::rgba(0, 0, 0, 0).into(),
                         },
                     ],
                 }));
@@ -364,7 +364,7 @@ fn the_page_root_sits_inside_the_canvas_at_its_margins() {
         let mut child = Node::new(NodeKind::Box);
         child.layout.size =
             (Dimension::Percent(0.75), Dimension::Percent(0.75));
-        child.paint.background_color = BLUE;
+        child.paint.background_color = BLUE.into();
         scene
             .push(NodeId::ROOT, child)
             .unwrap_or_else(|error| unreachable!("{error}"));

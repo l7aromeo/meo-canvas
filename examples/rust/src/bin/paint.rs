@@ -37,11 +37,11 @@ fn ends() -> Vec<GradientStop> {
     vec![
         GradientStop {
             offset: 0.0,
-            color: FROM,
+            color: FROM.into(),
         },
         GradientStop {
             offset: 1.0,
-            color: TO,
+            color: TO.into(),
         },
     ]
 }
@@ -51,15 +51,15 @@ fn three() -> Vec<GradientStop> {
     vec![
         GradientStop {
             offset: 0.0,
-            color: FROM,
+            color: FROM.into(),
         },
         GradientStop {
             offset: 0.5,
-            color: Color::rgb(0xff, 0xff, 0xff),
+            color: Color::rgb(0xff, 0xff, 0xff).into(),
         },
         GradientStop {
             offset: 1.0,
-            color: TO,
+            color: TO.into(),
         },
     ]
 }
@@ -161,20 +161,20 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                 cell().background_color(FROM).box_shadow(vec![BoxShadow {
                     offset_y: 6.0,
                     blur: 10.0,
-                    color: TO,
+                    color: TO.into(),
                     ..BoxShadow::default()
                 }]),
                 cell().background_color(FROM).box_shadow(vec![
                     BoxShadow {
                         offset_x: -6.0,
                         blur: 4.0,
-                        color: TO,
+                        color: TO.into(),
                         ..BoxShadow::default()
                     },
                     BoxShadow {
                         offset_x: 6.0,
                         blur: 4.0,
-                        color: Color::rgb(0x22, 0x88, 0x44),
+                        color: Color::rgb(0x22, 0x88, 0x44).into(),
                         ..BoxShadow::default()
                     },
                 ]),
@@ -223,11 +223,11 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                     stops: vec![
                         GradientStop {
                             offset: 0.0,
-                            color: Color::rgb(0x30, 0x30, 0x36),
+                            color: Color::rgb(0x30, 0x30, 0x36).into(),
                         },
                         GradientStop {
                             offset: 1.0,
-                            color: Color::rgb(0x34, 0x34, 0x3a),
+                            color: Color::rgb(0x34, 0x34, 0x3a).into(),
                         },
                     ],
                 }),
@@ -258,11 +258,11 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                     stops: vec![
                         GradientStop {
                             offset: 0.0,
-                            color: Color::rgba(0, 0, 0, 0xff),
+                            color: Color::rgba(0, 0, 0, 0xff).into(),
                         },
                         GradientStop {
                             offset: 1.0,
-                            color: Color::rgba(0, 0, 0, 0x00),
+                            color: Color::rgba(0, 0, 0, 0x00).into(),
                         },
                     ],
                 })),

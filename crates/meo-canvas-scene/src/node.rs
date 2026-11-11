@@ -20,7 +20,7 @@ use crate::{
         Length,
         effect::{Effects, FillRule},
         layout::LayoutStyle,
-        paint::{Color, Gradient, ObjectFit, PaintStyle},
+        paint::{ColorValue, Gradient, ObjectFit, PaintStyle},
         text::{ParagraphStyle, TextSegment, TextStyle},
     },
     wire::wire_enum,
@@ -297,7 +297,7 @@ wire_enum! {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PathPaint {
     /// A flat colour.
-    Solid(Color),
+    Solid(ColorValue),
     /// A gradient.
     Gradient(Gradient),
 }
@@ -589,7 +589,7 @@ mod tests {
             ..LayoutStyle::default()
         };
         let paint = PaintStyle {
-            background_color: Color::BLACK,
+            background_color: Color::BLACK.into(),
             ..PaintStyle::default()
         };
         let node = Node::container()
@@ -744,7 +744,7 @@ mod tests {
             format!("{:?}", ImageSource::Bytes(vec![1])),
             format!("{:?}", LineCap::Butt),
             format!("{:?}", LineJoin::Bevel),
-            format!("{:?}", PathPaint::Solid(Color::BLACK)),
+            format!("{:?}", PathPaint::Solid(Color::BLACK.into())),
         ] {
             assert!(!rendered.is_empty());
         }

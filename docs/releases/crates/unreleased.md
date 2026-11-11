@@ -1,5 +1,7 @@
 ### Added
 
+- `currentColor` on every colour a style takes: `ColorValue::Current` paints as the node's text colour after inheritance, black where nothing sets one, as Chrome paints it on every case `current-color.tsv` measures. It reaches the background colour, border colours, gradient stops, box and text shadows, the text stroke and a path's fill and stroke. On `color`, `Current` is the parent's colour, as `color: currentColor` is, and a markup `<color=currentColor>` tag keeps the enclosing colour. `meo_canvas_core::color::parse_color_value` reads a string into a `ColorValue`. Inside `color-mix()` or a relative colour `currentColor` is refused, and inside a `filter`'s `drop-shadow()` it is drawn black, since meo-skia-canvas's colour reader takes no node colour there (`l7aromeo/meo-skia-canvas#688`) (`l7aromeo/meo-canvas#224`).
+
 - `EncodeOptions::lossless: Some(true)` writes a lossless WebP, still or animated, which decodes to the drawn pixels; 0.1.4 refused it for WebP with ``invalid `lossless`: webp is either lossless already or has no lossless form``. `Some(false)` writes a lossy WebP at any quality, its finest at `quality: Some(1.0)`, and `None` leaves WebP to the quality, lossless at 1.0, as before. (`l7aromeo/meo-canvas#184`, `l7aromeo/meo-skia-canvas#575`).
 
 - The CLI's `--lossless` takes a value after `=`: `--lossless=false` writes a lossy WebP at any quality, and `--lossless=true` is the bare flag, which still means `true`, so `render --lossless scene.mcs` reads as it did.
@@ -11,6 +13,10 @@
 - `Measure::has_picture`, a provided method a measurer answers for an image leaf: whether its source decoded. Layout lays an image without a picture out as Chrome lays out a broken `<img>` with no `alt`, a box around a 16px icon rather than a replaced element. It defaults to `true`, so a measurer that loads no images keeps every image's layout as it was (`l7aromeo/meo-canvas#183`).
 
 ### Changed
+
+- **Breaking.** Colours in a style are `ColorValue`s, a colour or `Current`, rather than `Color`s: `PaintStyle::background_color`, `border_color` and `border_color_all`, `GradientStop::color`, `BoxShadow::color`, `TextShadow::color`, `TextStroke::color` and `PathPaint::Solid`, and `TextStyle::color` is `Option<ColorValue>`. A setter on a node takes either, so `Row::new().background_color(hex_rgb(0x10_10_14))` is unchanged; `Style`'s colour setters stay `const` and take a `ColorValue`, so a `const` style writes `Style::new().background_color(ColorValue::Rgba(hex_rgb(0x10_10_14)))`, and a struct literal writes `color: hex_rgb(0x10_10_14).into()`.
+
+- A border with no colour, and a box shadow, text shadow or text stroke with no colour, draw in the node's text colour, as CSS's initial `currentColor` does in Chrome, where they drew black. `BoxShadow::default()` and `TextShadow::default()` carry `ColorValue::Current`. A node with no text colour anywhere above it draws them black as before.
 
 - Pixels move with meo-skia-canvas 0.17. `filter` `blur()`, `drop-shadow()`, `backdrop_filter` and blurred box shadows are the exact Gaussian blur, which Chrome's blur only approximates, so a blurred edge can sit a few levels from Chrome's; this is a decided difference from Chrome, recorded in the design notes. A gradient channel whose exact value lies on a half now rounds up. An `opacity` of 0.99 composites a level lighter than Chrome, 220,43,43 for `#dc2828` over white where Chrome and 0.16.3 give 220,42,42 (l7aromeo/meo-skia-canvas#621). Antialiased edges of borders, shadows and clips move by a level or two, and a few pixels of a dashed border by up to 8. Drawing is about 18% faster in the crate's own benchmark, 1.94 and 2.06 ms against 2.44 for a page of 111 nodes, and a whole render no slower (l7aromeo/meo-skia-canvas#623).
 
