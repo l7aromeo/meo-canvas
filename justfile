@@ -172,14 +172,30 @@ test:
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
-# Compiles and tests `net`, which no other recipe builds, once on Linux: whether
-# it compiles is a fact about the code. A local `just ci` does not build it.
-# `net` adds 14 crates to the core's tree, `ureq` and `rustls` with theirs.
+# How many of the core's test files compile only under `net`: `fetch_policy` and
+# `image_soft_fail`. A floor, so adding one needs no edit and losing one fails.
+net_only_core_tests := "2"
+
+# Compiles and tests `net`, which no other recipe and no local `just ci` builds,
+# once on Linux. `net` adds 14 crates to the core's tree, `ureq` and `rustls` with
+# theirs. The core's `net`-only test files are found rather than listed, so a new
+# one runs unedited, and the floor fails a pattern that stopped matching.
 [doc("Compile and test the `net` feature, which no other recipe builds.")]
 net-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
     cargo clippy -p meo-canvas -p meo-canvas-core -p meo-canvas-cli --all-targets --features net -- -D warnings
     cargo test -p meo-canvas-core --features net --lib
-    cargo test -p meo-canvas-core --features net --test fetch_policy
+    found=0
+    for file in crates/meo-canvas-core/tests/*.rs; do
+      grep -q '^#!\[cfg(feature = "net")\]' "$file" || continue
+      cargo test -p meo-canvas-core --features net --test "$(basename "$file" .rs)"
+      found=$((found + 1))
+    done
+    if [ "$found" -lt {{ net_only_core_tests }} ]; then
+      echo "error: net-check found $found net-only test files in meo-canvas-core, fewer than {{ net_only_core_tests }}" >&2
+      exit 1
+    fi
     cargo test -p meo-canvas --features net --test net_feature
     cargo test -p meo-canvas-cli --features net --test cli
 # Not in `ci`: it regenerates four images rather than checking, so it sits with
