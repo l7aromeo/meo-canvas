@@ -40,6 +40,24 @@ const LINES = [1, 2]
 /** The text: a cap and a descender, as the report's own string. */
 const TEXT = 'Ag'
 
+/**
+ * Lines holding a span of another face or size, at `normal`, as `[block family,
+ * block size, span family, span size]`: each inline box carries its own
+ * half-leading, so the line box is the union of the boxes, not the largest
+ * ascent, descent and gap. 13px is where the two give the same box and 15 and
+ * 25 are where they part; a 25px span in a 13px block asks it across sizes.
+ */
+const MIXED = [
+  ...[13, 15, 25].flatMap(size => [
+    [FONT.family, size, 'Poppins', size],
+    ['Poppins', size, FONT.family, size],
+  ]),
+  ['Poppins', 13, 'Poppins', 25],
+  [FONT.family, 13, FONT.family, 25],
+  [FONT.family, 13, 'Poppins', 25],
+  ['Poppins', 13, FONT.family, 25],
+]
+
 const browser = await open()
 try {
   await browser.page.setViewportSize({ width: 800, height: 400 })
@@ -58,42 +76,66 @@ try {
   }
   await settle(browser.page)
 
+  /** The block's box and first baseline: one line or two of the text, and a span after the first. */
+  const measure = (family, size, multiple, lines, span) =>
+    browser.page.evaluate(
+      ({ family, size, multiple, lines, span, text }) => {
+        const block = ruler => {
+          const div = document.createElement('div')
+          div.style.cssText = `font:${size}px "${family}";line-height:${multiple === null ? 'normal' : multiple};width:400px`
+          for (let line = 0; line < lines; line += 1) {
+            if (line > 0) div.append(document.createElement('br'))
+            div.append(text)
+          }
+          if (span !== null) {
+            const inner = document.createElement('span')
+            inner.style.cssText = `font:${span.size}px "${span.family}"`
+            inner.textContent = text
+            div.firstChild.after(inner)
+          }
+          let mark = null
+          if (ruler) {
+            mark = document.createElement('span')
+            mark.style.cssText = 'display:inline-block;width:0;height:0'
+            div.firstChild.after(mark)
+          }
+          document.body.append(div)
+          const top = div.getBoundingClientRect().top
+          const result = { height: div.getBoundingClientRect().height, baseline: mark === null ? null : mark.getBoundingClientRect().top - top }
+          div.remove()
+          return result
+        }
+        // The box from bare text, since the ruler can hold a short line box open.
+        return { box: block(false).height, baseline: block(true).baseline }
+      },
+      { family, size, multiple, lines, span, text: TEXT },
+    )
+  const row = (family, multiple, size, lines, span, measured) =>
+    [
+      family,
+      multiple === null ? 'normal' : multiple,
+      size,
+      lines,
+      span === null ? '-' : span.family,
+      span === null ? '-' : span.size,
+      measured.box.toFixed(3),
+      measured.baseline.toFixed(3),
+    ].join('\t')
+
   const rows = []
   for (const face of FACES) {
     for (const multiple of LINE_HEIGHTS) {
       for (const size of SIZES) {
         for (const lines of LINES) {
           if (lines === 2 && multiple !== null) continue
-          const measured = await browser.page.evaluate(
-            ({ family, size, multiple, lines, text }) => {
-              const block = ruler => {
-                const div = document.createElement('div')
-                div.style.cssText = `font:${size}px "${family}";line-height:${multiple === null ? 'normal' : multiple};width:400px`
-                for (let line = 0; line < lines; line += 1) {
-                  if (line > 0) div.append(document.createElement('br'))
-                  div.append(text)
-                }
-                let mark = null
-                if (ruler) {
-                  mark = document.createElement('span')
-                  mark.style.cssText = 'display:inline-block;width:0;height:0'
-                  div.firstChild.after(mark)
-                }
-                document.body.append(div)
-                const top = div.getBoundingClientRect().top
-                const result = { height: div.getBoundingClientRect().height, baseline: mark === null ? null : mark.getBoundingClientRect().top - top }
-                div.remove()
-                return result
-              }
-              // The box from bare text, since the ruler can hold a short line box open.
-              return { box: block(false).height, baseline: block(true).baseline }
-            },
-            { family: face.family, size, multiple, lines, text: TEXT },
-          )
-          rows.push([face.family, multiple === null ? 'normal' : multiple, size, lines, measured.box.toFixed(3), measured.baseline.toFixed(3)].join('\t'))
+          rows.push(row(face.family, multiple, size, lines, null, await measure(face.family, size, multiple, lines, null)))
         }
       }
     }
+  }
+  for (const [family, size, spanFamily, spanSize] of MIXED) {
+    const span = { family: spanFamily, size: spanSize }
+    rows.push(row(family, null, size, 1, span, await measure(family, size, null, 1, span)))
   }
 
   const header = [
@@ -102,9 +144,10 @@ try {
     '# Written by packages/meo-canvas/tools/conformance/lineheightnormal.mjs.',
     '#',
     '# The block is 400px wide, its lines broken by <br>. `box` is its height; `baseline` is the',
-    "# first line's baseline from the block's top, read from a zero-height inline-block.",
+    "# first line's baseline from the block's top, read from a zero-height inline-block. A row with",
+    "# a span puts the text again, in `span_family` at `span_size`, after the first line's text.",
     '#',
-    '# family\tline_height\tsize\tlines\tbox\tbaseline',
+    '# family\tline_height\tsize\tlines\tspan_family\tspan_size\tbox\tbaseline',
   ]
   const written = table([...header, ...rows])
   if (process.env['WRITE'] === '1') {
