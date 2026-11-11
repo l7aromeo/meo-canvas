@@ -307,13 +307,30 @@ fn the_placeholder_stays_inside_the_box_it_was_given() {
 
 #[test]
 fn a_box_with_no_extent_is_drawn_as_nothing() {
-    // `auto` on both axes with no bitmap to size it collapses to 0x0, and
-    // Chrome draws nothing there. Drawing a mark would invent an extent
-    // layout did not give the node.
+    // Sized 0x0, so the placeholder has nowhere to go; a mark would invent an
+    // extent layout did not give. `auto` is not such a box: it takes the
+    // broken-image box of `failed-image.tsv`, the next test's subject.
     assert_eq!(
-        marked(&alone(None, 0.0)),
+        marked(&alone(Some(0.0), 0.0)),
         Vec::new(),
-        "a collapsed box should be untouched"
+        "a 0x0 box should be untouched"
+    );
+}
+
+#[test]
+fn an_auto_box_takes_the_broken_image_box_and_draws_in_it() {
+    // `failed-image.tsv`'s `failed block - -` is the container's width by
+    // 16px: here 40x16 at the padding's corner, (10, 10), and nothing outside.
+    let painted = marked(&alone(None, 0.0));
+    assert!(!painted.is_empty(), "the placeholder drew nothing");
+    let stray: Vec<_> = painted
+        .iter()
+        .filter(|(x, y)| !(10..50).contains(x) || !(10..26).contains(y))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "drawn outside the 40x16 box at {:?}",
+        &stray[..stray.len().min(8)]
     );
 }
 
